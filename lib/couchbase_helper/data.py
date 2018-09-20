@@ -1,0 +1,50 @@
+# Used by JsonDocGenerator in documentgenerator.py
+# coding=utf-8
+
+FIRST_NAMES = ['Adara', 'Adena', 'Adrianne', 'Alarice', 'Alvita', 'Amara',
+                'Ambika', 'Antonia', 'Araceli', 'Balandria', 'Basha',
+                'Beryl', 'Bryn', 'Callia', 'Caryssa', 'Cassandra', 'Casondrah',
+                'Chatha', 'Ciara', 'Cynara', 'Cytheria', 'Dabria', 'Darcei',
+                'Deandra', 'Deirdre', 'Delores', 'Desdomna', 'Devi', 'Dominique',
+                'Drucilla', 'Duvessa', 'Ebony', 'Fantine', 'Fuscienne',
+                'Gabi', 'Gallia', 'Hanna', 'Hedda', 'Jerica', 'Jetta', 'Joby',
+                'Kacila', 'Kagami', 'Kala', 'Kallie', 'Keelia', 'Kerry',
+                'Kerry-Ann', 'Kimberly', 'Killian', 'Kory', 'Lilith',
+                'Lucretia', 'Lysha', 'Mercedes', 'Mia', 'Maura', 'Perdita',
+                'Quella','Riona', 'Safiya', 'Salina', 'Severin', 'Sidonia',
+                'Sirena', 'Solita', 'Tempest', 'Thea', 'Treva', 'Trista',
+                'Vala', 'Winta']
+
+LAST_NAMES = ['Smith', 'Brown', 'Johnson', 'Jones', 'Williams',
+            'Davis', 'Miller XII', 'Wilson', 'Taylor', 'Clark', 'White',
+            'Moore', 'Thompson', 'Allen', 'Martin', 'Hall', 'Adams',
+            'Thomas', 'Wright', 'Baker III', 'Walker II', 'Anderson', 'Lewis',
+            'Harris', 'Hill', 'King Jr.', 'Jackson', 'Lee', 'Green', 'Wood',
+            'Parker X', 'Campbell', 'Young', 'Robinson Sr.', 'Stewart',
+            'Scott', 'Rogers', 'Roberts', 'Cook', 'Phillips', 'Turner',
+            'Carter', 'Ward', 'Foster', 'Morgan', 'Howard Jr.', 'Cox',
+            'Bailey', 'Richardson IX', 'Reed', 'Russell', 'Edwards Sr.',
+            'Cooper', 'Wells', 'Palmer', 'Ann', 'Mitchell', 'Evans',
+            'Simón', 'Josué', 'Damián', 'Julián', 'Aarón', 'Ángel',
+            'Gerónimo', 'Juan José', 'Tomás', 'Nicolás', 'Sebastián',
+            'Jr.', 'Sr.']
+
+LANGUAGES = ['English', 'Spanish', 'German', 'Italian', 'French',
+             'Arabic', 'Africans', 'Hindi', 'Vietnamese', 'Urdu', 'Dutch',
+             'Quechua', 'Japanese', 'Chinese', 'Nepalese', 'Thai', 'Malay',
+             'Sinhalese', 'Portuguese', 'Romanian']
+
+DEPT = ['Engineering', 'Sales', 'Support', 'Marketing', 'Info-tech', 'Finance',
+        'HR', 'Pre-sales', 'Accounts', 'Dev-ops', 'Training']
+
+COUNTRIES = ["India", "US", "UK", "Japan", "France", "Germany", "China", "Korea", "Canada", "Cuba",
+     "West Indies", "Australia", "New Zealand", "Nepal", "Sri Lanka", "Pakistan", "Mexico",
+     "belgium", "Netherlands", "Brazil", "Costa Rica", "Cambodia", "Fiji", "Finland", "haiti",
+     "Hong Kong", "Iceland", "Iran", "Iraq", "Italy", "Greece", "Jamaica", "Kenya", "Kuwait", "Macau",
+     "Spain","Morocco", "Maldives", "Norway"]
+
+COUNTRY_CODE = ["Ind123", "US123", "UK123", "Jap123", "Fra123", "Ger123", "Chi123", "Kor123", "Can123",
+        "Cub123", "Wes123", "Aus123", "New123", "Nep123", "Sri123", "Pak123", "Mex123", "bel123",
+        "Net123", "Bra123", "Cos123", "Cam123", "Fij123", "Fin123", "hai123", "Hon123", "Ice123",
+        "Ira123", "Ira123", "Ita123", "Gre123", "Jam123", "Ken123", "Kuw123", "Mac123", "Spa123",
+        "Mor123", "Mal123", "Nor123"]
