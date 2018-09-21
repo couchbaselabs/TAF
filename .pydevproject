@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?eclipse-pydev version="1.0"?><pydev_project>
+<pydev_pathproperty name="org.python.pydev.PROJECT_SOURCE_PATH">
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/couchbase-core-io-1.6.1-javadoc.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/couchbase-core-io-1.6.1-sources.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/couchbase-core-io-1.6.1.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/couchbase-java-client-2.6.1-javadoc.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/couchbase-java-client-2.6.1-sources.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/couchbase-java-client-2.6.1.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/encryption-1.0.0.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/opentracing-api-0.31.0-sources.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/opentracing-api-0.31.0.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/rxjava-1.3.7-sources.jar</path>
+<path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/rxjava-1.3.7.jar</path>
+<path>/${PROJECT_DIR_NAME}/couchbase_utils</path>
+<path>/TAF/jsch-0.1.54.jar</path>
+<path>/TAF/doc_ops.jar</path>
+<path>/${PROJECT_DIR_NAME}/lib</path>
+<path>/${PROJECT_DIR_NAME}/platform_utils</path>
+<path>/${PROJECT_DIR_NAME}/connections</path>
+<path>/${PROJECT_DIR_NAME}/pytests</path>
+<path>/${PROJECT_DIR_NAME}/scripts</path>
+</pydev_pathproperty>
+<pydev_property name="org.python.pydev.PYTHON_PROJECT_VERSION">jython interpreter</pydev_property>
+<pydev_property name="org.python.pydev.PYTHON_PROJECT_INTERPRETER">Default</pydev_property>
+</pydev_project>

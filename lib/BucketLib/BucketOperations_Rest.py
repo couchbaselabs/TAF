@@ -102,19 +102,6 @@ class BucketHelper(RestConnection):
             server_list.append(node[0])
         return vbucket_map, server_list, num_replica
     
-    def get_buckets_itemCount(self):
-        # get all the buckets
-        bucket_map = {}
-        api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets?basic_stats=true')
-        status, content, header = self._http_request(api)
-        json_parsed = json.loads(content)
-        if status:
-            for item in json_parsed:
-                bucketInfo = RestParser().parse_get_bucket_json(item)
-                bucket_map[bucketInfo.name] = bucketInfo.stats.itemCount
-        log.info(bucket_map)
-        return bucket_map
-
     def get_bucket_stats_for_node(self, bucket='default', node=None):
         if not node:
             log.error('node_ip not specified')
@@ -188,16 +175,16 @@ class BucketHelper(RestConnection):
     def get_bucket_stats_json(self, bucket='default'):
         stats = {}
         api = "{0}{1}{2}{3}".format(self.baseUrl, 'pools/default/buckets/', bucket, "/stats")
-        if isinstance(bucket, Bucket):
-            api = '{0}{1}{2}{3}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name, "/stats")
+#         if isinstance(bucket, Bucket):
+#             api = '{0}{1}{2}{3}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name, "/stats")
         status, content, header = self._http_request(api)
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def get_bucket_json(self, bucket='default'):
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket)
-        if isinstance(bucket, Bucket):
-            api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name)
+#         if isinstance(bucket, Bucket):
+#             api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name)
         status, content, header = self._http_request(api)
         if not status:
             log.error("error while getting {0}. Please re-try".format(api))
@@ -206,8 +193,8 @@ class BucketHelper(RestConnection):
 
     def delete_bucket(self, bucket='default'):
         api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/', bucket)
-        if isinstance(bucket, Bucket):
-            api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/', bucket.name)
+#         if isinstance(bucket, Bucket):
+#             api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/', bucket.name)
         status, content, header = self._http_request(api, 'DELETE')
 
         if int(header['status']) == 500:
@@ -288,8 +275,8 @@ class BucketHelper(RestConnection):
                       compressionMode=None):
         
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket)
-        if isinstance(bucket, Bucket):
-            api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name)
+#         if isinstance(bucket, Bucket):
+#             api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name)
         params = urllib.urlencode({})
         params_dict = {}
         existing_bucket = self.get_bucket_json(bucket)
@@ -402,10 +389,10 @@ class BucketHelper(RestConnection):
         return status
 
     def flush_bucket(self, bucket="default"):
-        if isinstance(bucket, Bucket):
-            bucket_name = bucket.name
-        else:
-            bucket_name = bucket
+#         if isinstance(bucket, Bucket):
+#             bucket_name = bucket.name
+#         else:
+        bucket_name = bucket
         api = self.baseUrl + "pools/default/buckets/%s/controller/doFlush" % (bucket_name)
         status, content, header = self._http_request(api, 'POST')
         if not status:
@@ -415,8 +402,8 @@ class BucketHelper(RestConnection):
     def get_bucket_CCCP(self, bucket):
         log.info("Getting CCCP config ")
         api = '%spools/default/b/%s' % (self.baseUrl, bucket)
-        if isinstance(bucket, Bucket):
-            api = '%spools/default/b/%s' % (self.baseUrl, bucket.name)
+#         if isinstance(bucket, Bucket):
+#             api = '%spools/default/b/%s' % (self.baseUrl, bucket.name)
         status, content, header = self._http_request(api)
         if status:
             return json.loads(content)
@@ -434,8 +421,8 @@ class BucketHelper(RestConnection):
 
     def cancel_bucket_compaction(self, bucket="default"):
         api = self.baseUrl + 'pools/default/buckets/{0}/controller/cancelBucketCompaction'.format(bucket)
-        if isinstance(bucket, Bucket):
-            api = self.baseUrl + 'pools/default/buckets/{0}/controller/cancelBucketCompaction'.format(bucket.name)
+#         if isinstance(bucket, Bucket):
+#             api = self.baseUrl + 'pools/default/buckets/{0}/controller/cancelBucketCompaction'.format(bucket.name)
         status, content, header = self._http_request(api, 'POST')
         log.info("Status is {0}".format(status))
         if status:

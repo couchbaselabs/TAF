@@ -1,0 +1,6 @@
+**/settings
+*.settings
+**/logs
+*.log
+*.class
+*.pyc
