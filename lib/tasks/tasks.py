@@ -299,13 +299,14 @@ class BucketCreateTask(Task):
                 self. set_unexpected_exception(error)
                 return
         info = rest.get_nodes_self()
-
+        if int(info.port) in xrange(9091, 9991):
+            self.port = info.port
+            
         if self.bucket.ramQuotaMB <= 0:
             self.size = info.memoryQuota * 2 / 3
 
         if int(info.port) in xrange(9091, 9991):
             try:
-                self.port = info.port
                 BucketHelper(self.server).create_bucket(self.bucket.__dict__)
                 self.state = CHECKING
                 self.call()
