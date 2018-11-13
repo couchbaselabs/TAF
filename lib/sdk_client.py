@@ -664,6 +664,7 @@ class SDKSmartClient(object):
             self.scheme = "couchbase"
         self.client = SDKClient(self.bucket, hosts=[self.host], scheme=self.scheme, password=rest.password, 
                                 compression=compression)
+        self.MemcachedError = MemcachedError
 
     def close(self):
         self.client.close()

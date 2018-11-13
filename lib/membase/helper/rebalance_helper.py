@@ -263,6 +263,89 @@ class RebalanceHelper():
         return verified
 
     @staticmethod
+    def verify_items_count(master, bucket, num_attempt=3, timeout=2):
+        # get the #of buckets from rest
+        rest = RestConnection(master)
+        if isinstance(bucket, Bucket):
+            bucket = bucket.name
+        bucket_info = rest.get_bucket(bucket, num_attempt, timeout)
+        replica_factor = bucket_info.numReplicas
+        vbucket_active_sum = 0
+        vbucket_replica_sum = 0
+        vbucket_pending_sum = 0
+        kv_nodes = 0
+        all_server_stats = []
+        stats_received = True
+        nodes = rest.get_nodes()
+        nodes_services = rest.get_nodes_services()
+        for node in nodes_services:
+            if 'kv' in nodes_services[node]:
+                kv_nodes += 1
+        for server in nodes:
+            # get the stats
+            server_stats = rest.get_bucket_stats_for_node(bucket, server)
+            if not server_stats:
+                log.info("unable to get stats from {0}:{1}".format(server.ip, server.port))
+                stats_received = False
+            all_server_stats.append((server, server_stats))
+        if not stats_received:
+            raise StatsUnavailableException()
+        sum = 0
+        for server, single_stats in all_server_stats:
+            if not single_stats or "curr_items" not in single_stats:
+                continue
+            sum += single_stats["curr_items"]
+            log.info("curr_items from {0}:{1} : {2}".format(server.ip, server.port, \
+                                                            single_stats["curr_items"]))
+            if 'vb_pending_num' in single_stats:
+                vbucket_pending_sum += single_stats['vb_pending_num']
+                log.info(
+                    "vb_pending_num from {0}:{1} : {2}".format(server.ip, server.port, \
+                                                               single_stats["vb_pending_num"]))
+            if 'vb_active_num' in single_stats:
+                vbucket_active_sum += single_stats['vb_active_num']
+                log.info(
+                    "vb_active_num from {0}:{1} : {2}".format(server.ip, server.port, \
+                                                              single_stats["vb_active_num"]))
+            if 'vb_replica_num' in single_stats:
+                vbucket_replica_sum += single_stats['vb_replica_num']
+                log.info(
+                    "vb_replica_num from {0}:{1} : {2}".format(server.ip, server.port, \
+                                                               single_stats["vb_replica_num"]))
+
+        msg = "summation of vb_active_num : {0} vb_pending_num : {1} vb_replica_num : {2}"
+        log.info(msg.format(vbucket_active_sum, vbucket_pending_sum, vbucket_replica_sum))
+        msg = 'sum : {0} and sum * (replica_factor + 1) ({1}) : {2}'
+        log.info(msg.format(sum, replica_factor + 1, (sum * (replica_factor + 1))))
+        master_stats = rest.get_bucket_stats(bucket)
+        if "curr_items_tot" in master_stats:
+            log.info('curr_items_tot from master: {0}'.format(master_stats["curr_items_tot"]))
+        else:
+            raise Exception("bucket {0} stats doesnt contain 'curr_items_tot':".format(bucket))
+        if replica_factor >= kv_nodes:
+            log.warn("the number of nodes is less than replica requires")
+            delta = sum * (kv_nodes) - master_stats["curr_items_tot"]
+        else:
+            delta = sum * (replica_factor + 1) - master_stats["curr_items_tot"]
+        delta = abs(delta)
+
+        if delta > 0:
+            if sum == 0:
+                missing_percentage = 0
+            else:
+                missing_percentage = delta * 1.0 / (sum * (replica_factor + 1))
+            log.info("Nodes stats are: {0}".format([node.ip for node in nodes]))
+        else:
+            missing_percentage = 1
+        log.info("delta : {0} missing_percentage : {1} replica_factor : {2}".format(delta, \
+                                                                                    missing_percentage, replica_factor))
+        # If no items missing then, return True
+        kv_nodes = 0
+        if not delta:
+            return True
+        return False
+
+    @staticmethod
     def wait_till_total_numbers_match(master,
                                       bucket,
                                       timeout_in_seconds=120):

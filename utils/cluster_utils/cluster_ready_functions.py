@@ -7,7 +7,7 @@ import copy
 
 from couchbase_cli import CouchbaseCLI
 from membase.api.rest_client import RestConnection, RestHelper
-from remote.remote_util import RemoteMachineShellConnection
+from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from membase.helper.cluster_helper import ClusterOperationHelper
 from TestInput import TestInputSingleton
 import testconstants
@@ -30,24 +30,26 @@ class CBCluster:
     
     def update_master(self,master):
         self.master = master
-        
+
 class cluster_utils():
     
-    def __init__(self, cluster):
+    def __init__(self, cluster, task_manager):
         self.input = TestInputSingleton.input
         self.cluster = cluster
+        self.task_manager = task_manager
         self.rest = RestConnection(cluster.master)
         self.vbuckets = self.input.param("vbuckets", 1024)
         self.upr = self.input.param("upr", None)
         self.log = logger.Logger.get_logger()
     
-    def _cluster_cleanup(self, bucket_util):
+    def cluster_cleanup(self, bucket_util):
         rest = RestConnection(self.cluster.master)
         if rest._rebalance_progress_status() == 'running':
             self.kill_memcached()
             self.log.warning("rebalancing is still running, test should be verified")
             stopped = rest.stop_rebalance()
-            self.assertTrue(stopped, msg="unable to stop rebalance")
+            if not stopped:
+                raise Exception("Unable to stop rebalance")
         bucket_util.delete_all_buckets(self.cluster.servers)
         self.cleanup_cluster(self.cluster.servers, master=self.cluster.master)
         self.wait_for_ns_servers_or_assert(self.cluster.servers)
@@ -201,7 +203,7 @@ class cluster_utils():
                 if len(dict) >= 1:
                     remote_client = RemoteMachineShellConnection(server)
                     remote_client.change_env_variables(dict)
-                remote_client.disconnect()
+                    remote_client.disconnect()
             self.log.info("========= CHANGED ENVIRONMENT SETTING ===========")
 
     def reset_env_variables(self):
@@ -311,6 +313,28 @@ class cluster_utils():
                     self.log.info("Membase started")
                 shell.disconnect()
                 break
+
+    def kill_server_memcached(self, node):
+        """ Method to start a server which is subject to failover """
+        for server in self.cluster.servers:
+            if server.ip == node.ip:
+                remote_client = RemoteMachineShellConnection(server)
+                remote_client.kill_memcached()
+                remote_client.disconnect()
+
+    def start_firewall_on_node(self, node):
+        """ Method to start a server which is subject to failover """
+        for server in self.cluster.servers:
+            if server.ip == node.ip:
+                RemoteUtilHelper.enable_firewall(server)
+
+    def stop_firewall_on_node(self, node):
+        """ Method to start a server which is subject to failover """
+        for server in self.cluster.servers:
+            if server.ip == node.ip:
+                remote_client = RemoteMachineShellConnection(server)
+                remote_client.disable_firewall()
+                remote_client.disconnect()
             
     def reset_cluster(self):
         try:
@@ -528,4 +552,13 @@ class cluster_utils():
         if wait_for_rebalance:
             removed
 #             self.assertTrue(removed, "Rebalance operation failed while removing %s,"%otpnode)
+
+    def get_victim_nodes(self, nodes, master=None, chosen=None, victim_type="master", victim_count=1):
+        victim_nodes = [master]
+        if victim_type == "graceful_failover_node":
+            victim_nodes = [chosen]
+        elif victim_type == "other":
+            victim_nodes = self.add_remove_servers(nodes, nodes, [chosen, self.cluster.master], [])
+            victim_nodes = victim_nodes[:victim_count]
+        return victim_nodes
         

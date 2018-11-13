@@ -291,9 +291,9 @@ class MemcachedClientHelper(object):
 
         if isinstance(server, dict):
             log.info("dict:{0}".format(server))
-            log.info("creating direct client {0}:{1} {2}".format(server["ip"], node.memcached, bucket))
+            log.info("creating direct client {0}:{1} {2}".format(server["ip"], node.memcached, bucket.name))
         else:
-            log.info("creating direct client {0}:{1} {2}".format(server.ip, node.memcached, bucket))
+            log.info("creating direct client {0}:{1} {2}".format(server.ip, node.memcached, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
         vBuckets = BucketHelper(server).get_vbuckets(bucket)
         if isinstance(server, dict):
@@ -304,7 +304,6 @@ class MemcachedClientHelper(object):
             client.vbucket_count = len(vBuckets)
         else:
             client.vbucket_count = 0
-        bucket_info = BucketHelper(server).get_bucket(bucket)
         # todo raise exception for not bucket_info
 
         versions = rest.get_nodes_versions(logging=False)
@@ -316,18 +315,12 @@ class MemcachedClientHelper(object):
             log.info("Atleast 1 of the server is on pre-spock "
                      "version. Using the old ssl auth to connect to "
                      "bucket.")
-            client.sasl_auth_plain(bucket_info.name.encode('ascii'),
-                                    bucket_info.saslPassword.encode('ascii'))
+            client.sasl_auth_plain(bucket.name.encode('ascii'),
+                                    bucket.saslPassword.encode('ascii'))
         else:
-            try:
-                bucket = bucket.name
-            except:
-#                 if isinstance(bucket,Bucket):
-#                     bucket = bucket.name
-                pass
-            bucket = bucket.encode('ascii')
+            bucket_name = bucket.name.encode('ascii')
             client.sasl_auth_plain(admin_user,admin_pass)
-            client.bucket_select(bucket)
+            client.bucket_select(bucket_name)
 
         return client
 
@@ -755,8 +748,6 @@ class VBucketAwareMemcached(object):
         self.log = logger.Logger.get_logger()
         self.info = info
         self.bucket = bucket
-        if isinstance(bucket, Bucket):
-            self.bucket = bucket.name
         self.memcacheds = {}
         self.vBucketMap = {}
         self.vBucketMapReplica = {}

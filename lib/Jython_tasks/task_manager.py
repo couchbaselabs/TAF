@@ -12,15 +12,14 @@ class TaskManager():
         
     def add_new_task(self, task):
         future = self.pool.submit(task)
-        print task.thread_used
-        self.futures[task.thread_used] = future
+        self.futures[task.thread_name] = future
         self.tasks.append(task)
         
     def get_all_result(self):
         return self.pool.invokeAll(self.tasks)
     
     def get_task_result(self, task):
-        future = self.futures[task.thread_used]
+        future = self.futures[task.thread_name]
         return future.get()
     
     def shutdown_task_manager(self, timeout=5):

@@ -28,7 +28,6 @@ from scripts.getcoredumps import Getcoredumps, Clearcoredumps
 import signal
 import shutil
 
-
 def usage(err=None):
     print """\
 Syntax: testrunner [options]

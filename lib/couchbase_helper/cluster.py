@@ -1,7 +1,11 @@
 #from tasks.future import Future
 import logging
 from tasks.taskmanager import TaskManager
+from Jython_tasks.task_manager import TaskManager as jython_task_manager
 import tasks.tasks as conc
+import Jython_tasks.task as jython_tasks
+from sdk_client import SDKSmartClient as VBucketAwareMemcached
+from membase.api.rest_client import RestConnection
 import types
 
 
@@ -18,6 +22,7 @@ class ServerTasks(object):
 
     def __init__(self):
         self.task_manager = TaskManager("Cluster_Thread")
+        self.jython_task_manager = jython_task_manager()
 
     def async_create_bucket(self, server, bucket):
         """Asynchronously creates the default bucket
@@ -107,17 +112,29 @@ class ServerTasks(object):
         self.task_manager.schedule(_task)
         return _task
 
-    def async_load_gen_docs(self, server, bucket, generator, kv_store, op_type, exp=0, flag=0, only_store_hash=True,
-                            batch_size=1, pause_secs=1, timeout_secs=5, proxy_client=None, compression=True):
-        log.info("BATCH SIZE for documents load: %s" % batch_size)
-        if isinstance(generator, list):
-                _task = conc.LoadDocumentsGeneratorsTask(server, self.task_manager, bucket, generator, kv_store, op_type, exp, flag, only_store_hash, batch_size, compression=compression)
-        else:
-                _task = conc.LoadDocumentsGeneratorsTask(server, self.task_manager, bucket, [generator], kv_store, op_type, exp, flag, only_store_hash, batch_size, compression=compression)
+    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0, only_store_hash=True,
+                            batch_size=1, pause_secs=1, timeout_secs=5, compression=True, process_concurrency=4):
 
-        self.task_manager.schedule(_task)
+        log.info("Loading documents to {}".format(bucket.name))
+        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+        _task = jython_tasks.LoadDocumentsGeneratorsTask(cluster, self.jython_task_manager, bucket, client, [generator],
+                                                        op_type, exp, flag=flag, only_store_hash=only_store_hash, batch_size=batch_size, 
+                                                        pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
+                                                        process_concurrency=process_concurrency)
+        self.jython_task_manager.add_new_task(_task)
         return _task
-    
+
+    def async_validate_docs(self, cluster, bucket, generator, opt_type, exp=0, flag=0, only_store_hash=True,
+                            batch_size=1, pause_secs=1, timeout_secs=5, compression=True, process_concurrency=4):
+        log.info("Validating documents")
+        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+        _task = jython_tasks.DocumentsValidatorTask(cluster, self.jython_task_manager, bucket, client, [generator],
+                                                    opt_type, exp, flag=flag, only_store_hash=only_store_hash, batch_size=batch_size,
+                                                        pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
+                                                        process_concurrency=process_concurrency)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
 #     def async_load_gen_docs_java(self, server, bucket, start_from, num_items=10000):
 #         def read_json_tempelate(path):
 #             import json
@@ -145,11 +162,12 @@ class ServerTasks(object):
 
         Returns:
             RebalanceTask - A task future that is a handle to the scheduled task"""
-        _task = conc.RebalanceTask(servers, self.task_manager, to_add, to_remove, use_hostnames=use_hostnames, services = services, check_vbucket_shuffling=check_vbucket_shuffling)
-        self.task_manager.schedule(_task)
+        _task = jython_tasks.rebalanceTask(servers, to_add, to_remove,
+                 use_hostnames=use_hostnames, services=services, check_vbucket_shuffling=check_vbucket_shuffling)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_wait_for_stats(self, servers, bucket, param, stat, comparison, value):
+    def async_wait_for_stats(self, cluster, bucket, param, stat, comparison, value):
         """Asynchronously wait for stats
 
         Waits for stats to match the criteria passed by the stats variable. See
@@ -168,8 +186,8 @@ class ServerTasks(object):
 
         Returns:
             RebalanceTask - A task future that is a handle to the scheduled task"""
-        _task = conc.StatsWaitTask(servers, bucket, param, stat, comparison, value, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+        _task = jython_tasks.StatsWaitTask(cluster, bucket, param, stat, comparison, value)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def create_default_bucket(self, bucket_params, timeout=600):
@@ -246,14 +264,15 @@ class ServerTasks(object):
         Returns:
             boolean - Whether or not the rebalance was successful"""
         _task = self.async_rebalance(servers, to_add, to_remove, use_hostnames, services = services)
-        return _task.get_result(timeout)
+        result = self.jython_task_manager.get_task_result(_task)
+        return result
 
     def load_gen_docs(self, server, bucket, generator, kv_store, op_type, exp=0, timeout=None,
                       flag=0, only_store_hash=True, batch_size=1, proxy_client=None, compression=True):
         _task = self.async_load_gen_docs(server, bucket, generator, kv_store, op_type, exp, flag,
                                          only_store_hash=only_store_hash, batch_size=batch_size, 
                                          proxy_client=proxy_client, compression=compression)
-        return _task.get_result(timeout)
+        return self.jython_task_manager.get_task_result(_task)
 
     def verify_data(self, server, bucket, kv_store, timeout=None, compression=True):
         _task = self.async_verify_data(server, bucket, kv_store, compression=compression)
@@ -270,7 +289,7 @@ class ServerTasks(object):
         self.task_manager.schedule(_task)
         return _task
     
-    def wait_for_stats(self, servers, bucket, param, stat, comparison, value, timeout=None):
+    def wait_for_stats(self, cluster, bucket, param, stat, comparison, value, timeout=None):
         """Synchronously wait for stats
 
         Waits for stats to match the criteria passed by the stats variable. See
@@ -289,8 +308,8 @@ class ServerTasks(object):
 
         Returns:
             boolean - Whether or not the correct stats state was seen"""
-        _task = self.async_wait_for_stats(servers, bucket, param, stat, comparison, value)
-        return _task.result(timeout)
+        _task = self.async_wait_for_stats(cluster, bucket, param, stat, comparison, value)
+        return self.jython_task_manager.get_task_result(_task)
 
     def shutdown(self, force=False):
         self.task_manager.shutdown(force)

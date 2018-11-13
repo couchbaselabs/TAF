@@ -15,6 +15,7 @@ class KVGenerator(object):
         self.start = start
         self.end = end
         self.itr = start
+        self.random = None
     def has_next(self):
         return self.itr < self.end
 
@@ -78,17 +79,18 @@ class DocumentGenerator(KVGenerator):
         if self.itr >= self.end:
             raise StopIteration
         seed = self.itr
+        id = self.name + '-' + str(self.itr)
+        self.random.seed(id)
         doc_args = []
         for arg in self.args:
-            value = arg[seed % len(arg)]
+            value = self.random.choice(arg)
             doc_args.append(value)
-            seed /= len(arg)
         doc = self.template.format(*doc_args).replace('\'', '"').replace('True',
                              'true').replace('False', 'false').replace('\\', '\\\\')
         json_doc = json.loads(doc)
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
-            json_doc['_id'] = ''.join(choice(ascii_uppercase+ascii_lowercase+digits) \
+            json_doc['_id'] = ''.join(self.random.choice(ascii_uppercase+ascii_lowercase+digits) \
                                                                    for i in range(12))
         else:
             json_doc['_id'] = self.name + '-' + str(self.itr)
@@ -176,6 +178,7 @@ class BatchedDocumentGenerator(object):
     def __init__(self, document_generator, batch_size_int=100):
         self._doc_gen = document_generator
         self._batch_size = batch_size_int
+        self._doc_gen.random = random.Random()
         if self._batch_size <= 0:
             raise ValueError("Invalid Batch size {0}".format(self._batch_size))
 
