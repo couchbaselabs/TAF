@@ -74,18 +74,18 @@ class BucketHelper(bucket_helper_rest, SDKClient):
         try:
             bucketSettings = DefaultBucketSettings.builder()
             
-            if bucket_params.get('type') == "memcached":
+            if bucket_params.get('bucketType') == "memcached":
                 bucketSettings.type(BucketType.MEMCACHED)
-            elif bucket_params.get('type') == "ephemeral":
+            elif bucket_params.get('bucketType') == "ephemeral":
                 bucketSettings.type(BucketType.EPHEMERAL)
             else:
                 bucketSettings.type(BucketType.COUCHBASE)
                 
-            bucketSettings.replicas(bucket_params.get('replicas'))
+            bucketSettings.replicas(bucket_params.get('replicaNumber'))
             bucketSettings.name(bucket_params.get('name'))
-            bucketSettings.quota(bucket_params.get('size'))
+            bucketSettings.quota(bucket_params.get('ramQuotaMB'))
             bucketSettings.enableFlush(bucket_params.get('flushEnabled'))
-            bucketSettings.indexReplicas(bucket_params.get('enable_replica_index'))
+            bucketSettings.indexReplicas(bucket_params.get('replicaIndex'))
             bucketSettings.build()
             self.clusterManager.insertBucket(bucketSettings)
             log.info("Disconnecting Cluster")
