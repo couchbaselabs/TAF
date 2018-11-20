@@ -35,7 +35,6 @@ from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
 from Jython_tasks import task_manager
-import pydevd
 
 log = logging.getLogger(__name__)
 
