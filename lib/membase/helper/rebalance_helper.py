@@ -73,24 +73,24 @@ class RebalanceHelper():
         return verified
 
     @staticmethod
-    def wait_for_replication(servers, cluster_helper=None, timeout=600):
+    def wait_for_replication(servers, bucket_util, cluster_helper=None, timeout=600):
         if cluster_helper is None:
             cluster = ServerTasks()
         else:
             cluster = cluster_helper
         tasks = []
         rest = RestConnection(servers[0])
-        buckets = rest.get_buckets()
+        buckets = bucket_util.get_all_buckets()
         for server in servers:
             for bucket in buckets:
-                for server_repl in list(set(servers) - set([server])):
+                for server_repl in list(set(servers) - {server}):
                     tasks.append(cluster.async_wait_for_stats([server], bucket, 'tap',
                                    'eq_tapq:replication_ns_1@' + server_repl.ip + ':idle', '==', 'true'))
                     tasks.append(cluster.async_wait_for_stats([server], bucket, 'tap',
                                    'eq_tapq:replication_ns_1@' + server_repl.ip + ':backfill_completed', '==', 'true'))
         try:
             for task in tasks:
-                task.result(timeout)
+                cluster.jython_task_manager.get_task_result(task)
         finally:
             if cluster_helper is None:
                 # stop all newly created task manager threads

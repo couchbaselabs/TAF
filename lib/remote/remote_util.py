@@ -152,7 +152,7 @@ class RemoteMachineShellConnection:
 
     def __init__(self, username='root',
                  pkey_location='',
-                 ip=''):
+                 ip='', port=8091):
         self.username = username
         self.use_sudo = True
         self.nonroot = False
@@ -167,7 +167,9 @@ class RemoteMachineShellConnection:
             self.nonroot = True
         # let's create a connection
         self._ssh_client = paramiko.SSHClient()
+        self.input = TestInput.TestInputParser.get_test_input(sys.argv)
         self.ip = ip
+        self.port = port
         if self.ip.find(":")!= -1:
             self.ip = self.ip.replace('[', '').replace(']','')
 #             self.ip += "%en0"
@@ -4721,6 +4723,33 @@ class RemoteMachineShellConnection:
         self.sleep(5, "==== delay kill pid %d in 5 seconds to printout message ==="\
                                                                       % os.getpid())
         os.system('kill %d' % os.getpid())
+
+    def enable_diag_eval_on_non_local_hosts(self, state=True):
+        """
+        Enable diag/eval to be run on non-local hosts.
+        :return: Command output and error if any.
+        """
+        if self.input.membase_settings.rest_username:
+            rest_username = self.input.membase_settings.rest_username
+        else:
+            log.info("*** You need to set rest username at ini file ***")
+            rest_username = "Administrator"
+        if self.input.membase_settings.rest_password:
+            rest_password = self.input.membase_settings.rest_password
+        else:
+            log.info("*** You need to set rest password at ini file ***")
+            rest_password = "password"
+        command = "curl http://{0}:{1}@localhost:{2}/diag/eval -X POST -d " \
+                  "'ns_config:set(allow_nonlocal_eval, {3}).'".format(rest_username, rest_password,
+                                                                      self.port, state.__str__().lower())
+        server = {"ip": self.ip, "username": rest_username, "password": rest_password, "port": self.port}
+        rest_connection = RestConnection(server)
+        is_cluster_compatible = rest_connection.check_cluster_compatibility("5.5")
+        if (not is_cluster_compatible):
+            log.info("Enabling diag/eval on non-local hosts is available only post 5.5.2 or 6.0 releases")
+            return None, "Enabling diag/eval on non-local hosts is available only post 5.5.2 or 6.0 releases"
+        output, error = self.execute_command(command)
+        return output, error
 
 class RemoteUtilHelper(object):
 

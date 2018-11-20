@@ -387,6 +387,21 @@ class cluster_utils():
             else:
                 return list[0]
 
+    def get_services_map(self, reset=True, master=None):
+        if not reset:
+            return
+        else:
+            self.services_map = {}
+        if not master:
+            master = self.cluster.master
+        rest = RestConnection(master)
+        map = rest.get_nodes_services()
+        for key, val in map.iteritems():
+            for service in val:
+                if service not in self.services_map.keys():
+                    self.services_map[service] = []
+                self.services_map[service].append(key)
+
     def get_services(self, tgt_nodes, tgt_services, start_node=1):
         services = []
         if tgt_services == None:
@@ -430,7 +445,7 @@ class cluster_utils():
             master = self.cluster.master
         rest = RestConnection(master)
         versions = rest.get_nodes_versions()
-        for version in versions:
+        for version in versions: 
             if "3.5" > version:
                 return servers
         if servers == None:

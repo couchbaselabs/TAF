@@ -172,7 +172,7 @@ class BaseTestCase(unittest.TestCase):
                           .format(self.case_number, self._testMethodName))
 
             if not self.skip_init_check_cbserver:
-                self._log_start(self)
+                self._log_start()
                 self.sleep(5)
         except Exception, e:
             traceback.print_exc()
@@ -242,7 +242,7 @@ class BaseTestCase(unittest.TestCase):
             else:
                 self.cluster_util.reset_env_variables()
             self.task.shutdown(force=True)
-            self._log_finish(self)
+            self._log_finish()
 
     def get_cbcollect_info(self, server):
         """Collect cbcollectinfo logs for all the servers in the cluster.
@@ -257,7 +257,6 @@ class BaseTestCase(unittest.TestCase):
         except Exception as e:
             log.error("IMPOSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}".format(server.ip, e))
             
-    @staticmethod
     def _log_start(self):
         try:
             msg = "{0} : {1} started ".format(datetime.datetime.now(), self._testMethodName)
@@ -265,7 +264,6 @@ class BaseTestCase(unittest.TestCase):
         except:
             pass
 
-    @staticmethod
     def _log_finish(self):
         try:
             msg = "{0} : {1} finished ".format(datetime.datetime.now(), self._testMethodName)

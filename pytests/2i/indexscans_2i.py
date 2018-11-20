@@ -16,15 +16,15 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
     def _create_index_in_async(self, query_definitions = None, buckets = None, index_nodes = None):
         refer_index = []
         if buckets == None:
-            buckets = self.buckets
+            buckets = self.bucket_util.buckets
         if query_definitions == None:
             query_definitions = self.query_definitions
         if not self.run_async:
             self.run_multi_operations(buckets=buckets, query_definitions=query_definitions, create_index=True)
             return
         if index_nodes == None:
-            index_nodes = self.get_nodes_from_services_map(service_type="index", get_all_nodes=True)
-        x =  len(query_definitions) - 1
+            index_nodes = self.cluster_util.get_nodes_from_services_map(service_type="index", get_all_nodes=True)
+        x = len(query_definitions) - 1
         while x > -1:
             tasks = []
             build_index_map = {}
@@ -70,4 +70,5 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
         finally:
             tasks = self.async_run_multi_operations(buckets=self.buckets, query_definitions=self.query_definitions,
                                                     drop_index=True)
-            self._run_tasks(tasks)
+            for task in tasks:
+                self.task.jython_task_manager.get_task_result(task)

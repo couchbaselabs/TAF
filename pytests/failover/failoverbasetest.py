@@ -92,7 +92,7 @@ class FailoverBaseTest(BaseTestCase):
                     # supported starting with python2.7
                     self.log.warn("CLEANUP WAS SKIPPED")
                     self.cluster.shutdown(force=True)
-                    self._log_finish(self)
+                    self._log_finish()
         else:
             try:
                 self.log.info("==============  tearDown was started for test #{0} {1} =============="\

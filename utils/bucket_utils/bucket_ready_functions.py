@@ -231,14 +231,14 @@ class bucket_utils():
                 if not status:
                     raise Exception("Bucket {0} could not be deleted".format(bucket.name))
         
-    def create_default_bucket(self, ram_quota=100):
+    def create_default_bucket(self, ram_quota=100, replica=1):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if node_info.memoryQuota and int(node_info.memoryQuota) > 0 :
             ram_available = node_info.memoryQuota
             ramQuotaMB = ram_available - 1
         else:
             ramQuotaMB = ram_quota
-        default_bucket = Bucket({Bucket.ramQuotaMB:ramQuotaMB})
+        default_bucket = Bucket({Bucket.ramQuotaMB:ramQuotaMB, Bucket.replicaNumber:replica})
         self.task.sync_create_bucket(self.cluster.master, default_bucket)
         self.buckets.append(default_bucket)
         if self.enable_time_sync:
@@ -1280,7 +1280,7 @@ class bucket_utils():
                 log.error(msg)
                 if assert_on_test:
                     assert_on_test.fail(msg=msg)
-                    
+
     def wait_for_vbuckets_ready_state(self, node, bucket, timeout_in_seconds=300, log_msg='', admin_user='cbadminbucket',
                                       admin_pass='password'):
         log = logger.Logger.get_logger()
@@ -1717,14 +1717,33 @@ class bucket_utils():
                     self.pre_warmup_stats[bucket_name]["%s:%s" % (server.ip, server.port)][stat_to_monitor] = \
                         mc_conn.stats('warmup')[stat_to_monitor]
             mc_conn.close()
-            
+
+    def wait_till_total_numbers_match(self, master,
+                                      bucket,
+                                      timeout_in_seconds=120):
+
+        log.info('waiting for sum_of_curr_items == total_items....')
+        start = time.time()
+        verified = False
+        while (time.time() - start) <= timeout_in_seconds:
+            try:
+                if self.verify_items_count(master, bucket):
+                    verified = True
+                    break
+                else:
+                    time.sleep(2)
+            except StatsUnavailableException:
+                log.error("unable to retrieve stats for any node! Print taps for all nodes:")
+                break
+        if not verified:
+            rest = RestConnection(master)
+            RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
+        return verified
+
     def verify_items_count(self, master, bucket, num_attempt=3, timeout=2):
         #get the #of buckets from rest
         rest = RestConnection(master)
-        if isinstance(bucket, Bucket):
-            bucket = bucket.name
-        bucket_info = BucketHelper(master).get_bucket(bucket, num_attempt, timeout)
-        replica_factor = bucket_info.numReplicas
+        replica_factor = bucket.numReplicas
         vbucket_active_sum = 0
         vbucket_replica_sum = 0
         vbucket_pending_sum = 0
@@ -1771,7 +1790,7 @@ class bucket_utils():
         if "curr_items_tot" in master_stats:
             log.info('curr_items_tot from master: {0}'.format(master_stats["curr_items_tot"]))
         else:
-           raise Exception("bucket {O} stats doesnt contain 'curr_items_tot':".format(bucket))
+           raise Exception("bucket {0} stats doesnt contain 'curr_items_tot':".format(bucket))
         if replica_factor >= len(nodes):
             log.warn("the number of nodes is less than replica requires")
             delta = sum * (len(nodes)) - master_stats["curr_items_tot"]
@@ -2027,6 +2046,21 @@ class bucket_utils():
             return views
         else:
             return [View(ref_view.name + str(i), ref_view.map_func, None, is_dev_ddoc) for i in xrange(count)]
+
+    def base_bucket_ratio(self, servers):
+        ratio = 1.0
+        #check if ip is same for all servers
+        ip = servers[0].ip
+        dev_environment = True
+        for server in servers:
+            if server.ip != ip:
+                dev_environment = False
+                break
+        if dev_environment:
+            ratio = 2.0 / 3.0 * 1 / len(servers)
+        else:
+            ratio = 2.0 / 3.0
+        return ratio
 
     def sleep(self, timeout=15, message=""):
         log.info("sleep for {0} secs. {1} ...".format(timeout, message))
