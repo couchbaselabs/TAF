@@ -94,21 +94,22 @@ class FailoverBaseTest(BaseTestCase):
                     self.cluster.shutdown(force=True)
                     self._log_finish()
         else:
-            try:
-                self.log.info("==============  tearDown was started for test #{0} {1} =============="\
-                              .format(self.case_number, self._testMethodName))
-                RemoteUtilHelper.common_basic_setup(self.cluster.servers)
-                #self.bucket_util.delete_all_buckets(self.cluster.servers)
-                for node in self.cluster.servers:
-                    master = node
-                    try:
-                        self.cluster_util.cleanup_cluster()
-                    except:
-                        continue
-                self.log.info("==============  tearDown was finished for test #{0} {1} =============="\
-                              .format(self.case_number, self._testMethodName))
-            finally:
-                super(FailoverBaseTest, self).tearDown()
+            super(FailoverBaseTest, self).tearDown()
+            # try:
+            #     self.log.info("==============  tearDown was started for test #{0} {1} =============="\
+            #                   .format(self.case_number, self._testMethodName))
+            #     RemoteUtilHelper.common_basic_setup(self.cluster.servers)
+            #     self.bucket_util.delete_all_buckets(self.cluster.servers)
+            #     for node in self.cluster.servers:
+            #         master = node
+            #         try:
+            #             self.cluster_util.cleanup_cluster()
+            #         except:
+            #             continue
+            #     self.log.info("==============  tearDown was finished for test #{0} {1} =============="\
+            #                   .format(self.case_number, self._testMethodName))
+            # finally:
+            #     super(FailoverBaseTest, self).tearDown()
 
     def vb_distribution_analysis(self, servers=[], buckets=[], total_vbuckets=0, std=1.0, type="rebalance",
                                  graceful=True):

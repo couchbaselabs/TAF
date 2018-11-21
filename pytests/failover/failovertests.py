@@ -109,7 +109,7 @@ class FailoverTests(FailoverBaseTest):
         """ Method to run rebalance after failover and verify """
         # Need a delay > min because MB-7168
         _servers_ = self.filter_servers(self.servers, chosen)
-        self.bucket_util._wait_for_stats_all_buckets(_servers_, check_ep_items_remaining=True)
+        self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True)
         self.sleep(5, "after failover before invoking rebalance...")
         # Rebalance after Failover operation
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[node.id for node in chosen])
@@ -163,7 +163,7 @@ class FailoverTests(FailoverBaseTest):
             It also verifies if the operations are correct with data verificaiton steps
         """
         _servers_ = self.filter_servers(self.servers, chosen)
-        self.bucket_util._wait_for_stats_all_buckets(_servers_, check_ep_items_remaining=True)
+        self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True)
         recoveryTypeMap = self.define_maps_during_failover(self.recoveryType)
         fileMapsForVerification = self.create_file(chosen, self.buckets, self.server_map)
         index = 0
@@ -204,7 +204,7 @@ class FailoverTests(FailoverBaseTest):
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
 
         #  Drain ep_queue and make sure that intra-cluster replication is complete
-        self.bucket_util._wait_for_stats_all_buckets(self.servers, check_ep_items_remaining=True)
+        self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True)
 
         self.log.info("Begin VERIFICATION for Add-back and rebalance")
 
@@ -369,24 +369,27 @@ class FailoverTests(FailoverBaseTest):
                     json_parsed = json.loads(content)
                     self.log.info("nodeStatuses: {0}".format(json_parsed))
                     self.fail("node status is not unhealthy even after waiting for 5 minutes")
-        nodes = self.filter_servers(self.servers, chosen)
-        failed_over = self.cluster.async_failover([self.master], failover_nodes=chosen, graceful=self.graceful)
-        # Perform Compaction
-        compact_tasks = []
-        if self.compact:
-            for bucket in self.buckets:
-                compact_tasks.append(self.cluster.async_compact_bucket(self.master, bucket))
-        # Run View Operations
-        if self.withViewsOps:
-            self.query_and_monitor_view_tasks(nodes)
-        # Run mutation operations
-        if self.withMutationOps:
-            self.run_mutation_operations()
-        failed_over.result()
-        for task in compact_tasks:
-            task.result()
-        msg = "rebalance failed while removing failover nodes {0}".format(node.id)
-        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
+            nodes = self.filter_servers(self.servers, chosen)
+            success_failed_over = self.rest.fail_over(node.id, graceful=(self.graceful))
+            #failed_over = self.task.async_failover([self.master], failover_nodes=chosen, graceful=self.graceful)
+            # Perform Compaction
+            compact_tasks = []
+            if self.compact:
+                for bucket in self.buckets:
+                    compact_tasks.append(self.task.async_compact_bucket(self.master, bucket))
+            # Run View Operations
+            if self.withViewsOps:
+                self.query_and_monitor_view_tasks(nodes)
+            # Run mutation operations
+            if self.withMutationOps:
+                self.run_mutation_operations()
+            #failed_over.result()
+            msg = "rebalance failed while removing failover nodes {0}".format(node.id)
+            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
+            for task in compact_tasks:
+                task.result()
+        # msg = "rebalance failed while removing failover nodes {0}".format(node.id)
+        # self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
 
 
     def load_all_buckets(self, gen, op):

@@ -419,7 +419,7 @@ class bucket_utils():
             if verify_total_items:
                 verified = True
                 for bucket in self.buckets:
-                    verified &= RebalanceHelper.wait_till_total_numbers_match(master, bucket,
+                    verified &= self.wait_till_total_numbers_match(master, bucket,
                                                                               timeout_in_seconds=(timeout or 500))
                 if not verified:
                  log.error("Lost items!!! Replication was completed but "
@@ -954,8 +954,7 @@ class bucket_utils():
                                                                          updatedItems=updatedItems)
         if not logic:
             raise Exception(summary)
-        self.assertTrue(logic, summary)
-        self.log.info(" End Verification for data comparison ")
+        log.info(" End Verification for data comparison ")
 
     def get_data_set_all(self, servers, buckets, path=None, mode="disk"):
         """ Method to get all data set for buckets and from the servers """
