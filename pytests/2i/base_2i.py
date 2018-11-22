@@ -755,14 +755,14 @@ class BaseSecondaryIndexingTests(QueryTests):
             query_with_explain = self.run_query_with_explain,
             query = False, scan_consistency = self.scan_consistency)
         for task in tasks:
-            task.result()
-        tasks = self.async_run_multi_operations(buckets = self.bucket_util.buckets,
-            query_definitions = self.query_definitions,
-            create_index = False, drop_index = False,
-            query_with_explain = False, query = self.run_query,
-            scan_consistency = self.scan_consistency)
-        for task in tasks:
-            task.result()
+            self.task.jython_task_manager.get_task_result(task)
+        # tasks = self.async_run_multi_operations(buckets = self.bucket_util.buckets,
+        #     query_definitions = self.query_definitions,
+        #     create_index = False, drop_index = False,
+        #     query_with_explain = False, query = self.run_query,
+        #     scan_consistency = self.scan_consistency)
+        # for task in tasks:
+        #     self.task.jython_task_manager.get_task_result(task)
 
     def _set_query_explain_flags(self, phase):
         if ("query_ops" in self.ops_map[phase].keys()) and self.ops_map[phase]["query_ops"]:

@@ -336,7 +336,7 @@ class ServerTasks(object):
             scan_vector - scan vector used for consistency
         Returns:
             N1QLQueryTask - A task future that is a handle to the scheduled task."""
-        _task = conc.N1QLQueryTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.N1QLQueryTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  query = query, expected_result=expected_result,
                  verify_results = verify_results,
@@ -344,8 +344,8 @@ class ServerTasks(object):
                  index_name = index_name,
                  retry_time= retry_time,
                  scan_consistency = scan_consistency,
-                 scan_vector = scan_vector, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 scan_vector = scan_vector)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def n1ql_query_verification(self, server, bucket, query, n1ql_helper = None,
@@ -379,7 +379,7 @@ class ServerTasks(object):
                  retry_time= retry_time,
                  scan_consistency = scan_consistency,
                  scan_vector = scan_vector)
-        return _task.result(timeout)
+        return self.jython_task_manager.get_task_result(_task)
 
     def async_create_index(self, server, bucket, query, n1ql_helper = None,
                            index_name = None, defer_build = False, retry_time=2,

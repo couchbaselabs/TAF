@@ -1035,10 +1035,10 @@ class ViewCreateTask(Task):
                             self.set_exception(Exception("design doc {0} doesn't contain view {1}".format(
                                 self.design_doc_name, self.view.name)))
                             return 0
-                self.log.info("view : {0} was created successfully in ddoc: {1}".format(self.view.name, self.design_doc_name))
+                log.info("view : {0} was created successfully in ddoc: {1}".format(self.view.name, self.design_doc_name))
             else:
                 # if we have reached here, it means design doc was successfully updated
-                self.log.info("Design Document : {0} was updated successfully".format(self.design_doc_name))
+                log.info("Design Document : {0} was updated successfully".format(self.design_doc_name))
 
             if self._check_ddoc_revision():
                 return self.ddoc_rev_no
@@ -1101,19 +1101,19 @@ class ViewCreateTask(Task):
                     if new_rev_id == self.ddoc_rev_no:
                         break
                     else:
-                        self.log.info("Design Doc {0} version is not updated on node {1}:{2}. Retrying.".format(self.design_doc_name, node.ip, node.port))
+                        log.info("Design Doc {0} version is not updated on node {1}:{2}. Retrying.".format(self.design_doc_name, node.ip, node.port))
                         time.sleep(2)
                 except ReadDocumentException as e:
                     if(count < retry_count):
-                        self.log.info("Design Doc {0} not yet available on node {1}:{2}. Retrying.".format(self.design_doc_name, node.ip, node.port))
+                        log.info("Design Doc {0} not yet available on node {1}:{2}. Retrying.".format(self.design_doc_name, node.ip, node.port))
                         time.sleep(2)
                     else:
-                        self.log.error("Design Doc {0} failed to replicate on node {1}:{2}".format(self.design_doc_name, node.ip, node.port))
+                        log.error("Design Doc {0} failed to replicate on node {1}:{2}".format(self.design_doc_name, node.ip, node.port))
                         self.set_exception(e)
                         break
                 except Exception as e:
                     if(count < retry_count):
-                        self.log.info("Unexpected Exception Caught. Retrying.")
+                        log.info("Unexpected Exception Caught. Retrying.")
                         time.sleep(2)
                     else:
                         self.set_exception(e)
@@ -1157,7 +1157,7 @@ class ViewDeleteTask(Task):
             else:
                 # delete the design doc
                 rest.delete_view(self.bucket, self.design_doc_name)
-                self.log.info("Design Doc : {0} was successfully deleted".format(self.design_doc_name))
+                log.info("Design Doc : {0} was successfully deleted".format(self.design_doc_name))
                 self.complete_task()
                 return True
 
@@ -1181,7 +1181,7 @@ class ViewDeleteTask(Task):
                 rest.query_view(self.design_doc_name, self.view.name, self.bucket, query)
             return False
         except QueryViewException as e:
-            self.log.info("view : {0} was successfully deleted in ddoc: {1}".format(self.view.name, self.design_doc_name))
+            log.info("view : {0} was successfully deleted in ddoc: {1}".format(self.view.name, self.design_doc_name))
             return True
 
         # catch and set all unexpected exceptions
@@ -1238,7 +1238,7 @@ class ViewQueryTask(Task):
             content = \
                 rest.query_view(self.design_doc_name, self.view_name, self.bucket, self.query, self.timeout)
 
-            self.log.info("Server: %s, Design Doc: %s, View: %s, (%d rows) expected, (%d rows) returned" % \
+            log.info("Server: %s, Design Doc: %s, View: %s, (%d rows) expected, (%d rows) returned" % \
                           (self.server.ip, self.design_doc_name, self.view_name, self.expected_rows, len(content['rows'])))
 
             raised_error = content.get(u'error', '') or ''.join([str(item) for item in content.get(u'errors', [])])
@@ -1246,7 +1246,7 @@ class ViewQueryTask(Task):
                 raise QueryViewException(self.view_name, raised_error)
 
             if len(content['rows']) == self.expected_rows:
-                self.log.info("expected number of rows: '{0}' was found for view query".format(self.
+                log.info("expected number of rows: '{0}' was found for view query".format(self.
                             expected_rows))
                 return True
             else:
@@ -1310,8 +1310,8 @@ class N1QLQueryTask(Task):
             else:
                 self.actual_result = self.n1ql_helper.run_cbq_query(query = self.query, server = self.server,
                  scan_consistency = self.scan_consistency, scan_vector = self.scan_vector)
-                self.log.info(self.actual_result)
-            self.log.info(" <<<<< Done Executing Query {0} >>>>>>".format(self.query))
+                log.info(self.actual_result)
+            log.info(" <<<<< Done Executing Query {0} >>>>>>".format(self.query))
             return_value = self.check()
             self.complete_task()
             return return_value
@@ -1336,13 +1336,15 @@ class N1QLQueryTask(Task):
                     log.info(" Query {0} results leads to INCORRECT RESULT ".format(self.query))
                     raise N1QLQueryException(self.msg)
             else:
+                import pydevd
+                pydevd.settrace(trace_only_current_thread=False)
                 check = self.n1ql_helper.verify_index_with_explain(self.actual_result, self.index_name)
                 if not check:
                     actual_result = self.n1ql_helper.run_cbq_query(query = "select * from system:indexes", server = self.server)
-                    self.log.info(actual_result)
+                    log.info(actual_result)
                     raise Exception(" INDEX usage in Query {0} :: NOT FOUND {1} :: as observed in result {2}".format(
                         self.query, self.index_name, self.actual_result))
-           self.log.info(" <<<<< Done VERIFYING Query {0} >>>>>>".format(self.query))
+           log.info(" <<<<< Done VERIFYING Query {0} >>>>>>".format(self.query))
            return True
         except N1QLQueryException as e:
             # subsequent query failed! exit

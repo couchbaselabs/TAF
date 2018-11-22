@@ -53,7 +53,7 @@ class QueryTests(BaseTestCase):
         self.docs_per_day = self.input.param("doc-per-day", 49)
         self.item_flag = self.input.param("item_flag", 4042322160)
         self.n1ql_port = self.input.param("n1ql_port", 8093)
-        self.dataset = self.input.param("dataset", "simple")
+        self.dataset = self.input.param("dataset", "default")
         self.value_size = self.input.param("value_size", 1024)
         self.doc_ops = self.input.param("doc_ops", False)
         self.create_ops_per = self.input.param("create_ops_per", 0)
@@ -127,7 +127,7 @@ class QueryTests(BaseTestCase):
                 return self.generate_docs_sabre(num_items, start)
             if self.dataset == "array":
                 return self.generate_docs_array(num_items, start)
-            return getattr(self, 'generate_docs_' + self.dataset)(num_items, start)
+            return self.generate_docs_simple(num_items, start)
         except Exception, ex:
             self.log.info(str(ex))
             self.fail("There is no dataset %s, please enter a valid one" % self.dataset)
