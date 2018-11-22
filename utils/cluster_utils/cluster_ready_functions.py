@@ -357,13 +357,13 @@ class cluster_utils():
             servers = self.cluster.servers
         if not master:
             master = self.cluster.master
-        self.get_services_map(master=master)
-        if (service_type not in self.services_map):
+        services_map = self.get_services_map(master=master)
+        if (service_type not in services_map):
             self.log.info("cannot find service node {0} in cluster " \
                           .format(service_type))
         else:
             list = []
-            for server_info in self.services_map[service_type]:
+            for server_info in services_map[service_type]:
                 tokens = server_info.split(":")
                 ip = tokens[0]
                 port = int(tokens[1])
@@ -391,16 +391,17 @@ class cluster_utils():
         if not reset:
             return
         else:
-            self.services_map = {}
+            services_map = {}
         if not master:
             master = self.cluster.master
         rest = RestConnection(master)
         map = rest.get_nodes_services()
         for key, val in map.iteritems():
             for service in val:
-                if service not in self.services_map.keys():
-                    self.services_map[service] = []
-                self.services_map[service].append(key)
+                if service not in services_map.keys():
+                    services_map[service] = []
+                services_map[service].append(key)
+        return services_map
 
     def get_services(self, tgt_nodes, tgt_services, start_node=1):
         services = []
@@ -418,6 +419,51 @@ class cluster_utils():
             for node in range(start_node, len(tgt_nodes)):
                 services.append(tgt_services.replace(":", ","))
         return services
+
+    def generate_map_nodes_out_dist(self, nodes_out_dist=None, targetMaster=False, targetIndexManager=False):
+        if nodes_out_dist is None:
+            nodes_out_dist = []
+        index_nodes_out = []
+        nodes_out_list = []
+        services_map = self.get_services_map(reset=True)
+        if not nodes_out_dist:
+            if len(self.cluster.servers) > 1:
+                nodes_out_list.append(self.cluster.servers[1])
+            return nodes_out_list, index_nodes_out
+        for service_fail_map in nodes_out_dist.split("-"):
+            tokens = service_fail_map.rsplit(":", 1)
+            count = 0
+            service_type = tokens[0]
+            service_type_count = int(tokens[1])
+            compare_string_master = "{0}:{1}".format(self.cluster.master.ip, self.cluster.master.port)
+            compare_string_index_manager = "{0}:{1}".format(self.cluster.master.ip, self.cluster.master.port)
+            if service_type in services_map.keys():
+                for node_info in services_map[service_type]:
+                    for server in self.cluster.servers:
+                        compare_string_server = "{0}:{1}".format(server.ip, server.port)
+                        addNode = False
+                        if (targetMaster and (not targetIndexManager)) \
+                                and (
+                                                compare_string_server == node_info and compare_string_master == compare_string_server):
+                            addNode = True
+                            self.master = self.cluster.servers[1]
+                        elif ((not targetMaster) and (not targetIndexManager)) \
+                                and (
+                                                    compare_string_server == node_info and compare_string_master != compare_string_server \
+                                                and compare_string_index_manager != compare_string_server):
+                            addNode = True
+                        elif ((not targetMaster) and targetIndexManager) \
+                                and (
+                                                    compare_string_server == node_info and compare_string_master != compare_string_server
+                                        and compare_string_index_manager == compare_string_server):
+                            addNode = True
+                        if addNode and (server not in nodes_out_list) and count < service_type_count:
+                            count += 1
+                            if service_type == "index":
+                                if server not in index_nodes_out:
+                                    index_nodes_out.append(server)
+                            nodes_out_list.append(server)
+        return nodes_out_list, index_nodes_out
 
     def setDebugLevel(self, index_servers=None, service_type="kv"):
         index_debug_level = self.input.param("index_debug_level", None)

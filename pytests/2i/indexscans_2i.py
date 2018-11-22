@@ -45,24 +45,24 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
                                                                  deploy_node_info=deploy_node_info))
                 x -= 1
             for task in tasks:
-                task.result()
+                self.task.jython_task_manager.get_task_result(task)
             if self.defer_build:
                 for bucket_name in build_index_map.keys():
                     if len(build_index_map[bucket_name]) > 0:
                         build_index_task = self.async_build_index(bucket_name, build_index_map[bucket_name])
-                        build_index_task.result()
+                        self.task.jython_task_manager.get_task_result(build_index_task)
                 monitor_index_tasks = []
                 for bucket_name in build_index_map.keys():
                     for index_name in build_index_map[bucket_name]:
                         monitor_index_tasks.append(self.async_monitor_index(bucket_name, index_name))
                 for task in monitor_index_tasks:
-                    task.result()
+                    self.task.jython_task_manager.get_task_result(task)
 
     def test_multi_create_query_explain_drop_index(self):
         try:
             self._create_index_in_async()
             self.run_doc_ops()
-            self._query_explain_in_async()
+            #self._query_explain_in_async()
             self._verify_index_map()
         except Exception, ex:
             self.log.info(ex)

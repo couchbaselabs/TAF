@@ -397,14 +397,14 @@ class ServerTasks(object):
             timeout - timeout for index to come online
         Returns:
             CreateIndexTask - A task future that is a handle to the scheduled task."""
-        _task = conc.CreateIndexTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.CreateIndexTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  defer_build = defer_build,
                  index_name = index_name,
                  query = query,
                  retry_time= retry_time,
-                 timeout = timeout, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 timeout = timeout)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def async_monitor_index(self, server, bucket, n1ql_helper = None,
@@ -421,12 +421,12 @@ class ServerTasks(object):
             n1ql_helper - n1ql helper object
         Returns:
             MonitorIndexTask - A task future that is a handle to the scheduled task."""
-        _task = conc.MonitorIndexTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.MonitorIndexTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  index_name = index_name,
                  retry_time= retry_time,
-                 timeout = timeout, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 timeout = timeout)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def async_build_index(self, server, bucket, query, n1ql_helper = None, retry_time=2):
@@ -440,11 +440,11 @@ class ServerTasks(object):
             n1ql_helper - n1ql helper object
         Returns:
             BuildIndexTask - A task future that is a handle to the scheduled task."""
-        _task = conc.BuildIndexTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.BuildIndexTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  query = query,
-                 retry_time= retry_time, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 retry_time= retry_time)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def create_index(self, server, bucket, query, n1ql_helper = None, index_name = None,
@@ -468,7 +468,7 @@ class ServerTasks(object):
                  index_name = index_name,
                  defer_build = defer_build,
                  retry_time= retry_time)
-        return _task.result(timeout)
+        return self.jython_task_manager.get_task_result(_task)
 
     def async_drop_index(self, server = None, bucket = "default", query = None,
                          n1ql_helper = None, index_name = None, retry_time=2):
@@ -483,12 +483,12 @@ class ServerTasks(object):
             n1ql_helper - n1ql helper object
         Returns:
             DropIndexTask - A task future that is a handle to the scheduled task."""
-        _task = conc.DropIndexTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.DropIndexTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  query = query,
                  index_name = index_name,
-                 retry_time= retry_time, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 retry_time= retry_time)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def drop_index(self, server, bucket, query, n1ql_helper = None,
@@ -510,7 +510,7 @@ class ServerTasks(object):
                  query = query,
                  index_name = index_name,
                  retry_time= retry_time)
-        return _task.result(timeout)
+        return self.jython_task_manager.get_task_result(_task)
 
     def failover(self, servers=[], failover_nodes=[], graceful=False, use_hostnames=False,timeout=None):
         """Synchronously flushes a bucket

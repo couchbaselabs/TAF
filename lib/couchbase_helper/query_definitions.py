@@ -138,7 +138,7 @@ class SQLDefinitionGenerator:
                 index_name=index_name_prefix+"job_title",
                 index_fields = ["job_title"],
                 query_template = FULL_SCAN_TEMPLATE.format("*","name IS NOT NULL"),
-                groups = [SIMPLE_INDEX, FULL_SCAN, "simple","isnotnull",NO_ORDERBY_GROUPBY]))
+                groups = [SIMPLE_INDEX, FULL_SCAN, "isnotnull",NO_ORDERBY_GROUPBY]))
         return definitions_list
 
     def generate_employee_data_query_definitions(self):

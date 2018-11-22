@@ -171,6 +171,8 @@ class bucket_utils():
                     log.error("Unable to get timings for bucket")
                 log.info(msg)
                 return False
+            else:
+                return True
     
     def wait_for_bucket_deletion(self, bucket,
                                  bucket_conn,
@@ -1175,7 +1177,7 @@ class bucket_utils():
         return int(client.stats()["curr_items"])
 
     def get_buckets_itemCount(self):
-        server = self.get_nodes_from_services_map(service_type="kv")
+        server = self.cluster_util.get_nodes_from_services_map(service_type="kv")
         return BucketHelper(server).get_buckets_itemCount()
 
     def expire_pager(self, servers, val=10):

@@ -6,9 +6,6 @@ class RebalanceBaseTest(BaseTestCase):
     
     def setUp(self):
         super(RebalanceBaseTest, self).setUp()
-        self.nodes_init = self.input.param("nodes_init", 1)
-        self.nodes_in = self.input.param("nodes_in", 1)
-        self.nodes_out = self.input.param("nodes_out", 1)
         self.doc_ops = self.input.param("doc_ops", "create")
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])

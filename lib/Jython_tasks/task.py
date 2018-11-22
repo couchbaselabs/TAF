@@ -66,6 +66,7 @@ class Task(Callable):
 
     def set_exception(self, exception):
         self.exception = exception
+        self.complete_task()
         raise BaseException(self.exception)
 
     def complete_task(self):
@@ -961,8 +962,8 @@ class ViewCreateTask(Task):
         self.ddoc_options = ddoc_options
         self.rest = RestConnection(self.server)
 
-    def execute(self, task_manager):
-
+    def call(self):
+        self.start_task()
         try:
             # appending view to existing design doc
             content, meta = self.rest.get_ddoc(self.bucket, self.design_doc_name)
@@ -1132,7 +1133,8 @@ class ViewDeleteTask(Task):
             prefix = ("", "dev_")[self.view.dev_view]
         self.design_doc_name = prefix + design_doc_name
 
-    def execute(self, task_manager):
+    def call(self):
+        self.start_task()
         try:
             rest = RestConnection(self.server)
             if self.view:
@@ -1201,7 +1203,8 @@ class ViewQueryTask(Task):
         self.retry_time = retry_time
         self.timeout = 900
 
-    def execute(self):
+    def call(self):
+        self.start_task()
         try:
             rest = RestConnection(self.server)
             # make sure view can be queried
@@ -1267,6 +1270,274 @@ class ViewQueryTask(Task):
             self.set_exception(e)
             return False
 
+
+class N1QLQueryTask(Task):
+    def __init__(self,
+                 server, bucket,
+                 query, n1ql_helper = None,
+                 expected_result=None,
+                 verify_results = True,
+                 is_explain_query = False,
+                 index_name = None,
+                 retry_time=2,
+                 scan_consistency = None,
+                 scan_vector = None):
+        super(N1QLQueryTask, self).__init__("query_n1ql_task")
+        self.server = server
+        self.bucket = bucket
+        self.query = query
+        self.expected_result = expected_result
+        self.n1ql_helper = n1ql_helper
+        self.timeout = 900
+        self.verify_results = verify_results
+        self.is_explain_query = is_explain_query
+        self.index_name = index_name
+        self.retry_time = 2
+        self.retried = 0
+        self.scan_consistency = scan_consistency
+        self.scan_vector = scan_vector
+
+    def call(self):
+        self.start_task()
+        try:
+            # Query and get results
+            log.info(" <<<<< START Executing Query {0} >>>>>>".format(self.query))
+            if not self.is_explain_query:
+                self.msg, self.isSuccess = self.n1ql_helper.run_query_and_verify_result(
+                    query = self.query, server = self.server, expected_result = self.expected_result,
+                    scan_consistency = self.scan_consistency, scan_vector = self.scan_vector,
+                    verify_results = self.verify_results)
+            else:
+                self.actual_result = self.n1ql_helper.run_cbq_query(query = self.query, server = self.server,
+                 scan_consistency = self.scan_consistency, scan_vector = self.scan_vector)
+                self.log.info(self.actual_result)
+            self.log.info(" <<<<< Done Executing Query {0} >>>>>>".format(self.query))
+            return_value = self.check()
+            self.complete_task()
+            return return_value
+        except N1QLQueryException as e:
+            # initial query failed, try again
+            if self.retried < self.retry_time:
+                self.retried += 1
+                time.sleep(self.retry_time)
+                self.call()
+
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.complete_task()
+            self.set_exception(e)
+
+    def check(self):
+        try:
+           # Verify correctness of result set
+           if self.verify_results:
+            if not self.is_explain_query:
+                if not self.isSuccess:
+                    log.info(" Query {0} results leads to INCORRECT RESULT ".format(self.query))
+                    raise N1QLQueryException(self.msg)
+            else:
+                check = self.n1ql_helper.verify_index_with_explain(self.actual_result, self.index_name)
+                if not check:
+                    actual_result = self.n1ql_helper.run_cbq_query(query = "select * from system:indexes", server = self.server)
+                    self.log.info(actual_result)
+                    raise Exception(" INDEX usage in Query {0} :: NOT FOUND {1} :: as observed in result {2}".format(
+                        self.query, self.index_name, self.actual_result))
+           self.log.info(" <<<<< Done VERIFYING Query {0} >>>>>>".format(self.query))
+           return True
+        except N1QLQueryException as e:
+            # subsequent query failed! exit
+            self.set_exception(e)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.set_exception(e)
+
+class CreateIndexTask(Task):
+    def __init__(self,
+                 server, bucket, index_name,
+                 query, n1ql_helper = None,
+                 retry_time=2, defer_build = False,
+                 timeout = 240):
+        super(CreateIndexTask, self).__init__("create_index_task")
+        Task.__init__(self, "create_index_task")
+        self.server = server
+        self.bucket = bucket
+        self.defer_build = defer_build
+        self.query = query
+        self.index_name = index_name
+        self.n1ql_helper = n1ql_helper
+        self.retry_time = 2
+        self.retried = 0
+        self.timeout = timeout
+
+    def call(self):
+        self.start_task()
+        try:
+            # Query and get results
+            self.n1ql_helper.run_cbq_query(query = self.query, server = self.server)
+            return_value = self.check()
+            self.complete_task()
+            return return_value
+        except CreateIndexException as e:
+            # initial query failed, try again
+            if self.retried < self.retry_time:
+                self.retried += 1
+                time.sleep(self.retry_time)
+                self.call()
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            log.error(e)
+            self.set_exception(e)
+
+    def check(self):
+        try:
+           # Verify correctness of result set
+            check = True
+            if not self.defer_build:
+                check = self.n1ql_helper.is_index_online_and_in_list(self.bucket, self.index_name, server = self.server, timeout = self.timeout)
+            if not check:
+                raise CreateIndexException("Index {0} not created as expected ".format(self.index_name))
+            return True
+        except CreateIndexException as e:
+            # subsequent query failed! exit
+            log.error(e)
+            self.set_exception(e)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            log.error(e)
+            self.set_exception(e)
+
+class BuildIndexTask(Task):
+    def __init__(self,
+                 server, bucket,
+                 query, n1ql_helper = None,
+                 retry_time=2):
+        super(BuildIndexTask, self).__init__("build_index_task")
+        self.server = server
+        self.bucket = bucket
+        self.query = query
+        self.n1ql_helper = n1ql_helper
+        self.retry_time = 2
+        self.retried = 0
+
+    def call(self):
+        self.start_task()
+        try:
+            # Query and get results
+            self.n1ql_helper.run_cbq_query(query = self.query, server = self.server)
+            return_value = self.check()
+            self.complete_task()
+            return return_value
+        except CreateIndexException as e:
+            # initial query failed, try again
+            if self.retried < self.retry_time:
+                self.retried += 1
+                time.sleep(self.retry_time)
+                self.call()
+
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.set_exception(e)
+
+    def check(self):
+        try:
+           # Verify correctness of result set
+            return True
+        except CreateIndexException as e:
+            # subsequent query failed! exit
+            self.set_exception(e)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.set_exception(e)
+
+class MonitorIndexTask(Task):
+    def __init__(self,
+                 server, bucket, index_name,
+                 n1ql_helper = None,
+                 retry_time=2,
+                 timeout = 240):
+        super(MonitorIndexTask, self).__init__("build_index_task")
+        self.server = server
+        self.bucket = bucket
+        self.index_name = index_name
+        self.n1ql_helper = n1ql_helper
+        self.retry_time = 2
+        self.timeout = timeout
+
+    def call(self):
+        self.start_task()
+        try:
+            check = self.n1ql_helper.is_index_online_and_in_list(self.bucket, self.index_name,
+            server = self.server, timeout = self.timeout)
+            if not check:
+                raise CreateIndexException("Index {0} not created as expected ".format(self.index_name))
+            return_value = self.check()
+            self.complete_task()
+            return return_value
+        except CreateIndexException as e:
+            # initial query failed, try again
+            self.set_exception(e)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.set_exception(e)
+
+    def check(self):
+        try:
+            return True
+        except CreateIndexException as e:
+            # subsequent query failed! exit
+            self.set_exception(e)
+
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.set_exception(e)
+
+class DropIndexTask(Task):
+    def __init__(self,
+                 server, bucket, index_name,
+                 query, n1ql_helper = None,
+                 retry_time=2):
+        super(DropIndexTask, self).__init__("drop_index_task")
+        self.server = server
+        self.bucket = bucket
+        self.query = query
+        self.index_name = index_name
+        self.n1ql_helper = n1ql_helper
+        self.timeout = 900
+        self.retry_time = 2
+        self.retried = 0
+
+    def call(self):
+        self.start_task()
+        try:
+            # Query and get results
+            check = self.n1ql_helper._is_index_in_list(self.bucket, self.index_name, server = self.server)
+            if not check:
+                raise DropIndexException("index {0} does not exist will not drop".format(self.index_name))
+            self.n1ql_helper.run_cbq_query(query = self.query, server = self.server)
+            return_value = self.check()
+        except N1QLQueryException as e:
+            # initial query failed, try again
+            if self.retried < self.retry_time:
+                self.retried += 1
+                time.sleep(self.retry_time)
+                self.call()
+        # catch and set all unexpected exceptions
+        except DropIndexException as e:
+            self.setexception(e)
+
+    def check(self):
+        try:
+        # Verify correctness of result set
+            check = self.n1ql_helper._is_index_in_list(self.bucket, self.index_name, server = self.server)
+            if check:
+                raise Exception("Index {0} not dropped as expected ".format(self.index_name))
+            return True
+        except DropIndexException as e:
+            # subsequent query failed! exit
+            self.set_exception(e)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.set_exception(e)
 
 class TestTask(Callable):
     def __init__(self, timeout):

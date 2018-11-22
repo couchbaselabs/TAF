@@ -60,16 +60,22 @@ class BaseTestCase(unittest.TestCase):
         self.skip_init_check_cbserver = self.input.param("skip_init_check_cbserver", False)
 
         try:
+            self.vbuckets = self.input.param("vbuckets", 1024)
             self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
             self.index_quota_percent = self.input.param("index_quota_percent", None)
             self.num_servers = self.input.param("servers", len(self.cluster.servers))
             # initial number of items in the cluster
             self.services_init = self.input.param("services_init", None)
+            self.nodes_init = self.input.param("nodes_init", 1)
+            self.nodes_in = self.input.param("nodes_in", 1)
+            self.nodes_out = self.input.param("nodes_out", 1)
             self.services_in = self.input.param("services_in", None)
             self.forceEject = self.input.param("forceEject", False)
             self.num_items = self.input.param("num_items", 100000)
             self.num_replicas = self.input.param("replicas", 1)
             self.value_size = self.input.param("value_size", 1)
+            self.dgm_run = self.input.param("dgm_run", False)
+            self.active_resident_threshold = int(self.input.param("active_resident_threshold", 0))
             self.verify_unacked_bytes = self.input.param("verify_unacked_bytes", False)
             self.force_kill_memcached = TestInputSingleton.input.param('force_kill_memcached', False)
             self.disabled_consistent_view = self.input.param("disabled_consistent_view", None)
@@ -87,7 +93,8 @@ class BaseTestCase(unittest.TestCase):
                 self.skip_buckets_handle = self.input.param("skip_buckets_handle", False)
             self.test_timeout = self.input.param("test_timeout", 3600)  # kill hang test and jump to next one.
             self.gsi_type = self.input.param("gsi_type", 'plasma')
-
+            self.compression_mode = self.input.param("compression_mode", 'passive')
+            self.sdk_compression = self.input.param("sdk_compression", True)
             #jre-path for cbas
             self.jre_path=self.input.param("jre_path",None)
             # end of bucket parameters spot (this is ongoing)

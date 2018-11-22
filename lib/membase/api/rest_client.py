@@ -1428,6 +1428,19 @@ class RestConnection(object):
         if not status:
             log.error('unable to logClientError')
 
+    def get_buckets_itemCount(self):
+        # get all the buckets
+        bucket_map = {}
+        api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets?basic_stats=true')
+        status, content, header = self._http_request(api)
+        json_parsed = json.loads(content)
+        if status:
+            for item in json_parsed:
+                bucketInfo = RestParser().parse_get_bucket_json(item)
+                bucket_map[bucketInfo.name] = bucketInfo.stats.itemCount
+        log.info(bucket_map)
+        return bucket_map
+
     def trigger_index_compaction(self, timeout=120):
         node = None
         api = self.index_baseUrl + 'triggerCompaction'
@@ -1440,6 +1453,19 @@ class RestConnection(object):
         status, content, header = self._http_request(api, 'POST', json.dumps(setting_json))
         if not status:
             raise Exception(content)
+        log.info("{0} set".format(setting_json))
+
+    def set_index_settings_internal(self, setting_json, timeout=120):
+        api = self.index_baseUrl + 'internal/settings'
+        status, content, header = self._http_request(api, 'POST',
+                                                     json.dumps(setting_json))
+        if not status:
+            if header['status'] == '404':
+                log.info(
+                    "This endpoint is introduced only in 5.5.0, hence not found. Redirecting the request to the old endpoint")
+                self.set_index_settings(setting_json, timeout)
+            else:
+                raise Exception(content)
         log.info("{0} set".format(setting_json))
 
     def get_index_settings(self, timeout=120):

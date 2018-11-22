@@ -50,7 +50,7 @@ class N1QLHelper():
             if server.ip == "127.0.0.1":
                 self.n1ql_port = server.n1ql_port
             if self.input.tuq_client and "client" in self.input.tuq_client:
-                server = self.tuq_client
+                server = self.input.tuq_client
         if self.n1ql_port is None or self.n1ql_port == '':
             self.n1ql_port = self.input.param("n1ql_port", 8093)
             if not self.n1ql_port:
@@ -58,7 +58,7 @@ class N1QLHelper():
                 raise Exception("n1ql_port is not defined, processing will not proceed further")
         cred_params = {'creds': []}
         for bucket in self.buckets:
-            if bucket.saslPassword:
+            if hasattr(bucket, 'saslPassword') and bucket.saslPassword:
                 cred_params['creds'].append({'user': 'local:%s' % bucket.name, 'pass': bucket.saslPassword})
         query_params.update(cred_params)
         if self.use_rest:

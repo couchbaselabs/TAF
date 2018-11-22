@@ -15,7 +15,7 @@ class KVGenerator(object):
         self.start = start
         self.end = end
         self.itr = start
-        self.random = None
+        self.random = random.Random()
     def has_next(self):
         return self.itr < self.end
 
