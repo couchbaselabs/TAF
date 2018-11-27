@@ -13,7 +13,7 @@ from subprocess import call
 import time
 import uuid
 from BucketLib.BucketOperations import BucketHelper
-from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask
+from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, BucketCreateTask, StatsWaitTask
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, DataAnalysisResultAnalyzer
@@ -140,12 +140,17 @@ class bucket_utils():
         self.data_collector = DataCollector()
         self.data_analyzer = DataAnalyzer()
         self.result_analyzer = DataAnalysisResultAnalyzer()
-    
+
     def create_bucket(self, bucket):
         if not isinstance(bucket, Bucket):
             raise Exception("Create bucket needs Bucket object as parameter")
-        self.task.sync_create_bucket(self.cluster.master, bucket)
-        self.buckets.append(bucket)
+        _task = BucketCreateTask(self.cluster.master, bucket)
+        self.task_manager.add_new_task(_task)
+        result = self.task_manager.get_task_result(_task)
+        if result:
+            self.buckets.append(bucket)
+        else:
+            raise Exception("Could not create bucket {}".format(bucket.name))
         
     def delete_bucket(self, serverInfo, bucket, wait_for_bucket_deletion=True):
         log = logger.Logger.get_logger()
@@ -241,8 +246,7 @@ class bucket_utils():
         else:
             ramQuotaMB = ram_quota
         default_bucket = Bucket({Bucket.ramQuotaMB:ramQuotaMB, Bucket.replicaNumber:replica})
-        self.task.sync_create_bucket(self.cluster.master, default_bucket)
-        self.buckets.append(default_bucket)
+        self.create_bucket(default_bucket)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
     
@@ -304,7 +308,7 @@ class bucket_utils():
         for b in buckets:
             client1 = VBucketAwareMemcached( RestConnection(self.cluster.master), b)
 
-            for j in range(self.vbuckets):
+            for j in range(b.vbuckets):
                 #print 'doing vbucket', j
                 #try:
                     active_vbucket = client1.memcached_for_vbucket ( j )
@@ -357,7 +361,7 @@ class bucket_utils():
 #                                                type=self.bucket_type))
         return success
     
-    def _create_standard_buckets(self, server, num_buckets, bucket_size=None, bucket_priorities=None):
+    def create_standard_buckets(self, server, num_buckets, bucket_size=None, bucket_priorities=None):
         if bucket_priorities is None:
             bucket_priorities = []
         if not num_buckets:
@@ -377,7 +381,7 @@ class bucket_utils():
         if self.enable_time_sync:
             self._set_time_sync_on_buckets(['standard_bucket' + str(i) for i in range(num_buckets)])
 
-    def _create_memcached_buckets(self, server, num_buckets, bucket_size=None):
+    def create_memcached_buckets(self, server, num_buckets, bucket_size=None):
         if not num_buckets:
             return
         if bucket_size is None:
@@ -406,6 +410,30 @@ class bucket_utils():
 
         for task in flush_tasks:
             task.result()
+
+    def async_wait_for_stats(self, cluster, bucket, param, stat, comparison, value):
+        """Asynchronously wait for stats
+
+        Waits for stats to match the criteria passed by the stats variable. See
+        couchbase.stats_tool.StatsCommon.build_stat_check(...) for a description of
+        the stats structure and how it can be built.
+
+        Parameters:
+            servers - The servers to get stats from. Specifying multiple servers will
+                cause the result from each server to be added together before
+                comparing. ([TestInputServer])
+            bucket - The name of the bucket (String)
+            param - The stats parameter to use. (String)
+            stat - The stat that we want to get the value from. (String)
+            comparison - How to compare the stat result to the value specified.
+            value - The value to compare to.
+
+        Returns:
+            RebalanceTask - A task future that is a handle to the scheduled task"""
+        _task = StatsWaitTask(cluster, bucket, param, stat, comparison, value)
+        self.task_manager.add_new_task(_task)
+        return _task
+
 
     def verify_cluster_stats(self, items, master=None,
                              timeout=None, check_items=True,
@@ -445,9 +473,9 @@ class bucket_utils():
                 if items != items_actual:
                     raise Exception("Items are not correct")
                 continue
-            stats_tasks.append(self.task.async_wait_for_stats(cluster, bucket, '',
+            stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
                                                                  'curr_items', '==', items))
-            stats_tasks.append(self.task.async_wait_for_stats(cluster, bucket, '',
+            stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
                                                                  'vb_active_curr_items', '==', items))
 
             available_replicas = bucket.replicaNumber
@@ -455,19 +483,19 @@ class bucket_utils():
                 available_replicas = len(servers) - 1
             elif len(servers) <= bucket.replicaNumber:
                 available_replicas = len(servers) - 1
-            stats_tasks.append(self.task.async_wait_for_stats(cluster, bucket, '',
+            stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
                                                                  'vb_replica_curr_items', '==',
                                                                  items * available_replicas))
-            stats_tasks.append(self.task.async_wait_for_stats(cluster, bucket, '',
+            stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
                                                                  'curr_items_tot', '==',
                                                                  items * (available_replicas + 1)))
         try:
             for task in stats_tasks:
-                self.task.jython_task_manager.get_task_result(task)
+                self.task_manager.get_task_result(task)
         except Exception as e:
             log.info("{0}".format(e))
             for task in stats_tasks:
-                task.cancel()
+                self.task_manager.stop_task(task)
             log.error("unable to get expected stats for any node! Print taps for all nodes:")
             rest = RestConnection(self.cluster.master)
             for bucket in self.buckets:

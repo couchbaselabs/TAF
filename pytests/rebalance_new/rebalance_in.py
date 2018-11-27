@@ -13,10 +13,11 @@ class RebalanceInTests(RebalanceBaseTest):
     def test_rebalance_in_with_ops(self):
         age = range(5)
         first = ['james', 'sharon']
-        template = '{{ "age": {0}, "first_name": "{1}" }}'
-        gen_create = DocumentGenerator('test_docs', template, age, first, start=self.num_items,
+        body = [''.rjust(self.doc_size - 10, 'a')]
+        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
+        gen_create = DocumentGenerator(self.key, template, age, first, body, start=self.num_items,
                                        end=self.num_items * 2)
-        gen_delete = DocumentGenerator('test_docs', template, age, first, start=self.num_items / 2, end=self.num_items)
+        gen_delete = DocumentGenerator(self.key, template, age, first, body, start=self.num_items / 2, end=self.num_items)
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
         tasks = []
         task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])

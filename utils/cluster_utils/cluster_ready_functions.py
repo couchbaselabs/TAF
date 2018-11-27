@@ -5,6 +5,7 @@ Created on Sep 26, 2017
 '''
 import copy
 
+from Jython_tasks.task import PrintClusterStats
 from couchbase_cli import CouchbaseCLI
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
@@ -622,4 +623,16 @@ class cluster_utils():
             victim_nodes = self.add_remove_servers(nodes, nodes, [chosen, self.cluster.master], [])
             victim_nodes = victim_nodes[:victim_count]
         return victim_nodes
-        
+
+    def print_cluster_stats(self):
+        rest = RestConnection(self.cluster.master)
+        cluster_stat = rest.get_cluster_stats()
+        self.log.info("------- Cluster statistics -------")
+        for cluster_node, node_stats in cluster_stat.items():
+            self.log.info("{0} => {1}".format(cluster_node, node_stats))
+        self.log.info("--- End of cluster statistics ---")
+
+    def async_print_cluster_stats(self, sleep=5):
+        _task = PrintClusterStats(self.cluster.master,sleep)
+        self.task_manager.add_new_task(_task)
+        return _task

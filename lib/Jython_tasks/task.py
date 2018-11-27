@@ -4,6 +4,7 @@ Created on Sep 14, 2017
 @author: riteshagarwal
 '''
 from BucketLib.BucketOperations import BucketHelper
+from BucketLib.MemcachedOperations import MemcachedHelper
 from Jython_tasks.shutdown import shutdown_and_await_termination
 import copy
 
@@ -13,9 +14,10 @@ from couchbase_helper.documentgenerator import BatchedDocumentGenerator
 from httplib import IncompleteRead
 import json as Json
 import logging
-from membase.api.exception import N1QLQueryException, DropIndexException, CreateIndexException, DesignDocCreationException, QueryViewException, ReadDocumentException, RebalanceFailedException, \
-                                    GetBucketInfoFailed, CompactViewFailed, SetViewInfoNotFound, FailoverFailedException, \
-                                    ServerUnavailableException
+from membase.api.exception import N1QLQueryException, DropIndexException, CreateIndexException, \
+    DesignDocCreationException, QueryViewException, ReadDocumentException, RebalanceFailedException, \
+    GetBucketInfoFailed, CompactViewFailed, SetViewInfoNotFound, FailoverFailedException, \
+    ServerUnavailableException, BucketCreationException
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 import random
@@ -1336,8 +1338,6 @@ class N1QLQueryTask(Task):
                     log.info(" Query {0} results leads to INCORRECT RESULT ".format(self.query))
                     raise N1QLQueryException(self.msg)
             else:
-                import pydevd
-                pydevd.settrace(trace_only_current_thread=False)
                 check = self.n1ql_helper.verify_index_with_explain(self.actual_result, self.index_name)
                 if not check:
                     actual_result = self.n1ql_helper.run_cbq_query(query = "select * from system:indexes", server = self.server)
@@ -1540,6 +1540,101 @@ class DropIndexTask(Task):
         # catch and set all unexpected exceptions
         except Exception as e:
             self.set_exception(e)
+
+class PrintClusterStats(Task):
+    def __init__(self, node, sleep=5):
+        super(PrintClusterStats, self).__init__("print_cluster_stats")
+        self.node = node
+        self.sleep = sleep
+        self.stop_task = False
+
+    def call(self):
+        self.start_task()
+        rest = RestConnection(self.node)
+        while not self.stop_task:
+            try:
+                cluster_stat = rest.get_cluster_stats()
+                log.info("------- Cluster statistics -------")
+                for cluster_node, node_stats in cluster_stat.items():
+                    log.info("{0} => {1}".format(cluster_node, node_stats))
+                log.info("--- End of cluster statistics ---")
+                time.sleep(self.sleep)
+            except Exception as e:
+                log.error(e.message)
+                time.sleep(self.sleep)
+        self.complete_task()
+
+    def end_task(self):
+        self.stop_task = True
+
+class BucketCreateTask(Task):
+    def __init__(self, server, bucket):
+        super(BucketCreateTask,self).__init__("bucket_create_task")
+        self.server = server
+        self.bucket = bucket
+        if self.bucket.priority is None or self.bucket.priority.lower() is 'low':
+            self.bucket_priority = 3
+        else:
+            self.bucket_priority = 8
+        self.retries = 0
+
+    def call(self):
+        try:
+            rest = RestConnection(self.server)
+        except ServerUnavailableException as error:
+                self.set_exception(error)
+                return False
+        info = rest.get_nodes_self()
+
+        if self.bucket.ramQuotaMB <= 0:
+            self.size = info.memoryQuota * 2 / 3
+
+        if int(info.port) in xrange(9091, 9991):
+            try:
+                self.port = info.port
+                BucketHelper(self.server).create_bucket(self.bucket.__dict__)
+                #return_value = self.check()
+                self.complete_task()
+                return True
+            except Exception as e:
+                log.info(str(e))
+                self.set_exception(e)
+        version = rest.get_nodes_self().version
+        try:
+            if float(version[:2]) >= 3.0 and self.bucket_priority is not None:
+                self.bucket.threadsNumber = self.bucket_priority
+            BucketHelper(self.server).create_bucket(self.bucket.__dict__)
+            #return_value = self.check()
+            self.complete_task()
+            return True
+        except BucketCreationException as e:
+            log.info(str(e))
+            self.set_exception(e)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            log.info(str(e))
+            self.set_exception(e)
+
+    def check(self):
+        try:
+            # if self.bucket.bucketType == 'memcached' or int(self.server.port) in xrange(9091, 9991):
+            #     return True
+            if MemcachedHelper.wait_for_memcached(self.server, self.bucket.name):
+                log.info("bucket '{0}' was created with per node RAM quota: {1}".format(self.bucket, self.bucket.ramQuotaMB))
+                return True
+            else:
+                log.warn("vbucket map not ready after try {0}".format(self.retries))
+                if self.retries >= 5:
+                    return False
+        except Exception as e:
+            log.error("Unexpected error: %s" % str(e))
+            log.warn("vbucket map not ready after try {0}".format(self.retries))
+            if self.retries >= 5:
+                self.set_exception(e)
+        self.retries = self.retries + 1
+        time.sleep(5)
+        self.check()
+
 
 class TestTask(Callable):
     def __init__(self, timeout):
