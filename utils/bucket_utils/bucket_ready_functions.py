@@ -13,7 +13,8 @@ from subprocess import call
 import time
 import uuid
 from BucketLib.BucketOperations import BucketHelper
-from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, BucketCreateTask, StatsWaitTask
+from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, BucketCreateTask, StatsWaitTask, \
+    PrintOpsRate
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, DataAnalysisResultAnalyzer
@@ -2075,6 +2076,11 @@ class bucket_utils():
             return views
         else:
             return [View(ref_view.name + str(i), ref_view.map_func, None, is_dev_ddoc) for i in xrange(count)]
+
+    def async_print_bucket_ops(self, bucket, sleep=1):
+        task = PrintOpsRate(self.cluster, bucket, sleep)
+        self.task_manager.add_new_task(task)
+        return task
 
     def base_bucket_ratio(self, servers):
         ratio = 1.0

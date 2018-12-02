@@ -23,10 +23,12 @@ class RebalanceBaseTest(BaseTestCase):
         #gen_create = BlobGenerator('mike', 'mike-', self.value_size, start=self.num_items + 1, end=self.num_items * 3 / 2)
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
+            print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
             task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0, batch_size=10,
                                                  process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
-            print task.__str__()
+            print_ops_task.end_task()
+            self.task_manager.get_task_result(print_ops_task)
     def tearDown(self):
         if hasattr(self, "print_cluster_stat_task") and self.print_cluster_stat_task:
             self.print_cluster_stat_task.end_task()

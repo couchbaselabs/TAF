@@ -209,7 +209,6 @@ class BucketHelper(RestConnection):
         zoom -- stats zoom level (minute | hour | day | week | month | year)
         """
         api = self.baseUrl + 'pools/default/buckets/{0}/stats?zoom={1}'.format(bucket, zoom)
-        log.info(api)
         status, content, header = self._http_request(api)
         return json.loads(content)
 
