@@ -380,11 +380,13 @@ class GenericLoadingTask(Task):
 
     def call(self):
         self.start_task()
+        log.info("Starting load generation thread")
         try:
             while self.has_next():
                 self.next()
         except Exception as e:
             self.set_exception(Exception(e.message))
+        log.info("Load generation thread completed")
         self.complete_task()
 
     def has_next(self):
