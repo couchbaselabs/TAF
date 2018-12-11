@@ -3452,6 +3452,15 @@ class RestConnection(object):
             raise Exception(content)
         return json.loads(content)
 
+    # the same as Preview a Random Document on UI
+    def get_random_key(self, bucket):
+        api = self.baseUrl + 'pools/default/buckets/%s/localRandomKey' % (bucket)
+        status, content, header = self._http_request(api, headers=self._create_capi_headers())
+        json_parsed = json.loads(content)
+        if not status:
+            raise Exception("unable to get random document/key for bucket %s" % (bucket))
+        return json_parsed
+
 
 
 class MembaseServerVersion:

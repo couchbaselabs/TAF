@@ -513,7 +513,7 @@ class GenericLoadingTask(Task):
         try:
             self._process_values_for_update(key_val)
             self.client.upsertMulti(self.exp, self.flag, key_val, self.pause, self.timeout, parallel=False)
-            log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
+            #log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
             self.set_exception(error)
@@ -703,14 +703,19 @@ class LoadDocumentsGeneratorsTask(Task):
                 print_ops_rate_task = PrintOpsRate(self.cluster, self.bucket)
                 self.print_ops_rate_tasks.append(print_ops_rate_task)
                 self.task_manager.add_new_task(print_ops_rate_task)
-        for task in tasks:
-            self.task_manager.add_new_task(task)
-        for task in tasks:
-            self.task_manager.get_task_result(task)
-        if self.print_ops_rate and hasattr(self, "print_ops_rate_tasks"):
-            for print_ops_rate_task in self.print_ops_rate_tasks:
-                print_ops_rate_task.end_task()
-                self.task_manager.get_task_result(print_ops_rate_task)
+        try:
+            for task in tasks:
+                self.task_manager.add_new_task(task)
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+        except Exception as e:
+            self.set_exception(e)
+        finally:
+            self.client.close()
+            if self.print_ops_rate and hasattr(self, "print_ops_rate_tasks"):
+                for print_ops_rate_task in self.print_ops_rate_tasks:
+                    print_ops_rate_task.end_task()
+                    self.task_manager.get_task_result(print_ops_rate_task)
         self.complete_task()
 
     def get_tasks(self, generator):
@@ -718,7 +723,7 @@ class LoadDocumentsGeneratorsTask(Task):
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-        gen_range = max(int(generator.end / self.process_concurrency), 1)
+        gen_range = max(int((generator.end - generator.start)/ self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
             partition_gen.start = pos
@@ -869,7 +874,7 @@ class DocumentsValidatorTask(Task):
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-        gen_range = max(int(generator.end / self.process_concurrency), 1)
+        gen_range = max(int((generator.end - generator.start) / self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
             partition_gen.start = pos

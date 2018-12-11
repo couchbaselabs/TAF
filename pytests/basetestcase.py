@@ -46,7 +46,7 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager = TaskManager(self.thread_to_use)
         self.cluster_util = cluster_utils(self.cluster, self.task_manager)
         self.bucket_util = bucket_utils(self.cluster, self.task_manager, self.cluster_util)
-        self.task = ServerTasks()
+        self.task = ServerTasks(self.task_manager)
         self.cleanup = False
         self.nonroot = False
         shell = RemoteMachineShellConnection(self.cluster.master)
@@ -74,6 +74,7 @@ class BaseTestCase(unittest.TestCase):
             self.num_items = self.input.param("num_items", 100000)
             self.num_replicas = self.input.param("replicas", 1)
             self.value_size = self.input.param("value_size", 1)
+            self.wait_timeout = self.input.param("wait_timeout", 60)
             self.dgm_run = self.input.param("dgm_run", False)
             self.active_resident_threshold = int(self.input.param("active_resident_threshold", 0))
             self.verify_unacked_bytes = self.input.param("verify_unacked_bytes", False)
@@ -139,7 +140,7 @@ class BaseTestCase(unittest.TestCase):
                 self.cleanup = True
                 if not self.skip_init_check_cbserver:
                     self.tearDownEverything()
-                self.task = ServerTasks()
+                self.task = ServerTasks(self.task_manager)
             if not self.skip_init_check_cbserver:
                 log.info("initializing cluster")
 #                 self.cluster_util.reset_cluster()

@@ -503,9 +503,9 @@ class bucket_utils():
                 RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
             raise Exception("unable to get expected stats during {0} sec".format(timeout))
 
-    def _async_load_all_buckets(self, server, kv_gen, op_type, exp, kv_store=1, flag=0,
+    def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=30,
-                                proxy_client=None, sdk_compression = True):
+                                sdk_compression=True, process_concurrency=4):
         
         """
         Asynchronously applys load generation to all bucekts in the cluster.bucket.name, gen,
@@ -522,19 +522,17 @@ class bucket_utils():
             A list of all of the tasks created.
         """
         tasks = []
-        self.buckets = self.get_all_buckets(server)
+        self.buckets = self.get_all_buckets(cluster.master)
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
             if bucket.bucketType != 'memcached':
 #                 tasks.append(self.task.async_load_gen_docs_java(server, bucket.name, gen.start,gen.end-gen.start))
                 log.info("BATCH SIZE for documents load: %s" % batch_size)
-                tasks.append(self.task.async_load_gen_docs(server, bucket.name, gen,
-                                                              bucket.kvs[kv_store],
-                                                              op_type, exp, flag, only_store_hash,
-                                                              batch_size, pause_secs, timeout_secs,
-                                                              proxy_client, compression=sdk_compression))
+                tasks.append(self.task.async_load_gen_docs(cluster, bucket, gen, op_type, exp, flag, only_store_hash,
+                                                           batch_size, pause_secs, timeout_secs,
+                                                           sdk_compression, process_concurrency))
             else:
-                self._load_memcached_bucket(server, gen, bucket.name)
+                self._load_memcached_bucket(cluster.master, gen, bucket.name)
         return tasks
 
     def _load_all_buckets(self, server, kv_gen, op_type, exp, kv_store=1, flag=0,
@@ -728,7 +726,7 @@ class bucket_utils():
                       "dbFragmentThresholdPercentage": None,
                       "dbFragmentThreshold": None,
                       "viewFragmntThreshold": None}
-        self.task.modify_fragmentation_config(server, new_config, bucket)
+        self.cluster_util.modify_fragmentation_config(new_config, bucket)
 
     def _load_doc_data_all_buckets(self, data_op="create", batch_size=1000, gen_load=None, start=0, end=1000):
         # initialize the template for document generator
@@ -945,12 +943,12 @@ class bucket_utils():
             2) Compare Previous Active and Replica data
             3) Compare Current Active and Replica data
         """
-        self.log.info(" Begin Verification for data comparison ")
+        log.info(" Begin Verification for data comparison ")
         info, curr_data_set_replica = self.data_collector.collect_data(servers, buckets, data_path=path, perNode=False,
                                                                        getReplica=True, mode=mode)
         info, curr_data_set_active = self.data_collector.collect_data(servers, buckets, data_path=path, perNode=False,
                                                                       getReplica=False, mode=mode)
-        self.log.info(" Comparing :: Prev vs Current :: Active and Replica ")
+        log.info(" Comparing :: Prev vs Current :: Active and Replica ")
         comparison_result_replica = self.data_analyzer.compare_all_dataset(info, prev_data_set_replica,
                                                                            curr_data_set_replica)
         comparison_result_active = self.data_analyzer.compare_all_dataset(info, prev_data_set_active,
@@ -961,13 +959,17 @@ class bucket_utils():
                                                                                               deletedItems=False,
                                                                                               addedItems=False,
                                                                                               updatedItems=False)
-        self.assertTrue(logic_replica, output_replica)
-        self.assertTrue(logic_active, output_active)
-        self.log.info(" Comparing :: Current :: Active and Replica ")
+        if not logic_replica:
+            log.error(output_replica)
+            raise Exception(output_replica)
+        if not logic_active:
+            log.error(output_active)
+            raise Exception(output_active)
+        log.info(" Comparing :: Current :: Active and Replica ")
         comparison_result = self.data_analyzer.compare_all_dataset(info, curr_data_set_active, curr_data_set_replica)
         logic, summary, output = self.result_analyzer.analyze_all_result(comparison_result, deletedItems=False,
                                                                          addedItems=False, updatedItems=False)
-        self.log.info(" End Verification for data comparison ")
+        log.info(" End Verification for data comparison ")
 
     def data_analysis_all(self, prev_data_set, servers, buckets, path=None, mode="disk", deletedItems=False,
                           addedItems=False, updatedItems=False):
@@ -1019,12 +1021,14 @@ class bucket_utils():
                                                                       getReplica=True, mode=mode)
         info, disk_active_dataset = self.data_collector.collect_data(servers, buckets, data_path=path, perNode=False,
                                                                      getReplica=False, mode=mode)
-        self.log.info(" Begin Verification for Active Vs Replica ")
+        log.info(" Begin Verification for Active Vs Replica ")
         comparison_result = self.data_analyzer.compare_all_dataset(info, disk_replica_dataset, disk_active_dataset)
         logic, summary, output = self.result_analyzer.analyze_all_result(comparison_result, deletedItems=False,
                                                                          addedItems=False, updatedItems=False)
-        self.assertTrue(logic, summary)
-        self.log.info(" End Verification for Active Vs Replica ")
+        if not logic:
+            log.error(summary)
+            raise Exception(summary)
+        log.info(" End Verification for Active Vs Replica ")
         return disk_replica_dataset, disk_active_dataset
 
     def data_active_and_replica_analysis(self, server, max_verify=None, only_store_hash=True, kv_store=1):

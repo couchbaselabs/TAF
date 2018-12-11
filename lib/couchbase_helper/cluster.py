@@ -20,9 +20,9 @@ log = logging.getLogger(__name__)
 class ServerTasks(object):
     """A Task API for performing various operations synchronously or asynchronously on Couchbase cluster."""
 
-    def __init__(self):
+    def __init__(self, task_manager=jython_task_manager()):
         self.task_manager = TaskManager("Cluster_Thread")
-        self.jython_task_manager = jython_task_manager()
+        self.jython_task_manager = task_manager
 
     def async_create_bucket(self, server, bucket):
         """Asynchronously creates the default bucket

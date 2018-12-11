@@ -22,6 +22,9 @@ class SDKClient(object):
         self.password = self.server.rest_password
         self.cluster = None
         self.clusterManager = None
+
+    def __del__(self):
+        self.disconnectCluster()
         
     def connectCluster(self, username=None, password=None):
         if username:

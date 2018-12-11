@@ -636,3 +636,89 @@ class cluster_utils():
         _task = PrintClusterStats(self.cluster.master,sleep)
         self.task_manager.add_new_task(_task)
         return _task
+
+    def verify_replica_distribution_in_zones(self, nodes):
+        """
+        Verify the replica distribution in nodes in different zones.
+        Validate that no replicas of a node are in the same zone.
+        :param nodes: Map of the nodes in different zones. Each key contains the zone name and the ip of nodes in that zone.
+        """
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        info = shell.extract_remote_info().type.lower()
+        if info == 'linux':
+            cbstat_command = "{0:s}cbstats".format(testconstants.LINUX_COUCHBASE_BIN_PATH)
+        elif info == 'windows':
+            cbstat_command = "{0:s}cbstats".format(testconstants.WIN_COUCHBASE_BIN_PATH)
+        elif info == 'mac':
+            cbstat_command = "{0:s}cbstats".format(testconstants.MAC_COUCHBASE_BIN_PATH)
+        else:
+            raise Exception("OS not supported.")
+        saslpassword = ''
+        versions = RestConnection(self.cluster.master).get_nodes_versions()
+        for group in nodes:
+            for node in nodes[group]:
+                if versions[0][:5] in testconstants.COUCHBASE_VERSION_2:
+                    command = "tap"
+                    if not info == 'windows':
+                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep :vb_filter: |  awk '{print $1}' \
+                            | xargs | sed 's/eq_tapq:replication_ns_1@//g'  | sed 's/:vb_filter://g' \
+                            " % (cbstat_command, node, command, "default", saslpassword)
+                    else:
+                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep.exe :vb_filter: | gawk.exe '{print $1}' \
+                               | sed.exe 's/eq_tapq:replication_ns_1@//g'  | sed.exe 's/:vb_filter://g' \
+                               " % (cbstat_command, node, command, "default", saslpassword)
+                    output, error = shell.execute_command(commands)
+                elif versions[0][:5] in testconstants.COUCHBASE_VERSION_3 or \
+                                versions[0][:5] in testconstants.COUCHBASE_FROM_VERSION_4:
+                    command = "dcp"
+                    if not info == 'windows':
+                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep :replication:ns_1@%s |  grep vb_uuid | \
+                                    awk '{print $1}' | sed 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
+                                    sed 's/:.*//g' | sort -u | xargs \
+                                   " % (cbstat_command, node, command, "default", saslpassword, node, node)
+                        output, error = shell.execute_command(commands)
+                    else:
+                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
+                                    gawk.exe '{print $1}' | sed.exe 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
+                                    sed.exe 's/:.*//g' \
+                                   " % (cbstat_command, node, command, "default", saslpassword, node, node)
+                        output, error = shell.execute_command(commands)
+                        output = sorted(set(output))
+                shell.log_command_output(output, error)
+                output = output[0].split(" ")
+                if node not in output:
+                    self.log.info("{0}".format(nodes))
+                    self.log.info("replicas of node {0} are in nodes {1}".format(node, output))
+                    self.log.info("replicas of node {0} are not in its zone {1}".format(node, group))
+                else:
+                    raise Exception("replica of node {0} are on its own zone {1}".format(node, group))
+        shell.disconnect()
+
+    def modify_fragmentation_config(self, config, bucket="default"):
+        rest = RestConnection(self.cluster.master)
+        _config = {"parallelDBAndVC": "false",
+                       "dbFragmentThreshold": None,
+                       "viewFragmntThreshold": None,
+                       "dbFragmentThresholdPercentage": 100,
+                       "viewFragmntThresholdPercentage": 100,
+                       "allowedTimePeriodFromHour": None,
+                       "allowedTimePeriodFromMin": None,
+                       "allowedTimePeriodToHour": None,
+                       "allowedTimePeriodToMin": None,
+                       "allowedTimePeriodAbort": None,
+                       "autoCompactionDefined": "true"}
+        for key in config:
+            _config[key] = config[key]
+        
+        rest.set_auto_compaction(parallelDBAndVC=_config["parallelDBAndVC"],
+                                     dbFragmentThreshold=_config["dbFragmentThreshold"],
+                                     viewFragmntThreshold=_config["viewFragmntThreshold"],
+                                     dbFragmentThresholdPercentage=_config["dbFragmentThresholdPercentage"],
+                                     viewFragmntThresholdPercentage=_config["viewFragmntThresholdPercentage"],
+                                     allowedTimePeriodFromHour=_config["allowedTimePeriodFromHour"],
+                                     allowedTimePeriodFromMin=_config["allowedTimePeriodFromMin"],
+                                     allowedTimePeriodToHour=_config["allowedTimePeriodToHour"],
+                                     allowedTimePeriodToMin=_config["allowedTimePeriodToMin"],
+                                     allowedTimePeriodAbort=_config["allowedTimePeriodAbort"],
+                                     bucket=bucket)
+        time.sleep(5)
