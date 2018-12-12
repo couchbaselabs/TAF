@@ -91,6 +91,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         rebalance = self.task.async_rebalance(self.cluster.servers[:1], [], servs_out)
         self.task.jython_task_manager.get_task_result(rebalance)
+        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         self.bucket_util._verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util.verify_cluster_stats(check_ep_items_remaining=True)
         new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats,
@@ -148,6 +149,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="full")
         rebalance = self.task.async_rebalance(self.cluster.servers[:1], [], servs_out)
         self.task.jython_task_manager.get_task_result(rebalance)
+        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.servers[:self.num_servers - self.nodes_out], self.bucket_util.buckets)
         self.sleep(30)
@@ -239,6 +241,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.num_items = self.num_items - (self.num_items / 2)
             for task in tasks:
                 self.task_manager.get_task_result(task)
+        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -278,6 +281,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             num_iter += 1
 
         self.task.jython_task_manager.get_task_result(rebalance)
+        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -309,6 +313,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                     self.num_items = self.num_items - (self.num_items / 2)
                 for task in tasks:
                     self.task_manager.get_task_result(task)
+                self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(self.cluster.servers[i:i + 2]))
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -377,6 +382,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                         expected_rows=expected_rows)
         # verify view queries results after rebalancing
         self.task.jython_task_manager.get_task_result(rebalance)
+        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         for bucket in self.bucket_util.buckets:
             self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, bucket=bucket, wait_time=timeout,
                                         expected_rows=expected_rows)
@@ -438,6 +444,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                         expected_rows=expected_rows)
             # verify view queries results after rebalancing
             self.task.jython_task_manager.get_task_result(rebalance)
+            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(self.cluster.servers[i:i + 2]))
             self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, wait_time=timeout,
                                         expected_rows=expected_rows)
             self.bucket_util.verify_cluster_stats(self.num_items)
@@ -469,6 +476,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         try:
             rebalance = self.task.async_rebalance(self.cluster.servers, [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
+            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         except RebalanceFailedException:
             self.log.info("rebalance was failed as expected")
             self.assertTrue(self.bucket_util._wait_warmup_completed(self, [warmup_node], \
@@ -478,6 +486,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.log.info("second attempt to rebalance")
             rebalance = self.task.async_rebalance(self.cluster.servers, [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
+            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -526,6 +535,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             self._load_all_buckets(self.cluster.master, self.gen_update, "update", 0, batch_size=batch_size, timeout_secs=60)
             self._load_all_buckets(self.cluster.master, gen_2, "update", 5, batch_size=batch_size, timeout_secs=60)
             self.task.jython_task_manager.get_task_result(rebalance)
+            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set([self.cluster.servers[i]]))
             self.sleep(5)
             self._load_all_buckets(self.cluster.master, gen_2, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
