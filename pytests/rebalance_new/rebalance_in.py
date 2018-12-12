@@ -136,7 +136,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                               self.cluster.servers[:self.nodes_in + self.nodes_init], self.bucket_util.buckets, path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
+        #self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
 
     """Rebalances  after we do add node and graceful failover
 
@@ -191,7 +191,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                               path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
+        #self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
 
 
     """Rebalances nodes into a cluster while doing docs ops:create, delete, update.
