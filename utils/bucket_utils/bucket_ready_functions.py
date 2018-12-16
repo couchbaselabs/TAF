@@ -2085,7 +2085,7 @@ class bucket_utils():
                                   None, is_dev_ddoc))
             return views
         else:
-            return [View(ref_view.name + str(i), ref_view.map_func, None, is_dev_ddoc) for i in xrange(count)]
+            return [View("{0}{1}".format(ref_view.name,i), ref_view.map_func, None, is_dev_ddoc) for i in xrange(count)]
 
     def async_print_bucket_ops(self, bucket, sleep=1):
         task = PrintOpsRate(self.cluster, bucket, sleep)

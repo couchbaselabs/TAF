@@ -558,7 +558,7 @@ class RebalanceInTests(RebalanceBaseTest):
         tasks = []
         tasks = self.bucket_util.async_create_views(self.cluster.master, ddoc_name, views, 'default')
         for task in tasks:
-            task.result(self.wait_timeout * 2)
+            self.task_manager.get_task_result(task)
         self.bucket_util.disable_compaction()
         fragmentation_monitor = self.cluster.async_monitor_view_fragmentation(self.cluster.master,
                                                                               prefix + ddoc_name, fragmentation_value,

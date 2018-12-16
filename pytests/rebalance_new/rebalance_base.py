@@ -35,9 +35,9 @@ class RebalanceBaseTest(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)
-            self.gen_load = self._get_doc_generator(0, self.num_items)
-            # gen_update is used for doing mutation for 1/2th of uploaded data
-            self.gen_update = self._get_doc_generator(0, (self.num_items / 2 - 1))
+        self.gen_load = self._get_doc_generator(0, self.num_items)
+        # gen_update is used for doing mutation for 1/2th of uploaded data
+        self.gen_update = self._get_doc_generator(0, (self.num_items / 2 - 1))
         self.log.info("==========Finished rebalance base setup========")
 
     def tearDown(self):
