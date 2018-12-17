@@ -912,40 +912,48 @@ class StatsWaitTask(Task):
         self.comparison = comparison
         self.value = value
         self.conns = {}
+        self.stop = False
 
     def call(self):
         self.start_task()
         stat_result = 0
         # import pydevd
         # pydevd.settrace(trace_only_current_thread=False)
+        try:
+            while not self.stop:
+                self._get_stats_and_compare()
+        finally:
+            for server, conn in self.conns.items():
+                conn.close()
+        self.complete_task()
+
+    def _get_stats_and_compare(self):
+        stat_result = 0
         for server in self.cluster.nodes_in_cluster:
             try:
                 client = self._get_connection(server)
                 stats = client.stats(self.param)
                 if not stats.has_key(self.stat):
                     self.set_exception(Exception("Stat {0} not found".format(self.stat)))
-                    return
+                    self.stop = True
+                    return False
                 if stats[self.stat].isdigit():
                     stat_result += long(stats[self.stat])
                 else:
                     stat_result = stats[self.stat]
             except EOFError as ex:
                 self.set_exception(ex)
-                return
+                self.stop = True
+                return False
         if not self._compare(self.comparison, str(stat_result), self.value):
             log.warn("Not Ready: %s %s %s %s expected on %s, %s bucket" % (self.stat, stat_result,
                                                                            self.comparison, self.value,
                                                                            self._stringify_servers(), self.bucket.name))
             time.sleep(5)
-            self.call()
-            return
-        log.info("Saw %s %s %s %s expected on %s,%s bucket" % (self.stat, stat_result,
-                                                               self.comparison, self.value, self._stringify_servers(),
-                                                               self.bucket.name))
-
-        for server, conn in self.conns.items():
-            conn.close()
-        self.complete_task()
+            return False
+        else:
+            self.stop = True
+            return True
 
     def _stringify_servers(self):
         return ''.join([`server.ip + ":" + str(server.port)` for server in self.cluster.nodes_in_cluster])
