@@ -17,6 +17,7 @@ from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, Buc
     PrintOpsRate
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
+from bucket_utils.Bucket import Bucket
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import BlobGenerator
@@ -26,7 +27,6 @@ import crc32
 import logger
 import mc_bin_client
 from membase.api.rest_client import Node
-from membase.api.exception import ServerUnavailableException
 from membase.api.rest_client import RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
 from membase.helper.rebalance_helper import RebalanceHelper
@@ -36,9 +36,7 @@ from memcached.helper.data_helper import VBucketAwareMemcached
 from remote.remote_util import RemoteMachineShellConnection
 from testconstants import MAX_COMPACTION_THRESHOLD
 from testconstants import MIN_COMPACTION_THRESHOLD
-from memcached.helper.kvstore import KVStore
 from couchbase_helper.cluster import ServerTasks
-from cluster_utils.cluster_ready_functions import CBCluster as cluster
 from membase.api.exception import StatsUnavailableException
 log = logger.Logger.get_logger()
 
@@ -58,75 +56,7 @@ Parameters:
     lww = determine the conflict resolution type of the bucket. (Boolean)
 """
 
-class Bucket(object):
-    name = "name"
-    replicas = "replicas"
-    ramQuotaMB = "ramQuotaMB"
-    bucketType = "bucketType"
-    replicaNumber = "replicaNumber"
-    evictionPolicy = "evictionPolicy"
-    priority = "priority"
-    flushEnabled = "flushEnabled"
-    lww = "lww"
-    maxTTL = "maxTTL"
-    replicaIndex = "replicaIndex"
-    threadsNumber = "threadsNumber"
-    compressionMode = "compressionMode"
-    uuid = "uuid"
-    
-    class bucket_type:
-        MEMBASE = "membase"
-        EPHEMERAL = "ephemeral"
-        MEMCACHED = "memcached"
-    
-    class bucket_eviction_policy:
-        VALUE_ONLY = "valueOnly"
-        FULL_EVICTION = "fullEviction"
-        NO_EVICTION = "noEviction"
-        
-    class bucket_compression_mode:
-        ACTIVE = "active"
-        PASSIVE = "passive"
-        OFF = "off"
 
-    class vBucket():
-        def __init__(self):
-            self.master = ''
-            self.replica = []
-            self.id = -1
-    
-    class BucketStats():
-        def __init__(self):
-            self.opsPerSec = 0
-            self.itemCount = 0
-            self.diskUsed = 0
-            self.memUsed = 0
-            self.ram = 0
-
-    def __init__(self, new_params={}):
-        self.name = new_params.get(Bucket.name, "default")
-        self.bucketType = new_params.get(Bucket.bucketType, Bucket.bucket_type.MEMBASE)
-        self.replicaNumber = new_params.get(Bucket.replicaNumber, 0)
-        self.ramQuotaMB = new_params.get(Bucket.ramQuotaMB, 100)
-        self.kvs = {1:KVStore()}
-        self.evictionPolicy = new_params.get(Bucket.evictionPolicy, Bucket.bucket_eviction_policy.VALUE_ONLY)
-        self.replicaIndex = new_params.get(Bucket.replicaIndex, 0)
-        self.priority = new_params.get(Bucket.priority, None)
-        self.threadsNumber = new_params.get(Bucket.threadsNumber,3)
-        self.uuid = None
-        self.lww = new_params.get(Bucket.lww, False)
-        self.maxTTL = new_params.get(Bucket.maxTTL, None)
-        self.flushEnabled = new_params.get(Bucket.flushEnabled, 1)
-        self.compressionMode = new_params.get(Bucket.compressionMode, Bucket.bucket_compression_mode.PASSIVE)
-        self.nodes = None
-        self.stats = None
-        self.servers = []
-        self.vbuckets = []
-        self.forward_map = []
-
-    def __str__(self):
-        return self.name
-    
 class bucket_utils():
     
     def __init__(self, cluster, task_manager, cluster_util):
@@ -344,7 +274,7 @@ class bucket_utils():
             for i in range(0, howmany):
                 name = "bucket-{0}".format(i)
                 bucket = Bucket({Bucket.name:name, Bucket.ramQuotaMB:bucket_ram,
-                                 Bucket.replicas:replica,Bucket.bucketType:bucketType,
+                                 Bucket.replicas:replica, Bucket.bucketType:bucketType,
                                  Bucket.evictionPolicy:evictionPolicy, Bucket.maxTTL:maxttl,
                                  Bucket.compressionMode:compression_mode})
                 self.create_bucket(bucket)
@@ -390,7 +320,7 @@ class bucket_utils():
 
         for i in range(num_buckets):
             name = 'memcached_bucket' + str(i)
-            bucket = Bucket({Bucket.name:name,Bucket.bucketType:Bucket.bucket_type.MEMCACHED,
+            bucket = Bucket({Bucket.name:name, Bucket.bucketType: Bucket.bucket_type.MEMCACHED,
                              Bucket.ramQuotaMB:bucket_size})
             self.create_bucket(bucket)
             self.buckets.append(bucket)

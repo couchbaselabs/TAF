@@ -1,6 +1,6 @@
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
-from bucket_utils.bucket_ready_functions import Bucket
+from bucket_utils.Bucket import Bucket
 from couchbase_helper.documentgenerator import DocumentGenerator
 
 class RecreateBucketTests(BaseTestCase):

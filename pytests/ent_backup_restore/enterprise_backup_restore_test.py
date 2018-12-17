@@ -6,7 +6,8 @@ from couchbase_helper.cluster import Cluster
 from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
 from ent_backup_restore.enterprise_backup_restore_base import EnterpriseBackupRestoreBase
-from membase.api.rest_client import RestConnection, RestHelper, Bucket
+from membase.api.rest_client import RestConnection, RestHelper
+from bucket_utils.Bucket import Bucket
 from membase.helper.bucket_helper import BucketOperationHelper
 from pytests.query_tests_helper import QueryHelperTests
 #from lib.membase.helper.cluster_helper import ClusterOperationHelper

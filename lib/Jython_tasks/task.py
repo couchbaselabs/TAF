@@ -1709,7 +1709,7 @@ class BucketCreateTask(Task):
             log.warn("vbucket map not ready after try {0}".format(self.retries))
             if self.retries >= 5:
                 self.set_exception(e)
-        self.retries = self.retries + 1
+        self.retries = self.retris + 1
         time.sleep(5)
         self.check()
 

@@ -1,7 +1,7 @@
 import time
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
-from bucket_utils.bucket_ready_functions import Bucket
+from bucket_utils.Bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
 
 
