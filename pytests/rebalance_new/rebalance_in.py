@@ -317,20 +317,20 @@ class RebalanceInTests(RebalanceBaseTest):
                 for bucket in self.bucket_util.buckets:
                     if ("update" in self.doc_ops):
                         # 1/2th of data will be updated in each iteration
-                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, self.gen_update, "update", 0, batch_size=20000,
+                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, self.gen_update, "update", 0, batch_size=20000,
                                                               pause_secs=5, timeout_secs=180))
                     elif ("create" in self.doc_ops):
                         # 1/2th of initial data will be added in each iteration
                         gen_create = self._get_doc_generator(self.num_items * (1 + i) / 2.0,
                                                    self.num_items * (1 + i / 2.0))
-                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_create, "create", 0, batch_size=20000,
+                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0, batch_size=20000,
                                                               pause_secs=5, timeout_secs=180))
                     elif ("delete" in self.doc_ops):
                         # 1/(num_servers) of initial data will be removed after each iteration
                         # at the end we should get empty base( or couple items)
                         gen_delete = self._get_doc_generator(int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1,
                                                    int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0))))
-                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_delete, "delete", 0, batch_size=20000,
+                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0, batch_size=20000,
                                                               pause_secs=5, timeout_secs=180))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
