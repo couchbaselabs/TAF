@@ -387,9 +387,9 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             for view in views:
                 # run queries to create indexes
-                self.cluster.query_view(self.cluster.master, prefix + ddoc_name, view.name, query)
+                self.bucket_util.query_view(self.cluster.master, prefix + ddoc_name, view.name, query)
 
-        active_tasks = self.cluster.async_monitor_active_task(self.cluster.servers[:self.nodes_init], "indexer",
+        active_tasks = self.bucket_util.async_monitor_active_task(self.cluster.servers[:self.nodes_init], "indexer",
                                                               "_design/" + prefix + ddoc_name, wait_task=False)
         for active_task in active_tasks:
             result = active_task.result()
