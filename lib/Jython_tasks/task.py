@@ -903,7 +903,7 @@ class StatsWaitTask(Task):
     GREATER_THAN = '>'
     GREATER_THAN_EQ = '>='
 
-    def __init__(self, cluster, bucket, param, stat, comparison, value):
+    def __init__(self, cluster, bucket, param, stat, comparison, value, timeout=300):
         super(StatsWaitTask, self).__init__("StatsWaitTask")
         self.cluster = cluster
         self.bucket = bucket
@@ -913,18 +913,23 @@ class StatsWaitTask(Task):
         self.value = value
         self.conns = {}
         self.stop = False
+        self.timeout = timeout
 
     def call(self):
         self.start_task()
         stat_result = 0
         # import pydevd
         # pydevd.settrace(trace_only_current_thread=False)
+        start_time = time.time()
+        timeout = start_time + self.timeout
         try:
-            while not self.stop:
+            while not self.stop and time.time() < timeout:
                 self._get_stats_and_compare()
         finally:
             for server, conn in self.conns.items():
                 conn.close()
+        if time.time() > timeout:
+            self.set_exception("Could not verify stat {} within timeout {}".format(self.stat, self.timeout))
         self.complete_task()
 
     def _get_stats_and_compare(self):
