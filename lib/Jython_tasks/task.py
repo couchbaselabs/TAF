@@ -1262,31 +1262,33 @@ class ViewQueryTask(Task):
 
     def call(self):
         self.start_task()
-        try:
-            rest = RestConnection(self.server)
-            # make sure view can be queried
-            content = \
-                rest.query_view(self.design_doc_name, self.view_name, self.bucket, self.query, self.timeout)
+        retries = 0
+        while retries < self.retry_time:
+            try:
+                rest = RestConnection(self.server)
+                # make sure view can be queried
+                content = \
+                    rest.query_view(self.design_doc_name, self.view_name, self.bucket, self.query, self.timeout)
 
-            if self.expected_rows is None:
-                # no verification
-                self.complete_task()
-                return content
-            else:
-                return_value = self.check()
-                self.complete_task()
-                return return_value
+                if self.expected_rows is None:
+                    # no verification
+                    self.complete_task()
+                    return content
+                else:
+                    return_value = self.check()
+                    self.complete_task()
+                    return return_value
 
-        except QueryViewException as e:
-            # initial query failed, try again
-            time.sleep(self.retry_time)
-            self.execute()
+            except QueryViewException as e:
+                # initial query failed, try again
+                time.sleep(self.retry_time)
+                retries += 1
 
         # catch and set all unexpected exceptions
-        except Exception as e:
-            self.set_exception(e)
-            self.complete_task()
-            return False
+            except Exception as e:
+                self.set_exception(e)
+                self.complete_task()
+                return False
 
     def check(self):
         try:
@@ -1726,6 +1728,114 @@ class BucketCreateTask(Task):
         time.sleep(5)
         self.check()
 
+class MonitorActiveTask(Task):
+
+    """
+        Attempt to monitor active task that  is available in _active_tasks API.
+        It allows to monitor indexer, bucket compaction.
+
+        Execute function looks at _active_tasks API and tries to identifies task for monitoring
+        and its pid by: task type('indexer' , 'bucket_compaction', 'view_compaction' )
+        and target value (for example "_design/ddoc" for indexing, bucket "default" for bucket compaction or
+        "_design/dev_view" for view compaction).
+        wait_task=True means that task should be found in the first attempt otherwise,
+        we can assume that the task has been completed( reached 100%).
+
+        Check function monitors task by pid that was identified in execute func
+        and matches new progress result with the previous.
+        task is failed if:
+            progress is not changed  during num_iterations iteration
+            new progress was gotten less then previous
+        task is passed and completed if:
+            progress reached wait_progress value
+            task was not found by pid(believe that it's over)
+    """
+
+    def __init__(self, server, type, target_value, wait_progress=100, num_iterations=100, wait_task=True):
+        super(MonitorActiveTask, self).__init__("MonitorActiveTask")
+        self.server = server
+        self.type = type  # indexer or bucket_compaction
+        self.target_key = ""
+
+        if self.type == 'indexer':
+            pass # no special actions
+        elif self.type == "bucket_compaction":
+            self.target_key = "original_target"
+        elif self.type == "view_compaction":
+            self.target_key = "designDocument"
+        else:
+            raise Exception("type %s is not defined!" % self.type)
+        self.target_value = target_value
+        self.wait_progress = wait_progress
+        self.num_iterations = num_iterations
+        self.wait_task = wait_task
+
+        self.rest = RestConnection(self.server)
+        self.current_progress = None
+        self.current_iter = 0
+        self.task = None
+
+
+    def call(self):
+        tasks = self.rest.active_tasks()
+        for task in tasks:
+            if task["type"] == self.type and ((
+                        self.target_key == "designDocument" and task[self.target_key] == self.target_value) or (
+                        self.target_key == "original_target" and task[self.target_key]["type"] == self.target_value) or (
+                        self.type == 'indexer') ):
+                self.current_progress = task["progress"]
+                self.task = task
+                log.info("monitoring active task was found:" + str(task))
+                log.info("progress %s:%s - %s %%" % (self.type, self.target_value, task["progress"]))
+                if self.current_progress >= self.wait_progress:
+                    log.info("expected progress was gotten: %s" % self.current_progress)
+                    return True
+
+                else:
+                    return self.check()
+        if self.wait_task:
+            # task is not performed
+            log.error("expected active task %s:%s was not found" % (self.type, self.target_value))
+            return False
+        else:
+            # task was completed
+            log.info("task for monitoring %s:%s completed" % (self.type, self.target_value))
+            return True
+
+
+    def check(self):
+        while(1):
+            tasks = self.rest.active_tasks()
+            for task in tasks:
+                # if task still exists
+                if task == self.task:
+                    log.info("progress %s:%s - %s %%" % (self.type, self.target_value, task["progress"]))
+                    # reached expected progress
+                    if task["progress"] >= self.wait_progress:
+                            log.error("progress was reached %s" % self.wait_progress)
+                            return True
+                    # progress value was changed
+                    if task["progress"] > self.current_progress:
+                        self.current_progress = task["progress"]
+                        self.current_iter = 0
+                        break
+                    # progress value was not changed
+                    elif task["progress"] == self.current_progress:
+                        if self.current_iter < self.num_iterations:
+                            time.sleep(2)
+                            self.current_iter += 1
+                            break
+                        # num iteration with the same progress = num_iterations
+                        else:
+                            log.error("progress for active task was not changed during %s sec" % 2 * self.num_iterations)
+                            return False
+                    else:
+                        log.error("progress for task %s:%s changed direction!" % (self.type, self.target_value))
+                        return False
+
+        # task was completed
+        log.info("task %s:%s was completed" % (self.type, self.target_value))
+        return True
 
 class TestTask(Callable):
     def __init__(self, timeout):

@@ -389,10 +389,10 @@ class RebalanceInTests(RebalanceBaseTest):
                 # run queries to create indexes
                 self.bucket_util.query_view(self.cluster.master, prefix + ddoc_name, view.name, query)
 
-        active_tasks = self.bucket_util.async_monitor_active_task(self.cluster.servers[:self.nodes_init], "indexer",
+        active_tasks = self.cluster_util.async_monitor_active_task(self.cluster.servers[:self.nodes_init], "indexer",
                                                               "_design/" + prefix + ddoc_name, wait_task=False)
         for active_task in active_tasks:
-            result = active_task.result()
+            result = self.task_manager.get_task_result(active_task)
             self.assertTrue(result)
 
         expected_rows = None
