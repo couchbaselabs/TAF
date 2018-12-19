@@ -402,8 +402,9 @@ class RebalanceInTests(RebalanceBaseTest):
         query["stale"] = "false"
 
         for bucket in self.bucket_util.buckets:
-            self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, bucket=bucket, wait_time=timeout,
-                                        expected_rows=expected_rows)
+            self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
+                                                    query, bucket=bucket, wait_time=timeout,
+                                                    expected_rows=expected_rows)
         for i in xrange(iterations_to_try):
             servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
             rebalance = self.task.async_rebalance([self.cluster.master], servs_in, [])
@@ -411,15 +412,17 @@ class RebalanceInTests(RebalanceBaseTest):
 
             # see that the result of view queries are the same as expected during the test
             for bucket in self.bucket_util.buckets:
-                self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, bucket=bucket, wait_time=timeout,
-                                            expected_rows=expected_rows)
+                self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
+                                                        query, bucket=bucket, wait_time=timeout,
+                                                        expected_rows=expected_rows)
 
             self.task.jython_task_manager.get_task_result(rebalance)
             self.cluster.nodes_in_cluster.extend(servs_in)
             # verify view queries results after rebalancing
             for bucket in self.bucket_util.buckets:
-                self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, bucket=bucket, wait_time=timeout,
-                                            expected_rows=expected_rows)
+                self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
+                                                        query, bucket=bucket, wait_time=timeout,
+                                                        expected_rows=expected_rows)
 
             self.bucket_util.verify_cluster_stats(self.num_items)
             if reproducer:
@@ -471,19 +474,20 @@ class RebalanceInTests(RebalanceBaseTest):
             query["limit"] = expected_rows
         query["stale"] = "false"
 
-        self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, wait_time=timeout, expected_rows=expected_rows)
+        self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
+                                                query, wait_time=timeout, expected_rows=expected_rows)
         query["stale"] = "update_after"
         for i in range(1, self.num_servers, 2):
             rebalance = self.task.async_rebalance(self.cluster.servers[:i], self.cluster.servers[i:i + 2], [])
             self.sleep(self.wait_timeout / 5)
             # see that the result of view queries are the same as expected during the test
-            self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, wait_time=timeout,
-                                        expected_rows=expected_rows)
+            self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
+                                                    query, wait_time=timeout, expected_rows=expected_rows)
             # verify view queries results after rebalancing
             self.task.jython_task_manager.get_task_result(rebalance)
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
-            self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, wait_time=timeout,
-                                        expected_rows=expected_rows)
+            self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
+                                                    query, wait_time=timeout, expected_rows=expected_rows)
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -587,8 +591,8 @@ class RebalanceInTests(RebalanceBaseTest):
 
         query["stale"] = "false"
 
-        self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, query, wait_time=self.wait_timeout * 3,
-                                    expected_rows=expected_rows)
+        self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
+                                                query, wait_time=self.wait_timeout * 3, expected_rows=expected_rows)
 
         compaction_task = self.cluster.async_compact_view(self.cluster.master, prefix + ddoc_name, 'default',
                                                           with_rebalance=True)
