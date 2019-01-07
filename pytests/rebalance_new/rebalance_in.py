@@ -309,6 +309,7 @@ class RebalanceInTests(RebalanceBaseTest):
     Once all nodes have been rebalanced in the test is finished."""
 
     def incremental_rebalance_in_with_ops(self):
+        num_of_items = self.num_items
         for i in range(1, self.num_servers, 2):
             tasks = [self.task.async_rebalance(self.cluster.servers[:i], self.cluster.servers[i:i + 2], [])]
             if self.doc_ops is not None:
@@ -321,21 +322,26 @@ class RebalanceInTests(RebalanceBaseTest):
                                                               pause_secs=5, timeout_secs=180))
                     elif ("create" in self.doc_ops):
                         # 1/2th of initial data will be added in each iteration
-                        gen_create = self._get_doc_generator(self.num_items * (1 + i) / 2.0,
-                                                   self.num_items * (1 + i / 2.0))
+                        tem_num_items = int(self.num_items * (1 + i / 2.0))
+                        gen_create = self._get_doc_generator(num_of_items,
+                                                             tem_num_items)
+                        num_of_items = tem_num_items
                         tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0, batch_size=20000,
                                                               pause_secs=5, timeout_secs=180))
                     elif ("delete" in self.doc_ops):
                         # 1/(num_servers) of initial data will be removed after each iteration
                         # at the end we should get empty base( or couple items)
-                        gen_delete = self._get_doc_generator(int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1,
-                                                   int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0))))
+                        tem_del_start_num = int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1
+                        tem_del_end_num = int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0)))
+                        gen_delete = self._get_doc_generator(tem_del_start_num,
+                                                             tem_del_end_num)
+                        self.num_items -= (tem_del_end_num - tem_del_start_num + 1)
                         tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0, batch_size=20000,
                                                               pause_secs=5, timeout_secs=180))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
-            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_cluster_stats(num_of_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     """Rebalances nodes into a cluster  during view queries.
@@ -373,7 +379,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             temp = self.bucket_util.make_default_views(self.default_view, num_views,
                                            is_dev_ddoc, different_map=reproducer)
-            temp_tasks = self.bucket_util.async_create_views(self.cluster.master, ddoc_name, temp, bucket)
+            temp_tasks = self.bucket_util.async_create_views(self.cluster.master, prefix + ddoc_name, temp, bucket)
             views += temp
             tasks += temp_tasks
 
@@ -395,7 +401,7 @@ class RebalanceInTests(RebalanceBaseTest):
             result = self.task_manager.get_task_result(active_task)
             self.assertTrue(result)
 
-        expected_rows = None
+        expected_rows = self.num_items
         if self.max_verify:
             expected_rows = self.max_verify
             query["limit"] = expected_rows
@@ -455,7 +461,7 @@ class RebalanceInTests(RebalanceBaseTest):
         query["connectionTimeout"] = 60000
         query["full_set"] = "true"
         tasks = []
-        tasks = self.bucket_util.async_create_views(self.cluster.master, ddoc_name, views, 'default')
+        tasks = self.bucket_util.async_create_views(self.cluster.master, prefix + ddoc_name, views, 'default')
         for task in tasks:
             self.task_manager.get_task_result(task)
         for view in views:
@@ -465,7 +471,7 @@ class RebalanceInTests(RebalanceBaseTest):
         active_tasks = self.cluster_util.async_monitor_active_task(self.cluster.master, "indexer", "_design/" + prefix + ddoc_name,
                                                               wait_task=False)
         for active_task in active_tasks:
-            result = active_task.result()
+            result = active_task.check()
             self.assertTrue(result)
 
         expected_rows = None
@@ -560,7 +566,7 @@ class RebalanceInTests(RebalanceBaseTest):
             query["limit"] = expected_rows
 
         tasks = []
-        tasks = self.bucket_util.async_create_views(self.cluster.master, ddoc_name, views, 'default')
+        tasks = self.bucket_util.async_create_views(self.cluster.master, prefix + ddoc_name, views, 'default')
         for task in tasks:
             self.task_manager.get_task_result(task)
         self.bucket_util.disable_compaction()
@@ -582,7 +588,8 @@ class RebalanceInTests(RebalanceBaseTest):
         fragmentation_monitor.result()
 
         for i in xrange(3):
-            active_tasks = self.cluster.async_monitor_active_task(self.cluster.master, "indexer", "_design/" + ddoc_name,
+            active_tasks = self.cluster.async_monitor_active_task(self.cluster.master, "indexer",
+                                                                  "_design/" + prefix + ddoc_name,
                                                                   wait_task=False)
             for active_task in active_tasks:
                 result = active_task.result()
