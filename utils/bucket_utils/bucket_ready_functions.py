@@ -1267,7 +1267,7 @@ class bucket_utils():
         memcacheds, vbucket_map, vbucket_map_replica = obj.request_map(rest, bucket)
         #Create dictionary with key:"ip:port" and value: a list of vbuckets
         server_dict = defaultdict(list)
-        for everyID in range(0, vbucket_count - 1):
+        for everyID in range(0, vbucket_count):
             memcached_ip_port = str(vbucket_map[everyID])
             server_dict[memcached_ip_port].append(everyID)
         while time.time() < end_time and len(ready_vbuckets) < vbucket_count:
