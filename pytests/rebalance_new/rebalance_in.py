@@ -34,6 +34,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.cluster.nodes_in_cluster.extend(servs_in)
+        self.sleep(20, "Wait for cluster to be ready after rebalance")
         tasks = []
         for bucket in self.bucket_util.buckets:
             if (self.doc_ops is not None):
@@ -341,6 +342,7 @@ class RebalanceInTests(RebalanceBaseTest):
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
+            self.sleep(20, "Wait for cluster to be ready after rebalance")
             self.bucket_util.verify_cluster_stats(num_of_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
