@@ -14,12 +14,7 @@ class RebalanceInTests(RebalanceBaseTest):
         
     def tearDown(self):
         super(RebalanceInTests, self).tearDown()
-
-    def _wait_for_memcached_ready(self):
-        for node in self.cluster.nodes_in_cluster:
-            for bucket in self.bucket_util.buckets:
-                self.bucket_util.wait_for_memcached(node, bucket)
-
+    
     def test_rebalance_in_with_ops(self):
         gen_create = self._get_doc_generator(self.num_items, self.num_items * 2)
         gen_delete = self._get_doc_generator(self.num_items / 2, self.num_items)
@@ -39,7 +34,6 @@ class RebalanceInTests(RebalanceBaseTest):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.cluster.nodes_in_cluster.extend(servs_in)
-        self._wait_for_memcached_ready()
         tasks = []
         for bucket in self.bucket_util.buckets:
             if (self.doc_ops is not None):
@@ -347,7 +341,6 @@ class RebalanceInTests(RebalanceBaseTest):
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
-            self._wait_for_memcached_ready()
             self.bucket_util.verify_cluster_stats(num_of_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
