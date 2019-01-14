@@ -34,7 +34,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.cluster.nodes_in_cluster.extend(servs_in)
-        self.sleep(20, "Wait for cluster to be ready after rebalance")
+        self.sleep(60, "Wait for cluster to be ready after rebalance")
         tasks = []
         for bucket in self.bucket_util.buckets:
             if (self.doc_ops is not None):
@@ -78,6 +78,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])
         self.task.jython_task_manager.get_task_result(rebalance)
+        self.sleep(60)
         self.cluster.nodes_in_cluster.extend(servs_in)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
@@ -128,6 +129,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="full")
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])
         self.task.jython_task_manager.get_task_result(rebalance)
+        self.sleep(60)
         self.cluster.nodes_in_cluster.extend(servs_in)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
@@ -179,7 +181,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.nodes = self.rest.node_statuses()
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[chosen[0].id])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance Failed")
-
+        self.sleep(60)
         # Verification
         new_server_list = self.add_remove_servers(self.cluster.servers, self.cluster.servers[:self.nodes_init], [chosen[0]],
                                                   [self.cluster.servers[self.nodes_init]])
@@ -228,6 +230,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.cluster.nodes_in_cluster.extend(servs_in)
+        self.sleep(60)
         self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -251,6 +254,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                        pause_secs=5, timeout_secs=180)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.cluster.nodes_in_cluster.extend(servs_in)
+        self.sleep(60)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -291,6 +295,7 @@ class RebalanceInTests(RebalanceBaseTest):
 
         self.task.jython_task_manager.get_task_result(rebalance)
         self.cluster.nodes_in_cluster.extend(servs_in)
+        self.sleep(60)
         # get random keys for new added nodes
         rest_cons = [RestConnection(self.cluster.servers[i]) for i in xrange(self.nodes_init + self.nodes_in)]
         list_threads = []
@@ -342,7 +347,7 @@ class RebalanceInTests(RebalanceBaseTest):
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
-            self.sleep(20, "Wait for cluster to be ready after rebalance")
+            self.sleep(60, "Wait for cluster to be ready after rebalance")
             self.bucket_util.verify_cluster_stats(num_of_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -426,6 +431,7 @@ class RebalanceInTests(RebalanceBaseTest):
 
             self.task.jython_task_manager.get_task_result(rebalance)
             self.cluster.nodes_in_cluster.extend(servs_in)
+            self.sleep(60)
             # verify view queries results after rebalancing
             for bucket in self.bucket_util.buckets:
                 self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
@@ -494,6 +500,7 @@ class RebalanceInTests(RebalanceBaseTest):
             # verify view queries results after rebalancing
             self.task.jython_task_manager.get_task_result(rebalance)
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
+            self.sleep(60)
             self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
                                                     query, wait_time=timeout, expected_rows=expected_rows)
             self.bucket_util.verify_cluster_stats(self.num_items)
@@ -534,6 +541,7 @@ class RebalanceInTests(RebalanceBaseTest):
             rebalance = self.task.async_rebalance(servs_init + servs_in, [], [])
             self.cluster.nodes_in_cluster.extend(servs_in)
             self.task.jython_task_manager.get_task_result(rebalance)
+        self.sleep(60)
         self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
