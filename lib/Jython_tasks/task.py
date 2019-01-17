@@ -937,7 +937,7 @@ class StatsWaitTask(Task):
         for server in self.cluster.nodes_in_cluster:
             try:
                 client = self._get_connection(server)
-                stats = client.stats(self.param)
+                stats = client.stats()
                 if not stats.has_key(self.stat):
                     self.set_exception(Exception("Stat {0} not found".format(self.stat)))
                     self.stop = True
