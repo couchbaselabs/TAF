@@ -936,10 +936,9 @@ class StatsWaitTask(Task):
         stat_result = 0
         for server in self.cluster.nodes_in_cluster:
             try:
-                for i in range(0,6):
-                    client = self._get_connection(server)
-                    stats = client.stats(self.param)
-                    time.sleep(30)
+                client = self._get_connection_single(server)
+                stats = client.stats(self.param)
+                client.close()
                 if not stats.has_key(self.stat):
                     self.set_exception(Exception("Stat {0} not found".format(self.stat)))
                     self.stop = True
@@ -965,6 +964,15 @@ class StatsWaitTask(Task):
 
     def _stringify_servers(self):
         return ''.join([`server.ip + ":" + str(server.port)` for server in self.cluster.nodes_in_cluster])
+    
+    def _get_connection_single(self, server, admin_user='cbadminbucket', admin_pass='password'):
+        try:
+            conn = MemcachedClientHelper.direct_client(server, self.bucket, admin_user=admin_user,
+                                                                             admin_pass=admin_pass)
+            return conn
+        except (EOFError, socket.error):
+            log.error("failed to create direct client, retry in 1 sec")
+            time.sleep(1)
 
     def _get_connection(self, server, admin_user='cbadminbucket', admin_pass='password'):
         if not self.conns.has_key(server):
