@@ -633,7 +633,7 @@ class cluster_utils():
             self.log.info("{0} => {1}".format(cluster_node, node_stats))
         self.log.info("--- End of cluster statistics ---")
 
-    def async_print_cluster_stats(self, sleep=5):
+    def async_print_cluster_stats(self, sleep=300):
         _task = PrintClusterStats(self.cluster.master,sleep)
         self.task_manager.add_new_task(_task)
         return _task

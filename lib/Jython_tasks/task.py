@@ -936,8 +936,10 @@ class StatsWaitTask(Task):
         stat_result = 0
         for server in self.cluster.nodes_in_cluster:
             try:
-                client = self._get_connection(server)
-                stats = client.stats(self.param)
+                for i in range(0,6):
+                    client = self._get_connection(server)
+                    stats = client.stats(self.param)
+                    time.sleep(30)
                 if not stats.has_key(self.stat):
                     self.set_exception(Exception("Stat {0} not found".format(self.stat)))
                     self.stop = True
@@ -946,6 +948,7 @@ class StatsWaitTask(Task):
                     stat_result += long(stats[self.stat])
                 else:
                     stat_result = stats[self.stat]
+                    
             except EOFError as ex:
                 self.set_exception(ex)
                 self.stop = True
