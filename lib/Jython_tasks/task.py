@@ -938,7 +938,6 @@ class StatsWaitTask(Task):
         for server in self.cluster.nodes_in_cluster:
             try:
                 client = self._get_connection_single(server)
-                print server
                 stats = client.stats(self.param)
                 client.close()
                 if not stats.has_key(self.stat):
@@ -946,21 +945,13 @@ class StatsWaitTask(Task):
                     self.stop = True
                     return False
                 if stats[self.stat].isdigit():
-                    print "Stat is a digit"
-                    print self.stat
-                    print stats[self.stat]
                     stat_result += long(stats[self.stat])
-                    print "after conversion to long"
-                    print stat_result
                 else:
-                    print "Found the stat"
                     stat_result = stats[self.stat]
             except EOFError as ex:
-                print "Into Exception"
                 self.set_exception(ex)
                 self.stop = True
                 return False
-        print "Outside the for loop over all servers"
         if not self._compare(self.comparison, str(stat_result), self.value):
             log.warn("Not Ready: %s %s %s %s expected on %s, %s bucket" % (self.stat, stat_result,
                                                                            self.comparison, self.value,
@@ -968,7 +959,6 @@ class StatsWaitTask(Task):
             time.sleep(5)
             return False
         else:
-            print 'into else condition'
             self.stop = True
             return True
 
@@ -999,17 +989,11 @@ class StatsWaitTask(Task):
         return self.conns[server]
 
     def _compare(self, cmp_type, a, b):
-        log.info("Into compare with Command type {0}  -- A - {1} -- b - {2}".format(cmp_type,a,b))
         if isinstance(b, (int, long)) and a.isdigit():
-            print "first condition is true"
             a = long(a)
-            log.info ("Print long a {0}".format(a))
         elif isinstance(b, (int, long)) and not a.isdigit():
-            print "first condition else is true"
             return False
-        print "After first condition"
-        print StatsWaitTask.EQUAL
-        log.info("Into compare with Command type {0}  -- A - {1} -- b - {2}".format(cmp_type,a,b))
+        print "Into compare with Command type %s  -- A - %s -- b - %s"  % (cmp_type,a,b)
         if (cmp_type == StatsWaitTask.EQUAL and a == b):
             print "match found"
         else:
