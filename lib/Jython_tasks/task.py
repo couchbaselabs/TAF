@@ -924,6 +924,7 @@ class StatsWaitTask(Task):
         timeout = start_time + self.timeout
         try:
             while not self.stop and time.time() < timeout:
+                print self.stop
                 self._get_stats_and_compare()
         finally:
             for server, conn in self.conns.items():
@@ -967,6 +968,7 @@ class StatsWaitTask(Task):
             time.sleep(5)
             return False
         else:
+            print 'into else condition'
             self.stop = True
             return True
 
@@ -997,10 +999,14 @@ class StatsWaitTask(Task):
         return self.conns[server]
 
     def _compare(self, cmp_type, a, b):
+        log.info("Into compare with Command type {0}  -- A - {1} -- b - {2}".format(cmd_type,a,b))
         if isinstance(b, (int, long)) and a.isdigit():
+            print "first condition is true"
             a = long(a)
         elif isinstance(b, (int, long)) and not a.isdigit():
+            print "first condition else is true"
             return False
+        print "After first condition"
         if (cmp_type == StatsWaitTask.EQUAL and a == b) or \
                 (cmp_type == StatsWaitTask.NOT_EQUAL and a != b) or \
                 (cmp_type == StatsWaitTask.LESS_THAN_EQ and a <= b) or \
