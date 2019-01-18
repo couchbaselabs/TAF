@@ -939,16 +939,19 @@ class StatsWaitTask(Task):
                 client = self._get_connection_single(server)
                 stats = client.stats(self.param)
                 client.close()
+                print stats
                 if not stats.has_key(self.stat):
                     self.set_exception(Exception("Stat {0} not found".format(self.stat)))
                     self.stop = True
                     return False
                 if stats[self.stat].isdigit():
+                    print "Stat is a digit"
                     stat_result += long(stats[self.stat])
                 else:
+                    print "Found the stat"
                     stat_result = stats[self.stat]
-                    
             except EOFError as ex:
+                print "Into Exception"
                 self.set_exception(ex)
                 self.stop = True
                 return False
