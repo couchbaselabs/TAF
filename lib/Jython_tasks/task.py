@@ -1003,10 +1003,17 @@ class StatsWaitTask(Task):
         if isinstance(b, (int, long)) and a.isdigit():
             print "first condition is true"
             a = long(a)
+            log.info ("Print long a {0}".format(a))
         elif isinstance(b, (int, long)) and not a.isdigit():
             print "first condition else is true"
             return False
         print "After first condition"
+        print StatsWaitTask.EQUAL
+        log.info("Into compare with Command type {0}  -- A - {1} -- b - {2}".format(cmp_type,a,b))
+        if (cmp_type == StatsWaitTask.EQUAL and a == b):
+            print "match found"
+        else:
+            print "mismatch"
         if (cmp_type == StatsWaitTask.EQUAL and a == b) or \
                 (cmp_type == StatsWaitTask.NOT_EQUAL and a != b) or \
                 (cmp_type == StatsWaitTask.LESS_THAN_EQ and a <= b) or \
