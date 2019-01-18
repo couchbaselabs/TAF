@@ -999,7 +999,7 @@ class StatsWaitTask(Task):
         return self.conns[server]
 
     def _compare(self, cmp_type, a, b):
-        log.info("Into compare with Command type {0}  -- A - {1} -- b - {2}".format(cmd_type,a,b))
+        log.info("Into compare with Command type {0}  -- A - {1} -- b - {2}".format(cmp_type,a,b))
         if isinstance(b, (int, long)) and a.isdigit():
             print "first condition is true"
             a = long(a)
