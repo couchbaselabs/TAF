@@ -946,7 +946,7 @@ class StatsWaitTask(Task):
                 if stats[self.stat].isdigit():
                     print "Stat is a digit"
                     print self.stat
-                    print stats[self.stats]
+                    print stats[self.stat]
                     stat_result += long(stats[self.stat])
                     print stat_result
                 else:
