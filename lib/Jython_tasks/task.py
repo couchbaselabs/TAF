@@ -937,6 +937,7 @@ class StatsWaitTask(Task):
         for server in self.cluster.nodes_in_cluster:
             try:
                 client = self._get_connection_single(server)
+                print server
                 stats = client.stats(self.param)
                 client.close()
                 if not stats.has_key(self.stat):
@@ -948,6 +949,7 @@ class StatsWaitTask(Task):
                     print self.stat
                     print stats[self.stat]
                     stat_result += long(stats[self.stat])
+                    print "after conversion to long"
                     print stat_result
                 else:
                     print "Found the stat"
