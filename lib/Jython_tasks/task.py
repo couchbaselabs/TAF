@@ -939,14 +939,16 @@ class StatsWaitTask(Task):
                 client = self._get_connection_single(server)
                 stats = client.stats(self.param)
                 client.close()
-                print stats
                 if not stats.has_key(self.stat):
                     self.set_exception(Exception("Stat {0} not found".format(self.stat)))
                     self.stop = True
                     return False
                 if stats[self.stat].isdigit():
                     print "Stat is a digit"
+                    print self.stat
+                    print stats[self.stats]
                     stat_result += long(stats[self.stat])
+                    print stat_result
                 else:
                     print "Found the stat"
                     stat_result = stats[self.stat]
@@ -955,6 +957,7 @@ class StatsWaitTask(Task):
                 self.set_exception(ex)
                 self.stop = True
                 return False
+        print "Outside the for loop over all servers"
         if not self._compare(self.comparison, str(stat_result), self.value):
             log.warn("Not Ready: %s %s %s %s expected on %s, %s bucket" % (self.stat, stat_result,
                                                                            self.comparison, self.value,
