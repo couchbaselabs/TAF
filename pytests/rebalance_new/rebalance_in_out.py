@@ -31,7 +31,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         if self.zone > 1:
             self.shuffle_nodes_between_zones_and_rebalance()
         gen = self._get_doc_generator(0, self.num_items)
-        self._load_all_buckets(gen, "create", 0)
         tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
@@ -76,7 +75,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         recovery_type = self.input.param("recoveryType", "full")
         gen = self._get_doc_generator(0, self.num_items)
-        self._load_all_buckets(gen, "create", 0)
         tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
@@ -126,7 +124,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         fail_over = self.input.param("fail_over", False)
         gen = self._get_doc_generator(0, self.num_items)
-        self._load_all_buckets(gen, "create", 0)
         tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
@@ -172,7 +169,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
         gen = self._get_doc_generator(0, self.num_items)
-        self._load_all_buckets(gen, "create", 0)
         batch_size = 50
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0,
@@ -204,7 +200,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
         gen = self._get_doc_generator(0, self.num_items)
-        self._load_all_buckets(gen, "create", 0)
         batch_size = 50
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=batch_size, timeout_secs=60)
@@ -242,7 +237,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         init_num_nodes = self.input.param("init_num_nodes", 1)
         #self.add_remove_servers_and_rebalance(self.cluster.servers[1:init_num_nodes], [])
         gen = self._get_doc_generator(0, self.num_items)
-        self._load_all_buckets(gen, "create", 0)
         for i in range(self.num_servers):
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=10, timeout_secs=60)
             self.add_remove_servers_and_rebalance(self.cluster.servers[init_num_nodes:init_num_nodes + i + 1], [])
