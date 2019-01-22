@@ -16,8 +16,8 @@ class RebalanceInTests(RebalanceBaseTest):
         super(RebalanceInTests, self).tearDown()
     
     def test_rebalance_in_with_ops(self):
-        gen_create = self._get_doc_generator(self.num_items, self.num_items * 2)
-        gen_delete = self._get_doc_generator(self.num_items / 2, self.num_items)
+        gen_create = self.get_doc_generator(self.num_items, self.num_items * 2)
+        gen_delete = self.get_doc_generator(self.num_items / 2, self.num_items)
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
         tasks = []
         task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])
@@ -61,7 +61,7 @@ class RebalanceInTests(RebalanceBaseTest):
        Once all nodes have been rebalanced in the test is finished."""
 
     def rebalance_in_after_ops(self):
-        gen_update = self._get_doc_generator(0, self.num_items)
+        gen_update = self.get_doc_generator(0, self.num_items)
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_update, "update", 0))
@@ -105,7 +105,7 @@ class RebalanceInTests(RebalanceBaseTest):
     Once all nodes have been rebalanced in the test is finished."""
 
     def rebalance_in_with_failover_full_addback_recovery(self):
-        gen_update = self._get_doc_generator(0, self.num_items)
+        gen_update = self.get_doc_generator(0, self.num_items)
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks += self.bucket_util._async_load_all_buckets(self.cluster, bucket, self.cluster.master, gen_update, "update", 0)
@@ -154,7 +154,7 @@ class RebalanceInTests(RebalanceBaseTest):
 
     def rebalance_in_with_failover(self):
         fail_over = self.input.param("fail_over", False)
-        gen_update = self._get_doc_generator(0, self.num_items)
+        gen_update = self.get_doc_generator(0, self.num_items)
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_update, "update", 0)
@@ -217,14 +217,14 @@ class RebalanceInTests(RebalanceBaseTest):
                                                           pause_secs=5, timeout_secs=180)
                 elif ("create" in self.doc_ops):
                     # 1/2th of initial data will be added in each iteration
-                    gen_create = self._get_doc_generator(self.num_items * (1 + i) / 2.0, self.num_items * (1 + i / 2.0))
+                    gen_create = self.get_doc_generator(self.num_items * (1 + i) / 2.0, self.num_items * (1 + i / 2.0))
                     tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_create, "create", 0, batch_size=20000,
                                                           pause_secs=5, timeout_secs=180)
                 elif ("delete" in self.doc_ops):
                     # 1/(num_servers) of initial data will be removed after each iteration
                     # at the end we should get empty base( or couple items)
-                    gen_delete = self._get_doc_generator(int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1,
-                                                         int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0))))
+                    gen_delete = self.get_doc_generator(int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1,
+                                                        int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0))))
                     tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_delete, "delete", 0, batch_size=20000,
                                                           pause_secs=5, timeout_secs=180)
         for task in tasks:
@@ -236,8 +236,8 @@ class RebalanceInTests(RebalanceBaseTest):
 
 
     def rebalance_in_with_ops_batch(self):
-        gen_delete = self._get_doc_generator((self.num_items / 2 - 1), self.num_items)
-        gen_create = self._get_doc_generator(self.num_items + 1, self.num_items * 3 / 2)
+        gen_delete = self.get_doc_generator((self.num_items / 2 - 1), self.num_items)
+        gen_create = self.get_doc_generator(self.num_items + 1, self.num_items * 3 / 2)
         servs_in = [self.cluster.servers[i + 1] for i in range(self.nodes_in)]
         rebalance = self.task.async_rebalance(self.cluster.servers[:1], servs_in, [])
         if (self.doc_ops is not None):
@@ -329,8 +329,8 @@ class RebalanceInTests(RebalanceBaseTest):
                     elif ("create" in self.doc_ops):
                         # 1/2th of initial data will be added in each iteration
                         tem_num_items = int(self.num_items * (1 + i / 2.0))
-                        gen_create = self._get_doc_generator(num_of_items,
-                                                             tem_num_items)
+                        gen_create = self.get_doc_generator(num_of_items,
+                                                            tem_num_items)
                         num_of_items = tem_num_items
                         tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0, batch_size=20000,
                                                               pause_secs=5, timeout_secs=180))
@@ -339,8 +339,8 @@ class RebalanceInTests(RebalanceBaseTest):
                         # at the end we should get empty base( or couple items)
                         tem_del_start_num = int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1
                         tem_del_end_num = int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0)))
-                        gen_delete = self._get_doc_generator(tem_del_start_num,
-                                                             tem_del_end_num)
+                        gen_delete = self.get_doc_generator(tem_del_start_num,
+                                                            tem_del_end_num)
                         self.num_items -= (tem_del_end_num - tem_del_start_num + 1)
                         tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0, batch_size=20000,
                                                               pause_secs=5, timeout_secs=180))
@@ -633,8 +633,8 @@ class RebalanceInTests(RebalanceBaseTest):
     Once all nodes have been rebalanced in the test is finished."""
 
     def incremental_rebalance_in_with_mutation_and_deletion(self):
-        gen_delete = self._get_doc_generator(self.num_items / 2,
-                                   self.num_items)
+        gen_delete = self.get_doc_generator(self.num_items / 2,
+                                            self.num_items)
 
         for i in range(self.num_servers)[1:]:
             rebalance = self.task.async_rebalance(self.cluster.servers[:i], [self.cluster.servers[i]], [])
@@ -657,8 +657,8 @@ class RebalanceInTests(RebalanceBaseTest):
     Once all nodes have been rebalanced in the test is finished."""
 
     def incremental_rebalance_in_with_mutation_and_expiration(self):
-        gen_2 = self._get_doc_generator(self.num_items / 2,
-                              self.num_items)
+        gen_2 = self.get_doc_generator(self.num_items / 2,
+                                       self.num_items)
         for i in range(self.num_servers)[1:]:
             rebalance = self.task.async_rebalance(self.cluster.servers[:i], [self.cluster.servers[i]], [])
             self._load_all_buckets(self.cluster.master, self.gen_update, "update", 0)

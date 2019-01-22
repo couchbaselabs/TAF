@@ -30,7 +30,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         # Shuffle the nodes if zone > 1 is specified.
         if self.zone > 1:
             self.shuffle_nodes_between_zones_and_rebalance()
-        gen = self._get_doc_generator(0, self.num_items)
+        gen = self.get_doc_generator(0, self.num_items)
         tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
@@ -74,12 +74,12 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         recovery_type = self.input.param("recoveryType", "full")
-        gen = self._get_doc_generator(0, self.num_items)
+        gen = self.get_doc_generator(0, self.num_items)
         tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
         for task in tasks:
-            task.result(self.wait_timeout * 20)
+            self.task_manager.get_task_result(task)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
@@ -123,12 +123,12 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         fail_over = self.input.param("fail_over", False)
-        gen = self._get_doc_generator(0, self.num_items)
+        gen = self.get_doc_generator(0, self.num_items)
         tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
         for task in tasks:
-            task.result(self.wait_timeout * 20)
+            self.task_manager.get_task_result(task)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
@@ -168,7 +168,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
-        gen = self._get_doc_generator(0, self.num_items)
+        gen = self.get_doc_generator(0, self.num_items)
         batch_size = 50
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0,
@@ -199,7 +199,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
-        gen = self._get_doc_generator(0, self.num_items)
+        gen = self.get_doc_generator(0, self.num_items)
         batch_size = 50
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=batch_size, timeout_secs=60)
@@ -236,7 +236,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         init_num_nodes = self.input.param("init_num_nodes", 1)
         #self.add_remove_servers_and_rebalance(self.cluster.servers[1:init_num_nodes], [])
-        gen = self._get_doc_generator(0, self.num_items)
+        gen = self.get_doc_generator(0, self.num_items)
         for i in range(self.num_servers):
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=10, timeout_secs=60)
             self.add_remove_servers_and_rebalance(self.cluster.servers[init_num_nodes:init_num_nodes + i + 1], [])
@@ -263,7 +263,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
-        gen_delete = self._get_doc_generator(self.num_items / 2 + 2000, self.num_items)
+        gen_delete = self.get_doc_generator(self.num_items / 2 + 2000, self.num_items)
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0,
                                                  pause_secs=5, batch_size=1, timeout_secs=60)
@@ -274,7 +274,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.sleep(60)
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
             for task in tasks:
-                task.result(self.wait_timeout * 30)
+                self.task_manager.get_task_result(task)
             self._load_all_buckets(self.cluster.master, gen_delete, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
 

@@ -25,7 +25,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.create_default_bucket()
         self.bucket_util.add_rbac_user()
 
-        gen_create = self._get_doc_generator(0, self.num_items)
+        gen_create = self.get_doc_generator(0, self.num_items)
         #gen_create = BlobGenerator('mike', 'mike-', self.value_size, start=self.num_items + 1, end=self.num_items * 3 / 2)
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
@@ -35,9 +35,9 @@ class RebalanceBaseTest(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)
-        self.gen_load = self._get_doc_generator(0, self.num_items)
+        self.gen_load = self.get_doc_generator(0, self.num_items)
         # gen_update is used for doing mutation for 1/2th of uploaded data
-        self.gen_update = self._get_doc_generator(0, (self.num_items / 2 - 1))
+        self.gen_update = self.get_doc_generator(0, (self.num_items / 2 - 1))
         self.log.info("==========Finished rebalance base setup========")
 
     def tearDown(self):
@@ -120,7 +120,7 @@ class RebalanceBaseTest(BaseTestCase):
                     initial_list.remove(server)
         return initial_list
 
-    def _get_doc_generator(self, start, end):
+    def get_doc_generator(self, start, end):
         age = range(5)
         first = ['james', 'sharon']
         body = [''.rjust(self.doc_size - 10, 'a')]
