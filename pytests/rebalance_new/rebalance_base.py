@@ -105,6 +105,7 @@ class RebalanceBaseTest(BaseTestCase):
             rest.add_node(user=serverinfo.rest_username, password=serverinfo.rest_password,
                           remoteIp=node.ip)
         self.shuffle_nodes_between_zones_and_rebalance(to_remove)
+        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster + to_add) - set(to_remove))
 
     def add_remove_servers(self, servers=[], list=[], remove_list=[], add_list=[]):
         """ Add or Remove servers from server list """
