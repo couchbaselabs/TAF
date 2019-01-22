@@ -12,14 +12,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
     def tearDown(self):
         super(RebalanceInOutTests, self).tearDown()
 
-    def _get_doc_generator(self, start, end):
-        age = range(5)
-        first = ['james', 'sharon']
-        body = [''.rjust(self.doc_size - 10, 'a')]
-        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-        generator = DocumentGenerator(self.key, template, age, first, body, start=start,
-                                      end=end)
-        return generator
 
     def test_rebalance_in_out_after_mutation(self):
         """

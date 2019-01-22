@@ -89,11 +89,9 @@ class RebalanceOutTests(RebalanceBaseTest):
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
         record_data_set = self.bucket_util.get_data_set_all(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:1], [], servs_out)
-        self.task.jython_task_manager.get_task_result(rebalance)
-        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-        self.bucket_util._verify_stats_all_buckets(self.num_items, timeout=120)
-        self.bucket_util.verify_cluster_stats(check_ep_items_remaining=True)
+        self.add_remove_servers_and_rebalance([], servs_out)
+        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats,
                                                          self.cluster.servers[:self.num_servers - self.nodes_out], self.bucket_util.buckets)
         new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(prev_vbucket_stats,
@@ -147,9 +145,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         # Mark Node for full recovery
         if success_failed_over:
             self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="full")
-        rebalance = self.task.async_rebalance(self.cluster.servers[:1], [], servs_out)
-        self.task.jython_task_manager.get_task_result(rebalance)
-        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
+        self.add_remove_servers_and_rebalance([], servs_out)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.servers[:self.num_servers - self.nodes_out], self.bucket_util.buckets)
         self.sleep(30)
@@ -187,7 +183,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             for task in tasks:
                 self.task_manager.get_task_result(task)
         ejectedNode = self.cluster_util.find_node_info(self.cluster.master, self.cluster.servers[self.nodes_init - 1])
-        self.bucket_util._verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
@@ -203,6 +199,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.nodes = self.rest.node_statuses()
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[chosen[0].id, ejectedNode.id])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
+        self.cluster.nodes_in_cluster = new_server_list
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         self.sleep(30)
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.bucket_util.buckets)
@@ -226,8 +223,9 @@ class RebalanceOutTests(RebalanceBaseTest):
         gen_create = self._get_doc_generator(self.num_items + 1, self.num_items * 3 / 2)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
         tasks = [self.task.async_rebalance(self.cluster.servers[:1], [], servs_out)]
+        compaction_task = []
         for bucket in self.bucket_util.buckets:
-            tasks.append(self.cluster.async_compact_bucket(self.cluster.master, bucket))
+            compaction_task.append(self.cluster.async_compact_bucket(self.cluster.master, bucket))
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         if (self.doc_ops is not None):
@@ -239,8 +237,10 @@ class RebalanceOutTests(RebalanceBaseTest):
             if ("delete" in self.doc_ops):
                 tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0)
                 self.num_items = self.num_items - (self.num_items / 2)
-            for task in tasks:
-                self.task_manager.get_task_result(task)
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+        for task in compaction_task:
+            self.task_manager.get_task_result(task)
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -335,7 +335,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         prefix = ("", "dev_")[is_dev_ddoc]
 
         query = {}
-        query["connectionTimeout"] = 60000;
+        query["connectionTimeout"] = 60000
         query["full_set"] = "true"
 
         views = []
@@ -535,7 +535,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             self._load_all_buckets(self.cluster.master, self.gen_update, "update", 0, batch_size=batch_size, timeout_secs=60)
             self._load_all_buckets(self.cluster.master, gen_2, "update", 5, batch_size=batch_size, timeout_secs=60)
             self.task.jython_task_manager.get_task_result(rebalance)
-            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set([self.cluster.servers[i]]))
+            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - {self.cluster.servers[i]})
             self.sleep(5)
             self._load_all_buckets(self.cluster.master, gen_2, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
