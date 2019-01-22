@@ -43,17 +43,17 @@ class RebalanceInOutTests(RebalanceBaseTest):
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-            self.cluster.servers[:self.nodes_init], self.buckets, path=None)
+            self.cluster.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.add_remove_servers_and_rebalance(servs_in, servs_out)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
-        new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats, result_nodes, self.buckets)
-        new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(prev_vbucket_stats, result_nodes, self.buckets,
+        new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats, result_nodes, self.bucket_util.buckets)
+        new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(prev_vbucket_stats, result_nodes, self.bucket_util.buckets,
                                                         perNode=False)
         self.bucket_util.compare_vbucketseq_failoverlogs(new_vbucket_stats, new_failover_stats)
         self.sleep(30)
-        self.bucket_util.data_analysis_active_replica_all(disk_active_dataset, disk_replica_dataset, result_nodes, self.buckets,
+        self.bucket_util.data_analysis_active_replica_all(disk_active_dataset, disk_replica_dataset, result_nodes, self.bucket_util.buckets,
                                               path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster.nodes_in_cluster
@@ -83,10 +83,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
-        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.buckets)
-        prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.buckets)
+        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
+        prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-            self.cluster.servers[:self.nodes_init], self.buckets, path=None)
+            self.cluster.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.rest = RestConnection(self.cluster.master)
         self.nodes = self.cluster.nodes_in_cluster
@@ -132,10 +132,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
-        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.buckets)
-        prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.buckets)
+        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
+        prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-            self.cluster.servers[:self.nodes_init], self.buckets, path=None)
+            self.cluster.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.rest = RestConnection(self.cluster.master)
         chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
@@ -146,9 +146,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.rest.fail_over(chosen[0].id, graceful=fail_over)
         self.shuffle_nodes_between_zones_and_rebalance(servs_out)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
-        self.bucket_util.compare_failovers_logs(prev_failover_stats, result_nodes, self.buckets)
+        self.bucket_util.compare_failovers_logs(prev_failover_stats, result_nodes, self.bucket_util.buckets)
         self.sleep(30)
-        self.bucket_util.data_analysis_active_replica_all(disk_active_dataset, disk_replica_dataset, result_nodes, self.buckets,
+        self.bucket_util.data_analysis_active_replica_all(disk_active_dataset, disk_replica_dataset, result_nodes, self.bucket_util.buckets,
                                               path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster.nodes_in_cluster
