@@ -1585,7 +1585,7 @@ class bucket_utils():
             serverList = vBucketServerMap['serverList']
             bucket.servers.extend(serverList)
             if "numReplicas" in vBucketServerMap:
-                bucket.numReplicas = vBucketServerMap["numReplicas"]
+                bucket.replicaNumber = vBucketServerMap["numReplicas"]
             # vBucketMapForward
             if 'vBucketMapForward' in vBucketServerMap:
                 # let's gather the forward map
@@ -1713,7 +1713,7 @@ class bucket_utils():
     def verify_items_count(self, master, bucket, num_attempt=3, timeout=2):
         #get the #of buckets from rest
         rest = RestConnection(master)
-        replica_factor = bucket.numReplicas
+        replica_factor = bucket.replicaNumber
         vbucket_active_sum = 0
         vbucket_replica_sum = 0
         vbucket_pending_sum = 0

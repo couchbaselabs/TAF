@@ -269,7 +269,7 @@ class RebalanceHelper():
         if isinstance(bucket, Bucket):
             bucket = bucket.name
         bucket_info = rest.get_bucket(bucket, num_attempt, timeout)
-        replica_factor = bucket_info.numReplicas
+        replica_factor = bucket_info.replicaNumber
         vbucket_active_sum = 0
         vbucket_replica_sum = 0
         vbucket_pending_sum = 0

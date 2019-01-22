@@ -52,7 +52,7 @@ class BucketHelper(RestConnection):
                 serverList = vBucketServerMap['serverList']
                 bucket.servers.extend(serverList)
                 if "numReplicas" in vBucketServerMap:
-                    bucket.numReplicas = vBucketServerMap["numReplicas"]
+                    bucket.replicaNumber = vBucketServerMap["numReplicas"]
                 # vBucketMapForward
                 if 'vBucketMapForward' in vBucketServerMap:
                     # let's gather the forward map
@@ -120,7 +120,7 @@ class BucketHelper(RestConnection):
             vbs_active = [vb.id for vb in bucket_to_check.vbuckets
                            if vb.master.startswith(str(server.ip))]
             vbs_replica = []
-            for replica_num in xrange(0, bucket_to_check.numReplicas):
+            for replica_num in xrange(0, bucket_to_check.replicaNumber):
                 vbs_replica.extend([vb.id for vb in bucket_to_check.vbuckets
                                     if vb.replica[replica_num].startswith(str(server.ip))])
             vbuckets_servers[server]['active_vb'] = vbs_active
