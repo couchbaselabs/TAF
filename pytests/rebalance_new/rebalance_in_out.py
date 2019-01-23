@@ -140,11 +140,13 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.rest = RestConnection(self.cluster.master)
         chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
+        result_nodes = [node for node in result_nodes if node.ip != chosen[0].ip]
         for node in servs_in:
             self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password, node.ip, node.port)
         # Mark Node for failover
         self.rest.fail_over(chosen[0].id, graceful=fail_over)
         self.shuffle_nodes_between_zones_and_rebalance(servs_out)
+        self.cluster.nodes_in_cluster = result_nodes
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         self.bucket_util.compare_failovers_logs(prev_failover_stats, result_nodes, self.bucket_util.buckets)
         self.sleep(30)
@@ -205,13 +207,13 @@ class RebalanceInOutTests(RebalanceBaseTest):
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=batch_size, timeout_secs=60)
             compact_tasks = []
             for bucket in self.bucket_util.buckets:
-                compact_tasks.append(self.cluster_util.async_compact_bucket(self.cluster.master, bucket))
+                compact_tasks.append(self.task.async_compact_bucket(self.cluster.master, bucket))
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
             self.sleep(10)
             for task in tasks:
                 self.task_manager.get_task_result(task)
             for task in compact_tasks:
-                task.result(self.wait_timeout * 20)
+                task.get_result(self.wait_timeout * 20)
             tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=batch_size, timeout_secs=60)
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
             for task in tasks:
@@ -275,7 +277,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
             for task in tasks:
                 self.task_manager.get_task_result(task)
-            self._load_all_buckets(self.cluster.master, gen_delete, "create", 0)
+            self._load_all_buckets(gen_delete, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
 
 

@@ -646,7 +646,7 @@ class LoadDocumentsTask(GenericLoadingTask):
 class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators, op_type, exp, flag=0,
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=60, compression=True,
-                 process_concurrency=4, print_ops_rate=True):
+                 process_concurrency=8, print_ops_rate=True):
         super(LoadDocumentsGeneratorsTask, self).__init__("DocumentsLoadGenTask")
         self.cluster = cluster
         self.exp = exp

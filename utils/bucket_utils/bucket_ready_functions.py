@@ -278,18 +278,18 @@ class bucket_utils():
                                  Bucket.evictionPolicy:evictionPolicy, Bucket.maxTTL:maxttl,
                                  Bucket.compressionMode:compression_mode})
                 self.create_bucket(bucket)
-                msg = "create_bucket succeeded but bucket \"{0}\" does not exist"
-                bucket_created = self.wait_for_bucket_creation(bucket.name, bucket_conn)
-                if not bucket_created:
-                    log.error(msg.format(name))
-                    success = False
-                    break
-                if bucket_created:
-                    pass
-#                     self.buckets.append(Bucket(name=name, authType="sasl", saslPassword="",
-#                                                num_replicas=self.num_replicas, bucket_size=self.bucket_size,
-#                                                eviction_policy=self.eviction_policy, lww=self.lww,
-#                                                type=self.bucket_type))
+#                 msg = "create_bucket succeeded but bucket \"{0}\" does not exist"
+#                 bucket_created = self.wait_for_bucket_creation(bucket.name, bucket_conn)
+#                 if not bucket_created:
+#                     log.error(msg.format(name))
+#                     success = False
+#                     break
+#                 if bucket_created:
+#                     pass
+# #                     self.buckets.append(Bucket(name=name, authType="sasl", saslPassword="",
+# #                                                num_replicas=self.num_replicas, bucket_size=self.bucket_size,
+# #                                                eviction_policy=self.eviction_policy, lww=self.lww,
+# #                                                type=self.bucket_type))
         return success
     
     def create_standard_buckets(self, server, num_buckets, bucket_size=None, bucket_priorities=None):
@@ -435,7 +435,7 @@ class bucket_utils():
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=30,
-                                sdk_compression=True, process_concurrency=4):
+                                sdk_compression=True, process_concurrency=8):
         
         """
         Asynchronously applys load generation to all bucekts in the cluster.bucket.name, gen,

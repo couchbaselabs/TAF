@@ -253,7 +253,7 @@ class SwapRebalanceBase(BaseTestCase):
                         self.log.info("Rebalance will be stopped with {0}%".format(progress))
                         stopped = rest.stop_rebalance()
                         self.assertTrue(stopped, msg="unable to stop rebalance")
-                        self.sleep(self, 20)
+                        self.sleep(20)
                         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                                        ejectedNodes=optNodesIds)
                         break
@@ -261,7 +261,7 @@ class SwapRebalanceBase(BaseTestCase):
                         break
                     else:
                         retry += 1
-                        self.sleep(self, 1)
+                        self.sleep(1)
         self.assertTrue(rest.monitorRebalance(),
             msg="rebalance operation failed after adding node {0}".format(optNodesIds))
         self.verification_phase()
@@ -359,7 +359,7 @@ class SwapRebalanceBase(BaseTestCase):
         self.sleep(10)
         # we can't get stats for new node when rebalance falls
         if not self.swap_orchestrator:
-            self.bucket_util._wait_warmup_completed(self, [master], bucket, wait_time=600)
+            self.bucket_util._wait_warmup_completed([master], bucket, wait_time=600)
         i = 0
         # we expect that rebalance will be failed
         try:

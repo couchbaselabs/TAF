@@ -113,7 +113,7 @@ class ServerTasks(object):
         return _task
 
     def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0, only_store_hash=True,
-                            batch_size=1, pause_secs=1, timeout_secs=5, compression=True, process_concurrency=4):
+                            batch_size=1, pause_secs=1, timeout_secs=5, compression=True, process_concurrency=8):
 
         log.info("Loading documents to {}".format(bucket.name))
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
