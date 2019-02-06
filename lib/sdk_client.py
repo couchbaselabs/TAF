@@ -305,25 +305,38 @@ class SDKClient(object):
             except CouchbaseException as e:
                 raise
 
-    def set_multi(self, keys, ttl=0, format=None, persist_to=0, replicate_to=0):
+    def set_multi(self, keys, ttl=0, format=None, persist_to=0, replicate_to=0, retry=5):
         import bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
             docs.append(self.__translate_to_json_document(key, value, ttl))
+
         try:
             doc_op().bulkSet(self.cb, docs)
+            return
         except:
-            time.sleep(20)
-            doc_op().bulkUpsert(self.cb, docs)
-            log.info("Calling close inside SDK due to an exception during bulkSet.")
-#             self.close()
+            while retry > 0:
+                time.sleep(5)
+                log.info("Retrying documents that failed to be inserted")
+                try:
+                    doc_op().bulkUpsert(self.cb, docs)
+                    return
+                except:
+                    retry -= 1
             
-    def upsert_multi(self, keys, ttl=0, persist_to=0, replicate_to=0):
+    def upsert_multi(self, keys, ttl=0, persist_to=0, replicate_to=0, retry=5):
         import bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
             docs.append(self.__translate_to_json_document(key, value, ttl))
-        doc_op().bulkUpsert(self.cb, docs)
+        while retry > 0:
+            try:
+                doc_op().bulkUpsert(self.cb, docs)
+                return
+            except:
+                time.sleep(5)
+                log.info("Retrying documents that failed to be inserted")
+                retry -= 1
         
     def insert(self, key, value, ttl=0, format=None, persist_to=0, replicate_to=0):
         doc = self.__translate_to_json_document(key, value, ttl)
@@ -691,15 +704,15 @@ class SDKSmartClient(object):
     def getr(self, key, replica_index=0):
         return self.client.rget(key,replica_index=replica_index)
 
-    def setMulti(self, exp, flags, key_val_dic, pause = None, timeout = 5.0, parallel=None, format = FMT_AUTO):
+    def setMulti(self, exp, flags, key_val_dic, pause = None, timeout = 5.0, parallel=None, format = FMT_AUTO, retry=5):
 #         try:
 #             self.client.cb.timeout = timeout
-        return self.client.set_multi(key_val_dic, ttl = exp)
+        return self.client.set_multi(key_val_dic, ttl = exp, retry=retry)
 #         finally:
 #             self.client.cb.timeout = self.client.default_timeout
 
-    def upsertMulti(self, exp, flags, key_val_dic, pause = None, timeout = 5.0, parallel=None, format = FMT_AUTO):
-        return self.client.upsert_multi(key_val_dic, ttl = exp)
+    def upsertMulti(self, exp, flags, key_val_dic, pause = None, timeout = 5.0, parallel=None, format = FMT_AUTO, retry=5):
+        return self.client.upsert_multi(key_val_dic, ttl = exp, retry=5)
     
     def getMulti(self, keys_lst, pause = None, timeout_sec = 5.0, parallel=None):
         map = None
