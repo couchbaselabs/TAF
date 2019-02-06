@@ -306,37 +306,45 @@ class SDKClient(object):
                 raise
 
     def set_multi(self, keys, ttl=0, format=None, persist_to=0, replicate_to=0, retry=5):
-        import bulk_doc_operations.doc_ops as doc_op
+        import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
             docs.append(self.__translate_to_json_document(key, value, ttl))
-
-        try:
-            doc_op().bulkSet(self.cb, docs)
-            return
-        except:
-            while retry > 0:
+        success = {}
+        fail = {}
+        while retry > 0:
+            result = doc_op().bulkSet(self.cb, docs)
+            success, fail = self.__translate_upsert_multi(result)
+            if fail:
+                docs = [doc[3] for doc in fail.values()]
+                retry -= 1
                 time.sleep(5)
-                log.info("Retrying documents that failed to be inserted")
-                try:
-                    doc_op().bulkUpsert(self.cb, docs)
-                    return
-                except:
-                    retry -= 1
+            else:
+                return success
+        if retry == 0:
+            log.error("Could not load all documents in this set. Failed set = {}".format(fail.__str__()))
+            return fail
             
     def upsert_multi(self, keys, ttl=0, persist_to=0, replicate_to=0, retry=5):
-        import bulk_doc_operations.doc_ops as doc_op
+        import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
             docs.append(self.__translate_to_json_document(key, value, ttl))
+        success = {}
+        fail = {}
         while retry > 0:
-            try:
-                doc_op().bulkUpsert(self.cb, docs)
-                return
-            except:
+            result = doc_op().bulkUpsert(self.cb, docs)
+            success, fail = self.__translate_upsert_multi(result)
+            if fail:
+                docs = [doc[3] for doc in fail.values()]
+                result -= 1
                 time.sleep(5)
-                log.info("Retrying documents that failed to be inserted")
-                retry -= 1
+            else:
+                return success
+        if retry == 0:
+            log.error("Could not load all documents in this set. Failed set = {}".format(fail.__str__()))
+            return fail
+
         
     def insert(self, key, value, ttl=0, format=None, persist_to=0, replicate_to=0):
         doc = self.__translate_to_json_document(key, value, ttl)
@@ -349,7 +357,7 @@ class SDKClient(object):
             except CouchbaseException as e:
                 raise
 
-    def insert_multi(self, keys,  ttl=0, format=None, persist_to=0, replicate_to=0):
+    def insert_multi(self, keys,  ttl=0, format=None, persist_to=0, replicate_to=0, retry=5):
         import bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
@@ -588,7 +596,24 @@ class SDKClient(object):
         except:
             pass
         return StringDocument.create(key,str(value))
-    
+
+    def __translate_upsert_multi(self, data):
+        success = {}
+        fail = {}
+        if data == None:
+            return success, fail
+        for result in data:
+            res = result['Status']
+            if res:
+                document = result['Document']
+                success[document.id()] = [document.id(), document.cas(), document.content(), document]
+            else:
+                error = result['Error']
+                document = result['Document']
+                fail[document.id()] = [error, document.id(), document.content(), document]
+        return success, fail
+
+
     def __translate_get_multi(self, data):
         map = {}
         if data == None:
@@ -612,14 +637,6 @@ class SDKClient(object):
             return map
         for key, result in data.items():
             map[key] = result.value
-        return map
-
-    def __translate_upsert_multi(self, data):
-        map = {}
-        if data == None:
-            return map
-        for key, result in data.items():
-            map[key] = result
         return map
 
     def __translate_upsert_op(self, data):
@@ -712,7 +729,7 @@ class SDKSmartClient(object):
 #             self.client.cb.timeout = self.client.default_timeout
 
     def upsertMulti(self, exp, flags, key_val_dic, pause = None, timeout = 5.0, parallel=None, format = FMT_AUTO, retry=5):
-        return self.client.upsert_multi(key_val_dic, ttl = exp, retry=5)
+        return self.client.upsert_multi(key_val_dic, ttl = exp, retry=retry)
     
     def getMulti(self, keys_lst, pause = None, timeout_sec = 5.0, parallel=None):
         map = None

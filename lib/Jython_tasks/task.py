@@ -367,7 +367,7 @@ class rebalanceTask(Task):
 
 class GenericLoadingTask(Task):
     def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1, timeout_secs=60, compression=True,
-                 throughput_concurrency=4):
+                 throughput_concurrency=8):
         super(GenericLoadingTask, self).__init__("Loadgen_task")
         self.batch_size = batch_size
         self.pause = pause_secs
