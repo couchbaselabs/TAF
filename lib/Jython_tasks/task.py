@@ -489,7 +489,8 @@ class GenericLoadingTask(Task):
             self.set_exception(error)
 
     # start of batch methods
-    def _create_batch_client(self, key_val, shared_client=None):
+    def batch_create(self, key_val, shared_client=None, persist_to=0, replicate_to=0, timeout=5,
+                     time_unit="seconds"):
         """
         standalone method for creating key/values in batch (sans kvstore)
 
@@ -500,25 +501,26 @@ class GenericLoadingTask(Task):
         try:
             self._process_values_for_create(key_val)
             client = shared_client or self.client
-            client.setMulti(self.exp, self.flag, key_val, self.pause, self.timeout, parallel=False)
+            client.setMulti(self.exp, self.flag, key_val, self.pause, self.timeout, parallel=False,
+                            persist_to=persist_to, replicate_to=replicate_to, timeout=timeout,
+                            time_unit=time_unit)
             # log.info("Batch Operation: %s documents are INSERTED into bucket %s"%(len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
             self.set_exception(error)
 
-    def _create_batch(self, key_val):
-        self._create_batch_client(key_val)
-
-    def _update_batch(self, key_val):
+    def batch_update(self, key_val, persist_to=0, replicate_to=0, timeout=5, time_unit="seconds"):
         try:
             self._process_values_for_update(key_val)
-            self.client.upsertMulti(self.exp, self.flag, key_val, self.pause, self.timeout, parallel=False)
+            self.client.upsertMulti(self.exp, self.flag, key_val, self.pause, self.timeout, parallel=False,
+                                    persist_to=persist_to, replicate_to=replicate_to, timeout=timeout,
+                                    time_unit=time_unit)
             #log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
             self.set_exception(error)
 
-    def _delete_batch(self, key_val):
+    def batch_delete(self, key_val):
         for key, value in key_val.items():
             try:
                 self.client.delete(key)
@@ -528,7 +530,7 @@ class GenericLoadingTask(Task):
             except (ServerUnavailableException, socket.error, EOFError, AttributeError) as error:
                 self.set_exception(error)
 
-    def _read_batch(self, key_val):
+    def batch_read(self, key_val):
         try:
             result_map = self.client.getMulti(key_val.keys(), self.pause, self.timeout)
             # log.info("Batch Operation: %s documents are READ from bucket %s"%(len(key_val), self.bucket))
@@ -572,7 +574,8 @@ class GenericLoadingTask(Task):
 class LoadDocumentsTask(GenericLoadingTask):
 
     def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
-                 proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=30,
+                 persist_to=0, replicate_to=0, time_unit="seconds",
+                 proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, throughput_concurrency=4):
         super(LoadDocumentsTask, self).__init__(cluster, bucket, client, batch_size=batch_size,
                                                 pause_secs=pause_secs,
@@ -583,6 +586,9 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.op_type = op_type
         self.exp = exp
         self.flag = flag
+        self.persist_to = persist_to
+        self.replicate_to = replicate_to
+        self.time_unit = time_unit
 
         if proxy_client:
             log.info("Changing client to proxy %s:%s..." % (proxy_client.host,
@@ -596,13 +602,15 @@ class LoadDocumentsTask(GenericLoadingTask):
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch()
         if self.op_type == 'create':
-            self._create_batch(key_value)
+            self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
+                              timeout=self.timeout, time_unit=self.time_unit)
         elif self.op_type == 'update':
-            self._update_batch(key_value)
+            self.batch_update(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
+                              timeout=self.timeout, time_unit=self.time_unit)
         elif self.op_type == 'delete':
-            self._delete_batch(key_value)
+            self.batch_delete(key_value)
         elif self.op_type == 'read':
-            self._read_batch(key_value)
+            self.batch_read(key_value)
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 
@@ -645,12 +653,16 @@ class LoadDocumentsTask(GenericLoadingTask):
 
 class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators, op_type, exp, flag=0,
-                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=60, compression=True,
+                 persist_to=0, replicate_to=0, time_unit="seconds",
+                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True):
         super(LoadDocumentsGeneratorsTask, self).__init__("DocumentsLoadGenTask")
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
+        self.persit_to = persist_to
+        self.replicate_to = replicate_to
+        self.time_unit = time_unit
         self.only_store_hash = only_store_hash
         self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
@@ -737,7 +749,8 @@ class LoadDocumentsGeneratorsTask(Task):
             generators.append(batch_gen)
         for generator in generators:
             task = LoadDocumentsTask(self.cluster, self.bucket, self.client, generator, self.op_type,
-                                     self.exp, self.flag, batch_size=self.batch_size,
+                                     self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
+                                     time_unit=self.time_unit, batch_size=self.batch_size,
                                      pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                                      compression=self.compression, throughput_concurrency=self.process_concurrency)
             tasks.append(task)
@@ -779,7 +792,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
             pass
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
-        result_map = self._read_batch(key_value)
+        result_map = self.batch_read(key_value)
         missing_keys, wrong_values = self.validate_key_val(result_map, key_value)
         if self.op_type == 'delete':
             not_missing = []

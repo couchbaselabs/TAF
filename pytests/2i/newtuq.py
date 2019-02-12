@@ -280,7 +280,8 @@ class QueryTests(BaseTestCase):
         for bucket in buckets:
             self.log.info("%s %s to %s documents..." % (op_type, items, bucket.name))
             tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gens_load[bucket.name], op_type, exp,
-                                                       flag,only_store_hash, batch_size, pause_secs,timeout_secs,
+                                                       flag, self.persist_to, self.replicate_to,
+                                                       only_store_hash, batch_size, pause_secs,timeout_secs,
                                                        self.sdk_compression))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)

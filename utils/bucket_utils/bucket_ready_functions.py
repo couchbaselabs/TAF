@@ -433,7 +433,16 @@ class bucket_utils():
                 RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
             raise Exception("unable to get expected stats during {0} sec".format(timeout))
 
-    def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
+    def _async_load_bucket(self, cluster, bucket, generator, op_type, exp=0, flag=0, persist_to=0, replicate_to=0,
+                            only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
+                            process_concurrency=8):
+        return self.task.async_load_gen_docs(cluster, bucket, generator, op_type, exp=exp, flag=flag,
+                                             persist_to=persist_to, replicate_to=replicate_to,
+                                             only_store_hash=only_store_hash, batch_size=batch_size,
+                                             pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
+                                             process_concurrency=process_concurrency)
+
+    def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0, persist_to=0, replicate_to=0,
                                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=30,
                                 sdk_compression=True, process_concurrency=8):
         
@@ -458,7 +467,8 @@ class bucket_utils():
             if bucket.bucketType != 'memcached':
 #                 tasks.append(self.task.async_load_gen_docs_java(server, bucket.name, gen.start,gen.end-gen.start))
                 log.info("BATCH SIZE for documents load: %s" % batch_size)
-                tasks.append(self.task.async_load_gen_docs(cluster, bucket, gen, op_type, exp, flag, only_store_hash,
+                tasks.append(self.task.async_load_gen_docs(cluster, bucket, gen, op_type, exp, flag, persist_to,
+                                                           replicate_to, only_store_hash,
                                                            batch_size, pause_secs, timeout_secs,
                                                            sdk_compression, process_concurrency))
             else:
@@ -528,21 +538,6 @@ class bucket_utils():
                                                                         bucket.name))
                         break
 
-    def _async_load_bucket(self, bucket, server, kv_gen, op_type, exp, kv_store=1, flag=0, only_store_hash=True,
-                           batch_size=1000, pause_secs=1, timeout_secs=30):
-        gen = copy.deepcopy(kv_gen)
-        task = self.task.async_load_gen_docs(server, bucket.name, gen,
-                                                bucket.kvs[kv_store], op_type,
-                                                exp, flag, only_store_hash,
-                                                batch_size, pause_secs, timeout_secs,
-                                                compression=self.sdk_compression)
-        return task
-
-    def _load_bucket(self, bucket, server, kv_gen, op_type, exp, kv_store=1, flag=0, only_store_hash=True,
-                     batch_size=1000, pause_secs=1, timeout_secs=30):
-        task = self._async_load_bucket(bucket, server, kv_gen, op_type, exp, kv_store, flag, only_store_hash,
-                                       batch_size, pause_secs, timeout_secs)
-        task.result()
 
     def _load_all_ephemeral_buckets_until_no_more_memory(self, server, kv_gen, op_type, exp, increment, kv_store=1, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1, timeout_secs=30,

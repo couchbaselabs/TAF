@@ -29,13 +29,21 @@ class RebalanceOutTests(RebalanceBaseTest):
             if (self.doc_ops is not None):
                 if ("update" in self.doc_ops):
                     tasks.append(
-                        self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "update", 0, batch_size=10))
+                        self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "update", 0,
+                                                      batch_size=20, persist_to=self.persist_to,
+                                                      replicate_to=self.replicate_to,
+                                                      pause_secs=5, timeout_secs=5))
                 if ("create" in self.doc_ops):
                     tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
-                                                               batch_size=10, process_concurrency=8))
+                                                               batch_size=20, persist_to=self.persist_to,
+                                                               replicate_to=self.replicate_to,
+                                                               pause_secs=5, timeout_secs=5))
                 if ("delete" in self.doc_ops):
                     tasks.append(
-                        self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0, batch_size=10))
+                        self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0,
+                                                      batch_size=20, persist_to=self.persist_to,
+                                                      replicate_to=self.replicate_to,
+                                                      pause_secs=5, timeout_secs=5))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
