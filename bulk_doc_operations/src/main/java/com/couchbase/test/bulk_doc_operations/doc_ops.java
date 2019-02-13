@@ -24,7 +24,7 @@ public class doc_ops {
 	 * @param timeUnit Unit for timeout
 	 * @return
 	 */
-	public List<HashMap<String, Object>> bulkUpsert(final Bucket bucket, List<JsonDocument> documents, int persistTo, int replicateTo, long timeOut, String timeUnit){
+	public List<HashMap<String, Object>> bulkUpsert(final Bucket bucket, List<JsonDocument> documents, final int persistTo, final int replicateTo, final long timeOut, final String timeUnit){
 		PersistTo persist = this.getPersistTo(persistTo);
 		ReplicateTo replicate = this.getReplicateTo(replicateTo);
 		TimeUnit time = this.getTimeUnit(timeUnit);
@@ -65,7 +65,7 @@ public class doc_ops {
 	 * @param timeUnit Unit for timeout
 	 * @return
 	 */
-	public List<HashMap<String, Object>> bulkSet(final Bucket bucket, List<JsonDocument> documents, int persistTo, int replicateTo, long timeOut, String timeUnit){
+	public List<HashMap<String, Object>> bulkSet(final Bucket bucket, List<JsonDocument> documents, final int persistTo, final int replicateTo, final long timeOut, final String timeUnit){
 		PersistTo persist = this.getPersistTo(persistTo);
 		ReplicateTo replicate = this.getReplicateTo(replicateTo);
 		TimeUnit time = this.getTimeUnit(timeUnit);
