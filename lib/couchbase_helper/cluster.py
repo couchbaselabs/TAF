@@ -112,14 +112,18 @@ class ServerTasks(object):
         self.task_manager.schedule(_task)
         return _task
 
-    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0, only_store_hash=True,
-                            batch_size=1, pause_secs=1, timeout_secs=5, compression=True, process_concurrency=8):
+    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0, persist_to=0, replicate_to=0,
+                            only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
+                            process_concurrency=8):
 
         log.info("Loading documents to {}".format(bucket.name))
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
         _task = jython_tasks.LoadDocumentsGeneratorsTask(cluster, self.jython_task_manager, bucket, client, [generator],
-                                                        op_type, exp, flag=flag, only_store_hash=only_store_hash, batch_size=batch_size, 
-                                                        pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
+                                                        op_type, exp, flag=flag, persist_to=persist_to,
+                                                        replicate_to=replicate_to, only_store_hash=only_store_hash,
+                                                        batch_size=batch_size,
+                                                        pause_secs=pause_secs, timeout_secs=timeout_secs,
+                                                        compression=compression,
                                                         process_concurrency=process_concurrency)
         self.jython_task_manager.add_new_task(_task)
         return _task
@@ -267,11 +271,13 @@ class ServerTasks(object):
         result = self.jython_task_manager.get_task_result(_task)
         return result
 
-    def load_gen_docs(self, server, bucket, generator, kv_store, op_type, exp=0, timeout=None,
-                      flag=0, only_store_hash=True, batch_size=1, proxy_client=None, compression=True):
-        _task = self.async_load_gen_docs(server, bucket, generator, kv_store, op_type, exp, flag,
+    def load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
+                      flag=0, persist_to=0, replicate_to=0, only_store_hash=True,
+                      batch_size=1, compression=True):
+        _task = self.async_load_gen_docs(cluster, bucket, generator, op_type, exp, flag, persist_to=persist_to,
+                                         replicate_to=replicate_to,
                                          only_store_hash=only_store_hash, batch_size=batch_size, 
-                                         proxy_client=proxy_client, compression=compression)
+                                         compression=compression)
         return self.jython_task_manager.get_task_result(_task)
 
     def verify_data(self, server, bucket, kv_store, timeout=None, compression=True):

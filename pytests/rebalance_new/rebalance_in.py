@@ -25,12 +25,20 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             if(self.doc_ops is not None):
                 if("update" in self.doc_ops):
-                    tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "update", 0, batch_size=10, process_concurrency=8))
+                    tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "update", 0,
+                                                               batch_size=20, persist_to=self.persist_to,
+                                                               replicate_to=self.replicate_to,
+                                                               pause_secs=5, timeout_secs=5))
                 if("create" in self.doc_ops):
                     tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
-                                                               batch_size=10, process_concurrency=8))
+                                                               batch_size=20, persist_to=self.persist_to,
+                                                               replicate_to=self.replicate_to,
+                                                               pause_secs=5, timeout_secs=5))
                 if("delete" in self.doc_ops):
-                    tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0, batch_size=10, process_concurrency=8))
+                    tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0,
+                                                               batch_size=20, persist_to=self.persist_to,
+                                                               replicate_to=self.replicate_to,
+                                                               pause_secs=5, timeout_secs=5))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.cluster.nodes_in_cluster.extend(servs_in)
@@ -64,7 +72,10 @@ class RebalanceInTests(RebalanceBaseTest):
         gen_update = self.get_doc_generator(0, self.num_items)
         tasks = []
         for bucket in self.bucket_util.buckets:
-            tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_update, "update", 0))
+            tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_update, "update", 0,
+                                                       batch_size=20, persist_to=self.persist_to,
+                                                       replicate_to=self.replicate_to,
+                                                       pause_secs=5, timeout_secs=5))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
@@ -157,7 +168,10 @@ class RebalanceInTests(RebalanceBaseTest):
         gen_update = self.get_doc_generator(0, self.num_items)
         tasks = []
         for bucket in self.bucket_util.buckets:
-            tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_update, "update", 0)
+            tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_update, "update", 0,
+                                                   batch_size=20, persist_to=self.persist_to,
+                                                   replicate_to=self.replicate_to,
+                                                   pause_secs=5, timeout_secs=5)
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
@@ -213,20 +227,26 @@ class RebalanceInTests(RebalanceBaseTest):
                 if ("update" in self.doc_ops):
                     # 1/2th of data will be updated in each iteration
                     
-                    tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, self.gen_update, "update", 0, batch_size=20000,
-                                                          pause_secs=5, timeout_secs=180)
+                    tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, self.gen_update,
+                                                           "update", 0, batch_size=20, persist_to=self.persist_to,
+                                                                   replicate_to=self.replicate_to,
+                                                                   pause_secs=5, timeout_secs=5)
                 elif ("create" in self.doc_ops):
                     # 1/2th of initial data will be added in each iteration
                     gen_create = self.get_doc_generator(self.num_items * (1 + i) / 2.0, self.num_items * (1 + i / 2.0))
-                    tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_create, "create", 0, batch_size=20000,
-                                                          pause_secs=5, timeout_secs=180)
+                    tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_create,
+                                                           "create", 0, batch_size=20, persist_to=self.persist_to,
+                                                                   replicate_to=self.replicate_to,
+                                                                   pause_secs=5, timeout_secs=5)
                 elif ("delete" in self.doc_ops):
                     # 1/(num_servers) of initial data will be removed after each iteration
                     # at the end we should get empty base( or couple items)
                     gen_delete = self.get_doc_generator(int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1,
                                                         int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0))))
-                    tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_delete, "delete", 0, batch_size=20000,
-                                                          pause_secs=5, timeout_secs=180)
+                    tasks += self.task.async_load_gen_docs(self.cluster, bucket, self.cluster.master, gen_delete,
+                                                           "delete", 0, batch_size=20, persist_to=self.persist_to,
+                                                                   replicate_to=self.replicate_to,
+                                                                   pause_secs=5, timeout_secs=5)
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.cluster.nodes_in_cluster.extend(servs_in)
@@ -245,12 +265,12 @@ class RebalanceInTests(RebalanceBaseTest):
             # allows multiple of them but one by one
             if ("update" in self.doc_ops):
                 self._load_all_buckets(self.gen_update, "update", 0, 4294967295, True,
-                                       batch_size=20000, pause_secs=5, timeout_secs=180)
+                                       batch_size=20, pause_secs=5, timeout_secs=180)
             if ("create" in self.doc_ops):
-                self._load_all_buckets(gen_create, "create", 0, 4294967295, True, batch_size=20000,
+                self._load_all_buckets(gen_create, "create", 0, 4294967295, True, batch_size=20,
                                        pause_secs=5, timeout_secs=180)
             if ("delete" in self.doc_ops):
-                self._load_all_buckets(gen_delete, "delete", 0, 4294967295, True, batch_size=20000,
+                self._load_all_buckets(gen_delete, "delete", 0, 4294967295, True, batch_size=20,
                                        pause_secs=5, timeout_secs=180)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.cluster.nodes_in_cluster.extend(servs_in)
@@ -324,16 +344,20 @@ class RebalanceInTests(RebalanceBaseTest):
                 for bucket in self.bucket_util.buckets:
                     if ("update" in self.doc_ops):
                         # 1/2th of data will be updated in each iteration
-                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, self.gen_update, "update", 0, batch_size=20000,
-                                                              pause_secs=5, timeout_secs=180))
+                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, self.gen_update, "update", 0,
+                                                                   batch_size=20, persist_to=self.persist_to,
+                                                                   replicate_to=self.replicate_to,
+                                                                   pause_secs=5, timeout_secs=5))
                     elif ("create" in self.doc_ops):
                         # 1/2th of initial data will be added in each iteration
                         tem_num_items = int(self.num_items * (1 + i / 2.0))
                         gen_create = self.get_doc_generator(num_of_items,
                                                             tem_num_items)
                         num_of_items = tem_num_items
-                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0, batch_size=20000,
-                                                              pause_secs=5, timeout_secs=180))
+                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
+                                                                   batch_size=20, persist_to=self.persist_to,
+                                                                   replicate_to=self.replicate_to,
+                                                                   pause_secs=5, timeout_secs=5))
                     elif ("delete" in self.doc_ops):
                         # 1/(num_servers) of initial data will be removed after each iteration
                         # at the end we should get empty base( or couple items)
@@ -342,8 +366,10 @@ class RebalanceInTests(RebalanceBaseTest):
                         gen_delete = self.get_doc_generator(tem_del_start_num,
                                                             tem_del_end_num)
                         self.num_items -= (tem_del_end_num - tem_del_start_num + 1)
-                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0, batch_size=20000,
-                                                              pause_secs=5, timeout_secs=180))
+                        tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0,
+                                                                   batch_size=20, persist_to=self.persist_to,
+                                                                   replicate_to=self.replicate_to,
+                                                                   pause_secs=5, timeout_secs=5))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])

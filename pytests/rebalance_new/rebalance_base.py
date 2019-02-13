@@ -30,7 +30,9 @@ class RebalanceBaseTest(BaseTestCase):
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
-            task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0, batch_size=10,
+            task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
+                                                 persist_to=self.persist_to, replicate_to=self.replicate_to,
+                                                 batch_size=10,
                                                  process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
@@ -132,7 +134,8 @@ class RebalanceBaseTest(BaseTestCase):
     def _load_all_buckets(self, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
-        tasks = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen, op_type, exp, flag, only_store_hash,
+        tasks = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen, op_type, exp, flag, self.persist_to,
+                                                         self.replicate_to, only_store_hash,
                                                          batch_size, pause_secs, timeout_secs, compression)
         for task in tasks:
             self.task_manager.get_task_result(task)

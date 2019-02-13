@@ -130,7 +130,9 @@ class SwapRebalanceBase(BaseTestCase):
                                        end=self.num_items)
         for bucket in self.bucket_util.buckets:
             loaders.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
-                                                       batch_size=10, process_concurrency=8))
+                                                         batch_size=20, persist_to=self.persist_to,
+                                                         replicate_to=self.replicate_to,
+                                                         pause_secs=5, timeout_secs=5))
         return loaders
 
     def start_access_phase(self):

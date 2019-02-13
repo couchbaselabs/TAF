@@ -98,6 +98,8 @@ class BaseTestCase(unittest.TestCase):
             self.gsi_type = self.input.param("gsi_type", 'plasma')
             self.compression_mode = self.input.param("compression_mode", 'passive')
             self.sdk_compression = self.input.param("sdk_compression", True)
+            self.replicate_to = self.input.param("replicate_to", 0)
+            self.persist_to = self.input.param("persist_to", 0)
             #jre-path for cbas
             self.jre_path=self.input.param("jre_path",None)
             # end of bucket parameters spot (this is ongoing)

@@ -26,7 +26,9 @@ class RecreateBucketTests(BaseTestCase):
         template = '{{ "age": {0}, "first_name": "{1}" }}'
         gen_create = DocumentGenerator('test_docs', template, age, first, start=0, end=self.num_items)
         task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
-                                                           batch_size=10, process_concurrency=8)
+                                             batch_size=20, persist_to=self.persist_to,
+                                             replicate_to=self.replicate_to,
+                                             pause_secs=5, timeout_secs=5)
         self.task.jython_task_manager.get_task_result(task)
 
     def _validate_load(self, bucket):

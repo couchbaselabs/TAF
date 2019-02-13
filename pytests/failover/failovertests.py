@@ -395,7 +395,10 @@ class FailoverTests(FailoverBaseTest):
     def load_all_buckets(self, gen, op):
         tasks = []
         for bucket in self.bucket_util.buckets:
-            tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen, op, 0, batch_size=10))
+            tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen, op, 0,
+                                                       batch_size=20, persist_to=self.persist_to,
+                                                       replicate_to=self.replicate_to,
+                                                       pause_secs=5, timeout_secs=5))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 

@@ -181,7 +181,9 @@ class CreateDeleteViewTests(BaseTestCase):
         gen_load = DocumentGenerator('test_docs', template, age, first, start=0, end=self.num_items)
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_load, "create", 0,
-                                                       batch_size=10, process_concurrency=8))
+                                                       batch_size=20, persist_to=self.persist_to,
+                                                       replicate_to=self.replicate_to,
+                                                       pause_secs=5, timeout_secs=5))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         for bucket in self.buckets:
