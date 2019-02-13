@@ -318,23 +318,17 @@ class SDKClient(object):
     def set(self, key, value, ttl=None, format=None,
             persist_to=0, replicate_to=0):
         doc = self.__translate_to_json_document(key, value, ttl)
-        print(doc)
         try:
-            print("111111")
             return self.cb.insert(doc)
         except CouchbaseException:
             try:
-                print("Sleep")
                 time.sleep(10)
-                print("After Sleep")
                 return self.cb.insertWithPersistToReplicateToAndTimeout(doc,
                                                                         persist_to,
                                                                         replicate_to,
                                                                         ttl,
                                                                         TimeUnit.SECONDS)
-            except CouchbaseException as e:
-                print ("Exception")
-                print(e)
+            except CouchbaseException:
                 raise
 
     def upsert(self, key, value, ttl=None, persist_to=0, replicate_to=0):
@@ -357,9 +351,7 @@ class SDKClient(object):
         success = {}
         fail = {}
         while retry > 0:
-            print("BULKSET")
             result = doc_op().bulkSet(self.cb.getBucketObj(), docs)
-            print("BULKSET _ DONE")
             success, fail = self.__translate_upsert_multi(result)
             if fail:
                 docs = [doc[3] for doc in fail.values()]
