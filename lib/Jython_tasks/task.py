@@ -501,8 +501,8 @@ class GenericLoadingTask(Task):
         try:
             self._process_values_for_create(key_val)
             client = shared_client or self.client
-            client.setMulti(self.exp, self.flag, key_val, self.pause, self.timeout, parallel=False,
-                            persist_to=persist_to, replicate_to=replicate_to, timeout=timeout,
+            client.setMulti(self.exp, self.flag, key_val, self.pause, timeout, parallel=False,
+                            persist_to=persist_to, replicate_to=replicate_to,
                             time_unit=time_unit)
             # log.info("Batch Operation: %s documents are INSERTED into bucket %s"%(len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
@@ -512,8 +512,8 @@ class GenericLoadingTask(Task):
     def batch_update(self, key_val, persist_to=0, replicate_to=0, timeout=5, time_unit="seconds"):
         try:
             self._process_values_for_update(key_val)
-            self.client.upsertMulti(self.exp, self.flag, key_val, self.pause, self.timeout, parallel=False,
-                                    persist_to=persist_to, replicate_to=replicate_to, timeout=timeout,
+            self.client.upsertMulti(self.exp, self.flag, key_val, self.pause, timeout, parallel=False,
+                                    persist_to=persist_to, replicate_to=replicate_to,
                                     time_unit=time_unit)
             #log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
