@@ -71,6 +71,8 @@ class BaseTestCase(unittest.TestCase):
             self.nodes_out = self.input.param("nodes_out", 1)
             self.services_in = self.input.param("services_in", None)
             self.forceEject = self.input.param("forceEject", False)
+            self.key_size = self.input.param("key_size", 0)
+            self.doc_size = self.input.param("doc_size", 10)
             self.num_items = self.input.param("num_items", 100000)
             self.num_replicas = self.input.param("replicas", 1)
             self.value_size = self.input.param("value_size", 1)
@@ -177,7 +179,7 @@ class BaseTestCase(unittest.TestCase):
                 self.port = str(self.input.param("port", None))
 
             log.info("==============  basetestcase setup was finished for test #{0} {1} ==============" \
-                          .format(self.case_number, self._testMethodName))
+                     .format(self.case_number, self._testMethodName))
 
             if not self.skip_init_check_cbserver:
                 self._log_start()
@@ -189,7 +191,7 @@ class BaseTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.tearDownEverything()
-        
+
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
             return
@@ -228,14 +230,14 @@ class BaseTestCase(unittest.TestCase):
                                 pass
 
                 log.info("==============  basetestcase cleanup was started for test #{0} {1} ==============" \
-                              .format(self.case_number, self._testMethodName))
+                         .format(self.case_number, self._testMethodName))
                 rest = RestConnection(self.cluster.master)
                 alerts = rest.get_alerts()
                 if alerts is not None and len(alerts) != 0:
                     log.warn("Alerts were found: {0}".format(alerts))
                 self.cluster_util.cluster_cleanup(self.bucket_util)
                 log.info("==============  basetestcase cleanup was finished for test #{0} {1} ==============" \
-                              .format(self.case_number, self._testMethodName))
+                         .format(self.case_number, self._testMethodName))
         except BaseException:
             # kill memcached
             self.cluster_util.kill_memcached()
@@ -264,7 +266,7 @@ class BaseTestCase(unittest.TestCase):
                 "get-cbcollect-info"] = False
         except Exception as e:
             log.error("IMPOSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}".format(server.ip, e))
-            
+
     def _log_start(self):
         try:
             msg = "{0} : {1} started ".format(datetime.datetime.now(), self._testMethodName)
@@ -317,8 +319,15 @@ class BaseTestCase(unittest.TestCase):
                 rest.set_jre_path(self.jre_path)
         return quota
 
+    def expire_pager(self, servers, val=10):
+        for bucket in self.buckets:
+            for server in servers:
+                ClusterOperationHelper.flushctl_set(server, "exp_pager_stime",
+                                                    val, bucket)
+        self.sleep(val, "wait for expiry pager to run on all these nodes")
+
     def set_testrunner_client(self):
         self.testrunner_client = self.input.param("testrunner_client", None)
         if self.testrunner_client != None:
             os.environ[testconstants.TESTRUNNER_CLIENT] = self.testrunner_client
-            
+

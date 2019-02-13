@@ -8,21 +8,25 @@ import time
 import logger
 import Java_Connection
 
+from mimify import repl
+
 from com.couchbase.client.deps.io.netty.buffer import Unpooled
 from com.couchbase.client.deps.io.netty.util import CharsetUtil
 from com.couchbase.client.java import CouchbaseCluster
 from com.couchbase.client.java.CouchbaseBucket import mutateIn
 from com.couchbase.client.java.document import *
 from com.couchbase.client.java.document.json import *
+from com.couchbase.client.java.error.subdoc import DocumentNotJsonException
 from com.couchbase.client.java.subdoc import SubdocOptionsBuilder
 from com.couchbase.client.java.query import N1qlQueryResult, N1qlQuery
 from com.couchbase.client.core import CouchbaseException
+from com.couchbase.test.sdk import BucketInterface
 
-from mc_bin_client import MemcachedError
 from java.util.concurrent import TimeUnit
-from com.couchbase.client.java.error.subdoc import DocumentNotJsonException
 from java.util.logging import Logger, Level, ConsoleHandler
 from java.lang import System
+
+from mc_bin_client import MemcachedError
 
 FMT_AUTO = "autoformat"
 
@@ -92,7 +96,8 @@ class SDKClient(object):
             # self.cluster = CouchbaseCluster.create(Java_Connection.env, self.hosts)
             self.cluster = CouchbaseCluster.fromConnectionString(Java_Connection.env, self.connection_string);
             self.cluster.authenticate("Administrator", self.password)
-            self.cb = self.cluster.openBucket(self.bucket)
+            self.cb = BucketInterface(self.cluster, self.bucket)
+            self.cb.connect()
         except CouchbaseException:
             self.cluster.disconnect()
             raise
@@ -110,7 +115,7 @@ class SDKClient(object):
             self.cluster.disconnect()
             log.info("Closed down Cluster Connection.")
 
-    def counter_in(self, key, path, delta, create_parents=True, cas=0, ttl=0,
+    def counter_in(self, key, path, delta, create_parents=True, cas=0, ttl=None,
                    persist_to=0, replicate_to=0):
         try:
             return self.cb.counter_in(key, path, delta, create_parents,
@@ -119,7 +124,7 @@ class SDKClient(object):
             raise
 
     def arrayappend_in(self, key, path, value, create_parents=True, cas=0,
-                       ttl=0, persist_to=0, replicate_to=0):
+                       ttl=None, persist_to=0, replicate_to=0):
         try:
             return self.cb.arrayappend_in(key, path, value, create_parents,
                                           cas, ttl, persist_to, replicate_to)
@@ -127,7 +132,7 @@ class SDKClient(object):
             raise
 
     def arrayprepend_in(self, key, path, value, create_parents=True, cas=0,
-                        ttl=0, persist_to=0, replicate_to=0):
+                        ttl=None, persist_to=0, replicate_to=0):
         try:
             return self.cb.arrayprepend_in(key, path, value, create_parents,
                                            cas, ttl, persist_to, replicate_to)
@@ -135,14 +140,14 @@ class SDKClient(object):
             raise
 
     def arrayaddunique_in(self, key, path, value, create_parents=True, cas=0,
-                          ttl=0, persist_to=0, replicate_to=0):
+                          ttl=None, persist_to=0, replicate_to=0):
         try:
             return self.cb.addunique_in(key, path, value, create_parents, cas,
                                         ttl, persist_to, replicate_to)
         except CouchbaseException:
             raise
 
-    def arrayinsert_in(self, key, path, value, cas=0, ttl=0,
+    def arrayinsert_in(self, key, path, value, cas=0, ttl=None,
                        persist_to=0, replicate_to=0):
         try:
             return self.cb.arrayinsert_in(key, path, value, cas, ttl,
@@ -150,7 +155,7 @@ class SDKClient(object):
         except CouchbaseException:
             raise
 
-    def remove_in(self, key, path,  cas=0, ttl=0):
+    def remove_in(self, key, path,  cas=0, ttl=None):
         try:
             self.cb.remove_in(key, path, cas, ttl)
         except CouchbaseException:
@@ -181,7 +186,7 @@ class SDKClient(object):
         except CouchbaseException:
             raise
 
-    def replace_in(self, key, path, value, cas=0, ttl=0,
+    def replace_in(self, key, path, value, cas=0, ttl=None,
                    persist_to=0, replicate_to=0):
         try:
             return self.cb.replace_in(key, path, value, cas, ttl,
@@ -189,7 +194,7 @@ class SDKClient(object):
         except CouchbaseException:
             raise
 
-    def insert_in(self, key, path, value, create_parents=True, cas=0, ttl=0,
+    def insert_in(self, key, path, value, create_parents=True, cas=0, ttl=None,
                   persist_to=0, replicate_to=0):
         try:
             return self.cb.insert_in(key, path, value, create_parents,
@@ -197,7 +202,7 @@ class SDKClient(object):
         except CouchbaseException:
             raise
 
-    def upsert_in(self, key, path, value, create_parents=True, cas=0, ttl=0,
+    def upsert_in(self, key, path, value, create_parents=True, cas=0, ttl=None,
                   persist_to=0, replicate_to=0):
         try:
             return self.cb.upsert_in(key, path, value, create_parents,
@@ -253,7 +258,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def replace(self, key, value, cas=0, ttl=0, format=None,
+    def replace(self, key, value, cas=0, ttl=None, format=None,
                 persist_to=0, replicate_to=0):
         try:
             self.cb.replace(key, value, cas, ttl, format,
@@ -266,7 +271,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def replace_multi(self, keys, cas=0, ttl=0, format=None,
+    def replace_multi(self, keys, cas=0, ttl=None, format=None,
                       persist_to=0, replicate_to=0):
         try:
             self.cb.replace_multi(keys, cas, ttl, format,
@@ -279,7 +284,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def cas(self, key, value, cas=0, ttl=0, format=None):
+    def cas(self, key, value, cas=0, ttl=None, format=None):
         return self.cb.replace(key, value, cas, format)
 
     def delete(self, key, cas=0, quiet=True, persist_to=0, replicate_to=0):
@@ -310,20 +315,29 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def set(self, key, value, ttl=0, format=None,
+    def set(self, key, value, ttl=None, format=None,
             persist_to=0, replicate_to=0):
         doc = self.__translate_to_json_document(key, value, ttl)
+        print(doc)
         try:
-            return self.cb.set(doc)
+            print("111111")
+            return self.cb.insert(doc)
         except CouchbaseException:
             try:
+                print("Sleep")
                 time.sleep(10)
-                return self.cb.set(doc, persist_to, replicate_to, ttl,
-                                   TimeUnit.SECONDS)
-            except CouchbaseException:
+                print("After Sleep")
+                return self.cb.insertWithPersistToReplicateToAndTimeout(doc,
+                                                                        persist_to,
+                                                                        replicate_to,
+                                                                        ttl,
+                                                                        TimeUnit.SECONDS)
+            except CouchbaseException as e:
+                print ("Exception")
+                print(e)
                 raise
 
-    def upsert(self, key, value, ttl=0, persist_to=0, replicate_to=0):
+    def upsert(self, key, value, ttl=None, persist_to=0, replicate_to=0):
         doc = self.__translate_to_json_document(key, value, ttl)
         try:
             return self.cb.upsert(doc)
@@ -334,7 +348,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def set_multi(self, keys, ttl=0, format=None,
+    def set_multi(self, keys, ttl=None, format=None,
                   persist_to=0, replicate_to=0, retry=5):
         import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         docs = []
@@ -343,7 +357,9 @@ class SDKClient(object):
         success = {}
         fail = {}
         while retry > 0:
-            result = doc_op().bulkSet(self.cb, docs)
+            print("BULKSET")
+            result = doc_op().bulkSet(self.cb.getBucketObj(), docs)
+            print("BULKSET _ DONE")
             success, fail = self.__translate_upsert_multi(result)
             if fail:
                 docs = [doc[3] for doc in fail.values()]
@@ -356,7 +372,7 @@ class SDKClient(object):
                       .format(fail.__str__()))
             return fail
 
-    def upsert_multi(self, keys, ttl=0, persist_to=0, replicate_to=0, retry=5):
+    def upsert_multi(self, keys, ttl=None, persist_to=0, replicate_to=0, retry=5):
         import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
@@ -364,7 +380,7 @@ class SDKClient(object):
         success = {}
         fail = {}
         while retry > 0:
-            result = doc_op().bulkUpsert(self.cb, docs)
+            result = doc_op().bulkUpsert(self.cb.getBucketObj(), docs)
             success, fail = self.__translate_upsert_multi(result)
             if fail:
                 docs = [doc[3] for doc in fail.values()]
@@ -377,7 +393,7 @@ class SDKClient(object):
                       .format(fail.__str__()))
             return fail
 
-    def insert(self, key, value, ttl=0, format=None,
+    def insert(self, key, value, ttl=None, format=None,
                persist_to=0, replicate_to=0):
         doc = self.__translate_to_json_document(key, value, ttl)
         try:
@@ -389,15 +405,15 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def insert_multi(self, keys,  ttl=0, format=None,
+    def insert_multi(self, keys,  ttl=None, format=None,
                      persist_to=0, replicate_to=0, retry=5):
         import bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
             docs.append(self.__translate_to_json_document(key, value, ttl))
-        doc_op().bulkSet(self.cb, docs)
+        doc_op().bulkSet(self.cb.getBucketObj(), docs)
 
-    def touch(self, key, ttl=0):
+    def touch(self, key, ttl=None):
         try:
             self.cb.getAndTouch(key, ttl)
         except CouchbaseException:
@@ -407,33 +423,166 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def touch_multi(self, keys, ttl=0):
+    def touch_multi(self, keys, ttl=None):
         for key in keys:
             self.touch(key, ttl=ttl)
 
-    def decr(self, key, delta=1, initial=None, ttl=0):
+    def decr(self, key, delta=1, initial=None, ttl=None):
         self.counter(key, delta=-delta, initial=initial, ttl=ttl)
 
-    def decr_multi(self, keys, delta=1, initial=None, ttl=0):
+    def decr_multi(self, keys, delta=1, initial=None, ttl=None):
         self.counter_multi(keys, delta=-delta, initial=initial, ttl=ttl)
 
-    def incr(self, key, delta=1, initial=None, ttl=0):
+    def incr(self, key, delta=1, initial=None, ttl=None):
         self.counter(key, delta=delta, initial=initial, ttl=ttl)
 
-    def incr_multi(self, keys, delta=1, initial=None, ttl=0):
+    def incr_multi(self, keys, delta=1, initial=None, ttl=None):
         self.counter_multi(keys, delta=delta, initial=initial, ttl=ttl)
 
-    def counter(self, key, delta=1, initial=None, ttl=0):
+    def generic_counter(self, key, delta=0, initial=None, ttl=None,
+                        persistTo=None, replicateTo=None,
+                        timeout=None, timeUnit=None):
+        if initial is None:
+            if ttl == persistTo == replicateTo == timeout == timeUnit is None:
+                self.cb.counter(key, delta)
+            elif ttl == persistTo == replicateTo is None and \
+                    None not in (timeout, timeUnit):
+                self.cb.counterWithTimeout(key, delta, timeout, timeUnit)
+            elif ttl == replicateTo == timeout == timeUnit is None and \
+                    persistTo is not None:
+                self.cb.counterWithPersistTo(key, delta, persistTo)
+            elif ttl == replicateTo is None and \
+                    None not in (persistTo, timeout, timeUnit):
+                self.cb.counterWithPersistToAndTimeout(key, delta, persistTo,
+                                                       timeout, timeUnit)
+            elif ttl == timeout == timeUnit is None and \
+                    None not in (persistTo, replicateTo):
+                self.cb.counterWithPersistToReplicateTo(key, delta,
+                                                        persistTo, replicateTo)
+            elif ttl == replicateTo is None and \
+                    replicateTo is not None:
+                self.cb.counterWithReplicateTo(key, delta, replicateTo)
+            elif ttl == replicateTo == timeout == timeUnit is None and \
+                    None not in (replicateTo, timeout, timeUnit):
+                self.cb.counterWithReplicateToAndTimeout(key, delta,
+                                                         replicateTo,
+                                                         timeout, timeUnit)
+            elif None not in (persistTo, replicateTo, timeout, timeUnit):
+                self.cb.counterWithPersistToReplicateToAndTimeout(key, delta,
+                                                                  persistTo,
+                                                                  replicateTo,
+                                                                  timeout,
+                                                                  timeUnit)
+        else:
+            if ttl == persistTo == replicateTo == timeout == timeUnit is None:
+                self.cb.counterWithInitial(key, delta, initial)
+            elif persistTo == replicateTo == timeout == timeUnit is None and \
+                    ttl is not None:
+                self.cb.counterWithInitialExpiry(key, delta, initial, ttl)
+            elif persistTo == replicateTo is None and \
+                    None not in (ttl, timeout, timeUnit):
+                self.cb.counterWithInitialExpiryAndTimeout(key, delta, initial,
+                                                           ttl,
+                                                           timeout, timeUnit)
+            elif replicateTo == timeout == timeUnit is None and \
+                    None not in (ttl, persistTo):
+                self.cb.counterWithInitialExpiryPersistTo(key, delta, initial,
+                                                          ttl, persistTo)
+            elif replicateTo is None and \
+                    None not in (ttl, persistTo, timeout, timeUnit):
+                self.cb.counterWithInitialExpiryPersistToAndTimeout(key, delta,
+                                                                    initial,
+                                                                    ttl,
+                                                                    persistTo,
+                                                                    timeout,
+                                                                    timeUnit)
+            elif timeout == timeUnit is None and \
+                    None not in (ttl, persistTo, replicateTo):
+                self.cb.counterWithInitialExpiryPersistToReplicateTo(key,
+                                                                     delta,
+                                                                     initial,
+                                                                     ttl,
+                                                                     persistTo,
+                                                                     replicateTo)
+            elif None not in (ttl, persistTo, replicateTo, timeout, timeUnit):
+                self.cb.counterWithInitialExpiryPersistToReplicateToAndTimeout(key,
+                                                                               delta,
+                                                                               initial,
+                                                                               ttl,
+                                                                               persistTo,
+                                                                               replicateTo,
+                                                                               timeout,
+                                                                               timeUnit)
+            elif persistTo == timeout == timeUnit is None and \
+                    None not in (ttl, replicateTo):
+                self.cb.counterWithInitialExpiryReplicateTo(key, delta,
+                                                            initial, ttl,
+                                                            replicateTo)
+            elif persistTo is None and \
+                    None not in (ttl, replicateTo, timeout, timeUnit):
+                self.cb.counterWithInitialExpiryReplicateToAndTimeout(key,
+                                                                      delta,
+                                                                      initial,
+                                                                      ttl,
+                                                                      replicateTo,
+                                                                      timeout,
+                                                                      timeUnit)
+            elif ttl == persistTo == replicateTo is None and \
+                    None not in (timeout, timeUnit):
+                self.cb.counterWithInitialAndTimeout(key, delta, initial,
+                                                     timeout, timeUnit)
+            elif ttl == replicateTo == timeout == timeUnit is None and \
+                    persistTo is not None:
+                self.cb.counterWithInitialPersistTo(key, delta, initial,
+                                                    persistTo)
+            elif ttl == replicateTo is None and \
+                    None not in (persistTo, timeout, timeUnit):
+                self.cb.counterWithInitialPersistToAndTimeout(key, delta,
+                                                              initial,
+                                                              persistTo,
+                                                              timeout,
+                                                              timeUnit)
+            elif ttl == timeout == timeUnit is None and \
+                    None not in (persistTo, replicateTo):
+                self.cb.counterWithInitialPersistToReplicateTo(key, delta,
+                                                               initial,
+                                                               persistTo,
+                                                               replicateTo)
+            elif ttl is None and \
+                    None not in (persistTo, replicateTo, timeout, timeUnit):
+                self.cb.counterWithInitialPersistToReplicateToAndTimeout(key,
+                                                                         delta,
+                                                                         initial,
+                                                                         persistTo,
+                                                                         replicateTo,
+                                                                         timeout,
+                                                                         timeUnit)
+            elif ttl == persistTo == timeout == timeUnit is None and \
+                    replicateTo is not None:
+                self.cb.counterWithInitialReplicateTo(key, delta, initial,
+                                                      replicateTo)
+            elif ttl == persistTo is None and \
+                    None not in (replicateTo, timeout, timeUnit):
+                self.cb.counterWithInitialReplicateToAndTimeout(key, delta,
+                                                                initial,
+                                                                replicateTo,
+                                                                timeout,
+                                                                timeUnit)
+
+    def counter(self, key, delta=1, initial=None, ttl=None,
+                persistTo=None, replicateTo=None, timeout=None, timeUnit=None):
         try:
-            self.cb.counter(key, delta, initial, ttl)
+            self.generic_counter(key, delta, initial, ttl,
+                                 persistTo, replicateTo, timeout, timeUnit)
         except CouchbaseException:
             try:
                 time.sleep(10)
-                self.cb.counter(key, delta, initial, ttl)
+                self.generic_counter(key, delta, initial, ttl,
+                                     persistTo, replicateTo, timeout, timeUnit)
             except CouchbaseException:
                 raise
 
-    def counter_multi(self, keys, delta=1, initial=None, ttl=0):
+    def counter_multi(self, keys, delta=1, initial=None, ttl=None):
         try:
             self.cb.counter_multi(keys, delta, initial, ttl)
         except CouchbaseException:
@@ -443,7 +592,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def get(self, key, ttl=0, quiet=True, replica=False, no_format=False):
+    def get(self, key, ttl=None, quiet=True, replica=False, no_format=False):
         try:
             rv = self.cb.get(key, ttl, quiet, replica, no_format)
             return self.__translate_get(rv)
@@ -467,7 +616,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def get_multi(self, keys, ttl=0, quiet=True, replica=False,
+    def get_multi(self, keys, ttl=None, quiet=True, replica=False,
                   no_format=False):
         import bulk_doc_operations.doc_ops as doc_op
         try:
@@ -560,7 +709,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def lock(self, key, ttl=0):
+    def lock(self, key, ttl=None):
         try:
             data = self.cb.getAndLock(key, ttl)
             return self.__translate_get(data)
@@ -572,7 +721,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def lock_multi(self, keys, ttl=0):
+    def lock_multi(self, keys, ttl=None):
         try:
             data = self.cb.lock_multi(keys, ttl)
             return self.__translate_get_multi(data)
@@ -584,7 +733,7 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def unlock(self, key, ttl=0):
+    def unlock(self, key, ttl=None):
         try:
             return self.cb.unlock(key)
         except CouchbaseException:
@@ -616,7 +765,7 @@ class SDKClient(object):
         except CouchbaseException:
             raise
 
-    def __translate_to_json_document(self, key, value, ttl=0):
+    def __translate_to_json_document(self, key, value, ttl=None):
         try:
             if type(value) != dict:
                 value = json.loads(value)
@@ -748,7 +897,7 @@ class SDKSmartClient(object):
                                 scheme=self.scheme, password=self.saslPassword,
                                 compression=compression)
 
-    def memcached(self):
+    def get_client(self):
         return self.client
 
     def set(self, key, exp, flags, value, format=FMT_AUTO):
