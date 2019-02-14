@@ -30,7 +30,7 @@ class BaseTestCase(unittest.TestCase):
         self.log = logger.Logger.get_logger()
         self.input = TestInputSingleton.input
         self.primary_index_created = False
-        self.use_sdk_client = self.input.param("use_sdk_client", False)
+        self.sdk_client_type = self.input.param("sdk_client_type", "java")
         if self.input.param("log_level", None):
             log.setLevel(level=0)
             for hd in log.handlers:

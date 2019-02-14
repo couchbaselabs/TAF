@@ -454,24 +454,27 @@ class CBASSecondaryIndexes(CBASBaseTest):
         self.assertTrue(status == "success", "Drop Index query failed")
 
         self.assertFalse(
-            self.cbas_util.verify_index_created(self.index_name, self.index_fields,
-                                      self.cbas_dataset_name)[0])
+            self.cbas_util.verify_index_created(self.index_name,
+                                                self.index_fields,
+                                                self.cbas_dataset_name)[0])
 
     def _direct_client(self, server, bucket, timeout=30):
         # CREATE SDK CLIENT
-        if self.use_sdk_client:
+        if self.sdk_client_type == "java":
             try:
                 from sdk_client import SDKClient
                 scheme = "couchbase"
                 host = self.master.ip
                 if self.master.ip == "127.0.0.1":
                     scheme = "http"
-                    host="{0}:{1}".format(self.master.ip,self.master.port)
-                return SDKClient(scheme=scheme,hosts = [host], bucket = bucket, password=self.master.rest_password)
+                    host = "{0}:{1}".format(self.master.ip, self.master.port)
+                return SDKClient(scheme=scheme, hosts=[host], bucket=bucket,
+                                 password=self.master.rest_password)
             except Exception, ex:
-                self.log.error("cannot load sdk client due to error {0}".format(str(ex)))
+                self.log.error("cannot load sdk client due to error {0}"
+                               .format(str(ex)))
         # USE MC BIN CLIENT WHEN NOT USING SDK CLIENT
-        return self.direct_mc_bin_client(server, bucket, timeout= timeout)
+        return self.direct_mc_bin_client(server, bucket, timeout=timeout)
 
     def test_index_population(self):
         '''
@@ -492,7 +495,6 @@ class CBASSecondaryIndexes(CBASBaseTest):
         testuser = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'password': 'password'}]
         rolelist = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'roles': 'admin'}]
         self.add_built_in_server_user(testuser=testuser, rolelist=rolelist)
-        self.use_sdk_client =True
         self.client = self._direct_client(self.master, self.cb_bucket_name)
         k = 'test_index_population'
 
@@ -590,7 +592,6 @@ class CBASSecondaryIndexes(CBASBaseTest):
         testuser = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'password': 'password'}]
         rolelist = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'roles': 'admin'}]
         self.add_built_in_server_user(testuser=testuser, rolelist=rolelist)
-        self.use_sdk_client = True
         self.client = self._direct_client(self.master, self.cb_bucket_name)
         k = 'test_index_population_thread'
 
