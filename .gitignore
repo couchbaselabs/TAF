@@ -4,7 +4,3 @@
 *.log
 *.class
 *.pyc
-.project
-.pydevproject
-logs
-scripts.log
