@@ -763,7 +763,7 @@ class SDKClient(object):
         except CouchbaseException:
             raise
 
-    def __translate_to_json_document(self, key, value, ttl=None):
+    def __translate_to_json_document(self, key, value, ttl=0):
         try:
             if type(value) != dict:
                 value = json.loads(value)
