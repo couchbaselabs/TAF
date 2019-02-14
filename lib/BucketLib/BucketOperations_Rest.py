@@ -36,6 +36,53 @@ class BucketHelper(RestConnection):
         except Exception:
             return False
 
+    def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
+        api = '%s%s%s?basic_stats=true' % (self.baseUrl, 'pools/default/buckets/', bucket.name)
+        status, content, header = self._http_request(api)
+        num = 1
+        while not status and num_attempt > num:
+            log.error("try to get {0} again after {1} sec".format(api, timeout))
+            time.sleep(timeout)
+            status, content, header = self._http_request(api)
+            num += 1
+        if status:
+            parsed = json.loads(content)
+            if 'vBucketServerMap' in parsed:
+                vBucketServerMap = parsed['vBucketServerMap']
+                serverList = vBucketServerMap['serverList']
+                bucket.servers.extend(serverList)
+                if "numReplicas" in vBucketServerMap:
+                    bucket.replicaNumber = vBucketServerMap["numReplicas"]
+                # vBucketMapForward
+                if 'vBucketMapForward' in vBucketServerMap:
+                    # let's gather the forward map
+                    vBucketMapForward = vBucketServerMap['vBucketMapForward']
+                    counter = 0
+                    for vbucket in vBucketMapForward:
+                        # there will be n number of replicas
+                        vbucketInfo = vBucket()
+                        vbucketInfo.master = serverList[vbucket[0]]
+                        if vbucket:
+                            for i in range(1, len(vbucket)):
+                                if vbucket[i] != -1:
+                                    vbucketInfo.replica.append(serverList[vbucket[i]])
+                        vbucketInfo.id = counter
+                        counter += 1
+                        bucket.forward_map.append(vbucketInfo)
+                vBucketMap = vBucketServerMap['vBucketMap']
+                counter = 0
+                for vbucket in vBucketMap:
+                    # there will be n number of replicas
+                    vbucketInfo = vBucket()
+                    vbucketInfo.master = serverList[vbucket[0]]
+                    if vbucket:
+                        for i in range(1, len(vbucket)):
+                            if vbucket[i] != -1:
+                                vbucketInfo.replica.append(serverList[vbucket[i]])
+                    vbucketInfo.id = counter
+                    counter += 1
+                    bucket.vbuckets.append(vbucketInfo)
+
     def get_buckets_json(self):
         api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets?basic_stats=true')
         status, content, header = self._http_request(api)
@@ -53,7 +100,11 @@ class BucketHelper(RestConnection):
         msg = 'vbucket map is not ready for bucket {0} after waiting {1} seconds'
         log.info(msg.format(bucket, timeout_in_seconds))
         return False
-    
+
+    def get_vbuckets(self, bucket):
+        self.get_bucket_from_cluster(bucket)
+        return None if not bucket.vbuckets else bucket.vbuckets
+
     def _get_vbuckets(self, servers, bucket_name='default'):
         vbuckets_servers = {}
         for server in servers:
@@ -69,7 +120,7 @@ class BucketHelper(RestConnection):
             vbs_active = [vb.id for vb in bucket_to_check.vbuckets
                            if vb.master.startswith(str(server.ip))]
             vbs_replica = []
-            for replica_num in xrange(0, bucket_to_check.numReplicas):
+            for replica_num in xrange(0, bucket_to_check.replicaNumber):
                 vbs_replica.extend([vb.id for vb in bucket_to_check.vbuckets
                                     if vb.replica[replica_num].startswith(str(server.ip))])
             vbuckets_servers[server]['active_vb'] = vbs_active
@@ -145,7 +196,6 @@ class BucketHelper(RestConnection):
         zoom -- stats zoom level (minute | hour | day | week | month | year)
         """
         api = self.baseUrl + 'pools/default/buckets/{0}/stats?zoom={1}'.format(bucket, zoom)
-        log.info(api)
         status, content, header = self._http_request(api)
         return json.loads(content)
 
@@ -461,4 +511,42 @@ class BucketHelper(RestConnection):
         if not status:
             raise Exception("unable to get random document/key for bucket %s" % (bucket))
         return json_parsed
-    
+
+    '''
+        Add/Update user role assignment
+        user_id=userid of the user to act on
+        payload=name=<nameofuser>&roles=admin,cluster_admin&password=<password>
+        if roles=<empty> user will be created with no roles'''
+
+    def add_set_builtin_user(self, user_id, payload):
+        url = "settings/rbac/users/local/" + user_id
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'PUT', payload)
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    '''
+    Delete built-in user
+    '''
+
+    def delete_builtin_user(self, user_id):
+        url = "settings/rbac/users/local/" + user_id
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'DELETE')
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    '''
+    Add/Update user role assignment
+    user_id=userid of the user to act on
+    password=<new password>'''
+
+    def change_password_builtin_user(self, user_id, password):
+        url = "controller/changePassword/" + user_id
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'POST', password)
+        if not status:
+            raise Exception(content)
+        return json.loads(content)

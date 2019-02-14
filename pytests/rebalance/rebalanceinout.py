@@ -3,7 +3,8 @@ import threading
 
 from rebalance.rebalance_base import RebalanceBaseTest
 from couchbase_helper.documentgenerator import BlobGenerator
-from membase.api.rest_client import RestConnection, RestHelper, Bucket
+from membase.api.rest_client import RestConnection, RestHelper
+from bucket_utils.Bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.document import View

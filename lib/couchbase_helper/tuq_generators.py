@@ -883,7 +883,7 @@ class JsonGenerator:
 
         gen_load = DocumentGenerator(key_prefix, template, age, name, start=start,
                                      end=end)
-        return [gen_load]
+        return gen_load
 
     def generate_docs_simple(self, key_prefix ="simple_dataset", start=0, docs_per_day = 1000, isShuffle = False):
         end = docs_per_day
@@ -891,7 +891,7 @@ class JsonGenerator:
         name = [key_prefix + '-' + str(i) for i in self._shuffle(xrange(start, end), isShuffle)]
         template = '{{ "age": {0}, "name": "{1}" }}'
         gen_load = DocumentGenerator(key_prefix, template, age, name, start=start, end=end)
-        return [gen_load]
+        return gen_load
 
     def generate_docs_array(self, key_prefix="array_dataset", start=0, docs_per_day=1, isShuffle=False):
         COUNTRIES = ["India", "US", "UK", "Japan", "France", "Germany", "China", "Korea", "Canada", "Cuba",

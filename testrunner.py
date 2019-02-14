@@ -28,7 +28,6 @@ from scripts.getcoredumps import Getcoredumps, Clearcoredumps
 import signal
 import shutil
 
-
 def usage(err=None):
     print """\
 Syntax: testrunner [options]
@@ -498,6 +497,8 @@ def main():
         result = unittest.TextTestRunner(verbosity=2).run(suite)
     except AttributeError as ex:
         pass
+    except Exception as e:
+        print e.message
     if "makefile" in TestInputSingleton.input.test_params:
         # print out fail for those tests which failed and do sys.exit() error code
         fail_count = 0

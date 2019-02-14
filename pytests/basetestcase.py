@@ -20,6 +20,7 @@ from cluster_utils.cluster_ready_functions import cluster_utils
 from cluster_utils.cluster_ready_functions import CBCluster
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
+from Jython_tasks.task_manager import TaskManager
 import time
 
 log = logging.getLogger()
@@ -40,10 +41,12 @@ class BaseTestCase(unittest.TestCase):
         self.servers = self.input.servers
         self.buckets = []
         self.case_number = self.input.param("case_number", 0)
+        self.thread_to_use = self.input.param("threads_to_use", 10)
         self.cluster = CBCluster(servers=self.input.servers)
-        self.bucket_util = bucket_utils(self.cluster)
-        self.cluster_util = cluster_utils(self.cluster)
-        self.task = ServerTasks()
+        self.task_manager = TaskManager(self.thread_to_use)
+        self.cluster_util = cluster_utils(self.cluster, self.task_manager)
+        self.bucket_util = bucket_utils(self.cluster, self.task_manager, self.cluster_util)
+        self.task = ServerTasks(self.task_manager)
         self.cleanup = False
         self.nonroot = False
         shell = RemoteMachineShellConnection(self.cluster.master)
@@ -57,13 +60,24 @@ class BaseTestCase(unittest.TestCase):
         self.skip_init_check_cbserver = self.input.param("skip_init_check_cbserver", False)
 
         try:
+            self.vbuckets = self.input.param("vbuckets", 1024)
             self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
             self.index_quota_percent = self.input.param("index_quota_percent", None)
             self.num_servers = self.input.param("servers", len(self.cluster.servers))
             # initial number of items in the cluster
             self.services_init = self.input.param("services_init", None)
+            self.nodes_init = self.input.param("nodes_init", 1)
+            self.nodes_in = self.input.param("nodes_in", 1)
+            self.nodes_out = self.input.param("nodes_out", 1)
             self.services_in = self.input.param("services_in", None)
             self.forceEject = self.input.param("forceEject", False)
+            self.num_items = self.input.param("num_items", 100000)
+            self.num_replicas = self.input.param("replicas", 1)
+            self.value_size = self.input.param("value_size", 1)
+            self.wait_timeout = self.input.param("wait_timeout", 60)
+            self.dgm_run = self.input.param("dgm_run", False)
+            self.active_resident_threshold = int(self.input.param("active_resident_threshold", 0))
+            self.verify_unacked_bytes = self.input.param("verify_unacked_bytes", False)
             self.force_kill_memcached = TestInputSingleton.input.param('force_kill_memcached', False)
             self.disabled_consistent_view = self.input.param("disabled_consistent_view", None)
             self.rebalanceIndexWaitingDisabled = self.input.param("rebalanceIndexWaitingDisabled", None)
@@ -80,7 +94,10 @@ class BaseTestCase(unittest.TestCase):
                 self.skip_buckets_handle = self.input.param("skip_buckets_handle", False)
             self.test_timeout = self.input.param("test_timeout", 3600)  # kill hang test and jump to next one.
             self.gsi_type = self.input.param("gsi_type", 'plasma')
-
+            self.compression_mode = self.input.param("compression_mode", 'passive')
+            self.sdk_compression = self.input.param("sdk_compression", True)
+            self.replicate_to = self.input.param("replicate_to", 0)
+            self.persist_to = self.input.param("persist_to", 0)
             #jre-path for cbas
             self.jre_path=self.input.param("jre_path",None)
             # end of bucket parameters spot (this is ongoing)
@@ -103,7 +120,7 @@ class BaseTestCase(unittest.TestCase):
             log.info("==============  basetestcase setup was started for test #{0} {1}==============" \
                           .format(self.case_number, self._testMethodName))
             if not self.skip_buckets_handle and not self.skip_init_check_cbserver:
-                self.cluster_util._cluster_cleanup(self.bucket_util)
+                self.cluster_util.cluster_cleanup(self.bucket_util)
 
             # avoid any cluster operations in setup for new upgrade
             #  & upgradeXDCR tests
@@ -125,7 +142,7 @@ class BaseTestCase(unittest.TestCase):
                 self.cleanup = True
                 if not self.skip_init_check_cbserver:
                     self.tearDownEverything()
-                self.task = ServerTasks()
+                self.task = ServerTasks(self.task_manager)
             if not self.skip_init_check_cbserver:
                 log.info("initializing cluster")
 #                 self.cluster_util.reset_cluster()
@@ -165,8 +182,8 @@ class BaseTestCase(unittest.TestCase):
                           .format(self.case_number, self._testMethodName))
 
             if not self.skip_init_check_cbserver:
-                self._log_start(self)
-                self.sleep(10)
+                self._log_start()
+                self.sleep(5)
         except Exception, e:
             traceback.print_exc()
             self.task.shutdown(force=True)
@@ -218,7 +235,7 @@ class BaseTestCase(unittest.TestCase):
                 alerts = rest.get_alerts()
                 if alerts is not None and len(alerts) != 0:
                     log.warn("Alerts were found: {0}".format(alerts))
-                self.cluster_util._cluster_cleanup(self.bucket_util)
+                self.cluster_util.cluster_cleanup(self.bucket_util)
                 log.info("==============  basetestcase cleanup was finished for test #{0} {1} ==============" \
                               .format(self.case_number, self._testMethodName))
         except BaseException:
@@ -235,7 +252,7 @@ class BaseTestCase(unittest.TestCase):
             else:
                 self.cluster_util.reset_env_variables()
             self.task.shutdown(force=True)
-            self._log_finish(self)
+            self._log_finish()
 
     def get_cbcollect_info(self, server):
         """Collect cbcollectinfo logs for all the servers in the cluster.
@@ -250,7 +267,6 @@ class BaseTestCase(unittest.TestCase):
         except Exception as e:
             log.error("IMPOSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}".format(server.ip, e))
             
-    @staticmethod
     def _log_start(self):
         try:
             msg = "{0} : {1} started ".format(datetime.datetime.now(), self._testMethodName)
@@ -258,7 +274,6 @@ class BaseTestCase(unittest.TestCase):
         except:
             pass
 
-    @staticmethod
     def _log_finish(self):
         try:
             msg = "{0} : {1} finished ".format(datetime.datetime.now(), self._testMethodName)

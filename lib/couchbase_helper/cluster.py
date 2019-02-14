@@ -1,7 +1,11 @@
 #from tasks.future import Future
 import logging
 from tasks.taskmanager import TaskManager
+from Jython_tasks.task_manager import TaskManager as jython_task_manager
 import tasks.tasks as conc
+import Jython_tasks.task as jython_tasks
+from sdk_client import SDKSmartClient as VBucketAwareMemcached
+from membase.api.rest_client import RestConnection
 import types
 
 
@@ -16,8 +20,9 @@ log = logging.getLogger(__name__)
 class ServerTasks(object):
     """A Task API for performing various operations synchronously or asynchronously on Couchbase cluster."""
 
-    def __init__(self):
+    def __init__(self, task_manager=jython_task_manager()):
         self.task_manager = TaskManager("Cluster_Thread")
+        self.jython_task_manager = task_manager
 
     def async_create_bucket(self, server, bucket):
         """Asynchronously creates the default bucket
@@ -107,17 +112,33 @@ class ServerTasks(object):
         self.task_manager.schedule(_task)
         return _task
 
-    def async_load_gen_docs(self, server, bucket, generator, kv_store, op_type, exp=0, flag=0, only_store_hash=True,
-                            batch_size=1, pause_secs=1, timeout_secs=5, proxy_client=None, compression=True):
-        log.info("BATCH SIZE for documents load: %s" % batch_size)
-        if isinstance(generator, list):
-                _task = conc.LoadDocumentsGeneratorsTask(server, self.task_manager, bucket, generator, kv_store, op_type, exp, flag, only_store_hash, batch_size, compression=compression)
-        else:
-                _task = conc.LoadDocumentsGeneratorsTask(server, self.task_manager, bucket, [generator], kv_store, op_type, exp, flag, only_store_hash, batch_size, compression=compression)
+    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0, persist_to=0, replicate_to=0,
+                            only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
+                            process_concurrency=8):
 
-        self.task_manager.schedule(_task)
+        log.info("Loading documents to {}".format(bucket.name))
+        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+        _task = jython_tasks.LoadDocumentsGeneratorsTask(cluster, self.jython_task_manager, bucket, client, [generator],
+                                                        op_type, exp, flag=flag, persist_to=persist_to,
+                                                        replicate_to=replicate_to, only_store_hash=only_store_hash,
+                                                        batch_size=batch_size,
+                                                        pause_secs=pause_secs, timeout_secs=timeout_secs,
+                                                        compression=compression,
+                                                        process_concurrency=process_concurrency)
+        self.jython_task_manager.add_new_task(_task)
         return _task
-    
+
+    def async_validate_docs(self, cluster, bucket, generator, opt_type, exp=0, flag=0, only_store_hash=True,
+                            batch_size=1, pause_secs=1, timeout_secs=5, compression=True, process_concurrency=4):
+        log.info("Validating documents")
+        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+        _task = jython_tasks.DocumentsValidatorTask(cluster, self.jython_task_manager, bucket, client, [generator],
+                                                    opt_type, exp, flag=flag, only_store_hash=only_store_hash, batch_size=batch_size,
+                                                        pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
+                                                        process_concurrency=process_concurrency)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
 #     def async_load_gen_docs_java(self, server, bucket, start_from, num_items=10000):
 #         def read_json_tempelate(path):
 #             import json
@@ -145,11 +166,12 @@ class ServerTasks(object):
 
         Returns:
             RebalanceTask - A task future that is a handle to the scheduled task"""
-        _task = conc.RebalanceTask(servers, self.task_manager, to_add, to_remove, use_hostnames=use_hostnames, services = services, check_vbucket_shuffling=check_vbucket_shuffling)
-        self.task_manager.schedule(_task)
+        _task = jython_tasks.rebalanceTask(servers, to_add, to_remove,
+                 use_hostnames=use_hostnames, services=services, check_vbucket_shuffling=check_vbucket_shuffling)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_wait_for_stats(self, servers, bucket, param, stat, comparison, value):
+    def async_wait_for_stats(self, cluster, bucket, param, stat, comparison, value):
         """Asynchronously wait for stats
 
         Waits for stats to match the criteria passed by the stats variable. See
@@ -168,8 +190,8 @@ class ServerTasks(object):
 
         Returns:
             RebalanceTask - A task future that is a handle to the scheduled task"""
-        _task = conc.StatsWaitTask(servers, bucket, param, stat, comparison, value, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+        _task = jython_tasks.StatsWaitTask(cluster, bucket, param, stat, comparison, value)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def create_default_bucket(self, bucket_params, timeout=600):
@@ -246,14 +268,17 @@ class ServerTasks(object):
         Returns:
             boolean - Whether or not the rebalance was successful"""
         _task = self.async_rebalance(servers, to_add, to_remove, use_hostnames, services = services)
-        return _task.get_result(timeout)
+        result = self.jython_task_manager.get_task_result(_task)
+        return result
 
-    def load_gen_docs(self, server, bucket, generator, kv_store, op_type, exp=0, timeout=None,
-                      flag=0, only_store_hash=True, batch_size=1, proxy_client=None, compression=True):
-        _task = self.async_load_gen_docs(server, bucket, generator, kv_store, op_type, exp, flag,
+    def load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
+                      flag=0, persist_to=0, replicate_to=0, only_store_hash=True,
+                      batch_size=1, compression=True):
+        _task = self.async_load_gen_docs(cluster, bucket, generator, op_type, exp, flag, persist_to=persist_to,
+                                         replicate_to=replicate_to,
                                          only_store_hash=only_store_hash, batch_size=batch_size, 
-                                         proxy_client=proxy_client, compression=compression)
-        return _task.get_result(timeout)
+                                         compression=compression)
+        return self.jython_task_manager.get_task_result(_task)
 
     def verify_data(self, server, bucket, kv_store, timeout=None, compression=True):
         _task = self.async_verify_data(server, bucket, kv_store, compression=compression)
@@ -270,7 +295,7 @@ class ServerTasks(object):
         self.task_manager.schedule(_task)
         return _task
     
-    def wait_for_stats(self, servers, bucket, param, stat, comparison, value, timeout=None):
+    def wait_for_stats(self, cluster, bucket, param, stat, comparison, value, timeout=None):
         """Synchronously wait for stats
 
         Waits for stats to match the criteria passed by the stats variable. See
@@ -289,8 +314,8 @@ class ServerTasks(object):
 
         Returns:
             boolean - Whether or not the correct stats state was seen"""
-        _task = self.async_wait_for_stats(servers, bucket, param, stat, comparison, value)
-        return _task.result(timeout)
+        _task = self.async_wait_for_stats(cluster, bucket, param, stat, comparison, value)
+        return self.jython_task_manager.get_task_result(_task)
 
     def shutdown(self, force=False):
         self.task_manager.shutdown(force)
@@ -317,7 +342,7 @@ class ServerTasks(object):
             scan_vector - scan vector used for consistency
         Returns:
             N1QLQueryTask - A task future that is a handle to the scheduled task."""
-        _task = conc.N1QLQueryTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.N1QLQueryTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  query = query, expected_result=expected_result,
                  verify_results = verify_results,
@@ -325,8 +350,8 @@ class ServerTasks(object):
                  index_name = index_name,
                  retry_time= retry_time,
                  scan_consistency = scan_consistency,
-                 scan_vector = scan_vector, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 scan_vector = scan_vector)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def n1ql_query_verification(self, server, bucket, query, n1ql_helper = None,
@@ -360,7 +385,7 @@ class ServerTasks(object):
                  retry_time= retry_time,
                  scan_consistency = scan_consistency,
                  scan_vector = scan_vector)
-        return _task.result(timeout)
+        return self.jython_task_manager.get_task_result(_task)
 
     def async_create_index(self, server, bucket, query, n1ql_helper = None,
                            index_name = None, defer_build = False, retry_time=2,
@@ -378,14 +403,14 @@ class ServerTasks(object):
             timeout - timeout for index to come online
         Returns:
             CreateIndexTask - A task future that is a handle to the scheduled task."""
-        _task = conc.CreateIndexTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.CreateIndexTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  defer_build = defer_build,
                  index_name = index_name,
                  query = query,
                  retry_time= retry_time,
-                 timeout = timeout, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 timeout = timeout)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def async_monitor_index(self, server, bucket, n1ql_helper = None,
@@ -402,12 +427,12 @@ class ServerTasks(object):
             n1ql_helper - n1ql helper object
         Returns:
             MonitorIndexTask - A task future that is a handle to the scheduled task."""
-        _task = conc.MonitorIndexTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.MonitorIndexTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  index_name = index_name,
                  retry_time= retry_time,
-                 timeout = timeout, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 timeout = timeout)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def async_build_index(self, server, bucket, query, n1ql_helper = None, retry_time=2):
@@ -421,11 +446,11 @@ class ServerTasks(object):
             n1ql_helper - n1ql helper object
         Returns:
             BuildIndexTask - A task future that is a handle to the scheduled task."""
-        _task = conc.BuildIndexTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.BuildIndexTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  query = query,
-                 retry_time= retry_time, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 retry_time= retry_time)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def create_index(self, server, bucket, query, n1ql_helper = None, index_name = None,
@@ -449,7 +474,7 @@ class ServerTasks(object):
                  index_name = index_name,
                  defer_build = defer_build,
                  retry_time= retry_time)
-        return _task.result(timeout)
+        return self.jython_task_manager.get_task_result(_task)
 
     def async_drop_index(self, server = None, bucket = "default", query = None,
                          n1ql_helper = None, index_name = None, retry_time=2):
@@ -464,12 +489,12 @@ class ServerTasks(object):
             n1ql_helper - n1ql helper object
         Returns:
             DropIndexTask - A task future that is a handle to the scheduled task."""
-        _task = conc.DropIndexTask(n1ql_helper = n1ql_helper,
+        _task = jython_tasks.DropIndexTask(n1ql_helper = n1ql_helper,
                  server = server, bucket = bucket,
                  query = query,
                  index_name = index_name,
-                 retry_time= retry_time, task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                 retry_time= retry_time)
+        self.jython_task_manager.add_new_task(_task)
         return _task
 
     def drop_index(self, server, bucket, query, n1ql_helper = None,
@@ -491,7 +516,7 @@ class ServerTasks(object):
                  query = query,
                  index_name = index_name,
                  retry_time= retry_time)
-        return _task.result(timeout)
+        return self.jython_task_manager.get_task_result(_task)
 
     def failover(self, servers=[], failover_nodes=[], graceful=False, use_hostnames=False,timeout=None):
         """Synchronously flushes a bucket

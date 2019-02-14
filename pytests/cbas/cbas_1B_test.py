@@ -7,7 +7,7 @@ from pytests.cbas.cbas_base import CBASBaseTest
 from lib.membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import bucket_utils
-from bucket_utils.bucket_ready_functions import Bucket as buck
+from bucket_utils.Bucket import Bucket as buck
 import time
 from pytests.cbas.cbas_utils import cbas_utils
 

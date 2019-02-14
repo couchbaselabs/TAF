@@ -11,6 +11,7 @@ import uuid
 from copy import deepcopy
 from threading import Thread
 from TestInput import TestInputSingleton
+from bucket_utils.Bucket import Bucket
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
 from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
 from exception import ServerAlreadyJoinedException, ServerUnavailableException, InvalidArgumentException
@@ -1420,6 +1421,19 @@ class RestConnection(object):
         if not status:
             log.error('unable to logClientError')
 
+    def get_buckets_itemCount(self):
+        # get all the buckets
+        bucket_map = {}
+        api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets?basic_stats=true')
+        status, content, header = self._http_request(api)
+        json_parsed = json.loads(content)
+        if status:
+            for item in json_parsed:
+                bucketInfo = RestParser().parse_get_bucket_json(item)
+                bucket_map[bucketInfo.name] = bucketInfo.stats.itemCount
+        log.info(bucket_map)
+        return bucket_map
+
     def trigger_index_compaction(self, timeout=120):
         node = None
         api = self.index_baseUrl + 'triggerCompaction'
@@ -1432,6 +1446,19 @@ class RestConnection(object):
         status, content, header = self._http_request(api, 'POST', json.dumps(setting_json))
         if not status:
             raise Exception(content)
+        log.info("{0} set".format(setting_json))
+
+    def set_index_settings_internal(self, setting_json, timeout=120):
+        api = self.index_baseUrl + 'internal/settings'
+        status, content, header = self._http_request(api, 'POST',
+                                                     json.dumps(setting_json))
+        if not status:
+            if header['status'] == '404':
+                log.info(
+                    "This endpoint is introduced only in 5.5.0, hence not found. Redirecting the request to the old endpoint")
+                self.set_index_settings(setting_json, timeout)
+            else:
+                raise Exception(content)
         log.info("{0} set".format(setting_json))
 
     def get_index_settings(self, timeout=120):
@@ -1697,6 +1724,28 @@ class RestConnection(object):
             log.info("Node versions in cluster {0}".format(versions))
         return versions
 
+    def check_cluster_compatibility(self, version):
+        """
+        Check if all nodes in cluster are of versions equal or above the version required.
+        :param version: Version to check the cluster compatibility for. Should be of format major_ver.minor_ver.
+                        For example: 5.0, 4.5, 5.1
+        :return: True if cluster is compatible with the version specified, False otherwise. Return None if cluster is
+        uninitialized.
+        """
+        nodes = self.get_nodes()
+        if not nodes:
+            # If nodes returned is None, it means that the cluster is not initialized yet and hence cluster
+            # compatibility cannot be found. Return None
+            return None
+        major_ver, minor_ver = version.split(".")
+        compatibility = int(major_ver) * 65536 + int(minor_ver)
+        is_compatible = True
+        for node in nodes:
+            clusterCompatibility = int(node.clusterCompatibility)
+            if clusterCompatibility < compatibility:
+                is_compatible = False
+        return is_compatible
+
     # this method returns the services of nodes in cluster - implemented for Sherlock
     def get_nodes_services(self):
         nodes = self.get_nodes()
@@ -1712,6 +1761,24 @@ class RestConnection(object):
         if versions[0] < check_version:
             return False
         return True
+
+    def get_cluster_stats(self):
+        """
+        Reads cluster nodes statistics using `pools/default` rest GET method
+        :return stat_dict - Dictionary of CPU & Memory status each cluster node:
+        """
+        stat_dict = dict()
+        json_output = self.get_pools_default()
+        if 'nodes' in json_output:
+            for node_stat in json_output['nodes']:
+                stat_dict[node_stat['hostname']] = dict()
+                stat_dict[node_stat['hostname']]['services'] = node_stat['services']
+                stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats']['cpu_utilization_rate']
+                stat_dict[node_stat['hostname']]['mem_free'] = node_stat['systemStats']['mem_free']
+                stat_dict[node_stat['hostname']]['mem_total'] = node_stat['systemStats']['mem_total']
+                stat_dict[node_stat['hostname']]['swap_mem_used'] = node_stat['systemStats']['swap_used']
+                stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats']['swap_total']
+        return stat_dict
 
     def get_fts_stats(self, index_name, bucket_name, stat_name):
         """
@@ -3377,6 +3444,15 @@ class RestConnection(object):
         if not status:
             raise Exception(content)
         return json.loads(content)
+
+    # the same as Preview a Random Document on UI
+    def get_random_key(self, bucket):
+        api = self.baseUrl + 'pools/default/buckets/%s/localRandomKey' % (bucket)
+        status, content, header = self._http_request(api, headers=self._create_capi_headers())
+        json_parsed = json.loads(content)
+        if not status:
+            raise Exception("unable to get random document/key for bucket %s" % (bucket))
+        return json_parsed
 
 
 
