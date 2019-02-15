@@ -1,6 +1,10 @@
-**/settings
+**.class
+**.pyc
+*.log
+*.iml
 *.settings
 **/logs
-*.log
-*.class
-*.pyc
+**/settings
+**/.idea
+.project
+.pydevproject
