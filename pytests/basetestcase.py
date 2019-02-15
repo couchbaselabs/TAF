@@ -134,11 +134,11 @@ class BaseTestCase(unittest.TestCase):
 
             # avoid any cluster operations in setup for new upgrade
             #  & upgradeXDCR tests
-            if True or str(self.__class__).find('newupgradetests') != -1 or \
-                            str(self.__class__).find('upgradeXDCR') != -1 or \
-                            str(self.__class__).find('Upgrade_EpTests') != -1 or \
-                            hasattr(self, 'skip_buckets_handle') and \
-                            self.skip_buckets_handle:
+            if str(self.__class__).find('newupgradetests') != -1 or \
+                    str(self.__class__).find('upgradeXDCR') != -1 or \
+                    str(self.__class__).find('Upgrade_EpTests') != -1 or \
+                    hasattr(self, 'skip_buckets_handle') and \
+                    self.skip_buckets_handle:
                 log.info("any cluster operation in setup will be skipped")
                 self.primary_index_created = True
                 log.info("==============  basetestcase setup was finished for test #{0} {1} =============="
