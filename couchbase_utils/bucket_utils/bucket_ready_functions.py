@@ -169,14 +169,16 @@ class bucket_utils():
                 if not status:
                     raise Exception("Bucket {0} could not be deleted".format(bucket.name))
         
-    def create_default_bucket(self, ram_quota=100, replica=1):
+    def create_default_bucket(self, ram_quota=100, replica=1, compression_mode="off"):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if node_info.memoryQuota and int(node_info.memoryQuota) > 0 :
             ram_available = node_info.memoryQuota
             ramQuotaMB = ram_available - 1
         else:
             ramQuotaMB = ram_quota
-        default_bucket = Bucket({Bucket.ramQuotaMB:ramQuotaMB, Bucket.replicaNumber:replica})
+        default_bucket = Bucket({Bucket.ramQuotaMB: ramQuotaMB,
+                                 Bucket.replicaNumber: replica,
+                                 Bucket.compressionMode: compression_mode})
         self.create_bucket(default_bucket)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])

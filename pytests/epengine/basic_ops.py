@@ -33,7 +33,8 @@ class basic_ops(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(replica=self.num_replicas,
+                                               compression_mode=self.compression_mode)
         self.bucket_util.add_rbac_user()
 
         """
@@ -44,7 +45,9 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(self.cluster, bucket,
                                                  gen_create, "create", 0,
                                                  batch_size=10,
-                                                 process_concurrency=8)
+                                                 process_concurrency=8,
+                                                 replicate_to=self.replicate_to,
+                                                 persist_to=self.persist_to)
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)
@@ -152,11 +155,10 @@ class basic_ops(BaseTestCase):
 
     def test_large_doc_size(self):
         # bucket size=256MB, when Bucket gets filled 236MB then test starts failing
-        # document size =2MB, No of docs = 221 , load 250 docs
-        # epengine.basic_ops.basic_ops.test_large_doc_size_1MB,skip_cleanup=True,document_size=1024000,dgm_run=True
+        # document size=2MB, No of docs = 221 , load 250 docs
         # generate docs with size >= 1MB , See MB-29333
 
-        self.num_items = self.input.param("num_of_docs", 10)
+        self.num_items = self.input.param("num_items", 256)
         self.doc_size *= 1024000
 
         gens_load = self.generate_docs_bigdata(docs_per_day=self.num_items,
@@ -167,7 +169,9 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(self.cluster, bucket,
                                                  gens_load, "create", 0,
                                                  batch_size=10,
-                                                 process_concurrency=8)
+                                                 process_concurrency=8,
+                                                 replicate_to=self.replicate_to,
+                                                 persist_to=self.persist_to)
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)
@@ -188,33 +192,38 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(self.cluster, bucket,
                                                  gens_load, "create", 0,
                                                  batch_size=10,
-                                                 process_concurrency=8)
+                                                 process_concurrency=8,
+                                                 replicate_to=self.replicate_to,
+                                                 persist_to=self.persist_to)
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)
 
-        mc = MemcachedClient(self.cluster.master.ip, 11210)
-        mc.sasl_auth_plain(self.cluster.master.rest_username,
-                           self.cluster.master.rest_password)
         for bucket in self.bucket_util.buckets:
-            mc.bucket_select(bucket.name)
-            stats = mc.stats()
-            if (self.doc_size > 20):
+            if self.doc_size > 20:
                 # failed with error "Data Too Big" when document size > 20MB
-                self.assertEquals(int(stats['curr_items']), 0)
+                self.bucket_util.verify_stats_all_buckets(0)
             else:
-                self.assertEquals(int(stats['curr_items']), 1)
+                self.bucket_util.verify_stats_all_buckets(1)
                 gens_update = self.generate_docs_bigdata(docs_per_day=1,
                                                          document_size=(21 * 1024000))
-                self.load(gens_update, buckets=self.src_bucket, verify_data=False,
-                          batch_size=10)
-                stats = mc.stats()
-                self.assertEquals(int(stats['curr_items']), 1)
+                print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
+                task = self.task.async_load_gen_docs(self.cluster, bucket,
+                                                     gens_update, "create", 0,
+                                                     batch_size=10,
+                                                     process_concurrency=8,
+                                                     replicate_to=self.replicate_to,
+                                                     persist_to=self.persist_to)
+                self.task.jython_task_manager.get_task_result(task)
+                print_ops_task.end_task()
+                self.task_manager.get_task_result(print_ops_task)
+                self.bucket_util.verify_stats_all_buckets(1)
 
     def test_diag_eval_curl(self):
         # Check if diag/eval can be done only by local host
         # epengine.basic_ops.basic_ops.test_diag_eval_curl,disable_diag_eval_non_local=True
 
+        self.disable_diag_eval_on_non_local_host = self.input.param("disable_diag_eval_non_local", False)
         port = self.cluster.master.port
 
         # check if local host can work fine
@@ -250,9 +259,11 @@ class basic_ops(BaseTestCase):
         for command in cmd:
             output, error = shell.execute_command(command)
             if self.disable_diag_eval_on_non_local_host:
-                self.assertEquals("API is accessible from localhost only", output[0])
+                self.assertEquals("API is accessible from localhost only",
+                                  output[0])
             else:
-                self.assertNotEquals("API is accessible from localhost only", output[0])
+                self.assertNotEquals("API is accessible from localhost only",
+                                     output[0])
 
     def verify_stat(self, items, value="active"):
         mc = MemcachedClient(self.cluster.master.ip, 11210)
@@ -282,15 +293,21 @@ class basic_ops(BaseTestCase):
                                    end=self.num_items)
         gen_create2 = BlobGenerator('eviction2', 'eviction2-', self.value_size,
                                     end=self.num_items)
-        self._load_all_buckets(self.cluster.master, gen_create, "create", 0)
-        self._wait_for_stats_all_buckets(self.servers[:self.nodes_init])
-        self._verify_stats_all_buckets(self.servers[:self.nodes_init])
+        def_bucket = self.bucket_util.get_all_buckets()[0]
+        print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
+        task = self.task.async_load_gen_docs(self.cluster, def_bucket,
+                                             gen_create, "create", 0,
+                                             batch_size=10,
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to)
+        self.task.jython_task_manager.get_task_result(task)
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        print_ops_task.end_task()
 
         remote = RemoteMachineShellConnection(self.cluster.master)
         for bucket in self.buckets:
-            # Verify the stat or compression_mode active and compressed items should be 10000
-            self.verify_stat(items=self.num_items)
-
             # change compression mode to off
             output, _ = remote.execute_couchbase_cli(cli_command='bucket-edit',
                                                      cluster_host="localhost:8091",
@@ -305,14 +322,17 @@ class basic_ops(BaseTestCase):
 
         # Load data and check stats to see compression
         # is not done for newly added data
-        self._load_all_buckets(self.cluster.master, gen_create2, "create", 0)
-        self._wait_for_stats_all_buckets(self.servers[:self.nodes_init])
-        self._verify_stats_all_buckets(self.servers[:self.nodes_init])
-
-        for bucket in self.buckets:
-            # Verify the stat for compression_mode off and
-            # compressed items should be still 10000
-            self.verify_stat(items=self.num_items, value="off")
+        print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
+        task = self.task.async_load_gen_docs(self.cluster, def_bucket,
+                                             gen_create2, "create", 0,
+                                             batch_size=10,
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to)
+        self.task.jython_task_manager.get_task_result(task)
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        print_ops_task.end_task()
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
