@@ -25,6 +25,7 @@ import time
 
 log = logging.getLogger()
 
+
 class BaseTestCase(unittest.TestCase):
     def setUp(self):
         self.log = logger.Logger.get_logger()
@@ -60,8 +61,25 @@ class BaseTestCase(unittest.TestCase):
         self.skip_init_check_cbserver = self.input.param("skip_init_check_cbserver", False)
 
         try:
-            self.vbuckets = self.input.param("vbuckets", 1024)
+            # Framework specific params
             self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
+            self.log_info = self.input.param("log_info", None)
+            self.log_location = self.input.param("log_location", None)
+            # kill hang test and jump to next one.
+            self.test_timeout = self.input.param("test_timeout", 3600)
+
+            # Bucket specific params
+            self.vbuckets = self.input.param("vbuckets", 1024)
+            self.num_replicas = self.input.param("replicas", 1)
+            self.active_resident_threshold = int(self.input.param("active_resident_threshold", 0))
+            self.compression_mode = self.input.param("compression_mode", 'passive')
+            # end of bucket parameters spot (this is ongoing)
+
+            # Client specific params
+            self.sdk_compression = self.input.param("sdk_compression", True)
+            self.replicate_to = self.input.param("replicate_to", 0)
+            self.persist_to = self.input.param("persist_to", 0)
+
             self.index_quota_percent = self.input.param("index_quota_percent", None)
             self.num_servers = self.input.param("servers", len(self.cluster.servers))
             # initial number of items in the cluster
@@ -74,11 +92,9 @@ class BaseTestCase(unittest.TestCase):
             self.key_size = self.input.param("key_size", 0)
             self.doc_size = self.input.param("doc_size", 10)
             self.num_items = self.input.param("num_items", 100000)
-            self.num_replicas = self.input.param("replicas", 1)
             self.value_size = self.input.param("value_size", 1)
             self.wait_timeout = self.input.param("wait_timeout", 60)
             self.dgm_run = self.input.param("dgm_run", False)
-            self.active_resident_threshold = int(self.input.param("active_resident_threshold", 0))
             self.verify_unacked_bytes = self.input.param("verify_unacked_bytes", False)
             self.force_kill_memcached = TestInputSingleton.input.param('force_kill_memcached', False)
             self.disabled_consistent_view = self.input.param("disabled_consistent_view", None)
@@ -88,21 +104,13 @@ class BaseTestCase(unittest.TestCase):
             self.maxParallelReplicaIndexers = self.input.param("maxParallelReplicaIndexers", None)
             self.quota_percent = self.input.param("quota_percent", None)
             self.port = None
-            self.log_info = self.input.param("log_info", None)
-            self.log_location = self.input.param("log_location", None)
             self.stat_info = self.input.param("stat_info", None)
             self.port_info = self.input.param("port_info", None)
             if not hasattr(self, 'skip_buckets_handle'):
                 self.skip_buckets_handle = self.input.param("skip_buckets_handle", False)
-            self.test_timeout = self.input.param("test_timeout", 3600)  # kill hang test and jump to next one.
             self.gsi_type = self.input.param("gsi_type", 'plasma')
-            self.compression_mode = self.input.param("compression_mode", 'passive')
-            self.sdk_compression = self.input.param("sdk_compression", True)
-            self.replicate_to = self.input.param("replicate_to", 0)
-            self.persist_to = self.input.param("persist_to", 0)
-            #jre-path for cbas
-            self.jre_path=self.input.param("jre_path",None)
-            # end of bucket parameters spot (this is ongoing)
+            # jre-path for cbas
+            self.jre_path = self.input.param("jre_path", None)
 
             if self.skip_setup_cleanup:
                 self.buckets = self.bucket_util.get_all_buckets()
@@ -119,8 +127,8 @@ class BaseTestCase(unittest.TestCase):
                 self.protocol = self.cluster_util.get_protocol_type()
             self.services_map = None
 
-            log.info("==============  basetestcase setup was started for test #{0} {1}==============" \
-                          .format(self.case_number, self._testMethodName))
+            log.info("==============  basetestcase setup was started for test #{0} {1}=============="
+                     .format(self.case_number, self._testMethodName))
             if not self.skip_buckets_handle and not self.skip_init_check_cbserver:
                 self.cluster_util.cluster_cleanup(self.bucket_util)
 
@@ -133,8 +141,8 @@ class BaseTestCase(unittest.TestCase):
                             self.skip_buckets_handle:
                 log.info("any cluster operation in setup will be skipped")
                 self.primary_index_created = True
-                log.info("==============  basetestcase setup was finished for test #{0} {1} ==============" \
-                              .format(self.case_number, self._testMethodName))
+                log.info("==============  basetestcase setup was finished for test #{0} {1} =============="
+                         .format(self.case_number, self._testMethodName))
                 return
             # avoid clean up if the previous test has been tear down
             if self.case_number == 1 or self.case_number > 1000:
@@ -147,21 +155,21 @@ class BaseTestCase(unittest.TestCase):
                 self.task = ServerTasks(self.task_manager)
             if not self.skip_init_check_cbserver:
                 log.info("initializing cluster")
-#                 self.cluster_util.reset_cluster()
-                master_services = self.cluster_util.get_services(self.servers[:1], \
-                                                    self.services_init, \
-                                                    start_node=0)
-                if master_services != None:
+                # self.cluster_util.reset_cluster()
+                master_services = self.cluster_util.get_services(self.servers[:1],
+                                                                 self.services_init,
+                                                                 start_node=0)
+                if master_services is None:
                     master_services = master_services[0].split(",")
 
-                self.quota = self._initialize_nodes(self.task, self.cluster.servers, \
-                                                    self.disabled_consistent_view, \
-                                                    self.rebalanceIndexWaitingDisabled, \
-                                                    self.rebalanceIndexPausingDisabled, \
-                                                    self.maxParallelIndexers, \
-                                                    self.maxParallelReplicaIndexers, \
-                                                    self.port, \
-                                                    self.quota_percent, \
+                self.quota = self._initialize_nodes(self.task, self.cluster.servers,
+                                                    self.disabled_consistent_view,
+                                                    self.rebalanceIndexWaitingDisabled,
+                                                    self.rebalanceIndexPausingDisabled,
+                                                    self.maxParallelIndexers,
+                                                    self.maxParallelReplicaIndexers,
+                                                    self.port,
+                                                    self.quota_percent,
                                                     services=master_services)
 
                 self.cluster_util.change_env_variables()
@@ -180,7 +188,7 @@ class BaseTestCase(unittest.TestCase):
             if self.input.param("port", None):
                 self.port = str(self.input.param("port", None))
 
-            log.info("==============  basetestcase setup was finished for test #{0} {1} ==============" \
+            log.info("==============  basetestcase setup was finished for test #{0} {1} =============="
                      .format(self.case_number, self._testMethodName))
 
             if not self.skip_init_check_cbserver:
@@ -231,14 +239,14 @@ class BaseTestCase(unittest.TestCase):
                             except:
                                 pass
 
-                log.info("==============  basetestcase cleanup was started for test #{0} {1} ==============" \
+                log.info("==============  basetestcase cleanup was started for test #{0} {1} =============="
                          .format(self.case_number, self._testMethodName))
                 rest = RestConnection(self.cluster.master)
                 alerts = rest.get_alerts()
                 if alerts is not None and len(alerts) != 0:
                     log.warn("Alerts were found: {0}".format(alerts))
                 self.cluster_util.cluster_cleanup(self.bucket_util)
-                log.info("==============  basetestcase cleanup was finished for test #{0} {1} ==============" \
+                log.info("==============  basetestcase cleanup was finished for test #{0} {1} =============="
                          .format(self.case_number, self._testMethodName))
         except BaseException:
             # kill memcached

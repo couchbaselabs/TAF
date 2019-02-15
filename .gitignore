@@ -1,6 +1,8 @@
 **.class
 **.pyc
+*.iml
 .project
 .pydevproject
 logs
 scripts.log
+**/.idea
