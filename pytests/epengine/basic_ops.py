@@ -33,7 +33,8 @@ class basic_ops(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket(replica=self.num_replicas, compression_mode=self.compression_mode)
+        self.bucket_util.create_default_bucket(replica=self.num_replicas,
+                                               compression_mode=self.compression_mode)
         self.bucket_util.add_rbac_user()
 
         """
@@ -44,7 +45,9 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(self.cluster, bucket,
                                                  gen_create, "create", 0,
                                                  batch_size=10,
-                                                 process_concurrency=8)
+                                                 process_concurrency=8,
+                                                 replicate_to=self.replicate_to,
+                                                 persist_to=self.persist_to)
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)
@@ -166,7 +169,9 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(self.cluster, bucket,
                                                  gens_load, "create", 0,
                                                  batch_size=10,
-                                                 process_concurrency=8)
+                                                 process_concurrency=8,
+                                                 replicate_to=self.replicate_to,
+                                                 persist_to=self.persist_to)
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)
@@ -187,7 +192,9 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(self.cluster, bucket,
                                                  gens_load, "create", 0,
                                                  batch_size=10,
-                                                 process_concurrency=8)
+                                                 process_concurrency=8,
+                                                 replicate_to=self.replicate_to,
+                                                 persist_to=self.persist_to)
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)
@@ -204,7 +211,9 @@ class basic_ops(BaseTestCase):
                 task = self.task.async_load_gen_docs(self.cluster, bucket,
                                                      gens_update, "create", 0,
                                                      batch_size=10,
-                                                     process_concurrency=8)
+                                                     process_concurrency=8,
+                                                     replicate_to=self.replicate_to,
+                                                     persist_to=self.persist_to)
                 self.task.jython_task_manager.get_task_result(task)
                 print_ops_task.end_task()
                 self.task_manager.get_task_result(print_ops_task)
@@ -289,7 +298,9 @@ class basic_ops(BaseTestCase):
         task = self.task.async_load_gen_docs(self.cluster, def_bucket,
                                              gen_create, "create", 0,
                                              batch_size=10,
-                                             process_concurrency=8)
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -315,7 +326,9 @@ class basic_ops(BaseTestCase):
         task = self.task.async_load_gen_docs(self.cluster, def_bucket,
                                              gen_create2, "create", 0,
                                              batch_size=10,
-                                             process_concurrency=8)
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
