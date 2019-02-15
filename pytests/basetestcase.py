@@ -134,7 +134,7 @@ class BaseTestCase(unittest.TestCase):
 
             # avoid any cluster operations in setup for new upgrade
             #  & upgradeXDCR tests
-            if str(self.__class__).find('newupgradetests') != -1 or \
+            if True or str(self.__class__).find('newupgradetests') != -1 or \
                             str(self.__class__).find('upgradeXDCR') != -1 or \
                             str(self.__class__).find('Upgrade_EpTests') != -1 or \
                             hasattr(self, 'skip_buckets_handle') and \
@@ -159,7 +159,7 @@ class BaseTestCase(unittest.TestCase):
                 master_services = self.cluster_util.get_services(self.servers[:1],
                                                                  self.services_init,
                                                                  start_node=0)
-                if master_services is None:
+                if master_services is not None:
                     master_services = master_services[0].split(",")
 
                 self.quota = self._initialize_nodes(self.task, self.cluster.servers,
