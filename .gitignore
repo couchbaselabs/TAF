@@ -1,8 +1,10 @@
 **.class
 **.pyc
+*.log
 *.iml
+*.settings
+**/logs
+**/settings
+**/.idea
 .project
 .pydevproject
-logs
-scripts.log
-**/.idea
