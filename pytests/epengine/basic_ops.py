@@ -1,8 +1,9 @@
 import time
 import json
+from math import floor
 
 from basetestcase import BaseTestCase
-from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
+from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
 from couchbase_helper.tuq_generators import JsonGenerator
 
 from membase.api.rest_client import RestConnection
@@ -37,22 +38,6 @@ class basic_ops(BaseTestCase):
                                                compression_mode=self.compression_mode)
         self.bucket_util.add_rbac_user()
 
-        """
-        gen_create = self.get_doc_generator(0, self.num_items)
-        self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
-        for bucket in self.bucket_util.buckets:
-            print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
-            task = self.task.async_load_gen_docs(self.cluster, bucket,
-                                                 gen_create, "create", 0,
-                                                 batch_size=10,
-                                                 process_concurrency=8,
-                                                 replicate_to=self.replicate_to,
-                                                 persist_to=self.persist_to)
-            self.task.jython_task_manager.get_task_result(task)
-            print_ops_task.end_task()
-            self.task_manager.get_task_result(print_ops_task)
-        """
-
         # self.src_bucket = RestConnection(self.cluster.master).get_buckets()
         self.src_bucket = self.bucket_util.get_all_buckets()
         # Reset active_resident_threshold to avoid further data load as DGM
@@ -61,14 +46,6 @@ class basic_ops(BaseTestCase):
 
     def tearDown(self):
         super(basic_ops, self).tearDown()
-
-    def get_doc_generator(self, start, end):
-        age = range(5)
-        first = ['james', 'sharon']
-        body = [''.rjust(self.doc_size - 10, 'a')]
-        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-        return DocumentGenerator(self.key, template, age, first, body,
-                                 start=start, end=end)
 
     def do_basic_ops(self):
         KEY_NAME = 'key1'
@@ -152,14 +129,79 @@ class basic_ops(BaseTestCase):
                                                     end=docs_per_day,
                                                     value_size=document_size)
 
+    def test_doc_size(self):
+        """
+        Basic tests for document CRUD operations using JSON docs
+        """
+        doc_type = self.input.param("doc_type", "json")
+        doc_op = self.input.param("doc_op", "")
+        def_bucket = self.bucket_util.buckets[0]
+
+        if doc_op == "":
+            doc_op = None
+
+        # Load basic docs into bucket
+        doc_create = doc_generator(self.key, 0, self.num_items,
+                                   doc_size=self.doc_size,
+                                   doc_type=doc_type)
+        print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
+        task = self.task.async_load_gen_docs(self.cluster, def_bucket,
+                                             doc_create, "create", 0,
+                                             batch_size=10,
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to)
+        self.task.jython_task_manager.get_task_result(task)
+        print_ops_task.end_task()
+        self.task_manager.get_task_result(print_ops_task)
+
+        # Verify initial doc load count
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        num_item_start_for_crud = int(floor(self.num_items / 2)) + 1
+        doc_update = doc_generator(self.key, num_item_start_for_crud,
+                                   self.num_items,
+                                   doc_size=self.doc_size,
+                                   doc_type=doc_type)
+
+        print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
+        expected_num_items = self.num_items
+        num_of_mutations = 1
+
+        if doc_op == "update":
+            task = self.task.async_load_gen_docs(self.cluster, def_bucket,
+                                                 doc_update, "update", 0,
+                                                 batch_size=10,
+                                                 process_concurrency=8,
+                                                 replicate_to=self.replicate_to,
+                                                 persist_to=self.persist_to)
+            self.task.jython_task_manager.get_task_result(task)
+            self.task_manager.get_task_result(print_ops_task)
+            # TODO: Proc to verify the mutation value in each doc
+            # self.verify_doc_mutation(doc_update, num_of_mutations)
+        elif doc_op == "delete":
+            task = self.task.async_load_gen_docs(self.cluster, def_bucket,
+                                                 doc_update, "delete", 0,
+                                                 batch_size=10,
+                                                 process_concurrency=8,
+                                                 replicate_to=self.replicate_to,
+                                                 persist_to=self.persist_to)
+            self.task.jython_task_manager.get_task_result(task)
+            self.task_manager.get_task_result(print_ops_task)
+            expected_num_items = self.num_items - num_item_start_for_crud
+        else:
+            self.log.warning("Unsupported doc_operation")
+        print_ops_task.end_task()
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(expected_num_items)
+
     def test_large_doc_size(self):
         # bucket size=256MB, when Bucket gets filled 236MB then test starts failing
         # document size=2MB, No of docs = 221 , load 250 docs
         # generate docs with size >= 1MB , See MB-29333
 
-        self.num_items = self.input.param("num_items", 256)
         self.doc_size *= 1024000
-
         gens_load = self.generate_docs_bigdata(docs_per_day=self.num_items,
                                                document_size=self.doc_size)
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()

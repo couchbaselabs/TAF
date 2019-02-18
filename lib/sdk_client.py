@@ -291,13 +291,18 @@ class SDKClient(object):
         self.remove(key, cas=cas, quiet=quiet,
                     persist_to=persist_to, replicate_to=replicate_to)
 
-    def remove(self, key, cas=0, quiet=True, persist_to=0, replicate_to=0):
+    def remove(self, key, persist_to=None, replicate_to=None,
+               timeout=None, timeUnit=None):
         try:
-            return self.cb.remove(key)
+            return self.generic_remove(key, persistTo=persist_to,
+                                       replicateTo=replicate_to,
+                                       timeout=timeout, timeUnit=timeUnit)
         except CouchbaseException:
             try:
                 time.sleep(10)
-                return self.cb.remove(key)
+                return self.generic_remove(key, persistTo=persist_to,
+                                           replicateTo=replicate_to,
+                                           timeout=timeout, timeUnit=timeUnit)
             except CouchbaseException:
                 raise
 
@@ -566,6 +571,35 @@ class SDKClient(object):
                                                                 replicateTo,
                                                                 timeout,
                                                                 timeUnit)
+
+    def generic_remove(self, key, persistTo=None, replicateTo=None,
+                       timeout=None, timeUnit=None):
+        print("{0},{1},{2},{3},{4}".format(key, persistTo,replicateTo, timeout, timeUnit))
+        if timeout == timeUnit is None:
+            if persistTo == replicateTo is None:
+                self.cb.remove(key)
+            elif persistTo is not None and replicateTo is None:
+                self.cb.removeWithPersistTo(key, persistTo)
+            elif replicateTo is not None and persistTo is None:
+                self.cb.removeWithReplicateTo(key, replicateTo)
+            elif None not in [replicateTo, persistTo]:
+                self.cb.removeWithPersistToReplicateTo(key,
+                                                       persistTo, replicateTo)
+        elif None not in [timeout, timeUnit]:
+            if persistTo == replicateTo is None:
+                self.cb.removeWithTimeout(key, timeout, timeUnit)
+            elif persistTo is not None and replicateTo is None:
+                self.cb.removeWithPersistToAndTimeout(key, persistTo,
+                                                      timeout, timeUnit)
+            elif replicateTo is not None and persistTo is None:
+                self.cb.removeWithReplicateToAndTimeout(key, replicateTo,
+                                                        timeout, timeUnit)
+            elif None not in [replicateTo, persistTo]:
+                self.cb.removeWithPersistToReplicateToAndTimeout(key,
+                                                                 persistTo,
+                                                                 replicateTo,
+                                                                 timeout,
+                                                                 timeUnit)
 
     def counter(self, key, delta=1, initial=None, ttl=None,
                 persistTo=None, replicateTo=None, timeout=None, timeUnit=None):
