@@ -60,8 +60,7 @@ class basic_ops(BaseTestCase):
         self.log.info("==========Finished Basic_ops base setup========")
 
     def tearDown(self):
-        # super(basic_ops, self).tearDown()
-        pass
+        super(basic_ops, self).tearDown()
 
     def get_doc_generator(self, start, end):
         age = range(5)
