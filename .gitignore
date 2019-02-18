@@ -6,5 +6,4 @@
 **/logs
 **/settings
 **/.idea
-.project
-.pydevproject
+.DS_Store

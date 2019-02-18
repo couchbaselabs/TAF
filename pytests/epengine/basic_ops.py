@@ -133,7 +133,6 @@ class basic_ops(BaseTestCase):
         """
         Basic tests for document CRUD operations using JSON docs
         """
-        doc_type = self.input.param("doc_type", "json")
         doc_op = self.input.param("doc_op", "")
         def_bucket = self.bucket_util.buckets[0]
 
@@ -143,7 +142,7 @@ class basic_ops(BaseTestCase):
         # Load basic docs into bucket
         doc_create = doc_generator(self.key, 0, self.num_items,
                                    doc_size=self.doc_size,
-                                   doc_type=doc_type)
+                                   doc_type=self.doc_type)
         print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
         task = self.task.async_load_gen_docs(self.cluster, def_bucket,
                                              doc_create, "create", 0,
@@ -163,7 +162,7 @@ class basic_ops(BaseTestCase):
         doc_update = doc_generator(self.key, num_item_start_for_crud,
                                    self.num_items,
                                    doc_size=self.doc_size,
-                                   doc_type=doc_type)
+                                   doc_type=self.doc_type)
 
         print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
         expected_num_items = self.num_items

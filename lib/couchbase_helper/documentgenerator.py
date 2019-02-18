@@ -16,12 +16,10 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json"):
     body = [''.rjust(doc_size - 10, 'a')]
     # Defaults to JSON doc_type
     template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-    if doc_type == "string":
+    if doc_type in ["string", "binary"]:
         template = "Age:{0}, first_name:{1}, body: {2}"
-    elif doc_type == "binary":
-        template = body.encode("bz2")
     return DocumentGenerator(key, template, age, first, body,
-                             start=start, end=end)
+                             start=start, end=end, doc_type=doc_type)
 
 
 class KVGenerator(object):
@@ -72,6 +70,7 @@ class DocumentGenerator(KVGenerator):
         """
         self.args = args
         self.template = template
+        self.doc_type = "json"
 
         size = 0
         if not len(self.args) == 0:
@@ -88,10 +87,14 @@ class DocumentGenerator(KVGenerator):
         if 'end' in kwargs:
             self.end = kwargs['end']
 
+        if 'doc_type' in kwargs:
+            self.doc_type = kwargs['doc_type']
+
     """Creates the next generated document and increments the iterator.
 
     Returns:
         The document generated"""
+
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
@@ -106,15 +109,14 @@ class DocumentGenerator(KVGenerator):
                                              .replace('True', 'true') \
                                              .replace('False', 'false') \
                                              .replace('\\', '\\\\')
-        json_doc = json.loads(doc)
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
-            json_doc['_id'] = ''.join(self.random.choice(ascii_uppercase+ascii_lowercase+digits) \
+            doc_key = ''.join(self.random.choice(ascii_uppercase+ascii_lowercase+digits) \
                                                                    for i in range(12))
         else:
-            json_doc['_id'] = self.name + '-' + str(self.itr)
+            doc_key = self.name + '-' + str(self.itr)
         self.itr += 1
-        return json_doc['_id'], json.dumps(json_doc).encode("ascii", "ignore")
+        return doc_key, doc
 
 
 class SubdocDocumentGenerator(KVGenerator):
@@ -158,7 +160,6 @@ class SubdocDocumentGenerator(KVGenerator):
             self.end = kwargs['end']
 
     """Creates the next generated document and increments the iterator.
-
     Returns:
         The document generated"""
     def next(self):
@@ -201,6 +202,8 @@ class BatchedDocumentGenerator(object):
         self._doc_gen = document_generator
         self._batch_size = batch_size_int
         self._doc_gen.random = random.Random()
+        self.doc_type = document_generator.doc_type
+
         if self._batch_size <= 0:
             raise ValueError("Invalid Batch size {0}".format(self._batch_size))
 
@@ -303,6 +306,7 @@ class JsonDocGenerator(KVGenerator):
         self.name = name
         self.gen_docs = {}
         self.encoding = encoding
+        self.doc_type = "json"
 
         size = 0
         if not len(self.args) == 0:
