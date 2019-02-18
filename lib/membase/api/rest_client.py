@@ -14,20 +14,12 @@ from TestInput import TestInputSingleton
 from bucket_utils.Bucket import Bucket
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
 from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
-
-# try:
-#     from couchbase_helper.document import DesignDocument, View
-# except ImportError:
-#     from lib.couchbase_helper.document import DesignDocument, View
-
 from exception import ServerAlreadyJoinedException, ServerUnavailableException, InvalidArgumentException
 from membase.api.exception import BucketCreationException, ServerSelfJoinException, ClusterRemoteException, \
     RebalanceFailedException, FailoverFailedException, DesignDocCreationException, QueryViewException, \
     ReadDocumentException, GetBucketInfoFailed, CompactViewFailed, SetViewInfoNotFound, AddNodeException, \
     BucketFlushFailed, CBRecoveryFailedException, XDCRException, SetRecoveryTypeFailed, BucketCompactionException
 log = logger.Logger.get_logger()
-
-# helper library methods built on top of RestConnection interface
 
 class RestHelper(object):
     def __init__(self, rest_connection):
