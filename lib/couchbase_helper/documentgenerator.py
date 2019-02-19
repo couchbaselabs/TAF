@@ -9,6 +9,19 @@ import gzip
 from testconstants import DEWIKI, ENWIKI, ESWIKI, FRWIKI
 from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
+
+def doc_generator(key, start, end, doc_size=256, doc_type="json"):
+    age = range(5)
+    first = ['james', 'sharon']
+    body = [''.rjust(doc_size - 10, 'a')]
+    # Defaults to JSON doc_type
+    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
+    if doc_type in ["string", "binary"]:
+        template = "Age:{0}, first_name:{1}, body: {2}"
+    return DocumentGenerator(key, template, age, first, body,
+                             start=start, end=end, doc_type=doc_type)
+
+
 class KVGenerator(object):
     def __init__(self, name, start, end):
         self.name = name
@@ -16,6 +29,7 @@ class KVGenerator(object):
         self.end = end
         self.itr = start
         self.random = random.Random()
+
     def has_next(self):
         return self.itr < self.end
 
@@ -31,10 +45,9 @@ class KVGenerator(object):
     def __len__(self):
         return self.end - self.start
 
+
 class DocumentGenerator(KVGenerator):
     """ An idempotent document generator."""
-
-
     def __init__(self, name, template, *args, **kwargs):
         """Initializes the document generator
 
@@ -44,17 +57,20 @@ class DocumentGenerator(KVGenerator):
         age = range(5)
         first = ['james', 'sharon']
         template = '{{ "age": {0}, "first_name": "{1}" }}'
-        gen = DocumentGenerator('test_docs', template, age, first, start=0, end=5)
+        gen = DocumentGenerator('test_docs', template, age, first,
+                                start=0, end=5)
 
         Args:
             name: The key name prefix
             template: A formated string that can be used to generate documents
-            *args: Each argument is list for the corresponding parameter in the template. In the above example age[2]
-                   appears in the 3rd document
-            *kwargs: Special constrains for the document generator, currently start and end are supported
+            *args: Each argument is list for the corresponding parameter in the template.
+                   In the above example age[2] appears in the 3rd document
+            *kwargs: Special constrains for the document generator,
+                     currently start and end are supported
         """
         self.args = args
         self.template = template
+        self.doc_type = "json"
 
         size = 0
         if not len(self.args) == 0:
@@ -71,10 +87,14 @@ class DocumentGenerator(KVGenerator):
         if 'end' in kwargs:
             self.end = kwargs['end']
 
+        if 'doc_type' in kwargs:
+            self.doc_type = kwargs['doc_type']
+
     """Creates the next generated document and increments the iterator.
 
     Returns:
         The document generated"""
+
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
@@ -85,17 +105,19 @@ class DocumentGenerator(KVGenerator):
         for arg in self.args:
             value = self.random.choice(arg)
             doc_args.append(value)
-        doc = self.template.format(*doc_args).replace('\'', '"').replace('True',
-                             'true').replace('False', 'false').replace('\\', '\\\\')
-        json_doc = json.loads(doc)
+        doc = self.template.format(*doc_args).replace('\'', '"') \
+                                             .replace('True', 'true') \
+                                             .replace('False', 'false') \
+                                             .replace('\\', '\\\\')
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
-            json_doc['_id'] = ''.join(self.random.choice(ascii_uppercase+ascii_lowercase+digits) \
+            doc_key = ''.join(self.random.choice(ascii_uppercase+ascii_lowercase+digits) \
                                                                    for i in range(12))
         else:
-            json_doc['_id'] = self.name + '-' + str(self.itr)
+            doc_key = self.name + '-' + str(self.itr)
         self.itr += 1
-        return json_doc['_id'], json.dumps(json_doc).encode("ascii", "ignore")
+        return doc_key, doc
+
 
 class SubdocDocumentGenerator(KVGenerator):
     """ An idempotent document generator."""
@@ -138,7 +160,6 @@ class SubdocDocumentGenerator(KVGenerator):
             self.end = kwargs['end']
 
     """Creates the next generated document and increments the iterator.
-
     Returns:
         The document generated"""
     def next(self):
@@ -147,6 +168,7 @@ class SubdocDocumentGenerator(KVGenerator):
 
         self.itr += 1
         return self.name + '-' + str(self.itr), json.dumps(self.template).encode("ascii", "ignore")
+
 
 class BlobGenerator(KVGenerator):
     def __init__(self, name, seed, value_size, start=0, end=10000):
@@ -173,12 +195,15 @@ class BlobGenerator(KVGenerator):
         self.itr += 1
         return key, value
 
+
 class BatchedDocumentGenerator(object):
 
     def __init__(self, document_generator, batch_size_int=100):
         self._doc_gen = document_generator
         self._batch_size = batch_size_int
         self._doc_gen.random = random.Random()
+        self.doc_type = document_generator.doc_type
+
         if self._batch_size <= 0:
             raise ValueError("Invalid Batch size {0}".format(self._batch_size))
 
@@ -193,6 +218,7 @@ class BatchedDocumentGenerator(object):
             key_val[key] = val
             count += 1
         return key_val
+
 
 class JSONNonDocGenerator(KVGenerator):
     """
@@ -215,6 +241,7 @@ class JSONNonDocGenerator(KVGenerator):
         self.itr += 1
         return key, value
 
+
 class Base64Generator(KVGenerator):
     def __init__(self, name, values, start=0, end=10000):
         KVGenerator.__init__(self, name, start, end)
@@ -233,9 +260,11 @@ class Base64Generator(KVGenerator):
         self.itr += 1
         return key, value
 
+
 class JsonDocGenerator(KVGenerator):
 
-    def __init__(self, name, op_type="create", encoding="utf-8", *args, **kwargs ):
+    def __init__(self, name, op_type="create", encoding="utf-8",
+                 *args, **kwargs):
         """Initializes the JSON document generator
         gen =  JsonDocGenerator(prefix, encoding="utf-8",start=0,end=num_items)
 
@@ -277,6 +306,7 @@ class JsonDocGenerator(KVGenerator):
         self.name = name
         self.gen_docs = {}
         self.encoding = encoding
+        self.doc_type = "json"
 
         size = 0
         if not len(self.args) == 0:
@@ -364,8 +394,7 @@ class JsonDocGenerator(KVGenerator):
             raise StopIteration
         doc = self.gen_docs[self.itr]
         self.itr += 1
-        return self.name+str(10000000+self.itr),\
-               json.dumps(doc).encode(self.encoding, "ignore")
+        return self.name+str(10000000+self.itr), json.dumps(doc).encode(self.encoding, "ignore")
 
     def generate_join_date(self):
         import datetime
@@ -383,8 +412,8 @@ class JsonDocGenerator(KVGenerator):
         return round(random.random()*100000 + 50000, 2)
 
     def generate_name(self):
-        return "%s %s" %(FIRST_NAMES[random.randint(1, len(FIRST_NAMES)-1)],
-                         LAST_NAMES[random.randint(1, len(LAST_NAMES)-1)])
+        return "%s %s" % (FIRST_NAMES[random.randint(1, len(FIRST_NAMES)-1)],
+                          LAST_NAMES[random.randint(1, len(LAST_NAMES)-1)])
 
     def generate_lang_known(self):
         count = 0
@@ -393,6 +422,7 @@ class JsonDocGenerator(KVGenerator):
             lang.append(LANGUAGES[random.randint(0, len(LANGUAGES)-1)])
             count += 1
         return lang
+
 
 class WikiJSONGenerator(KVGenerator):
 
@@ -476,8 +506,8 @@ class WikiJSONGenerator(KVGenerator):
         done = False
         while not done:
             try:
-                with gzip.open("lib/couchbase_helper/wiki/{0}wiki.txt.gz".
-                                format(self.lang.lower()), "r") as f:
+                with gzip.open("lib/couchbase_helper/wiki/{0}wiki.txt.gz"
+                               .format(self.lang.lower()), "r") as f:
                     for doc in f:
                         self.gen_docs[count] = doc
                         if count >= self.end:
@@ -510,5 +540,4 @@ class WikiJSONGenerator(KVGenerator):
         doc['mutated'] = 0
         doc['type'] = 'wiki'
         self.itr += 1
-        return self.name+str(10000000+self.itr),\
-               json.dumps(doc, indent=3).encode(self.encoding, "ignore")
+        return self.name+str(10000000+self.itr), json.dumps(doc, indent=3).encode(self.encoding, "ignore")

@@ -9,7 +9,7 @@ import sys
 import threading
 from os.path import basename, splitext
 from pprint import pprint
-sys.path = ["lib", "pytests", "pysystests", "utils", "connections"] + sys.path
+sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils", "platform_utils", "connections"] + sys.path
 
 if sys.hexversion < 0x02060000:
     print "Testrunner requires version 2.6+ of python"

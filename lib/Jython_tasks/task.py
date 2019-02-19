@@ -489,8 +489,9 @@ class GenericLoadingTask(Task):
             self.set_exception(error)
 
     # start of batch methods
-    def batch_create(self, key_val, shared_client=None, persist_to=0, replicate_to=0, timeout=5,
-                     time_unit="seconds"):
+    def batch_create(self, key_val, shared_client=None, persist_to=0,
+                     replicate_to=0, timeout=5, time_unit="seconds",
+                     doc_type="json"):
         """
         standalone method for creating key/values in batch (sans kvstore)
 
@@ -503,18 +504,19 @@ class GenericLoadingTask(Task):
             client = shared_client or self.client
             client.setMulti(self.exp, self.flag, key_val, self.pause, timeout, parallel=False,
                             persist_to=persist_to, replicate_to=replicate_to,
-                            time_unit=time_unit)
+                            time_unit=time_unit, doc_type=doc_type)
             # log.info("Batch Operation: %s documents are INSERTED into bucket %s"%(len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
             self.set_exception(error)
 
-    def batch_update(self, key_val, persist_to=0, replicate_to=0, timeout=5, time_unit="seconds"):
+    def batch_update(self, key_val, persist_to=0, replicate_to=0, timeout=5,
+                     time_unit="seconds", doc_type="json"):
         try:
             self._process_values_for_update(key_val)
             self.client.upsertMulti(self.exp, self.flag, key_val, self.pause, timeout, parallel=False,
                                     persist_to=persist_to, replicate_to=replicate_to,
-                                    time_unit=time_unit)
+                                    time_unit=time_unit, doc_type=doc_type)
             #log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
@@ -603,10 +605,10 @@ class LoadDocumentsTask(GenericLoadingTask):
         key_value = doc_gen.next_batch()
         if self.op_type == 'create':
             self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                              timeout=self.timeout, time_unit=self.time_unit)
+                              timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
         elif self.op_type == 'update':
             self.batch_update(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                              timeout=self.timeout, time_unit=self.time_unit)
+                              timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
         elif self.op_type == 'delete':
             self.batch_delete(key_value)
         elif self.op_type == 'read':
