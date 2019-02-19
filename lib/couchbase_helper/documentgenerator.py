@@ -1,16 +1,18 @@
+import gzip
 import json
-import string
 import random
+import string
+import zlib
+
 from random import choice
 from string import ascii_uppercase
 from string import ascii_lowercase
 from string import digits
-import gzip
-from testconstants import DEWIKI, ENWIKI, ESWIKI, FRWIKI
 from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 
-def doc_generator(key, start, end, doc_size=256, doc_type="json"):
+def doc_generator(key, start, end, doc_size=256, doc_type="json",
+                  target_vbucket=None, vbuckets=1024):
     age = range(5)
     first = ['james', 'sharon']
     body = [''.rjust(doc_size - 10, 'a')]
@@ -18,6 +20,12 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json"):
     template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
     if doc_type in ["string", "binary"]:
         template = "Age:{0}, first_name:{1}, body: {2}"
+    if target_vbucket:
+        return DocumentGeneratorForTargetVbucket(key, template, age, first,
+                                                 body, start=start, end=end,
+                                                 doc_type=doc_type,
+                                                 target_vbucket=target_vbucket,
+                                                 vbuckets=vbuckets)
     return DocumentGenerator(key, template, age, first, body,
                              start=start, end=end, doc_type=doc_type)
 
@@ -131,7 +139,8 @@ class SubdocDocumentGenerator(KVGenerator):
         age = range(5)
         first = ['james', 'sharon']
         template = '{{ "age": {0}, "first_name": "{1}" }}'
-        gen = DocumentGenerator('test_docs', template, age, first, start=0, end=5)
+        gen = DocumentGenerator('test_docs', template, age, first,
+                                start=0, end=5)
 
         Args:
             name: The key name prefix
@@ -141,8 +150,6 @@ class SubdocDocumentGenerator(KVGenerator):
         """
         self.args = args
         self.template = template
-
-        print type(self.template)
 
         size = 0
         if not len(self.args) == 0:
@@ -167,7 +174,91 @@ class SubdocDocumentGenerator(KVGenerator):
             raise StopIteration
 
         self.itr += 1
-        return self.name + '-' + str(self.itr), json.dumps(self.template).encode("ascii", "ignore")
+        return self.name + '-' + str(self.itr), json.dumps(self.template) \
+                                                    .encode("ascii", "ignore")
+
+
+class DocumentGeneratorForTargetVbucket(KVGenerator):
+    """ An idempotent document generator."""
+    def __init__(self, name, template, *args, **kwargs):
+        """Initializes the document generator
+
+        Example:
+        Creates 10 documents, but only iterates through the first 5.
+
+        age = range(5)
+        first = ['james', 'sharon']
+        template = '{{ "age": {0}, "first_name": "{1}" }}'
+        gen = DocumentGenerator('test_docs', template, age, first,
+                                start=0, end=5)
+
+        Args:
+            name: The key name prefix
+            template: A formated string that can be used to generate documents
+            *args: Each argument is list for the corresponding parameter in the template.
+                   In the above example age[2] appears in the 3rd document
+            *kwargs: Special constrains for the document generator,
+                     currently start and end are supported
+        """
+        self.args = args
+        self.template = template
+        self.doc_type = "json"
+        self.doc_keys = list()
+        self.doc_keys_len = 0
+        self.key_counter = 1
+
+        size = 0
+        if not len(self.args) == 0:
+            size = 1
+            for arg in self.args:
+                size *= len(arg)
+
+        KVGenerator.__init__(self, name, 0, size)
+
+        if 'start' in kwargs:
+            self.start = kwargs['start']
+            self.itr = kwargs['start']
+        if 'end' in kwargs:
+            self.end = kwargs['end']
+        if 'doc_type' in kwargs:
+            self.doc_type = kwargs['doc_type']
+        if 'vbuckets' in kwargs:
+            self.vbuckets = kwargs['vbuckets']
+        if 'target_vbucket' in kwargs:
+            self.target_vbucket = kwargs['target_vbucket']
+
+        self.create_key_for_vbucket()
+
+    def create_key_for_vbucket(self):
+        while self.doc_keys_len < self.end:
+            doc_key = "{0}-{1}".format(self.name, str(self.key_counter))
+            tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
+                (self.vbuckets-1)
+            if tem_vb == self.target_vbucket:
+                self.doc_keys.append(doc_key)
+                self.doc_keys_len += 1
+            self.key_counter += 1
+
+    """
+    Creates the next generated document and increments the iterator.
+    Returns:
+       The document generated
+    """
+    def next(self):
+        if self.itr >= self.end:
+            raise StopIteration
+        id = self.name + '-' + str(self.itr)
+        self.random.seed(id)
+        doc_args = []
+        for arg in self.args:
+            value = self.random.choice(arg)
+            doc_args.append(value)
+        doc = self.template.format(*doc_args).replace('\'', '"') \
+                                             .replace('True', 'true') \
+                                             .replace('False', 'false') \
+                                             .replace('\\', '\\\\')
+        self.itr += 1
+        return self.doc_keys[self.itr-1], doc
 
 
 class BlobGenerator(KVGenerator):
@@ -401,8 +492,8 @@ class JsonDocGenerator(KVGenerator):
         year = random.randint(1950, 2016)
         month = random.randint(1, 12)
         day = random.randint(1, 28)
-        hour = random.randint(0,23)
-        min = random.randint(0,59)
+        hour = random.randint(0, 23)
+        min = random.randint(0, 59)
         return datetime.datetime(year, month, day, hour, min).isoformat()
 
     def generate_dept(self):
