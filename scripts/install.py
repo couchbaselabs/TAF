@@ -12,8 +12,7 @@ from datetime import datetime
 import socket
 import Queue
 
-sys.path = [".", "lib"] + sys.path
-sys.path = ["lib", "pytests", "pysystests", "utils", "connections"] + sys.path
+sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils", "platform_utils", "connections"] + sys.path
 import testconstants
 import time
 from builds.build_query import BuildQuery

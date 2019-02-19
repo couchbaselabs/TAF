@@ -217,7 +217,7 @@ public class BucketInterface {
 	*/
 
 	/*
-	// Un-implemented SDK functions
+	// Need to implement based on the requirements
 	D	get(String id, Class<D> target)
 	D	get(String id, Class<D> target, long timeout, TimeUnit timeUnit)
 	*/
@@ -249,5 +249,89 @@ public class BucketInterface {
 	Insert a Document if it does not exist already and watch for durability constraints with the default key/value timeout.
 	<D extends Document<?>>
 	D	insert(D document, ReplicateTo replicateTo, long timeout, TimeUnit timeUnit)
+	*/
+
+	// Remove document methods
+	public JsonDocument	remove(String id) {
+		return this.bucket.remove(id);
+	}
+
+	public JsonDocument removeWithTimeout(String id, long timeout, TimeUnit timeUnit) {
+		return this.bucket.remove(id, timeout, timeUnit);
+	}
+
+	public JsonDocument removeWithPersistTo(String id, PersistTo persistTo) {
+		return this.bucket.remove(id, persistTo);	
+	}
+
+	public JsonDocument removeWithPersistToAndTimeout(String id, PersistTo persistTo, long timeout, TimeUnit timeUnit) {
+		return this.bucket.remove(id, persistTo, timeout, timeUnit);
+	}
+
+	public JsonDocument removeWithPersistToReplicateTo(String id, PersistTo persistTo, ReplicateTo replicateTo) {
+		return this.bucket.remove(id, persistTo, replicateTo);
+	}
+
+	public JsonDocument removeWithPersistToReplicateToAndTimeout(String id, PersistTo persistTo, ReplicateTo replicateTo, long timeout, TimeUnit timeUnit) {
+		return this.bucket.remove(id, persistTo, replicateTo, timeout, timeUnit);
+	}
+
+	public JsonDocument removeWithReplicateTo(String id, ReplicateTo replicateTo) {
+		return this.bucket.remove(id, replicateTo);
+	}
+
+	public JsonDocument removeWithReplicateToAndTimeout(String id, ReplicateTo replicateTo, long timeout, TimeUnit timeUnit) {
+		return this.bucket.remove(id, replicateTo, timeout, timeUnit);
+	}
+
+	/*
+	<D extends Document<?>>
+	D	remove(D document)
+	Removes a Document from the Server with the default key/value timeout.
+	<D extends Document<?>>
+	D	remove(D document, long timeout, TimeUnit timeUnit)
+	Removes a Document from the Server with a custom timeout.
+	<D extends Document<?>>
+	D	remove(D document, PersistTo persistTo)
+	Removes a Document from the Server and apply a durability requirement with the default key/value timeout.
+	<D extends Document<?>>
+	D	remove(D document, PersistTo persistTo, long timeout, TimeUnit timeUnit)
+	Removes a Document from the Server and apply a durability requirement with a custom timeout.
+	<D extends Document<?>>
+	D	remove(D document, PersistTo persistTo, ReplicateTo replicateTo)
+	Removes a Document from the Server and apply a durability requirement with the default key/value timeout.
+	<D extends Document<?>>
+	D	remove(D document, PersistTo persistTo, ReplicateTo replicateTo, long timeout, TimeUnit timeUnit)
+	Removes a Document from the Server and apply a durability requirement with a custom timeout.
+	<D extends Document<?>>
+	D	remove(D document, ReplicateTo replicateTo)
+	Removes a Document from the Server and apply a durability requirement with the default key/value timeout.
+	<D extends Document<?>>
+	D	remove(D document, ReplicateTo replicateTo, long timeout, TimeUnit timeUnit)
+	Removes a Document from the Server and apply a durability requirement with a custom timeout.
+	<D extends Document<?>>
+	D	remove(String id, Class<D> target)
+	Removes a Document from the Server identified by its ID with the default key/value timeout.
+	<D extends Document<?>>
+	D	remove(String id, Class<D> target, long timeout, TimeUnit timeUnit)
+	Removes a Document from the Server identified by its ID with a custom timeout.
+	<D extends Document<?>>
+	D	remove(String id, PersistTo persistTo, Class<D> target)
+	Removes a Document from the Server by its ID and apply a durability requirement with the default key/value timeout.
+	<D extends Document<?>>
+	D	remove(String id, PersistTo persistTo, Class<D> target, long timeout, TimeUnit timeUnit)
+	Removes a Document from the Server by its ID and apply a durability requirement with a custom timeout.
+	<D extends Document<?>>
+	D	remove(String id, PersistTo persistTo, ReplicateTo replicateTo, Class<D> target)
+	Removes a Document from the Server by its ID and apply a durability requirement with the default key/value timeout.
+	<D extends Document<?>>
+	D	remove(String id, PersistTo persistTo, ReplicateTo replicateTo, Class<D> target, long timeout, TimeUnit timeUnit)
+	Removes a Document from the Server by its ID and apply a durability requirement with a custom timeout.
+	<D extends Document<?>>
+	D	remove(String id, ReplicateTo replicateTo, Class<D> target)
+	Removes a Document from the Server by its ID and apply a durability requirement with the default key/value timeout.
+	<D extends Document<?>>
+	D	remove(String id, ReplicateTo replicateTo, Class<D> target, long timeout, TimeUnit timeUnit)
+	Removes a Document from the Server by its ID and apply a durability requirement with a custom timeout.
 	*/
 }

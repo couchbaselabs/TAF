@@ -1,10 +1,9 @@
+.DS_Store
 **.class
 **.pyc
 *.log
 *.iml
 *.settings
+**/.idea
 **/logs
 **/settings
-**/.idea
-.project
-.pydevproject

@@ -4,6 +4,7 @@ Java based SDK client interface
 
 """
 import time
+import json as pyJson
 
 import logger
 import Java_Connection
@@ -291,13 +292,18 @@ class SDKClient(object):
         self.remove(key, cas=cas, quiet=quiet,
                     persist_to=persist_to, replicate_to=replicate_to)
 
-    def remove(self, key, cas=0, quiet=True, persist_to=0, replicate_to=0):
+    def remove(self, key, persist_to=None, replicate_to=None,
+               timeout=None, timeUnit=None):
         try:
-            return self.cb.remove(key)
+            return self.generic_remove(key, persistTo=persist_to,
+                                       replicateTo=replicate_to,
+                                       timeout=timeout, timeUnit=timeUnit)
         except CouchbaseException:
             try:
                 time.sleep(10)
-                return self.cb.remove(key)
+                return self.generic_remove(key, persistTo=persist_to,
+                                           replicateTo=replicate_to,
+                                           timeout=timeout, timeUnit=timeUnit)
             except CouchbaseException:
                 raise
 
@@ -344,11 +350,12 @@ class SDKClient(object):
 
     def set_multi(self, keys, ttl=None, format=None,
                   persist_to=0, replicate_to=0, timeOut=10,
-                  timeUnit="seconds", retry=5):
+                  timeUnit="seconds", retry=5, doc_type="json"):
         import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
-            docs.append(self.__translate_to_json_document(key, value, ttl))
+            docs.append(self.__translate_to_json_document(key, value, ttl,
+                                                          doc_type=doc_type))
         success = {}
         fail = {}
         while retry > 0:
@@ -368,11 +375,12 @@ class SDKClient(object):
             return fail
 
     def upsert_multi(self, keys, ttl=None, persist_to=0, replicate_to=0,
-                     timeOut=10, timeUnit="seconds", retry=5):
+                     timeOut=10, timeUnit="seconds", retry=5, doc_type="json"):
         import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
-            docs.append(self.__translate_to_json_document(key, value, ttl))
+            docs.append(self.__translate_to_json_document(key, value, ttl,
+                                                          doc_type=doc_type))
         success = {}
         fail = {}
         while retry > 0:
@@ -392,8 +400,9 @@ class SDKClient(object):
             return fail
 
     def insert(self, key, value, ttl=None, format=None,
-               persist_to=0, replicate_to=0):
-        doc = self.__translate_to_json_document(key, value, ttl)
+               persist_to=0, replicate_to=0,doc_type="json"):
+        doc = self.__translate_to_json_document(key, value, ttl,
+                                                doc_type=doc_type)
         try:
             self.cb.insert(doc)
         except CouchbaseException:
@@ -404,11 +413,13 @@ class SDKClient(object):
                 raise
 
     def insert_multi(self, keys,  ttl=None, format=None,
-                     persist_to=0, replicate_to=0, retry=5):
+                     persist_to=0, replicate_to=0, retry=5,
+                     doc_type="json"):
         import bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
-            docs.append(self.__translate_to_json_document(key, value, ttl))
+            docs.append(self.__translate_to_json_document(key, value, ttl,
+                                                          doc_type=doc_type))
         doc_op().bulkSet(self.cb.getBucketObj(), docs)
 
     def touch(self, key, ttl=None):
@@ -566,6 +577,34 @@ class SDKClient(object):
                                                                 replicateTo,
                                                                 timeout,
                                                                 timeUnit)
+
+    def generic_remove(self, key, persistTo=None, replicateTo=None,
+                       timeout=None, timeUnit=None):
+        if timeout == timeUnit is None:
+            if persistTo == replicateTo is None:
+                self.cb.remove(key)
+            elif persistTo is not None and replicateTo is None:
+                self.cb.removeWithPersistTo(key, persistTo)
+            elif replicateTo is not None and persistTo is None:
+                self.cb.removeWithReplicateTo(key, replicateTo)
+            elif None not in [replicateTo, persistTo]:
+                self.cb.removeWithPersistToReplicateTo(key,
+                                                       persistTo, replicateTo)
+        elif None not in [timeout, timeUnit]:
+            if persistTo == replicateTo is None:
+                self.cb.removeWithTimeout(key, timeout, timeUnit)
+            elif persistTo is not None and replicateTo is None:
+                self.cb.removeWithPersistToAndTimeout(key, persistTo,
+                                                      timeout, timeUnit)
+            elif replicateTo is not None and persistTo is None:
+                self.cb.removeWithReplicateToAndTimeout(key, replicateTo,
+                                                        timeout, timeUnit)
+            elif None not in [replicateTo, persistTo]:
+                self.cb.removeWithPersistToReplicateToAndTimeout(key,
+                                                                 persistTo,
+                                                                 replicateTo,
+                                                                 timeout,
+                                                                 timeUnit)
 
     def counter(self, key, delta=1, initial=None, ttl=None,
                 persistTo=None, replicateTo=None, timeout=None, timeUnit=None):
@@ -763,20 +802,21 @@ class SDKClient(object):
         except CouchbaseException:
             raise
 
-    def __translate_to_json_document(self, key, value, ttl=0):
+    def __translate_to_json_document(self, key, value, ttl=0, doc_type="json"):
         try:
-            if type(value) != dict:
-                value = json.loads(value)
-            js = JsonObject.create()
-            for field, val in value.items():
-                js.put(field, val)
-            doc = JsonDocument.create(key, ttl, js)
-            return doc
-        except DocumentNotJsonException:
-            return StringDocument.create(key, str(value))
+            if doc_type.find("json") != -1:
+                js = JsonObject.create()
+                value = pyJson.loads(value)
+                for field, val in value.items():
+                    js.put(field, val)
+                doc = JsonDocument.create(key, ttl, js)
+                return doc
+            elif doc_type.find("binary") != -1:
+                return BinaryDocument.create(key, Unpooled.copiedBuffer(value,
+                                                                        CharsetUtil.UTF_8))
         except Exception:
-            return StringDocument.create(key, str(value))
-        return StringDocument.create(key, str(value))
+            return JsonStringDocument.create(key, str(value))
+        return JsonStringDocument.create(key, str(value))
 
     def __translate_upsert_multi(self, data):
         success = dict()
@@ -915,22 +955,23 @@ class SDKSmartClient(object):
 
     def setMulti(self, exp, flags, key_val_dic, pause=None, timeout=5,
                  parallel=None, format=FMT_AUTO,
-                 persist_to=0, replicate_to=0, time_unit="seconds", retry=5):
+                 persist_to=0, replicate_to=0, time_unit="seconds", retry=5,
+                 doc_type="json"):
         return self.client.set_multi(key_val_dic, ttl=exp,
                                      persist_to=persist_to,
                                      replicate_to=replicate_to,
                                      timeOut=timeout, timeUnit=time_unit,
-                                     retry=retry)
+                                     retry=retry, doc_type=doc_type)
 
     def upsertMulti(self, exp, flags, key_val_dic, pause=None, timeout=5,
                     parallel=None, format=FMT_AUTO,
                     persist_to=0, replicate_to=0,
-                    time_unit="seconds", retry=5):
+                    time_unit="seconds", retry=5, doc_type="json"):
         return self.client.upsert_multi(key_val_dic, ttl=exp,
                                         persist_to=persist_to,
                                         replicate_to=replicate_to,
                                         timeOut=timeout, timeUnit=time_unit,
-                                        retry=retry)
+                                        retry=retry, doc_type=doc_type)
 
     def getMulti(self, keys_lst, pause=None, timeout_sec=5.0, parallel=None):
         map = None

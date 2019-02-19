@@ -75,6 +75,12 @@ class BaseTestCase(unittest.TestCase):
             self.compression_mode = self.input.param("compression_mode", 'passive')
             # end of bucket parameters spot (this is ongoing)
 
+            # Doc specific params
+            self.key_size = self.input.param("key_size", 0)
+            self.doc_size = self.input.param("doc_size", 10)
+            self.doc_type = self.input.param("doc_type", "json")
+            self.num_items = self.input.param("num_items", 100000)
+
             # Client specific params
             self.sdk_compression = self.input.param("sdk_compression", True)
             self.replicate_to = self.input.param("replicate_to", 0)
@@ -89,9 +95,6 @@ class BaseTestCase(unittest.TestCase):
             self.nodes_out = self.input.param("nodes_out", 1)
             self.services_in = self.input.param("services_in", None)
             self.forceEject = self.input.param("forceEject", False)
-            self.key_size = self.input.param("key_size", 0)
-            self.doc_size = self.input.param("doc_size", 10)
-            self.num_items = self.input.param("num_items", 100000)
             self.value_size = self.input.param("value_size", 1)
             self.wait_timeout = self.input.param("wait_timeout", 60)
             self.dgm_run = self.input.param("dgm_run", False)
