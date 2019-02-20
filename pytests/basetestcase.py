@@ -85,6 +85,7 @@ class BaseTestCase(unittest.TestCase):
             self.sdk_compression = self.input.param("sdk_compression", True)
             self.replicate_to = self.input.param("replicate_to", 0)
             self.persist_to = self.input.param("persist_to", 0)
+            self.durability_level = self.param("durability_level", None)
 
             self.index_quota_percent = self.input.param("index_quota_percent", None)
             self.num_servers = self.input.param("servers", len(self.cluster.servers))
