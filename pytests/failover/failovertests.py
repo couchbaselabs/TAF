@@ -16,8 +16,17 @@ class FailoverTests(FailoverBaseTest):
     def tearDown(self):
         super(FailoverTests, self).tearDown()
 
+    def test_failover_firewall(self):
+        self.common_test_body('firewall')
 
     def test_failover_normal(self):
+        self.common_test_body('normal')
+
+    def test_failover_stop_server(self):
+        self.common_test_body('stop_server')
+
+    def test_failover_then_add_back(self):
+        self.add_back_flag = True
         self.common_test_body('normal')
 
     def common_test_body(self, failover_reason):
@@ -510,9 +519,9 @@ class FailoverTests(FailoverBaseTest):
         ddoc_name = "ddoc1"
         prefix = ("", "dev_")[is_dev_ddoc]
         self.verify_query_task()
-        active_tasks = self.cluster.async_monitor_active_task(servers, "indexer", "_design/" + prefix + ddoc_name, wait_task=False)
+        active_tasks = self.cluster_util.async_monitor_active_task(servers, "indexer", "_design/" + prefix + ddoc_name, wait_task=False)
         for active_task in active_tasks:
-            result = active_task.result()
+            result = self.task.jython_task_manager.get_task_result(active_task)
             self.assertTrue(result)
 
     def verify_query_task(self):
