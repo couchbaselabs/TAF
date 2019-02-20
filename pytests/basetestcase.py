@@ -85,6 +85,8 @@ class BaseTestCase(unittest.TestCase):
             self.sdk_compression = self.input.param("sdk_compression", True)
             self.replicate_to = self.input.param("replicate_to", 0)
             self.persist_to = self.input.param("persist_to", 0)
+            self.sdk_retries = self.input.param("sdk_retries", 5)
+            self.sdk_timeout = self.input.param("sdk_timeout", 5)
             self.durability_level = self.param("durability_level", None)
 
             self.index_quota_percent = self.input.param("index_quota_percent", None)

@@ -32,8 +32,8 @@ class RebalanceBaseTest(BaseTestCase):
             print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
             task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
                                                  persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                                 batch_size=10,
-                                                 process_concurrency=8)
+                                                 batch_size=10, timeout_secs=self.sdk_timeout,
+                                                 process_concurrency=8, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
             print_ops_task.end_task()
             self.task_manager.get_task_result(print_ops_task)

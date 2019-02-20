@@ -281,8 +281,8 @@ class QueryTests(BaseTestCase):
             self.log.info("%s %s to %s documents..." % (op_type, items, bucket.name))
             tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gens_load[bucket.name], op_type, exp,
                                                        flag, self.persist_to, self.replicate_to,
-                                                       only_store_hash, batch_size, pause_secs,timeout_secs,
-                                                       self.sdk_compression))
+                                                       only_store_hash, batch_size, pause_secs, self.sdk_timeout,
+                                                       self.sdk_compression, retries=self.sdk_retries))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.num_items = items + start_items

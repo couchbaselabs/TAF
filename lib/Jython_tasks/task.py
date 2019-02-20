@@ -363,7 +363,7 @@ class rebalanceTask(Task):
 
 class GenericLoadingTask(Task):
     def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1, timeout_secs=60, compression=True,
-                 throughput_concurrency=8):
+                 throughput_concurrency=8, retries=5):
         super(GenericLoadingTask, self).__init__("Loadgen_task")
         self.batch_size = batch_size
         self.pause = pause_secs
@@ -373,6 +373,7 @@ class GenericLoadingTask(Task):
         self.client = client
         self.process_concurrency = throughput_concurrency
         self.random = random.Random()
+        self.retries = retries
 
     def call(self):
         self.start_task()
@@ -500,7 +501,7 @@ class GenericLoadingTask(Task):
             client = shared_client or self.client
             client.setMulti(self.exp, self.flag, key_val, self.pause, timeout, parallel=False,
                             persist_to=persist_to, replicate_to=replicate_to,
-                            time_unit=time_unit, doc_type=doc_type)
+                            time_unit=time_unit, retry=self.retries, doc_type=doc_type)
             # log.info("Batch Operation: %s documents are INSERTED into bucket %s"%(len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
@@ -512,7 +513,7 @@ class GenericLoadingTask(Task):
             self._process_values_for_update(key_val)
             self.client.upsertMulti(self.exp, self.flag, key_val, self.pause, timeout, parallel=False,
                                     persist_to=persist_to, replicate_to=replicate_to,
-                                    time_unit=time_unit, doc_type=doc_type)
+                                    time_unit=time_unit, retry=self.retries, doc_type=doc_type)
             #log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
@@ -574,11 +575,11 @@ class LoadDocumentsTask(GenericLoadingTask):
     def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True, throughput_concurrency=4):
+                 compression=True, throughput_concurrency=4, retries=5):
         super(LoadDocumentsTask, self).__init__(cluster, bucket, client, batch_size=batch_size,
                                                 pause_secs=pause_secs,
                                                 timeout_secs=timeout_secs, compression=compression,
-                                                throughput_concurrency=throughput_concurrency)
+                                                throughput_concurrency=throughput_concurrency, retries=retries)
 
         self.generator = generator
         self.op_type = op_type
@@ -653,7 +654,7 @@ class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
-                 process_concurrency=8, print_ops_rate=True):
+                 process_concurrency=8, print_ops_rate=True, retries=5):
         super(LoadDocumentsGeneratorsTask, self).__init__("DocumentsLoadGenTask")
         self.cluster = cluster
         self.exp = exp
@@ -674,6 +675,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.op_types = None
         self.buckets = None
         self.print_ops_rate = print_ops_rate
+        self.retries = retries
         if isinstance(op_type, list):
             self.op_types = op_type
         else:

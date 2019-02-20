@@ -437,16 +437,16 @@ class bucket_utils():
 
     def _async_load_bucket(self, cluster, bucket, generator, op_type, exp=0, flag=0, persist_to=0, replicate_to=0,
                             only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
-                            process_concurrency=8):
+                            process_concurrency=8, retries=5):
         return self.task.async_load_gen_docs(cluster, bucket, generator, op_type, exp=exp, flag=flag,
                                              persist_to=persist_to, replicate_to=replicate_to,
                                              only_store_hash=only_store_hash, batch_size=batch_size,
                                              pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
-                                             process_concurrency=process_concurrency)
+                                             process_concurrency=process_concurrency, retries=retries)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0, persist_to=0, replicate_to=0,
                                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=30,
-                                sdk_compression=True, process_concurrency=8):
+                                sdk_compression=True, process_concurrency=8, retries=5):
         
         """
         Asynchronously applys load generation to all bucekts in the cluster.bucket.name, gen,
@@ -472,7 +472,7 @@ class bucket_utils():
                 tasks.append(self.task.async_load_gen_docs(cluster, bucket, gen, op_type, exp, flag, persist_to,
                                                            replicate_to, only_store_hash,
                                                            batch_size, pause_secs, timeout_secs,
-                                                           sdk_compression, process_concurrency))
+                                                           sdk_compression, process_concurrency, retries))
             else:
                 self._load_memcached_bucket(cluster.master, gen, bucket.name)
         return tasks
