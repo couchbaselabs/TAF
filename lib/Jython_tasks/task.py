@@ -21,19 +21,14 @@ from membase.api.exception import N1QLQueryException, DropIndexException, Create
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 import random
-from sdk_client import SDKSmartClient as VBucketAwareMemcached
 import socket
 import string
-import sys
-from threading import Thread
-import threading
 import time
-import math
 
-from com.couchbase.client.java import *;
-from com.couchbase.client.java.document import *;
-from com.couchbase.client.java.document.json import *;
-from com.couchbase.client.java.query import *;
+from com.couchbase.client.java import *
+from com.couchbase.client.java.document import *
+from com.couchbase.client.java.document.json import *
+from com.couchbase.client.java.query import *
 from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
@@ -55,15 +50,16 @@ class Task(Callable):
             raise self.exception
         elif self.completed:
             log.info("Task %s completed on: %s" % (
-            self.thread_name, str(time.strftime("%H:%M:%S", time.gmtime(self.end_time)))))
+                self.thread_name, str(time.strftime("%H:%M:%S",
+                                                    time.gmtime(self.end_time)))))
             return "%s task completed in %.2fs" % \
                    (self.thread_name, self.completed - self.started,)
         elif self.started:
             return "Thread %s at %s" % \
-                   (self.thread_name, str(time.strftime("%H:%M:%S", time.gmtime(self.start_time))))
+                   (self.thread_name, str(time.strftime("%H:%M:%S",
+                                                        time.gmtime(self.start_time))))
         else:
-            return "[%s] not yet scheduled" % \
-                   (self.thread_name)
+            return "[%s] not yet scheduled" % (self.thread_name)
 
     def start_task(self):
         self.started = True
@@ -1008,11 +1004,8 @@ class StatsWaitTask(Task):
             a = long(a)
         elif isinstance(b, (int, long)) and not a.isdigit():
             return False
-        print "Into compare with Command type %s  -- A - %s -- b - %s"  % (cmp_type,a,b)
-        if (cmp_type == StatsWaitTask.EQUAL and a == b):
-            print "match found"
-        else:
-            print "mismatch"
+        print("Into compare with Command type %s  -- A - %s -- b - %s"
+              % (cmp_type, a, b))
         if (cmp_type == StatsWaitTask.EQUAL and a == b) or \
                 (cmp_type == StatsWaitTask.NOT_EQUAL and a != b) or \
                 (cmp_type == StatsWaitTask.LESS_THAN_EQ and a <= b) or \
@@ -1020,11 +1013,14 @@ class StatsWaitTask(Task):
                 (cmp_type == StatsWaitTask.LESS_THAN and a < b) or \
                 (cmp_type == StatsWaitTask.GREATER_THAN and a > b):
             return True
+        else:
+            print "mismatch"
         return False
 
 
 class ViewCreateTask(Task):
-    def __init__(self, server, design_doc_name, view, bucket="default", with_query=True,
+    def __init__(self, server, design_doc_name, view,
+                 bucket="default", with_query=True,
                  check_replication=False, ddoc_options=None):
         super(ViewCreateTask, self).__init__("ViewCreateTask")
         self.server = server
@@ -1046,7 +1042,8 @@ class ViewCreateTask(Task):
         self.start_task()
         try:
             # appending view to existing design doc
-            content, meta = self.rest.get_ddoc(self.bucket, self.design_doc_name)
+            content, meta = self.rest.get_ddoc(self.bucket,
+                                               self.design_doc_name)
             ddoc = DesignDocument._init_from_json(self.design_doc_name, content)
             # if view is to be updated
             if self.view:
@@ -1059,7 +1056,8 @@ class ViewCreateTask(Task):
             # creating first view in design doc
             if self.view:
                 if self.view.is_spatial:
-                    ddoc = DesignDocument(self.design_doc_name, [], spatial_views=[self.view])
+                    ddoc = DesignDocument(self.design_doc_name, [],
+                                          spatial_views=[self.view])
                 else:
                     ddoc = DesignDocument(self.design_doc_name, [self.view])
             # create an empty design doc
@@ -1095,31 +1093,35 @@ class ViewCreateTask(Task):
                 if self.with_query:
                     query = {"stale": "ok"}
                     if self.view.is_spatial:
-                        content = \
-                            self.rest.query_view(self.design_doc_name, self.view.name,
-                                                 self.bucket, query, type="spatial")
+                        content = self.rest.query_view(self.design_doc_name,
+                                                       self.view.name,
+                                                       self.bucket, query,
+                                                       type="spatial")
                     else:
-                        content = \
-                            self.rest.query_view(self.design_doc_name, self.view.name,
-                                                 self.bucket, query)
+                        content = self.rest.query_view(self.design_doc_name,
+                                                       self.view.name,
+                                                       self.bucket, query)
                 else:
-                    _, json_parsed, _ = self.rest._get_design_doc(self.bucket, self.design_doc_name)
+                    _, json_parsed, _ = self.rest._get_design_doc(self.bucket,
+                                                                  self.design_doc_name)
                     if self.view.is_spatial:
                         if self.view.name not in json_parsed["spatial"].keys():
                             self.set_exception(
-                                Exception("design doc {0} doesn't contain spatial view {1}".format(
-                                    self.design_doc_name, self.view.name)))
+                                Exception("design doc {0} doesn't contain spatial view {1}"
+                                          .format(self.design_doc_name,
+                                                  self.view.name)))
                             return 0
                     else:
                         if self.view.name not in json_parsed["views"].keys():
                             self.set_exception(Exception("design doc {0} doesn't contain view {1}".format(
                                 self.design_doc_name, self.view.name)))
                             return 0
-                log.info(
-                    "view : {0} was created successfully in ddoc: {1}".format(self.view.name, self.design_doc_name))
+                log.info("view : {0} was created successfully in ddoc: {1}"
+                         .format(self.view.name, self.design_doc_name))
             else:
                 # if we have reached here, it means design doc was successfully updated
-                log.info("Design Document : {0} was updated successfully".format(self.design_doc_name))
+                log.info("Design Document : {0} was updated successfully"
+                         .format(self.design_doc_name))
 
             if self._check_ddoc_revision():
                 return self.ddoc_rev_no
@@ -1142,7 +1144,8 @@ class ViewCreateTask(Task):
     def _check_ddoc_revision(self):
         valid = False
         try:
-            content, meta = self.rest.get_ddoc(self.bucket, self.design_doc_name)
+            content, meta = self.rest.get_ddoc(self.bucket,
+                                               self.design_doc_name)
             new_rev_id = self._parse_revision(meta['rev'])
             if new_rev_id != self.ddoc_rev_no:
                 self.ddoc_rev_no = new_rev_id
@@ -1177,7 +1180,8 @@ class ViewCreateTask(Task):
             for count in xrange(retry_count):
                 try:
                     rest_node = RestConnection(server_info)
-                    content, meta = rest_node.get_ddoc(self.bucket, self.design_doc_name)
+                    content, meta = rest_node.get_ddoc(self.bucket,
+                                                       self.design_doc_name)
                     new_rev_id = self._parse_revision(meta['rev'])
                     if new_rev_id == self.ddoc_rev_no:
                         break
@@ -1188,13 +1192,12 @@ class ViewCreateTask(Task):
                 except ReadDocumentException as e:
                     if (count < retry_count):
                         log.info(
-                            "Design Doc {0} not yet available on node {1}:{2}. Retrying.".format(self.design_doc_name,
-                                                                                                 node.ip, node.port))
+                            "Design Doc {0} not yet available on node {1}:{2}. Retrying."
+                            .format(self.design_doc_name, node.ip, node.port))
                         time.sleep(2)
                     else:
-                        log.error(
-                            "Design Doc {0} failed to replicate on node {1}:{2}".format(self.design_doc_name, node.ip,
-                                                                                        node.port))
+                        log.error("Design Doc {0} failed to replicate on node {1}:{2}"
+                                  .format(self.design_doc_name, node.ip, node.port))
                         self.set_exception(e)
                         break
                 except Exception as e:
@@ -1206,7 +1209,8 @@ class ViewCreateTask(Task):
                         break
             else:
                 self.set_exception(Exception(
-                    "Design Doc {0} version mismatch on node {1}:{2}".format(self.design_doc_name, node.ip, node.port)))
+                    "Design Doc {0} version mismatch on node {1}:{2}"
+                    .format(self.design_doc_name, node.ip, node.port)))
 
 
 class ViewDeleteTask(Task):
@@ -1233,7 +1237,8 @@ class ViewDeleteTask(Task):
                 else:
                     status = ddoc.delete_view(self.view)
                 if not status:
-                    self.set_exception(Exception('View does not exist! %s' % (self.view.name)))
+                    self.set_exception(Exception('View does not exist! %s'
+                                                 % (self.view.name)))
                     self.complete_task()
                     return False
                 # update design doc
@@ -1244,11 +1249,13 @@ class ViewDeleteTask(Task):
             else:
                 # delete the design doc
                 rest.delete_view(self.bucket, self.design_doc_name)
-                log.info("Design Doc : {0} was successfully deleted".format(self.design_doc_name))
+                log.info("Design Doc : {0} was successfully deleted"
+                         .format(self.design_doc_name))
                 self.complete_task()
                 return True
 
-        except (ValueError, ReadDocumentException, DesignDocCreationException) as e:
+        except (ValueError, ReadDocumentException,
+                DesignDocCreationException) as e:
             self.set_exception(e)
             self.complete_task()
             return False
@@ -1264,11 +1271,12 @@ class ViewDeleteTask(Task):
             rest = RestConnection(self.server)
             # make sure view was deleted
             query = {"stale": "ok"}
-            content = \
-                rest.query_view(self.design_doc_name, self.view.name, self.bucket, query)
+            content = rest.query_view(self.design_doc_name, self.view.name,
+                                      self.bucket, query)
             return False
         except QueryViewException as e:
-            log.info("view : {0} was successfully deleted in ddoc: {1}".format(self.view.name, self.design_doc_name))
+            log.info("view : {0} was successfully deleted in ddoc: {1}"
+                     .format(self.view.name, self.design_doc_name))
             return True
 
         # catch and set all unexpected exceptions
@@ -1299,7 +1307,8 @@ class ViewQueryTask(Task):
                 rest = RestConnection(self.server)
                 # make sure view can be queried
                 content = \
-                    rest.query_view(self.design_doc_name, self.view_name, self.bucket, self.query, self.timeout)
+                    rest.query_view(self.design_doc_name, self.view_name,
+                                    self.bucket, self.query, self.timeout)
 
                 if self.expected_rows is None:
                     # no verification
@@ -1328,22 +1337,25 @@ class ViewQueryTask(Task):
             content = \
                 rest.query_view(self.design_doc_name, self.view_name, self.bucket, self.query, self.timeout)
 
-            log.info("Server: %s, Design Doc: %s, View: %s, (%d rows) expected, (%d rows) returned" % \
-                     (self.server.ip, self.design_doc_name, self.view_name, self.expected_rows, len(content['rows'])))
+            log.info("Server: %s, Design Doc: %s, View: %s, (%d rows) expected, (%d rows) returned"
+                     % (self.server.ip, self.design_doc_name, self.view_name,
+                        self.expected_rows, len(content['rows'])))
 
             raised_error = content.get(u'error', '') or ''.join([str(item) for item in content.get(u'errors', [])])
             if raised_error:
                 raise QueryViewException(self.view_name, raised_error)
 
             if len(content['rows']) == self.expected_rows:
-                log.info("expected number of rows: '{0}' was found for view query".format(self.
-                                                                                          expected_rows))
+                log.info("expected number of rows: '{0}' was found for view query"
+                         .format(self.expected_rows))
                 return True
             else:
                 if len(content['rows']) > self.expected_rows:
                     raise QueryViewException(self.view_name,
                                              "Server: {0}, Design Doc: {1}, actual returned rows: '{2}' are greater than expected {3}"
-                                             .format(self.server.ip, self.design_doc_name, len(content['rows']),
+                                             .format(self.server.ip,
+                                                     self.design_doc_name,
+                                                     len(content['rows']),
                                                      self.expected_rows, ))
                 if "stale" in self.query:
                     if self.query["stale"].lower() == "false":
@@ -1426,7 +1438,8 @@ class N1QLQueryTask(Task):
             if self.verify_results:
                 if not self.is_explain_query:
                     if not self.isSuccess:
-                        log.info(" Query {0} results leads to INCORRECT RESULT ".format(self.query))
+                        log.info(" Query {0} results leads to INCORRECT RESULT"
+                                 .format(self.query))
                         raise N1QLQueryException(self.msg)
                 else:
                     check = self.n1ql_helper.verify_index_with_explain(self.actual_result, self.index_name)
@@ -1492,7 +1505,8 @@ class CreateIndexTask(Task):
                 check = self.n1ql_helper.is_index_online_and_in_list(self.bucket, self.index_name, server=self.server,
                                                                      timeout=self.timeout)
             if not check:
-                raise CreateIndexException("Index {0} not created as expected ".format(self.index_name))
+                raise CreateIndexException("Index {0} not created as expected"
+                                           .format(self.index_name))
             return True
         except CreateIndexException as e:
             # subsequent query failed! exit
@@ -1565,10 +1579,13 @@ class MonitorIndexTask(Task):
     def call(self):
         self.start_task()
         try:
-            check = self.n1ql_helper.is_index_online_and_in_list(self.bucket, self.index_name,
-                                                                 server=self.server, timeout=self.timeout)
+            check = self.n1ql_helper.is_index_online_and_in_list(self.bucket,
+                                                                 self.index_name,
+                                                                 server=self.server,
+                                                                 timeout=self.timeout)
             if not check:
-                raise CreateIndexException("Index {0} not created as expected ".format(self.index_name))
+                raise CreateIndexException("Index {0} not created as expected"
+                                           .format(self.index_name))
             return_value = self.check()
             self.complete_task()
             return return_value
@@ -1610,9 +1627,12 @@ class DropIndexTask(Task):
         self.start_task()
         try:
             # Query and get results
-            check = self.n1ql_helper._is_index_in_list(self.bucket, self.index_name, server=self.server)
+            check = self.n1ql_helper._is_index_in_list(self.bucket,
+                                                       self.index_name,
+                                                       server=self.server)
             if not check:
-                raise DropIndexException("index {0} does not exist will not drop".format(self.index_name))
+                raise DropIndexException("index {0} does not exist will not drop"
+                                         .format(self.index_name))
             self.n1ql_helper.run_cbq_query(query=self.query, server=self.server)
             return_value = self.check()
         except N1QLQueryException as e:
@@ -1628,9 +1648,12 @@ class DropIndexTask(Task):
     def check(self):
         try:
             # Verify correctness of result set
-            check = self.n1ql_helper._is_index_in_list(self.bucket, self.index_name, server=self.server)
+            check = self.n1ql_helper._is_index_in_list(self.bucket,
+                                                       self.index_name,
+                                                       server=self.server)
             if check:
-                raise Exception("Index {0} not dropped as expected ".format(self.index_name))
+                raise Exception("Index {0} not dropped as expected"
+                                .format(self.index_name))
             return True
         except DropIndexException as e:
             # subsequent query failed! exit
@@ -1743,11 +1766,12 @@ class BucketCreateTask(Task):
             # if self.bucket.bucketType == 'memcached' or int(self.server.port) in xrange(9091, 9991):
             #     return True
             if MemcachedHelper.wait_for_memcached(self.server, self.bucket.name):
-                log.info(
-                    "bucket '{0}' was created with per node RAM quota: {1}".format(self.bucket, self.bucket.ramQuotaMB))
+                log.info("bucket '{0}' created with per node RAM quota: {1}"
+                         .format(self.bucket, self.bucket.ramQuotaMB))
                 return True
             else:
-                log.warn("vbucket map not ready after try {0}".format(self.retries))
+                log.warn("vbucket map not ready after try {0}"
+                         .format(self.retries))
                 if self.retries >= 5:
                     return False
         except Exception as e:
@@ -1758,6 +1782,7 @@ class BucketCreateTask(Task):
         self.retries = self.retris + 1
         time.sleep(5)
         self.check()
+
 
 class MonitorActiveTask(Task):
 
@@ -1782,14 +1807,16 @@ class MonitorActiveTask(Task):
             task was not found by pid(believe that it's over)
     """
 
-    def __init__(self, server, type, target_value, wait_progress=100, num_iterations=100, wait_task=True):
+    def __init__(self, server, type, target_value, wait_progress=100,
+                 num_iterations=100, wait_task=True):
         super(MonitorActiveTask, self).__init__("MonitorActiveTask")
         self.server = server
         self.type = type  # indexer or bucket_compaction
         self.target_key = ""
 
         if self.type == 'indexer':
-            pass # no special actions
+            # no special actions
+            pass
         elif self.type == "bucket_compaction":
             self.target_key = "original_target"
         elif self.type == "view_compaction":
@@ -1806,7 +1833,6 @@ class MonitorActiveTask(Task):
         self.current_iter = 0
         self.task = None
 
-
     def call(self):
         tasks = self.rest.active_tasks()
         for task in tasks:
@@ -1817,7 +1843,8 @@ class MonitorActiveTask(Task):
                 self.current_progress = task["progress"]
                 self.task = task
                 log.info("monitoring active task was found:" + str(task))
-                log.info("progress %s:%s - %s %%" % (self.type, self.target_value, task["progress"]))
+                log.info("progress %s:%s - %s %%" % (self.type,
+                                                     self.target_value, task["progress"]))
                 if self.current_progress >= self.wait_progress:
                     log.info("expected progress was gotten: %s" % self.current_progress)
                     return True
@@ -1832,7 +1859,6 @@ class MonitorActiveTask(Task):
             # task was completed
             log.info("task for monitoring %s:%s completed" % (self.type, self.target_value))
             return True
-
 
     def check(self):
         while(1):
@@ -1867,6 +1893,7 @@ class MonitorActiveTask(Task):
         # task was completed
         log.info("task %s:%s was completed" % (self.type, self.target_value))
         return True
+
 
 class TestTask(Callable):
     def __init__(self, timeout):
