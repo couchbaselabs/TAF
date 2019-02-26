@@ -168,10 +168,10 @@ class bucket_utils():
                     raise e
                 if not status:
                     raise Exception("Bucket {0} could not be deleted".format(bucket.name))
-        
+
     def create_default_bucket(self, ram_quota=100, replica=1, compression_mode="off"):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
-        if node_info.memoryQuota and int(node_info.memoryQuota) > 0 :
+        if node_info.memoryQuota and int(node_info.memoryQuota) > 0:
             ram_available = node_info.memoryQuota
             ramQuotaMB = ram_available - 1
         else:
@@ -182,7 +182,7 @@ class bucket_utils():
         self.create_bucket(default_bucket)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
-    
+
     def get_bucket_object_from_name(self, bucket="", num_attempt=1, timeout=1):
         bucketInfo = None
         bucket_helper = BucketHelper(self.cluster.master)
@@ -1559,7 +1559,7 @@ class bucket_utils():
         return errors
 
     def get_all_buckets(self, server=None):
-        if server == None:
+        if server is None:
             server = self.cluster.master
         self.buckets = []
         rest = BucketHelper(server)
@@ -1568,7 +1568,7 @@ class bucket_utils():
             bucket_obj = self.parse_get_bucket_json(item)
             self.buckets.append(bucket_obj)
         return self.buckets
-    
+
     def parse_get_bucket_json(self, parsed):
         bucket = Bucket()
         bucket.name = parsed['name']

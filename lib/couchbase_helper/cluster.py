@@ -112,19 +112,40 @@ class ServerTasks(object):
         self.task_manager.schedule(_task)
         return _task
 
-    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0, persist_to=0, replicate_to=0,
-                            only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
-                            process_concurrency=8, retries=5):
+    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0,
+                            persist_to=0, replicate_to=0, only_store_hash=True, batch_size=1,
+                            pause_secs=1, timeout_secs=5, compression=True,
+                            process_concurrency=8, retries=5, active_resident_threshold=100):
 
         log.info("Loading documents to {}".format(bucket.name))
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
-        _task = jython_tasks.LoadDocumentsGeneratorsTask(cluster, self.jython_task_manager, bucket, client, [generator],
-                                                        op_type, exp, flag=flag, persist_to=persist_to,
-                                                        replicate_to=replicate_to, only_store_hash=only_store_hash,
-                                                        batch_size=batch_size,
-                                                        pause_secs=pause_secs, timeout_secs=timeout_secs,
-                                                        compression=compression,
-                                                        process_concurrency=process_concurrency, retries=retries)
+        if active_resident_threshold == 100:
+            _task = jython_tasks.LoadDocumentsGeneratorsTask(cluster, self.jython_task_manager,
+                                                             bucket, client, [generator],
+                                                             op_type, exp, flag=flag,
+                                                             persist_to=persist_to,
+                                                             replicate_to=replicate_to,
+                                                             only_store_hash=only_store_hash,
+                                                             batch_size=batch_size,
+                                                             pause_secs=pause_secs,
+                                                             timeout_secs=timeout_secs,
+                                                             compression=compression,
+                                                             process_concurrency=process_concurrency,
+                                                             retries=retries)
+        else:
+            _task = jython_tasks.LoadDocumentsForDgmTask(cluster, self.jython_task_manager,
+                                                         bucket, client, [generator],
+                                                         op_type, exp, flag=flag,
+                                                         persist_to=persist_to,
+                                                         replicate_to=replicate_to,
+                                                         only_store_hash=only_store_hash,
+                                                         batch_size=batch_size,
+                                                         pause_secs=pause_secs,
+                                                         timeout_secs=timeout_secs,
+                                                         compression=compression,
+                                                         process_concurrency=process_concurrency,
+                                                         retries=retries,
+                                                         active_resident_threshold=active_resident_threshold)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -134,28 +155,13 @@ class ServerTasks(object):
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
         _task = jython_tasks.DocumentsValidatorTask(cluster, self.jython_task_manager, bucket, client, [generator],
                                                     opt_type, exp, flag=flag, only_store_hash=only_store_hash, batch_size=batch_size,
-                                                        pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
-                                                        process_concurrency=process_concurrency)
+                                                    pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
+                                                    process_concurrency=process_concurrency)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-#     def async_load_gen_docs_java(self, server, bucket, start_from, num_items=10000):
-#         def read_json_tempelate(path):
-#             import json
-#             istream = open(path);
-#             with istream as data_file:    
-#                 data = json.load(data_file)
-#             return data["key"], data["value"]
-#         
-#         path = "b/testdata.json"
-#         k,v = read_json_tempelate(path)
-#         
-#         _task = conc.LoadDocumentsTask_java(self.task_manager, server, bucket, num_items, start_from, k, v)
-# 
-#         self.task_manager.schedule(_task)
-#         return _task
-
-    def async_rebalance(self, servers, to_add, to_remove, use_hostnames=False, services = None, check_vbucket_shuffling=True):
+    def async_rebalance(self, servers, to_add, to_remove, use_hostnames=False,
+                        services=None, check_vbucket_shuffling=True):
         """Asyncronously rebalances a cluster
 
         Parameters:
@@ -167,7 +173,9 @@ class ServerTasks(object):
         Returns:
             RebalanceTask - A task future that is a handle to the scheduled task"""
         _task = jython_tasks.rebalanceTask(servers, to_add, to_remove,
-                 use_hostnames=use_hostnames, services=services, check_vbucket_shuffling=check_vbucket_shuffling)
+                                           use_hostnames=use_hostnames,
+                                           services=services,
+                                           check_vbucket_shuffling=check_vbucket_shuffling)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

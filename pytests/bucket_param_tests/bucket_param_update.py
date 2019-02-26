@@ -7,8 +7,7 @@ class Bucket_param_test(BaseTestCase):
     def setUp(self):
         super(Bucket_param_test, self).setUp()
         self.key = 'test_docs'.rjust(self.key_size, '0')
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else [
-        ]
+        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend(
             [self.cluster.master] + nodes_init)
@@ -38,8 +37,7 @@ class Bucket_param_test(BaseTestCase):
         self.log.info("==========Finished Bucket_param_test setup========")
 
     def tearDown(self):
-        #super(Bucket_param_test, self).tearDown()
-        pass
+        super(Bucket_param_test, self).tearDown()
 
     def generic_replica_update(self, doc_ops, bucket_helper_obj, replicas_to_update):
         update_replicateTo_persistTo = self.input.param("update_replicateTo_persistTo", False)
