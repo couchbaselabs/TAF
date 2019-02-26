@@ -8,7 +8,8 @@ import json
 import time
 import urllib
 from bucket import *
-from membase.api.exception import BucketCreationException, GetBucketInfoFailed, BucketFlushFailed, BucketCompactionException
+from membase.api.exception import BucketCreationException, GetBucketInfoFailed, \
+                                  BucketFlushFailed, BucketCompactionException
 from membase.api.rest_client import Node
 from memcached.helper.kvstore import KVStore
 from Rest_Connection import RestConnection
@@ -16,20 +17,20 @@ import logger
 
 log = logger.Logger.get_logger()
 
+
 class BucketHelper(RestConnection):
 
     def __init__(self, server):
         super(BucketHelper, self).__init__(server)
-    
+
     def bucket_exists(self, bucket):
         try:
             buckets = self.get_buckets()
             names = [item.name for item in buckets]
-            log.info("node {1} existing buckets : {0}" \
-                              .format(names, self.ip))
+            log.info("node {1} existing buckets : {0}".format(names, self.ip))
             for item in buckets:
                 if item.name == bucket:
-                    log.info("node {1} found bucket {0}" \
+                    log.info("node {1} found bucket {0}"
                              .format(bucket, self.ip))
                     return True
             return False
@@ -37,7 +38,8 @@ class BucketHelper(RestConnection):
             return False
 
     def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
-        api = '%s%s%s?basic_stats=true' % (self.baseUrl, 'pools/default/buckets/', bucket.name)
+        api = '%s%s%s?basic_stats=true' \
+               % (self.baseUrl, 'pools/default/buckets/', bucket.name)
         status, content, header = self._http_request(api)
         num = 1
         while not status and num_attempt > num:
@@ -82,13 +84,15 @@ class BucketHelper(RestConnection):
                     vbucketInfo.id = counter
                     counter += 1
                     bucket.vbuckets.append(vbucketInfo)
+            bucket.vbActiveNumNonResident = parsed["basicStats"]["vbActiveNumNonResident"]
+        return bucket
 
     def get_buckets_json(self):
         api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets?basic_stats=true')
         status, content, header = self._http_request(api)
         json_parsed = json.loads(content)
         return json_parsed
-    
+
     def vbucket_map_ready(self, bucket, timeout_in_seconds=360):
         end_time = time.time() + timeout_in_seconds
         while time.time() <= end_time:
