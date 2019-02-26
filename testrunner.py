@@ -301,8 +301,6 @@ class StoppableThreadWithResult(Thread):
 
 def main():
 
-    BEFORE_SUITE = "suite_setUp"
-    AFTER_SUITE = "suite_tearDown"
     names, runtime_test_params, arg_i, arg_p, options = parse_args(sys.argv)
     # get params from command line
     TestInputSingleton.input = TestInputParser.get_test_input(sys.argv)
@@ -385,22 +383,6 @@ def main():
         if "get-coredumps" in TestInputSingleton.input.test_params:
             if TestInputSingleton.input.param("get-coredumps", True):
                 clear_old_core_dumps(TestInputSingleton.input, logs_folder)
-        if case_number == 1:
-            before_suite_name = "%s.%s" % (name[:name.rfind('.')], BEFORE_SUITE)
-            try:
-                print "Run before suite setup for %s" % name
-                suite = unittest.TestLoader().loadTestsFromName(before_suite_name)
-                result = unittest.TextTestRunner(verbosity=2).run(suite)
-                if "get-coredumps" in TestInputSingleton.input.test_params:
-                    if TestInputSingleton.input.param("get-coredumps", True):
-                        if get_core_dumps(TestInputSingleton.input, logs_folder):
-                            result = unittest.TextTestRunner(verbosity=2)._makeResult()
-                            result.errors = [(name, "Failing test : new core dump(s) "
-                                             "were found and collected."
-                                             " Check testrunner logs folder.")]
-                            print("FAIL: New core dump(s) was found and collected")
-            except AttributeError as ex:
-                pass
         try:
             suite = unittest.TestLoader().loadTestsFromName(name)
         except AttributeError, e:
@@ -490,15 +472,6 @@ def main():
             print "test fails, all of the following tests will be skipped!!!"
             break
 
-    after_suite_name = "%s.%s" % (name[:name.rfind('.')], AFTER_SUITE)
-    try:
-        print "Run after suite setup for %s" % name
-        suite = unittest.TestLoader().loadTestsFromName(after_suite_name)
-        result = unittest.TextTestRunner(verbosity=2).run(suite)
-    except AttributeError as ex:
-        pass
-    except Exception as e:
-        print e.message
     if "makefile" in TestInputSingleton.input.test_params:
         # print out fail for those tests which failed and do sys.exit() error code
         fail_count = 0
