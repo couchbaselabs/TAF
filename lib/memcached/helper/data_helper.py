@@ -757,12 +757,13 @@ class VBucketAwareMemcached(object):
     def reset(self, rest=None):
         if not rest:
             self.rest = RestConnection(self.info)
-        m, v, r = self.request_map(self.rest , self.bucket)
+        m, v, r = self.request_map(self.rest, self.bucket)
         self.memcacheds = m
         self.vBucketMap = v
         self.vBucketMapReplica = r
 
-    def reset_vbuckets(self, rest, vbucketids_set, forward_map=None, admin_user='cbadminbucket',admin_pass='password'):
+    def reset_vbuckets(self, rest, vbucketids_set, forward_map=None,
+                       admin_user='cbadminbucket', admin_pass='password'):
         if not forward_map:
             forward_map = rest.get_bucket(self.bucket, num_attempt=2).forward_map
             if not forward_map:

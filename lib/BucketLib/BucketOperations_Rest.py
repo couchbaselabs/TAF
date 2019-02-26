@@ -73,6 +73,8 @@ class BucketHelper(RestConnection):
                         bucket.forward_map.append(vbucketInfo)
                 vBucketMap = vBucketServerMap['vBucketMap']
                 counter = 0
+                # Reset the list to avoid appending through multiple calls
+                bucket.vbuckets = list()
                 for vbucket in vBucketMap:
                     # there will be n number of replicas
                     vbucketInfo = vBucket()

@@ -47,7 +47,7 @@ class ServerTasks(object):
         _task = conc.BucketCreateTask(server, bucket, task_manager=self.task_manager)
         self.task_manager.schedule(_task)
         return _task.get_result()
-    
+
     def async_bucket_delete(self, server, bucket='default'):
         """Asynchronously deletes a bucket
 
@@ -199,6 +199,26 @@ class ServerTasks(object):
         Returns:
             RebalanceTask - A task future that is a handle to the scheduled task"""
         _task = jython_tasks.StatsWaitTask(cluster, bucket, param, stat, comparison, value)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
+    def async_monitor_db_fragmentation(self, server, bucket, fragmentation,
+                                       get_view_frag=False):
+        """
+        Asyncronously monitor db fragmentation
+        Parameters:
+            servers - server to check(TestInputServers)
+            bucket - bucket to check
+            fragmentation - fragmentation to reach
+            get_view_frag - Monitor view fragmentation.
+                            In case enabled when <fragmentation_value> is
+                            reached this method will return (boolean)
+        Returns:
+            MonitorDBFragmentationTask - A task future that is a handle to the
+                                         scheduled task
+        """
+        _task = jython_tasks.MonitorDBFragmentationTask(server, fragmentation,
+                                                        bucket, get_view_frag)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

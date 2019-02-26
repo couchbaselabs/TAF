@@ -2048,3 +2048,49 @@ class TestTask(Callable):
             time.sleep(1)
         self.completed = time.time()
         return True
+
+
+class MonitorDBFragmentationTask(Task):
+    """
+        Attempt to monitor fragmentation that is occurring for a given bucket.
+        Note: If autocompaction is enabled and user attempts to monitor for
+        fragmentation value higher than level at which auto_compaction
+        kicks in a warning is sent and it is best user to use lower value
+        as this can lead to infinite monitoring.
+    """
+
+    def __init__(self, server, fragmentation_value=10, bucket="default",
+                 get_view_frag=False):
+        Task.__init__(self, "monitor_frag_db_task")
+        self.server = server
+        self.bucket = bucket
+        self.fragmentation_value = fragmentation_value
+        self.get_view_frag = get_view_frag
+
+    def check(self):
+        # sanity check of fragmentation value
+        if self.fragmentation_value < 0 or self.fragmentation_value > 100:
+            err_msg = "Invalid value for fragmentation %d" \
+                      % self.fragmentation_value
+            self.set_exception(Exception(err_msg))
+
+    def call(self):
+        self.start_task()
+        try:
+            rest = RestConnection(self.server)
+            stats = rest.fetch_bucket_stats(bucket=self.bucket)
+            if self.get_view_frag:
+                new_frag_value = stats["op"]["samples"]["couch_views_fragmentation"][-1]
+                self.log.info("Current amount of views fragmentation = %d"
+                              % new_frag_value)
+            else:
+                new_frag_value = stats["op"]["samples"]["couch_docs_fragmentation"][-1]
+                self.log.info("current amount of docs fragmentation = %d"
+                              % new_frag_value)
+            if new_frag_value >= self.fragmentation_value:
+                self.set_result(True)
+        except Exception, ex:
+            self.set_result(False)
+            self.set_exception(ex)
+        self.check()
+        self.complete_task()
