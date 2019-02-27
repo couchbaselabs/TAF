@@ -370,8 +370,7 @@ class SDKClient(object):
             else:
                 return success
         if retry == 0:
-            log.error("Could not load all documents in this set. Failed count={0}, \
-                       Failed keys={1}".format(len(fail), fail.keys()))
+            log.error("Could not load all documents in this set. Failed count={0}".format(len(fail)))
             return fail
 
     def upsert_multi(self, keys, ttl=None, persist_to=0, replicate_to=0,
