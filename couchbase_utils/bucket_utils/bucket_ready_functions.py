@@ -368,7 +368,6 @@ class bucket_utils():
         self.task_manager.add_new_task(_task)
         return _task
 
-
     def verify_cluster_stats(self, items, master=None,
                              timeout=None, check_items=True,
                              check_bucket_stats=True,
@@ -386,11 +385,10 @@ class bucket_utils():
                     verified &= self.wait_till_total_numbers_match(master, bucket,
                                                                               timeout_in_seconds=(timeout or 500))
                 if not verified:
-                 log.error("Lost items!!! Replication was completed but "
-                                          "          sum(curr_items) don't match the curr_items_total")
-                 raise Exception("Lost items!!! Replication was completed but "
-                                          "          sum(curr_items) don't match the curr_items_total")
-
+                    log.error("Lost items!!! Replication was completed but "
+                              "sum(curr_items) don't match the curr_items_total")
+                    raise Exception("Lost items!!! Replication was completed but "
+                                    "sum(curr_items) don't match the curr_items_total")
 
     def verify_stats_all_buckets(self, items, timeout=60):
         stats_tasks = []
@@ -1105,9 +1103,9 @@ class bucket_utils():
 
     def async_monitor_db_fragmentation(self, server, fragmentation, bucket,
                                        get_view_frag=False):
-        _task = MonitorDBFragmentationTask(server, fragmentation, bucket,
+        _task = MonitorDBFragmentationTask(server, fragmentation, bucket.name,
                                            get_view_frag)
-        self.task_manager.schedule(_task)
+        self.task_manager.add_new_task(_task)
         return _task
 
     def _expiry_pager(self, master, val=10):

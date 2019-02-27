@@ -267,6 +267,7 @@ class BlobGenerator(KVGenerator):
         self.seed = seed
         self.value_size = value_size
         self.itr = self.start
+        self.doc_type = "string"
 
     def next(self):
         if self.itr >= self.end:
