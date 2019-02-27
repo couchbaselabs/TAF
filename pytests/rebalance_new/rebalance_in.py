@@ -226,7 +226,7 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
         tasks = [self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])]
         for bucket in self.bucket_util.buckets:
-            tasks.append(self.cluster.async_compact_bucket(self.cluster.master, bucket))
+            tasks.append(self.task.async_compact_bucket(self.cluster.master, bucket))
         if (self.doc_ops is not None):
             for bucket in self.bucket_util.buckets:
                 if ("update" in self.doc_ops):
