@@ -11,6 +11,7 @@ elif mode.cli:
     from BucketOperations_CLI import BucketHelper as bucketlib
 else:
     from BucketOperations_Rest import BucketHelper as bucketlib
-    
+
+
 class BucketHelper(bucketlib):
     pass

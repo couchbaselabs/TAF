@@ -69,6 +69,7 @@ class BaseTestCase(unittest.TestCase):
             self.test_timeout = self.input.param("test_timeout", 3600)
 
             # Bucket specific params
+            self.bucket_type = self.input.param("bucket_type", "membase")
             self.vbuckets = self.input.param("vbuckets", 1024)
             self.num_replicas = self.input.param("replicas", 1)
             self.active_resident_threshold = int(self.input.param("active_resident_threshold", 0))
@@ -80,6 +81,8 @@ class BaseTestCase(unittest.TestCase):
             self.doc_size = self.input.param("doc_size", 10)
             self.doc_type = self.input.param("doc_type", "json")
             self.num_items = self.input.param("num_items", 100000)
+            self.target_vbucket = self.input.param("target_vbucket", None)
+            self.maxttl = self.input.param("maxttl", 0)
 
             # Client specific params
             self.sdk_compression = self.input.param("sdk_compression", True)
@@ -321,7 +324,7 @@ class BaseTestCase(unittest.TestCase):
             node_quota = task.get_result()
             if node_quota < quota or quota == 0:
                 quota = node_quota
-        if quota < 100 and not len(set([server.ip for server in self.servers])) == 1:
+        if quota < 100 and len(set([server.ip for server in self.servers])) != 1:
             log.warn("RAM quota was defined less than 100 MB:")
             for server in servers:
                 remote_client = RemoteMachineShellConnection(server)
@@ -344,6 +347,5 @@ class BaseTestCase(unittest.TestCase):
 
     def set_testrunner_client(self):
         self.testrunner_client = self.input.param("testrunner_client", None)
-        if self.testrunner_client != None:
+        if self.testrunner_client is not None:
             os.environ[testconstants.TESTRUNNER_CLIENT] = self.testrunner_client
-

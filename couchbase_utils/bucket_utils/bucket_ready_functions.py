@@ -170,16 +170,20 @@ class bucket_utils():
                 if not status:
                     raise Exception("Bucket {0} could not be deleted".format(bucket.name))
 
-    def create_default_bucket(self, ram_quota=100, replica=1, compression_mode="off"):
+    def create_default_bucket(self, bucket_type=Bucket.bucket_type.MEMBASE,
+                              ram_quota=100, replica=1,
+                              maxTTL=0, compression_mode="off"):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if node_info.memoryQuota and int(node_info.memoryQuota) > 0:
             ram_available = node_info.memoryQuota
             ramQuotaMB = ram_available - 1
         else:
             ramQuotaMB = ram_quota
-        default_bucket = Bucket({Bucket.ramQuotaMB: ramQuotaMB,
+        default_bucket = Bucket({Bucket.bucket_type: bucket_type,
+                                 Bucket.ramQuotaMB: ramQuotaMB,
                                  Bucket.replicaNumber: replica,
-                                 Bucket.compressionMode: compression_mode})
+                                 Bucket.compressionMode: compression_mode,
+                                 Bucket.maxTTL: maxTTL})
         self.create_bucket(default_bucket)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
@@ -368,6 +372,13 @@ class bucket_utils():
         self.task_manager.add_new_task(_task)
         return _task
 
+    def update_all_bucket_maxTTL(self, maxttl=0):
+        for bucket in self.buckets:
+            log.info("Updating maxTTL for bucket {0} to {1}s"
+                     .format(bucket.name, maxttl))
+            BucketHelper(self.cluster.master).change_bucket_props(bucket,
+                                                                  maxTTL=maxttl)
+
     def verify_cluster_stats(self, items, master=None,
                              timeout=None, check_items=True,
                              check_bucket_stats=True,
@@ -396,7 +407,7 @@ class bucket_utils():
         cluster = self.cluster
         servers = self.cluster.nodes_in_cluster
         for bucket in self.buckets:
-            #items = sum([len(kv_store) for kv_store in bucket.kvs.values()])
+            # items = sum([len(kv_store) for kv_store in bucket.kvs.values()])
             if bucket.bucketType == 'memcached':
                 items_actual = 0
                 for server in servers:
@@ -406,9 +417,10 @@ class bucket_utils():
                     raise Exception("Items are not correct")
                 continue
             stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
-                                                                 'curr_items', '==', items))
+                                                         'curr_items', '==',
+                                                         items))
             stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
-                                                                 'vb_active_curr_items', '==', items))
+                                                         'vb_active_curr_items', '==', items))
 
             available_replicas = bucket.replicaNumber
             if len(servers) == bucket.replicaNumber:
@@ -416,11 +428,11 @@ class bucket_utils():
             elif len(servers) <= bucket.replicaNumber:
                 available_replicas = len(servers) - 1
             stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
-                                                                 'vb_replica_curr_items', '==',
+                                                         'vb_replica_curr_items', '==',
                                                                  items * available_replicas))
             stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
-                                                                 'curr_items_tot', '==',
-                                                                 items * (available_replicas + 1)))
+                                                         'curr_items_tot', '==',
+                                                         items * (available_replicas + 1)))
         try:
             for task in stats_tasks:
                 self.task_manager.get_task_result(task)
@@ -1756,9 +1768,11 @@ class bucket_utils():
         log.info(msg.format(sum, replica_factor + 1, (sum * (replica_factor + 1))))
         master_stats = BucketHelper(master).get_bucket_stats(bucket)
         if "curr_items_tot" in master_stats:
-            log.info('curr_items_tot from master: {0}'.format(master_stats["curr_items_tot"]))
+            log.info('curr_items_tot from master: {0}'
+                     .format(master_stats["curr_items_tot"]))
         else:
-           raise Exception("bucket {0} stats doesnt contain 'curr_items_tot':".format(bucket))
+            raise Exception("bucket {0} stats doesnt contain 'curr_items_tot':"
+                            .format(bucket))
         if replica_factor >= len(nodes):
             log.warn("the number of nodes is less than replica requires")
             delta = sum * (len(nodes)) - master_stats["curr_items_tot"]
