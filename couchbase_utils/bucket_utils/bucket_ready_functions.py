@@ -171,14 +171,18 @@ class bucket_utils():
                     raise Exception("Bucket {0} could not be deleted".format(bucket.name))
 
     def create_default_bucket(self, bucket_type=Bucket.bucket_type.MEMBASE,
-                              ram_quota=100, replica=1,
+                              ram_quota=None, replica=1,
                               maxTTL=0, compression_mode="off"):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
-        if node_info.memoryQuota and int(node_info.memoryQuota) > 0:
+        if ram_quota:
+            ramQuotaMB = ram_quota
+        elif node_info.memoryQuota and int(node_info.memoryQuota) > 0:
             ram_available = node_info.memoryQuota
             ramQuotaMB = ram_available - 1
         else:
-            ramQuotaMB = ram_quota
+            # By default set 100Mb if unable to fetch proper value
+            ramQuotaMB = 100
+
         default_bucket = Bucket({Bucket.bucket_type: bucket_type,
                                  Bucket.ramQuotaMB: ramQuotaMB,
                                  Bucket.replicaNumber: replica,

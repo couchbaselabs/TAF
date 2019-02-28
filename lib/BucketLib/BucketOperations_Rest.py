@@ -87,13 +87,17 @@ class BucketHelper(RestConnection):
                     counter += 1
                     bucket.vbuckets.append(vbucketInfo)
             bucket.vbActiveNumNonResident = parsed["basicStats"]["vbActiveNumNonResident"]
+            bucket.maxTTL = parsed["maxTTL"]
         return bucket
 
     def get_buckets_json(self):
-        api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets?basic_stats=true')
-        status, content, header = self._http_request(api)
-        json_parsed = json.loads(content)
-        return json_parsed
+        api = '{0}{1}'.format(self.baseUrl,
+                              'pools/default/buckets?basic_stats=true')
+        status, content, _ = self._http_request(api)
+        if not status:
+            log.error("Error while getting {0}. Please re-try".format(api))
+            raise GetBucketInfoFailed("all_buckets", content)
+        return json.loads(content)
 
     def vbucket_map_ready(self, bucket, timeout_in_seconds=360):
         end_time = time.time() + timeout_in_seconds
@@ -132,7 +136,7 @@ class BucketHelper(RestConnection):
             vbuckets_servers[server]['active_vb'] = vbs_active
             vbuckets_servers[server]['replica_vb'] = vbs_replica
         return vbuckets_servers
-    
+
     def fetch_vbucket_map(self, bucket="default"):
         """Return vbucket map for bucket
         Keyword argument:
@@ -158,7 +162,7 @@ class BucketHelper(RestConnection):
             node = node.split(":")
             server_list.append(node[0])
         return vbucket_map, server_list, num_replica
-    
+
     def get_bucket_stats_for_node(self, bucket='default', node=None):
         if not node:
             log.error('node_ip not specified')
@@ -228,23 +232,20 @@ class BucketHelper(RestConnection):
                         stats[stat_name] = samples[stat_name][last_sample]
         return stats
 
-    def get_bucket_stats_json(self, bucket='default'):
-        stats = {}
-        api = "{0}{1}{2}{3}".format(self.baseUrl, 'pools/default/buckets/', bucket, "/stats")
-#         if isinstance(bucket, Bucket):
-#             api = '{0}{1}{2}{3}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name, "/stats")
-        status, content, header = self._http_request(api)
+    def get_bucket_stats_json(self, bucket_name='default'):
+        api = "{0}{1}{2}{3}".format(self.baseUrl, 'pools/default/buckets/',
+                                    bucket_name, "/stats")
+        status, content, _ = self._http_request(api)
         json_parsed = json.loads(content)
         return status, json_parsed
 
-    def get_bucket_json(self, bucket='default'):
-        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket)
-#         if isinstance(bucket, Bucket):
-#             api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name)
-        status, content, header = self._http_request(api)
+    def get_bucket_json(self, bucket_name='default'):
+        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
+                                 bucket_name)
+        status, content, _ = self._http_request(api)
         if not status:
             log.error("error while getting {0}. Please re-try".format(api))
-            raise GetBucketInfoFailed(bucket, content)
+            raise GetBucketInfoFailed(bucket_name, content)
         return json.loads(content)
 
     def delete_bucket(self, bucket='default'):
@@ -317,19 +318,13 @@ class BucketHelper(RestConnection):
         log.info("{0:.02f} seconds to create bucket {1}".
                  format(round(create_time, 2), bucket_params.get('name')))
         return status
-       
-    def change_bucket_props(self, bucket,
-                      ramQuotaMB=None,
-                      authType=None,
-                      saslPassword=None,
-                      replicaNumber=None,
-                      proxyPort=None,
-                      replicaIndex=None,
-                      flushEnabled=None,
-                      timeSynchronization=None,
-                      maxTTL=None,
-                      compressionMode=None):
-        
+
+    def change_bucket_props(self, bucket, ramQuotaMB=None, authType=None,
+                            saslPassword=None, replicaNumber=None,
+                            proxyPort=None, replicaIndex=None,
+                            flushEnabled=None, timeSynchronization=None,
+                            maxTTL=None, compressionMode=None):
+
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket)
 #         if isinstance(bucket, Bucket):
 #             api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name)

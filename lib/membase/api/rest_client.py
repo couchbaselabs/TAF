@@ -265,7 +265,7 @@ class RestConnection(object):
                 else:
                     self.capiBaseUrl = http_res["couchApiBase"]
                     return
-            raise ServerUnavailableException("couchApiBase doesn't exist in nodes/self: %s " % http_res)
+            raise ServerUnavailableException("couchApiBase doesn't exist in nodes/self: %s" % http_res)
 
     def sasl_streaming_rq(self, bucket, timeout=120):
         api = self.baseUrl + 'pools/default/bucketsStreaming/{0}'.format(bucket)
@@ -281,11 +281,11 @@ class RestConnection(object):
         log.info("Opening sasl streaming connection for bucket %s" %
                  (bucket, bucket.name)[isinstance(bucket, Bucket)])
         t = Thread(target=self.sasl_streaming_rq,
-                          name="streaming_" + str(uuid.uuid4())[:4],
-                          args=(bucket, timeout))
+                   name="streaming_" + str(uuid.uuid4())[:4],
+                   args=(bucket, timeout))
         try:
             t.start()
-        except:
+        except Exception:
             log.warn("thread is not started")
             return None
         return t
@@ -296,14 +296,14 @@ class RestConnection(object):
                 return False
             try:
                 versions = list(set([node["version"][:1] for node in http_res["nodes"]]))
-            except:
-                log.error('Error while processing cluster info {0}'.format(http_res))
+            except Exception:
+                log.error('Error while processing cluster info {0}'
+                          .format(http_res))
                 # not really clear what to return but False see to be a good start until we figure what is happening
                 return False
 
-
             if '1' in versions and '2' in versions:
-                 return True
+                return True
             return False
 
     def is_cluster_compat_mode_greater_than(self, version):
@@ -326,13 +326,16 @@ class RestConnection(object):
             return False
         editions = []
         community_nodes = []
-        """ get the last word in node["version"] as in "version": "2.5.1-1073-rel-enterprise" """
+        """
+        get the last word in node["version"] as in "version": "2.5.1-1073-rel-enterprise"
+        """
         for node in http_res["nodes"]:
             editions.extend(node["version"].split("-")[-1:])
             if "community" in node["version"].split("-")[-1:]:
                 community_nodes.extend(node["hostname"].split(":")[:1])
         if "community" in editions:
-            log.error("IP(s) for node(s) with community edition {0}".format(community_nodes))
+            log.error("IP(s) for node(s) with community edition {0}"
+                      .format(community_nodes))
             return False
         return True
 

@@ -17,7 +17,7 @@ log = logger.Logger.get_logger()
 
 class RestConnection(object):
 
-    def __new__(self, serverInfo={}, node = None):
+    def __new__(self, serverInfo={}, node=None):
         # allow port to determine
         # behavior of restconnection
         port = None

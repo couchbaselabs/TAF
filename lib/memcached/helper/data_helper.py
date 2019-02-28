@@ -327,42 +327,49 @@ class MemcachedClientHelper(object):
     @staticmethod
     def proxy_client(server, bucket, timeout=30, force_ascii=False, standalone_moxi_port=None):
         # for this bucket on this node what is the proxy ?
-        rest = RestConnection(server)
         log = logger.Logger.get_logger()
-        bucket_info = BucketHelper(server).get_bucket(bucket)
-        nodes = bucket_info.nodes
+        bucket_info = BucketHelper(server).get_bucket_json(bucket.name)
+        nodes = bucket_info["nodes"]
 
-        if (TestInputSingleton.input and "ascii" in TestInputSingleton.input.test_params \
-            and TestInputSingleton.input.test_params["ascii"].lower() == "true")\
-            or force_ascii:
+        if (TestInputSingleton.input and "ascii" in TestInputSingleton.input.test_params
+            and TestInputSingleton.input.test_params["ascii"].lower() == "true") \
+                or force_ascii:
             ascii = True
         else:
             ascii = False
-        for node in nodes:
+        for _ in nodes:
             BucketHelper(server).vbucket_map_ready(bucket, 60)
             vBuckets = BucketHelper(server).get_vbuckets(bucket)
-            port_moxi = standalone_moxi_port or node.moxi
+            port_moxi = standalone_moxi_port or 11210
             if ascii:
                 log = logger.Logger.get_logger()
-                log.info("creating ascii client {0}:{1} {2}".format(server.ip, port_moxi, bucket))
-                client = MemcachedAsciiClient(server.ip, port_moxi, timeout=timeout)
+                log.info("creating ascii client {0}:{1} {2}"
+                         .format(server.ip, port_moxi, bucket))
+                client = MemcachedAsciiClient(server.ip, port_moxi,
+                                              timeout=timeout)
             else:
                 log = logger.Logger.get_logger()
                 if isinstance(server, dict):
-                    log.info("creating proxy client {0}:{1} {2}".format(server["ip"], port_moxi, bucket))
-                    client = MemcachedClient(server["ip"], port_moxi, timeout=timeout)
+                    log.info("creating proxy client {0}:{1} {2}"
+                             .format(server["ip"], port_moxi, bucket))
+                    client = MemcachedClient(server["ip"], port_moxi,
+                                             timeout=timeout)
                 else:
-                    log.info("creating proxy client {0}:{1} {2}".format(server.ip, port_moxi, bucket))
-                    client = MemcachedClient(server.ip, port_moxi, timeout=timeout)
+                    log.info("creating proxy client {0}:{1} {2}"
+                             .format(server.ip, port_moxi, bucket))
+                    client = MemcachedClient(server.ip, port_moxi,
+                                             timeout=timeout)
                 client.vbucket_count = len(vBuckets)
-                if bucket_info.authType == "sasl":
-                    client.sasl_auth_plain(bucket_info.name.encode('ascii'),
-                                           bucket_info.saslPassword.encode('ascii'))
+                if bucket_info["authType"] == "sasl":
+                    client.sasl_auth_plain(bucket.name.encode('ascii'),
+                                           bucket_info["saslPassword"].encode('ascii'))
             return client
         if isinstance(server, dict):
-            raise Exception("unable to find {0} in get_nodes()".format(server["ip"]))
+            raise Exception("unable to find {0} in get_nodes()"
+                            .format(server["ip"]))
         else:
-            raise Exception("unable to find {0} in get_nodes()".format(server.ip))
+            raise Exception("unable to find {0} in get_nodes()"
+                            .format(server.ip))
 
     @staticmethod
     def standalone_moxi_client(server, bucket, timeout=30, moxi_port=None):
@@ -744,7 +751,7 @@ class WorkerThread(threading.Thread):
 
 
 class VBucketAwareMemcached(object):
-    def __init__(self, rest, bucket, info=None):
+    def __init__(self, rest, bucket, info=None, collections=None):
         self.log = logger.Logger.get_logger()
         self.info = info
         self.bucket = bucket
@@ -753,6 +760,7 @@ class VBucketAwareMemcached(object):
         self.vBucketMapReplica = {}
         self.rest = rest
         self.reset(rest)
+        self.collections = collections
 
     def reset(self, rest=None):
         if not rest:
@@ -843,7 +851,6 @@ class VBucketAwareMemcached(object):
                 self.done()
                 raise ex
 
-
     def memcached(self, key, replica_index=None):
         vBucketId = self._get_vBucket_id(key)
         if replica_index is None:
@@ -865,7 +872,8 @@ class VBucketAwareMemcached(object):
             msg = "replica vbucket map does not have an entry for vb : {0}"
             raise Exception(msg.format(vBucketId))
         if log_on:
-          self.log.info("replica vbucket: vBucketId {0}, server{1}".format(vBucketId, self.vBucketMapReplica[vBucketId][replica_index]))
+            self.log.info("replica vbucket: vBucketId {0}, server{1}"
+                          .format(vBucketId, self.vBucketMapReplica[vBucketId][replica_index]))
         if self.vBucketMapReplica[vBucketId][replica_index] not in self.memcacheds:
             msg = "moxi does not have a mc connection for server : {0}"
             raise Exception(msg.format(self.vBucketMapReplica[vBucketId][replica_index]))
@@ -878,7 +886,7 @@ class VBucketAwareMemcached(object):
             if server != which_mc:
                 return self.memcacheds[server]
 
-# DECORATOR
+    # DECORATOR
     def aware_call(func):
       def new_func(self, key, *args, **keyargs):
         vb_error = 0
@@ -895,9 +903,10 @@ class VBucketAwareMemcached(object):
             except (EOFError, socket.error), error:
                 if "Got empty data (remote died?)" in error.message or \
                    "Timeout waiting for socket" in error.message or \
-                   "Broken pipe" in error.message or "Connection reset by peer" in error.message \
-                    and vb_error < 5:
-                    self.reset_vbuckets(self.rest, set([self._get_vBucket_id(key)]))
+                   "Broken pipe" in error.message or \
+                   "Connection reset by peer" in error.message and vb_error < 5:
+                    self.reset_vbuckets(self.rest,
+                                        set([self._get_vBucket_id(key)]))
                     vb_error += 1
                 else:
                     raise error
