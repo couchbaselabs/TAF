@@ -236,7 +236,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks = [self.task.async_rebalance(self.cluster.servers[:1], [], servs_out)]
         compaction_task = []
         for bucket in self.bucket_util.buckets:
-            compaction_task.append(self.cluster.async_compact_bucket(self.cluster.master, bucket))
+            compaction_task.append(self.task.async_compact_bucket(self.cluster.master, bucket))
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         if (self.doc_ops is not None):
