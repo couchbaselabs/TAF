@@ -14,7 +14,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     def tearDown(self):
         super(RebalanceOutTests, self).tearDown()
 
-    def test_rebalance_out_with_ops(self):
+    def rebalance_out_with_ops(self):
         age = range(5)
         first = ['james', 'sharon']
         template = '{{ "age": {0}, "first_name": "{1}" }}'
@@ -94,7 +94,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             for task in tasks:
                 self.task_manager.get_task_result(task)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
-        self.bucket_util._verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
@@ -142,7 +142,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             for task in tasks:
                 self.task_manager.get_task_result(task)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
-        self.bucket_util._verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.rest = RestConnection(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
@@ -236,7 +236,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks = [self.task.async_rebalance(self.cluster.servers[:1], [], servs_out)]
         compaction_task = []
         for bucket in self.bucket_util.buckets:
-            compaction_task.append(self.cluster.async_compact_bucket(self.cluster.master, bucket))
+            compaction_task.append(self.task.async_compact_bucket(self.cluster.master, bucket))
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         if (self.doc_ops is not None):
