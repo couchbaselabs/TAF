@@ -94,7 +94,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             for task in tasks:
                 self.task_manager.get_task_result(task)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
-        self.bucket_util._verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
@@ -142,7 +142,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             for task in tasks:
                 self.task_manager.get_task_result(task)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
-        self.bucket_util._verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.rest = RestConnection(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
