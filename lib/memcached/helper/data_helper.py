@@ -464,11 +464,11 @@ class ReaderThread(object):
         self.aborted = True
 
     def _saw_error(self, key):
-    #        error_msg = "unable to get key {0}"
+        # error_msg = "unable to get key {0}"
         self.error_seen += 1
 
-    #        if self.error_seen < 500:
-    #            self.log.error(error_msg.format(key))
+        #    if self.error_seen < 500:
+        #        self.log.error(error_msg.format(key))
 
     def start(self):
         client = MemcachedClientHelper.direct_client(self.info["server"], self.info['name'],admin_user='cbadminbucket',
@@ -753,7 +753,9 @@ class WorkerThread(threading.Thread):
 class VBucketAwareMemcached(object):
     def __init__(self, rest, bucket, info=None, collections=None):
         self.log = logger.Logger.get_logger()
-        self.info = info
+        self.info = info or dict({"ip": rest.ip, "port": rest.port,
+                                  "username": rest.username,
+                                  "password": rest.password})
         self.bucket = bucket
         self.memcacheds = {}
         self.vBucketMap = {}
