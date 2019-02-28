@@ -7,8 +7,6 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from Jython_tasks.shutdown import shutdown_and_await_termination
 import copy
-
-# from bucket_utils.bucket_ready_functions import Bucket
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
                                                doc_generator
@@ -25,7 +23,6 @@ import random
 import socket
 import string
 import time
-
 from com.couchbase.client.java import *
 from com.couchbase.client.java.document import *
 from com.couchbase.client.java.document.json import *
@@ -380,7 +377,7 @@ class GenericLoadingTask(Task):
 
     def call(self):
         self.start_task()
-        log.info("Starting load generation thread")
+        log.info("Starting GenericLoadingTask thread")
         try:
             while self.has_next():
                 self.next()
@@ -655,7 +652,183 @@ class LoadDocumentsTask(GenericLoadingTask):
         #     else:
         #         self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 
+class Durability(Task):
+    instances = 1
+    num_items = 10000
+    mutations = num_items
+    start_from = 0
+    op_type = "insert"
+    persist_to = 1
+    replicate_to = 1
+    start_from = 0
+    tasks = []
+    task_manager = []
+    write_offset = []
+    def __init__(self, cluster, task_manager, bucket, client, generator, op_type, exp, flag=0,
+                 persist_to=0, replicate_to=0, time_unit="seconds",
+                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
+                 process_concurrency=4, print_ops_rate=True, retries=5):
+        super(Durability, self).__init__("DocumentsLoadGenTask")
+        
+        Durability.num_items = generator.end - generator.start
+        Durability.start_from = generator.start
+        Durability.op_type = op_type
+        Durability.persist_to = persist_to
+        Durability.replicate_to = replicate_to
+        
+        for i in range(process_concurrency):
+            Durability.write_offset.append(0)
+            
+        self.cluster = cluster
+        self.exp = exp
+        self.flag = flag
+        self.persit_to = persist_to
+        self.replicate_to = replicate_to
+        self.time_unit = time_unit
+        self.only_store_hash = only_store_hash
+        self.pause_secs = pause_secs
+        self.timeout_secs = timeout_secs
+        self.compression = compression
+        self.process_concurrency = process_concurrency
+        self.client = client
+        Durability.task_manager = task_manager
+        self.batch_size = batch_size
+        self.generator = generator
+        self.op_types = None
+        self.buckets = None
+        self.print_ops_rate = print_ops_rate
+        self.retries = retries
+        if isinstance(op_type, list):
+            self.op_types = op_type
+        else:
+            self.op_type = op_type
+        if isinstance(bucket, list):
+            self.buckets = bucket
+        else:
+            self.bucket = bucket
+    
+    def call(self): 
+        for num in range(Durability.instances):
+            generators = []
+            Durability.tasks = []
+            gen_start = int(self.generator.start)
+            gen_end = max(int(self.generator.end), 1)
+            gen_range = max(int((self.generator.end - self.generator.start)/ self.process_concurrency), 1)
+            for pos in range(gen_start, gen_end, gen_range):
+                partition_gen = copy.deepcopy(self.generator)
+                partition_gen.start = pos
+                partition_gen.itr = pos
+                partition_gen.end = pos + gen_range
+                if partition_gen.end > self.generator.end:
+                    partition_gen.end = self.generator.end
+                batch_gen = BatchedDocumentGenerator(
+                    partition_gen,
+                    self.batch_size)
+                generators.append(batch_gen)
+            i = 0
+            for generator in generators:
+                task = self.Loader(self.cluster, self.bucket, self.client, generator, self.op_type,
+                                         self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
+                                         time_unit=self.time_unit, batch_size=self.batch_size,
+                                         pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                                         compression=self.compression, throughput_concurrency=self.process_concurrency,
+                                         instance_num = i)
+                Durability.tasks.append(task)
+                i+=1
+        try:
+            for task in Durability.tasks:
+                Durability.task_manager.add_new_task(task)
+            for task in Durability.tasks:
+                Durability.task_manager.get_task_result(task)
+        except Exception as e:
+            self.set_exception(e)
+        finally:
+            self.client.close()
+            
+    class Loader(GenericLoadingTask):
+        '''
+        1. Start inserting data into buckets
+        2. Keep updating the write offset
+        3. Start the reader thread
+        4. Keep track of non durable documents
+        '''
+        def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
+                     persist_to=0, replicate_to=0, time_unit="seconds",
+                     batch_size=1, pause_secs=1, timeout_secs=5,
+                     compression=True, throughput_concurrency=4, retries=5, instance_num=0):
+            super(Durability.Loader, self).__init__(cluster, bucket, client, batch_size=batch_size,
+                                                    pause_secs=pause_secs,
+                                                    timeout_secs=timeout_secs, compression=compression,
+                                                    throughput_concurrency=throughput_concurrency, retries=retries)
 
+            self.generator = generator
+            self.op_type = op_type
+            self.exp = exp
+            self.flag = flag
+            self.persist_to = persist_to
+            self.replicate_to = replicate_to
+            self.time_unit = time_unit
+            self.instance = instance_num
+            Durability.write_offset[self.instance] = generator._doc_gen.start
+            print("Docs start loading from", generator._doc_gen.start)
+            print("Instance num", self.instance)
+            
+        def call(self):
+            self.start_task()
+            task = self.Reader(generator=self.generator, write_offset=Durability.write_offset[self.instance], instance=self.instance)
+            Durability.task_manager.add_new_task(task)
+            log.info("Starting load generation thread")
+            try:
+                while self.has_next():
+                    self.next()
+            except Exception as e:
+                self.set_exception(Exception(e.message))
+            log.info("Load generation thread completed")
+            Durability.task_manager.get_task_result(task)
+            self.complete_task()
+        
+        def has_next(self):
+            return self.generator.has_next()
+    
+        def next(self, override_generator=None):
+            doc_gen = override_generator or self.generator
+            key_value = doc_gen.next_batch()
+            if self.op_type == 'create':
+#                 print("creates")
+                self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
+                                  timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+            elif self.op_type == 'update':
+                self.batch_update(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
+                                  timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+            elif self.op_type == 'delete':
+                self.batch_delete(key_value)
+            elif self.op_type == 'read':
+                self.batch_read(key_value)
+            else:
+                self.set_exception(Exception("Bad operation type: %s" % self.op_type))
+                
+            Durability.write_offset[self.instance] += len(key_value)
+#             print("Loader: WriteOffset" , Durability.write_offset[self.instance])
+            
+        class Reader(Task):
+            def __init__(self, generator, write_offset, instance):
+                self.thread_name = "DocumentReaderTask"
+                self.start = generator._doc_gen.start
+                self.end = generator._doc_gen.end
+                self.write_offset = write_offset
+                self.read_offset = generator._doc_gen.start
+                self.instance = instance
+                
+            def call(self):
+                self.start_task()
+                while True:
+                    if self.read_offset <= Durability.write_offset[self.instance]: 
+                        print("Reader: ReadOffset=" , self.read_offset, "WriteOffset=", Durability.write_offset[self.instance], "Reader: FinalOffset=" , self.end)
+                        if self.read_offset == self.end:
+                            break
+                        self.read_offset += 1
+                self.complete_task()
+                
 class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators,
                  op_type, exp, flag=0,
