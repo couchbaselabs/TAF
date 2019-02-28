@@ -14,7 +14,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     def tearDown(self):
         super(RebalanceOutTests, self).tearDown()
 
-    def test_rebalance_out_with_ops(self):
+    def rebalance_out_with_ops(self):
         age = range(5)
         first = ['james', 'sharon']
         template = '{{ "age": {0}, "first_name": "{1}" }}'
