@@ -365,7 +365,7 @@ class rebalanceTask(Task):
 class GenericLoadingTask(Task):
     def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1, timeout_secs=60, compression=True,
                  throughput_concurrency=8, retries=5):
-        super(GenericLoadingTask, self).__init__("Loadgen_task")
+        super(GenericLoadingTask, self).__init__("Loadgen_task_{}".format(time.time()))
         self.batch_size = batch_size
         self.pause = pause_secs
         self.timeout = timeout_secs
@@ -658,7 +658,7 @@ class LoadDocumentsGeneratorsTask(Task):
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5):
-        super(LoadDocumentsGeneratorsTask, self).__init__("DocumentsLoadGenTask")
+        super(LoadDocumentsGeneratorsTask, self).__init__("DocumentsLoadGenTask_{}".format(time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -723,7 +723,7 @@ class LoadDocumentsGeneratorsTask(Task):
                 self.task_manager.add_new_task(task)
             for task in tasks:
                 self.task_manager.get_task_result(task)
-                log.info("Loaded docs from {} to {}".format(task.generator.start, task.generator.end))
+                log.info("Loaded docs from {} to {}".format(task.generator._doc_gen.start, task.generator._doc_gen.end))
         except Exception as e:
             log.info(e)
             self.set_exception(e)
@@ -769,7 +769,7 @@ class LoadDocumentsForDgmTask(Task):
                  pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5,
                  active_resident_threshold=99):
-        super(LoadDocumentsForDgmTask, self).__init__("DocumentsLoadGenTask")
+        super(LoadDocumentsForDgmTask, self).__init__("DocumentsLoadGenTask_{}".format(time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -953,7 +953,7 @@ class DocumentsValidatorTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators, op_type, exp, flag=0,
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=60, compression=True,
                  process_concurrency=4):
-        super(DocumentsValidatorTask, self).__init__("DocumentsLoadGenTask")
+        super(DocumentsValidatorTask, self).__init__("ValidateDocumentsTask_{}".format(time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag

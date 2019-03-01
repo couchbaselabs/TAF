@@ -654,9 +654,9 @@ class SDKClient(object):
 
     def get_multi(self, keys, ttl=None, quiet=True, replica=False,
                   no_format=False):
-        import bulk_doc_operations.doc_ops as doc_op
+        import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         try:
-            data = doc_op().bulkGet(self.cb, keys)
+            data = doc_op().bulkGet(self.cb.getBucketObj(), keys)
             # data = self.cb.get_multi(keys, ttl, quiet, replica, no_format)
             return self.__translate_get_multi(data)
         except CouchbaseException:
