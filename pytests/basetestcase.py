@@ -29,6 +29,7 @@ log = logging.getLogger()
 class BaseTestCase(unittest.TestCase):
     def setUp(self):
         self.log = logger.Logger.get_logger()
+        self.tear_down_while_setup = True
         self.input = TestInputSingleton.input
         self.primary_index_created = False
         self.sdk_client_type = self.input.param("sdk_client_type", "java")
@@ -162,7 +163,8 @@ class BaseTestCase(unittest.TestCase):
                 self.cleanup = True
                 if not self.skip_init_check_cbserver:
                     self.tearDownEverything()
-                self.task = ServerTasks(self.task_manager)
+                    self.tear_down_while_setup = False
+                #self.task = ServerTasks(self.task_manager)
             if not self.skip_init_check_cbserver:
                 log.info("initializing cluster")
                 # self.cluster_util.reset_cluster()
@@ -274,7 +276,9 @@ class BaseTestCase(unittest.TestCase):
             log.info("==========================tasks in thread pool==================")
             self.task_manager.print_tasks_in_pool()
             log.info("====================================================")
-            self.task.shutdown(force=True)
+            if not self.tear_down_while_setup:
+                self.task_manager.shutdown_task_manager()
+                self.task.shutdown(force=True)
             self._log_finish()
 
     def get_cbcollect_info(self, server):
