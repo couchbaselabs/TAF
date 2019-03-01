@@ -29,5 +29,9 @@ class TaskManager():
 
     def shutdown_task_manager(self, timeout=5):
         shutdown_and_await_termination(self.pool, timeout)
-        
+
+    def print_tasks_in_pool(self):
+        for task_name,future in self.futures.items():
+            if not future.isDone():
+                print "Task {} not completed".format(task_name)
         

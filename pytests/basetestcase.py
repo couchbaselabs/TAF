@@ -271,6 +271,9 @@ class BaseTestCase(unittest.TestCase):
                 self.cleanup = False
             else:
                 self.cluster_util.reset_env_variables()
+            log.info("==========================tasks in thread pool==================")
+            self.task_manager.print_tasks_in_pool()
+            log.info("====================================================")
             self.task.shutdown(force=True)
             self._log_finish()
 
