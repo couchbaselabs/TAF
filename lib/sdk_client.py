@@ -366,11 +366,17 @@ class SDKClient(object):
             if fail:
                 docs = [doc[3] for doc in fail.values()]
                 retry -= 1
+                errors = [doc[0] for doc in fail.values()]
+                log.warning("Retrying {0} documents again. Error reasons: {1}. "
+                            "Retry count: {2}".format(docs.__len__(), errors, retry + 1))
                 time.sleep(5)
             else:
                 return success
         if retry == 0:
-            log.error("Could not load all documents in this set. Failed count={0}".format(len(fail)))
+            errors = [doc[0] for doc in fail.values()]
+            errors = set(errors)
+            log.error("Could not load all documents in this set. Failed count={0} "
+                      "Failure reasons: {1}".format(len(fail), errors))
             return fail
 
     def upsert_multi(self, keys, ttl=None, persist_to=0, replicate_to=0,
