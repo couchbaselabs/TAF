@@ -25,7 +25,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             if(self.doc_ops is not None):
                 if("update" in self.doc_ops):
-                    tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "update", 0,
+                    tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, self.gen_update, "update", 0,
                                                                batch_size=20, persist_to=self.persist_to,
                                                                replicate_to=self.replicate_to,
                                                                pause_secs=5, timeout_secs=self.sdk_timeout,
@@ -50,7 +50,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             if (self.doc_ops is not None):
                 if ("update" in self.doc_ops):
-                    tasks.append(self.task.async_validate_docs(self.cluster, bucket, gen_create, "update", 0,
+                    tasks.append(self.task.async_validate_docs(self.cluster, bucket, self.gen_update, "update", 0,
                                                                batch_size=10))
                 if ("create" in self.doc_ops):
                     tasks.append(self.task.async_validate_docs(self.cluster, bucket, gen_create, "create", 0, batch_size=10,
