@@ -723,7 +723,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 self.task_manager.add_new_task(task)
             for task in tasks:
                 self.task_manager.get_task_result(task)
-                log.info("Loaded docs from {} to {}".format(task.generator._doc_gen.start, task.generator._doc_gen.end))
+                log.info("Loaded docs from {} to {}"
+                         .format(task.generator._doc_gen.start, task.generator._doc_gen.end))
         except Exception as e:
             log.info(e)
             self.set_exception(e)

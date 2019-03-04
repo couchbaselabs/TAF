@@ -2,12 +2,11 @@ import copy
 
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
+from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.rest_client import RestConnection
 
 
 class RebalanceBaseTest(BaseTestCase):
-    
     def setUp(self):
         super(RebalanceBaseTest, self).setUp()
         self.doc_ops = self.input.param("doc_ops", "create")
@@ -26,7 +25,6 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.add_rbac_user()
 
         gen_create = self.get_doc_generator(0, self.num_items)
-        #gen_create = BlobGenerator('mike', 'mike-', self.value_size, start=self.num_items + 1, end=self.num_items * 3 / 2)
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
@@ -48,12 +46,13 @@ class RebalanceBaseTest(BaseTestCase):
             self.task_manager.get_task_result(self.print_cluster_stat_task)
         self.cluster_util.print_cluster_stats()
         super(RebalanceBaseTest, self).tearDown()
-    
+
     def shuffle_nodes_between_zones_and_rebalance(self, to_remove=None):
         """
-        Shuffle the nodes present in the cluster if zone > 1. Rebalance the nodes in the end.
-        Nodes are divided into groups iteratively i.e. 1st node in Group 1, 2nd in Group 2, 3rd in Group 1 and so on, when
-        zone=2.
+        Shuffle the nodes present in the cluster if zone > 1.
+        Rebalance the nodes in the end.
+        Nodes are divided into groups iteratively. i.e: 1st node in Group 1,
+        2nd in Group 2, 3rd in Group 1 & so on, when zone=2
         :param to_remove: List of nodes to be removed.
         """
         if not to_remove:
@@ -114,11 +113,11 @@ class RebalanceBaseTest(BaseTestCase):
         initial_list = copy.deepcopy(list)
         for add_server in add_list:
             for server in self.servers:
-                if add_server != None and server.ip == add_server.ip:
+                if add_server is not None and server.ip == add_server.ip:
                     initial_list.append(add_server)
         for remove_server in remove_list:
             for server in initial_list:
-                if remove_server != None and server.ip == remove_server.ip:
+                if remove_server is not None and server.ip == remove_server.ip:
                     initial_list.remove(server)
         return initial_list
 
@@ -127,15 +126,19 @@ class RebalanceBaseTest(BaseTestCase):
         first = ['james', 'sharon']
         body = [''.rjust(self.doc_size - 10, 'a')]
         template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-        generator = DocumentGenerator(self.key, template, age, first, body, start=start,
-                                      end=end)
+        generator = DocumentGenerator(self.key, template, age, first, body,
+                                      start=start, end=end)
         return generator
 
     def _load_all_buckets(self, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
-        tasks = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen, op_type, exp, flag, self.persist_to,
-                                                         self.replicate_to, only_store_hash,
-                                                         batch_size, pause_secs, timeout_secs, compression)
+        tasks = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen,
+                                                         op_type, exp, flag,
+                                                         self.persist_to,
+                                                         self.replicate_to,
+                                                         only_store_hash,
+                                                         batch_size, pause_secs,
+                                                         timeout_secs, compression)
         for task in tasks:
             self.task_manager.get_task_result(task)
