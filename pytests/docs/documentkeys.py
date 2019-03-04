@@ -12,7 +12,8 @@ class DocumentKeysTests(BaseTestCase):
     def setUp(self):
         super(DocumentKeysTests, self).setUp()
         self.key = 'test_docs'.rjust(self.key_size, '0')
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.create_default_bucket()
@@ -37,11 +38,12 @@ class DocumentKeysTests(BaseTestCase):
             default_view = View("View", default_map_func, None, False)
             ddoc_name = "key_ddoc"
 
-            self.create_views(self.master, ddoc_name, [default_view],
+            self.create_views(self.cluster.master, ddoc_name, [default_view],
                               bucket.name)
             query = {"stale": "false", "connection_timeout": 60000}
-            self.cluster.query_view(self.master, ddoc_name, default_view.name,
-                                    query, expected_rows, bucket=bucket.name)
+            self.cluster.query_view(self.cluster.master, ddoc_name,
+                                    default_view.name, query,
+                                    expected_rows, bucket=bucket.name)
 
     """
     Perform create/update/delete data ops on the input document key and verify
@@ -50,14 +52,11 @@ class DocumentKeysTests(BaseTestCase):
         gen_load = doc_generator(dockey, 0, self.num_items, doc_type="json")
         bucket = self.bucket_util.get_all_buckets()[0]
         for op_type in ["create", "update", "delete"]:
-            task = self.task.async_load_gen_docs(self.cluster, bucket,
-                                                 gen_load, op_type, 0,
-                                                 batch_size=20,
-                                                 persist_to=self.persist_to,
-                                                 replicate_to=self.replicate_to,
-                                                 pause_secs=5,
-                                                 timeout_secs=self.sdk_timeout,
-                                                 retries=self.sdk_retries)
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, gen_load, op_type, 0, batch_size=20,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                pause_secs=5, timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
             if op_type == "delete":
                 self.num_items = 0
@@ -66,9 +65,17 @@ class DocumentKeysTests(BaseTestCase):
     """Perform verification with views after loading data"""
     def _dockey_views(self, dockey="dockey"):
         gen_load = doc_generator(dockey, 0, self.num_items, doc_type="json")
-        self._load_all_buckets(self.master, gen_load, "create", 0)
+        bucket = self.bucket_util.get_all_buckets()[0]
+        task = self.task.async_load_gen_docs(self.cluster, bucket,
+                                             gen_load, "create", 0,
+                                             batch_size=20,
+                                             persist_to=self.persist_to,
+                                             replicate_to=self.replicate_to,
+                                             pause_secs=5,
+                                             timeout_secs=self.sdk_timeout,
+                                             retries=self.sdk_retries)
+        self.task.jython_task_manager.get_task_result(task)
         self._persist_and_verify()
-
         self._verify_with_views(self.num_items)
 
     """
@@ -78,11 +85,20 @@ class DocumentKeysTests(BaseTestCase):
     """
     def _dockey_tap(self, dockey="dockey"):
         gen_load = doc_generator(dockey, 0, self.num_items, doc_type="json")
-        self._load_all_buckets(self.master, gen_load, "create", 0)
+        bucket = self.bucket_util.get_all_buckets()[0]
+        task = self.task.async_load_gen_docs(self.cluster, bucket,
+                                             gen_load, "create", 0,
+                                             batch_size=20,
+                                             persist_to=self.persist_to,
+                                             replicate_to=self.replicate_to,
+                                             pause_secs=5,
+                                             timeout_secs=self.sdk_timeout,
+                                             retries=self.sdk_retries)
+        self.task.jython_task_manager.get_task_result(task)
         self._persist_and_verify()
 
         # assert if there are not enough nodes to failover
-        rest = RestConnection(self.master)
+        rest = RestConnection(self.cluster.master)
         num_nodes = len(rest.node_statuses())
         self.assertTrue(num_nodes > 1,
                         "ERROR: Not enough nodes to do failover")
@@ -103,8 +119,8 @@ class DocumentKeysTests(BaseTestCase):
         expected_rows = self.num_items
         for bucket in self.buckets:
             try:
-                client = MemcachedClientHelper.proxy_client(self.master,
-                                                            bucket.name)
+                client = MemcachedClientHelper.proxy_client(
+                    self.cluster.master, bucket.name)
             except Exception as ex:
                 self.log.exception("Unable to create memcached client - {0}"
                                    .format(ex))
@@ -122,7 +138,7 @@ class DocumentKeysTests(BaseTestCase):
                 self.log.exception("Exception {0} while performing data op {1}"
                                    .format(ex, data_op))
 
-        self._wait_for_stats_all_buckets(self.servers[:self.nodes_init])
+        self.bucket_util._wait_for_stats_all_buckets()
         if self.bucket_type != 'ephemeral':
             # views not supported for ephemeral buckets
             self._verify_with_views(expected_rows)

@@ -71,7 +71,7 @@ class DocumentGenerator(KVGenerator):
         Args:
             name: The key name prefix
             template: A formated string that can be used to generate documents
-            *args: Each argument is list for the corresponding parameter in the template.
+            *args: Each arg is list for the corresponding param in the template
                    In the above example age[2] appears in the 3rd document
             *kwargs: Special constrains for the document generator,
                      currently start and end are supported
@@ -106,9 +106,9 @@ class DocumentGenerator(KVGenerator):
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
-        seed = self.itr
-        id = self.name + '-' + str(self.itr)
-        self.random.seed(id)
+
+        seed_hash = self.name + '-' + str(self.itr)
+        self.random.seed(seed_hash)
         doc_args = []
         for arg in self.args:
             value = self.random.choice(arg)
@@ -119,8 +119,8 @@ class DocumentGenerator(KVGenerator):
                                              .replace('\\', '\\\\')
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
-            doc_key = ''.join(self.random.choice(ascii_uppercase+ascii_lowercase+digits) \
-                                                                   for i in range(12))
+            doc_key = ''.join(self.random.choice(
+                ascii_uppercase+ascii_lowercase+digits) for _ in range(12))
         else:
             doc_key = self.name + '-' + str(self.itr)
         self.itr += 1
@@ -195,7 +195,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         Args:
             name: The key name prefix
             template: A formated string that can be used to generate documents
-            *args: Each argument is list for the corresponding parameter in the template.
+            *args: Each arg is list for the corresponding param in the template
                    In the above example age[2] appears in the 3rd document
             *kwargs: Special constrains for the document generator,
                      currently start and end are supported
@@ -247,8 +247,8 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
-        id = self.name + '-' + str(self.itr)
-        self.random.seed(id)
+        rand_hash = self.name + '-' + str(self.itr)
+        self.random.seed(rand_hash)
         doc_args = []
         for arg in self.args:
             value = self.random.choice(arg)
@@ -274,7 +274,8 @@ class BlobGenerator(KVGenerator):
             raise StopIteration
 
         if self.name == "random_keys":
-            key = ''.join(choice(ascii_uppercase+ascii_lowercase+digits) for i in range(12))
+            key = ''.join(choice(ascii_uppercase+ascii_lowercase+digits)
+                          for _ in range(12))
         else:
             key = self.name + str(self.itr)
         if self.value_size == 1:
@@ -462,16 +463,16 @@ class JsonDocGenerator(KVGenerator):
                 if 'is_manager' in fields_to_update:
                     doc_dict['is_manager'] = bool(random.getrandbits(1))
                     if doc_dict["is_manager"]:
-                        doc_dict['manages'] = {'team_size': random.randint(5,10)}
+                        doc_dict['manages'] = {'team_size': random.randint(5, 10)}
                         doc_dict['manages']['reports'] = []
                         for _ in xrange(0, doc_dict['manages']['team_size']):
                             doc_dict['manages']['reports'].append(self.generate_name())
                 if 'languages_known' in fields_to_update:
                     doc_dict['languages_known'] = self.generate_lang_known()
                 if 'email' in fields_to_update:
-                    doc_dict['email'] = "%s_%s@mcdiabetes.com" %\
+                    doc_dict['email'] = "%s_%s@mcdiabetes.com" % \
                                         (doc_dict['name'].split(' ')[0].lower(),
-                                         str(random.randint(0,99)))
+                                         str(random.randint(0, 99)))
                 if 'manages.team_size' in fields_to_update or\
                         'manages.reports' in fields_to_update:
                     doc_dict['manages'] = {}
@@ -486,7 +487,8 @@ class JsonDocGenerator(KVGenerator):
             raise StopIteration
         doc = self.gen_docs[self.itr]
         self.itr += 1
-        return self.name+str(10000000+self.itr), json.dumps(doc).encode(self.encoding, "ignore")
+        return self.name+str(10000000+self.itr), \
+            json.dumps(doc).encode(self.encoding, "ignore")
 
     def generate_join_date(self):
         import datetime
@@ -494,8 +496,8 @@ class JsonDocGenerator(KVGenerator):
         month = random.randint(1, 12)
         day = random.randint(1, 28)
         hour = random.randint(0, 23)
-        min = random.randint(0, 59)
-        return datetime.datetime(year, month, day, hour, min).isoformat()
+        minutes = random.randint(0, 59)
+        return datetime.datetime(year, month, day, hour, minutes).isoformat()
 
     def generate_dept(self):
         return DEPT[random.randint(0, len(DEPT)-1)]
@@ -632,4 +634,5 @@ class WikiJSONGenerator(KVGenerator):
         doc['mutated'] = 0
         doc['type'] = 'wiki'
         self.itr += 1
-        return self.name+str(10000000+self.itr), json.dumps(doc, indent=3).encode(self.encoding, "ignore")
+        return self.name+str(10000000+self.itr), \
+            json.dumps(doc, indent=3).encode(self.encoding, "ignore")

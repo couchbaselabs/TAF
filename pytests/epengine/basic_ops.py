@@ -168,9 +168,10 @@ class basic_ops(BaseTestCase):
         doc_update = doc_generator(self.key, num_item_start_for_crud,
                                    self.num_items,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type)
+                                   doc_type=self.doc_type,
+                                   target_vbucket=self.target_vbucket,
+                                   vbuckets=self.vbuckets)
 
-        print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
         expected_num_items = self.num_items
         num_of_mutations = 1
 
@@ -184,7 +185,6 @@ class basic_ops(BaseTestCase):
                                                  timeout_secs=self.sdk_timeout,
                                                  retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
-            self.task_manager.get_task_result(print_ops_task)
             # TODO: Proc to verify the mutation value in each doc
             # self.verify_doc_mutation(doc_update, num_of_mutations)
         elif doc_op == "delete":
@@ -197,11 +197,9 @@ class basic_ops(BaseTestCase):
                                                  timeout_secs=self.sdk_timeout,
                                                  retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
-            self.task_manager.get_task_result(print_ops_task)
-            expected_num_items = self.num_items - num_item_start_for_crud
+            expected_num_items = self.num_items - (self.num_items-num_item_start_for_crud)
         else:
             self.log.warning("Unsupported doc_operation")
-        print_ops_task.end_task()
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(expected_num_items)
 
