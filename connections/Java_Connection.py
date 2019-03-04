@@ -9,10 +9,14 @@ from com.couchbase.client.java import CouchbaseCluster
 from com.couchbase.client.core import CouchbaseException
 from java.util.logging import Logger, Level, ConsoleHandler
 from com.couchbase.client.java.env import DefaultCouchbaseEnvironment
+from com.couchbase.client.core.env import KeyValueServiceConfig
 from java.util.concurrent import TimeUnit
 from java.lang import System
-
-env = DefaultCouchbaseEnvironment.builder().mutationTokensEnabled(True).computationPoolSize(5).maxRequestLifetime(TimeUnit.SECONDS.toMillis(300000)).socketConnectTimeout(100000).connectTimeout(100000).build();
+a = {}
+env = DefaultCouchbaseEnvironment.builder().mutationTokensEnabled(True).\
+    computationPoolSize(5).maxRequestLifetime(TimeUnit.SECONDS.toMillis(300000)).\
+    socketConnectTimeout(100000).connectTimeout(100000).keyValueServiceConfig(KeyValueServiceConfig.create(10)).\
+    kvTimeout(10).build()
 class SDKClient(object):
     """Java SDK Client Implementation for testrunner - master branch Implementation"""
 
