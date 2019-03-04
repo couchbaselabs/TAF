@@ -7,7 +7,7 @@ import time
 import json as pyJson
 
 import logger
-import Java_Connection
+import connections.Java_Connection as Java_Connection
 
 from mimify import repl
 
