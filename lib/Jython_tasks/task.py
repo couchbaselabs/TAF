@@ -520,10 +520,13 @@ class GenericLoadingTask(Task):
                 RuntimeError) as error:
             self.set_exception(error)
 
-    def batch_delete(self, key_val):
-        for key, value in key_val.items():
+    def batch_delete(self, key_val, persist_to=None, replicate_to=None,
+                     timeout=None, timeunit=None):
+        for key, _ in key_val.items():
             try:
-                self.client.delete(key)
+                self.client.delete(key, persist_to=persist_to,
+                                   replicate_to=replicate_to,
+                                   timeout=timeout, timeunit=timeunit)
             except self.client.MemcachedError as error:
                 self.set_exception(error)
                 return

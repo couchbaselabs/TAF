@@ -20,8 +20,13 @@ from com.couchbase.client.java.document.json import *
 from com.couchbase.client.java.error.subdoc import DocumentNotJsonException
 from com.couchbase.client.java.subdoc import SubdocOptionsBuilder
 from com.couchbase.client.java.query import N1qlQueryResult, N1qlQuery
-from com.couchbase.client.core import CouchbaseException
 from com.couchbase.test.sdk import BucketInterface
+
+# Exceptions
+from com.couchbase.client.core import CouchbaseException, BackpressureException
+from com.couchbase.client.java.error import CASMismatchException, \
+                                            DocumentDoesNotExistException, \
+                                            TemporaryFailureException
 
 from java.util.concurrent import TimeUnit
 from java.util.logging import Logger, Level, ConsoleHandler
@@ -59,31 +64,40 @@ class SDKClient(object):
     def _createString(self, scheme="couchbase", bucket=None,
                       hosts=["localhost"], certpath=None,
                       uhm_options="", ipv6=False, compression=True):
-        connection_string = "{0}://{1}".format(scheme, ", ".join(hosts).replace(" ", ""))
+        connection_string = "{0}://{1}" \
+                            .format(scheme, ", ".join(hosts).replace(" ", ""))
         # if bucket != None:
         #     connection_string = "{0}/{1}".format(connection_string, bucket)
         if uhm_options is not None:
-            connection_string = "{0}?{1}".format(connection_string, uhm_options)
+            connection_string = "{0}?{1}" \
+                                .format(connection_string, uhm_options)
         if ipv6 is True:
             if "?" in connection_string:
-                connection_string = "{0},ipv6=allow".format(connection_string)
+                connection_string = "{0},ipv6=allow" \
+                                    .format(connection_string)
             else:
                 connection_string = "{0}?ipv6=allow".format(connection_string)
         if compression is True:
             if "?" in connection_string:
-                connection_string = "{0},compression=on".format(connection_string)
+                connection_string = "{0},compression=on" \
+                                    .format(connection_string)
             else:
-                connection_string = "{0}?compression=on".format(connection_string)
+                connection_string = "{0}?compression=on" \
+                                    .format(connection_string)
         else:
             if "?" in connection_string:
-                connection_string = "{0},compression=off".format(connection_string)
+                connection_string = "{0},compression=off" \
+                                    .format(connection_string)
             else:
-                connection_string = "{0}?compression=off".format(connection_string)
+                connection_string = "{0}?compression=off" \
+                                    .format(connection_string)
         if scheme == "couchbases":
             if "?" in connection_string:
-                connection_string = "{0},certpath={1}".format(connection_string, certpath)
+                connection_string = "{0},certpath={1}" \
+                                    .format(connection_string, certpath)
             else:
-                connection_string = "{0}?certpath={1}".format(connection_string, certpath)
+                connection_string = "{0}?certpath={1}" \
+                                    .format(connection_string, certpath)
         return connection_string
 
     def _createConn(self):
@@ -95,7 +109,8 @@ class SDKClient(object):
                 if isinstance(h, ConsoleHandler):
                     h.setLevel(Level.SEVERE)
             # self.cluster = CouchbaseCluster.create(Java_Connection.env, self.hosts)
-            self.cluster = CouchbaseCluster.fromConnectionString(Java_Connection.env, self.connection_string);
+            self.cluster = CouchbaseCluster.fromConnectionString(
+                Java_Connection.env, self.connection_string)
             self.cluster.authenticate("Administrator", self.password)
             self.cb = BucketInterface(self.cluster, self.bucket)
             self.cb.connect()
@@ -116,8 +131,8 @@ class SDKClient(object):
             self.cluster.disconnect()
             log.info("Closed down Cluster Connection.")
 
-    def counter_in(self, key, path, delta, create_parents=True, cas=0, ttl=None,
-                   persist_to=0, replicate_to=0):
+    def counter_in(self, key, path, delta, create_parents=True, cas=0,
+                   ttl=None, persist_to=0, replicate_to=0):
         try:
             return self.cb.counter_in(key, path, delta, create_parents,
                                       cas, ttl, persist_to, replicate_to)
@@ -288,28 +303,29 @@ class SDKClient(object):
     def cas(self, key, value, cas=0, ttl=None, format=None):
         return self.cb.replace(key, value, cas, format)
 
-    def delete(self, key, cas=0, quiet=True, persist_to=0, replicate_to=0):
+    def delete(self, key, cas=0, quiet=True, persist_to=0, replicate_to=0,
+               max_retry=3):
         self.remove(key, cas=cas, quiet=quiet,
-                    persist_to=persist_to, replicate_to=replicate_to)
+                    persist_to=persist_to, replicate_to=replicate_to,
+                    max_retry=max_retry)
 
     def remove(self, key, persist_to=None, replicate_to=None,
-               timeout=None, timeUnit=None):
-        try:
-            return self.generic_remove(key, persistTo=persist_to,
-                                       replicateTo=replicate_to,
-                                       timeout=timeout, timeUnit=timeUnit)
-        except CouchbaseException:
+               timeout=None, timeunit=None, max_retry=3):
+        retry_count = 0
+        while retry_count <= max_retry:
             try:
-                time.sleep(10)
-                return self.generic_remove(key, persistTo=persist_to,
-                                           replicateTo=replicate_to,
-                                           timeout=timeout, timeUnit=timeUnit)
-            except CouchbaseException:
-                raise
-
-    # def delete(self, keys, quiet=True, persist_to=0, replicate_to=0):
-    #     return self.remove(self, keys, quiet=quiet, persist_to=persist_to,
-    #                        replicate_to=replicate_to)
+                do_retry = self.generic_remove(
+                    key, persistTo=persist_to, replicateTo=replicate_to,
+                    timeout=timeout, timeunit=timeunit)
+                if do_retry is True:
+                    retry_count += 1
+                    # Sleep for 5 sec before next retry
+                    time.sleep(5)
+                else:
+                    break
+            except Exception as e:
+                log.error("Error during remove of {0} - {1}"
+                          .format(key, e))
 
     def remove_multi(self, keys, quiet=True, persist_to=0, replicate_to=0):
         try:
@@ -329,11 +345,8 @@ class SDKClient(object):
         except CouchbaseException:
             try:
                 time.sleep(10)
-                return self.cb.insertWithPersistToReplicateToAndTimeout(doc,
-                                                                        persist_to,
-                                                                        replicate_to,
-                                                                        ttl,
-                                                                        TimeUnit.SECONDS)
+                return self.cb.insertWithPersistToReplicateToAndTimeout(
+                    doc, persist_to, replicate_to, ttl, TimeUnit.SECONDS)
             except CouchbaseException:
                 raise
 
@@ -367,16 +380,18 @@ class SDKClient(object):
                 docs = [doc[3] for doc in fail.values()]
                 retry -= 1
                 errors = [doc[0] for doc in fail.values()]
-                log.warning("Retrying {0} documents again. Error reasons: {1}. "
-                            "Retry count: {2}".format(docs.__len__(), errors, retry + 1))
+                log.warning("Retrying {0} documents again. Error reasons: {1}."
+                            "Retry count: {2}"
+                            .format(docs.__len__(), errors, retry + 1))
                 time.sleep(5)
             else:
                 return success
         if retry == 0:
             errors = [doc[0] for doc in fail.values()]
             errors = set(errors)
-            log.error("Could not load all documents in this set. Failed count={0} "
-                      "Failure reasons: {1}".format(len(fail), errors))
+            log.error("Could not load all documents in this set."
+                      "Failure count={0}, reasons: {1}"
+                      .format(len(fail), errors))
             return fail
 
     def upsert_multi(self, keys, ttl=None, persist_to=0, replicate_to=0,
@@ -405,7 +420,7 @@ class SDKClient(object):
             return fail
 
     def insert(self, key, value, ttl=None, format=None,
-               persist_to=0, replicate_to=0,doc_type="json"):
+               persist_to=0, replicate_to=0, doc_type="json"):
         doc = self.__translate_to_json_document(key, value, ttl,
                                                 doc_type=doc_type)
         try:
@@ -577,39 +592,52 @@ class SDKClient(object):
                                                       replicateTo)
             elif ttl == persistTo is None and \
                     None not in (replicateTo, timeout, timeUnit):
-                self.cb.counterWithInitialReplicateToAndTimeout(key, delta,
-                                                                initial,
-                                                                replicateTo,
-                                                                timeout,
-                                                                timeUnit)
+                self.cb.counterWithInitialReplicateToAndTimeout(
+                    key, delta, initial, replicateTo, timeout, timeUnit)
 
     def generic_remove(self, key, persistTo=None, replicateTo=None,
-                       timeout=None, timeUnit=None):
-        if timeout == timeUnit is None:
-            if persistTo == replicateTo is None:
-                self.cb.remove(key)
-            elif persistTo is not None and replicateTo is None:
-                self.cb.removeWithPersistTo(key, persistTo)
-            elif replicateTo is not None and persistTo is None:
-                self.cb.removeWithReplicateTo(key, replicateTo)
-            elif None not in [replicateTo, persistTo]:
-                self.cb.removeWithPersistToReplicateTo(key,
-                                                       persistTo, replicateTo)
-        elif None not in [timeout, timeUnit]:
-            if persistTo == replicateTo is None:
-                self.cb.removeWithTimeout(key, timeout, timeUnit)
-            elif persistTo is not None and replicateTo is None:
-                self.cb.removeWithPersistToAndTimeout(key, persistTo,
-                                                      timeout, timeUnit)
-            elif replicateTo is not None and persistTo is None:
-                self.cb.removeWithReplicateToAndTimeout(key, replicateTo,
-                                                        timeout, timeUnit)
-            elif None not in [replicateTo, persistTo]:
-                self.cb.removeWithPersistToReplicateToAndTimeout(key,
-                                                                 persistTo,
-                                                                 replicateTo,
-                                                                 timeout,
-                                                                 timeUnit)
+                       timeout=None, timeunit=None):
+        retry = False
+        try:
+            if timeout == timeunit is None:
+                if persistTo == replicateTo is None:
+                    self.cb.remove(key)
+                elif persistTo is not None and replicateTo is None:
+                    self.cb.removeWithPersistTo(key, persistTo)
+                elif replicateTo is not None and persistTo is None:
+                    self.cb.removeWithReplicateTo(key, replicateTo)
+                elif None not in [replicateTo, persistTo]:
+                    self.cb.removeWithPersistToReplicateTo(
+                        key, persistTo, replicateTo)
+            elif None not in [timeout, timeunit]:
+                if persistTo == replicateTo is None:
+                    self.cb.removeWithTimeout(key, timeout, timeunit)
+                elif persistTo is not None and replicateTo is None:
+                    self.cb.removeWithPersistToAndTimeout(key, persistTo,
+                                                          timeout, timeunit)
+                elif replicateTo is not None and persistTo is None:
+                    self.cb.removeWithReplicateToAndTimeout(key, replicateTo,
+                                                            timeout, timeunit)
+                elif None not in [replicateTo, persistTo]:
+                    self.cb.removeWithPersistToReplicateToAndTimeout(
+                        key, persistTo, replicateTo, timeout, timeunit)
+        except DocumentDoesNotExistException as e:
+            log.error("Exception: Document id {0} not found - {1}"
+                      .format(key, e))
+            raise(e)
+        except CASMismatchException as e:
+            log.error("Exception: Cas mismatch for doc {0} - {1}"
+                      .format(key, e))
+            raise(e)
+        except (BackpressureException, TemporaryFailureException) as e:
+            log.warning("Exception: Retry for doc {0} - {1}"
+                        .format(key, e))
+            retry = True
+        except CouchbaseException as e:
+            log.error("Generic exception for doc {0} - {1}"
+                      .format(key, e))
+            raise(e)
+        return retry
 
     def counter(self, key, delta=1, initial=None, ttl=None,
                 persistTo=None, replicateTo=None, timeout=None, timeUnit=None):
@@ -998,5 +1026,9 @@ class SDKSmartClient(object):
         finally:
             self.client.cb.timeout = self.client.default_timeout
 
-    def delete(self, key):
-        return self.client.remove(key)
+    def delete(self, key, persist_to=None, replicate_to=None,
+               timeout=None, timeunit=None, max_retry=3):
+        return self.client.remove(key, persist_to=persist_to,
+                                  replicate_to=replicate_to,
+                                  timeout=timeout, timeunit=timeunit,
+                                  max_retry=max_retry)
