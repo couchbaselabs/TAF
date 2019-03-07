@@ -1,10 +1,7 @@
 import logger
 import unittest
-import copy
 import datetime
 import logging
-import commands
-import json
 import traceback
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
@@ -22,6 +19,7 @@ from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 import time
+import os
 
 log = logging.getLogger()
 
@@ -352,8 +350,3 @@ class BaseTestCase(unittest.TestCase):
                 ClusterOperationHelper.flushctl_set(server, "exp_pager_stime",
                                                     val, bucket)
         self.sleep(val, "wait for expiry pager to run on all these nodes")
-
-    def set_testrunner_client(self):
-        self.testrunner_client = self.input.param("testrunner_client", None)
-        if self.testrunner_client is not None:
-            os.environ[testconstants.TESTRUNNER_CLIENT] = self.testrunner_client
