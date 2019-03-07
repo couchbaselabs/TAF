@@ -65,6 +65,7 @@ class Task(Callable):
     def start_task(self):
         self.started = True
         self.start_time = time.time()
+        log.info("Thread %s is started:"%self.thread_name)
 
     def set_exception(self, exception):
         self.exception = exception
@@ -74,6 +75,7 @@ class Task(Callable):
     def complete_task(self):
         self.completed = True
         self.end_time = time.time()
+        log.info("Thread %s is completed:"%self.thread_name)
 
     def call(self):
         raise NotImplementedError
