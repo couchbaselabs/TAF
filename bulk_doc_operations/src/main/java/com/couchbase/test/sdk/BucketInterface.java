@@ -202,8 +202,7 @@ public class BucketInterface {
 		return this.bucket.get(doc);
 	}
 
-	/*
-	public Document<D> getWithDocAndTimeout(Document<D> doc, long timeout, TimeUnit timeUnit) {
+	public Document getWithDocAndTimeout(Document doc, long timeout, TimeUnit timeUnit) {
 		return this.bucket.get(doc, timeout, timeUnit);
 	}
 	
@@ -214,7 +213,6 @@ public class BucketInterface {
 	public JsonDocument getWithTimeout(String id, long timeout, TimeUnit timeUnit) {
 		return this.bucket.get(id, timeout, timeUnit);
 	}
-	*/
 
 	/*
 	// Need to implement based on the requirements
