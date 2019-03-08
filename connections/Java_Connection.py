@@ -15,8 +15,8 @@ from java.lang import System
 a = {}
 env = DefaultCouchbaseEnvironment.builder().mutationTokensEnabled(True).\
     computationPoolSize(5).maxRequestLifetime(TimeUnit.SECONDS.toMillis(300000)).\
-    socketConnectTimeout(100000).connectTimeout(100000).keyValueServiceConfig(KeyValueServiceConfig.create(10)).\
-    kvTimeout(10).build()
+    socketConnectTimeout(100000).connectTimeout(100000).keyValueServiceConfig(KeyValueServiceConfig.create(1000)).\
+    kvTimeout(1000).build()
 class SDKClient(object):
     """Java SDK Client Implementation for testrunner - master branch Implementation"""
 

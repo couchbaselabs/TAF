@@ -14,7 +14,7 @@ from mimify import repl
 
 from com.couchbase.client.deps.io.netty.buffer import Unpooled
 from com.couchbase.client.deps.io.netty.util import CharsetUtil
-from com.couchbase.client.java import CouchbaseCluster
+from com.couchbase.client.java import CouchbaseCluster, ReplicaMode
 from com.couchbase.client.java.CouchbaseBucket import mutateIn
 from com.couchbase.client.java.document import *
 from com.couchbase.client.java.document.json import *
@@ -683,15 +683,17 @@ class SDKClient(object):
             except CouchbaseException as e:
                 raise e
 
-    def rget(self, key, replica_index=None, quiet=True):
+    def getfromReplica(self, key, ReplicaMode=None):
         try:
-            data = self.rget(key, replica_index=replica_index, quiet=None)
-            return self.__translate_get(data)
+            data = self.cb.getFromReplica(key, ReplicaMode)
+#             print data
+            return self.__translate_get_replica(data)
         except CouchbaseException:
             try:
                 time.sleep(10)
-                data = self.rget(key, replica_index=replica_index, quiet=None)
-                return self.__translate_get(data)
+                data = self.cb.getfromReplica(key, ReplicaMode)
+                print data
+                return self.__translate_get_replica(data)
             except CouchbaseException:
                 raise
 
@@ -892,6 +894,15 @@ class SDKClient(object):
         else:
             return None, None, None
 
+    def __translate_get_replica(self, data):
+        map = dict()
+        if data is None:
+            return map
+        for result in data:
+            map[result.id()] = [result.id(), result.cas(),
+                                str(result.content())]
+        return map
+
     def __translate_delete(self, data):
         return data
 
@@ -996,8 +1007,8 @@ class SDKSmartClient(object):
     def get(self, key):
         return self.client.get(key)
 
-    def getr(self, key, replica_index=0):
-        return self.client.rget(key, replica_index=replica_index)
+    def getfromReplica(self, key, ReplicaMode=ReplicaMode.ALL):
+        return self.client.getfromReplica(key, ReplicaMode=ReplicaMode)
 
     def setMulti(self, exp, flags, key_val_dic, pause=None, timeout=5,
                  parallel=None, format=FMT_AUTO,

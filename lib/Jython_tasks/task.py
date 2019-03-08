@@ -35,6 +35,9 @@ from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
 from java.lang import Thread
+from Jython_tasks import task_manager
+from copy import deepcopy
+from time import sleep
 
 log = logging.getLogger(__name__)
 
@@ -539,49 +542,10 @@ class GenericLoadingTask(Task):
                             fail.pop(key)
                 log.info("Failed items after reads {}".format(fail.__str__()))
             return success, fail
-            # while retry_count < self.retries:
-            #     success, fail = client.setMulti(self.exp, self.flag, retry_docs, self.pause, timeout, parallel=False,
-            #                 persist_to=persist_to, replicate_to=replicate_to,
-            #                 time_unit=time_unit, retry=self.retries, doc_type=doc_type)
-            #     if fail:
-            #         #import pydevd
-            #         #pydevd.settrace(trace_only_current_thread=False)
-            #         retry_docs = {}
-            #         for key, value in fail.items():
-            #             #Don't retry documents that already exist.
-            #             if "com.couchbase.client.java.error.DocumentAlreadyExistsException" in value[0].__str__():
-            #                 continue
-            #             retry_docs[key] = key_val[key]
-            #         errors = [doc[0] for doc in fail.values()]
-            #         errors = set(errors)
-            #         timeout_error = False
-            #         for error in errors:
-            #             if "java.util.concurrent.TimeoutException" in error.__str__():
-            #                 timeout_error = True
-            #                 break
-            #         if timeout_error:
-            #             log.warning("Reconnecting client")
-            #             client.reconnect()
-            #         log.warning("Retrying {} documents again".format(retry_docs.__len__()))
-            #         retry_count += 1
-            #         time.sleep(5)
-            #     else:
-            #         break
-            # if retry_count == self.retries and fail:
-            #     #import pydevd
-            #     #pydevd.settrace(trace_only_current_thread=False)
-            #     errors = [doc[0] for doc in fail.values()]
-            #     errors = set(errors)
-            #     log.error(errors)
-            #     log.error("Failed to insert docs: {}".format(fail.__len__()))
-            #     return key_val.__len__() - fail.__len__()
-            # else:
-            #     return key_val.__len__()
-            # # log.info("Batch Operation: %s documents are INSERTED into bucket %s"%(len(key_val), self.bucket))
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
             log.error(error)
-            self.set_exception(error)
+        return success, fail
 
     def batch_update(self, key_val, persist_to=0, replicate_to=0, timeout=5,
                      time_unit="seconds", doc_type="json"):
@@ -602,31 +566,29 @@ class GenericLoadingTask(Task):
                     retry_count += 1
                 else:
                     break
-            if retry_count == self.retries and fail:
-                import pydevd
-                pydevd.settrace(trace_only_current_thread=False)
-                log.error("Failed to insert docs: {}".format(fail.__len__()))
-                return fail.__len__()
-            else:
-                return key_val.__len__()
-            #log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
+            return success, fail
+
         except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
                 RuntimeError) as error:
-            self.set_exception(error)
+            log.error(error)
+
+        return success, fail
 
     def batch_delete(self, key_val, persist_to=None, replicate_to=None,
                      timeout=None, timeunit=None):
+        cant_deleted = []
         for key, _ in key_val.items():
             try:
                 self.client.delete(key, persist_to=persist_to,
                                    replicate_to=replicate_to,
                                    timeout=timeout, timeunit=timeunit)
             except self.client.MemcachedError as error:
-                self.set_exception(error)
+                cant_deleted.append(key)
                 return
             except (ServerUnavailableException, socket.error, EOFError,
                     AttributeError) as error:
                 self.set_exception(error)
+        return cant_deleted
 
     def batch_read(self, key_val):
         try:
@@ -671,7 +633,8 @@ class GenericLoadingTask(Task):
 
 
 class LoadDocumentsTask(GenericLoadingTask):
-    fail ={}
+    fail = {}
+
     def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
@@ -719,39 +682,6 @@ class LoadDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 
-        # print("batchsize = {}".format(self.batch_size))
-        # if self.batch_size == 1:
-        #     key, value = self.generator.next()
-        #     print(key, value)
-        #     if self.op_type == 'create':
-        #         is_base64_value = (self.generator.__class__.__name__ == 'Base64Generator')
-        #         self._unlocked_create(key, value, is_base64_value=is_base64_value)
-        #     elif self.op_type == 'read':
-        #         self._unlocked_read(key)
-        #     elif self.op_type == 'read_replica':
-        #         self._unlocked_replica_read(key)
-        #     elif self.op_type == 'update':
-        #         self._unlocked_update(key)
-        #     elif self.op_type == 'delete':
-        #         self._unlocked_delete(key)
-        #     elif self.op_type == 'append':
-        #         self._unlocked_append(key, value)
-        #     else:
-        #         self.set_exception(Exception("Bad operation type: %s" % self.op_type))
-        # else:
-        #     doc_gen = override_generator or self.generator
-        #     key_value = doc_gen.next_batch()
-        #     if self.op_type == 'create':
-        #         self._create_batch(key_value)
-        #     elif self.op_type == 'update':
-        #         self._update_batch(key_value)
-        #     elif self.op_type == 'delete':
-        #         self._delete_batch(key_value)
-        #     elif self.op_type == 'read':
-        #         self._read_batch(key_value)
-        #     else:
-        #         self.set_exception(Exception("Bad operation type: %s" % self.op_type))
-
 
 class Durability(Task):
     instances = 1
@@ -765,6 +695,11 @@ class Durability(Task):
     tasks = []
     task_manager = []
     write_offset = []
+    create_failed = []
+    update_failed = []
+    delete_failed = []
+    docs_to_be_updated = []
+    docs_to_be_deleted = []
 
     def __init__(self, cluster, task_manager, bucket, client, generator,
                  op_type, exp, flag=0, persist_to=0, replicate_to=0,
@@ -781,6 +716,11 @@ class Durability(Task):
 
         for _ in range(process_concurrency):
             Durability.write_offset.append(0)
+            Durability.create_failed.append({})
+            Durability.update_failed.append({})
+            Durability.delete_failed.append({})
+            Durability.docs_to_be_updated.append({})
+            Durability.docs_to_be_deleted.append({})
 
         self.cluster = cluster
         self.exp = exp
@@ -848,8 +788,6 @@ class Durability(Task):
                 Durability.task_manager.get_task_result(task)
         except Exception as e:
             self.set_exception(e)
-        finally:
-            self.client.close()
 
     class Loader(GenericLoadingTask):
         '''
@@ -885,7 +823,7 @@ class Durability(Task):
             self.start_task()
             task = self.Reader(generator=self.generator,
                                write_offset=Durability.write_offset[self.instance],
-                               instance=self.instance)
+                               instance=self.instance, client=self.client)
             Durability.task_manager.add_new_task(task)
             log.info("Starting load generation thread")
             try:
@@ -904,35 +842,41 @@ class Durability(Task):
             doc_gen = override_generator or self.generator
             key_value = doc_gen.next_batch()
             if self.op_type == 'create':
-                self.batch_create(
+                s_docs, f_docs = self.batch_create(
                     key_value, persist_to=self.persist_to,
                     replicate_to=self.replicate_to, timeout=self.timeout,
                     time_unit=self.time_unit,
                     doc_type=self.generator.doc_type)
+
+                if len(f_docs) > 0:
+                    Durability.create_failed[self.instance].update(f_docs)
+#                 print "CreateFailed = %s" % Durability.create_failed[self.instance]
             elif self.op_type == 'update':
-                self.batch_update(
+                Durability.docs_to_be_updated[self.instance].update(self.batch_read(key_value))
+                s_docs, f_docs = self.batch_update(
                     key_value, persist_to=self.persist_to,
                     replicate_to=self.replicate_to, timeout=self.timeout,
                     time_unit=self.time_unit,
                     doc_type=self.generator.doc_type)
+                Durability.update_failed[self.instance].update(f_docs)
             elif self.op_type == 'delete':
-                self.batch_delete(key_value)
-            elif self.op_type == 'read':
-                self.batch_read(key_value)
+                Durability.docs_to_be_deleted[self.instance].update(self.batch_read(key_value))
+                Durability.delete_failed[self.instance].update(self.batch_delete(key_value))
             else:
                 self.set_exception(Exception("Bad operation type: %s" % self.op_type))
-
             Durability.write_offset[self.instance] += len(key_value)
 #             print("Loader: WriteOffset" , Durability.write_offset[self.instance])
 
         class Reader(Task):
-            def __init__(self, generator, write_offset, instance):
+            def __init__(self, generator, write_offset, instance, client):
+                self.generator = copy.deepcopy(generator)
                 self.thread_name = "DocumentReaderTask"
-                self.start = generator._doc_gen.start
-                self.end = generator._doc_gen.end
+                self.start = self.generator._doc_gen.start
+                self.end = self.generator._doc_gen.end
                 self.write_offset = write_offset
-                self.read_offset = generator._doc_gen.start
+                self.read_offset = self.generator._doc_gen.start
                 self.instance = instance
+                self.client = client
 
             def call(self):
                 self.start_task()
@@ -940,8 +884,16 @@ class Durability(Task):
                     if self.read_offset <= Durability.write_offset[self.instance]:
                         print("Reader: ReadOffset=", self.read_offset,
                               "WriteOffset=", Durability.write_offset[self.instance],
-                              "Reader: FinalOffset=" , self.end)
+                              "Reader: FinalOffset=", self.end)
+                        if self.generator._doc_gen.has_next():
+                            key = self.generator._doc_gen.next()[0]
+#                             print "Reading: %s"%key
+                            if key not in Durability.create_failed[self.instance].keys():
+                                map = self.client.getfromReplica(key, ReplicaMode.ALL)
+                                if len(map) <= Durability.replicate_to + 1:
+                                    print "Key isn't durable although SDK reports Durable, Key = ",key, " getfromReplica = ",map
                         if self.read_offset == self.end:
+                            print "BREAKING!!"
                             break
                         self.read_offset += 1
                 self.complete_task()
