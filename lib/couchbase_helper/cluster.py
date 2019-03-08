@@ -1,12 +1,16 @@
 #from tasks.future import Future
 import logging
-from tasks.taskmanager import TaskManager
-from Jython_tasks.task_manager import TaskManager as jython_task_manager
+import types
+
 import tasks.tasks as conc
 import Jython_tasks.task as jython_tasks
-from sdk_client import SDKSmartClient as VBucketAwareMemcached
+
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
-import types
+from sdk_client import SDKSmartClient as VBucketAwareMemcached
+from tasks.taskmanager import TaskManager
+from BucketLib.BucketOperations import BucketHelper
+from Jython_tasks.task_manager import TaskManager as jython_task_manager
 
 
 """An API for scheduling tasks that run against Couchbase Server
@@ -17,46 +21,58 @@ API provides a way to run task do syncronously and asynchronously.
 
 log = logging.getLogger(__name__)
 
+
 class ServerTasks(object):
-    """A Task API for performing various operations synchronously or asynchronously on Couchbase cluster."""
+    """
+    A Task API for performing various operations synchronously or
+    asynchronously on Couchbase cluster
+    """
 
     def __init__(self, task_manager=jython_task_manager()):
         self.task_manager = TaskManager("Cluster_Thread")
         self.jython_task_manager = task_manager
 
     def async_create_bucket(self, server, bucket):
-        """Asynchronously creates the default bucket
+        """
+        Asynchronously creates the default bucket
 
         Parameters:
-            bucket_params - a dictionary containing bucket creation parameters. (Dict)
+          bucket_params - a dictionary containing bucket creation parameters.
         Returns:
-            BucketCreateTask - A task future that is a handle to the scheduled task."""
+          BucketCreateTask - Task future that is a handle to the scheduled task
+        """
 #         bucket_params['bucket_name'] = 'default'
-        _task = conc.BucketCreateTask(server, bucket, task_manager=self.task_manager)
+        _task = conc.BucketCreateTask(server, bucket,
+                                      task_manager=self.task_manager)
         self.task_manager.schedule(_task)
         return _task
 
     def sync_create_bucket(self, server, bucket):
-        """Synchronously creates the default bucket
+        """
+        Synchronously creates the default bucket
 
         Parameters:
-            bucket_params - a dictionary containing bucket creation parameters. (Dict)
+          bucket_params - a dictionary containing bucket creation parameters.
         Returns:
-            BucketCreateTask - A task future that is a handle to the scheduled task."""
+          BucketCreateTask - Task future that is a handle to the scheduled task
+        """
 #         bucket_params['bucket_name'] = 'default'
-        _task = conc.BucketCreateTask(server, bucket, task_manager=self.task_manager)
+        _task = conc.BucketCreateTask(server, bucket,
+                                      task_manager=self.task_manager)
         self.task_manager.schedule(_task)
         return _task.get_result()
 
     def async_bucket_delete(self, server, bucket='default'):
-        """Asynchronously deletes a bucket
+        """
+        Asynchronously deletes a bucket
 
         Parameters:
-            server - The server to delete the bucket on. (TestInputServer)
-            bucket - The name of the bucket to be deleted. (String)
+          server - The server to delete the bucket on. (TestInputServer)
+          bucket - The name of the bucket to be deleted. (String)
 
         Returns:
-            BucketDeleteTask - A task future that is a handle to the scheduled task."""
+          BucketDeleteTask - Task future that is a handle to the scheduled task
+        """
         _task = conc.BucketDeleteTask(server, self.task_manager, bucket)
         self.task_manager.schedule(_task)
         return _task
@@ -112,46 +128,29 @@ class ServerTasks(object):
         self.task_manager.schedule(_task)
         return _task
 
-    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0,
-                            persist_to=0, replicate_to=0, only_store_hash=True, batch_size=1,
-                            pause_secs=1, timeout_secs=5, compression=True,
-                            process_concurrency=8, retries=5, active_resident_threshold=100):
-
+    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
+                            flag=0, persist_to=0, replicate_to=0,
+                            only_store_hash=True, batch_size=1, pause_secs=1,
+                            timeout_secs=5, compression=True,
+                            process_concurrency=8, retries=5):
         log.info("Loading documents to {}".format(bucket.name))
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
-        if active_resident_threshold == 100:
-            _task = jython_tasks.LoadDocumentsGeneratorsTask(cluster, self.jython_task_manager,
-                                                             bucket, client, [generator],
-                                                             op_type, exp, flag=flag,
-                                                             persist_to=persist_to,
-                                                             replicate_to=replicate_to,
-                                                             only_store_hash=only_store_hash,
-                                                             batch_size=batch_size,
-                                                             pause_secs=pause_secs,
-                                                             timeout_secs=timeout_secs,
-                                                             compression=compression,
-                                                             process_concurrency=process_concurrency,
-                                                             retries=retries)
-        else:
-            _task = jython_tasks.LoadDocumentsForDgmTask(cluster, self.jython_task_manager,
-                                                         bucket, client, [generator],
-                                                         op_type, exp, flag=flag,
-                                                         persist_to=persist_to,
-                                                         replicate_to=replicate_to,
-                                                         only_store_hash=only_store_hash,
-                                                         batch_size=batch_size,
-                                                         pause_secs=pause_secs,
-                                                         timeout_secs=timeout_secs,
-                                                         compression=compression,
-                                                         process_concurrency=process_concurrency,
-                                                         retries=retries,
-                                                         active_resident_threshold=active_resident_threshold)
+        _task = jython_tasks.LoadDocumentsGeneratorsTask(
+            cluster, self.jython_task_manager, bucket, client, [generator],
+            op_type, exp, flag=flag, persist_to=persist_to,
+            replicate_to=replicate_to, only_store_hash=only_store_hash,
+            batch_size=batch_size, pause_secs=pause_secs,
+            timeout_secs=timeout_secs, compression=compression,
+            process_concurrency=process_concurrency, retries=retries)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_load_gen_docs_durable(self, cluster, bucket, generator, op_type, exp=0, flag=0, persist_to=0, replicate_to=0,
-                            only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
-                            process_concurrency=1, retries=5):
+    def async_load_gen_docs_durable(self, cluster, bucket, generator, op_type,
+                                    exp=0, flag=0, persist_to=0,
+                                    replicate_to=0, only_store_hash=True,
+                                    batch_size=1, pause_secs=1,
+                                    timeout_secs=5, compression=True,
+                                    process_concurrency=1, retries=5):
 
         log.info("Loading documents to {}".format(bucket.name))
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
@@ -164,7 +163,28 @@ class ServerTasks(object):
                                                         process_concurrency=process_concurrency, retries=retries)
         self.jython_task_manager.add_new_task(_task)
         return _task
-    
+
+    def load_bucket_into_dgm(self, cluster, bucket, key, num_items,
+                             active_resident_threshold, load_batch_size=20000,
+                             persist_to=None, replicate_to=None):
+        rest = BucketHelper(cluster.master)
+        bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
+                                                     cluster.master)
+        while bucket_stat["vb_active_resident_items_ratio"] > \
+                active_resident_threshold:
+            gen_load = doc_generator(key, num_items,
+                                     num_items+load_batch_size,
+                                     doc_type="binary")
+            num_items += load_batch_size
+            task = self.async_load_gen_docs(
+                cluster, bucket, gen_load, "create", 0,
+                persist_to=persist_to, replicate_to=replicate_to,
+                batch_size=10, process_concurrency=8)
+            self.jython_task_manager.get_task_result(task)
+            bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
+                                                         cluster.master)
+            return num_items
+
     def async_validate_docs(self, cluster, bucket, generator, opt_type, exp=0, flag=0, only_store_hash=True,
                             batch_size=1, pause_secs=1, timeout_secs=5, compression=True, process_concurrency=4):
         log.info("Validating documents")

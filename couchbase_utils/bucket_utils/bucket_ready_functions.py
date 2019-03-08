@@ -265,45 +265,39 @@ class bucket_utils():
         bucket_info = bucket_helper.get_bucket_json(bucket=bucket)
         return bucket_info['compressionMode']
 
-    def create_multiple_buckets(self, server, replica, bucket_ram_ratio=(2.0 / 3.0),
-                                howmany=3, bucketType='membase', evictionPolicy='valueOnly', maxttl=0,
+    def create_multiple_buckets(self, server, replica,
+                                bucket_ram_ratio=(2.0 / 3.0),
+                                bucket_count=3, bucket_type='membase',
+                                eviction_policy='valueOnly', maxttl=0,
                                 compression_mode="active"):
         success = True
         rest = RestConnection(server)
-        bucket_conn = BucketHelper(server)
         info = rest.get_nodes_self()
         if info.memoryQuota < 450.0:
             log.error("at least need 450MB memoryQuota")
             success = False
         else:
             available_ram = info.memoryQuota * bucket_ram_ratio
-            if available_ram / howmany > 100:
-                bucket_ram = int(available_ram / howmany)
+            if available_ram / bucket_count > 100:
+                bucket_ram = int(available_ram / bucket_count)
             else:
                 bucket_ram = 100
-                #choose a port that is not taken by this ns server
-            for i in range(0, howmany):
+                # choose a port that is not taken by this ns server
+            for i in range(0, bucket_count):
                 name = "bucket-{0}".format(i)
-                bucket = Bucket({Bucket.name:name, Bucket.ramQuotaMB:bucket_ram,
-                                 Bucket.replicas:replica, Bucket.bucketType:bucketType,
-                                 Bucket.evictionPolicy:evictionPolicy, Bucket.maxTTL:maxttl,
-                                 Bucket.compressionMode:compression_mode})
+                bucket = Bucket({Bucket.name: name,
+                                 Bucket.ramQuotaMB: bucket_ram,
+                                 Bucket.replicas: replica,
+                                 Bucket.bucketType: bucket_type,
+                                 Bucket.evictionPolicy: eviction_policy,
+                                 Bucket.maxTTL: maxttl,
+                                 Bucket.compressionMode: compression_mode})
                 self.create_bucket(bucket)
-#                 msg = "create_bucket succeeded but bucket \"{0}\" does not exist"
-#                 bucket_created = self.wait_for_bucket_creation(bucket.name, bucket_conn)
-#                 if not bucket_created:
-#                     log.error(msg.format(name))
-#                     success = False
-#                     break
-#                 if bucket_created:
-#                     pass
-# #                     self.buckets.append(Bucket(name=name, authType="sasl", saslPassword="",
-# #                                                num_replicas=self.num_replicas, bucket_size=self.bucket_size,
-# #                                                eviction_policy=self.eviction_policy, lww=self.lww,
-# #                                                type=self.bucket_type))
+                time.sleep(10)
         return success
 
-    def create_standard_buckets(self, server, num_buckets, bucket_size=None, bucket_priorities=None):
+    def create_standard_buckets(self, server, num_buckets, bucket_size=None,
+                                bucket_priorities=None):
         if bucket_priorities is None:
             bucket_priorities = []
         if not num_buckets:
@@ -316,7 +310,9 @@ class bucket_utils():
             if bucket_priorities is not None:
                 bucket_priority = self.get_bucket_priority(bucket_priorities[i])
 
-            bucket = Bucket({Bucket.name:name, Bucket.ramQuotaMB:bucket_size, Bucket.priority:bucket_priority})
+            bucket = Bucket({Bucket.name: name,
+                             Bucket.ramQuotaMB: bucket_size,
+                             Bucket.priority: bucket_priority})
             self.create_bucket(bucket)
             self.buckets.append(bucket)
 
@@ -353,7 +349,51 @@ class bucket_utils():
         for task in flush_tasks:
             task.result()
 
-    def async_wait_for_stats(self, cluster, bucket, param, stat, comparison, value):
+    def verify_stats_for_bucket(self, bucket, items, timeout=60):
+        log.info("Verifying stats for bucket {0}".format(bucket.name))
+        stats_tasks = []
+        cluster = self.cluster
+        servers = self.cluster.nodes_in_cluster
+        if bucket.bucketType == 'memcached':
+            items_actual = 0
+            for server in servers:
+                client = MemcachedClientHelper.direct_client(server, bucket)
+                items_actual += int(client.stats()["curr_items"])
+            if items != items_actual:
+                raise Exception("Items are not correct")
+
+        stats_tasks.append(self.async_wait_for_stats(
+            cluster, bucket, '', 'curr_items', '==', items))
+        stats_tasks.append(self.async_wait_for_stats(
+            cluster, bucket, '', 'vb_active_curr_items', '==', items))
+
+        available_replicas = bucket.replicaNumber
+        if len(servers) == bucket.replicaNumber:
+            available_replicas = len(servers) - 1
+        elif len(servers) <= bucket.replicaNumber:
+            available_replicas = len(servers) - 1
+        stats_tasks.append(self.async_wait_for_stats(
+            cluster, bucket, '',
+            'vb_replica_curr_items', '==', items * available_replicas))
+        stats_tasks.append(self.async_wait_for_stats(
+            cluster, bucket, '',
+            'curr_items_tot', '==', items * (available_replicas + 1)))
+        try:
+            for task in stats_tasks:
+                self.task_manager.get_task_result(task)
+        except Exception as e:
+            log.info("{0}".format(e))
+            for task in stats_tasks:
+                self.task_manager.stop_task(task)
+            log.error("Unable to get expected stats for any node! Print taps for all nodes")
+            rest = RestConnection(self.cluster.master)
+            for bucket in self.buckets:
+                RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
+            raise Exception("Unable to get expected stats during {0} sec"
+                            .format(timeout))
+
+    def async_wait_for_stats(self, cluster, bucket, param, stat, comparison,
+                             value):
         """Asynchronously wait for stats
 
         Waits for stats to match the criteria passed by the stats variable. See
@@ -406,67 +446,32 @@ class bucket_utils():
                                     "sum(curr_items) don't match the curr_items_total")
 
     def verify_stats_all_buckets(self, items, timeout=60):
-        stats_tasks = []
-        master = self.cluster.master
-        cluster = self.cluster
-        servers = self.cluster.nodes_in_cluster
         for bucket in self.buckets:
-            # items = sum([len(kv_store) for kv_store in bucket.kvs.values()])
-            if bucket.bucketType == 'memcached':
-                items_actual = 0
-                for server in servers:
-                    client = MemcachedClientHelper.direct_client(server, bucket)
-                    items_actual += int(client.stats()["curr_items"])
-                if items != items_actual:
-                    raise Exception("Items are not correct")
-                continue
-            stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
-                                                         'curr_items', '==',
-                                                         items))
-            stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
-                                                         'vb_active_curr_items', '==', items))
+            self.verify_stats_for_bucket(bucket, items, timeout=timeout)
 
-            available_replicas = bucket.replicaNumber
-            if len(servers) == bucket.replicaNumber:
-                available_replicas = len(servers) - 1
-            elif len(servers) <= bucket.replicaNumber:
-                available_replicas = len(servers) - 1
-            stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
-                                                         'vb_replica_curr_items', '==',
-                                                                 items * available_replicas))
-            stats_tasks.append(self.async_wait_for_stats(cluster, bucket, '',
-                                                         'curr_items_tot', '==',
-                                                         items * (available_replicas + 1)))
-        try:
-            for task in stats_tasks:
-                self.task_manager.get_task_result(task)
-        except Exception as e:
-            log.info("{0}".format(e))
-            for task in stats_tasks:
-                self.task_manager.stop_task(task)
-            log.error("unable to get expected stats for any node! Print taps for all nodes:")
-            rest = RestConnection(self.cluster.master)
-            for bucket in self.buckets:
-                RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
-            raise Exception("unable to get expected stats during {0} sec".format(timeout))
+    def _async_load_bucket(self, cluster, bucket, generator, op_type, exp=0,
+                           flag=0, persist_to=0, replicate_to=0,
+                           only_store_hash=True, batch_size=1, pause_secs=1,
+                           timeout_secs=5, compression=True,
+                           process_concurrency=8, retries=5):
+        return self.task.async_load_gen_docs(
+            cluster, bucket, generator, op_type, exp=exp, flag=flag,
+            persist_to=persist_to, replicate_to=replicate_to,
+            only_store_hash=only_store_hash, batch_size=batch_size,
+            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            compression=compression,
+            process_concurrency=process_concurrency, retries=retries)
 
-    def _async_load_bucket(self, cluster, bucket, generator, op_type, exp=0, flag=0, persist_to=0, replicate_to=0,
-                            only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
-                            process_concurrency=8, retries=5):
-        return self.task.async_load_gen_docs(cluster, bucket, generator, op_type, exp=exp, flag=flag,
-                                             persist_to=persist_to, replicate_to=replicate_to,
-                                             only_store_hash=only_store_hash, batch_size=batch_size,
-                                             pause_secs=pause_secs, timeout_secs=timeout_secs, compression=compression,
-                                             process_concurrency=process_concurrency, retries=retries)
-
-    def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0, persist_to=0, replicate_to=0,
-                                only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=30,
-                                sdk_compression=True, process_concurrency=8, retries=5):
+    def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
+                                persist_to=0, replicate_to=0,
+                                only_store_hash=True, batch_size=1,
+                                pause_secs=1, timeout_secs=30,
+                                sdk_compression=True, process_concurrency=8,
+                                retries=5):
 
         """
-        Asynchronously applys load generation to all bucekts in the cluster.bucket.name, gen,
-                                                              bucket.kvs[kv_store],
-                                                              op_type, exp
+        Asynchronously apply load generation to all bucekts in the
+        cluster.bucket.name, gen, bucket.kvs[kv_store], op_type, exp
         Args:
             server - A server in the cluster. (TestInputServer)
             kv_gen - The generator to use to generate load. (DocumentGenerator)
@@ -484,17 +489,18 @@ class bucket_utils():
             if bucket.bucketType != 'memcached':
                 # tasks.append(self.task.async_load_gen_docs_java(server, bucket.name, gen.start,gen.end-gen.start))
                 log.info("BATCH SIZE for documents load: %s" % batch_size)
-                tasks.append(self.task.async_load_gen_docs(cluster, bucket, gen, op_type, exp, flag, persist_to,
-                                                           replicate_to, only_store_hash,
-                                                           batch_size, pause_secs, timeout_secs,
-                                                           sdk_compression, process_concurrency, retries))
+                tasks.append(self.task.async_load_gen_docs(
+                    cluster, bucket, gen, op_type, exp, flag, persist_to,
+                    replicate_to, only_store_hash, batch_size, pause_secs,
+                    timeout_secs, sdk_compression, process_concurrency,
+                    retries))
             else:
                 self._load_memcached_bucket(cluster.master, gen, bucket.name)
         return tasks
 
-    def _load_all_buckets(self, server, kv_gen, op_type, exp, kv_store=1, flag=0,
-                          only_store_hash=True, batch_size=5000, pause_secs=1,
-                          timeout_secs=30, proxy_client=None):
+    def _load_all_buckets(self, server, kv_gen, op_type, exp, kv_store=1,
+                          flag=0, only_store_hash=True, batch_size=5000,
+                          pause_secs=1, timeout_secs=30, proxy_client=None):
         """
         Synchronously applys load generation to all bucekts in the cluster.
 
@@ -555,10 +561,9 @@ class bucket_utils():
                                                                         bucket.name))
                         break
 
-
     def _load_all_ephemeral_buckets_until_no_more_memory(self, server, kv_gen, op_type, exp, increment, kv_store=1, flag=0,
-                          only_store_hash=True, batch_size=1000, pause_secs=1, timeout_secs=30,
-                          proxy_client=None, percentage=0.90):
+                                                         only_store_hash=True, batch_size=1000, pause_secs=1, timeout_secs=30,
+                                                         proxy_client=None, percentage=0.90):
 
         stats_all_buckets = {}
         for bucket in self.buckets:

@@ -828,15 +828,16 @@ class Durability(Task):
                             break
                         self.read_offset += 1
                 self.complete_task()
-                
+
+
 class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators,
-                 op_type, exp, flag=0,
-                 persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True,
+                 op_type, exp, flag=0, persist_to=0, replicate_to=0,
+                 time_unit="seconds", only_store_hash=True, batch_size=1,
+                 pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5):
-        super(LoadDocumentsGeneratorsTask, self).__init__("DocumentsLoadGenTask_{}".format(time.time()))
+        super(LoadDocumentsGeneratorsTask, self).__init__("DocumentsLoadGenTask_{}"
+                                                          .format(time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -975,6 +976,7 @@ class LoadDocumentsForDgmTask(Task):
         self.doc_start_num = self.generators[0].start
         self.doc_load_batch = self.generators[0].end - self.generators[0].start
         self.doc_end_num = self.generators[0].start + self.doc_load_batch
+        self.doc_type = self.generators[0].doc_type
 
         if isinstance(op_type, list):
             self.op_types = op_type
@@ -991,35 +993,32 @@ class LoadDocumentsForDgmTask(Task):
         return bucket.vbActiveNumNonResident
 
     def _load_next_batch_of_docs(self, bucket):
-        print("Doc load from {0} to {1}".format(self.doc_start_num, self.doc_end_num))
-        gen_load = doc_generator(self.key, self.doc_start_num, self.doc_end_num)
-        task = LoadDocumentsGeneratorsTask(self.cluster, self.task_manager,
-                                           bucket, self.client, [gen_load],
-                                           self.op_type, self.exp, flag=self.flag,
-                                           persist_to=self.persist_to,
-                                           replicate_to=self.replicate_to,
-                                           only_store_hash=self.only_store_hash,
-                                           batch_size=self.batch_size,
-                                           pause_secs=self.pause_secs,
-                                           timeout_secs=self.timeout_secs,
-                                           compression=self.compression,
-                                           process_concurrency=self.process_concurrency,
-                                           retries=self.retries)
+        print("Doc load from {0} to {1}"
+              .format(self.doc_start_num, self.doc_end_num))
+        gen_load = doc_generator(self.key, self.doc_start_num,
+                                 self.doc_end_num, doc_type=self.doc_type)
+        print(self.task_manager.print_tasks_in_pool())
+        task = LoadDocumentsGeneratorsTask(
+            self.cluster, self.task_manager, bucket, self.client, [gen_load],
+            self.op_type, self.exp, flag=self.flag,
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            only_store_hash=self.only_store_hash, batch_size=self.batch_size,
+            pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+            compression=self.compression,
+            process_concurrency=self.process_concurrency, retries=self.retries)
         self.task_manager.add_new_task(task)
         self.task_manager.get_task_result(task)
 
     def _load_bucket_into_dgm(self, bucket):
-        while True:
-            dgm_value = self._get_bucket_dgm(bucket)
+        dgm_value = self._get_bucket_dgm(bucket)
+        while dgm_value < (100 - self.active_resident_threshold):
             print("vbActiveNumNonResident for {0} is {1}"
                   .format(bucket.name, dgm_value))
-            if dgm_value < self.active_resident_threshold:
-                self._load_next_batch_of_docs(bucket)
-                # Update start/end to use it in next call
-                self.doc_start_num = self.doc_end_num
-                self.doc_end_num += self.doc_load_batch
-            else:
-                break
+            self._load_next_batch_of_docs(bucket)
+            # Update start/end to use it in next call
+            self.doc_start_num = self.doc_end_num
+            self.doc_end_num += self.doc_load_batch
+            dgm_value = self._get_bucket_dgm(bucket)
 
     def call(self):
         self.start_task()
