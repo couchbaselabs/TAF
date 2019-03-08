@@ -8,6 +8,7 @@ import json as pyJson
 
 import logger
 import connections.Java_Connection as Java_Connection
+import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
 
 from mimify import repl
 
@@ -364,60 +365,68 @@ class SDKClient(object):
     def set_multi(self, keys, ttl=None, format=None,
                   persist_to=0, replicate_to=0, timeOut=10,
                   timeUnit="seconds", retry=5, doc_type="json"):
-        import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
             docs.append(self.__translate_to_json_document(key, value, ttl,
                                                           doc_type=doc_type))
-        success = {}
-        fail = {}
-        while retry > 0:
-            result = doc_op().bulkSet(self.cb.getBucketObj(), docs,
-                                      persist_to, replicate_to,
-                                      timeOut, timeUnit)
-            success, fail = self.__translate_upsert_multi(result)
-            if fail:
-                docs = [doc[3] for doc in fail.values()]
-                retry -= 1
-                errors = [doc[0] for doc in fail.values()]
-                log.warning("Retrying {0} documents again. Error reasons: {1}."
-                            "Retry count: {2}"
-                            .format(docs.__len__(), errors, retry + 1))
-                time.sleep(5)
-            else:
-                return success
-        if retry == 0:
-            errors = [doc[0] for doc in fail.values()]
-            errors = set(errors)
-            log.error("Could not load all documents in this set."
-                      "Failure count={0}, reasons: {1}"
-                      .format(len(fail), errors))
-            return fail
+        #success = {}
+        #fail = {}
+        result = doc_op().bulkSet(self.cb.getBucketObj(), docs,
+                                  persist_to, replicate_to,
+                                  timeOut, timeUnit)
+        success, fail = self.__translate_upsert_multi(result)
+        return success, fail
+        # while retry > 0:
+        #     result = doc_op().bulkSet(self.cb.getBucketObj(), docs,
+        #                               persist_to, replicate_to,
+        #                               timeOut, timeUnit)
+        #     success, fail = self.__translate_upsert_multi(result)
+        #     if fail:
+        #         docs = [doc[3] for doc in fail.values()]
+        #         retry -= 1
+        #         errors = [doc[0] for doc in fail.values()]
+        #         log.warning("Retrying {0} documents again. Error reasons: {1}."
+        #                     "Retry count: {2}"
+        #                     .format(docs.__len__(), errors, retry + 1))
+        #         time.sleep(5)
+        #     else:
+        #         return success
+        # if retry == 0:
+        #     errors = [doc[0] for doc in fail.values()]
+        #     errors = set(errors)
+        #     log.error("Could not load all documents in this set."
+        #               "Failure count={0}, reasons: {1}"
+        #               .format(len(fail), errors))
+        #     return fail
 
     def upsert_multi(self, keys, ttl=None, persist_to=0, replicate_to=0,
                      timeOut=10, timeUnit="seconds", retry=5, doc_type="json"):
-        import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         docs = []
         for key, value in keys.items():
             docs.append(self.__translate_to_json_document(key, value, ttl,
                                                           doc_type=doc_type))
-        success = {}
-        fail = {}
-        while retry > 0:
-            result = doc_op().bulkUpsert(self.cb.getBucketObj(), docs,
-                                         persist_to, replicate_to,
-                                         timeOut, timeUnit)
-            success, fail = self.__translate_upsert_multi(result)
-            if fail:
-                docs = [doc[3] for doc in fail.values()]
-                result -= 1
-                time.sleep(5)
-            else:
-                return success
-        if retry == 0:
-            log.error("Could not load all documents in this set. Failed set={}"
-                      .format(fail.__str__()))
-            return fail
+        #success = {}
+        #fail = {}
+        result = doc_op().bulkUpsert(self.cb.getBucketObj(), docs,
+                                     persist_to, replicate_to,
+                                     timeOut, timeUnit)
+        success, fail = self.__translate_upsert_multi(result)
+        return success, fail
+        # while retry > 0:
+        #     result = doc_op().bulkUpsert(self.cb.getBucketObj(), docs,
+        #                                  persist_to, replicate_to,
+        #                                  timeOut, timeUnit)
+        #     success, fail = self.__translate_upsert_multi(result)
+        #     if fail:
+        #         docs = [doc[3] for doc in fail.values()]
+        #         result -= 1
+        #         time.sleep(5)
+        #     else:
+        #         return success
+        # if retry == 0:
+        #     log.error("Could not load all documents in this set. Failed set={}"
+        #               .format(fail.__str__()))
+        #     return fail
 
     def insert(self, key, value, ttl=None, format=None,
                persist_to=0, replicate_to=0, doc_type="json"):
@@ -664,15 +673,15 @@ class SDKClient(object):
 
     def get(self, key, ttl=None, quiet=True, replica=False, no_format=False):
         try:
-            rv = self.cb.get(key, ttl, quiet, replica, no_format)
+            rv = self.cb.getBucketObj().get(key)
             return self.__translate_get(rv)
         except CouchbaseException:
             try:
-                time.sleep(10)
-                rv = self.cb.get(key, ttl, quiet, replica, no_format)
+                time.sleep(1)
+                rv = self.cb.getBucketObj().get(key)
                 return self.__translate_get(rv)
-            except CouchbaseException:
-                raise
+            except CouchbaseException as e:
+                raise e
 
     def rget(self, key, replica_index=None, quiet=True):
         try:
@@ -688,7 +697,6 @@ class SDKClient(object):
 
     def get_multi(self, keys, ttl=None, quiet=True, replica=False,
                   no_format=False):
-        import com.couchbase.test.bulk_doc_operations.doc_ops as doc_op
         try:
             data = doc_op().bulkGet(self.cb.getBucketObj(), keys)
             # data = self.cb.get_multi(keys, ttl, quiet, replica, no_format)
@@ -879,7 +887,10 @@ class SDKClient(object):
         return map
 
     def __translate_get(self, data):
-        return data.id(), data.cas(), data.content()
+        if data:
+            return data.id(), data.cas(), data.content()
+        else:
+            return None, None, None
 
     def __translate_delete(self, data):
         return data
@@ -967,6 +978,8 @@ class SDKSmartClient(object):
         self.client = SDKClient(self.bucket, hosts=[self.host],
                                 scheme=self.scheme, password=self.saslPassword,
                                 compression=compression)
+    def reconnect(self):
+        self.client.reconnect()
 
     def get_client(self):
         return self.client

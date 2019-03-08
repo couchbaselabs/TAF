@@ -33,6 +33,7 @@ from com.couchbase.client.java.query import *
 from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
+from java.lang import Thread
 from cbstats_utils.cbstats import Cbstats
 
 log = logging.getLogger(__name__)
@@ -397,7 +398,9 @@ class GenericLoadingTask(Task):
             while self.has_next():
                 self.next()
         except Exception as e:
+            log.info(e)
             self.set_exception(Exception(e.message))
+            return
         log.info("Load generation thread completed")
         self.complete_task()
 
@@ -514,25 +517,101 @@ class GenericLoadingTask(Task):
         try:
             self._process_values_for_create(key_val)
             client = shared_client or self.client
-            client.setMulti(self.exp, self.flag, key_val, self.pause, timeout,
-                            parallel=False, persist_to=persist_to,
-                            replicate_to=replicate_to, time_unit=time_unit,
-                            retry=self.retries, doc_type=doc_type)
-        except (self.client.MemcachedError, ServerUnavailableException,
-                socket.error, EOFError, AttributeError, RuntimeError) as error:
+            retry_count = 0
+            retry_docs = key_val
+            success = {}
+            fail = {}
+            success, fail = client.setMulti(self.exp, self.flag, retry_docs, self.pause, timeout, parallel=False,
+                            persist_to=persist_to, replicate_to=replicate_to,
+                            time_unit=time_unit, retry=self.retries, doc_type=doc_type)
+            if fail:
+                try:
+                    Thread.sleep(timeout)
+                except Exception as e:
+                    log.info(e)
+                log.info("There was failure. Trying to read the values {}".format(fail.__str__()))
+                read_map = self.batch_read(fail)
+                for key, value in fail.items():
+                    if key in read_map:
+                        value = read_map[key]
+                        if value[1] != 0:
+                            success[key] = fail[key]
+                            fail.pop(key)
+                log.info("Failed items after reads {}".format(fail.__str__()))
+            return success, fail
+            # while retry_count < self.retries:
+            #     success, fail = client.setMulti(self.exp, self.flag, retry_docs, self.pause, timeout, parallel=False,
+            #                 persist_to=persist_to, replicate_to=replicate_to,
+            #                 time_unit=time_unit, retry=self.retries, doc_type=doc_type)
+            #     if fail:
+            #         #import pydevd
+            #         #pydevd.settrace(trace_only_current_thread=False)
+            #         retry_docs = {}
+            #         for key, value in fail.items():
+            #             #Don't retry documents that already exist.
+            #             if "com.couchbase.client.java.error.DocumentAlreadyExistsException" in value[0].__str__():
+            #                 continue
+            #             retry_docs[key] = key_val[key]
+            #         errors = [doc[0] for doc in fail.values()]
+            #         errors = set(errors)
+            #         timeout_error = False
+            #         for error in errors:
+            #             if "java.util.concurrent.TimeoutException" in error.__str__():
+            #                 timeout_error = True
+            #                 break
+            #         if timeout_error:
+            #             log.warning("Reconnecting client")
+            #             client.reconnect()
+            #         log.warning("Retrying {} documents again".format(retry_docs.__len__()))
+            #         retry_count += 1
+            #         time.sleep(5)
+            #     else:
+            #         break
+            # if retry_count == self.retries and fail:
+            #     #import pydevd
+            #     #pydevd.settrace(trace_only_current_thread=False)
+            #     errors = [doc[0] for doc in fail.values()]
+            #     errors = set(errors)
+            #     log.error(errors)
+            #     log.error("Failed to insert docs: {}".format(fail.__len__()))
+            #     return key_val.__len__() - fail.__len__()
+            # else:
+            #     return key_val.__len__()
+            # # log.info("Batch Operation: %s documents are INSERTED into bucket %s"%(len(key_val), self.bucket))
+        except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
+                RuntimeError) as error:
+            log.error(error)
             self.set_exception(error)
 
     def batch_update(self, key_val, persist_to=0, replicate_to=0, timeout=5,
                      time_unit="seconds", doc_type="json"):
         try:
             self._process_values_for_update(key_val)
-            self.client.upsertMulti(
-                self.exp, self.flag, key_val, self.pause, timeout,
-                parallel=False, persist_to=persist_to,
-                replicate_to=replicate_to, time_unit=time_unit,
-                retry=self.retries, doc_type=doc_type)
-        except (self.client.MemcachedError, ServerUnavailableException,
-                socket.error, EOFError, AttributeError, RuntimeError) as error:
+            retry_count = 0
+            retry_docs = key_val
+            success = {}
+            fail = {}
+            while retry_count < self.retries:
+                success, fail = self.client.upsertMulti(self.exp, self.flag, retry_docs, self.pause, timeout, parallel=False,
+                                        persist_to=persist_to, replicate_to=replicate_to,
+                                        time_unit=time_unit, retry=self.retries, doc_type=doc_type)
+                if fail:
+                    retry_docs = {}
+                    for key in fail.keys():
+                        retry_docs[key] = key_val[key]
+                    retry_count += 1
+                else:
+                    break
+            if retry_count == self.retries and fail:
+                import pydevd
+                pydevd.settrace(trace_only_current_thread=False)
+                log.error("Failed to insert docs: {}".format(fail.__len__()))
+                return fail.__len__()
+            else:
+                return key_val.__len__()
+            #log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
+        except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
+                RuntimeError) as error:
             self.set_exception(error)
 
     def batch_delete(self, key_val, persist_to=None, replicate_to=None,
@@ -592,7 +671,7 @@ class GenericLoadingTask(Task):
 
 
 class LoadDocumentsTask(GenericLoadingTask):
-
+    fail ={}
     def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
@@ -610,6 +689,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.persist_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
+        self.num_loaded = 0
+        #self.fail = {}
 
         if proxy_client:
             log.info("Changing client to proxy %s:%s..."
@@ -623,10 +704,9 @@ class LoadDocumentsTask(GenericLoadingTask):
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch()
         if self.op_type == 'create':
-            self.batch_create(key_value, persist_to=self.persist_to,
-                              replicate_to=self.replicate_to,
-                              timeout=self.timeout, time_unit=self.time_unit,
-                              doc_type=self.generator.doc_type)
+            success, fail = self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
+                              timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+            self.fail.update(fail)
         elif self.op_type == 'update':
             self.batch_update(key_value, persist_to=self.persist_to,
                               replicate_to=self.replicate_to,
@@ -840,11 +920,10 @@ class Durability(Task):
             elif self.op_type == 'read':
                 self.batch_read(key_value)
             else:
-                self.set_exception(Exception("Bad operation type: %s"
-                                             % self.op_type))
+                self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 
             Durability.write_offset[self.instance] += len(key_value)
-            # print("Loader: WriteOffset" , Durability.write_offset[self.instance])
+#             print("Loader: WriteOffset" , Durability.write_offset[self.instance])
 
         class Reader(Task):
             def __init__(self, generator, write_offset, instance):
@@ -869,10 +948,12 @@ class Durability(Task):
 
 
 class LoadDocumentsGeneratorsTask(Task):
-    def __init__(self, cluster, task_manager, bucket, client, generators,
-                 op_type, exp, flag=0, persist_to=0, replicate_to=0,
-                 time_unit="seconds", only_store_hash=True, batch_size=1,
-                 pause_secs=1, timeout_secs=5, compression=True,
+    fail = {}
+    def __init__(self, cluster, task_manager, bucket, clients, generators,
+                 op_type, exp, flag=0,
+                 persist_to=0, replicate_to=0, time_unit="seconds",
+                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5,
+                 compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "DocumentsLoadGenTask_{}".format(time.time()))
@@ -887,7 +968,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
-        self.client = client
+        self.clients = clients
         self.task_manager = task_manager
         self.batch_size = batch_size
         self.generators = generators
@@ -904,6 +985,8 @@ class LoadDocumentsGeneratorsTask(Task):
             self.buckets = bucket
         else:
             self.bucket = bucket
+        self.num_loaded = 0
+        #self.fail = {}
 
     def call(self):
         self.start_task()
@@ -939,20 +1022,31 @@ class LoadDocumentsGeneratorsTask(Task):
             for task in tasks:
                 self.task_manager.add_new_task(task)
             for task in tasks:
-                self.task_manager.get_task_result(task)
-                log.info("Loaded docs from {} to {}"
-                         .format(task.generator._doc_gen.start,
-                                 task.generator._doc_gen.end))
+                try:
+                    self.task_manager.get_task_result(task)
+                except Exception as e:
+                    log.info(e)
+                finally:
+                    self.fail.update(task.fail)
+                    log.info("Failed to load {} docs from {} to {}"
+                             .format(task.fail.__len__(), task.generator._doc_gen.start, task.generator._doc_gen.end))
         except Exception as e:
             log.info(e)
             self.set_exception(e)
         finally:
-            self.client.close()
             if self.print_ops_rate and hasattr(self, "print_ops_rate_tasks"):
                 for print_ops_rate_task in self.print_ops_rate_tasks:
                     print_ops_rate_task.end_task()
                     self.task_manager.get_task_result(print_ops_rate_task)
+            log.info("===========Tasks in loadgen pool=======")
+            self.task_manager.print_tasks_in_pool()
+            log.info("============================")
+            for task in tasks:
+                self.task_manager.stop_task(task)
+            for client in self.clients:
+                client.close()
         self.complete_task()
+        return self.fail
 
     def get_tasks(self, generator):
         generators = []
@@ -971,14 +1065,12 @@ class LoadDocumentsGeneratorsTask(Task):
                 partition_gen,
                 self.batch_size)
             generators.append(batch_gen)
-        for generator in generators:
-            task = LoadDocumentsTask(
-                self.cluster, self.bucket, self.client, generator,
-                self.op_type, self.exp, self.flag, persist_to=self.persit_to,
-                replicate_to=self.replicate_to, time_unit=self.time_unit,
-                batch_size=self.batch_size, pause_secs=self.pause_secs,
-                timeout_secs=self.timeout_secs, compression=self.compression,
-                throughput_concurrency=self.process_concurrency)
+        for i in range(0, len(generators)):
+            task = LoadDocumentsTask(self.cluster, self.bucket, self.clients[i], generators[i], self.op_type,
+                                     self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
+                                     time_unit=self.time_unit, batch_size=self.batch_size,
+                                     pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                                     compression=self.compression, throughput_concurrency=self.process_concurrency)
             tasks.append(task)
         return tasks
 

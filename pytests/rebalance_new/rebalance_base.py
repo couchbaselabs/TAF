@@ -25,18 +25,22 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.create_default_bucket()
         self.bucket_util.add_rbac_user()
-
+        self.sleep(10)
         gen_create = self.get_doc_generator(0, self.num_items)
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
-            print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
+            #print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
             task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
                                                  persist_to=self.persist_to, replicate_to=self.replicate_to,
                                                  batch_size=10, timeout_secs=self.sdk_timeout,
                                                  process_concurrency=8, retries=self.sdk_retries)
-            self.task.jython_task_manager.get_task_result(task)
-            print_ops_task.end_task()
-            self.task_manager.get_task_result(print_ops_task)
+            fail= self.task.jython_task_manager.get_task_result(task)
+            self.sleep(20)
+            current_item = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            self.num_items = current_item
+            self.log.info("Inserted {} number of items after loadgen".format(self.num_items))
+            #print_ops_task.end_task()
+            #self.task_manager.get_task_result(print_ops_task)
         self.gen_load = self.get_doc_generator(0, self.num_items)
         # gen_update is used for doing mutation for 1/2th of uploaded data
         self.gen_update = self.get_doc_generator(0, (self.num_items / 2 - 1))

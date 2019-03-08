@@ -44,9 +44,10 @@ class BaseTestCase(unittest.TestCase):
         self.thread_to_use = self.input.param("threads_to_use", 10)
         self.cluster = CBCluster(servers=self.input.servers)
         self.task_manager = TaskManager(self.thread_to_use)
+        self.load_gen_task_manager = TaskManager()
         self.cluster_util = cluster_utils(self.cluster, self.task_manager)
         self.bucket_util = bucket_utils(self.cluster, self.task_manager, self.cluster_util)
-        self.task = ServerTasks(self.task_manager)
+        self.task = ServerTasks(self.task_manager, self.load_gen_task_manager)
         self.cleanup = False
         self.nonroot = False
         shell = RemoteMachineShellConnection(self.cluster.master)
@@ -278,6 +279,7 @@ class BaseTestCase(unittest.TestCase):
             log.info("====================================================")
             if not self.tear_down_while_setup:
                 self.task_manager.shutdown_task_manager()
+                self.load_gen_task_manager.shutdown_task_manager()
                 self.task.shutdown(force=True)
             self._log_finish()
 

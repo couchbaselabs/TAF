@@ -28,9 +28,10 @@ class ServerTasks(object):
     asynchronously on Couchbase cluster
     """
 
-    def __init__(self, task_manager=jython_task_manager()):
+    def __init__(self, task_manager=jython_task_manager(), load_gen_task_manager=jython_task_manager()):
         self.task_manager = TaskManager("Cluster_Thread")
         self.jython_task_manager = task_manager
+        self.load_gen_task_manager = load_gen_task_manager
 
     def async_create_bucket(self, server, bucket):
         """
@@ -128,20 +129,46 @@ class ServerTasks(object):
         self.task_manager.schedule(_task)
         return _task
 
-    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
-                            flag=0, persist_to=0, replicate_to=0,
-                            only_store_hash=True, batch_size=1, pause_secs=1,
-                            timeout_secs=5, compression=True,
-                            process_concurrency=8, retries=5):
+    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0,
+                            persist_to=0, replicate_to=0, only_store_hash=True, batch_size=1,
+                            pause_secs=1, timeout_secs=5, compression=True,
+                            process_concurrency=8, retries=5, active_resident_threshold=100):
+
         log.info("Loading documents to {}".format(bucket.name))
-        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
-        _task = jython_tasks.LoadDocumentsGeneratorsTask(
-            cluster, self.jython_task_manager, bucket, client, [generator],
-            op_type, exp, flag=flag, persist_to=persist_to,
-            replicate_to=replicate_to, only_store_hash=only_store_hash,
-            batch_size=batch_size, pause_secs=pause_secs,
-            timeout_secs=timeout_secs, compression=compression,
-            process_concurrency=process_concurrency, retries=retries)
+        clients = []
+        gen_start = int(generator.start)
+        gen_end = max(int(generator.end), 1)
+        gen_range = max(int((generator.end - generator.start) / process_concurrency), 1)
+        for pos in range(gen_start, gen_end, gen_range):
+            client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+            clients.append(client)
+        if active_resident_threshold == 100:
+            _task = jython_tasks.LoadDocumentsGeneratorsTask(cluster, self.load_gen_task_manager,
+                                                             bucket, clients, [generator],
+                                                             op_type, exp, flag=flag,
+                                                             persist_to=persist_to,
+                                                             replicate_to=replicate_to,
+                                                             only_store_hash=only_store_hash,
+                                                             batch_size=batch_size,
+                                                             pause_secs=pause_secs,
+                                                             timeout_secs=timeout_secs,
+                                                             compression=compression,
+                                                             process_concurrency=process_concurrency,
+                                                             retries=retries)
+        else:
+            _task = jython_tasks.LoadDocumentsForDgmTask(cluster, self.jython_task_manager,
+                                                         bucket, client, [generator],
+                                                         op_type, exp, flag=flag,
+                                                         persist_to=persist_to,
+                                                         replicate_to=replicate_to,
+                                                         only_store_hash=only_store_hash,
+                                                         batch_size=batch_size,
+                                                         pause_secs=pause_secs,
+                                                         timeout_secs=timeout_secs,
+                                                         compression=compression,
+                                                         process_concurrency=process_concurrency,
+                                                         retries=retries,
+                                                         active_resident_threshold=active_resident_threshold)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

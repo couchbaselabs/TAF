@@ -25,7 +25,8 @@ class TaskManager():
 
     def stop_task(self, task):
         future = self.futures[task.thread_name]
-        future.cancel(True)
+        if not future.isDone():
+            future.cancel(True)
 
     def shutdown_task_manager(self, timeout=5):
         shutdown_and_await_termination(self.pool, timeout)

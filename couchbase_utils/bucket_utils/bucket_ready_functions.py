@@ -1190,6 +1190,15 @@ class bucket_utils():
         client = MemcachedClientHelper.direct_client(server, bucket)
         return int(client.stats()["curr_items"])
 
+    def get_buckets_current_items_count(self, cluster):
+        rest = RestConnection(cluster.master)
+        bucket_map = rest.get_buckets_itemCount()
+        return bucket_map
+
+    def get_bucket_current_item_count(self, cluster, bucket):
+        bucket_map = self.get_buckets_current_items_count(cluster)
+        return bucket_map[bucket.name]
+
     def get_buckets_itemCount(self):
         server = self.cluster_util.get_nodes_from_services_map(service_type="kv")
         return BucketHelper(server).get_buckets_itemCount()

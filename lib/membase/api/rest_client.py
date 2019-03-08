@@ -1432,8 +1432,9 @@ class RestConnection(object):
         json_parsed = json.loads(content)
         if status:
             for item in json_parsed:
-                bucketInfo = RestParser().parse_get_bucket_json(item)
-                bucket_map[bucketInfo.name] = bucketInfo.stats.itemCount
+                bucket_name = item['name']
+                item_count = item['basicStats']['itemCount']
+                bucket_map[bucket_name] = item_count
         log.info(bucket_map)
         return bucket_map
 
