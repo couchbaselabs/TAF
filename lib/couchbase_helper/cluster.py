@@ -183,7 +183,7 @@ class ServerTasks(object):
             self.jython_task_manager.get_task_result(task)
             bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                          cluster.master)
-            return num_items
+        return num_items
 
     def async_validate_docs(self, cluster, bucket, generator, opt_type, exp=0, flag=0, only_store_hash=True,
                             batch_size=1, pause_secs=1, timeout_secs=5, compression=True, process_concurrency=4):
