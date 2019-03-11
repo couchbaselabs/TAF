@@ -1,12 +1,14 @@
 package com.couchbase.test.sdk;
 
 import java.util.concurrent.TimeUnit;
+import java.util.List;
 
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.document.JsonLongDocument;
 import com.couchbase.client.java.env.CouchbaseEnvironment;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.PersistTo;
+import com.couchbase.client.java.ReplicaMode;
 import com.couchbase.client.java.ReplicateTo;
 import com.couchbase.client.java.document.Document;
 import com.couchbase.client.java.document.JsonDocument;
@@ -218,6 +220,46 @@ public class BucketInterface {
 	// Need to implement based on the requirements
 	D	get(String id, Class<D> target)
 	D	get(String id, Class<D> target, long timeout, TimeUnit timeUnit)
+	*/
+	
+	// GetFromReplicas methods
+	public List<JsonDocument> getFromReplica(String id, ReplicaMode type) {
+		return this.bucket.getFromReplica(id, type);
+	}
+
+	public List<JsonDocument> getFromReplicaWithTimeout(String id, ReplicaMode type, long timeout, TimeUnit timeUnit) {
+		return this.bucket.getFromReplica(id, type, timeout, timeUnit);
+	}
+	
+	/*
+	 <D extends Document<?>>
+	Iterator<D>	getFromReplica(D document)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with the default timeout.
+	<D extends Document<?>>
+	Iterator<D>	getFromReplica(D document, long timeout, TimeUnit timeUnit)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with a custom timeout.
+	<D extends Document<?>>
+	List<D>	getFromReplica(D document, ReplicaMode type)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with the default timeout.
+	<D extends Document<?>>
+	List<D>	getFromReplica(D document, ReplicaMode type, long timeout, TimeUnit timeUnit)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with a custom timeout.
+	Iterator<JsonDocument>	getFromReplica(String id)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with the default timeout.
+	<D extends Document<?>>
+	Iterator<D>	getFromReplica(String id, Class<D> target)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with the default timeout.
+	<D extends Document<?>>
+	Iterator<D>	getFromReplica(String id, Class<D> target, long timeout, TimeUnit timeUnit)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with a custom timeout.
+	Iterator<JsonDocument>	getFromReplica(String id, long timeout, TimeUnit timeUnit)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with a custom timeout.
+	<D extends Document<?>>
+	List<D>	getFromReplica(String id, ReplicaMode type, Class<D> target)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with the default timeout.
+	<D extends Document<?>>
+	List<D>	getFromReplica(String id, ReplicaMode type, Class<D> target, long timeout, TimeUnit timeUnit)
+	Retrieves one or more, possibly stale, representations of a JsonDocument by its unique ID with a custom timeout.
 	*/
 	
 	public void insert(Document doc) {
