@@ -615,21 +615,22 @@ class bucket_utils():
             for bucket in self.buckets:
                 if bucket.bucketType == 'memcached':
                     continue
-                tasks.append(self.task.async_wait_for_stats(self.cluster, bucket, '',
-                                                               'ep_queue_size', ep_queue_size_cond, ep_queue_size))
+                tasks.append(self.task.async_wait_for_stats(
+                    self.cluster, bucket, '',
+                    'ep_queue_size', ep_queue_size_cond, ep_queue_size))
                 if check_ep_items_remaining:
                     protocol = 'dcp'
                     ep_items_remaining = 'ep_{0}_items_remaining' \
                         .format(protocol)
-                    tasks.append(self.task.async_wait_for_stats(self.cluster,
-                                                                   bucket, protocol,
-                                                                   ep_items_remaining, "==", 0))
+                    tasks.append(self.task.async_wait_for_stats(
+                        self.cluster, bucket, protocol,
+                        ep_items_remaining, "==", 0))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
-    def verify_unacked_bytes_all_buckets(self, filter_list=[], sleep_time=5, master_node=None):
+    def verify_unacked_bytes_all_buckets(self, filter_list=[], sleep_time=5):
         """
-        Waits for max_unacked_bytes = 0 on all servers and buckets in a cluster.
+        Waits for max_unacked_bytes = 0 on all servers and buckets in a cluster
         A utility function that waits upr flow with unacked_bytes = 0
         """
         self.sleep(sleep_time)
@@ -639,14 +640,14 @@ class bucket_utils():
             if not map[bucket]:
                 raise Exception("the bucket {0} has unacked bytes != 0".format(bucket))
 
-    def _verify_all_buckets(self, server, kv_store=1, timeout=180, max_verify=None, only_store_hash=True,
-                            batch_size=1000,
-                            replica_to_read=None):
+    def _verify_all_buckets(self, server, kv_store=1, timeout=180,
+                            max_verify=None, only_store_hash=True,
+                            batch_size=1000, replica_to_read=None):
         """
         Verifies data on all of the nodes in a cluster.
 
-        Verifies all of the data in a specific kv_store index for all buckets in
-        the cluster.
+        Verifies all of the data in a specific kv_store index for all buckets
+        in the cluster.
 
         Args:
             server - A server in the cluster. (TestInputServer)
@@ -659,9 +660,10 @@ class bucket_utils():
         for bucket in self.buckets:
             if bucket.params.type == 'memcached':
                 continue
-            tasks.append(self.task.async_verify_data(server, bucket, bucket.kvs[kv_store], max_verify,
-                                                        only_store_hash, batch_size, replica_to_read,
-                                                        compression=self.sdk_compression))
+            tasks.append(self.task.async_verify_data(
+                server, bucket, bucket.kvs[kv_store], max_verify,
+                only_store_hash, batch_size, replica_to_read,
+                compression=self.sdk_compression))
         for task in tasks:
             task.get_result(timeout)
 
@@ -674,25 +676,29 @@ class bucket_utils():
                       "viewFragmntThreshold": None}
         self.cluster_util.modify_fragmentation_config(new_config, bucket)
 
-    def _load_doc_data_all_buckets(self, data_op="create", batch_size=1000, gen_load=None, start=0, end=1000):
+    def _load_doc_data_all_buckets(self, data_op="create", batch_size=1000,
+                                   gen_load=None, start=0, end=1000):
         # initialize the template for document generator
         age = range(5)
         first = ['james', 'sharon']
         template = '{{ "mutated" : 0, "age": {0}, "first_name": "{1}" }}'
         if gen_load is None:
-            gen_load = DocumentGenerator('test_docs', template, age, first, start=start, end=end)
+            gen_load = DocumentGenerator('test_docs', template, age, first,
+                                         start=start, end=end)
 
         log.info("%s %s documents..." % (data_op, end-start))
-        self._load_all_buckets(self.cluster.master, gen_load, data_op, 0, batch_size=batch_size)
+        self._load_all_buckets(self.cluster.master, gen_load, data_op, 0,
+                               batch_size=batch_size)
         return gen_load
 
-    def get_vbucket_seqnos(self, servers, buckets, skip_consistency=False, per_node=True):
+    def get_vbucket_seqnos(self, servers, buckets, skip_consistency=False,
+                           per_node=True):
         """
             Method to get vbucket information from a cluster using cbstats
         """
-        new_vbucket_stats = self.data_collector.collect_vbucket_stats(buckets, servers, collect_vbucket=False,
-                                                                      collect_vbucket_seqno=True,
-                                                                      collect_vbucket_details=False, perNode=per_node)
+        new_vbucket_stats = self.data_collector.collect_vbucket_stats(
+            buckets, servers, collect_vbucket=False, collect_vbucket_seqno=True,
+            collect_vbucket_details=False, perNode=per_node)
         if not skip_consistency:
             new_vbucket_stats = self.compare_per_node_for_vbucket_consistency(new_vbucket_stats)
         return new_vbucket_stats
@@ -702,9 +708,9 @@ class bucket_utils():
             Method to get vbucket information from a cluster using cbstats
         """
         servers = self.cluster_util.get_kv_nodes(servers)
-        new_vbucket_stats = self.data_collector.collect_vbucket_stats(buckets, servers, collect_vbucket=False,
-                                                                      collect_vbucket_seqno=True,
-                                                                      collect_vbucket_details=False, perNode=True)
+        new_vbucket_stats = self.data_collector.collect_vbucket_stats(
+            buckets, servers, collect_vbucket=False, collect_vbucket_seqno=True,
+            collect_vbucket_details=False, perNode=True)
         self.compare_per_node_for_vbucket_consistency(new_vbucket_stats)
         return new_vbucket_stats
 
@@ -721,7 +727,7 @@ class bucket_utils():
         comp_map["purge_seqno"] = {'type': "string", 'operation': compare}
 
         new_vbucket_stats = {}
-        log.info(" Begin Verification for vbucket sequence numbers comparison ")
+        log.info("Begin Verification for vbucket sequence numbers comparison")
         if perNode:
             new_vbucket_stats = self.get_vbucket_seqnos_per_Node_Only(servers, buckets)
         else:
@@ -730,21 +736,19 @@ class bucket_utils():
         result = ""
         summary = ""
         if not perNode:
-            compare_vbucket_seqnos_result = self.data_analyzer.compare_stats_dataset(prev_vbucket_stats,
-                                                                                     new_vbucket_stats, "vbucket_id",
-                                                                                     comparisonMap=comp_map)
-            isNotSame, summary, result = self.result_analyzer.analyze_all_result(compare_vbucket_seqnos_result,
-                                                                                 addedItems=False, deletedItems=False,
-                                                                                 updatedItems=False)
+            compare_vbucket_seqnos_result = self.data_analyzer.compare_stats_dataset(
+                prev_vbucket_stats, new_vbucket_stats, "vbucket_id",
+                comparisonMap=comp_map)
+            isNotSame, summary, result = self.result_analyzer.analyze_all_result(
+                compare_vbucket_seqnos_result, addedItems=False, deletedItems=False,
+                updatedItems=False)
         else:
-            compare_vbucket_seqnos_result = self.data_analyzer.compare_per_node_stats_dataset(prev_vbucket_stats,
-                                                                                              new_vbucket_stats,
-                                                                                              "vbucket_id",
-                                                                                              comparisonMap=comp_map)
-            isNotSame, summary, result = self.result_analyzer.analyze_per_node_result(compare_vbucket_seqnos_result,
-                                                                                      addedItems=False,
-                                                                                      deletedItems=False,
-                                                                                      updatedItems=False)
+            compare_vbucket_seqnos_result = self.data_analyzer.compare_per_node_stats_dataset(
+                prev_vbucket_stats, new_vbucket_stats, "vbucket_id",
+                comparisonMap=comp_map)
+            isNotSame, summary, result = self.result_analyzer.analyze_per_node_result(
+                compare_vbucket_seqnos_result, addedItems=False, deletedItems=False,
+                updatedItems=False)
         if not isNotSame:
             raise Exception(summary)
         log.info(" End Verification for vbucket sequence numbers comparison ")
