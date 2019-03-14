@@ -17,6 +17,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.defaul_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
         self.default_view = View(self.default_view_name, self.defaul_map_func, None)
         self.max_verify = self.input.param("max_verify", None)
+        self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
         self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])

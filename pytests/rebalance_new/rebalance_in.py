@@ -84,6 +84,7 @@ class RebalanceInTests(RebalanceBaseTest):
         Once all nodes have been rebalanced in the test is finished.
         """
         gen_update = self.get_doc_generator(0, self.num_items)
+        std = self.std_vbucket_dist or 1.0
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(
@@ -122,7 +123,10 @@ class RebalanceInTests(RebalanceBaseTest):
             self.bucket_util.buckets, path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        # self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
+        self.bucket_util.vb_distribution_analysis(
+            servers=nodes, buckets=self.bucket_util.buckets,
+            num_replicas=self.num_replicas,
+            std=std, total_vbuckets=self.vbuckets)
 
     def rebalance_in_with_failover_full_addback_recovery(self):
         """
@@ -140,6 +144,7 @@ class RebalanceInTests(RebalanceBaseTest):
         """
 
         gen_update = self.get_doc_generator(0, self.num_items)
+        std = self.std_vbucket_dist or 1.0
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks += self.bucket_util._async_load_all_buckets(self.cluster, bucket, self.cluster.master, gen_update, "update", 0)
@@ -175,7 +180,10 @@ class RebalanceInTests(RebalanceBaseTest):
             self.bucket_util.buckets, path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        # self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
+        self.bucket_util.vb_distribution_analysis(
+            servers=nodes, buckets=self.bucket_util.buckets,
+            num_replicas=self.num_replicas,
+            std=std, total_vbuckets=self.vbuckets)
 
     def rebalance_in_with_failover(self):
         """
@@ -195,6 +203,7 @@ class RebalanceInTests(RebalanceBaseTest):
 
         fail_over = self.input.param("fail_over", False)
         gen_update = self.get_doc_generator(0, self.num_items)
+        std = self.std_vbucket_dist or 1.0
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(
@@ -247,7 +256,10 @@ class RebalanceInTests(RebalanceBaseTest):
             self.bucket_util.buckets, path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        # self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
+        self.bucket_util.vb_distribution_analysis(
+            servers=nodes, buckets=self.bucket_util.buckets,
+            num_replicas=self.num_replicas,
+            std=std, total_vbuckets=self.vbuckets)
 
     def rebalance_in_with_compaction_and_ops(self):
         """
@@ -352,7 +364,6 @@ class RebalanceInTests(RebalanceBaseTest):
         num_iter = 0
         # get random keys for each node during rebalancing
         while rest_cons[0]._rebalance_progress_status() == 'running' and num_iter < 100:
-            list_threads = []
             temp_result = []
             self.log.info("getting random keys for all nodes in cluster....")
             for rest in rest_cons:
@@ -371,7 +382,6 @@ class RebalanceInTests(RebalanceBaseTest):
         self.sleep(60)
         # get random keys for new added nodes
         rest_cons = [RestConnection(self.cluster.servers[i]) for i in xrange(self.nodes_init + self.nodes_in)]
-        list_threads = []
         for rest in rest_cons:
             result = rest.get_random_key('default')
         self.bucket_util.verify_cluster_stats(self.num_items)
