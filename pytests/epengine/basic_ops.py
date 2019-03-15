@@ -31,11 +31,12 @@ class basic_ops(BaseTestCase):
 
         self.key = 'test_docs'.rjust(self.key_size, '0')
 
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket(replica=self.num_replicas,
-                                               compression_mode=self.compression_mode)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+        self.bucket_util.create_default_bucket(
+            replica=self.num_replicas, compression_mode=self.compression_mode)
         self.bucket_util.add_rbac_user()
 
         # self.src_bucket = RestConnection(self.cluster.master).get_buckets()
@@ -76,7 +77,7 @@ class basic_ops(BaseTestCase):
         try:
             rc = sdk_client.evict_key(KEY_NAME)
         except MemcachedError as exp:
-            self.fail("Exception with evict meta - {0}".format(exp) )
+            self.fail("Exception with evict meta - {0}".format(exp))
 
         CAS = 0xabcd
         try:
@@ -115,7 +116,8 @@ class basic_ops(BaseTestCase):
         except MemcachedError as error:
             stats = mc.stats()
             self.log.info('After 2nd setWithMeta(), curr_items: {} and curr_temp_items:{}'
-                          .format(stats['curr_items'], stats['curr_temp_items']))
+                          .format(stats['curr_items'],
+                                  stats['curr_temp_items']))
             if int(stats['curr_temp_items']) == 1:
                 self.fail("Error on second setWithMeta(), expected curr_temp_items to be 0")
             else:
@@ -125,10 +127,9 @@ class basic_ops(BaseTestCase):
     def generate_docs_bigdata(self, docs_per_day, start=0,
                               document_size=1024000):
         json_generator = JsonGenerator()
-        return json_generator.generate_docs_bigdata(start=start,
-                                                    end=docs_per_day,
-                                                    value_size=document_size)
-    
+        return json_generator.generate_docs_bigdata(
+            start=start, end=docs_per_day, value_size=document_size)
+
     def test_doc_size_durable(self):
         """
         Basic tests for document CRUD operations using JSON docs
@@ -144,23 +145,18 @@ class basic_ops(BaseTestCase):
 
         self.log.info("Creating doc_generator..")
         # Load basic docs into bucket
-        doc_create = doc_generator(self.key, 0, 10000,
-                                   doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   target_vbucket=target_vbucket,
-                                   vbuckets=self.vbuckets)
+        doc_create = doc_generator(
+            self.key, 0, 10000, doc_size=self.doc_size,
+            doc_type=self.doc_type, target_vbucket=target_vbucket,
+            vbuckets=self.vbuckets)
         self.log.info("doc_generator created")
-        task = self.task.async_load_gen_docs_durable(self.cluster, def_bucket,
-                                             doc_create, "create", 0,
-                                             batch_size=10,
-                                             process_concurrency=4,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to,
-                                             timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries)
+        task = self.task.async_load_gen_docs_durable(
+            self.cluster, def_bucket, doc_create, "create", 0,
+            batch_size=10, process_concurrency=4,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
 
-        
     def test_doc_size(self):
         """
         Basic tests for document CRUD operations using JSON docs
@@ -176,21 +172,17 @@ class basic_ops(BaseTestCase):
 
         self.log.info("Creating doc_generator..")
         # Load basic docs into bucket
-        doc_create = doc_generator(self.key, 0, self.num_items,
-                                   doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   target_vbucket=target_vbucket,
-                                   vbuckets=self.vbuckets)
+        doc_create = doc_generator(
+            self.key, 0, self.num_items, doc_size=self.doc_size,
+            doc_type=self.doc_type, target_vbucket=target_vbucket,
+            vbuckets=self.vbuckets)
         self.log.info("doc_generator created")
         print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
-        task = self.task.async_load_gen_docs(self.cluster, def_bucket,
-                                             doc_create, "create", 0,
-                                             batch_size=10,
-                                             process_concurrency=8,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to,
-                                             timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries)
+        task = self.task.async_load_gen_docs(
+            self.cluster, def_bucket, doc_create, "create", 0,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
         print_ops_task.end_task()
         self.task_manager.get_task_result(print_ops_task)
@@ -200,37 +192,29 @@ class basic_ops(BaseTestCase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         num_item_start_for_crud = int(floor(self.num_items / 2)) + 1
-        doc_update = doc_generator(self.key, num_item_start_for_crud,
-                                   self.num_items,
-                                   doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   target_vbucket=self.target_vbucket,
-                                   vbuckets=self.vbuckets)
+        doc_update = doc_generator(
+            self.key, num_item_start_for_crud, self.num_items,
+            doc_size=self.doc_size, doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket, vbuckets=self.vbuckets)
 
         expected_num_items = self.num_items
         num_of_mutations = 1
 
         if doc_op == "update":
-            task = self.task.async_load_gen_docs(self.cluster, def_bucket,
-                                                 doc_update, "update", 0,
-                                                 batch_size=10,
-                                                 process_concurrency=8,
-                                                 replicate_to=self.replicate_to,
-                                                 persist_to=self.persist_to,
-                                                 timeout_secs=self.sdk_timeout,
-                                                 retries=self.sdk_retries)
+            task = self.task.async_load_gen_docs(
+                self.cluster, def_bucket, doc_update, "update", 0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
             # TODO: Proc to verify the mutation value in each doc
             # self.verify_doc_mutation(doc_update, num_of_mutations)
         elif doc_op == "delete":
-            task = self.task.async_load_gen_docs(self.cluster, def_bucket,
-                                                 doc_update, "delete", 0,
-                                                 batch_size=10,
-                                                 process_concurrency=8,
-                                                 replicate_to=self.replicate_to,
-                                                 persist_to=self.persist_to,
-                                                 timeout_secs=self.sdk_timeout,
-                                                 retries=self.sdk_retries)
+            task = self.task.async_load_gen_docs(
+                self.cluster, def_bucket, doc_update, "delete", 0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
             expected_num_items = self.num_items - (self.num_items-num_item_start_for_crud)
         else:
@@ -244,22 +228,16 @@ class basic_ops(BaseTestCase):
         # generate docs with size >= 1MB , See MB-29333
 
         self.doc_size *= 1024000
-        gens_load = self.generate_docs_bigdata(docs_per_day=self.num_items,
-                                               document_size=self.doc_size)
+        gens_load = self.generate_docs_bigdata(
+            docs_per_day=self.num_items, document_size=self.doc_size)
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
-            print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
-            task = self.task.async_load_gen_docs(self.cluster, bucket,
-                                                 gens_load, "create", 0,
-                                                 batch_size=10,
-                                                 process_concurrency=8,
-                                                 replicate_to=self.replicate_to,
-                                                 persist_to=self.persist_to,
-                                                 timeout_secs=self.sdk_timeout,
-                                                 retries=self.sdk_retries)
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, gens_load, "create", 0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
-            print_ops_task.end_task()
-            self.task_manager.get_task_result(print_ops_task)
 
         # check if all the documents(250) are loaded with default timeout
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -269,22 +247,16 @@ class basic_ops(BaseTestCase):
         # Load a doc which is greater than 20MB
         # with compression enabled and check if it fails
         # check with compression_mode as active, passive and off
-        gens_load = self.generate_docs_bigdata(docs_per_day=1,
-                                               document_size=(self.doc_size * 1024000))
+        gens_load = self.generate_docs_bigdata(
+            docs_per_day=1, document_size=(self.doc_size * 1024000))
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
-            print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
-            task = self.task.async_load_gen_docs(self.cluster, bucket,
-                                                 gens_load, "create", 0,
-                                                 batch_size=10,
-                                                 process_concurrency=8,
-                                                 replicate_to=self.replicate_to,
-                                                 persist_to=self.persist_to,
-                                                 timeout_secs=self.sdk_timeout,
-                                                 retries=self.sdk_retries)
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, gens_load, "create", 0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
-            print_ops_task.end_task()
-            self.task_manager.get_task_result(print_ops_task)
 
         for bucket in self.bucket_util.buckets:
             if self.doc_size > 20:
@@ -292,20 +264,14 @@ class basic_ops(BaseTestCase):
                 self.bucket_util.verify_stats_all_buckets(0)
             else:
                 self.bucket_util.verify_stats_all_buckets(1)
-                gens_update = self.generate_docs_bigdata(docs_per_day=1,
-                                                         document_size=(21 * 1024000))
-                print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
-                task = self.task.async_load_gen_docs(self.cluster, bucket,
-                                                     gens_update, "create", 0,
-                                                     batch_size=10,
-                                                     process_concurrency=8,
-                                                     replicate_to=self.replicate_to,
-                                                     persist_to=self.persist_to,
-                                                     timeout_secs=self.sdk_timeout,
-                                                     retries=self.sdk_retries)
+                gens_update = self.generate_docs_bigdata(
+                    docs_per_day=1, document_size=(21 * 1024000))
+                task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, gens_update, "create", 0,
+                    batch_size=10, process_concurrency=8,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
                 self.task.jython_task_manager.get_task_result(task)
-                print_ops_task.end_task()
-                self.task_manager.get_task_result(print_ops_task)
                 self.bucket_util.verify_stats_all_buckets(1)
 
     def test_diag_eval_curl(self):
@@ -337,9 +303,10 @@ class basic_ops(BaseTestCase):
 
         # check ip address on diag/eval will not work fine when allow_nonlocal_eval is disabled
         cmd = []
-        cmd_base = 'curl http://{0}:{1}@{2}:{3}/diag/eval '.format(self.cluster.master.rest_username,
-                                                                   self.cluster.master.rest_password,
-                                                                   self.cluster.master.ip, port)
+        cmd_base = 'curl http://{0}:{1}@{2}:{3}/diag/eval ' \
+            .format(self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    self.cluster.master.ip, port)
         command = cmd_base + '-X POST -d \'os:cmd("env")\''
         cmd.append(command)
         command = cmd_base + '-X POST -d \'case file:read_file("/etc/passwd") of {ok, B} -> io:format("~p~n", [binary_to_term(B)]) end.\''
@@ -384,13 +351,11 @@ class basic_ops(BaseTestCase):
                                     end=self.num_items)
         def_bucket = self.bucket_util.get_all_buckets()[0]
         print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
-        task = self.task.async_load_gen_docs(self.cluster, def_bucket,
-                                             gen_create, "create", 0,
-                                             batch_size=10,
-                                             process_concurrency=8,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries)
+        task = self.task.async_load_gen_docs(
+            self.cluster, def_bucket, gen_create, "create", 0,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -399,11 +364,11 @@ class basic_ops(BaseTestCase):
         remote = RemoteMachineShellConnection(self.cluster.master)
         for bucket in self.buckets:
             # change compression mode to off
-            output, _ = remote.execute_couchbase_cli(cli_command='bucket-edit',
-                                                     cluster_host="localhost:8091",
-                                                     user=self.cluster.master.rest_username,
-                                                     password=self.cluster.master.rest_password,
-                                                     options='--bucket=%s --compression-mode off' % bucket.name)
+            output, _ = remote.execute_couchbase_cli(
+                cli_command='bucket-edit', cluster_host="localhost:8091",
+                user=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                options='--bucket=%s --compression-mode off' % bucket.name)
             self.assertTrue(' '.join(output).find('SUCCESS') != -1,
                             'compression mode set to off')
 
@@ -413,13 +378,11 @@ class basic_ops(BaseTestCase):
         # Load data and check stats to see compression
         # is not done for newly added data
         print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
-        task = self.task.async_load_gen_docs(self.cluster, def_bucket,
-                                             gen_create2, "create", 0,
-                                             batch_size=10,
-                                             process_concurrency=8,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries)
+        task = self.task.async_load_gen_docs(
+            self.cluster, def_bucket, gen_create2, "create", 0,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -442,4 +405,3 @@ class basic_ops(BaseTestCase):
                           % (error.status, error.message))
             if count % 1000 == 0:
                 self.log.info('The number of iteration is {}'.format(count))
-

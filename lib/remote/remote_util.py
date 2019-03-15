@@ -127,16 +127,16 @@ class RemoteMachineHelper(object):
             self.remote_shell.info = self.remote_shell.extract_remote_info()
 
         if self.remote_shell.info.type.lower() == 'windows':
-             output, error = self.remote_shell.execute_command('tasklist| grep {0}'.format(process_name), debug=False)
-             if error or output == [""] or output == []:
-                 return None
-             words = output[0].split(" ")
-             words = filter(lambda x: x != "", words)
-             process = RemoteMachineProcess()
-             process.pid = words[1]
-             process.name = words[0]
-             log.info("process is running on {0}: {1}".format(self.remote_shell.ip, words))
-             return process
+            output, error = self.remote_shell.execute_command('tasklist| grep {0}'.format(process_name), debug=False)
+            if error or output == [""] or output == []:
+                return None
+            words = output[0].split(" ")
+            words = filter(lambda x: x != "", words)
+            process = RemoteMachineProcess()
+            process.pid = words[1]
+            process.name = words[0]
+            log.info("process is running on {0}: {1}".format(self.remote_shell.ip, words))
+            return process
         else:
             processes = self.remote_shell.get_running_processes()
             for process in processes:
@@ -3452,19 +3452,19 @@ class RemoteMachineShellConnection:
             if self.remote:
                 text, stderro = self.execute_command_raw_jsch('uname -m')
             else:
-                p = Popen('uname -m' , shell=True, stdout=PIPE, stderr=PIPE)
+                p = Popen('uname -m', shell=True, stdout=PIPE, stderr=PIPE)
                 text, err = p.communicate()
                 os_arch = ''
             for line in text:
                 os_arch += line.rstrip()
                 # at this point we should know if its a linux or windows ditro
-            ext = { 'Ubuntu' : "deb",
-                   'CentOS'  : "rpm",
-                   'Red Hat' : "rpm",
-                   "Mac"     : "zip",
-                   "Debian"  : "deb",
+            ext = {'Ubuntu': "deb",
+                   'CentOS': "rpm",
+                   'Red Hat': "rpm",
+                   "Mac": "zip",
+                   "Debian": "deb",
                    "openSUSE": "rpm",
-                   "SUSE"    : "rpm",
+                   "SUSE": "rpm",
                    "Oracle Linux": "rpm"}.get(os_distro, '')
             arch = {'i686': 'x86',
                     'i386': 'x86'}.get(os_arch, os_arch)
@@ -3505,11 +3505,12 @@ class RemoteMachineShellConnection:
     def get_domain(self, win_info=None):
         if win_info:
             o, _ = self.execute_batch_command('ipconfig')
-            suffix_dns_row = [row for row in o if row.find(" Connection-specific DNS Suffix") != -1 and \
-                             len(row.split(':')[1]) > 1]
+            suffix_dns_row = [row for row in o \
+                              if row.find(" Connection-specific DNS Suffix") != -1 \
+                              and len(row.split(':')[1]) > 1]
             if suffix_dns_row ==[]:
-                #'   Connection-specific DNS Suffix  . : '
-                ret=""
+                # '   Connection-specific DNS Suffix  . : '
+                ret = ""
             else:
                 ret = suffix_dns_row[0].split(':')[1].strip()
         else:
@@ -3524,7 +3525,7 @@ class RemoteMachineShellConnection:
                  .format(self.ip, info.hostname[0].strip()))
         if info.type.lower() == 'windows':
             log.info("domain name of this {0} is {1}"
-                 .format(self.ip, info.domain))
+                     .format(self.ip, info.domain))
             return '%s.%s' % (info.hostname[0].strip(), info.domain.strip())
         else:
             if info.domain[0]:

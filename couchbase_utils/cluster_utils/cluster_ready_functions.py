@@ -68,8 +68,8 @@ class cluster_utils():
                 log.info("ns_server {0} is not running in {1} sec".format(server.ip, wait_time))
                 return False
             return True
-        
-    def cleanup_cluster(self, wait_for_rebalance=True, master = None):
+
+    def cleanup_cluster(self, wait_for_rebalance=True, master=None):
         log = logger.Logger.get_logger()
         if master is None:
             master = self.cluster.master
