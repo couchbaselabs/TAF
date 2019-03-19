@@ -1,29 +1,27 @@
 import copy
+import crc32
+import hashlib
+import json
+import logger
+import random
 import socket
 # from multiprocessing.process import Process
 # from multiprocessing.queues import Queue
-import random
+import threading
 import time
-from random import Random
 import uuid
+import zlib
+from random import Random
 from TestInput import TestInputServer
 from TestInput import TestInputSingleton
-import logger
-import zlib
-import crc32
-import hashlib
-import threading
+from Queue import Queue
+
 from mc_bin_client import MemcachedClient, MemcachedError
 from mc_ascii_client import MemcachedAsciiClient
 from memcached.helper.old_kvstore import ClientKeyValueStore
-from membase.api.rest_client import RestConnection, RestHelper
-from memcacheConstants import ERR_NOT_FOUND, ERR_NOT_MY_VBUCKET, ERR_ETMPFAIL, ERR_EINVAL
-import json
-import sys
+from membase.api.rest_client import RestConnection
+from memcacheConstants import ERR_NOT_MY_VBUCKET, ERR_ETMPFAIL, ERR_EINVAL
 # from perf_engines import mcsoda
-
-from Queue import Queue
-from threading import Thread
 from BucketLib.BucketOperations import BucketHelper
 
 log = logger.Logger.get_logger()
@@ -32,6 +30,7 @@ try:
 except ImportError:
     log.warn("{0} {1}".format("Can not import concurrent module.",
                               "Data for each server will be loaded/retrieved sequentially"))
+
 
 class MemcachedClientHelperExcetion(Exception):
     def __init__(self, errorcode, message):
@@ -45,18 +44,10 @@ class MemcachedClientHelper(object):
     # value_sizes {10:0.1,20:0.2:40:0.8}
 
     @staticmethod
-    def create_threads(servers=None,
-                       name='default',
-                       ram_load_ratio=-1,
-                       number_of_items=-1,
-                       value_size_distribution=None,
-                       number_of_threads=50,
-                       override_vBucketId=-1,
-                       write_only=False,
-                       moxi=True,
-                       async_write=False,
-                       delete_ratio=0,
-                       expiry_ratio=0):
+    def create_threads(servers=None, name='default', ram_load_ratio=-1,
+                       number_of_items=-1, value_size_distribution=None,
+                       number_of_threads=50, override_vBucketId=-1, write_only=False,
+                       moxi=True, async_write=False, delete_ratio=0, expiry_ratio=0):
         log = logger.Logger.get_logger()
         if not servers:
             raise MemcachedClientHelperExcetion(errorcode='invalid_argument',
@@ -68,12 +59,12 @@ class MemcachedClientHelper(object):
             value_size_distribution = {16: 0.25, 128: 0.25, 512: 0.25, 1024: 0.25}
 
         list = []
-
         if ram_load_ratio >= 0:
             info = BucketHelper(servers[0]).get_bucket(name)
             emptySpace = info.stats.ram - info.stats.memUsed
             space_to_fill = (int((emptySpace * ram_load_ratio) / 100.0))
-            log.info('space_to_fill : {0}, emptySpace : {1}'.format(space_to_fill, emptySpace))
+            log.info('space_to_fill : {0}, emptySpace : {1}'
+                     .format(space_to_fill, emptySpace))
             for size, probability in value_size_distribution.items():
                 how_many = int(space_to_fill / (size + 250) * probability)
                 payload_generator = DocumentGenerator.make_docs(number_of_items,
@@ -83,9 +74,11 @@ class MemcachedClientHelper(object):
         else:
             for size, probability in value_size_distribution.items():
                 how_many = ((number_of_items / number_of_threads) * probability)
-                payload_generator = DocumentGenerator.make_docs(number_of_items,
-                        {"name": "user-${prefix}", "payload": "memcached-json-${prefix}-${padding}",
-                         "size": size, "seed": str(uuid.uuid4())})
+                payload_generator = DocumentGenerator.make_docs(
+                    number_of_items, {"name": "user-${prefix}",
+                                      "payload": "memcached-json-${prefix}-${padding}",
+                                      "size": size,
+                                      "seed": str(uuid.uuid4())})
                 list.append({'size': size, 'value': payload_generator, 'how_many': how_many})
 
         for item in list:
@@ -99,31 +92,25 @@ class MemcachedClientHelper(object):
         threads = []
         for i in range(0, int(number_of_threads)):
             # choose one of the servers random
-            thread = WorkerThread(serverInfo=MemcachedClientHelper.random_pick(servers),
-                                  name=name,
-                                  values_list=list,
-                                  override_vBucketId=override_vBucketId,
-                                  write_only=write_only,
-                                  moxi=moxi,
-                                  async_write=async_write,
-                                  delete_ratio=delete_ratio,
-                                  expiry_ratio=expiry_ratio)
+            thread = WorkerThread(
+                serverInfo=MemcachedClientHelper.random_pick(servers),
+                name=name, values_list=list,
+                override_vBucketId=override_vBucketId,
+                write_only=write_only, moxi=moxi,
+                async_write=async_write, delete_ratio=delete_ratio,
+                expiry_ratio=expiry_ratio)
             threads.append(thread)
 
         return threads
 
     @staticmethod
-    def create_threads_for_load_bucket(serverInfo=None,
-                                       name='default',
-                                       ram_load_ratio=-1,
-                                       number_of_items=-1,
+    def create_threads_for_load_bucket(serverInfo=None, name='default',
+                                       ram_load_ratio=-1, number_of_items=-1,
                                        value_size_distribution=None,
                                        number_of_threads=50,
                                        override_vBucketId=-1,
-                                       write_only=False,
-                                       moxi=True,
-                                       delete_ratio=0,
-                                       expiry_ratio=0):
+                                       write_only=False, moxi=True,
+                                       delete_ratio=0, expiry_ratio=0):
         log = logger.Logger.get_logger()
         if not serverInfo:
             raise MemcachedClientHelperExcetion(errorcode='invalid_argument',
@@ -140,7 +127,8 @@ class MemcachedClientHelper(object):
             info = BucketHelper(serverInfo).get_bucket(name)
             emptySpace = info.stats.ram - info.stats.memUsed
             space_to_fill = (int((emptySpace * ram_load_ratio) / 100.0))
-            log.info('space_to_fill : {0}, emptySpace : {1}'.format(space_to_fill, emptySpace))
+            log.info('space_to_fill : {0}, emptySpace : {1}'
+                     .format(space_to_fill, emptySpace))
             for size, probability in value_size_distribution.items():
                 # let's assume overhead per key is 64 bytes ?
                 how_many = int(space_to_fill / (size + 250) * probability)
@@ -161,45 +149,32 @@ class MemcachedClientHelper(object):
             log.info(msg.format(item['how_many'], item['size']))
 
         threads = []
-        for i in range(0, int(number_of_threads)):
-            thread = WorkerThread(serverInfo=serverInfo,
-                                  name=name,
-                                  values_list=list,
-                                  override_vBucketId=override_vBucketId,
-                                  write_only=write_only,
-                                  moxi=moxi,
-                                  delete_ratio=delete_ratio,
-                                  expiry_ratio=expiry_ratio)
+        for _ in range(0, int(number_of_threads)):
+            thread = WorkerThread(
+                serverInfo=serverInfo, name=name, values_list=list,
+                override_vBucketId=override_vBucketId, write_only=write_only,
+                moxi=moxi, delete_ratio=delete_ratio,
+                expiry_ratio=expiry_ratio)
             threads.append(thread)
 
         return threads
 
     @staticmethod
-    def load_bucket_and_return_the_keys(servers=None,
-                                        name='default',
-                                        ram_load_ratio=-1,
-                                        number_of_items=-1,
+    def load_bucket_and_return_the_keys(servers=None, name='default',
+                                        ram_load_ratio=-1, number_of_items=-1,
                                         value_size_distribution=None,
                                         number_of_threads=50,
                                         override_vBucketId=-1,
-                                        write_only=False,
-                                        moxi=True,
-                                        delete_ratio=0,
-                                        expiry_ratio=0):
+                                        write_only=False, moxi=True,
+                                        delete_ratio=0, expiry_ratio=0):
         inserted_keys = []
         rejected_keys = []
         log = logger.Logger.get_logger()
-        threads = MemcachedClientHelper.create_threads(servers,
-                                                       name,
-                                                       ram_load_ratio,
-                                                       number_of_items,
-                                                       value_size_distribution,
-                                                       number_of_threads,
-                                                       override_vBucketId,
-                                                       write_only=write_only,
-                                                       moxi=moxi,
-                                                       delete_ratio=delete_ratio,
-                                                       expiry_ratio=expiry_ratio)
+        threads = MemcachedClientHelper.create_threads(
+            servers, name, ram_load_ratio, number_of_items,
+            value_size_distribution, number_of_threads, override_vBucketId,
+            write_only=write_only, moxi=moxi, delete_ratio=delete_ratio,
+            expiry_ratio=expiry_ratio)
 
         # we can start them!
         for thread in threads:
@@ -239,15 +214,10 @@ class MemcachedClientHelper(object):
         inserted_keys_count = 0
         rejected_keys_count = 0
         log = logger.Logger.get_logger()
-        threads = MemcachedClientHelper.create_threads(servers,
-                                                       name,
-                                                       ram_load_ratio,
-                                                       number_of_items,
-                                                       value_size_distribution,
-                                                       number_of_threads,
-                                                       override_vBucketId,
-                                                       write_only,
-                                                       moxi)
+        threads = MemcachedClientHelper.create_threads(
+            servers, name, ram_load_ratio, number_of_items,
+            value_size_distribution, number_of_threads, override_vBucketId,
+            write_only, moxi)
         # we can start them!
         for thread in threads:
             thread.start()
@@ -263,7 +233,7 @@ class MemcachedClientHelper(object):
 
     @staticmethod
     def create_value(pattern, size):
-        return (pattern * (size / len(pattern))) + pattern[0:(size % len(pattern))]
+        return (pattern * (size/len(pattern))) + pattern[0:(size % len(pattern))]
 
     @staticmethod
     def random_pick(list):
@@ -275,7 +245,8 @@ class MemcachedClientHelper(object):
         return None
 
     @staticmethod
-    def direct_client(server, bucket, timeout=30, admin_user='cbadminbucket',admin_pass='password'):
+    def direct_client(server, bucket, timeout=30,
+                      admin_user='cbadminbucket', admin_pass='password'):
         log = logger.Logger.get_logger()
         rest = RestConnection(server)
         node = None
@@ -291,16 +262,18 @@ class MemcachedClientHelper(object):
 
         if isinstance(server, dict):
             log.info("dict:{0}".format(server))
-            log.info("creating direct client {0}:{1} {2}".format(server["ip"], node.memcached, bucket.name))
+            log.info("creating direct client {0}:{1} {2}"
+                     .format(server["ip"], node.memcached, bucket.name))
         else:
-            log.info("creating direct client {0}:{1} {2}".format(server.ip, node.memcached, bucket.name))
+            log.info("creating direct client {0}:{1} {2}"
+                     .format(server.ip, node.memcached, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
         vBuckets = BucketHelper(server).get_vbuckets(bucket)
         if isinstance(server, dict):
             client = MemcachedClient(server["ip"], node.memcached, timeout=timeout)
         else:
             client = MemcachedClient(server.ip, node.memcached, timeout=timeout)
-        if vBuckets != None:
+        if vBuckets is not None:
             client.vbucket_count = len(vBuckets)
         else:
             client.vbucket_count = 0
@@ -316,24 +289,25 @@ class MemcachedClientHelper(object):
                      "version. Using the old ssl auth to connect to "
                      "bucket.")
             client.sasl_auth_plain(bucket.name.encode('ascii'),
-                                    bucket.saslPassword.encode('ascii'))
+                                   bucket.saslPassword.encode('ascii'))
         else:
             bucket_name = bucket.name.encode('ascii')
-            client.sasl_auth_plain(admin_user,admin_pass)
+            client.sasl_auth_plain(admin_user, admin_pass)
             client.bucket_select(bucket_name)
 
         return client
 
     @staticmethod
-    def proxy_client(server, bucket, timeout=30, force_ascii=False, standalone_moxi_port=None):
+    def proxy_client(server, bucket, timeout=30, force_ascii=False,
+                     standalone_moxi_port=None):
         # for this bucket on this node what is the proxy ?
         log = logger.Logger.get_logger()
         bucket_info = BucketHelper(server).get_bucket_json(bucket.name)
         nodes = bucket_info["nodes"]
 
-        if (TestInputSingleton.input and "ascii" in TestInputSingleton.input.test_params
-            and TestInputSingleton.input.test_params["ascii"].lower() == "true") \
-                or force_ascii:
+        if (TestInputSingleton.input
+                and "ascii" in TestInputSingleton.input.test_params
+                and TestInputSingleton.input.test_params["ascii"].lower() == "true") or force_ascii:
             ascii = True
         else:
             ascii = False
@@ -412,8 +386,10 @@ class MemcachedClientHelper(object):
 class MutationThread(threading.Thread):
     def run(self):
         values = DocumentGenerator.make_docs(len(self.keys),
-                {"name": "user-${prefix}", "payload": "memcached-json-${prefix}-${padding}",
-                 "size": 1024, "seed": self.seed})
+                                             {"name": "user-${prefix}",
+                                              "payload": "memcached-json-${prefix}-${padding}",
+                                              "size": 1024,
+                                              "seed": self.seed})
         client = MemcachedClientHelper.proxy_client(self.serverInfo, self.name)
         counter = 0
         for value in values:
@@ -434,11 +410,7 @@ class MutationThread(threading.Thread):
         self.log.info("mutation failed {0} times".format(self._rejected_count))
         client.close()
 
-    def __init__(self, serverInfo,
-                 keys,
-                 op,
-                 seed,
-                 name='default'):
+    def __init__(self, serverInfo, keys, op, seed, name='default'):
         threading.Thread.__init__(self)
         self.log = logger.Logger.get_logger()
         self.serverInfo = serverInfo
@@ -496,18 +468,10 @@ class WorkerThread(threading.Thread):
     # too flags : stop after x errors
     # slow down after every seeing y errors
     # value_list is a list of document generators
-    def __init__(self,
-                 serverInfo,
-                 name,
-                 values_list,
-                 ignore_how_many_errors=5000,
-                 override_vBucketId=-1,
-                 terminate_in_minutes=120,
-                 write_only=False,
-                 moxi=True,
-                 async_write=False,
-                 delete_ratio=0,
-                 expiry_ratio=0):
+    def __init__(self, serverInfo, name, values_list,
+                 ignore_how_many_errors=5000, override_vBucketId=-1,
+                 terminate_in_minutes=120, write_only=False, moxi=True,
+                 async_write=False, delete_ratio=0, expiry_ratio=0):
         threading.Thread.__init__(self)
         self.log = logger.Logger.get_logger()
         self.serverInfo = serverInfo

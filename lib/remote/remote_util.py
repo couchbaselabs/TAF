@@ -214,9 +214,9 @@ class RemoteMachineShellConnection:
         msg = 'connecting to {0} with username:{1} password:{2} ssh_key:{3}'
         log.info(msg.format(serverInfo.ip, serverInfo.ssh_username,
                             serverInfo.ssh_password, serverInfo.ssh_key))
-        
-        jsch=JSch()
-        
+
+        jsch = JSch()
+
         # added attempts for connection because of PID check failed.
         # RNG must be re-initialized after fork() error
         # That's a paramiko bug
@@ -369,7 +369,7 @@ class RemoteMachineShellConnection:
         if self.info.type.lower() == "linux":
             o, r = self.execute_command("/etc/init.d/membase-server start")
             self.log_command_output(o, r)
-    
+
     def get_number_of_cores(self):
         """
         Get number of cores on machine, that was invoked on.
@@ -384,7 +384,7 @@ class RemoteMachineShellConnection:
         elif self.info.type.lower() == "linux":
             o, r = self.execute_command("getconf _NPROCESSORS_ONLN")
             self.log_command_output(o, r)
-            return o;
+            return o
 
     def start_server(self, os="unix"):
         self.extract_remote_info()
@@ -534,7 +534,7 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
             log.info(self.execute_command("pgrep -l java"))
         return o, r
-    
+
     def kill_process(self, process_name, service_name, signum=9):
         self.extract_remote_info()
         if self.info.type.lower() == 'windows':
@@ -559,7 +559,7 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command("kill -%s %s" % (signum, process_list))
             self.log_command_output(o, r)
         return o, r
-    
+
     def kill_memcached(self):
         self.extract_remote_info()
         if self.info.type.lower() == 'windows':
@@ -766,7 +766,7 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
         else:
             raise Exception("stopping standalone moxi is not supported on windows")
-        
+
     def is_url_live(self, url):
         live_url = False
         log.info("Check if url {0} is ok".format(url))
@@ -852,7 +852,7 @@ class RemoteMachineShellConnection:
                     if "Active: active (running)" in line:
                         log.info("ntp is installed and running on this server %s" % self.ip)
                         ntp_installed = True
-                        break;
+                        break
             if os_version == "centos 6":
                 output, e = self.execute_command("/etc/init.d/ntpd status")
                 if output and " is running..." in output[0]:
@@ -1033,13 +1033,13 @@ class RemoteMachineShellConnection:
         from com.jcraft.jsch import ChannelSftp
         from com.jcraft.jsch import JSchException,SftpException
         jsch=JSch()
-        session=jsch.getSession(self.username, self.ip, 22);
-        session.setPassword(self.password);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
-        channel=session.openChannel("sftp");
+        session=jsch.getSession(self.username, self.ip, 22)
+        session.setPassword(self.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        channel=session.openChannel("sftp")
 #         errstream=channel.getErrStream()
-        channel.connect();
+        channel.connect()
         channelSftp = channel
         try:
             channelSftp.cd(remotepath)
@@ -1052,14 +1052,14 @@ class RemoteMachineShellConnection:
                 os.system("cp {0} {1}".format('{0}/{1}'.format(remotepath, filename), todir))
             channel.disconnect()
             session.disconnect()
-            
+
         except JSchException as e:
             channel.disconnect()
             session.disconnect()
         except SftpException as e:
             channel.disconnect()
             session.disconnect()
-        return False        
+        return False
 
     def read_remote_file(self, remote_path, filename):
         if self.file_exists(remote_path, filename):
@@ -1093,13 +1093,13 @@ class RemoteMachineShellConnection:
             from com.jcraft.jsch import ChannelSftp
             from com.jcraft.jsch import JSchException,SftpException
             jsch=JSch()
-            session=jsch.getSession(self.username, self.ip, 22);
-            session.setPassword(self.password);
-            session.setConfig("StrictHostKeyChecking", "no");
-            session.connect();
-            channel=session.openChannel("sftp");
+            session=jsch.getSession(self.username, self.ip, 22)
+            session.setPassword(self.password)
+            session.setConfig("StrictHostKeyChecking", "no")
+            session.connect()
+            channel=session.openChannel("sftp")
     #         errstream=channel.getErrStream()
-            channel.connect();
+            channel.connect()
             channelSftp = channel
             try:
                 channelSftp.rmdir(remote_path)
@@ -1157,13 +1157,13 @@ class RemoteMachineShellConnection:
             from com.jcraft.jsch import ChannelSftp
             from com.jcraft.jsch import JSchException,SftpException
             jsch=JSch()
-            session=jsch.getSession(self.username, self.ip, 22);
-            session.setPassword(self.password);
-            session.setConfig("StrictHostKeyChecking", "no");
-            session.connect();
-            channel=session.openChannel("sftp");
+            session=jsch.getSession(self.username, self.ip, 22)
+            session.setPassword(self.password)
+            session.setConfig("StrictHostKeyChecking", "no")
+            session.connect()
+            channel=session.openChannel("sftp")
     #         errstream=channel.getErrStream()
-            channel.connect();
+            channel.connect()
             channelSftp = channel
             try:
                 channelSftp.cd(remote_path)
@@ -1194,13 +1194,13 @@ class RemoteMachineShellConnection:
         from com.jcraft.jsch import ChannelSftp
         from com.jcraft.jsch import JSchException,SftpException
         jsch=JSch()
-        session=jsch.getSession(self.username, self.ip, 22);
-        session.setPassword(self.password);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
-        channel=session.openChannel("sftp");
+        session=jsch.getSession(self.username, self.ip, 22)
+        session.setPassword(self.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        channel=session.openChannel("sftp")
 #         errstream=channel.getErrStream()
-        channel.connect();
+        channel.connect()
         channelSftp = channel
         try:
             channelSftp.cd(remotepath)
@@ -1212,7 +1212,7 @@ class RemoteMachineShellConnection:
             pass
         channel.disconnect()
         session.disconnect()
-        
+
         if len(files_matched) > 0:
             log.info("found these files : {0}".format(files_matched))
         return files_matched
@@ -1224,13 +1224,13 @@ class RemoteMachineShellConnection:
         from com.jcraft.jsch import ChannelSftp
         from com.jcraft.jsch import JSchException,SftpException
         jsch=JSch()
-        session=jsch.getSession(self.username, self.ip, 22);
-        session.setPassword(self.password);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
-        channel=session.openChannel("sftp");
+        session=jsch.getSession(self.username, self.ip, 22)
+        session.setPassword(self.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        channel=session.openChannel("sftp")
 #         errstream=channel.getErrStream()
-        channel.connect();
+        channel.connect()
         channelSftp = channel
         try:
             channelSftp.cd(remotepath)
@@ -1242,7 +1242,7 @@ class RemoteMachineShellConnection:
             pass
         channel.disconnect()
         session.disconnect()
-        
+
         if len(files_matched) > 0:
             log.info("found these files : {0}".format(files_matched))
         return files_matched
@@ -1251,13 +1251,13 @@ class RemoteMachineShellConnection:
         from com.jcraft.jsch import ChannelSftp
         from com.jcraft.jsch import JSchException,SftpException
         jsch=JSch()
-        session=jsch.getSession(self.username, self.ip, 22);
-        session.setPassword(self.password);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
-        channel=session.openChannel("sftp");
+        session=jsch.getSession(self.username, self.ip, 22)
+        session.setPassword(self.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        channel=session.openChannel("sftp")
 #         errstream=channel.getErrStream()
-        channel.connect();
+        channel.connect()
         channelSftp = channel
         try:
             channelSftp.cd(remotepath)
@@ -1288,13 +1288,13 @@ class RemoteMachineShellConnection:
         from com.jcraft.jsch import ChannelSftp
         from com.jcraft.jsch import JSchException,SftpException
         jsch=JSch()
-        session=jsch.getSession(self.username, self.ip, 22);
-        session.setPassword(self.password);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
-        channel=session.openChannel("sftp");
+        session=jsch.getSession(self.username, self.ip, 22)
+        session.setPassword(self.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        channel=session.openChannel("sftp")
 #         errstream=channel.getErrStream()
-        channel.connect();
+        channel.connect()
         channelSftp = channel
 #         sftp = self._ssh_client.open_sftp()
         delete_file = False
@@ -1373,13 +1373,13 @@ class RemoteMachineShellConnection:
         from com.jcraft.jsch import ChannelSftp
         from com.jcraft.jsch import JSchException,SftpException
         jsch=JSch()
-        session=jsch.getSession(self.username, self.ip, 22);
-        session.setPassword(self.password);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
-        channel=session.openChannel("sftp");
+        session=jsch.getSession(self.username, self.ip, 22)
+        session.setPassword(self.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        channel=session.openChannel("sftp")
 #         errstream=channel.getErrStream()
-        channel.connect();
+        channel.connect()
         channelSftp = channel
         try:
             channelSftp.put(src_path, des_path)
@@ -1399,13 +1399,13 @@ class RemoteMachineShellConnection:
         from com.jcraft.jsch import ChannelSftp
         from com.jcraft.jsch import JSchException,SftpException
         jsch=JSch()
-        session=jsch.getSession(self.username, self.ip, 22);
-        session.setPassword(self.password);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
-        channel=session.openChannel("sftp");
+        session=jsch.getSession(self.username, self.ip, 22)
+        session.setPassword(self.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        channel=session.openChannel("sftp")
 #         errstream=channel.getErrStream()
-        channel.connect();
+        channel.connect()
         channelSftp = channel
         try:
             channelSftp.get(rem_path, des_path)
@@ -1764,13 +1764,13 @@ class RemoteMachineShellConnection:
         from com.jcraft.jsch import ChannelSftp
         from com.jcraft.jsch import JSchException,SftpException
         jsch=JSch()
-        session=jsch.getSession(self.username, self.ip, 22);
-        session.setPassword(self.password);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect();
-        channel=session.openChannel("sftp");
+        session=jsch.getSession(self.username, self.ip, 22)
+        session.setPassword(self.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        channel=session.openChannel("sftp")
 #         errstream=channel.getErrStream()
-        channel.connect();
+        channel.connect()
         channelSftp = channel
         try:
             channelSftp.ls(remote_path)
@@ -3186,34 +3186,34 @@ class RemoteMachineShellConnection:
         if not self.remote:
             p = Popen(command , shell=True, stdout=PIPE, stderr=PIPE)
             output, error = p.communicate()
-            
+
         else:
             try:
-                jsch=JSch()
-                session=jsch.getSession(self.username, self.ip, 22);
-                session.setPassword(self.password);
-                session.setConfig("StrictHostKeyChecking", "no");
-                session.connect();
-                self._ssh_client=session.openChannel("exec");
-                self._ssh_client.setInputStream(None);
-                
-                instream=self._ssh_client.getInputStream();
+                jsch = JSch()
+                session = jsch.getSession(self.username, self.ip, 22)
+                session.setPassword(self.password)
+                session.setConfig("StrictHostKeyChecking", "no")
+                session.connect()
+                self._ssh_client = session.openChannel("exec")
+                self._ssh_client.setInputStream(None)
+
+                instream=self._ssh_client.getInputStream()
                 errstream=self._ssh_client.getErrStream()
                 self._ssh_client.setCommand(command)
-                self._ssh_client.connect();
+                self._ssh_client.connect()
                 output=[]
                 error=[]
                 fu = FileUtil.wrap(instream)
                 for line in fu.readlines():
                     output.append(line)
-                    
+
                 fu = FileUtil.wrap(errstream)
                 for line in fu.readlines():
                     error.append(line)
                 self._ssh_client.disconnect()
                 session.disconnect()
             except JSchException as e:
-                log.info("%s: %s"%(self.ip,str(e)))    
+                log.info("%s: %s"%(self.ip,str(e)))
         if debug:
             log.info('command executed successfully')
         return output, error
@@ -3286,6 +3286,7 @@ class RemoteMachineShellConnection:
 
     def disconnect(self):
         if self._ssh_client:
+            log.info("Disconnecting ssh_client for {0}".format(self.ip))
             self._ssh_client.disconnect()
 
     def extract_remote_info(self):
@@ -3743,27 +3744,27 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command(remote_command, self.info)
             if r:
                 log.error("Command didn't run successfully. Error: {0}".format(r))
-            return o;
+            return o
         else:
             log.error("Function is implemented only for Windows OS")
             return None
 
     def get_process_statistics_parameter(self, parameter, process_name=None, process_pid=None):
-       if not parameter:
-           log.error("parameter cannot be None")
+        if not parameter:
+            log.error("parameter cannot be None")
 
-       parameters_list = self.get_process_statistics(process_name, process_pid)
+        parameters_list = self.get_process_statistics(process_name, process_pid)
 
-       if not parameters_list:
-           log.error("no statistics found")
-           return None
-       parameters_dic = dict(item.split(' = ') for item in parameters_list)
+        if not parameters_list:
+            log.error("no statistics found")
+            return None
+        parameters_dic = dict(item.split(' = ') for item in parameters_list)
 
-       if parameter in parameters_dic:
-           return parameters_dic[parameter]
-       else:
-           log.error("parameter '{0}' is not found".format(parameter))
-           return None
+        if parameter in parameters_dic:
+            return parameters_dic[parameter]
+        else:
+            log.error("parameter '{0}' is not found".format(parameter))
+            return None
 
     def set_environment_variable(self, name, value):
         """Request an interactive shell session, export custom variable and
@@ -4515,7 +4516,7 @@ class RemoteMachineShellConnection:
                                     o, r = self.execute_command("dpkg --get-selections | grep libssl")
                                     log.info("package {0} should not appear below".format(s[:11]))
                                     self.log_command_output(o, r)
-           
+
     def check_pkgconfig(self, deliverable_type, openssl):
         if "SUSE" in self.info.distribution_type:
             o, r = self.execute_command("zypper -n if pkg-config 2>/dev/null| grep -i \"Installed: Yes\"")
