@@ -19,7 +19,8 @@ from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from bucket_utils.Bucket import Bucket
-from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, DataAnalysisResultAnalyzer
+from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
+                                                  DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import BlobGenerator
 from couchbase_helper.documentgenerator import DocumentGenerator
@@ -119,8 +120,7 @@ class bucket_utils():
             else:
                 return True
 
-    def wait_for_bucket_deletion(self, bucket,
-                                 bucket_conn,
+    def wait_for_bucket_deletion(self, bucket, bucket_conn,
                                  timeout_in_seconds=120):
         log.info('waiting for bucket deletion to complete....')
         start = time.time()
@@ -131,8 +131,7 @@ class bucket_utils():
                 time.sleep(2)
         return False
 
-    def wait_for_bucket_creation(self, bucket,
-                                 bucket_conn,
+    def wait_for_bucket_creation(self, bucket, bucket_conn,
                                  timeout_in_seconds=120):
         log = logger.Logger.get_logger()
         log.info('waiting for bucket creation to complete....')
@@ -167,7 +166,8 @@ class bucket_utils():
                 log.error('15 seconds sleep before calling get_buckets again...')
                 time.sleep(15)
                 buckets = self.get_all_buckets(serverInfo)
-            log.info('deleting existing buckets {0} on {1}'.format([b.name for b in buckets], serverInfo.ip))
+            log.info('deleting existing buckets {0} on {1}'
+                     .format([b.name for b in buckets], serverInfo.ip))
             for bucket in buckets:
                 log.info("remove bucket {0} ...".format(bucket.name))
                 try:
@@ -176,11 +176,12 @@ class bucket_utils():
                     log.error(e)
                     raise e
                 if not status:
-                    raise Exception("Bucket {0} could not be deleted".format(bucket.name))
+                    raise Exception("Bucket {0} could not be deleted"
+                                    .format(bucket.name))
 
     def create_default_bucket(self, bucket_type=Bucket.bucket_type.MEMBASE,
-                              ram_quota=None, replica=1,
-                              maxTTL=0, compression_mode="off"):
+                              ram_quota=None, replica=1, maxTTL=0,
+                              compression_mode="off"):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ramQuotaMB = ram_quota
@@ -209,7 +210,7 @@ class bucket_utils():
                 content = bucket_helper.get_bucket_json(bucket)
                 bucketInfo = self.parse_get_bucket_json(content)
                 break
-            except:
+            except Exception:
                 time.sleep(timeout)
                 num += 1
         return bucketInfo
@@ -228,12 +229,10 @@ class bucket_utils():
             return False
 
     def change_max_buckets(self, total_buckets):
-        command = "curl -X POST -u {0}:{1} -d maxBucketCount={2} http://{3}:{4}/internalSettings".format \
-            (self.cluster.master.rest_username,
-             self.cluster.master.rest_password,
-             total_buckets,
-             self.cluster.master.ip,
-             self.cluster.master.port)
+        command = "curl -X POST -u {0}:{1} -d maxBucketCount={2} http://{3}:{4}/internalSettings" \
+                  .format(self.cluster.master.rest_username,
+                          self.cluster.master.rest_password, total_buckets,
+                          self.cluster.master.ip, self.cluster.master.port)
         shell = RemoteMachineShellConnection(self.cluster.master)
         output, error = shell.execute_command_raw(command)
         shell.log_command_output(output, error)
@@ -249,7 +248,8 @@ class bucket_utils():
         memcache_credentials = {}
         for s in self.cluster.nodes_in_cluster:
             memcache_admin, memcache_admin_password = RestConnection(s).get_admin_credentials()
-            memcache_credentials[s.ip] = {'id':memcache_admin, 'password':memcache_admin_password}
+            memcache_credentials[s.ip] = {'id': memcache_admin,
+                                          'password': memcache_admin_password}
 
             # this is a failed optimization, in theory sasl could be done here but it didn't work
             #client = MemcachedClient(s.ip, 11210)
@@ -360,7 +360,6 @@ class bucket_utils():
     def verify_stats_for_bucket(self, bucket, items, timeout=60):
         log.info("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
-        cluster = self.cluster
         servers = self.cluster.nodes_in_cluster
         if bucket.bucketType == 'memcached':
             items_actual = 0
@@ -370,21 +369,23 @@ class bucket_utils():
             if items != items_actual:
                 raise Exception("Items are not correct")
 
-        stats_tasks.append(self.async_wait_for_stats(
-            cluster, bucket, '', 'curr_items', '==', items))
-        stats_tasks.append(self.async_wait_for_stats(
-            cluster, bucket, '', 'vb_active_curr_items', '==', items))
-
+        # TODO: Need to fix the config files to always satisfy the
+        #       replica number based on the available number_of_servers
         available_replicas = bucket.replicaNumber
         if len(servers) == bucket.replicaNumber:
             available_replicas = len(servers) - 1
         elif len(servers) <= bucket.replicaNumber:
             available_replicas = len(servers) - 1
+
+        # Create connection to master node for verifying cbstats
+        shell_conn = RemoteMachineShellConnection(self.cluster.master)
+
+        # Create Tasks to verify total items/replica count in the bucket
         stats_tasks.append(self.async_wait_for_stats(
-            cluster, bucket, '',
+            shell_conn, bucket, '',
             'vb_replica_curr_items', '==', items * available_replicas))
         stats_tasks.append(self.async_wait_for_stats(
-            cluster, bucket, '',
+            shell_conn, bucket, '',
             'curr_items_tot', '==', items * (available_replicas + 1)))
         try:
             for task in stats_tasks:
@@ -393,34 +394,37 @@ class bucket_utils():
             log.info("{0}".format(e))
             for task in stats_tasks:
                 self.task_manager.stop_task(task)
-            log.error("Unable to get expected stats for any node! Print taps for all nodes")
+            log.error("Unable to get expected stats from the selected node")
+
+            log.info("Printing taps for all nodes")
             rest = RestConnection(self.cluster.master)
             for bucket in self.buckets:
                 RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
             raise Exception("Unable to get expected stats during {0} sec"
                             .format(timeout))
 
-    def async_wait_for_stats(self, cluster, bucket, param, stat, comparison,
+    def async_wait_for_stats(self, shell_conn, bucket, param, stat, comparison,
                              value):
-        """Asynchronously wait for stats
+        """
+        Asynchronously wait for stats
 
-        Waits for stats to match the criteria passed by the stats variable. See
-        couchbase.stats_tool.StatsCommon.build_stat_check(...) for a description of
-        the stats structure and how it can be built.
+        Waits for stats to match the criteria passed by the stats variable.
+        See couchbase.stats_tool.StatsCommon.build_stat_check(...)
+        for a description of the stats structure and how it can be built.
 
         Parameters:
-            servers - The servers to get stats from. Specifying multiple servers will
-                cause the result from each server to be added together before
-                comparing. ([TestInputServer])
-            bucket - The name of the bucket (String)
-            param - The stats parameter to use. (String)
-            stat - The stat that we want to get the value from. (String)
+            shell_conn - Object of type 'RemoteMachineShellConnection'.
+                         Uses this object to execute cbstats binary in the node
+            bucket     - The name of the bucket (String)
+            param      - The stats parameter to use. (String)
+            stat       - The stat that we want to get the value from. (String)
             comparison - How to compare the stat result to the value specified.
-            value - The value to compare to.
+            value      - The value to compare to.
 
         Returns:
-            RebalanceTask - A task future that is a handle to the scheduled task"""
-        _task = StatsWaitTask(cluster, bucket, param, stat, comparison, value)
+            RebalanceTask - A task future that is a handle to the scheduled task
+        """
+        _task = StatsWaitTask(shell_conn, bucket, param, stat, comparison, value)
         self.task_manager.add_new_task(_task)
         return _task
 
@@ -602,9 +606,10 @@ class bucket_utils():
     def key_generator(self, size=6, chars=string.ascii_uppercase + string.digits):
         return ''.join(random.choice(chars) for x in range(size))
 
-    def _wait_for_stats_all_buckets(self, ep_queue_size=0, \
+    def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
-                                    check_ep_items_remaining=False, timeout=360):
+                                    check_ep_items_remaining=False,
+                                    timeout=360):
         """
         Waits for queues to drain on all servers and buckets in a cluster.
 
@@ -620,18 +625,19 @@ class bucket_utils():
         """
         tasks = []
         for server in self.cluster.nodes_in_cluster:
+            shell_conn = RemoteMachineShellConnection(server)
             for bucket in self.buckets:
                 if bucket.bucketType == 'memcached':
                     continue
                 tasks.append(self.task.async_wait_for_stats(
-                    self.cluster, bucket, '',
+                    shell_conn, bucket, '',
                     'ep_queue_size', ep_queue_size_cond, ep_queue_size))
                 if check_ep_items_remaining:
                     protocol = 'dcp'
                     ep_items_remaining = 'ep_{0}_items_remaining' \
                         .format(protocol)
                     tasks.append(self.task.async_wait_for_stats(
-                        self.cluster, bucket, protocol,
+                        shell_conn, bucket, protocol,
                         ep_items_remaining, "==", 0))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)

@@ -207,7 +207,8 @@ class ServerTasks(object):
             use_hostnames - True if nodes should be added using hostnames (Boolean)
 
         Returns:
-            RebalanceTask - A task future that is a handle to the scheduled task"""
+            RebalanceTask - A task future that is a handle to the scheduled task
+        """
         _task = jython_tasks.rebalanceTask(servers, to_add, to_remove,
                                            use_hostnames=use_hostnames,
                                            services=services,
@@ -215,26 +216,28 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_wait_for_stats(self, cluster, bucket, param, stat, comparison, value):
+    def async_wait_for_stats(self, shell_conn, bucket, param, stat, comparison,
+                             value):
         """Asynchronously wait for stats
 
-        Waits for stats to match the criteria passed by the stats variable. See
-        couchbase.stats_tool.StatsCommon.build_stat_check(...) for a description of
-        the stats structure and how it can be built.
+        Waits for stats to match the criteria passed by the stats variable.
+        See couchbase.stats_tool.StatsCommon.build_stat_check(...) for a
+        description of the stats structure and how it can be built.
 
         Parameters:
-            servers - The servers to get stats from. Specifying multiple servers will
-                cause the result from each server to be added together before
-                comparing. ([TestInputServer])
-            bucket - The name of the bucket (String)
-            param - The stats parameter to use. (String)
-            stat - The stat that we want to get the value from. (String)
+            shell_conn - Object of type 'RemoteMachineShellConnection'.
+                         Uses this object to execute cbstats binary in the node
+            bucket     - The name of the bucket (String)
+            param      - The stats parameter to use. (String)
+            stat       - The stat that we want to get the value from. (String)
             comparison - How to compare the stat result to the value specified.
-            value - The value to compare to.
+            value      - The value to compare to.
 
         Returns:
-            RebalanceTask - A task future that is a handle to the scheduled task"""
-        _task = jython_tasks.StatsWaitTask(cluster, bucket, param, stat, comparison, value)
+            RebalanceTask - Task future that is a handle to the scheduled task
+        """
+        _task = jython_tasks.StatsWaitTask(shell_conn, bucket, param,
+                                           stat, comparison, value)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -244,7 +247,7 @@ class ServerTasks(object):
         Asyncronously monitor db fragmentation
         Parameters:
             servers - server to check(TestInputServers)
-            bucket - bucket to check
+            bucket  - bucket to check
             fragmentation - fragmentation to reach
             get_view_frag - Monitor view fragmentation.
                             In case enabled when <fragmentation_value> is
@@ -259,18 +262,20 @@ class ServerTasks(object):
         return _task
 
     def create_default_bucket(self, bucket_params, timeout=600):
-        """Synchronously creates the default bucket
+        """
+        Synchronously creates the default bucket
 
         Parameters:
-            bucket_params - A dictionary containing a list of bucket creation parameters. (Dict)
-
+            bucket_params - A dictionary containing a list of bucket
+                            creation parameters (dict)
         Returns:
-            boolean - Whether or not the bucket was created."""
+            boolean - Whether or not the bucket was created.
+        """
 
         _task = self.async_create_default_bucket(bucket_params)
         return _task.get_result(timeout)
 
-    def create_sasl_bucket(self, name, password,bucket_params, timeout=None):
+    def create_sasl_bucket(self, name, password, bucket_params, timeout=None):
         """Synchronously creates a sasl bucket
 
         Parameters:
@@ -340,7 +345,7 @@ class ServerTasks(object):
                       batch_size=1, compression=True, process_concurrency=8, retries=5):
         _task = self.async_load_gen_docs(cluster, bucket, generator, op_type, exp, flag, persist_to=persist_to,
                                          replicate_to=replicate_to,
-                                         only_store_hash=only_store_hash, batch_size=batch_size, 
+                                         only_store_hash=only_store_hash, batch_size=batch_size,
                                          compression=compression, process_concurrency=process_concurrency,
                                          retries=retries)
         return self.jython_task_manager.get_task_result(_task)
@@ -352,14 +357,14 @@ class ServerTasks(object):
     def async_verify_data(self, server, bucket, kv_store, max_verify=None,
                           only_store_hash=True, batch_size=1, replica_to_read=None, timeout_sec=5, compression=True):
         if batch_size > 1:
-            _task = conc.BatchedValidateDataTask(server, bucket, kv_store, max_verify, only_store_hash, batch_size, 
+            _task = conc.BatchedValidateDataTask(server, bucket, kv_store, max_verify, only_store_hash, batch_size,
                                                  timeout_sec, self.task_manager, compression=compression)
         else:
-            _task = conc.ValidateDataTask(server, bucket, kv_store, max_verify, only_store_hash, replica_to_read, 
+            _task = conc.ValidateDataTask(server, bucket, kv_store, max_verify, only_store_hash, replica_to_read,
                                           self.task_manager, compression=compression)
         self.task_manager.schedule(_task)
         return _task
-    
+
     def wait_for_stats(self, cluster, bucket, param, stat, comparison, value, timeout=None):
         """Synchronously wait for stats
 

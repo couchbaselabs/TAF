@@ -3,26 +3,29 @@ Created on Sep 14, 2017
 
 @author: riteshagarwal
 '''
-from BucketLib.BucketOperations import BucketHelper
-from BucketLib.MemcachedOperations import MemcachedHelper
-from Jython_tasks.shutdown import shutdown_and_await_termination
 import copy
-from couchbase_helper.document import DesignDocument
-from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
-                                               doc_generator
-from httplib import IncompleteRead
 import json as Json
 import logging
-from membase.api.exception import N1QLQueryException, DropIndexException, CreateIndexException, \
-    DesignDocCreationException, QueryViewException, ReadDocumentException, RebalanceFailedException, \
-    GetBucketInfoFailed, CompactViewFailed, SetViewInfoNotFound, FailoverFailedException, \
-    ServerUnavailableException, BucketCreationException
-from membase.api.rest_client import RestConnection
-from memcached.helper.data_helper import MemcachedClientHelper
 import random
 import socket
 import string
 import time
+from httplib import IncompleteRead
+
+from BucketLib.BucketOperations import BucketHelper
+from BucketLib.MemcachedOperations import MemcachedHelper
+from Jython_tasks.shutdown import shutdown_and_await_termination
+from couchbase_helper.document import DesignDocument
+from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
+                                               doc_generator
+from membase.api.exception import \
+    N1QLQueryException, DropIndexException, CreateIndexException, \
+    DesignDocCreationException, QueryViewException, ReadDocumentException, \
+    RebalanceFailedException, ServerUnavailableException, \
+    BucketCreationException
+from membase.api.rest_client import RestConnection
+from memcached.helper.data_helper import MemcachedClientHelper
+
 from com.couchbase.client.java import *
 from com.couchbase.client.java.document import *
 from com.couchbase.client.java.document.json import *
@@ -30,7 +33,7 @@ from com.couchbase.client.java.query import *
 from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
-from Jython_tasks import task_manager
+from cbstats_utils.cbstats import Cbstats
 
 log = logging.getLogger(__name__)
 
@@ -48,21 +51,21 @@ class Task(Callable):
             raise self.exception
         elif self.completed:
             log.info("Task %s completed on: %s" % (
-                self.thread_name, str(time.strftime("%H:%M:%S",
-                                                    time.gmtime(self.end_time)))))
+                self.thread_name,
+                str(time.strftime("%H:%M:%S", time.gmtime(self.end_time)))))
             return "%s task completed in %.2fs" % \
                    (self.thread_name, self.completed - self.started,)
         elif self.started:
             return "Thread %s at %s" % \
-                   (self.thread_name, str(time.strftime("%H:%M:%S",
-                                                        time.gmtime(self.start_time))))
+                   (self.thread_name,
+                    str(time.strftime("%H:%M:%S", time.gmtime(self.start_time))))
         else:
             return "[%s] not yet scheduled" % (self.thread_name)
 
     def start_task(self):
         self.started = True
         self.start_time = time.time()
-        log.info("Thread %s is started:"%self.thread_name)
+        log.info("Thread %s is started:" % self.thread_name)
 
     def set_exception(self, exception):
         self.exception = exception
@@ -72,7 +75,7 @@ class Task(Callable):
     def complete_task(self):
         self.completed = True
         self.end_time = time.time()
-        log.info("Thread %s is completed:"%self.thread_name)
+        log.info("Thread %s is completed:" % self.thread_name)
 
     def call(self):
         raise NotImplementedError
@@ -97,7 +100,8 @@ class DocloaderTask(Callable):
                    (self.thread_used, self.num_items, self.exception,
                     self.completed - self.started,)  # , self.result)
         elif self.completed:
-            print "Time: %s" % str(time.strftime("%H:%M:%S", time.gmtime(time.time())))
+            print("Time: %s"
+                  % str(time.strftime("%H:%M:%S", time.gmtime(time.time()))))
             return "[%s] %s items loaded in %.2fs" % \
                    (self.thread_used, self.loaded,
                     self.completed - self.started,)  # , self.result)
@@ -116,7 +120,7 @@ class DocloaderTask(Callable):
             # user = JsonObject.fromJson(str(self.value))
             for i in xrange(self.num_items):
                 doc = JsonDocument.create(self.key + str(i + self.start_from), user)
-                response = self.bucket.upsert(doc);
+                response = self.bucket.upsert(doc)
                 self.loaded += 1
         except Exception, ex:
             self.exception = ex
@@ -127,9 +131,9 @@ class DocloaderTask(Callable):
 class docloadertask_executor():
 
     def load(self, k, v, docs=10000, server="localhost", bucket="default"):
-        cluster = CouchbaseCluster.create(server);
+        cluster = CouchbaseCluster.create(server)
         cluster.authenticate("Administrator", "password")
-        bucket = cluster.openBucket(bucket);
+        bucket = cluster.openBucket(bucket)
 
         pool = Executors.newFixedThreadPool(5)
         docloaders = []
@@ -137,12 +141,12 @@ class docloadertask_executor():
         total_num_executors = 5
         num_docs = docs / total_num_executors
         for i in xrange(total_num_executors):
-            docloaders.append(DocloaderTask(bucket, num_docs, i * num_docs, k, v))
+            docloaders.append(DocloaderTask(bucket, num_docs, i*num_docs, k, v))
         futures = pool.invokeAll(docloaders)
         for future in futures:
-            print future.get(num_executors, TimeUnit.SECONDS)
+            print(future.get(num_executors, TimeUnit.SECONDS))
 
-        print "Executors completed!!"
+        print("Executors completed!!")
         shutdown_and_await_termination(pool, 5)
         if bucket.close() and cluster.disconnect():
             pass
@@ -150,8 +154,9 @@ class docloadertask_executor():
 
 class rebalanceTask(Task):
 
-    def __init__(self, servers, to_add=[], to_remove=[], do_stop=False, progress=30,
-                 use_hostnames=False, services=None, check_vbucket_shuffling=True):
+    def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
+                 progress=30, use_hostnames=False, services=None,
+                 check_vbucket_shuffling=True):
         super(rebalanceTask, self).__init__("Rebalance_task")
         self.servers = servers
         self.to_add = to_add
@@ -177,7 +182,8 @@ class rebalanceTask(Task):
                    (self.thread_name, self.num_items, self.exception,
                     self.completed - self.started,)  # , self.result)
         elif self.completed:
-            print "Time: %s" % str(time.strftime("%H:%M:%S", time.gmtime(time.time())))
+            print("Time: %s" % str(time.strftime("%H:%M:%S",
+                                                 time.gmtime(time.time()))))
             return "[%s] %s items loaded in %.2fs" % \
                    (self.thread_name, self.loaded,
                     self.completed - self.started,)  # , self.result)
@@ -230,15 +236,17 @@ class rebalanceTask(Task):
         node_index = 0
         for node in self.to_add:
             log.info("adding node {0}:{1} to cluster".format(node.ip, node.port))
-            if self.services != None:
+            if self.services is not None:
                 services_for_node = [self.services[node_index]]
                 node_index += 1
             if self.use_hostnames:
                 self.rest.add_node(master.rest_username, master.rest_password,
-                                   node.hostname, node.port, services=services_for_node)
+                                   node.hostname, node.port,
+                                   services=services_for_node)
             else:
                 self.rest.add_node(master.rest_username, master.rest_password,
-                                   node.ip, node.port, services=services_for_node)
+                                   node.ip, node.port,
+                                   services=services_for_node)
 
     def start_rebalance(self):
         nodes = self.rest.node_statuses()
@@ -261,12 +269,14 @@ class rebalanceTask(Task):
                 if cluster_run:
                     if int(server.port) == int(node.port):
                         ejectedNodes.append(node.id)
-                        log.info("removing node {0}:{1} to cluster".format(node.ip, node.port))
+                        log.info("removing node {0}:{1} to cluster"
+                                 .format(node.ip, node.port))
                 else:
                     if self.use_hostnames:
                         if server.hostname == node.ip and int(server.port) == int(node.port):
                             ejectedNodes.append(node.id)
-                            log.info("removing node {0}:{1} to cluster".format(node.ip, node.port))
+                            log.info("removing node {0}:{1} to cluster"
+                                     .format(node.ip, node.port))
                     elif server.ip == node.ip and int(server.port) == int(node.port):
                         ejectedNodes.append(node.id)
                         log.info("removing node {0}:{1} to cluster".format(node.ip, node.port))
@@ -276,7 +286,8 @@ class rebalanceTask(Task):
             log.warn("cluster is mixed. sleep for 15 seconds before rebalance")
             time.sleep(15)
 
-        self.rest.rebalance(otpNodes=[node.id for node in nodes], ejectedNodes=ejectedNodes)
+        self.rest.rebalance(otpNodes=[node.id for node in nodes],
+                            ejectedNodes=ejectedNodes)
         self.start_time = time.time()
 
     def check(self):
@@ -296,7 +307,8 @@ class rebalanceTask(Task):
                                       len(self.old_vbuckets[srv][vb_type]),
                                       len(new_vbuckets[srv][vb_type]))
                             log.error(msg)
-                            log.error("Old vbuckets: %s, new vbuckets %s" % (self.old_vbuckets, new_vbuckets))
+                            log.error("Old vbuckets: %s, new vbuckets %s"
+                                      % (self.old_vbuckets, new_vbuckets))
                             raise Exception(msg)
             (status, progress) = self.rest._rebalance_status_and_progress()
             log.info("Rebalance - status: %s, progress: %s", status, progress)
@@ -320,8 +332,9 @@ class rebalanceTask(Task):
             """ for mix cluster, rebalance takes longer """
             log.info("rebalance in mix cluster")
             retry_get_process_num = 40
-        # we need to wait for status to be 'none' (i.e. rebalance actually finished and
-        # not just 'running' and at 100%) before we declare ourselves done
+        # we need to wait for status to be 'none'
+        # (i.e. rebalance actually finished and not just 'running' and at 100%)
+        # before we declare ourselves done
         if progress != -1 and status != 'none':
             if self.retry_get_progress < retry_get_process_num:
                 time.sleep(3)
@@ -349,22 +362,24 @@ class rebalanceTask(Task):
                             time.sleep(0.1)
                     except (ServerUnavailableException, IncompleteRead), e:
                         log.error(e)
-            result = True
+
             for node in set(self.to_remove) - set(success_cleaned):
-                log.error("node {0}:{1} was not cleaned after removing from cluster" \
+                log.error("node {0}:{1} was not cleaned after removing from cluster"
                           .format(node.ip, node.port))
                 self.result = False
 
-            log.info("rebalancing was completed with progress: {0}% in {1} sec".
-                     format(progress, time.time() - self.start_time))
+            log.info("rebalancing was completed with progress: {0}% in {1} sec"
+                     .format(progress, time.time() - self.start_time))
             self.result = True
             return
 
 
 class GenericLoadingTask(Task):
-    def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1, timeout_secs=60, compression=True,
+    def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1,
+                 timeout_secs=60, compression=True,
                  throughput_concurrency=8, retries=5):
-        super(GenericLoadingTask, self).__init__("Loadgen_task_{}".format(time.time()))
+        super(GenericLoadingTask, self).__init__("Loadgen_task_{}"
+                                                 .format(time.time()))
         self.batch_size = batch_size
         self.pause = pause_secs
         self.timeout = timeout_secs
@@ -499,24 +514,25 @@ class GenericLoadingTask(Task):
         try:
             self._process_values_for_create(key_val)
             client = shared_client or self.client
-            client.setMulti(self.exp, self.flag, key_val, self.pause, timeout, parallel=False,
-                            persist_to=persist_to, replicate_to=replicate_to,
-                            time_unit=time_unit, retry=self.retries, doc_type=doc_type)
-            # log.info("Batch Operation: %s documents are INSERTED into bucket %s"%(len(key_val), self.bucket))
-        except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
-                RuntimeError) as error:
+            client.setMulti(self.exp, self.flag, key_val, self.pause, timeout,
+                            parallel=False, persist_to=persist_to,
+                            replicate_to=replicate_to, time_unit=time_unit,
+                            retry=self.retries, doc_type=doc_type)
+        except (self.client.MemcachedError, ServerUnavailableException,
+                socket.error, EOFError, AttributeError, RuntimeError) as error:
             self.set_exception(error)
 
     def batch_update(self, key_val, persist_to=0, replicate_to=0, timeout=5,
                      time_unit="seconds", doc_type="json"):
         try:
             self._process_values_for_update(key_val)
-            self.client.upsertMulti(self.exp, self.flag, key_val, self.pause, timeout, parallel=False,
-                                    persist_to=persist_to, replicate_to=replicate_to,
-                                    time_unit=time_unit, retry=self.retries, doc_type=doc_type)
-            #log.info("Batch Operation: %s documents are UPSERTED into bucket %s" % (len(key_val), self.bucket))
-        except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
-                RuntimeError) as error:
+            self.client.upsertMulti(
+                self.exp, self.flag, key_val, self.pause, timeout,
+                parallel=False, persist_to=persist_to,
+                replicate_to=replicate_to, time_unit=time_unit,
+                retry=self.retries, doc_type=doc_type)
+        except (self.client.MemcachedError, ServerUnavailableException,
+                socket.error, EOFError, AttributeError, RuntimeError) as error:
             self.set_exception(error)
 
     def batch_delete(self, key_val, persist_to=None, replicate_to=None,
@@ -529,13 +545,14 @@ class GenericLoadingTask(Task):
             except self.client.MemcachedError as error:
                 self.set_exception(error)
                 return
-            except (ServerUnavailableException, socket.error, EOFError, AttributeError) as error:
+            except (ServerUnavailableException, socket.error, EOFError,
+                    AttributeError) as error:
                 self.set_exception(error)
 
     def batch_read(self, key_val):
         try:
-            result_map = self.client.getMulti(key_val.keys(), self.pause, self.timeout)
-            # log.info("Batch Operation: %s documents are READ from bucket %s"%(len(key_val), self.bucket))
+            result_map = self.client.getMulti(key_val.keys(), self.pause,
+                                              self.timeout)
             return result_map
         except self.client.MemcachedError as error:
             self.set_exception(error)
@@ -553,7 +570,7 @@ class GenericLoadingTask(Task):
             except TypeError:
                 value = Json.dumps(value)
             except Exception, e:
-                print e
+                print(e)
             finally:
                 key_val[key] = value
 
@@ -561,7 +578,8 @@ class GenericLoadingTask(Task):
         self._process_values_for_create(key_val)
         for key, value in key_val.items():
             try:
-                value = key_val[key]  # new updated value, however it is not their in orginal code "LoadDocumentsTask"
+                # new updated value, however it is not their in orginal "LoadDocumentsTask"
+                value = key_val[key]
                 value_json = Json.loads(value)
                 value_json['mutated'] += 1
                 value = Json.dumps(value_json)
@@ -579,10 +597,11 @@ class LoadDocumentsTask(GenericLoadingTask):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, throughput_concurrency=4, retries=5):
-        super(LoadDocumentsTask, self).__init__(cluster, bucket, client, batch_size=batch_size,
-                                                pause_secs=pause_secs,
-                                                timeout_secs=timeout_secs, compression=compression,
-                                                throughput_concurrency=throughput_concurrency, retries=retries)
+        super(LoadDocumentsTask, self).__init__(
+            cluster, bucket, client, batch_size=batch_size,
+            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            compression=compression,
+            throughput_concurrency=throughput_concurrency, retries=retries)
 
         self.generator = generator
         self.op_type = op_type
@@ -593,8 +612,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.time_unit = time_unit
 
         if proxy_client:
-            log.info("Changing client to proxy %s:%s..." % (proxy_client.host,
-                                                            proxy_client.port))
+            log.info("Changing client to proxy %s:%s..."
+                     % (proxy_client.host, proxy_client.port))
             self.client = proxy_client
 
     def has_next(self):
@@ -604,11 +623,15 @@ class LoadDocumentsTask(GenericLoadingTask):
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch()
         if self.op_type == 'create':
-            self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                              timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+            self.batch_create(key_value, persist_to=self.persist_to,
+                              replicate_to=self.replicate_to,
+                              timeout=self.timeout, time_unit=self.time_unit,
+                              doc_type=self.generator.doc_type)
         elif self.op_type == 'update':
-            self.batch_update(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                              timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+            self.batch_update(key_value, persist_to=self.persist_to,
+                              replicate_to=self.replicate_to,
+                              timeout=self.timeout, time_unit=self.time_unit,
+                              doc_type=self.generator.doc_type)
         elif self.op_type == 'delete':
             self.batch_delete(key_value)
         elif self.op_type == 'read':
@@ -616,15 +639,12 @@ class LoadDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 
-        # print "batchsize = {}".format(self.batch_size)
+        # print("batchsize = {}".format(self.batch_size))
         # if self.batch_size == 1:
-        #     print self.generator
         #     key, value = self.generator.next()
-        #     print key
-        #     print value
+        #     print(key, value)
         #     if self.op_type == 'create':
         #         is_base64_value = (self.generator.__class__.__name__ == 'Base64Generator')
-        #         print 'came here'
         #         self._unlocked_create(key, value, is_base64_value=is_base64_value)
         #     elif self.op_type == 'read':
         #         self._unlocked_read(key)
@@ -652,6 +672,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         #     else:
         #         self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 
+
 class Durability(Task):
     instances = 1
     num_items = 10000
@@ -664,21 +685,23 @@ class Durability(Task):
     tasks = []
     task_manager = []
     write_offset = []
-    def __init__(self, cluster, task_manager, bucket, client, generator, op_type, exp, flag=0,
-                 persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
+
+    def __init__(self, cluster, task_manager, bucket, client, generator,
+                 op_type, exp, flag=0, persist_to=0, replicate_to=0,
+                 time_unit="seconds", only_store_hash=True, batch_size=1,
+                 pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=4, print_ops_rate=True, retries=5):
         super(Durability, self).__init__("DocumentsLoadGenTask")
-        
+
         Durability.num_items = generator.end - generator.start
         Durability.start_from = generator.start
         Durability.op_type = op_type
         Durability.persist_to = persist_to
         Durability.replicate_to = replicate_to
-        
-        for i in range(process_concurrency):
+
+        for _ in range(process_concurrency):
             Durability.write_offset.append(0)
-            
+
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -706,14 +729,14 @@ class Durability(Task):
             self.buckets = bucket
         else:
             self.bucket = bucket
-    
-    def call(self): 
-        for num in range(Durability.instances):
+
+    def call(self):
+        for _ in range(Durability.instances):
             generators = []
             Durability.tasks = []
             gen_start = int(self.generator.start)
             gen_end = max(int(self.generator.end), 1)
-            gen_range = max(int((self.generator.end - self.generator.start)/ self.process_concurrency), 1)
+            gen_range = max(int((self.generator.end-self.generator.start) / self.process_concurrency), 1)
             for pos in range(gen_start, gen_end, gen_range):
                 partition_gen = copy.deepcopy(self.generator)
                 partition_gen.start = pos
@@ -727,14 +750,17 @@ class Durability(Task):
                 generators.append(batch_gen)
             i = 0
             for generator in generators:
-                task = self.Loader(self.cluster, self.bucket, self.client, generator, self.op_type,
-                                         self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
-                                         time_unit=self.time_unit, batch_size=self.batch_size,
-                                         pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                         compression=self.compression, throughput_concurrency=self.process_concurrency,
-                                         instance_num = i)
+                task = self.Loader(
+                    self.cluster, self.bucket, self.client, generator,
+                    self.op_type, self.exp, self.flag,
+                    persist_to=self.persit_to, replicate_to=self.replicate_to,
+                    time_unit=self.time_unit, batch_size=self.batch_size,
+                    pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                    compression=self.compression,
+                    throughput_concurrency=self.process_concurrency,
+                    instance_num=i)
                 Durability.tasks.append(task)
-                i+=1
+                i += 1
         try:
             for task in Durability.tasks:
                 Durability.task_manager.add_new_task(task)
@@ -744,7 +770,7 @@ class Durability(Task):
             self.set_exception(e)
         finally:
             self.client.close()
-            
+
     class Loader(GenericLoadingTask):
         '''
         1. Start inserting data into buckets
@@ -752,14 +778,16 @@ class Durability(Task):
         3. Start the reader thread
         4. Keep track of non durable documents
         '''
-        def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
-                     persist_to=0, replicate_to=0, time_unit="seconds",
+        def __init__(self, cluster, bucket, client, generator, op_type, exp,
+                     flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
-                     compression=True, throughput_concurrency=4, retries=5, instance_num=0):
-            super(Durability.Loader, self).__init__(cluster, bucket, client, batch_size=batch_size,
-                                                    pause_secs=pause_secs,
-                                                    timeout_secs=timeout_secs, compression=compression,
-                                                    throughput_concurrency=throughput_concurrency, retries=retries)
+                     compression=True, throughput_concurrency=4, retries=5,
+                     instance_num=0):
+            super(Durability.Loader, self).__init__(
+                cluster, bucket, client, batch_size=batch_size,
+                pause_secs=pause_secs, timeout_secs=timeout_secs,
+                compression=compression,
+                throughput_concurrency=throughput_concurrency, retries=retries)
 
             self.generator = generator
             self.op_type = op_type
@@ -772,10 +800,12 @@ class Durability(Task):
             Durability.write_offset[self.instance] = generator._doc_gen.start
             print("Docs start loading from", generator._doc_gen.start)
             print("Instance num", self.instance)
-            
+
         def call(self):
             self.start_task()
-            task = self.Reader(generator=self.generator, write_offset=Durability.write_offset[self.instance], instance=self.instance)
+            task = self.Reader(generator=self.generator,
+                               write_offset=Durability.write_offset[self.instance],
+                               instance=self.instance)
             Durability.task_manager.add_new_task(task)
             log.info("Starting load generation thread")
             try:
@@ -786,30 +816,36 @@ class Durability(Task):
             log.info("Load generation thread completed")
             Durability.task_manager.get_task_result(task)
             self.complete_task()
-        
+
         def has_next(self):
             return self.generator.has_next()
-    
+
         def next(self, override_generator=None):
             doc_gen = override_generator or self.generator
             key_value = doc_gen.next_batch()
             if self.op_type == 'create':
-#                 print("creates")
-                self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                  timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+                self.batch_create(
+                    key_value, persist_to=self.persist_to,
+                    replicate_to=self.replicate_to, timeout=self.timeout,
+                    time_unit=self.time_unit,
+                    doc_type=self.generator.doc_type)
             elif self.op_type == 'update':
-                self.batch_update(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                  timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+                self.batch_update(
+                    key_value, persist_to=self.persist_to,
+                    replicate_to=self.replicate_to, timeout=self.timeout,
+                    time_unit=self.time_unit,
+                    doc_type=self.generator.doc_type)
             elif self.op_type == 'delete':
                 self.batch_delete(key_value)
             elif self.op_type == 'read':
                 self.batch_read(key_value)
             else:
-                self.set_exception(Exception("Bad operation type: %s" % self.op_type))
-                
+                self.set_exception(Exception("Bad operation type: %s"
+                                             % self.op_type))
+
             Durability.write_offset[self.instance] += len(key_value)
-#             print("Loader: WriteOffset" , Durability.write_offset[self.instance])
-            
+            # print("Loader: WriteOffset" , Durability.write_offset[self.instance])
+
         class Reader(Task):
             def __init__(self, generator, write_offset, instance):
                 self.thread_name = "DocumentReaderTask"
@@ -818,12 +854,14 @@ class Durability(Task):
                 self.write_offset = write_offset
                 self.read_offset = generator._doc_gen.start
                 self.instance = instance
-                
+
             def call(self):
                 self.start_task()
                 while True:
-                    if self.read_offset <= Durability.write_offset[self.instance]: 
-                        print("Reader: ReadOffset=" , self.read_offset, "WriteOffset=", Durability.write_offset[self.instance], "Reader: FinalOffset=" , self.end)
+                    if self.read_offset <= Durability.write_offset[self.instance]:
+                        print("Reader: ReadOffset=", self.read_offset,
+                              "WriteOffset=", Durability.write_offset[self.instance],
+                              "Reader: FinalOffset=" , self.end)
                         if self.read_offset == self.end:
                             break
                         self.read_offset += 1
@@ -836,8 +874,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  time_unit="seconds", only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5):
-        super(LoadDocumentsGeneratorsTask, self).__init__("DocumentsLoadGenTask_{}"
-                                                          .format(time.time()))
+        super(LoadDocumentsGeneratorsTask, self).__init__(
+            "DocumentsLoadGenTask_{}".format(time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -903,7 +941,8 @@ class LoadDocumentsGeneratorsTask(Task):
             for task in tasks:
                 self.task_manager.get_task_result(task)
                 log.info("Loaded docs from {} to {}"
-                         .format(task.generator._doc_gen.start, task.generator._doc_gen.end))
+                         .format(task.generator._doc_gen.start,
+                                 task.generator._doc_gen.end))
         except Exception as e:
             log.info(e)
             self.set_exception(e)
@@ -933,11 +972,13 @@ class LoadDocumentsGeneratorsTask(Task):
                 self.batch_size)
             generators.append(batch_gen)
         for generator in generators:
-            task = LoadDocumentsTask(self.cluster, self.bucket, self.client, generator, self.op_type,
-                                     self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
-                                     time_unit=self.time_unit, batch_size=self.batch_size,
-                                     pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                     compression=self.compression, throughput_concurrency=self.process_concurrency)
+            task = LoadDocumentsTask(
+                self.cluster, self.bucket, self.client, generator,
+                self.op_type, self.exp, self.flag, persist_to=self.persit_to,
+                replicate_to=self.replicate_to, time_unit=self.time_unit,
+                batch_size=self.batch_size, pause_secs=self.pause_secs,
+                timeout_secs=self.timeout_secs, compression=self.compression,
+                throughput_concurrency=self.process_concurrency)
             tasks.append(task)
         return tasks
 
@@ -949,7 +990,8 @@ class LoadDocumentsForDgmTask(Task):
                  pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5,
                  active_resident_threshold=99):
-        super(LoadDocumentsForDgmTask, self).__init__("DocumentsLoadGenTask_{}".format(time.time()))
+        super(LoadDocumentsForDgmTask, self).__init__("DocumentsLoadGenTask_{}"
+                                                      .format(time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -1047,24 +1089,26 @@ class LoadDocumentsForDgmTask(Task):
                 self.batch_size)
             generators.append(batch_gen)
         for generator in generators:
-            task = LoadDocumentsTask(self.cluster, self.bucket, self.client, generator, self.op_type,
-                                     self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
-                                     time_unit=self.time_unit, batch_size=self.batch_size,
-                                     pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                     compression=self.compression, throughput_concurrency=self.process_concurrency)
+            task = LoadDocumentsTask(
+                self.cluster, self.bucket, self.client, generator,
+                self.op_type, self.exp, self.flag, persist_to=self.persit_to,
+                replicate_to=self.replicate_to, time_unit=self.time_unit,
+                batch_size=self.batch_size, pause_secs=self.pause_secs,
+                timeout_secs=self.timeout_secs, compression=self.compression,
+                throughput_concurrency=self.process_concurrency)
             tasks.append(task)
         return tasks
 
 
 class ValidateDocumentsTask(GenericLoadingTask):
-
-    def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
-                 proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=30,
-                 compression=True, throughput_concurrency=4):
-        super(ValidateDocumentsTask, self).__init__(cluster, bucket, client, batch_size=batch_size,
-                                                    pause_secs=pause_secs,
-                                                    timeout_secs=timeout_secs, compression=compression,
-                                                    throughput_concurrency=throughput_concurrency)
+    def __init__(self, cluster, bucket, client, generator, op_type, exp,
+                 flag=0, proxy_client=None, batch_size=1, pause_secs=1,
+                 timeout_secs=30, compression=True, throughput_concurrency=4):
+        super(ValidateDocumentsTask, self).__init__(
+            cluster, bucket, client, batch_size=batch_size,
+            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            compression=compression,
+            throughput_concurrency=throughput_concurrency)
 
         self.generator = generator
         self.op_type = op_type
@@ -1072,8 +1116,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
         self.flag = flag
 
         if proxy_client:
-            log.info("Changing client to proxy %s:%s..." % (proxy_client.host,
-                                                            proxy_client.port))
+            log.info("Changing client to proxy %s:%s..."
+                     % (proxy_client.host, proxy_client.port))
             self.client = proxy_client
 
     def has_next(self):
@@ -1090,7 +1134,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
         elif self.op_type == 'delete':
             pass
         else:
-            self.set_exception(Exception("Bad operation type: %s" % self.op_type))
+            self.set_exception(Exception("Bad operation type: %s"
+                                         % self.op_type))
         result_map = self.batch_read(key_value)
         missing_keys, wrong_values = self.validate_key_val(result_map, key_value)
         if self.op_type == 'delete':
@@ -1101,14 +1146,17 @@ class ValidateDocumentsTask(GenericLoadingTask):
                         not_missing.append(key)
                 if not_missing:
                     self.set_exception(Exception("Keys were not deleted. "
-                                                 "Keys not deleted: {}".format(','.join(not_missing))))
+                                                 "Keys not deleted: {}"
+                                                 .format(','.join(not_missing))))
         else:
             if missing_keys:
                 self.set_exception("Keys were missing. "
-                                   "Keys missing: {}".format(','.join(missing_keys)))
+                                   "Keys missing: {}"
+                                   .format(','.join(missing_keys)))
             if wrong_values:
                 self.set_exception("Wrong key value. "
-                                   "Wrong key value: {}".format(','.join(wrong_values)))
+                                   "Wrong key value: {}"
+                                   .format(','.join(wrong_values)))
 
     def validate_key_val(self, map, key_value):
         missing_keys = []
@@ -1120,7 +1168,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 if expected_val == actual_val:
                     continue
                 else:
-                    wrong_value = "Key: {} Expected: {} Actual: {}".format(key, expected_val, actual_val)
+                    wrong_value = "Key: {} Expected: {} Actual: {}" \
+                                  .format(key, expected_val, actual_val)
                     wrong_values.append(wrong_value)
             else:
                 missing_keys.append(key)
@@ -1128,10 +1177,12 @@ class ValidateDocumentsTask(GenericLoadingTask):
 
 
 class DocumentsValidatorTask(Task):
-    def __init__(self, cluster, task_manager, bucket, client, generators, op_type, exp, flag=0,
-                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=60, compression=True,
+    def __init__(self, cluster, task_manager, bucket, client, generators,
+                 op_type, exp, flag=0, only_store_hash=True, batch_size=1,
+                 pause_secs=1, timeout_secs=60, compression=True,
                  process_concurrency=4):
-        super(DocumentsValidatorTask, self).__init__("ValidateDocumentsTask_{}".format(time.time()))
+        super(DocumentsValidatorTask, self).__init__("ValidateDocumentsTask_{}"
+                                                     .format(time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -1186,7 +1237,7 @@ class DocumentsValidatorTask(Task):
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-        gen_range = max(int((generator.end - generator.start) / self.process_concurrency), 1)
+        gen_range = max(int((generator.end-generator.start) / self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
             partition_gen.start = pos
@@ -1199,10 +1250,12 @@ class DocumentsValidatorTask(Task):
                 self.batch_size)
             generators.append(batch_gen)
         for generator in generators:
-            task = ValidateDocumentsTask(self.cluster, self.bucket, self.client, generator, self.op_type,
-                                         self.exp, self.flag, batch_size=self.batch_size,
-                                         pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                         compression=self.compression, throughput_concurrency=self.process_concurrency)
+            task = ValidateDocumentsTask(
+                self.cluster, self.bucket, self.client, generator,
+                self.op_type, self.exp, self.flag, batch_size=self.batch_size,
+                pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                compression=self.compression,
+                throughput_concurrency=self.process_concurrency)
             tasks.append(task)
         return tasks
 
@@ -1215,9 +1268,10 @@ class StatsWaitTask(Task):
     GREATER_THAN = '>'
     GREATER_THAN_EQ = '>='
 
-    def __init__(self, cluster, bucket, param, stat, comparison, value, timeout=300):
+    def __init__(self, shell_conn, bucket, param, stat, comparison, value,
+                 timeout=300):
         super(StatsWaitTask, self).__init__("StatsWaitTask")
-        self.cluster = cluster
+        self.shellConn = shell_conn
         self.bucket = bucket
         self.param = param
         self.stat = stat
@@ -1226,87 +1280,55 @@ class StatsWaitTask(Task):
         self.conns = {}
         self.stop = False
         self.timeout = timeout
+        self.cbstatObj = None
 
     def call(self):
         self.start_task()
-        stat_result = 0
         # import pydevd
         # pydevd.settrace(trace_only_current_thread=False)
         start_time = time.time()
         timeout = start_time + self.timeout
+        self.cbstatObj = Cbstats(self.shellConn)
         try:
             while not self.stop and time.time() < timeout:
-                print self.stop
+                print(self.stop)
                 self._get_stats_and_compare()
         finally:
-            for server, conn in self.conns.items():
+            for _, conn in self.conns.items():
                 conn.close()
         if time.time() > timeout:
-            self.set_exception("Could not verify stat {} within timeout {}".format(self.stat, self.timeout))
+            self.set_exception("Could not verify stat {} within timeout {}"
+                               .format(self.stat, self.timeout))
+
+        # Closes the shell_connection before ending the task
+        self.shellConn.disconnect()
         self.complete_task()
 
     def _get_stats_and_compare(self):
         stat_result = 0
-        for server in self.cluster.nodes_in_cluster:
-            try:
-                client = self._get_connection_single(server)
-                stats = client.stats(self.param)
-                client.close()
-                if not stats.has_key(self.stat):
-                    self.set_exception(Exception("Stat {0} not found".format(self.stat)))
-                    self.stop = True
-                    return False
-                if stats[self.stat].isdigit():
-                    stat_result += long(stats[self.stat])
-                else:
-                    stat_result = stats[self.stat]
-            except EOFError as ex:
-                self.set_exception(ex)
-                self.stop = True
-                return False
+        try:
+            stat_result = self.cbstatObj.get_stat(self.bucket.name,
+                                                  "all", self.stat)
+        except Exception as error:
+            self.set_exception(error)
+            self.stop = True
+            return False
         if not self._compare(self.comparison, str(stat_result), self.value):
-            log.warn("Not Ready: %s %s %s %s expected on %s, %s bucket" % (self.stat, stat_result,
-                                                                           self.comparison, self.value,
-                                                                           self._stringify_servers(), self.bucket.name))
+            log.warn("Not Ready: %s %s %s %s expected on %s, %s bucket"
+                     % (self.stat, stat_result, self.comparison, self.value,
+                        self.shellConn.ip, self.bucket.name))
             time.sleep(5)
             return False
         else:
             self.stop = True
             return True
 
-    def _stringify_servers(self):
-        return ''.join([`server.ip + ":" + str(server.port)` for server in self.cluster.nodes_in_cluster])
-    
-    def _get_connection_single(self, server, admin_user='cbadminbucket', admin_pass='password'):
-        try:
-            conn = MemcachedClientHelper.direct_client(server, self.bucket, admin_user=admin_user,
-                                                                             admin_pass=admin_pass)
-            return conn
-        except (EOFError, socket.error):
-            log.error("failed to create direct client, retry in 1 sec")
-            time.sleep(1)
-
-    def _get_connection(self, server, admin_user='cbadminbucket', admin_pass='password'):
-        if not self.conns.has_key(server):
-            for i in xrange(3):
-                try:
-                    self.conns[server] = MemcachedClientHelper.direct_client(server, self.bucket, admin_user=admin_user,
-                                                                             admin_pass=admin_pass)
-                    return self.conns[server]
-                except (EOFError, socket.error):
-                    log.error("failed to create direct client, retry in 1 sec")
-                    time.sleep(1)
-            self.conns[server] = MemcachedClientHelper.direct_client(server, self.bucket, admin_user=admin_user,
-                                                                     admin_pass=admin_pass)
-        return self.conns[server]
-
     def _compare(self, cmp_type, a, b):
         if isinstance(b, (int, long)) and a.isdigit():
             a = long(a)
         elif isinstance(b, (int, long)) and not a.isdigit():
             return False
-        print("Into compare with Command type %s  -- A - %s -- b - %s"
-              % (cmp_type, a, b))
+        print("Comparing %s %s %s" % (a, cmp_type, b))
         if (cmp_type == StatsWaitTask.EQUAL and a == b) or \
                 (cmp_type == StatsWaitTask.NOT_EQUAL and a != b) or \
                 (cmp_type == StatsWaitTask.LESS_THAN_EQ and a <= b) or \
@@ -1314,8 +1336,6 @@ class StatsWaitTask(Task):
                 (cmp_type == StatsWaitTask.LESS_THAN and a < b) or \
                 (cmp_type == StatsWaitTask.GREATER_THAN and a > b):
             return True
-        else:
-            print "mismatch"
         return False
 
 
@@ -1345,7 +1365,8 @@ class ViewCreateTask(Task):
             # appending view to existing design doc
             content, meta = self.rest.get_ddoc(self.bucket,
                                                self.design_doc_name)
-            ddoc = DesignDocument._init_from_json(self.design_doc_name, content)
+            ddoc = DesignDocument._init_from_json(self.design_doc_name,
+                                                  content)
             # if view is to be updated
             if self.view:
                 if self.view.is_spatial:
@@ -1394,17 +1415,16 @@ class ViewCreateTask(Task):
                 if self.with_query:
                     query = {"stale": "ok"}
                     if self.view.is_spatial:
-                        content = self.rest.query_view(self.design_doc_name,
-                                                       self.view.name,
-                                                       self.bucket, query,
-                                                       type="spatial")
+                        content = self.rest.query_view(
+                            self.design_doc_name, self.view.name,
+                            self.bucket, query, type="spatial")
                     else:
-                        content = self.rest.query_view(self.design_doc_name,
-                                                       self.view.name,
-                                                       self.bucket, query)
+                        content = self.rest.query_view(
+                            self.design_doc_name, self.view.name,
+                            self.bucket, query)
                 else:
-                    _, json_parsed, _ = self.rest._get_design_doc(self.bucket,
-                                                                  self.design_doc_name)
+                    _, json_parsed, _ = self.rest._get_design_doc(
+                        self.bucket, self.design_doc_name)
                     if self.view.is_spatial:
                         if self.view.name not in json_parsed["spatial"].keys():
                             self.set_exception(
@@ -1414,20 +1434,20 @@ class ViewCreateTask(Task):
                             return 0
                     else:
                         if self.view.name not in json_parsed["views"].keys():
-                            self.set_exception(Exception("design doc {0} doesn't contain view {1}".format(
-                                self.design_doc_name, self.view.name)))
+                            self.set_exception(Exception("design doc {0} doesn't contain view {1}"
+                                                         .format(self.design_doc_name, self.view.name)))
                             return 0
                 log.info("view : {0} was created successfully in ddoc: {1}"
                          .format(self.view.name, self.design_doc_name))
             else:
-                # if we have reached here, it means design doc was successfully updated
+                # If we are here, it means design doc was successfully updated
                 log.info("Design Document : {0} was updated successfully"
                          .format(self.design_doc_name))
 
             if self._check_ddoc_revision():
                 return self.ddoc_rev_no
             else:
-                self.set_exception(Exception("failed to update design document"))
+                self.set_exception(Exception("failed to update design doc"))
             if self.check_replication:
                 self._check_ddoc_replication_on_nodes()
 
@@ -1487,8 +1507,8 @@ class ViewCreateTask(Task):
                     if new_rev_id == self.ddoc_rev_no:
                         break
                     else:
-                        log.info("Design Doc {0} version is not updated on node {1}:{2}. Retrying.".format(
-                            self.design_doc_name, node.ip, node.port))
+                        log.info("Design Doc {0} version is not updated on node {1}:{2}. Retrying."
+                                 .format(self.design_doc_name, node.ip, node.port))
                         time.sleep(2)
                 except ReadDocumentException as e:
                     if (count < retry_count):
@@ -1531,8 +1551,10 @@ class ViewDeleteTask(Task):
             rest = RestConnection(self.server)
             if self.view:
                 # remove view from existing design doc
-                content, header = rest.get_ddoc(self.bucket, self.design_doc_name)
-                ddoc = DesignDocument._init_from_json(self.design_doc_name, content)
+                content, header = rest.get_ddoc(self.bucket,
+                                                self.design_doc_name)
+                ddoc = DesignDocument._init_from_json(self.design_doc_name,
+                                                      content)
                 if self.view.is_spatial:
                     status = ddoc.delete_spatial(self.view)
                 else:
@@ -1636,18 +1658,20 @@ class ViewQueryTask(Task):
             rest = RestConnection(self.server)
             # query and verify expected num of rows returned
             content = \
-                rest.query_view(self.design_doc_name, self.view_name, self.bucket, self.query, self.timeout)
+                rest.query_view(self.design_doc_name, self.view_name,
+                                self.bucket, self.query, self.timeout)
 
             log.info("Server: %s, Design Doc: %s, View: %s, (%d rows) expected, (%d rows) returned"
                      % (self.server.ip, self.design_doc_name, self.view_name,
                         self.expected_rows, len(content['rows'])))
 
-            raised_error = content.get(u'error', '') or ''.join([str(item) for item in content.get(u'errors', [])])
+            raised_error = content.get(u'error', '') or \
+                ''.join([str(item) for item in content.get(u'errors', [])])
             if raised_error:
                 raise QueryViewException(self.view_name, raised_error)
 
             if len(content['rows']) == self.expected_rows:
-                log.info("expected number of rows: '{0}' was found for view query"
+                log.info("expected rows: '{0}' was found for view query"
                          .format(self.expected_rows))
                 return True
             else:
@@ -1677,16 +1701,10 @@ class ViewQueryTask(Task):
 
 
 class N1QLQueryTask(Task):
-    def __init__(self,
-                 server, bucket,
-                 query, n1ql_helper=None,
-                 expected_result=None,
-                 verify_results=True,
-                 is_explain_query=False,
-                 index_name=None,
-                 retry_time=2,
-                 scan_consistency=None,
-                 scan_vector=None):
+    def __init__(self, server, bucket, query, n1ql_helper=None,
+                 expected_result=None, verify_results=True,
+                 is_explain_query=False, index_name=None, retry_time=2,
+                 scan_consistency=None, scan_vector=None):
         super(N1QLQueryTask, self).__init__("query_n1ql_task")
         self.server = server
         self.bucket = bucket
@@ -1706,18 +1724,23 @@ class N1QLQueryTask(Task):
         self.start_task()
         try:
             # Query and get results
-            log.info(" <<<<< START Executing Query {0} >>>>>>".format(self.query))
+            log.info(" <<<<< START Executing Query {0} >>>>>>"
+                     .format(self.query))
             if not self.is_explain_query:
                 self.msg, self.isSuccess = self.n1ql_helper.run_query_and_verify_result(
-                    query=self.query, server=self.server, expected_result=self.expected_result,
-                    scan_consistency=self.scan_consistency, scan_vector=self.scan_vector,
+                    query=self.query, server=self.server,
+                    expected_result=self.expected_result,
+                    scan_consistency=self.scan_consistency,
+                    scan_vector=self.scan_vector,
                     verify_results=self.verify_results)
             else:
-                self.actual_result = self.n1ql_helper.run_cbq_query(query=self.query, server=self.server,
-                                                                    scan_consistency=self.scan_consistency,
-                                                                    scan_vector=self.scan_vector)
+                self.actual_result = self.n1ql_helper.run_cbq_query(
+                    query=self.query, server=self.server,
+                    scan_consistency=self.scan_consistency,
+                    scan_vector=self.scan_vector)
                 log.info(self.actual_result)
-            log.info(" <<<<< Done Executing Query {0} >>>>>>".format(self.query))
+            log.info(" <<<<< Done Executing Query {0} >>>>>>"
+                     .format(self.query))
             return_value = self.check()
             self.complete_task()
             return return_value
@@ -1745,13 +1768,15 @@ class N1QLQueryTask(Task):
                 else:
                     check = self.n1ql_helper.verify_index_with_explain(self.actual_result, self.index_name)
                     if not check:
-                        actual_result = self.n1ql_helper.run_cbq_query(query="select * from system:indexes",
-                                                                       server=self.server)
+                        actual_result = self.n1ql_helper.run_cbq_query(
+                            query="select * from system:indexes",
+                            server=self.server)
                         log.info(actual_result)
                         raise Exception(
-                            " INDEX usage in Query {0} :: NOT FOUND {1} :: as observed in result {2}".format(
-                                self.query, self.index_name, self.actual_result))
-            log.info(" <<<<< Done VERIFYING Query {0} >>>>>>".format(self.query))
+                            " INDEX usage in Query {0} :: NOT FOUND {1} :: as observed in result {2}"
+                            .format(self.query, self.index_name, self.actual_result))
+            log.info(" <<<<< Done VERIFYING Query {0} >>>>>>"
+                     .format(self.query))
             return True
         except N1QLQueryException as e:
             # subsequent query failed! exit
@@ -1762,11 +1787,8 @@ class N1QLQueryTask(Task):
 
 
 class CreateIndexTask(Task):
-    def __init__(self,
-                 server, bucket, index_name,
-                 query, n1ql_helper=None,
-                 retry_time=2, defer_build=False,
-                 timeout=240):
+    def __init__(self, server, bucket, index_name, query, n1ql_helper=None,
+                 retry_time=2, defer_build=False, timeout=240):
         super(CreateIndexTask, self).__init__("create_index_task")
         Task.__init__(self, "create_index_task")
         self.server = server
@@ -1803,8 +1825,9 @@ class CreateIndexTask(Task):
             # Verify correctness of result set
             check = True
             if not self.defer_build:
-                check = self.n1ql_helper.is_index_online_and_in_list(self.bucket, self.index_name, server=self.server,
-                                                                     timeout=self.timeout)
+                check = self.n1ql_helper.is_index_online_and_in_list(
+                    self.bucket, self.index_name, server=self.server,
+                    timeout=self.timeout)
             if not check:
                 raise CreateIndexException("Index {0} not created as expected"
                                            .format(self.index_name))
@@ -1820,9 +1843,7 @@ class CreateIndexTask(Task):
 
 
 class BuildIndexTask(Task):
-    def __init__(self,
-                 server, bucket,
-                 query, n1ql_helper=None,
+    def __init__(self, server, bucket, query, n1ql_helper=None,
                  retry_time=2):
         super(BuildIndexTask, self).__init__("build_index_task")
         self.server = server
@@ -1864,11 +1885,8 @@ class BuildIndexTask(Task):
 
 
 class MonitorIndexTask(Task):
-    def __init__(self,
-                 server, bucket, index_name,
-                 n1ql_helper=None,
-                 retry_time=2,
-                 timeout=240):
+    def __init__(self, server, bucket, index_name, n1ql_helper=None,
+                 retry_time=2, timeout=240):
         super(MonitorIndexTask, self).__init__("build_index_task")
         self.server = server
         self.bucket = bucket
@@ -1880,10 +1898,9 @@ class MonitorIndexTask(Task):
     def call(self):
         self.start_task()
         try:
-            check = self.n1ql_helper.is_index_online_and_in_list(self.bucket,
-                                                                 self.index_name,
-                                                                 server=self.server,
-                                                                 timeout=self.timeout)
+            check = self.n1ql_helper.is_index_online_and_in_list(
+                self.bucket, self.index_name, server=self.server,
+                timeout=self.timeout)
             if not check:
                 raise CreateIndexException("Index {0} not created as expected"
                                            .format(self.index_name))
@@ -1910,9 +1927,7 @@ class MonitorIndexTask(Task):
 
 
 class DropIndexTask(Task):
-    def __init__(self,
-                 server, bucket, index_name,
-                 query, n1ql_helper=None,
+    def __init__(self, server, bucket, index_name, query, n1ql_helper=None,
                  retry_time=2):
         super(DropIndexTask, self).__init__("drop_index_task")
         self.server = server
@@ -1928,9 +1943,8 @@ class DropIndexTask(Task):
         self.start_task()
         try:
             # Query and get results
-            check = self.n1ql_helper._is_index_in_list(self.bucket,
-                                                       self.index_name,
-                                                       server=self.server)
+            check = self.n1ql_helper._is_index_in_list(
+                self.bucket, self.index_name, server=self.server)
             if not check:
                 raise DropIndexException("index {0} does not exist will not drop"
                                          .format(self.index_name))
@@ -1949,9 +1963,8 @@ class DropIndexTask(Task):
     def check(self):
         try:
             # Verify correctness of result set
-            check = self.n1ql_helper._is_index_in_list(self.bucket,
-                                                       self.index_name,
-                                                       server=self.server)
+            check = self.n1ql_helper._is_index_in_list(
+                self.bucket, self.index_name, server=self.server)
             if check:
                 raise Exception("Index {0} not dropped as expected"
                                 .format(self.index_name))
@@ -1993,7 +2006,8 @@ class PrintClusterStats(Task):
 
 class PrintOpsRate(Task):
     def __init__(self, cluster, bucket, sleep=1):
-        super(PrintOpsRate, self).__init__("print_ops_rate{}".format(bucket.name))
+        super(PrintOpsRate, self).__init__("print_ops_rate{}"
+                                           .format(bucket.name))
         self.cluster = cluster
         self.bucket = bucket
         self.bucket_helper = BucketHelper(self.cluster.master)
@@ -2004,9 +2018,12 @@ class PrintOpsRate(Task):
         self.start_task()
         while not self.stop_task:
             bucket_stats = self.bucket_helper.fetch_bucket_stats(self.bucket)
-            if 'op' in bucket_stats and 'samples' in bucket_stats['op'] and 'ops' in bucket_stats['op']['samples']:
+            if 'op' in bucket_stats and \
+                    'samples' in bucket_stats['op'] and \
+                    'ops' in bucket_stats['op']['samples']:
                 ops = bucket_stats['op']['samples']['ops']
-                log.info("Ops/sec for bucket {} : {}".format(self.bucket.name, ops[-1]))
+                log.info("Ops/sec for bucket {} : {}"
+                         .format(self.bucket.name, ops[-1]))
                 time.sleep(self.sleep)
         self.complete_task()
 
@@ -2064,7 +2081,8 @@ class BucketCreateTask(Task):
 
     def check(self):
         try:
-            # if self.bucket.bucketType == 'memcached' or int(self.server.port) in xrange(9091, 9991):
+            # if self.bucket.bucketType == 'memcached' or \
+            #        int(self.server.port) in xrange(9091, 9991):
             #     return True
             if MemcachedHelper.wait_for_memcached(self.server, self.bucket.name):
                 log.info("bucket '{0}' created with per node RAM quota: {1}"
@@ -2076,8 +2094,8 @@ class BucketCreateTask(Task):
                 if self.retries >= 5:
                     return False
         except Exception as e:
-            log.error("Unexpected error: %s" % str(e))
-            log.warn("vbucket map not ready after try {0}".format(self.retries))
+            log.warn("Exception: {0}. vbucket map not ready after try {1}"
+                     .format(e, self.retries))
             if self.retries >= 5:
                 self.set_exception(e)
         self.retries = self.retris + 1
@@ -2091,12 +2109,14 @@ class MonitorActiveTask(Task):
         Attempt to monitor active task that  is available in _active_tasks API.
         It allows to monitor indexer, bucket compaction.
 
-        Execute function looks at _active_tasks API and tries to identifies task for monitoring
-        and its pid by: task type('indexer' , 'bucket_compaction', 'view_compaction' )
-        and target value (for example "_design/ddoc" for indexing, bucket "default" for bucket compaction or
+        Execute function looks at _active_tasks API and tries to identifies
+        task for monitoring and its pid by:
+        task type('indexer' , 'bucket_compaction', 'view_compaction')
+        and target value (for example "_design/ddoc" for indexing,
+        bucket "default" for bucket compaction or
         "_design/dev_view" for view compaction).
-        wait_task=True means that task should be found in the first attempt otherwise,
-        we can assume that the task has been completed( reached 100%).
+        wait_task=True means that task should be found in the first attempt
+        otherwise, we can assume that the task has been completed(reached 100%)
 
         Check function monitors task by pid that was identified in execute func
         and matches new progress result with the previous.
@@ -2144,21 +2164,24 @@ class MonitorActiveTask(Task):
                 self.current_progress = task["progress"]
                 self.task = task
                 log.info("monitoring active task was found:" + str(task))
-                log.info("progress %s:%s - %s %%" % (self.type,
-                                                     self.target_value, task["progress"]))
+                log.info("progress %s:%s - %s %%"
+                         % (self.type, self.target_value, task["progress"]))
                 if self.current_progress >= self.wait_progress:
-                    log.info("expected progress was gotten: %s" % self.current_progress)
+                    log.info("expected progress was gotten: %s"
+                             % self.current_progress)
                     return True
 
                 else:
                     return self.check()
         if self.wait_task:
             # task is not performed
-            log.error("expected active task %s:%s was not found" % (self.type, self.target_value))
+            log.error("expected active task %s:%s was not found"
+                      % (self.type, self.target_value))
             return False
         else:
             # task was completed
-            log.info("task for monitoring %s:%s completed" % (self.type, self.target_value))
+            log.info("task for monitoring %s:%s completed"
+                     % (self.type, self.target_value))
             return True
 
     def check(self):
@@ -2167,10 +2190,13 @@ class MonitorActiveTask(Task):
             for task in tasks:
                 # if task still exists
                 if task == self.task:
-                    log.info("progress %s:%s - %s %%" % (self.type, self.target_value, task["progress"]))
+                    log.info("progress %s:%s - %s %%"
+                             % (self.type, self.target_value,
+                                task["progress"]))
                     # reached expected progress
                     if task["progress"] >= self.wait_progress:
-                            log.error("progress was reached %s" % self.wait_progress)
+                            log.error("progress was reached %s"
+                                      % self.wait_progress)
                             return True
                     # progress value was changed
                     if task["progress"] > self.current_progress:
@@ -2185,10 +2211,12 @@ class MonitorActiveTask(Task):
                             break
                         # num iteration with the same progress = num_iterations
                         else:
-                            log.error("progress for active task was not changed during %s sec" % 2 * self.num_iterations)
+                            log.error("progress for active task was not changed during %s sec"
+                                      % 2 * self.num_iterations)
                             return False
                     else:
-                        log.error("progress for task %s:%s changed direction!" % (self.type, self.target_value))
+                        log.error("progress for task %s:%s changed direction!"
+                                  % (self.type, self.target_value))
                         return False
 
         # task was completed
@@ -2210,7 +2238,8 @@ class TestTask(Callable):
                    (self.thread_used, self.num_items, self.exception,
                     self.completed - self.started,)  # , self.result)
         elif self.completed:
-            print "Time: %s" % str(time.strftime("%H:%M:%S", time.gmtime(time.time())))
+            print("Time: %s" %
+                  str(time.strftime("%H:%M:%S", time.gmtime(time.time()))))
             return "[%s] %s items loaded in %.2fs" % \
                    (self.thread_used, self.loaded,
                     self.completed - self.started,)  # , self.result)
@@ -2224,7 +2253,6 @@ class TestTask(Callable):
     def call(self):
         self.started = time.time()
         while time.time() < self.started + self.timeout:
-            print "Test Task"
             time.sleep(1)
         self.completed = time.time()
         return True
