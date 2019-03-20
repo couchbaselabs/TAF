@@ -1399,8 +1399,7 @@ class StatsWaitTask(Task):
     def _get_stats_and_compare(self):
         stat_result = 0
         try:
-            stat_result = self.cbstatObj.get_stat(self.bucket.name,
-                                                  "all", self.stat)
+            stat_result = self.cbstatObj.all_stats(self.bucket.name, self.stat)
         except Exception as error:
             self.set_exception(error)
             self.stop = True
