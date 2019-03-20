@@ -435,6 +435,13 @@ class bucket_utils():
             BucketHelper(self.cluster.master).change_bucket_props(bucket,
                                                                   maxTTL=maxttl)
 
+    def update_all_bucket_replicas(self, replicas=1):
+        for bucket in self.buckets:
+            log.info("Updating replica for bucket {0} to {1}s"
+                     .format(bucket.name, replicas))
+            BucketHelper(self.cluster.master).change_bucket_props(bucket,
+                                                                  replicaNumber=replicas)
+
     def verify_cluster_stats(self, items, master=None,
                              timeout=None, check_items=True,
                              check_bucket_stats=True,
