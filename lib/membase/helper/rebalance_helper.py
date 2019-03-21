@@ -73,31 +73,6 @@ class RebalanceHelper():
         return verified
 
     @staticmethod
-    def wait_for_replication(servers, bucket_util, cluster_helper=None, timeout=600):
-        if cluster_helper is None:
-            cluster = ServerTasks()
-        else:
-            cluster = cluster_helper
-        tasks = []
-        rest = RestConnection(servers[0])
-        buckets = bucket_util.get_all_buckets()
-        for server in servers:
-            for bucket in buckets:
-                for server_repl in list(set(servers) - {server}):
-                    tasks.append(cluster.async_wait_for_stats([server], bucket, 'tap',
-                                   'eq_tapq:replication_ns_1@' + server_repl.ip + ':idle', '==', 'true'))
-                    tasks.append(cluster.async_wait_for_stats([server], bucket, 'tap',
-                                   'eq_tapq:replication_ns_1@' + server_repl.ip + ':backfill_completed', '==', 'true'))
-        try:
-            for task in tasks:
-                cluster.jython_task_manager.get_task_result(task)
-        finally:
-            if cluster_helper is None:
-                # stop all newly created task manager threads
-                cluster.shutdown()
-            return True
-
-    @staticmethod
     #bucket is a json object that contains name,port,password
     def wait_for_stats(master, bucket, stat_key, stat_value, timeout_in_seconds=120, verbose=True):
         log.info("waiting for bucket {0} stat : {1} to match {2} on {3}".format(bucket, stat_key, \

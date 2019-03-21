@@ -1,17 +1,15 @@
 import time
 import datetime
-import unittest
 from TestInput import TestInputSingleton
 import logger
 from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.rest_client import RestConnection, RestHelper
 from membase.helper.rebalance_helper import RebalanceHelper
-from memcached.helper.data_helper import LoadWithMcsoda
 from remote.remote_util import RemoteMachineShellConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from membase.api.exception import RebalanceFailedException
 from basetestcase import BaseTestCase
-from rebalance_base import RebalanceBaseTest
+
 
 class SwapRebalanceBase(BaseTestCase):
 
@@ -177,7 +175,9 @@ class SwapRebalanceBase(BaseTestCase):
             for node in nodes:
                 if node.ip == server.ip and node.port == server.port:
                     servers_in_cluster.append(server)
-        RebalanceHelper.wait_for_replication(servers_in_cluster, self.bucket_util, self.task)
+        # TODO: Need to write wait_for_replication to use different
+        # verification strategy, since it was removed because for using 'tap'
+        # RebalanceHelper.wait_for_replication(servers_in_cluster, self.bucket_util, self.task)
         self.items_verification(self, self.cluster.master)
 
     def _common_test_body_swap_rebalance(self, do_stop_start=False):

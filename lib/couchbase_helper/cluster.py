@@ -243,7 +243,7 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_wait_for_stats(self, shell_conn, bucket, param, stat, comparison,
+    def async_wait_for_stats(self, shell_conn_list, bucket, stat_cmd, stat, comparison,
                              value):
         """Asynchronously wait for stats
 
@@ -252,10 +252,11 @@ class ServerTasks(object):
         description of the stats structure and how it can be built.
 
         Parameters:
-            shell_conn - Object of type 'RemoteMachineShellConnection'.
-                         Uses this object to execute cbstats binary in the node
+            shell_conn_list - Objects of type 'RemoteMachineShellConnection'.
+                              Uses this object to execute cbstats binary in
+                              the cluster nodes
             bucket     - The name of the bucket (String)
-            param      - The stats parameter to use. (String)
+            stat_cmd   - The stats name to fetch using cbstats. (String)
             stat       - The stat that we want to get the value from. (String)
             comparison - How to compare the stat result to the value specified.
             value      - The value to compare to.
@@ -263,7 +264,7 @@ class ServerTasks(object):
         Returns:
             RebalanceTask - Task future that is a handle to the scheduled task
         """
-        _task = jython_tasks.StatsWaitTask(shell_conn, bucket, param,
+        _task = jython_tasks.StatsWaitTask(shell_conn_list, bucket, stat_cmd,
                                            stat, comparison, value)
         self.jython_task_manager.add_new_task(_task)
         return _task

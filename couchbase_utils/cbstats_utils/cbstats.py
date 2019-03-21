@@ -2,8 +2,8 @@ import logging
 import re
 
 from testconstants import \
-    LINUX_COUCHBASE_BIN_PATH, \
-    LINUX_NONROOT_CB_BIN_PATH, WIN_COUCHBASE_BIN_PATH
+    LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \
+    WIN_COUCHBASE_BIN_PATH, MAC_COUCHBASE_BIN_PATH
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +25,10 @@ class Cbstats():
                                        self.binaryName)
 
         if self.shellConn.extract_remote_info().type.lower() == 'windows':
-            self.cbstatCmd = "%s%s" % (WIN_COUCHBASE_BIN_PATH,
+            self.cbstatCmd = "%s%s.exe" % (WIN_COUCHBASE_BIN_PATH,
+                                           self.binaryName)
+        elif self.shellConn.extract_remote_info().type.lower() == 'mac':
+            self.cbstatCmd = "%s%s" % (MAC_COUCHBASE_BIN_PATH,
                                        self.binaryName)
 
     def get_stats(self, bucket_name, stat_name, field_to_grep=None):
@@ -169,7 +172,6 @@ class Cbstats():
                 if curr_vb_type == vbucket_type:
                     vb_num = match_result.group(1)
                     vb_list.append(vb_num)
-                break
 
         return vb_list
 

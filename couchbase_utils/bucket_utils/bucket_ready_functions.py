@@ -361,7 +361,7 @@ class bucket_utils():
         log.info("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
         servers = self.cluster.nodes_in_cluster
-        if bucket.bucketType == 'memcached':
+        if bucket.bucketType == Bucket.bucket_type.MEMCACHED:
             items_actual = 0
             for server in servers:
                 client = MemcachedClientHelper.direct_client(server, bucket)
@@ -378,14 +378,18 @@ class bucket_utils():
             available_replicas = len(servers) - 1
 
         # Create connection to master node for verifying cbstats
-        shell_conn = RemoteMachineShellConnection(self.cluster.master)
+        stat_cmd = "all"
+        shell_conn_list = list()
+        for cluster_node in self.cluster.nodes_in_cluster:
+            remote_conn = RemoteMachineShellConnection(cluster_node)
+            shell_conn_list.append(remote_conn)
 
         # Create Tasks to verify total items/replica count in the bucket
         stats_tasks.append(self.async_wait_for_stats(
-            shell_conn, bucket, '',
+            shell_conn_list, bucket, stat_cmd,
             'vb_replica_curr_items', '==', items * available_replicas))
         stats_tasks.append(self.async_wait_for_stats(
-            shell_conn, bucket, '',
+            shell_conn_list, bucket, stat_cmd,
             'curr_items_tot', '==', items * (available_replicas + 1)))
         try:
             for task in stats_tasks:
@@ -403,8 +407,12 @@ class bucket_utils():
             raise Exception("Unable to get expected stats during {0} sec"
                             .format(timeout))
 
-    def async_wait_for_stats(self, shell_conn, bucket, param, stat, comparison,
-                             value):
+            # In case of exception, close all connections
+            for remote_conn in shell_conn_list:
+                remote_conn.disconnect()
+
+    def async_wait_for_stats(self, shell_conn_list, bucket, stat_cmd, stat,
+                             comparison, value):
         """
         Asynchronously wait for stats
 
@@ -413,10 +421,11 @@ class bucket_utils():
         for a description of the stats structure and how it can be built.
 
         Parameters:
-            shell_conn - Object of type 'RemoteMachineShellConnection'.
-                         Uses this object to execute cbstats binary in the node
+            shell_conn_list - Objects of type 'RemoteMachineShellConnection'.
+                              Uses this object to execute cbstats binary in
+                              the cluster nodes
             bucket     - The name of the bucket (String)
-            param      - The stats parameter to use. (String)
+            stat_cmd   - The stats name to fetch using cbstats. (String)
             stat       - The stat that we want to get the value from. (String)
             comparison - How to compare the stat result to the value specified.
             value      - The value to compare to.
@@ -424,7 +433,8 @@ class bucket_utils():
         Returns:
             RebalanceTask - A task future that is a handle to the scheduled task
         """
-        _task = StatsWaitTask(shell_conn, bucket, param, stat, comparison, value)
+        _task = StatsWaitTask(shell_conn_list, bucket, stat_cmd, stat,
+                              comparison, value)
         self.task_manager.add_new_task(_task)
         return _task
 
@@ -631,21 +641,23 @@ class bucket_utils():
             timeout - Waiting the end of the thread. (str)
         """
         tasks = []
+        stat_cmd = "all"
         for server in self.cluster.nodes_in_cluster:
             shell_conn = RemoteMachineShellConnection(server)
             for bucket in self.buckets:
                 if bucket.bucketType == 'memcached':
                     continue
                 tasks.append(self.task.async_wait_for_stats(
-                    shell_conn, bucket, '',
+                    [shell_conn], bucket, stat_cmd,
                     'ep_queue_size', ep_queue_size_cond, ep_queue_size))
                 if check_ep_items_remaining:
-                    protocol = 'dcp'
+                    stat_cmd = 'dcp'
                     ep_items_remaining = 'ep_{0}_items_remaining' \
-                        .format(protocol)
+                                         .format(stat_cmd)
                     tasks.append(self.task.async_wait_for_stats(
-                        shell_conn, bucket, protocol,
+                        [shell_conn], bucket, stat_cmd,
                         ep_items_remaining, "==", 0))
+            shell_conn.disconnect()
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
@@ -656,10 +668,12 @@ class bucket_utils():
         """
         self.sleep(sleep_time)
         servers = self.cluster_util.get_kv_nodes()
-        map = self.data_collector.collect_compare_dcp_stats(self.buckets, servers, filter_list=filter_list)
-        for bucket in map.keys():
-            if not map[bucket]:
-                raise Exception("the bucket {0} has unacked bytes != 0".format(bucket))
+        dcp_stat_map = self.data_collector.collect_compare_dcp_stats(
+            self.buckets, servers, filter_list=filter_list)
+        for bucket in dcp_stat_map.keys():
+            if not dcp_stat_map[bucket]:
+                raise Exception("the bucket {0} has unacked bytes != 0"
+                                .format(bucket))
 
     def _verify_all_buckets(self, server, kv_store=1, timeout=180,
                             max_verify=None, only_store_hash=True,

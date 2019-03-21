@@ -18,8 +18,8 @@ import time
 
 
 class CBCluster:
-    
-    def __init__(self, name="default",username="Administrator", 
+
+    def __init__(self, name="default", username="Administrator",
                  password="password", paths=None, servers=None):
         self.name = name
         self.username = username
@@ -29,12 +29,13 @@ class CBCluster:
         self.servers = servers
         self.nodes_in_cluster = []
         self.master = servers[0]
-    
-    def update_master(self,master):
+
+    def update_master(self, master):
         self.master = master
 
+
 class cluster_utils():
-    
+
     def __init__(self, cluster, task_manager):
         self.input = TestInputSingleton.input
         self.cluster = cluster
@@ -43,12 +44,12 @@ class cluster_utils():
         self.vbuckets = self.input.param("vbuckets", 1024)
         self.upr = self.input.param("upr", None)
         self.log = logger.Logger.get_logger()
-    
+
     def cluster_cleanup(self, bucket_util):
         rest = RestConnection(self.cluster.master)
         if rest._rebalance_progress_status() == 'running':
             self.kill_memcached()
-            self.log.warning("rebalancing is still running, test should be verified")
+            self.log.warning("Rebalance still running, test should be verified")
             stopped = rest.stop_rebalance()
             if not stopped:
                 raise Exception("Unable to stop rebalance")
@@ -56,16 +57,20 @@ class cluster_utils():
         self.cleanup_cluster(self.cluster.servers, master=self.cluster.master)
         self.wait_for_ns_servers_or_assert(self.cluster.servers)
 
-    #wait_if_warmup=True is useful in tearDown method for (auto)failover tests
-    def wait_for_ns_servers_or_assert(self, servers, wait_time=360, wait_if_warmup=False):
+    # wait_if_warmup=True is useful in tearDown method for (auto)failover tests
+    def wait_for_ns_servers_or_assert(self, servers, wait_time=360,
+                                      wait_if_warmup=False):
         for server in servers:
             rest = RestConnection(server)
             log = logger.Logger.get_logger()
-            log.info("waiting for ns_server @ {0}:{1}".format(server.ip, server.port))
+            log.info("waiting for ns_server @ {0}:{1}"
+                     .format(server.ip, server.port))
             if RestHelper(rest).is_ns_server_running(wait_time):
-                log.info("ns_server @ {0}:{1} is running".format(server.ip, server.port))
+                log.info("ns_server @ {0}:{1} is running"
+                         .format(server.ip, server.port))
             else:
-                log.info("ns_server {0} is not running in {1} sec".format(server.ip, wait_time))
+                log.info("ns_server {0} is not running in {1} sec"
+                         .format(server.ip, wait_time))
                 return False
             return True
 
@@ -85,8 +90,8 @@ class cluster_utils():
 
         if len(nodes) > 1:
             log.info("rebalancing all nodes in order to remove nodes")
-            rest.log_client_error("Starting rebalance from test, ejected nodes %s" % \
-                                                             [node.id for node in nodes if node.id != master_id])
+            rest.log_client_error("Starting rebalance from test, ejected nodes %s" %
+                                  [node.id for node in nodes if node.id != master_id])
             removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
                                           ejectedNodes=[node.id for node in nodes if node.id != master_id],
                                           wait_for_rebalance=wait_for_rebalance)
@@ -98,7 +103,8 @@ class cluster_utils():
                     rest = RestConnection(removed)
                 except Exception as ex:
                     log.error("can't create rest connection after rebalance out for ejected nodes,\
-                        will retry after 10 seconds according to MB-8430: {0} ".format(ex))
+                               will retry after 10 seconds according to MB-8430: {0}"
+                              .format(ex))
                     time.sleep(10)
                     rest = RestConnection(removed)
                 start = time.time()
@@ -112,23 +118,25 @@ class cluster_utils():
                     log.error("'pools' on node {0}:{1} - {2}".format(
                            removed.ip, removed.port, rest.get_pools_info()["pools"]))
             for node in set([node for node in nodes if (node.id != master_id)]) - set(success_cleaned):
-                log.error("node {0}:{1} was not cleaned after removing from cluster".format(
-                           removed.ip, removed.port))
+                log.error("node {0}:{1} was not cleaned after removing from cluster"
+                          .format(removed.ip, removed.port))
                 try:
                     rest = RestConnection(node)
                     rest.force_eject_node()
                 except Exception as ex:
-                    log.error("force_eject_node {0}:{1} failed: {2}".format(removed.ip, removed.port, ex))
+                    log.error("force_eject_node {0}:{1} failed: {2}"
+                              .format(removed.ip, removed.port, ex))
             if len(set([node for node in nodes if (node.id != master_id)])\
                     - set(success_cleaned)) != 0:
                 raise Exception("not all ejected nodes were cleaned successfully")
 
-            log.info("removed all the nodes from cluster associated with {0} ? {1}".format(self.cluster.master, \
-                    [(node.id, node.port) for node in nodes if (node.id != master_id)]))
-            
+            log.info("removed all the nodes from cluster associated with {0} ? {1}"
+                     .format(self.cluster.master,
+                             [(node.id, node.port) for node in nodes if (node.id != master_id)]))
+
     def get_nodes_in_cluster(self, master_node=None):
         rest = None
-        if master_node == None:
+        if master_node is None:
             rest = RestConnection(self.cluster.master)
         else:
             rest = RestConnection(master_node)
@@ -154,16 +162,20 @@ class cluster_utils():
     def change_password(self, new_password="new_password"):
         nodes = RestConnection(self.cluster.master).node_statuses()
 
-
-        cli = CouchbaseCLI(self.cluster.master, self.cluster.master.rest_username, self.cluster.master.rest_password  )
-        output, err, result = cli.setting_cluster(data_ramsize=False, index_ramsize=False, fts_ramsize=False, cluster_name=None,
-                         cluster_username=None, cluster_password=new_password, cluster_port=False)
+        cli = CouchbaseCLI(self.cluster.master,
+                           self.cluster.master.rest_username,
+                           self.cluster.master.rest_password)
+        output, err, result = cli.setting_cluster(
+            data_ramsize=False, index_ramsize=False, fts_ramsize=False,
+            cluster_name=None, cluster_username=None,
+            cluster_password=new_password, cluster_port=False)
 
         self.log.info(output)
         # MB-10136 & MB-9991
         if not result:
             raise Exception("Password didn't change!")
-        self.log.info("new password '%s' on nodes: %s" % (new_password, [node.ip for node in nodes]))
+        self.log.info("new password '%s' on nodes: %s"
+                      % (new_password, [node.ip for node in nodes]))
         for node in nodes:
             for server in self.cluster.servers:
                 if server.ip == node.ip and int(server.port) == int(node.port):
@@ -175,16 +187,18 @@ class cluster_utils():
         remote_client = RemoteMachineShellConnection(self.cluster.master)
         options = "--cluster-port=%s" % new_port
         cli_command = "cluster-edit"
-        output, error = remote_client.execute_couchbase_cli(cli_command=cli_command, options=options,
-                                                            cluster_host="localhost:%s" % current_port,
-                                                            user=self.cluster.master.rest_username,
-                                                            password=self.cluster.master.rest_password)
+        output, error = remote_client.execute_couchbase_cli(
+            cli_command=cli_command, options=options,
+            cluster_host="localhost:%s" % current_port,
+            user=self.cluster.master.rest_username,
+            password=self.cluster.master.rest_password)
         self.log.info(output)
         # MB-10136 & MB-9991
         if error:
             raise Exception("Port didn't change! %s" % error)
         self.port = new_port
-        self.log.info("new port '%s' on nodes: %s" % (new_port, [node.ip for node in nodes]))
+        self.log.info("new port '%s' on nodes: %s"
+                      % (new_port, [node.ip for node in nodes]))
         for node in nodes:
             for server in self.cluster.servers:
                 if server.ip == node.ip and int(server.port) == int(node.port):
@@ -192,30 +206,30 @@ class cluster_utils():
                     break
 
     def change_env_variables(self):
-        if self.vbuckets != 1024 or self.upr != None:
+        if self.vbuckets != 1024 or self.upr is not None:
             for server in self.cluster.servers:
-                dict = {}
+                env_dict = {}
                 if self.vbuckets:
-                    dict["COUCHBASE_NUM_VBUCKETS"] = self.vbuckets
+                    env_dict["COUCHBASE_NUM_VBUCKETS"] = self.vbuckets
                 if self.upr != None:
                     if self.upr:
-                        dict["COUCHBASE_REPL_TYPE"] = "upr"
+                        env_dict["COUCHBASE_REPL_TYPE"] = "upr"
                     else:
-                        dict["COUCHBASE_REPL_TYPE"] = "tap"
-                if len(dict) >= 1:
+                        env_dict["COUCHBASE_REPL_TYPE"] = "tap"
+                if len(env_dict) >= 1:
                     remote_client = RemoteMachineShellConnection(server)
-                    remote_client.change_env_variables(dict)
+                    remote_client.change_env_variables(env_dict)
                     remote_client.disconnect()
             self.log.info("========= CHANGED ENVIRONMENT SETTING ===========")
 
     def reset_env_variables(self):
-        if self.vbuckets != 1024 or self.upr != None:
+        if self.vbuckets != 1024 or self.upr is not None:
             for server in self.cluster.servers:
                 if self.upr or self.vbuckets:
                     remote_client = RemoteMachineShellConnection(server)
                     remote_client.reset_env_variables()
                     remote_client.disconnect()
-            self.log.info("========= RESET ENVIRONMENT SETTING TO ORIGINAL ===========")
+            self.log.info("==== RESET ENVIRONMENT SETTING TO ORIGINAL ====")
 
     def change_log_info(self):
         for server in self.cluster.servers:
@@ -281,13 +295,13 @@ class cluster_utils():
             remote_client = RemoteMachineShellConnection(server)
             remote_client.kill_memcached()
             remote_client.disconnect()
-            
+
     def get_nodes(self, server):
         """ Get Nodes from list of server """
         rest = RestConnection(self.cluster.master)
         nodes = rest.get_nodes()
         return nodes
-    
+
     def stop_server(self, node):
         """ Method to stop a server which is subject to failover """
         for server in self.cluster.servers:
@@ -337,7 +351,7 @@ class cluster_utils():
                 remote_client = RemoteMachineShellConnection(server)
                 remote_client.disable_firewall()
                 remote_client.disconnect()
-            
+
     def reset_cluster(self):
         try:
             for node in self.cluster.servers:
@@ -354,17 +368,19 @@ class cluster_utils():
         except Exception, ex:
             self.log.info(ex)
 
-    def get_nodes_from_services_map(self, service_type="n1ql", get_all_nodes=False, servers=None, master=None):
+    def get_nodes_from_services_map(self, service_type="n1ql",
+                                    get_all_nodes=False, servers=None,
+                                    master=None):
         if not servers:
             servers = self.cluster.servers
         if not master:
             master = self.cluster.master
         services_map = self.get_services_map(master=master)
         if (service_type not in services_map):
-            self.log.info("cannot find service node {0} in cluster " \
+            self.log.info("cannot find service node {0} in cluster "
                           .format(service_type))
         else:
-            list = []
+            node_list = []
             for server_info in services_map[service_type]:
                 tokens = server_info.split(":")
                 ip = tokens[0]
@@ -376,18 +392,18 @@ class cluster_utils():
                     if "couchbase.com" in ip and "couchbase.com" not in server.ip:
                         shell = RemoteMachineShellConnection(server)
                         hostname = shell.get_full_hostname()
-                        self.log.info("convert IP: {0} to hostname: {1}" \
+                        self.log.info("convert IP: {0} to hostname: {1}"
                                       .format(server.ip, hostname))
                         server.ip = hostname
                         shell.disconnect()
                     if (port != 8091 and port == int(server.port)) or \
                             (port == 8091 and server.ip == ip):
-                        list.append(server)
-            self.log.info("list of all nodes in cluster: {0}".format(list))
+                        node_list.append(server)
+            self.log.info("All nodes in cluster: {0}".format(node_list))
             if get_all_nodes:
-                return list
+                return node_list
             else:
-                return list[0]
+                return node_list[0]
 
     def get_services_map(self, reset=True, master=None):
         if not reset:
@@ -397,8 +413,8 @@ class cluster_utils():
         if not master:
             master = self.cluster.master
         rest = RestConnection(master)
-        map = rest.get_nodes_services()
-        for key, val in map.iteritems():
+        tem_map = rest.get_nodes_services()
+        for key, val in tem_map.iteritems():
             for service in val:
                 if service not in services_map.keys():
                     services_map[service] = []
@@ -407,22 +423,24 @@ class cluster_utils():
 
     def get_services(self, tgt_nodes, tgt_services, start_node=1):
         services = []
-        if tgt_services == None:
+        if tgt_services is None:
             for node in tgt_nodes[start_node:]:
-                if node.services != None and node.services != '':
+                if node.services is not None and node.services != '':
                     services.append(node.services)
             if len(services) > 0:
                 return services
             else:
                 return None
-        if tgt_services != None and "-" in tgt_services:
+        if tgt_services is not None and "-" in tgt_services:
             services = tgt_services.replace(":", ",").split("-")[start_node:]
-        elif tgt_services != None:
+        elif tgt_services is not None:
             for node in range(start_node, len(tgt_nodes)):
                 services.append(tgt_services.replace(":", ","))
         return services
 
-    def generate_map_nodes_out_dist(self, nodes_out_dist=None, targetMaster=False, targetIndexManager=False):
+    def generate_map_nodes_out_dist(self, nodes_out_dist=None,
+                                    targetMaster=False,
+                                    targetIndexManager=False):
         if nodes_out_dist is None:
             nodes_out_dist = []
         index_nodes_out = []
@@ -437,29 +455,34 @@ class cluster_utils():
             count = 0
             service_type = tokens[0]
             service_type_count = int(tokens[1])
-            compare_string_master = "{0}:{1}".format(self.cluster.master.ip, self.cluster.master.port)
-            compare_string_index_manager = "{0}:{1}".format(self.cluster.master.ip, self.cluster.master.port)
+            compare_string_master = "{0}:{1}".format(self.cluster.master.ip,
+                                                     self.cluster.master.port)
+            compare_string_index_manager = "{0}:{1}" \
+                                           .format(self.cluster.master.ip,
+                                                   self.cluster.master.port)
             if service_type in services_map.keys():
                 for node_info in services_map[service_type]:
                     for server in self.cluster.servers:
-                        compare_string_server = "{0}:{1}".format(server.ip, server.port)
+                        compare_string_server = "{0}:{1}".format(server.ip,
+                                                                 server.port)
                         addNode = False
                         if (targetMaster and (not targetIndexManager)) \
-                                and (
-                                                compare_string_server == node_info and compare_string_master == compare_string_server):
+                                and (compare_string_server == node_info
+                                     and compare_string_master == compare_string_server):
                             addNode = True
                             self.master = self.cluster.servers[1]
                         elif ((not targetMaster) and (not targetIndexManager)) \
-                                and (
-                                                    compare_string_server == node_info and compare_string_master != compare_string_server \
-                                                and compare_string_index_manager != compare_string_server):
+                                and (compare_string_server == node_info
+                                     and compare_string_master != compare_string_server
+                                     and compare_string_index_manager != compare_string_server):
                             addNode = True
                         elif ((not targetMaster) and targetIndexManager) \
-                                and (
-                                                    compare_string_server == node_info and compare_string_master != compare_string_server
-                                        and compare_string_index_manager == compare_string_server):
+                                and (compare_string_server == node_info
+                                     and compare_string_master != compare_string_server
+                                     and compare_string_index_manager == compare_string_server):
                             addNode = True
-                        if addNode and (server not in nodes_out_list) and count < service_type_count:
+                        if addNode and (server not in nodes_out_list) \
+                                and count < service_type_count:
                             count += 1
                             if service_type == "index":
                                 if server not in index_nodes_out:
@@ -469,9 +492,9 @@ class cluster_utils():
 
     def setDebugLevel(self, index_servers=None, service_type="kv"):
         index_debug_level = self.input.param("index_debug_level", None)
-        if index_debug_level == None:
+        if index_debug_level is None:
             return
-        if index_servers == None:
+        if index_servers is None:
             index_servers = self.get_nodes_from_services_map(service_type=service_type, get_all_nodes=True)
         json = {
             "indexer.settings.log_level": "debug",
@@ -493,16 +516,19 @@ class cluster_utils():
             master = self.cluster.master
         rest = RestConnection(master)
         versions = rest.get_nodes_versions()
-        for version in versions: 
+        for version in versions:
             if "3.5" > version:
                 return servers
-        if servers == None:
+        if servers is None:
             servers = self.cluster.servers
-        kv_servers = self.get_nodes_from_services_map(service_type="kv", get_all_nodes=True,servers=servers, master=master)
+        kv_servers = self.get_nodes_from_services_map(service_type="kv",
+                                                      get_all_nodes=True,servers=servers,
+                                                      master=master)
         new_servers = []
         for server in servers:
             for kv_server in kv_servers:
-                if kv_server.ip == server.ip and kv_server.port == server.port and (server not in new_servers):
+                if kv_server.ip == server.ip and kv_server.port == server.port \
+                        and (server not in new_servers):
                     new_servers.append(server)
         return new_servers
 
@@ -515,14 +541,14 @@ class cluster_utils():
         return "dcp"
 
     def generate_services_map(self, nodes, services=None):
-        map = {}
+        service_map = dict()
         index = 0
-        if services == None:
-            return map
+        if services is None:
+            return service_map
         for node in nodes:
-            map[node.ip] = node.services
+            service_map[node.ip] = node.services
             index += 1
-        return map
+        return service_map
 
     def find_node_info(self, master, node):
         """ Get Nodes from list of server """
@@ -534,89 +560,93 @@ class cluster_utils():
                 target_node = server
         return target_node
 
-    def add_remove_servers(self, servers=[], list=[], remove_list=[], add_list=[]):
+    def add_remove_servers(self, servers=[], list=[], remove_list=[],
+                           add_list=[]):
         """ Add or Remove servers from server list """
         initial_list = copy.deepcopy(list)
         for add_server in add_list:
             for server in self.cluster.servers:
-                if add_server != None and server.ip == add_server.ip:
+                if add_server is not None and server.ip == add_server.ip:
                     initial_list.append(add_server)
         for remove_server in remove_list:
             for server in initial_list:
-                if remove_server != None and server.ip == remove_server.ip:
+                if remove_server is not None and server.ip == remove_server.ip:
                     initial_list.remove(server)
         return initial_list
 
     def add_all_nodes_then_rebalance(self, nodes, wait_for_completion=True):
         otpNodes = []
-        if len(nodes)>=1:
+        if len(nodes) >= 1:
             for server in nodes:
-                '''This is the case when master node is running cbas service as well'''
+                '''
+                This is the case, master node is running cbas service as well
+                '''
                 if self.cluster.master.ip != server.ip:
-                    otpNodes.append(self.rest.add_node(user=server.rest_username,
-                                               password=server.rest_password,
-                                               remoteIp=server.ip,
-                                               port=8091,
-                                               services=server.services.split(",")))
-    
+                    otpNodes.append(self.rest.add_node(
+                        user=server.rest_username,
+                        password=server.rest_password,
+                        remoteIp=server.ip, port=8091,
+                        services=server.services.split(",")))
+
             self.rebalance(wait_for_completion)
         else:
             self.log.info("No Nodes provided to add in cluster")
 
         return otpNodes
-    
-    def rebalance(self, wait_for_completion=True, ejected_nodes = []):
+
+    def rebalance(self, wait_for_completion=True, ejected_nodes=[]):
         nodes = self.rest.node_statuses()
-        started = self.rest.rebalance(otpNodes=[node.id for node in nodes],ejectedNodes=ejected_nodes)
+        started = self.rest.rebalance(otpNodes=[node.id for node in nodes],
+                                      ejectedNodes=ejected_nodes)
         if started and wait_for_completion:
             result = self.rest.monitorRebalance()
-#             self.assertTrue(result, "Rebalance operation failed after adding %s cbas nodes,"%self.cbas_servers)
+            # self.assertTrue(result, "Rebalance operation failed after adding %s cbas nodes,"%self.cbas_servers)
             self.log.info("successfully rebalanced cluster {0}".format(result))
         else:
             result = started
         return result
-#             self.assertTrue(started, "Rebalance operation started and in progress %s,"%self.cbas_servers)
-        
-    def remove_all_nodes_then_rebalance(self,otpnodes=None, rebalance=True ):
-        return self.remove_node(otpnodes,rebalance) 
-        
-    def add_node(self, node=None, services=None, rebalance=True, wait_for_rebalance_completion=True):
+            # self.assertTrue(started, "Rebalance operation started and in progress %s,"%self.cbas_servers)
+
+    def remove_all_nodes_then_rebalance(self, otpnodes=None, rebalance=True):
+        return self.remove_node(otpnodes, rebalance)
+
+    def add_node(self, node=None, services=None, rebalance=True,
+                 wait_for_rebalance_completion=True):
         if not node:
             self.fail("There is no node to add to cluster.")
         if not services:
-            services = node.services.split(",")        
+            services = node.services.split(",")
         otpnode = self.rest.add_node(user=node.rest_username,
-                               password=node.rest_password,
-                               remoteIp=node.ip,
-                               port=8091,
-                               services=services
-                               )
+                                     password=node.rest_password,
+                                     remoteIp=node.ip, port=8091,
+                                     services=services)
         if rebalance:
             self.rebalance(wait_for_completion=wait_for_rebalance_completion)
         return otpnode
-    
-    def remove_node(self,otpnode=None, wait_for_rebalance=True):
+
+    def remove_node(self, otpnode=None, wait_for_rebalance=True):
         nodes = self.rest.node_statuses()
         '''This is the case when master node is running cbas service as well'''
         if len(nodes) <= len(otpnode):
             return
-        
+
         helper = RestHelper(self.rest)
         try:
             removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
-                                              ejectedNodes=[node.id for node in otpnode],
-                                              wait_for_rebalance=wait_for_rebalance)
+                                          ejectedNodes=[node.id for node in otpnode],
+                                          wait_for_rebalance=wait_for_rebalance)
         except Exception as e:
             self.log.info("First time rebalance failed on Removal. Wait and try again. THIS IS A BUG.")
             time.sleep(5)
             removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
-                                              ejectedNodes=[node.id for node in otpnode],
-                                              wait_for_rebalance=wait_for_rebalance)
+                                          ejectedNodes=[node.id for node in otpnode],
+                                          wait_for_rebalance=wait_for_rebalance)
         if wait_for_rebalance:
             removed
 #             self.assertTrue(removed, "Rebalance operation failed while removing %s,"%otpnode)
 
-    def get_victim_nodes(self, nodes, master=None, chosen=None, victim_type="master", victim_count=1):
+    def get_victim_nodes(self, nodes, master=None, chosen=None,
+                         victim_type="master", victim_count=1):
         victim_nodes = [master]
         if victim_type == "graceful_failover_node":
             victim_nodes = [chosen]
@@ -642,16 +672,20 @@ class cluster_utils():
         """
         Verify the replica distribution in nodes in different zones.
         Validate that no replicas of a node are in the same zone.
-        :param nodes: Map of the nodes in different zones. Each key contains the zone name and the ip of nodes in that zone.
+        :param nodes: Map of the nodes in different zones.
+        Each key contains the zone name and the ip of nodes in that zone.
         """
         shell = RemoteMachineShellConnection(self.cluster.master)
         info = shell.extract_remote_info().type.lower()
         if info == 'linux':
-            cbstat_command = "{0:s}cbstats".format(testconstants.LINUX_COUCHBASE_BIN_PATH)
+            cbstat_command = "{0:s}cbstats" \
+                             .format(testconstants.LINUX_COUCHBASE_BIN_PATH)
         elif info == 'windows':
-            cbstat_command = "{0:s}cbstats".format(testconstants.WIN_COUCHBASE_BIN_PATH)
+            cbstat_command = "{0:s}cbstats" \
+                             .format(testconstants.WIN_COUCHBASE_BIN_PATH)
         elif info == 'mac':
-            cbstat_command = "{0:s}cbstats".format(testconstants.MAC_COUCHBASE_BIN_PATH)
+            cbstat_command = "{0:s}cbstats" \
+                             .format(testconstants.MAC_COUCHBASE_BIN_PATH)
         else:
             raise Exception("OS not supported.")
         saslpassword = ''
@@ -670,7 +704,7 @@ class cluster_utils():
                                " % (cbstat_command, node, command, "default", saslpassword)
                     output, error = shell.execute_command(commands)
                 elif versions[0][:5] in testconstants.COUCHBASE_VERSION_3 or \
-                                versions[0][:5] in testconstants.COUCHBASE_FROM_VERSION_4:
+                        versions[0][:5] in testconstants.COUCHBASE_FROM_VERSION_4:
                     command = "dcp"
                     if not info == 'windows':
                         commands = "%s %s:11210 %s -b %s -p \"%s\" | grep :replication:ns_1@%s |  grep vb_uuid | \
@@ -689,47 +723,48 @@ class cluster_utils():
                 output = output[0].split(" ")
                 if node not in output:
                     self.log.info("{0}".format(nodes))
-                    self.log.info("replicas of node {0} are in nodes {1}".format(node, output))
-                    self.log.info("replicas of node {0} are not in its zone {1}".format(node, group))
+                    self.log.info("replicas of node {0} are in nodes {1}"
+                                  .format(node, output))
+                    self.log.info("replicas of node {0} are not in its zone {1}"
+                                  .format(node, group))
                 else:
-                    raise Exception("replica of node {0} are on its own zone {1}".format(node, group))
+                    raise Exception("replica of node {0} are on its own zone {1}"
+                                    .format(node, group))
         shell.disconnect()
 
     def modify_fragmentation_config(self, config, bucket="default"):
         rest = RestConnection(self.cluster.master)
         _config = {"parallelDBAndVC": "false",
-                       "dbFragmentThreshold": None,
-                       "viewFragmntThreshold": None,
-                       "dbFragmentThresholdPercentage": 100,
-                       "viewFragmntThresholdPercentage": 100,
-                       "allowedTimePeriodFromHour": None,
-                       "allowedTimePeriodFromMin": None,
-                       "allowedTimePeriodToHour": None,
-                       "allowedTimePeriodToMin": None,
-                       "allowedTimePeriodAbort": None,
-                       "autoCompactionDefined": "true"}
+                   "dbFragmentThreshold": None,
+                   "viewFragmntThreshold": None,
+                   "dbFragmentThresholdPercentage": 100,
+                   "viewFragmntThresholdPercentage": 100,
+                   "allowedTimePeriodFromHour": None,
+                   "allowedTimePeriodFromMin": None,
+                   "allowedTimePeriodToHour": None,
+                   "allowedTimePeriodToMin": None,
+                   "allowedTimePeriodAbort": None,
+                   "autoCompactionDefined": "true"}
         for key in config:
             _config[key] = config[key]
-        
-        rest.set_auto_compaction(parallelDBAndVC=_config["parallelDBAndVC"],
-                                     dbFragmentThreshold=_config["dbFragmentThreshold"],
-                                     viewFragmntThreshold=_config["viewFragmntThreshold"],
-                                     dbFragmentThresholdPercentage=_config["dbFragmentThresholdPercentage"],
-                                     viewFragmntThresholdPercentage=_config["viewFragmntThresholdPercentage"],
-                                     allowedTimePeriodFromHour=_config["allowedTimePeriodFromHour"],
-                                     allowedTimePeriodFromMin=_config["allowedTimePeriodFromMin"],
-                                     allowedTimePeriodToHour=_config["allowedTimePeriodToHour"],
-                                     allowedTimePeriodToMin=_config["allowedTimePeriodToMin"],
-                                     allowedTimePeriodAbort=_config["allowedTimePeriodAbort"],
-                                     bucket=bucket)
+
+        rest.set_auto_compaction(
+            parallelDBAndVC=_config["parallelDBAndVC"],
+            dbFragmentThreshold=_config["dbFragmentThreshold"],
+            viewFragmntThreshold=_config["viewFragmntThreshold"],
+            dbFragmentThresholdPercentage=_config["dbFragmentThresholdPercentage"],
+            viewFragmntThresholdPercentage=_config["viewFragmntThresholdPercentage"],
+            allowedTimePeriodFromHour=_config["allowedTimePeriodFromHour"],
+            allowedTimePeriodFromMin=_config["allowedTimePeriodFromMin"],
+            allowedTimePeriodToHour=_config["allowedTimePeriodToHour"],
+            allowedTimePeriodToMin=_config["allowedTimePeriodToMin"],
+            allowedTimePeriodAbort=_config["allowedTimePeriodAbort"],
+            bucket=bucket)
         time.sleep(5)
 
-    def async_monitor_active_task(self, servers,
-                                  type_task,
-                                  target_value,
-                                  wait_progress=100,
-                                  num_iteration=100,
-                                  wait_task=True):
+    def async_monitor_active_task(self, servers, type_task,
+                                  target_value, wait_progress=100,
+                                  num_iteration=100, wait_task=True):
         """Asynchronously monitor active task.
 
            When active task reached wait_progress this method  will return.
@@ -746,10 +781,11 @@ class cluster_utils():
         Returns:
             list of MonitorActiveTask - A task future that is a handle to the scheduled task."""
         _tasks = []
-        if type(servers) != types.ListType:
+        if type(servers) is not list:
             servers = [servers, ]
         for server in servers:
-            _task = MonitorActiveTask(server, type_task, target_value, wait_progress, num_iteration, wait_task)
+            _task = MonitorActiveTask(server, type_task, target_value,
+                                      wait_progress, num_iteration, wait_task)
             self.task_manager.add_new_task(_task)
             _tasks.append(_task)
         return _tasks

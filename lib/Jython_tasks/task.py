@@ -15,6 +15,7 @@ from httplib import IncompleteRead
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from Jython_tasks.shutdown import shutdown_and_await_termination
+from cbstats_utils.cbstats import Cbstats
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
                                                doc_generator
@@ -34,7 +35,6 @@ from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
 from java.lang import Thread
-from cbstats_utils.cbstats import Cbstats
 
 log = logging.getLogger(__name__)
 
@@ -1360,12 +1360,12 @@ class StatsWaitTask(Task):
     GREATER_THAN = '>'
     GREATER_THAN_EQ = '>='
 
-    def __init__(self, shell_conn, bucket, param, stat, comparison, value,
-                 timeout=300):
+    def __init__(self, shell_conn_list, bucket, stat_cmd, stat, comparison,
+                 value, timeout=300):
         super(StatsWaitTask, self).__init__("StatsWaitTask")
-        self.shellConn = shell_conn
+        self.shellConnList = shell_conn_list
         self.bucket = bucket
-        self.param = param
+        self.statCmd = stat_cmd
         self.stat = stat
         self.comparison = comparison
         self.value = value
@@ -1380,11 +1380,16 @@ class StatsWaitTask(Task):
         # pydevd.settrace(trace_only_current_thread=False)
         start_time = time.time()
         timeout = start_time + self.timeout
-        self.cbstatObj = Cbstats(self.shellConn)
+        self.cbstatObjList = list()
+        for remote_conn in self.shellConnList:
+            self.cbstatObjList.append(Cbstats(remote_conn))
         try:
             while not self.stop and time.time() < timeout:
                 print(self.stop)
-                self._get_stats_and_compare()
+                if self.statCmd in ["all", "dcp"]:
+                    self._get_all_stats_and_compare()
+                else:
+                    raise("Not supported. Implement the stat call")
         finally:
             for _, conn in self.conns.items():
                 conn.close()
@@ -1393,21 +1398,27 @@ class StatsWaitTask(Task):
                                .format(self.stat, self.timeout))
 
         # Closes the shell_connection before ending the task
-        self.shellConn.disconnect()
+        for remote_conn in self.shellConnList:
+            remote_conn.disconnect()
         self.complete_task()
 
-    def _get_stats_and_compare(self):
+    def _get_all_stats_and_compare(self):
         stat_result = 0
+        val_dict = dict()
         try:
-            stat_result = self.cbstatObj.all_stats(self.bucket.name, self.stat)
+            for cb_stat_obj in self.cbstatObjList:
+                tem_stat = cb_stat_obj.all_stats(self.bucket.name, self.stat)
+                val_dict[cb_stat_obj.shellConn.ip] = tem_stat
+                if tem_stat != "None":
+                    stat_result += int(tem_stat)
         except Exception as error:
             self.set_exception(error)
             self.stop = True
             return False
         if not self._compare(self.comparison, str(stat_result), self.value):
-            log.warn("Not Ready: %s %s %s %s expected on %s, %s bucket"
+            log.warn("Not Ready: %s %s %s %s. Received: %s for bucket '%s'"
                      % (self.stat, stat_result, self.comparison, self.value,
-                        self.shellConn.ip, self.bucket.name))
+                        val_dict, self.bucket.name))
             time.sleep(5)
             return False
         else:
