@@ -1409,7 +1409,7 @@ class StatsWaitTask(Task):
             for cb_stat_obj in self.cbstatObjList:
                 tem_stat = cb_stat_obj.all_stats(self.bucket.name, self.stat)
                 val_dict[cb_stat_obj.shellConn.ip] = tem_stat
-                if tem_stat != "None":
+                if tem_stat and tem_stat != "None":
                     stat_result += int(tem_stat)
         except Exception as error:
             self.set_exception(error)
