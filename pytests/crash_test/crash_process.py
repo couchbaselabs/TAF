@@ -2,6 +2,7 @@ from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
 from crash_test.constants import signum
+from cbstats_utils.cbstats import Cbstats
 
 
 class CrashTest(BaseTestCase):
@@ -13,9 +14,11 @@ class CrashTest(BaseTestCase):
         self.process_name = self.input.param("process", None)
         self.service_name = self.input.param("service", "data")
         self.sig_type = self.input.param("sig_type", "SIGKILL").upper()
+        self.target_node = self.input.param("target_node", "active")
 
         self.pre_warmup_stats = {}
         self.timeout = 120
+        self.new_docs_to_add = 100000
 
         if self.doc_ops is not None:
             self.doc_ops = self.doc_ops.split(";")
@@ -37,12 +40,22 @@ class CrashTest(BaseTestCase):
                 batch_size=10, process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
 
-        self.bucket_util.verify_unacked_bytes_all_buckets()
+        # self.bucket_util.verify_unacked_bytes_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.log.info("==========Finished CrashTest setup========")
 
     def tearDown(self):
         super(CrashTest, self).tearDown()
+
+    def getTargetNode(self):
+        if len(self.cluster.nodes_in_cluster) > 1:
+            return self.cluster.nodes_in_cluster[1]
+        return self.cluster.master
+
+    def getVbucketNumbers(self, shell_conn, bucket_name, replica_type):
+        cb_stats = Cbstats(shell_conn)
+        return cb_stats.vbucket_list(bucket_name, replica_type)
 
     def stop_process(self):
         """
@@ -52,28 +65,48 @@ class CrashTest(BaseTestCase):
         3. Wait for load bucket task to complete
         4. Validate the docs for durability
         """
-        new_docs = 100000
         def_bucket = self.bucket_util.buckets[0]
+        target_node = self.getTargetNode()
+        remote = RemoteMachineShellConnection(target_node)
+        target_vbuckets = self.getVbucketNumbers(remote, def_bucket.name,
+                                                 self.target_node)
+        if len(target_vbuckets) == 0:
+            self.log.error("No target vbucket list generated to load data")
+            remote.disconnect()
+            return
+
+        # Incr all values since the server's vbucket starts from '0'
+        target_vbuckets = [i+1 for i in target_vbuckets]
+
+        # Create doc_generator targeting only the active/replica vbuckets
+        # present in the target_node
         gen_load = doc_generator(self.key, self.num_items,
-                                 self.num_items+new_docs)
-        self.num_items += new_docs
+                                 self.num_items+self.new_docs_to_add,
+                                 target_vbucket=target_vbuckets)
+        self.num_items += self.new_docs_to_add
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_load, "create", 0, batch_size=10)
 
-        remote = RemoteMachineShellConnection(self.cluster.master)
+        self.log.info("Stopping {0}:{1} on node {2}"
+                      .format(self.process_name, self.service_name,
+                              target_node.ip))
         remote.kill_process(self.process_name, self.service_name,
                             signum=signum[self.sig_type])
+
         self.sleep(20, "Wait before resuming the process"
                        .format(self.process_name))
         remote.kill_process(self.process_name, self.service_name,
                             signum=signum["SIGCONT"])
+        remote.disconnect()
 
         # Wait for doc loading task to complete
         self.task.jython_task_manager.get_task_result(task)
 
         # Validate doc count
+        # TODO: Add verification for rollbacks based on active/replica failure
+        # self.bucket_util.verify_unacked_bytes_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
-        self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def crash_process(self):
         """
@@ -83,21 +116,40 @@ class CrashTest(BaseTestCase):
         3. Wait for load bucket task to complete
         4. Validate the docs for durability
         """
-        new_docs = 100000
         def_bucket = self.bucket_util.buckets[0]
+        target_node = self.getTargetNode()
+        remote = RemoteMachineShellConnection(target_node)
+        target_vbuckets = self.getVbucketNumbers(remote, def_bucket.name,
+                                                 self.target_node)
+        if len(target_vbuckets) == 0:
+            self.log.error("No target vbucket list generated to load data")
+            remote.disconnect()
+            return
+
+        # Incr all values since the server's vbucket starts from '0'
+        target_vbuckets = [i+1 for i in target_vbuckets]
+
+        # Create doc_generator targeting only the active/replica vbuckets
+        # present in the target_node
         gen_load = doc_generator(self.key, self.num_items,
-                                 self.num_items+new_docs)
-        self.num_items += new_docs
+                                 self.num_items+self.new_docs_to_add,
+                                 target_vbucket=target_vbuckets)
+        self.num_items += self.new_docs_to_add
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_load, "create", 0, batch_size=10)
 
-        remote = RemoteMachineShellConnection(self.cluster.master)
+        self.log.info("Killing {0}:{1} on node {2}"
+                      .format(self.process_name, self.service_name,
+                              target_node.ip))
         remote.kill_process(self.process_name, self.service_name,
                             signum=signum[self.sig_type])
+        remote.disconnect()
         self.sleep(60, "Waiting after kill the process")
         # Wait for doc loading task to complete
         self.task.jython_task_manager.get_task_result(task)
 
         # Validate doc count
+        # TODO: Add verification for rollbacks happening based on active/replica
+        # self.bucket_util.verify_unacked_bytes_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
-        self.bucket_util.verify_unacked_bytes_all_buckets()
