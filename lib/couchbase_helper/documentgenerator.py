@@ -234,7 +234,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
             doc_key = "{0}-{1}".format(self.name, str(self.key_counter))
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                 (self.vbuckets-1)
-            if tem_vb == self.target_vbucket:
+            if tem_vb in self.target_vbucket:
                 self.doc_keys.append(doc_key)
                 self.doc_keys_len += 1
             self.key_counter += 1

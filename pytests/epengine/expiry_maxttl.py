@@ -8,13 +8,16 @@ class ExpiryMaxTTL(BaseTestCase):
         super(ExpiryMaxTTL, self).setUp()
         self.key = 'test_ttl_docs'.rjust(self.key_size, '0')
 
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
+        if self.target_vbucket and type(self.target_vbucket) is not list:
+            self.target_vbucket = [self.target_vbucket]
+
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket(bucket_type=self.bucket_type,
-                                               maxTTL=self.maxttl,
-                                               replica=self.num_replicas,
-                                               compression_mode=self.compression_mode)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+        self.bucket_util.create_default_bucket(
+            bucket_type=self.bucket_type, maxTTL=self.maxttl,
+            replica=self.num_replicas, compression_mode=self.compression_mode)
         self.bucket_util.add_rbac_user()
         self.bucket_util.get_all_buckets()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
@@ -22,21 +25,17 @@ class ExpiryMaxTTL(BaseTestCase):
 
     def _load_json(self, bucket, num_items, exp=0):
         self.log.info("Creating doc_generator..")
-        doc_create = doc_generator(self.key, 0, num_items,
-                                   doc_size=self.doc_size,
-                                   doc_type="json",
-                                   target_vbucket=self.target_vbucket,
-                                   vbuckets=self.vbuckets)
+        doc_create = doc_generator(
+            self.key, 0, num_items, doc_size=self.doc_size,
+            doc_type="json", target_vbucket=self.target_vbucket,
+            vbuckets=self.vbuckets)
         self.log.info("doc_generator created")
-        task = self.task.async_load_gen_docs(self.cluster, bucket,
-                                             doc_create, "create", exp,
-                                             batch_size=10,
-                                             process_concurrency=8,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to,
-                                             timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries,
-                                             compression=self.sdk_compression)
+        task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_create, "create", exp,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            compression=self.sdk_compression)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.bucket_util._wait_for_stats_all_buckets()
