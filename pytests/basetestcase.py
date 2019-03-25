@@ -346,10 +346,3 @@ class BaseTestCase(unittest.TestCase):
                 rest = RestConnection(server)
                 rest.set_jre_path(self.jre_path)
         return quota
-
-    def expire_pager(self, servers, val=10):
-        for bucket in self.buckets:
-            for server in servers:
-                ClusterOperationHelper.flushctl_set(server, "exp_pager_stime",
-                                                    val, bucket)
-        self.sleep(val, "wait for expiry pager to run on all these nodes")

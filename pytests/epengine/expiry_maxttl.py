@@ -49,15 +49,15 @@ class ExpiryMaxTTL(BaseTestCase):
         :return:
         """
         for bucket in self.bucket_util.buckets:
-            self._load_json(bucket, self.num_items, exp=self.maxttl+500)
+            self._load_json(bucket, self.num_items, exp=self.maxttl)
         self.sleep(self.maxttl, "Waiting for docs to expire as per maxTTL")
-        self.expire_pager(self.cluster.servers)
+        self.bucket_util._expiry_pager(self.cluster.master)
         self.sleep(20, "Waiting for item count to come down...")
         for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Doc expiry {0}s, maxTTL {1}s, "
                           "after {2}s, item count {3}"
-                          .format(self.maxttl+500, self.maxttl,
+                          .format(self.maxttl, self.maxttl,
                                   self.maxttl, items))
             if items > 0:
                 self.fail("Bucket maxTTL of {0} is not honored"
@@ -65,7 +65,7 @@ class ExpiryMaxTTL(BaseTestCase):
             else:
                 self.log.info("SUCCESS: Doc expiry={0}s, maxTTL {1}s, "
                               "after {2}s, item count {3}"
-                              .format(int(self.maxttl)+500, self.maxttl,
+                              .format(int(self.maxttl), self.maxttl,
                                       self.maxttl, items))
 
     def test_maxttl_greater_doc_expiry(self):
@@ -77,7 +77,7 @@ class ExpiryMaxTTL(BaseTestCase):
         for bucket in self.buckets:
             self._load_json(bucket, self.num_items, exp=int(self.maxttl)-100)
         self.sleep(self.maxttl-100, "Waiting for docs to expire as per maxTTL")
-        self.expire_pager(self.servers)
+        self.bucket_util._expiry_pager(self.cluster.master)
         self.sleep(20, "Waiting for item count to come down...")
         for bucket in self.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
@@ -93,21 +93,27 @@ class ExpiryMaxTTL(BaseTestCase):
     def test_set_maxttl_on_existing_bucket(self):
         """
         1. Create a bucket with no max_ttl
-        2. Upload 1000 docs with exp = 100s
-        3. Set maxTTL on bucket as 60s
-        4. After 60s, run expiry pager, get item count, must be 1000
-        5. After 40s, run expiry pager again and get item count, must be 0
-        6. Now load another set of docs with exp = 100s
-        7. Run expiry pager after 60s and get item count, must be 0
+        2. Upload 1000 docs with 'doc_init_expiry' seconds
+        3. Set maxTTL on bucket as 'doc_new_expiry' seconds
+        4. After 'doc_init_expiry' seconds, run expiry pager and
+           get item count, must be 1000
+        5. After 'doc_new_expiry' seconds, run expiry pager again and
+           get item count, must be 0
+        6. Now load another set of docs with 'doc_init_expiry' seconds
+        7. Run expiry pager after 'doc_new_expiry' seconds and
+           get item count, must be 0
         """
-        for bucket in self.buckets:
-            self._load_json(bucket, self.num_items, exp=100)
-        self.bucket_util.update_all_bucket_maxTTL(maxttl=60)
+        doc_init_expiry = 100
+        doc_new_expiry = 60
+        for bucket in self.bucket_util.buckets:
+            self._load_json(bucket, self.num_items, exp=doc_init_expiry)
+        self.bucket_util.update_all_bucket_maxTTL(maxttl=doc_new_expiry)
 
-        self.sleep(60, "waiting before running expiry pager...")
-        self.expire_pager(self.servers)
+        self.sleep(doc_new_expiry, "waiting before running expiry pager...")
+        self.bucket_util._expiry_pager(self.cluster.master)
         self.sleep(20, "waiting for item count to come down...")
-        for bucket in self.buckets:
+
+        for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Doc expiry set to = 100s, maxTTL = 60s "
                           "(set after doc creation), after 60s, item count={0}"
@@ -117,9 +123,9 @@ class ExpiryMaxTTL(BaseTestCase):
                           "maxTTL updation deleted!")
 
         self.sleep(40, "Waiting before running expiry pager...")
-        self.expire_pager(self.servers)
+        self.bucket_util._expiry_pager(self.cluster.master)
         self.sleep(20, "Waiting for item count to come down...")
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Doc expiry set to = 100s, maxTTL = 60s"
                           "(set after doc creation), after 100s,"
@@ -127,13 +133,14 @@ class ExpiryMaxTTL(BaseTestCase):
             if items != 0:
                 self.fail("FAIL: Items with not greater expiry set before "
                           "maxTTL updation not deleted after elapsed TTL!")
-        for bucket in self.buckets:
-            self._load_json(bucket, self.num_items, exp=100)
 
-        self.sleep(60, "waiting before running expiry pager...")
-        self.expire_pager(self.servers)
+        for bucket in self.bucket_util.buckets:
+            self._load_json(bucket, self.num_items, exp=doc_init_expiry)
+
+        self.sleep(doc_new_expiry, "waiting before running expiry pager...")
+        self.bucket_util._expiry_pager(self.cluster.master)
         self.sleep(20, "waiting for item count to come down...")
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Doc expiry set to = 100s, maxTTL = 60s, after 100s,"
                           " item count = {0}".format(items))
@@ -150,14 +157,12 @@ class ExpiryMaxTTL(BaseTestCase):
         4. negative values, date, string
         """
         # default
-        default_bucket = self.bucket_util.buckets[0]
-        self.bucket_util.get_bucket_from_cluster(default_bucket)
-        default_maxttl = default_bucket.maxTTL
-        if default_maxttl != 0:
+        default_bucket = self.bucket_util.get_all_buckets()[0]
+        if default_bucket.maxTTL != 0:
             self.fail("FAIL: default maxTTL if left unset must be 0 but is {0}"
-                      .format(default_maxttl))
+                      .format(default_bucket.maxTTL))
         self.log.info("Verified: default maxTTL if left unset is {0}"
-                      .format(default_maxttl))
+                      .format(default_bucket.maxTTL))
 
         # max value
         try:
@@ -209,14 +214,14 @@ class ExpiryMaxTTL(BaseTestCase):
         6. Now load another set of docs with exp = 100s
         7. Run expiry pager after 40s and get item count, must be 0
         """
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             self._load_json(bucket, self.num_items, exp=100)
         self.bucket_util.update_all_bucket_maxTTL(maxttl=40)
 
         self.sleep(40, "waiting before running expiry pager...")
-        self.expire_pager(self.servers)
+        self.bucket_util._expiry_pager(self.cluster.master)
         self.sleep(20, "waiting for item count to come down...")
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Doc expiry=100s, maxTTL during doc creation = 200s"
                           " updated maxttl=40s, after 40s item count = {0}"
@@ -226,9 +231,9 @@ class ExpiryMaxTTL(BaseTestCase):
                           "before updation!")
 
         self.sleep(60, "waiting before running expiry pager...")
-        self.expire_pager(self.servers)
+        self.bucket_util._expiry_pager(self.cluster.master)
         self.sleep(20, "waiting for item count to come down...")
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Doc expiry=100s, maxTTL during doc creation=200s"
                           " updated maxttl=40s, after 100s item count = {0}"
@@ -245,26 +250,26 @@ class ExpiryMaxTTL(BaseTestCase):
         4. After 40s, run expiry pager again and get item count, must be 1000
         5. After 20s, run expiry pager again and get item count, must be 0
         """
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             self._load_json(bucket, self.num_items, exp=40)
 
         self.sleep(20, "waiting to update docs with exp=60s...")
-
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             self._load_json(bucket, self.num_items, exp=60)
 
         self.sleep(40, "waiting before running expiry pager...")
-        self.expire_pager(self.servers)
-        for bucket in self.buckets:
+        self.bucket_util._expiry_pager(self.cluster.master)
+        for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Items: {0}".format(items))
             if items != self.num_items:
                 self.fail("FAIL: Docs with updated expiry deleted unexpectedly")
 
         self.sleep(20, "waiting before running expiry pager...")
-        self.expire_pager(self.servers)
+        self.bucket_util._expiry_pager(self.cluster.master)
+
         self.sleep(20, "waiting for item count to come down...")
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Items: {0}".format(items))
             if items != 0:

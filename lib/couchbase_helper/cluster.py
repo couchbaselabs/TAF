@@ -172,6 +172,24 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
+    def async_continuous_update_docs(self, cluster, bucket, generator, exp=0,
+                                     flag=0, persist_to=0, replicate_to=0,
+                                     only_store_hash=True, batch_size=1,
+                                     pause_secs=1, timeout_secs=5,
+                                     compression=True,
+                                     process_concurrency=8, retries=5):
+        log.info("Mutating documents to {}".format(bucket.name))
+        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+        _task = jython_tasks.ContinuousDocUpdateTask(
+            cluster, self.jython_task_manager, bucket, client, [generator],
+            "update", exp, flag=flag, persist_to=persist_to,
+            replicate_to=replicate_to, only_store_hash=only_store_hash,
+            batch_size=batch_size, pause_secs=pause_secs,
+            timeout_secs=timeout_secs, compression=compression,
+            process_concurrency=process_concurrency, retries=retries)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
     def async_load_gen_docs_durable(self, cluster, bucket, generator, op_type,
                                     exp=0, flag=0, persist_to=0,
                                     replicate_to=0, only_store_hash=True,
@@ -191,8 +209,38 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
+    def async_load_bucket_for_dgm(self, cluster, bucket, generator, opt_type,
+                                  active_resident_threshold,
+                                  exp=0, flag=0, only_store_hash=True,
+                                  batch_size=1, pause_secs=1, timeout_secs=5,
+                                  compression=True, process_concurrency=4):
+        """
+        Loads specified bucket with docs until specified DGM percentage is achieved
+        Parameters:
+            cluster - Cluster object
+            bucket  - Bucket object to which docs needs to be loaded
+            generator - Document generator object
+            opt_type  - Operation type
+            active_resident_threshold - Percentage of DGM needs to be achieved
+        Returns:
+            _task - Async task created for DGM task
+        """
+        log.info("Loading doc into {0} until dgm is {1}%"
+                 .format(bucket.name, active_resident_threshold))
+        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+        _task = jython_tasks.LoadDocumentsForDgmTask(
+            cluster, self.jython_task_manager, bucket, client, [generator],
+            opt_type, exp, flag=flag, only_store_hash=only_store_hash,
+            batch_size=batch_size, pause_secs=pause_secs,
+            timeout_secs=timeout_secs, compression=compression,
+            process_concurrency=process_concurrency,
+            active_resident_threshold=active_resident_threshold)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
     def load_bucket_into_dgm(self, cluster, bucket, key, num_items,
                              active_resident_threshold, load_batch_size=20000,
+                             batch_size=10, process_concurrency=4,
                              persist_to=None, replicate_to=None):
         rest = BucketHelper(cluster.master)
         bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
@@ -205,8 +253,8 @@ class ServerTasks(object):
             num_items += load_batch_size
             task = self.async_load_gen_docs(
                 cluster, bucket, gen_load, "create", 0,
-                persist_to=persist_to, replicate_to=replicate_to,
-                batch_size=10, process_concurrency=8)
+                batch_size=batch_size, process_concurrency=process_concurrency,
+                persist_to=persist_to, replicate_to=replicate_to)
             self.jython_task_manager.get_task_result(task)
             bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                          cluster.master)

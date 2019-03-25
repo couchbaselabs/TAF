@@ -1167,7 +1167,8 @@ class bucket_utils():
 
     def _expiry_pager(self, master, val=10):
         for bucket in self.buckets:
-            ClusterOperationHelper.flushctl_set(master, "exp_pager_stime", val, bucket)
+            ClusterOperationHelper.flushctl_set(master, "exp_pager_stime",
+                                                val, bucket)
 
     def _run_compaction(self, number_of_times=100):
         try:
@@ -1177,26 +1178,29 @@ class bucket_utils():
         except Exception, ex:
             self.log.info(ex)
 
-    def _load_data_in_buckets_using_mc_bin_client(self, bucket, data_set, max_expiry_range=None):
-        client = VBucketAwareMemcached(RestConnection(self.cluster.master), bucket)
+    def _load_data_in_buckets_using_mc_bin_client(self, bucket, data_set,
+                                                  max_expiry_range=None):
+        client = VBucketAwareMemcached(RestConnection(self.cluster.master),
+                                       bucket)
         try:
             for key in data_set.keys():
                 expiry = 0
-                if max_expiry_range != None:
+                if max_expiry_range is not None:
                     expiry = random.randint(1, max_expiry_range)
                 o, c, d = client.set(key, expiry, 0, json.dumps(data_set[key]))
-        except Exception, ex:
-            print 'WARN======================='
-            print ex
+        except Exception as ex:
+            print('Exception: {0}'.format(ex))
 
     def run_mc_bin_client(self, number_of_times=500000, max_expiry_range=30):
         data_map = {}
         for i in range(number_of_times):
-            name = "key_" + str(i) + str((random.randint(1, 10000))) + str((random.randint(1, 10000)))
+            name = "key_" + str(i) + str((random.randint(1, 10000))) + \
+                    str((random.randint(1, 10000)))
             data_map[name] = {"name": "none_the_less"}
         for bucket in self.buckets:
             try:
-                self._load_data_in_buckets_using_mc_bin_client(bucket, data_map, max_expiry_range)
+                self._load_data_in_buckets_using_mc_bin_client(
+                    bucket, data_map, max_expiry_range)
             except Exception, ex:
                 self.log.info(ex)
 
@@ -1220,34 +1224,41 @@ class bucket_utils():
     def expire_pager(self, servers, val=10):
         for bucket in self.buckets:
             for server in servers:
-                ClusterOperationHelper.flushctl_set(server, "exp_pager_stime", val, bucket)
+                ClusterOperationHelper.flushctl_set(server, "exp_pager_stime",
+                                                    val, bucket)
         self.sleep(val, "wait for expiry pager to run on all these nodes")
 
-    def set_auto_compaction(self, rest, parallelDBAndVC="false", dbFragmentThreshold=None, viewFragmntThreshold=None,
-                            dbFragmentThresholdPercentage=None,
-                            viewFragmntThresholdPercentage=None, allowedTimePeriodFromHour=None,
-                            allowedTimePeriodFromMin=None, allowedTimePeriodToHour=None,
-                            allowedTimePeriodToMin=None, allowedTimePeriodAbort=None, bucket=None):
-        output, rq_content, header = rest.set_auto_compaction(parallelDBAndVC, dbFragmentThreshold,
-                                                              viewFragmntThreshold, dbFragmentThresholdPercentage,
-                                                              viewFragmntThresholdPercentage, allowedTimePeriodFromHour,
-                                                              allowedTimePeriodFromMin, allowedTimePeriodToHour,
-                                                              allowedTimePeriodToMin, allowedTimePeriodAbort, bucket)
+    def set_auto_compaction(
+            self, rest, parallelDBAndVC="false", dbFragmentThreshold=None,
+            viewFragmntThreshold=None, dbFragmentThresholdPercentage=None,
+            viewFragmntThresholdPercentage=None, allowedTimePeriodFromHour=None,
+            allowedTimePeriodFromMin=None, allowedTimePeriodToHour=None,
+            allowedTimePeriodToMin=None, allowedTimePeriodAbort=None, bucket=None):
+        output, rq_content, header = rest.set_auto_compaction(
+            parallelDBAndVC, dbFragmentThreshold, viewFragmntThreshold,
+            dbFragmentThresholdPercentage, viewFragmntThresholdPercentage,
+            allowedTimePeriodFromHour, allowedTimePeriodFromMin,
+            allowedTimePeriodToHour, allowedTimePeriodToMin,
+            allowedTimePeriodAbort, bucket)
 
-        if not output and (dbFragmentThresholdPercentage, dbFragmentThreshold, viewFragmntThresholdPercentage,
+        if not output and (dbFragmentThresholdPercentage, dbFragmentThreshold,
+                           viewFragmntThresholdPercentage,
                            viewFragmntThreshold <= MIN_COMPACTION_THRESHOLD
                            or dbFragmentThresholdPercentage,
                            viewFragmntThresholdPercentage >= MAX_COMPACTION_THRESHOLD):
-            self.assertFalse(output, "it should be  impossible to set compaction value = {0}%".format(
-                viewFragmntThresholdPercentage))
-            self.assertTrue(json.loads(rq_content).has_key("errors"), "Error is not present in response")
+            self.assertFalse(output,
+                             "Should be impossible to set compaction val {0}%"
+                             .format(viewFragmntThresholdPercentage))
+            self.assertTrue("errors" in json.loads(rq_content),
+                            "Error is not present in response")
             self.assertTrue(str(json.loads(rq_content)["errors"]).find("Allowed range is 2 - 100") > -1, \
-                            "Error 'Allowed range is 2 - 100' expected, but was '{0}'".format(
-                                str(json.loads(rq_content)["errors"])))
-            self.log.info("Response contains error = '%(errors)s' as expected" % json.loads(rq_content))
+                            "Error 'Allowed range is 2 - 100', but was '{0}'"
+                            .format(str(json.loads(rq_content)["errors"])))
+            self.log.info("Response contains error = '%(errors)s' as expected"
+                          % json.loads(rq_content))
 
     def get_bucket_priority(self, priority):
-        if priority == None:
+        if priority is None:
             return None
         if priority.lower() == 'low':
             return None
@@ -1259,24 +1270,26 @@ class bucket_utils():
         while num_tries < 6:
             try:
                 num_tries += 1
-                client = MemcachedClientHelper.direct_client(server, bucket_name)
+                client = MemcachedClientHelper.direct_client(server,
+                                                             bucket_name)
                 break
             except Exception as ex:
                 if num_tries < 5:
                     self.log.info("unable to create memcached client due to {0}. Try again".format(ex))
                 else:
-                    self.log.error("unable to create memcached client due to {0}.".format(ex))
+                    self.log.error("unable to create memcached client due to {0}".format(ex))
         while gen_load.has_next():
             key, value = gen_load.next()
             for v in xrange(1024):
                 try:
                     client.set(key, 0, 0, value, v)
                     break
-                except:
+                except Exception:
                     pass
         client.close()
 
-    def load_sample_buckets(self, servers=None, bucketName=None, total_items=None):
+    def load_sample_buckets(self, servers=None, bucketName=None,
+                            total_items=None):
         """ Load the specified sample bucket in Couchbase """
         self.assertTrue(BucketHelper(self.cluster.master).load_sample(bucketName),
                         "Failure while loading sample bucket: %s" % bucketName)
@@ -1598,7 +1611,6 @@ class bucket_utils():
                                      ops,
                                      total_loaded))
 
-
     def check_dataloss_for_high_ops_loader(self, server, bucket, items,
                                            batch=2000, threads=5,
                                            start_document=0,
@@ -1644,6 +1656,7 @@ class bucket_utils():
         bucket.authType = parsed["authType"]
         bucket.saslPassword = parsed["saslPassword"]
         bucket.nodes = list()
+        bucket.maxTTL = parsed["maxTTL"]
         if 'vBucketServerMap' in parsed:
             vBucketServerMap = parsed['vBucketServerMap']
             serverList = vBucketServerMap['serverList']

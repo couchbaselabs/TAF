@@ -40,7 +40,8 @@ class Bucket_DGM_Tests(BaseTestCase):
         bucket = self.bucket_util.get_all_buckets()[0]
         num_items = self.task.load_bucket_into_dgm(
             self.cluster, bucket, self.key, self.num_items,
-            self.active_resident_threshold,
+            self.active_resident_threshold, batch_size=10,
+            process_concurrency=8,
             persist_to=self.persist_to, replicate_to=self.replicate_to)
 
         gen_create = doc_generator(self.key, num_items,

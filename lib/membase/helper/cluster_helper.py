@@ -213,7 +213,8 @@ class ClusterOperationHelper(object):
         rest = RestConnection(server)
         node = rest.get_nodes_self()
         mc = MemcachedClientHelper.direct_client(server, bucket)
-        log.info("Setting flush param on server {0}, {1} to {2} on {3}".format(server, key, val, bucket))
+        log.info("Setting flush param on server {0}, {1} to {2} on {3}"
+                 .format(server, key, val, bucket))
         # Workaround for CBQE-249, ideally this should be node.version
         index_path = node.storage[0].get_index_path()
         if index_path is '':
@@ -223,11 +224,12 @@ class ClusterOperationHelper(object):
             type = ClusterOperationHelper._get_engine_param_type(key)
 
             if val == 'true' or val == 'false':
-               rv = mc.set_param(key, val, type)
+                rv = mc.set_param(key, val, type)
             else:
-               rv = mc.set_param(key, str(val), type)
+                rv = mc.set_param(key, str(val), type)
 
-        log.info("Setting flush param on server {0}, {1} to {2}, result: {3}".format(server, key, val, rv))
+        log.info("Setting flush param on server {0}, {1} to {2}, result: {3}"
+                 .format(server, key, val, rv))
         mc.close()
 
     @staticmethod
