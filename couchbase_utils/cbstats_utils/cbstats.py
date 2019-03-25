@@ -1,5 +1,6 @@
 import logging
 import re
+import zlib
 
 from testconstants import \
     LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \
@@ -31,6 +32,32 @@ class Cbstats():
             self.cbstatCmd = "%s%s" % (MAC_COUCHBASE_BIN_PATH,
                                        self.binaryName)
 
+    def __execute_cmd(self, cmd):
+        """
+        Executed the given command in the target shell
+        Arguments:
+        :cmd - Command to execute
+
+        Returns:
+        :output - Output for the command execution
+        :error  - Buffer containing warnings/errors from the execution
+        """
+        log.info("Executing: '%s'" % (cmd))
+        return self.shellConn.execute_command(cmd)
+
+    def __calculate_vbucket_num(self, doc_key, total_vbuckets):
+        """
+        Calculates vbucket number based on the document's key
+
+        Argument:
+        :doc_key        - Document's key
+        :total_vbuckets - Total vbuckets present in the bucket
+
+        Returns:
+        :vbucket_number calculated based on the 'doc_key'
+        """
+        return (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & (total_vbuckets-1)
+
     def get_stats(self, bucket_name, stat_name, field_to_grep=None):
         """
         Fetches stats using cbstat and greps for specific line.
@@ -48,7 +75,7 @@ class Cbstats():
 
         Returns:
         :output - Output for the cbstats command
-        :err    - Exception/Warnings got from the command execution
+        :error  - Buffer containing warnings/errors from the execution
         """
 
         cmd = "%s localhost:%s -u %s -p %s -b %s %s" \
@@ -58,10 +85,7 @@ class Cbstats():
         if field_to_grep:
             cmd = "%s | grep %s" % (cmd, field_to_grep)
 
-        log.info("Executing: '%s'" % (cmd))
-        output, err = self.shellConn.execute_command(cmd)
-
-        return output, err
+        return self.__execute_cmd(cmd)
 
     def get_vbucket_stats(self, bucket_name, stat_name, vbucket_num,
                           field_to_grep=None):
@@ -85,7 +109,7 @@ class Cbstats():
 
         Returns:
         :output - Output for the cbstats command
-        :err    - Exception/Warnings got from the command execution
+        :error  - Buffer containing warnings/errors from the execution
         """
 
         cmd = "%s localhost:%s -u %s -p %s -b %s %s %s" \
@@ -95,10 +119,7 @@ class Cbstats():
         if field_to_grep:
             cmd = "%s | grep %s" % (cmd, field_to_grep)
 
-        log.info("Executing: '%s'" % (cmd))
-        output, err = self.shellConn.execute_command(cmd)
-
-        return output, err
+        return self.__execute_cmd(cmd)
 
     # Below are wrapper functions for above command executor APIs
     def all_stats(self, bucket_name, field_to_grep):
@@ -158,10 +179,9 @@ class Cbstats():
         cmd = "%s localhost:%s -u %s -p %s -b %s vbucket" \
               % (self.cbstatCmd, self.port, self.username, self.password,
                  bucket_name)
-        log.info("Executing: '%s'" % (cmd))
-        output, err = self.shellConn.execute_command(cmd)
-        if len(err) != 0:
-            raise("\n".join(err))
+        output, error = self.__execute_cmd(cmd)
+        if len(error) != 0:
+            raise("\n".join(error))
 
         pattern = "[ \t]*vb_([0-9]+)[ \t]*:[ \t]+([a-zA-Z]+)"
         regexp = re.compile(pattern)
@@ -202,6 +222,52 @@ class Cbstats():
 
         pattern = "[ \t]*vb_{0}:{1}:[ \t]*:[ \t]+([_0-9a-zA-Z:\-\,\[\]\. ]+)" \
                   .format(vbucket_num, field_to_grep)
+        regexp = re.compile(pattern)
+        for line in output:
+            match_result = regexp.match(line)
+            if match_result:
+                result = match_result.group(1)
+                break
+
+        return result
+
+    def vkey_stat(self, bucket_name, doc_key, field_to_grep,
+                  vbucket_num=None, total_vbuckets=1024):
+        """
+        Get vkey stats from the command,
+          cbstats localhost:port -b 'bucket_name' vkey 'doc_id' 'vbucket_num'
+
+        Arguments:
+        :bucket_name    - Name of the bucket to get the stats
+        :doc_key        - Document key to validate for
+        :field_to_grep  - Target stat name string to grep
+        :vbucket_num    - Target vbucket_number to fetch the stats.
+                          If 'None', calculate the vbucket_num locally
+        :total_vbuckets - Total vbuckets configured for the bucket.
+                          Default=1024
+
+        Returns:
+        :result - Value of the 'field_to_grep' using regexp.
+                  If not matched, 'None'
+
+        Raise:
+        :Exception returned from command line execution (if any)
+        """
+
+        result = None
+        if vbucket_num is None:
+            vbucket_num = self.__calculate_vbucket_num(doc_key, total_vbuckets)
+
+        cmd = "%s localhost:%s -u %s -p %s -b %s vkey %s %s | grep %s" \
+              % (self.cbstatCmd, self.port, self.username, self.password,
+                 bucket_name, doc_key, vbucket_num, field_to_grep)
+
+        output, error = self.__execute_cmd(cmd)
+        if len(error) != 0:
+            raise("\n".join(error))
+
+        pattern = "[ \t]*{0}[ \t]*:[ \t]+([a-zA-Z0-9]+)" \
+                  .format(field_to_grep)
         regexp = re.compile(pattern)
         for line in output:
             match_result = regexp.match(line)
