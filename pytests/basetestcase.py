@@ -108,7 +108,6 @@ class BaseTestCase(unittest.TestCase):
             self.wait_timeout = self.input.param("wait_timeout", 60)
             self.dgm_run = self.input.param("dgm_run", False)
             self.verify_unacked_bytes = self.input.param("verify_unacked_bytes", False)
-            self.force_kill_memcached = TestInputSingleton.input.param('force_kill_memcached', False)
             self.disabled_consistent_view = self.input.param("disabled_consistent_view", None)
             self.rebalanceIndexWaitingDisabled = self.input.param("rebalanceIndexWaitingDisabled", None)
             self.rebalanceIndexPausingDisabled = self.input.param("rebalanceIndexPausingDisabled", None)

@@ -1,6 +1,8 @@
 import copy
 import json
 
+from cbstats_utils.cbstats import Cbstats
+from couchbase_helper.documentgenerator import doc_generator
 from failover.failoverbasetest import FailoverBaseTest
 from membase.api.rest_client import RestConnection, RestHelper
 from membase.helper.rebalance_helper import RebalanceHelper
@@ -56,6 +58,11 @@ class FailoverTests(FailoverBaseTest):
         self.nodes = self.rest.node_statuses()
         # Set the data path for the cluster
         self.data_path = self.rest.get_data_path()
+
+        # Variable to decide the durability outcome
+        durability_will_fail = False
+        # Variable to track the number of nodes failed
+        num_nodes_failed = 1
 
         # Check if the test case has to be run for 3.0.0
         versions = self.rest.get_nodes_versions()
@@ -113,28 +120,90 @@ class FailoverTests(FailoverBaseTest):
         else:
             self.run_failover_operations(self.chosen, failover_reason)
 
+        # Decide whether the durability is going to fail or not
+        if self.num_failed_nodes >= 1 and self.num_replicas > 1:
+            durability_will_fail = True
+
+        target_bucket = self.bucket_util.buckets[0]
+        # Construct target vbucket list from the nodes
+        # which are going to be failed over
+        vbucket_list = list()
+        for target_node in self.chosen:
+            shell_conn = RemoteMachineShellConnection(target_node)
+            cb_stats = Cbstats(shell_conn)
+            vbuckets = cb_stats.vbucket_list(target_bucket.name,
+                                             self.target_vbucket_type)
+            shell_conn.disconnect()
+            vbucket_list += vbuckets
+
+        # Code to generate doc_loaders that will work on vbucket_type
+        # based on targeted nodes. This will perform CRUD only on
+        # vbuckets which will be affected by the failover
+        self.gen_create = doc_generator(
+            self.key, self.num_items, self.num_items * 1.5,
+            target_vbucket=vbucket_list)
+        self.gen_update = doc_generator(
+            self.key, self.num_items / 2, self.num_items,
+            target_vbucket=vbucket_list)
+        self.gen_delete = doc_generator(
+            self.key, self.num_items / 4, self.num_items / 2 - 1,
+            target_vbucket=vbucket_list)
+        self.afterfailover_gen_create = doc_generator(
+            self.key, self.num_items * 1.6, self.num_items * 2,
+            target_vbucket=vbucket_list)
+        self.afterfailover_gen_update = doc_generator(
+            self.key, 1, self.num_items / 4,
+            target_vbucket=vbucket_list)
+        self.afterfailover_gen_delete = doc_generator(
+            self.key, self.num_items * 0.5, self.num_items * 0.75,
+            target_vbucket=vbucket_list)
+
         # Perform Add Back Operation with Rebalance
         # or only Rebalance with verifications
         if not self.gracefulFailoverFail and self.runRebalanceAfterFailover:
-            if self.add_back_flag:
-                self.run_add_back_operation_and_verify(
-                    self.chosen, prev_vbucket_stats, record_static_data_set,
-                    prev_failover_stats)
+            if self.failover_onebyone:
+                # Reset it back to False
+                durability_will_fail = False
+                for node_chosen in self.chosen:
+                    if num_nodes_failed > 1:
+                        durability_will_fail = True
+
+                    if self.add_back_flag:
+                        # In add-back case, durability should never fail, since
+                        # the num_nodes in the cluster will remain the same
+                        self.run_add_back_operation_and_verify(
+                            [node_chosen], prev_vbucket_stats,
+                            record_static_data_set, prev_failover_stats)
+                    else:
+                        self.run_rebalance_after_failover_and_verify(
+                            [node_chosen], prev_vbucket_stats,
+                            record_static_data_set, prev_failover_stats,
+                            durability_will_fail=durability_will_fail)
+                    num_nodes_failed += 1
             else:
-                self.run_rebalance_after_failover_and_verify(
-                    self.chosen, prev_vbucket_stats, record_static_data_set,
-                    prev_failover_stats)
+                if self.add_back_flag:
+                    self.run_add_back_operation_and_verify(
+                        self.chosen, prev_vbucket_stats,
+                        record_static_data_set, prev_failover_stats,
+                        durability_will_fail=durability_will_fail)
+                else:
+                    self.run_rebalance_after_failover_and_verify(
+                        self.chosen, prev_vbucket_stats,
+                        record_static_data_set, prev_failover_stats,
+                        durability_will_fail=durability_will_fail)
         else:
             return
 
-        if self.during_ops is None:
+        # Will verify_unacked_bytes only if the durability is not going to fail
+        if self.during_ops is None and not durability_will_fail:
             self.bucket_util.verify_unacked_bytes_all_buckets(
                 filter_list=self.filter_list, master_node=self.master)
 
     def run_rebalance_after_failover_and_verify(self, chosen,
                                                 prev_vbucket_stats,
                                                 record_static_data_set,
-                                                prev_failover_stats):
+                                                prev_failover_stats,
+                                                durability_will_fail=False):
         """ Method to run rebalance after failover and verify """
         # Need a delay > min because MB-7168
         _servers_ = self.filter_servers(self.servers, chosen)
@@ -203,7 +272,8 @@ class FailoverTests(FailoverBaseTest):
 
     def run_add_back_operation_and_verify(self, chosen, prev_vbucket_stats,
                                           record_static_data_set,
-                                          prev_failover_stats):
+                                          prev_failover_stats,
+                                          durability_will_fail=False):
         """
         Method to run add-back operation with recovery type = (delta/full).
         It also verifies if the operations are correct with data

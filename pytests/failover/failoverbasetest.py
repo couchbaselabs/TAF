@@ -2,7 +2,6 @@ from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.document import View
-from membase.api.rest_client import RestConnection
 
 
 class FailoverBaseTest(BaseTestCase):
@@ -43,11 +42,14 @@ class FailoverBaseTest(BaseTestCase):
         if self.doc_ops:
             self.doc_ops = self.doc_ops.split(":")
         self.num_failed_nodes = self.input.param("num_failed_nodes", 0)
+        self.target_vbucket_type = self.input.param("target_vbucket_type",
+                                                    "active")
         self.dgm_run = self.input.param("dgm_run", True)
         credentials = self.input.membase_settings
         self.add_back_flag = False
         self.during_ops = self.input.param("during_ops", None)
         self.graceful = self.input.param("graceful", True)
+        self.failover_onebyone = self.input.param("failover_onebyone", False)
         if self.recoveryType:
             self.recoveryType = self.recoveryType.split(":")
         if self.deltaRecoveryBuckets:

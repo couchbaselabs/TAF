@@ -651,10 +651,10 @@ class RebalanceHelper():
                 state = False
 
         if not state:
-             log.error("Something is wrong, see log above. See details:")
-             log.error("vBucetMap: {0}".format(vb_map))
-             log.error("vBucetReplicaMap: {0}".format(vb_mapReplica))
-             log.error("node_stats: {0}".format(node_stats))
+            log.error("Something is wrong, see log above. See details:")
+            log.error("vBucetMap: {0}".format(vb_map))
+            log.error("vBucetReplicaMap: {0}".format(vb_mapReplica))
+            log.error("node_stats: {0}".format(node_stats))
         return state
 
     @staticmethod
@@ -670,17 +670,20 @@ class RebalanceHelper():
         for node in nodes:
             stat = {}
             buckets = []
-            _server = {"ip": node.ip, "port": node.port, "username": master.rest_username,
-                           "password": master.rest_password}
+            _server = {"ip": node.ip, "port": node.port,
+                       "username": master.rest_username,
+                       "password": master.rest_password}
             try:
                 buckets = rest.get_buckets()
                 mc = MemcachedClient(node.ip, port)
                 stat_hash = mc.stats("hash")
             except Exception:
                 if not buckets:
-                    log.error("There are not any buckets in {0}:{1} node".format(node.ip, node.port))
+                    log.error("There are not any buckets in {0}:{1} node"
+                              .format(node.ip, node.port))
                 else:
-                    log.error("Impossible to get vBucket's information for {0}:{1} node".format(node.ip, node.port))
+                    log.error("Impossible to get vBucket's information for {0}:{1} node"
+                              .format(node.ip, node.port))
                     _nodes_stats[node.ip + ":" + str(node.port)]
                 continue
             mc.close()
@@ -691,7 +694,6 @@ class RebalanceHelper():
             _nodes_stats[node.ip + ":" + str(port)] = stat
         log.info(_nodes_stats)
         return _nodes_stats
-
 
     @staticmethod
     def pick_node(master):
@@ -710,29 +712,28 @@ class RebalanceHelper():
             node_picked = node
             if not nodes_on_same_ip:
                 if node_picked.ip != master.ip:
-                    log.info(
-                        "Picked node ... {0}:{1}".format(node_picked.ip, node_picked.port))
+                    log.info("Picked node ... {0}:{1}"
+                             .format(node_picked.ip, node_picked.port))
                     break
             else:
                 # temp fix - port numbers of master(machine ip and localhost: 9000 match
-                if int(node_picked.port) == int(
-                    master.port):
-                    log.info("Not picking the master node {0}:{1}.. try again...".format(node_picked.ip,
-                        node_picked.port))
+                if int(node_picked.port) == int(master.port):
+                    log.info("Not picking the master node {0}:{1}..try again.."
+                             .format(node_picked.ip, node_picked.port))
                 else:
-                    log.info(
-                        "Picked  node {0}:{1}".format(node_picked.ip, node_picked.port))
+                    log.info("Picked  node {0}:{1}"
+                             .format(node_picked.ip, node_picked.port))
                     break
         return node_picked
 
     @staticmethod
-    def pick_nodes(master, howmany=1, target_node = None):
+    def pick_nodes(master, howmany=1, target_node=None):
         rest = RestConnection(master)
         nodes = rest.node_statuses()
         picked = []
         for node_for_stat in nodes:
-            if node_for_stat.ip != master.ip or  str(node_for_stat.port) != master.port :
-                if target_node ==  None:
+            if node_for_stat.ip != master.ip or str(node_for_stat.port) != master.port:
+                if target_node is None:
                     picked.append(node_for_stat)
                 elif target_node.ip == node_for_stat.ip:
                     picked.append(node_for_stat)
