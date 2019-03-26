@@ -560,10 +560,10 @@ class cluster_utils():
                 target_node = server
         return target_node
 
-    def add_remove_servers(self, servers=[], list=[], remove_list=[],
+    def add_remove_servers(self, servers=[], server_list=[], remove_list=[],
                            add_list=[]):
-        """ Add or Remove servers from server list """
-        initial_list = copy.deepcopy(list)
+        """ Add or Remove servers from server_list """
+        initial_list = copy.deepcopy(server_list)
         for add_server in add_list:
             for server in self.cluster.servers:
                 if add_server is not None and server.ip == add_server.ip:

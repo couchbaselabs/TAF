@@ -28,18 +28,17 @@ class RebalanceBaseTest(BaseTestCase):
         gen_create = self.get_doc_generator(0, self.num_items)
         self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
-            #print_ops_task = self.bucket_util.async_print_bucket_ops(bucket)
-            task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
-                                                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                                 batch_size=10, timeout_secs=self.sdk_timeout,
-                                                 process_concurrency=8, retries=self.sdk_retries)
-            fail= self.task.jython_task_manager.get_task_result(task)
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, gen_create, "create", 0,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                batch_size=10, timeout_secs=self.sdk_timeout,
+                process_concurrency=8, retries=self.sdk_retries)
+            self.task.jython_task_manager.get_task_result(task)
             self.sleep(20)
             current_item = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
             self.num_items = current_item
-            self.log.info("Inserted {} number of items after loadgen".format(self.num_items))
-            #print_ops_task.end_task()
-            #self.task_manager.get_task_result(print_ops_task)
+            self.log.info("Inserted {} number of items after loadgen"
+                          .format(self.num_items))
         self.gen_load = self.get_doc_generator(0, self.num_items)
         # gen_update is used for doing mutation for 1/2th of uploaded data
         self.gen_update = self.get_doc_generator(0, (self.num_items / 2 - 1))
@@ -88,7 +87,8 @@ class RebalanceBaseTest(BaseTestCase):
                                     set([node for node in rest.get_nodes_in_zone(zones[i])]))
                 rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
         otpnodes = [node.id for node in rest.node_statuses()]
-        nodes_to_remove = [node.id for node in rest.node_statuses() if node.ip in [t.ip for t in to_remove]]
+        nodes_to_remove = [node.id for node in rest.node_statuses()
+                           if node.ip in [t.ip for t in to_remove]]
         # Start rebalance and monitor it.
         started = rest.rebalance(otpNodes=otpnodes, ejectedNodes=nodes_to_remove)
         if started:
@@ -108,23 +108,11 @@ class RebalanceBaseTest(BaseTestCase):
         serverinfo = self.servers[0]
         rest = RestConnection(serverinfo)
         for node in to_add:
-            rest.add_node(user=serverinfo.rest_username, password=serverinfo.rest_password,
+            rest.add_node(user=serverinfo.rest_username,
+                          password=serverinfo.rest_password,
                           remoteIp=node.ip)
         self.shuffle_nodes_between_zones_and_rebalance(to_remove)
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster + to_add) - set(to_remove))
-
-    def add_remove_servers(self, servers=[], list=[], remove_list=[], add_list=[]):
-        """ Add or Remove servers from server list """
-        initial_list = copy.deepcopy(list)
-        for add_server in add_list:
-            for server in self.servers:
-                if add_server is not None and server.ip == add_server.ip:
-                    initial_list.append(add_server)
-        for remove_server in remove_list:
-            for server in initial_list:
-                if remove_server is not None and server.ip == remove_server.ip:
-                    initial_list.remove(server)
-        return initial_list
 
     def get_doc_generator(self, start, end):
         age = range(5)
@@ -138,12 +126,9 @@ class RebalanceBaseTest(BaseTestCase):
     def _load_all_buckets(self, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
-        tasks = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen,
-                                                         op_type, exp, flag,
-                                                         self.persist_to,
-                                                         self.replicate_to,
-                                                         only_store_hash,
-                                                         batch_size, pause_secs,
-                                                         timeout_secs, compression)
+        tasks = self.bucket_util._async_load_all_buckets(
+            self.cluster, kv_gen, op_type, exp, flag, self.persist_to,
+            self.replicate_to, only_store_hash, batch_size, pause_secs,
+            timeout_secs, compression)
         for task in tasks:
             self.task_manager.get_task_result(task)

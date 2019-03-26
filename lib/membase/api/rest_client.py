@@ -1240,14 +1240,15 @@ class RestConnection(object):
                                            parameters=params)
         return status
 
-    def rebalance(self, otpNodes=[], ejectedNodes=[], deltaRecoveryBuckets=None):
+    def rebalance(self, otpNodes=[], ejectedNodes=[],
+                  deltaRecoveryBuckets=None):
         knownNodes = ','.join(otpNodes)
         ejectedNodesString = ','.join(ejectedNodes)
-        if deltaRecoveryBuckets == None:
+        if deltaRecoveryBuckets is None:
             params = {'knownNodes': knownNodes,
-                                    'ejectedNodes': ejectedNodesString,
-                                    'user': self.username,
-                                    'password': self.password}
+                      'ejectedNodes': ejectedNodesString,
+                      'user': self.username,
+                      'password': self.password}
         else:
             deltaRecoveryBuckets = ",".join(deltaRecoveryBuckets)
             params = {'knownNodes': knownNodes,

@@ -261,7 +261,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         msg="Rebalance Failed")
         self.sleep(60)
         # Verification
-        new_server_list = self.add_remove_servers(
+        new_server_list = self.cluster_util.add_remove_servers(
             self.cluster.servers, self.cluster.servers[:self.nodes_init],
             [chosen[0]], [self.cluster.servers[self.nodes_init]])
         self.cluster.nodes_in_cluster = new_server_list
