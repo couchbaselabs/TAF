@@ -284,7 +284,7 @@ class BucketHelper(RestConnection):
                        'flushEnabled': bucket_params.get('flushEnabled'),
                        'evictionPolicy': bucket_params.get('evictionPolicy'),
                        'compressionMode': bucket_params.get('compressionMode')}
-                            
+
         if bucket_params.get('lww'):
             init_params['maxTTL'] = bucket_params.get('lww')
         if bucket_params.get('maxTTL'):
@@ -352,7 +352,7 @@ class BucketHelper(RestConnection):
             params_dict["maxTTL"] = maxTTL
         if compressionMode:
             params_dict["compressionMode"] = compressionMode
-            
+
         params = urllib.urlencode(params_dict)
 
         log.info("%s with param: %s" % (api, params))
@@ -365,7 +365,7 @@ class BucketHelper(RestConnection):
             raise Exception("Unable to set bucket settings %s for bucket" % (params, bucket))
         log.info("bucket %s updated" % bucket)
         return status
-    
+
     def get_auto_compaction_settings(self):
         api = self.baseUrl + "settings/autoCompaction"
         status, content, header = self._http_request(api)
@@ -481,7 +481,7 @@ class BucketHelper(RestConnection):
         else:
             raise BucketCompactionException(bucket)
         return True
-    
+
     def get_xdc_queue_size(self, bucket):
         """Fetch bucket stats and return the latest value of XDC replication
         queue size"""
@@ -503,7 +503,7 @@ class BucketHelper(RestConnection):
         """Fetch bucket stats and return the bucket's replica count"""
         bucket_stats = self.fetch_bucket_stats(bucket)
         return bucket_stats['op']['samples']['vb_replica_curr_items'][-1]
-    
+
     # the same as Preview a Random Document on UI
     def get_random_key(self, bucket):
         api = self.baseUrl + 'pools/default/buckets/%s/localRandomKey' % (bucket)
