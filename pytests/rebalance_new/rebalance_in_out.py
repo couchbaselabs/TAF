@@ -12,7 +12,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
     def tearDown(self):
         super(RebalanceInOutTests, self).tearDown()
 
-
     def test_rebalance_in_out_after_mutation(self):
         """
         Rebalances nodes out and in of the cluster while doing mutations.
