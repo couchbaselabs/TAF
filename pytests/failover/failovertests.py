@@ -197,7 +197,7 @@ class FailoverTests(FailoverBaseTest):
         # Will verify_unacked_bytes only if the durability is not going to fail
         if self.during_ops is None and not durability_will_fail:
             self.bucket_util.verify_unacked_bytes_all_buckets(
-                filter_list=self.filter_list, master_node=self.master)
+                filter_list=self.filter_list)
 
     def run_rebalance_after_failover_and_verify(self, chosen,
                                                 prev_vbucket_stats,

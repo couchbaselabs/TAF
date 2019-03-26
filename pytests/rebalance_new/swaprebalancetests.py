@@ -101,6 +101,8 @@ class SwapRebalanceBase(BaseTestCase):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
         info = rest.get_nodes_self()
         available_ram = info.memoryQuota * node_ram_ratio
+        if available_ram < 100:
+            available_ram = 100
         self.bucket_util.create_default_bucket(available_ram, replica)
 
     def _create_multiple_buckets(self, replica=1):

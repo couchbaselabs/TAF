@@ -299,7 +299,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 if ("update" in self.doc_ops):
                     # 1/2th of data will be updated in each iteration
                     tasks.append(self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.cluster.master,
+                        self.cluster, bucket,
                         self.gen_update, "update", 0, batch_size=20,
                         persist_to=self.persist_to,
                         replicate_to=self.replicate_to, pause_secs=5,
@@ -309,7 +309,7 @@ class RebalanceInTests(RebalanceBaseTest):
                     # 1/2th of initial data will be added in each iteration
                     gen_create = self.get_doc_generator(self.num_items * (1+i)/2.0, self.num_items * (1 + i / 2.0))
                     tasks.append(self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.cluster.master, gen_create,
+                        self.cluster, bucket, gen_create,
                         "create", 0, batch_size=20, persist_to=self.persist_to,
                         replicate_to=self.replicate_to, pause_secs=5,
                         timeout_secs=self.sdk_timeout,
@@ -320,7 +320,7 @@ class RebalanceInTests(RebalanceBaseTest):
                     gen_delete = self.get_doc_generator(int(self.num_items * (1-i / (self.num_servers - 1.0))) + 1,
                                                         int(self.num_items * (1-(i-1) / (self.num_servers - 1.0))))
                     tasks.append(self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.cluster.master, gen_delete,
+                        self.cluster, bucket, gen_delete,
                         "delete", 0, batch_size=20, persist_to=self.persist_to,
                         replicate_to=self.replicate_to, pause_secs=5,
                         timeout_secs=self.sdk_timeout,
