@@ -71,7 +71,7 @@ class BaseTestCase(unittest.TestCase):
             # Bucket specific params
             self.bucket_type = self.input.param("bucket_type", "membase")
             self.bucket_size = self.input.param("bucket_size", None)
-            self.standard_buckets = self.input.param("standard_buckets", None)
+            self.standard_buckets = self.input.param("standard_buckets", 1)
             self.vbuckets = self.input.param("vbuckets", 1024)
             self.num_replicas = self.input.param("replicas", 1)
             self.active_resident_threshold = int(self.input.param("active_resident_threshold", 100))
