@@ -84,12 +84,12 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks = []
         if (self.doc_ops is not None):
             if ("update" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0))
             if ("create" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0))
                 self.num_items = self.num_items + 1 + (self.num_items * 3 / 2)
             if ("delete" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0))
                 self.num_items = self.num_items - (self.num_items / 2)
             for task in tasks:
                 self.task_manager.get_task_result(task)
@@ -132,12 +132,12 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks = []
         if (self.doc_ops is not None):
             if ("update" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0))
             if ("create" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0))
                 self.num_items = self.num_items + 1 + (self.num_items * 3 / 2)
             if ("delete" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0))
                 self.num_items = self.num_items - (self.num_items / 2)
             for task in tasks:
                 self.task_manager.get_task_result(task)
@@ -184,12 +184,12 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks = []
         if (self.doc_ops is not None):
             if ("update" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0))
             if ("create" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0))
                 self.num_items = self.num_items + 1 + (self.num_items * 3 / 2)
             if ("delete" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0))
                 self.num_items = self.num_items - (self.num_items / 2)
             for task in tasks:
                 self.task_manager.get_task_result(task)
@@ -242,12 +242,12 @@ class RebalanceOutTests(RebalanceBaseTest):
         # allows multiple of them but one by one
         if (self.doc_ops is not None):
             if ("update" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0))
             if ("create" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0))
                 self.num_items = self.num_items + 1 + (self.num_items * 3 / 2)
             if ("delete" in self.doc_ops):
-                tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0)
+                tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0))
                 self.num_items = self.num_items - (self.num_items / 2)
         for task in tasks:
             self.task_manager.get_task_result(task)
@@ -316,12 +316,12 @@ class RebalanceOutTests(RebalanceBaseTest):
             tasks = [self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])]
             if (self.doc_ops is not None):
                 if ("update" in self.doc_ops):
-                    tasks += self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0)
+                    tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0))
                 if ("create" in self.doc_ops):
-                    tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0)
+                    tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_create, "create", 0))
                     self.num_items = self.num_items + 1 + (self.num_items * 3 / 2)
                 if ("delete" in self.doc_ops):
-                    tasks += self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0)
+                    tasks.append(self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0))
                     self.num_items = self.num_items - (self.num_items / 2)
                 for task in tasks:
                     self.task_manager.get_task_result(task)
