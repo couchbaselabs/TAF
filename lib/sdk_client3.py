@@ -213,19 +213,19 @@ class SDKClient(object):
                 if f:
                     fail[doc["key"]] = f
             if fail:
-                docs = fail
+                docs = [{"key": key, "value":value["value"]} for key, value in fail.items()]
                 retry -= 1
-                errors = [doc["error"] for doc in fail]
-                log.warning("Retrying {0} documents again. Error reasons: {1}."
+                errors = [value["error"] for key, value in fail.items()]
+                print("Retrying {0} documents again. Error reasons: {1}."
                             "Retry count: {2}"
                             .format(docs.__len__(), errors, retry + 1))
                 time.sleep(5)
             else:
                 return success, fail
         if retry == 0:
-            errors = [doc["errors"] for doc in fail]
+            errors = [value["error"] for key, value in fail.items()]
             errors = set(errors)
-            log.error("Could not load all documents in this set."
+            print("Could not load all documents in this set."
                       "Failure count={0}, reasons: {1}"
                       .format(len(fail), errors))
             return success, fail
@@ -266,10 +266,15 @@ class SDKClient(object):
             return success, fail
 
     def __translate_to_json_object(self, value, doc_type="json"):
+        
+        if type(value) == JsonObject:
+            return value
+        
         json_obj = JsonObject.create()
         try:
             if doc_type.find("json") != -1:
-                value = pyJson.loads(value)
+                if type(value) != dict:
+                    value = pyJson.loads(value)
                 for field, val in value.items():
                     json_obj.put(field, val)
                 return json_obj
@@ -306,3 +311,4 @@ if __name__ == "__main__":
     key_value = batch_gen.next_batch()
     print key_value
     client.insert_multi(key_value, 100, TimeUnit.MINUTES, 1000)
+    client.close()
