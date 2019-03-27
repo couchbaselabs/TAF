@@ -22,7 +22,7 @@ from bucket_utils.Bucket import Bucket
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import BlobGenerator
+from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
 from couchbase_helper.documentgenerator import DocumentGenerator
 # from couchbase_helper.stats_tools import StatsCommon
 import crc32
@@ -725,6 +725,23 @@ class bucket_utils():
         self._load_all_buckets(self.cluster.master, gen_load, data_op, 0,
                                batch_size=batch_size)
         return gen_load
+
+    def load_bucket_with_durability(self, bucket, key, start, end,
+                                    op_type="create", doc_size=256,
+                                    doc_type="json", target_vbucket=None,
+                                    vbuckets=1024, replicate_to=0,
+                                    persist_to=0, durability_level=None):
+        doc_loader = doc_generator(
+            key, start, end, doc_size=doc_size, doc_type=doc_type,
+            target_vbucket=target_vbucket, vbuckets=vbuckets)
+        doc_loader_task = self.task_manager.async_load_gen_docs(
+                self.cluster, bucket, doc_loader, op_type, 0,
+                batch_size=10, persist_to=persist_to,
+                replicate_to=replicate_to,
+                pause_secs=5, timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries)
+        self.task_manager.jython_task_manager.get_task_result(doc_loader_task)
+        return
 
     def get_vbucket_seqnos(self, servers, buckets, skip_consistency=False,
                            per_node=True):
