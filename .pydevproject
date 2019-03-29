@@ -2,7 +2,6 @@
 <?eclipse-pydev version="1.0"?><pydev_project>
     <pydev_pathproperty name="org.python.pydev.PROJECT_SOURCE_PATH">
         <path>/${PROJECT_DIR_NAME}/bulk_doc_operations.jar</path>
-        <path>/${PROJECT_DIR_NAME}/doc_ops.jar</path>
         <path>/${PROJECT_DIR_NAME}/jsch-0.1.54.jar</path>
         <path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1</path>
         <path>/${PROJECT_DIR_NAME}/Couchbase-Java-Client-2.6.1/couchbase-core-io-1.6.1-javadoc.jar</path>
