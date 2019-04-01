@@ -279,6 +279,45 @@ class Cbstats(CbCmdBase):
 
         return result
 
+    def failover_stats(self, bucket_name):
+        """
+        Gets vbucket's failover stats. Uses command,
+          cbstats localhost:port -b 'bucket_name' failovers
+
+        Arguments:
+        :bucket_name    - Name of the bucket to get the stats
+        :field_to_grep  - Target stat name string to grep.
+                          Default=None means fetch all stats for the vbucket
+
+        Returns:
+        :stats - Dictionary of format stats["vb_num"]["stat_name"] = value
+
+        Raise:
+        :Exception returned from command line execution (if any)
+        """
+
+        stats = dict()
+        output, error = self.get_stats(bucket_name, "failovers")
+        if len(error) != 0:
+            raise("\n".join(error))
+
+        pattern = "[ \t]vb_([0-9]+):([0-9A-Za-z:]+):[ \t]+([0-9]+)"
+        regexp = re.compile(pattern)
+
+        for line in output:
+            # Match the regexp to the line and populate the values
+            match_result = regexp.match(line)
+            vb_num = match_result.group(1)
+            stat_name = match_result.group(2)
+            stat_value = match_result.group(3)
+
+            # Create a sub_dict to state vbucket level stats
+            stats[vb_num] = dict()
+            # Populate the values to the stats dictionary
+            stats[vb_num][stat_name] = stat_value
+
+        return stats
+
     def verify_failovers_field_stat(self, bucket_name, field_to_grep,
                                     expected_value, vbuckets_list=None):
         """
