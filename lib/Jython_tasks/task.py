@@ -15,7 +15,7 @@ from httplib import IncompleteRead
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from Jython_tasks.shutdown import shutdown_and_await_termination
-from cbstats_utils.cbstats import Cbstats
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
                                                doc_generator

@@ -1,8 +1,8 @@
 from basetestcase import BaseTestCase
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from remote.remote_util import RemoteMachineShellConnection
 from crash_test.constants import signum
-from cbstats_utils.cbstats import Cbstats
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class CrashTest(BaseTestCase):

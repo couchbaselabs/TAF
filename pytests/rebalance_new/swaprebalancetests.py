@@ -5,13 +5,13 @@ import logger
 from math import floor
 from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection, RestHelper
 from membase.helper.rebalance_helper import RebalanceHelper
-from remote.remote_util import RemoteMachineShellConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from membase.api.exception import RebalanceFailedException
-from cbstats_utils.cbstats import Cbstats
+from remote.remote_util import RemoteMachineShellConnection
 from BucketLib.BucketOperations import BucketHelper
 
 

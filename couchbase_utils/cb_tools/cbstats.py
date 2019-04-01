@@ -1,49 +1,15 @@
-import logging
 import re
 import zlib
 
-from testconstants import \
-    LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \
-    WIN_COUCHBASE_BIN_PATH, MAC_COUCHBASE_BIN_PATH
-
-log = logging.getLogger(__name__)
+from cb_tools.cb_tools_base import CbCmdBase
 
 
-class Cbstats():
+class Cbstats(CbCmdBase):
     def __init__(self, shell_conn, port=11210, username="Administrator",
                  password="password"):
 
-        self.shellConn = shell_conn
-        self.port = port
-        self.username = username
-        self.password = password
-
-        self.binaryName = "cbstats"
-        self.cbstatCmd = "%s%s" % (LINUX_COUCHBASE_BIN_PATH, self.binaryName)
-
-        if self.shellConn.username != "root":
-            self.cbstatCmd = "%s%s" % (LINUX_NONROOT_CB_BIN_PATH,
-                                       self.binaryName)
-
-        if self.shellConn.extract_remote_info().type.lower() == 'windows':
-            self.cbstatCmd = "%s%s.exe" % (WIN_COUCHBASE_BIN_PATH,
-                                           self.binaryName)
-        elif self.shellConn.extract_remote_info().type.lower() == 'mac':
-            self.cbstatCmd = "%s%s" % (MAC_COUCHBASE_BIN_PATH,
-                                       self.binaryName)
-
-    def __execute_cmd(self, cmd):
-        """
-        Executed the given command in the target shell
-        Arguments:
-        :cmd - Command to execute
-
-        Returns:
-        :output - Output for the command execution
-        :error  - Buffer containing warnings/errors from the execution
-        """
-        log.info("Executing: '%s'" % (cmd))
-        return self.shellConn.execute_command(cmd)
+        CbCmdBase.__init__(self, shell_conn, "cbstats", port=port,
+                           username=username, password=password)
 
     def __calculate_vbucket_num(self, doc_key, total_vbuckets):
         """
@@ -85,7 +51,7 @@ class Cbstats():
         if field_to_grep:
             cmd = "%s | grep %s" % (cmd, field_to_grep)
 
-        return self.__execute_cmd(cmd)
+        return self._execute_cmd(cmd)
 
     def get_vbucket_stats(self, bucket_name, stat_name, vbucket_num,
                           field_to_grep=None):
@@ -119,7 +85,7 @@ class Cbstats():
         if field_to_grep:
             cmd = "%s | grep %s" % (cmd, field_to_grep)
 
-        return self.__execute_cmd(cmd)
+        return self._execute_cmd(cmd)
 
     # Below are wrapper functions for above command executor APIs
     def all_stats(self, bucket_name, field_to_grep):
@@ -179,7 +145,7 @@ class Cbstats():
         cmd = "%s localhost:%s -u %s -p %s -b %s vbucket" \
               % (self.cbstatCmd, self.port, self.username, self.password,
                  bucket_name)
-        output, error = self.__execute_cmd(cmd)
+        output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise("\n".join(error))
 
@@ -262,7 +228,7 @@ class Cbstats():
               % (self.cbstatCmd, self.port, self.username, self.password,
                  bucket_name, doc_key, vbucket_num, field_to_grep)
 
-        output, error = self.__execute_cmd(cmd)
+        output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise("\n".join(error))
 

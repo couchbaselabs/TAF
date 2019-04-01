@@ -21,11 +21,10 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json",
     if doc_type in ["string", "binary"]:
         template = "Age:{0}, first_name:{1}, body: {2}"
     if target_vbucket:
-        return DocumentGeneratorForTargetVbucket(key, template, age, first,
-                                                 body, start=start, end=end,
-                                                 doc_type=doc_type,
-                                                 target_vbucket=target_vbucket,
-                                                 vbuckets=vbuckets)
+        return DocumentGeneratorForTargetVbucket(
+            key, template, age, first, body, start=start, end=end,
+            doc_type=doc_type, target_vbucket=target_vbucket,
+            vbuckets=vbuckets)
     return DocumentGenerator(key, template, age, first, body,
                              start=start, end=end, doc_type=doc_type)
 

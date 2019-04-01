@@ -1,5 +1,5 @@
 from math import floor
-from cbstats_utils.cbstats import Cbstats
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
