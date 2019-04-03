@@ -30,6 +30,14 @@ class CouchbaseError(object):
         elif action == "kill_memcached":
             _, error = self.__interrupt_process("memcached", "kill")
             self.__handle_shell_error(error)
+        elif action == "stop_beam.smp":
+            _, error = self.__interrupt_process("beam.smp", "stop")
+            self.__handle_shell_error(error)
+        elif action == "kill_beam.smp":
+            _, error = self.__interrupt_process("beam.smp", "kill")
+            self.__handle_shell_error(error)
+        elif action == "stop_server":
+            self.shell_conn.stop_server()
         elif action == "stop_persistence":
             cbepctl_obj = Cbepctl(self.shell_conn)
             cbepctl_obj.persistence(bucket_name, "stop")
@@ -40,6 +48,11 @@ class CouchbaseError(object):
         if action == "stop_memcached":
             _, error = self.__interrupt_process("memcached", "resume")
             self.__handle_shell_error(error)
+        elif action == "stop_beam.smp":
+            _, error = self.__interrupt_process("beam.smp", "resume")
+            self.__handle_shell_error(error)
+        elif action in ["kill_beam.smp", "stop_server"]:
+            self.shell_conn.start_server()
         elif action == "start_persistence":
             cbepctl_obj = Cbepctl(self.shell_conn)
             cbepctl_obj.persistence(bucket_name, "start")

@@ -93,6 +93,7 @@ class BaseTestCase(unittest.TestCase):
             self.sdk_retries = self.input.param("sdk_retries", 5)
             self.sdk_timeout = self.input.param("sdk_timeout", 5)
             self.durability_level = self.input.param("durability", None)
+            self.durability_timeout = self.input.param("durability_timeout", 0)
 
             self.index_quota_percent = self.input.param("index_quota_percent", None)
             self.num_servers = self.input.param("servers", len(self.cluster.servers))
