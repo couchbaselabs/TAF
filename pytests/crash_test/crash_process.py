@@ -60,7 +60,7 @@ class CrashTest(BaseTestCase):
     def stop_process(self):
         """
         1. Starting loading docs into the default bucket
-        2. Stop the requested process, which will not impact the
+        2. Stop the requested process, which will impact the
            memcached operations
         3. Wait for load bucket task to complete
         4. Validate the docs for durability

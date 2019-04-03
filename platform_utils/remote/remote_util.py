@@ -426,7 +426,7 @@ class RemoteMachineShellConnection:
         else:
             self.log.error("don't know operating system or product version")
 
-    def stop_server(self, os="unix"):
+    def stop_server(self):
         self.extract_remote_info()
         os = self.info.distribution_type.lower()
         if not os or os == "centos":
@@ -2771,7 +2771,7 @@ class RemoteMachineShellConnection:
                 output, error = self.execute_command("ipcrm")
                 self.log_command_output(output, error)
         elif self.info.distribution_type.lower() == 'mac':
-            self.stop_server(os='mac')
+            self.stop_server()
             """ close Safari browser before uninstall """
             self.terminate_process(self.info, "/Applications/Safari.app/Contents/MacOS/Safari")
             self.terminate_processes(self.info, terminate_process_list)
