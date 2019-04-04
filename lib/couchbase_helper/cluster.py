@@ -26,11 +26,10 @@ class ServerTasks(object):
     asynchronously on Couchbase cluster
     """
 
-    def __init__(self, task_manager=jython_task_manager(),
-                 load_gen_task_manager=jython_task_manager()):
+    def __init__(self, task_manager=jython_task_manager()):
+
         self.task_manager = TaskManager("Cluster_Thread")
         self.jython_task_manager = task_manager
-        self.load_gen_task_manager = load_gen_task_manager
 
     def async_create_bucket(self, server, bucket):
         """
@@ -155,7 +154,7 @@ class ServerTasks(object):
             clients.append(client)
         if active_resident_threshold == 100:
             _task = jython_tasks.LoadDocumentsGeneratorsTask(
-                cluster, self.load_gen_task_manager, bucket, clients,
+                cluster, self.jython_task_manager, bucket, clients,
                 [generator], op_type, exp, flag=flag, persist_to=persist_to,
                 replicate_to=replicate_to, only_store_hash=only_store_hash,
                 batch_size=batch_size, pause_secs=pause_secs,
