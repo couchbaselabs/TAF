@@ -2,6 +2,7 @@ from random import randint
 
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
+import zlib
 
 
 class DurabilityTestsBase(BaseTestCase):
@@ -12,7 +13,8 @@ class DurabilityTestsBase(BaseTestCase):
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
         self.doc_ops = self.input.param("doc_ops", None)
-        self.with_non_sync_writes = self.input.param("with_non_sync_writes", False)
+        self.with_non_sync_writes = self.input.param("with_non_sync_writes",
+                                                     False)
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
         if self.num_replicas > 1:
@@ -56,6 +58,13 @@ class DurabilityTestsBase(BaseTestCase):
 
     def tearDown(self):
         super(DurabilityTestsBase, self).tearDown()
+
+    def get_vb_num(self, key):
+        return (((zlib.crc32(key)) >> 16) & 0x7fff) & (self.vbuckets-1)
+
+    def get_random_node(self):
+        rand_node_index = randint(1, self.nodes_init-1)
+        return self.cluster.nodes_in_cluster[rand_node_index]
 
     def getTargetNodes(self):
         def select_randam_node(nodes):
