@@ -27,11 +27,11 @@ from membase.api.exception import \
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 
-from com.couchbase.client.java import *
-from com.couchbase.client.java.document import *
-from com.couchbase.client.java.document.json import *
-from com.couchbase.client.java.query import *
-from com.couchbase.client.java.transcoder import JsonTranscoder
+#from com.couchbase.client.java import *
+#from com.couchbase.client.java.document import *
+#from com.couchbase.client.java.document.json import *
+#from com.couchbase.client.java.query import *
+#from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
 from java.lang import Thread
@@ -83,78 +83,6 @@ class Task(Callable):
 
     def call(self):
         raise NotImplementedError
-
-
-class DocloaderTask(Callable):
-    def __init__(self, bucket, num_items, start_from, k, v, thread_name):
-        self.bucket = bucket
-        self.num_items = num_items
-        self.start_from = start_from
-        self.started = None
-        self.completed = None
-        self.loaded = 0
-        self.thread_used = thread_name
-        self.exception = None
-        self.key = k
-        self.value = v
-
-    def __str__(self):
-        if self.exception:
-            return "[%s] %s download error %s in %.2fs" % \
-                   (self.thread_used, self.num_items, self.exception,
-                    self.completed - self.started,)  # , self.result)
-        elif self.completed:
-            print("Time: %s"
-                  % str(time.strftime("%H:%M:%S", time.gmtime(time.time()))))
-            return "[%s] %s items loaded in %.2fs" % \
-                   (self.thread_used, self.loaded,
-                    self.completed - self.started,)  # , self.result)
-        elif self.started:
-            return "[%s] %s started at %s" % \
-                   (self.thread_used, self.num_items, self.started)
-        else:
-            return "[%s] %s not yet scheduled" % \
-                   (self.thread_used, self.num_items)
-
-    def call(self):
-        self.started = time.time()
-        try:
-            var = str(Json.dumps(self.value))
-            user = JsonTranscoder().stringToJsonObject(var)
-            # user = JsonObject.fromJson(str(self.value))
-            for i in xrange(self.num_items):
-                doc = JsonDocument.create(self.key + str(i + self.start_from), user)
-                response = self.bucket.upsert(doc)
-                self.loaded += 1
-        except Exception, ex:
-            self.exception = ex
-        self.completed = time.time()
-        return self
-
-
-class docloadertask_executor():
-
-    def load(self, k, v, docs=10000, server="localhost", bucket="default"):
-        cluster = CouchbaseCluster.create(server)
-        cluster.authenticate("Administrator", "password")
-        bucket = cluster.openBucket(bucket)
-
-        pool = Executors.newFixedThreadPool(5)
-        docloaders = []
-        num_executors = 5
-        total_num_executors = 5
-        num_docs = docs / total_num_executors
-        for i in xrange(total_num_executors):
-            docloaders.append(DocloaderTask(bucket, num_docs, i*num_docs, k, v))
-        futures = pool.invokeAll(docloaders)
-        for future in futures:
-            print(future.get(num_executors, TimeUnit.SECONDS))
-
-        print("Executors completed!!")
-        shutdown_and_await_termination(pool, 5)
-        if bucket.close() and cluster.disconnect():
-            pass
-
 
 class rebalanceTask(Task):
 
@@ -509,7 +437,7 @@ class GenericLoadingTask(Task):
     # start of batch methods
     def batch_create(self, key_val, shared_client=None, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
-                     doc_type="json"):
+                     doc_type="json", durability=""):
         """
         standalone method for creating key/values in batch (sans kvstore)
 
@@ -517,16 +445,16 @@ class GenericLoadingTask(Task):
             key_val -- array of key/value dicts to load size = self.batch_size
             shared_client -- optional client to use for data loading
         """
+        success = {}
+        fail = {}
         try:
             self._process_values_for_create(key_val)
             client = shared_client or self.client
             retry_count = 0
             retry_docs = key_val
-            success = {}
-            fail = {}
-            success, fail = client.setMulti(self.exp, self.flag, retry_docs, self.pause, timeout, parallel=False,
-                            persist_to=persist_to, replicate_to=replicate_to,
-                            time_unit=time_unit, retry=self.retries, doc_type=doc_type)
+            success, fail = client.setMulti(retry_docs, self.exp, exp_unit=self.exp_unit, persist_to=persist_to,
+                                            replicate_to=replicate_to, timeout=timeout, time_unit=time_unit,
+                                            retry=self.retries, doc_type=doc_type, durability=durability)
             if fail:
                 try:
                     Thread.sleep(timeout)
@@ -542,36 +470,39 @@ class GenericLoadingTask(Task):
                             fail.pop(key)
                 log.info("Failed items after reads {}".format(fail.__str__()))
             return success, fail
-        except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
-                RuntimeError) as error:
+        except Exception as error:
             log.error(error)
         return success, fail
 
     def batch_update(self, key_val, persist_to=0, replicate_to=0, timeout=5,
-                     time_unit="seconds", doc_type="json"):
+                     time_unit="seconds", doc_type="json", durability=""):
+        success = {}
+        fail = {}
         try:
-            self._process_values_for_update(key_val)
+            self._process_values_for_create(key_val)
+            client = self.client
             retry_count = 0
             retry_docs = key_val
-            success = {}
-            fail = {}
-            while retry_count < self.retries:
-                success, fail = self.client.upsertMulti(self.exp, self.flag, retry_docs, self.pause, timeout, parallel=False,
-                                        persist_to=persist_to, replicate_to=replicate_to,
-                                        time_unit=time_unit, retry=self.retries, doc_type=doc_type)
-                if fail:
-                    retry_docs = {}
-                    for key in fail.keys():
-                        retry_docs[key] = key_val[key]
-                    retry_count += 1
-                else:
-                    break
+            success, fail = client.upsertMulti(retry_docs, self.exp, exp_unit=self.exp_unit, persist_to=persist_to,
+                                            replicate_to=replicate_to, timeout=timeout, time_unit=time_unit,
+                                            retry=self.retries, doc_type=doc_type, durability=durability)
+            if fail:
+                try:
+                    Thread.sleep(timeout)
+                except Exception as e:
+                    log.info(e)
+                log.info("There was failure. Trying to read the values {}".format(fail.__str__()))
+                read_map = self.batch_read(fail)
+                for key, value in fail.items():
+                    if key in read_map:
+                        value = read_map[key]
+                        if value[1] != 0:
+                            success[key] = fail[key]
+                            fail.pop(key)
+                log.info("Failed items after reads {}".format(fail.__str__()))
             return success, fail
-
-        except (self.client.MemcachedError, ServerUnavailableException, socket.error, EOFError, AttributeError,
-                RuntimeError) as error:
+        except Exception as error:
             log.error(error)
-
         return success, fail
 
     def batch_delete(self, key_val, persist_to=None, replicate_to=None,
@@ -582,7 +513,7 @@ class GenericLoadingTask(Task):
                 self.client.delete(key, persist_to=persist_to,
                                    replicate_to=replicate_to,
                                    timeout=timeout, timeunit=timeunit)
-            except self.client.MemcachedError as error:
+            except Exception as error:
                 cant_deleted.append(key)
                 return
             except (ServerUnavailableException, socket.error, EOFError,
@@ -592,10 +523,9 @@ class GenericLoadingTask(Task):
 
     def batch_read(self, key_val):
         try:
-            result_map = self.client.getMulti(key_val.keys(), self.pause,
-                                              self.timeout)
+            result_map = self.client.getMulti(key_val.keys())
             return result_map
-        except self.client.MemcachedError as error:
+        except Exception as error:
             self.set_exception(error)
 
     def _process_values_for_create(self, key_val):
@@ -635,7 +565,7 @@ class GenericLoadingTask(Task):
 class LoadDocumentsTask(GenericLoadingTask):
     fail = {}
 
-    def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
+    def __init__(self, cluster, bucket, client, generator, op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, throughput_concurrency=4, retries=5):
@@ -648,6 +578,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
+        self.exp_unit = exp_unit
         self.flag = flag
         self.persist_to = persist_to
         self.replicate_to = replicate_to
@@ -671,10 +602,11 @@ class LoadDocumentsTask(GenericLoadingTask):
                               timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
             self.fail.update(fail)
         elif self.op_type == 'update':
-            self.batch_update(key_value, persist_to=self.persist_to,
+            success, fail = self.batch_update(key_value, persist_to=self.persist_to,
                               replicate_to=self.replicate_to,
                               timeout=self.timeout, time_unit=self.time_unit,
                               doc_type=self.generator.doc_type)
+            self.fail.update(fail)
         elif self.op_type == 'delete':
             self.batch_delete(key_value)
         elif self.op_type == 'read':
@@ -902,7 +834,7 @@ class Durability(Task):
 class LoadDocumentsGeneratorsTask(Task):
     fail = {}
     def __init__(self, cluster, task_manager, bucket, clients, generators,
-                 op_type, exp, flag=0,
+                 op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True,
@@ -911,6 +843,7 @@ class LoadDocumentsGeneratorsTask(Task):
             "DocumentsLoadGenTask_{}".format(time.time()))
         self.cluster = cluster
         self.exp = exp
+        self.exp_unit = exp_unit
         self.flag = flag
         self.persit_to = persist_to
         self.replicate_to = replicate_to
@@ -1019,7 +952,7 @@ class LoadDocumentsGeneratorsTask(Task):
             generators.append(batch_gen)
         for i in range(0, len(generators)):
             task = LoadDocumentsTask(self.cluster, self.bucket, self.clients[i], generators[i], self.op_type,
-                                     self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
+                                     self.exp, self.exp_unit, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
                                      time_unit=self.time_unit, batch_size=self.batch_size,
                                      pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                                      compression=self.compression, throughput_concurrency=self.process_concurrency)
@@ -1209,15 +1142,6 @@ class ValidateDocumentsTask(GenericLoadingTask):
 
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch()
-        if self.op_type == 'create':
-            self._process_values_for_create(key_value)
-        elif self.op_type == 'update':
-            self._process_values_for_update(key_value)
-        elif self.op_type == 'delete':
-            pass
-        else:
-            self.set_exception(Exception("Bad operation type: %s"
-                                         % self.op_type))
         result_map = self.batch_read(key_value)
         missing_keys, wrong_values = self.validate_key_val(result_map, key_value)
         if self.op_type == 'delete':
@@ -1246,7 +1170,13 @@ class ValidateDocumentsTask(GenericLoadingTask):
         for key, value in key_value.items():
             if key in map:
                 expected_val = Json.loads(value)
-                actual_val = Json.loads(map[key][2])
+                actual_val = {}
+                if map[key][1] != 0:
+                    actual_val = Json.loads(map[key][2].toString())
+                elif map[key][0] != None:
+                    actual_val = map[key][0].toString()
+                else:
+                    missing_keys.append(key)
                 if expected_val == actual_val:
                     continue
                 else:

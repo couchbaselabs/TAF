@@ -5,15 +5,15 @@ Java based SDK client interface
 @author: riteshagarwal
 
 '''
-from com.couchbase.client.java import CouchbaseCluster
-from com.couchbase.client.core import CouchbaseException
+from com.couchbase.client.java import Cluster
+from com.couchbase.client.core.error import CouchbaseException
 from java.util.logging import Logger, Level, ConsoleHandler
-from com.couchbase.client.java.env import DefaultCouchbaseEnvironment
-from com.couchbase.client.core.env import KeyValueServiceConfig
+from com.couchbase.client.java.env import ClusterEnvironment
+from com.couchbase.client.core.service import KeyValueServiceConfig
 from java.util.concurrent import TimeUnit
 from java.lang import System
 a = {}
-env = DefaultCouchbaseEnvironment.builder().mutationTokensEnabled(True).\
+env = ClusterEnvironment.builder().mutationTokensEnabled(True).\
     computationPoolSize(5).maxRequestLifetime(TimeUnit.SECONDS.toMillis(300000)).\
     socketConnectTimeout(100000).connectTimeout(100000).keyValueServiceConfig(KeyValueServiceConfig.create(10)).\
     kvTimeout(10).build()
@@ -42,7 +42,7 @@ class SDKClient(object):
             for h in logger.getParent().getHandlers():
                 if isinstance(h, ConsoleHandler) :
                     h.setLevel(Level.SEVERE);
-            self.cluster = CouchbaseCluster.create(env, self.server.ip)
+            self.cluster = Cluster.create(env, self.server.ip)
             self.cluster.authenticate(self.username, self.password)
             self.clusterManager = self.cluster.clusterManager()
         except CouchbaseException:

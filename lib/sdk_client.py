@@ -1010,27 +1010,25 @@ class SDKSmartClient(object):
     def getfromReplica(self, key, ReplicaMode=ReplicaMode.ALL):
         return self.client.getfromReplica(key, ReplicaMode=ReplicaMode)
 
-    def setMulti(self, exp, flags, key_val_dic, pause=None, timeout=5,
-                 parallel=None, format=FMT_AUTO,
-                 persist_to=0, replicate_to=0, time_unit="seconds", retry=5,
-                 doc_type="json"):
+    def setMulti(self, key_val_dic, exp, exp_unit="seconds",
+                 persist_to=0, replicate_to=0, timeout=5, time_unit="seconds", retry=5,
+                 doc_type="json", durability=None):
         return self.client.set_multi(key_val_dic, ttl=exp,
                                      persist_to=persist_to,
                                      replicate_to=replicate_to,
                                      timeOut=timeout, timeUnit=time_unit,
                                      retry=retry, doc_type=doc_type)
 
-    def upsertMulti(self, exp, flags, key_val_dic, pause=None, timeout=5,
-                    parallel=None, format=FMT_AUTO,
-                    persist_to=0, replicate_to=0,
-                    time_unit="seconds", retry=5, doc_type="json"):
+    def upsertMulti(self, key_val_dic, exp, exp_unit="seconds",
+                 persist_to=0, replicate_to=0, timeout=5, time_unit="seconds", retry=5,
+                 doc_type="json", durability=None):
         return self.client.upsert_multi(key_val_dic, ttl=exp,
                                         persist_to=persist_to,
                                         replicate_to=replicate_to,
                                         timeOut=timeout, timeUnit=time_unit,
                                         retry=retry, doc_type=doc_type)
 
-    def getMulti(self, keys_lst, pause=None, timeout_sec=5.0, parallel=None):
+    def getMulti(self, keys_lst):
         map = None
         try:
             # self.client.cb.timeout = timeout_sec

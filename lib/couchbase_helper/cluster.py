@@ -5,7 +5,8 @@ import Jython_tasks.task as jython_tasks
 
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
-from sdk_client import SDKSmartClient as VBucketAwareMemcached
+#from sdk_client import SDKSmartClient as VBucketAwareMemcached
+from sdk_client3 import SDKClient as VBucketAwareMemcached
 from tasks.taskmanager import TaskManager
 from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.task_manager import TaskManager as jython_task_manager
@@ -155,7 +156,7 @@ class ServerTasks(object):
         if active_resident_threshold == 100:
             _task = jython_tasks.LoadDocumentsGeneratorsTask(
                 cluster, self.jython_task_manager, bucket, clients,
-                [generator], op_type, exp, flag=flag, persist_to=persist_to,
+                [generator], op_type, exp, exp_unit="second", flag=flag, persist_to=persist_to,
                 replicate_to=replicate_to, only_store_hash=only_store_hash,
                 batch_size=batch_size, pause_secs=pause_secs,
                 timeout_secs=timeout_secs, compression=compression,

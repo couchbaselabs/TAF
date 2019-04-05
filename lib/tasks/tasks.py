@@ -48,7 +48,8 @@ import sys, traceback
 #     from memcached.helper.data_helper import VBucketAwareMemcached,KVStoreAwareSmartClient
 #from sdk_client import SDKSmartClient as VBucketAwareMemcached
 
-from sdk_client import SDKSmartClient as VBucketAwareMemcached
+#from sdk_client import SDKSmartClient as VBucketAwareMemcached
+from sdk_client3 import SDKClient as VBucketAwareMemcached
 CHECK_FLAG = False
 
 PENDING = 'PENDING'
