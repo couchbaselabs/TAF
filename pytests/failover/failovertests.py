@@ -32,7 +32,19 @@ class FailoverTests(FailoverBaseTest):
         self.add_back_flag = True
         self.common_test_body('normal')
 
-    def common_test_body(self, failover_reason):
+    def test_failover_then_add_back_and_rebalance_in(self):
+        self.add_back_flag = True
+        self.common_test_body('normal', rebalance_type="in")
+
+    def test_failover_then_add_back_and_rebalance_out(self):
+        self.add_back_flag = True
+        self.common_test_body('normal', rebalance_type="out")
+
+    def test_failover_then_add_back_and_swap_rebalance(self):
+        self.add_back_flag = True
+        self.common_test_body('normal', rebalance_type="swap")
+
+    def common_test_body(self, failover_reason, rebalance_type=None):
         """
             Main Test body which contains the flow of the failover basic steps
             1. Starts Operations if programmed into the test case(before/after)
@@ -173,7 +185,7 @@ class FailoverTests(FailoverBaseTest):
                         # the num_nodes in the cluster will remain the same
                         self.run_add_back_operation_and_verify(
                             [node_chosen], prev_vbucket_stats,
-                            record_static_data_set, prev_failover_stats)
+                            record_static_data_set, prev_failover_stats, rebalance_type=rebalance_type)
                     else:
                         self.run_rebalance_after_failover_and_verify(
                             [node_chosen], prev_vbucket_stats,
@@ -185,7 +197,7 @@ class FailoverTests(FailoverBaseTest):
                     self.run_add_back_operation_and_verify(
                         self.chosen, prev_vbucket_stats,
                         record_static_data_set, prev_failover_stats,
-                        durability_will_fail=durability_will_fail)
+                        durability_will_fail=durability_will_fail, rebalance_type=rebalance_type)
                 else:
                     self.run_rebalance_after_failover_and_verify(
                         self.chosen, prev_vbucket_stats,
@@ -273,7 +285,7 @@ class FailoverTests(FailoverBaseTest):
     def run_add_back_operation_and_verify(self, chosen, prev_vbucket_stats,
                                           record_static_data_set,
                                           prev_failover_stats,
-                                          durability_will_fail=False):
+                                          durability_will_fail=False, rebalance_type=None):
         """
         Method to run add-back operation with recovery type = (delta/full).
         It also verifies if the operations are correct with data
@@ -321,6 +333,16 @@ class FailoverTests(FailoverBaseTest):
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[],
                                 deltaRecoveryBuckets=self.deltaRecoveryBuckets)
+
+        if rebalance_type == "in":
+            rebalance = self.task.rebalance(self.servers[:self.nodes_init], [self.servers[self.nodes_init]], [])
+        if rebalance_type == "out":
+            rebalance = self.task.rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
+        if rebalance_type == "swap":
+            self.rest.add_node(self.master.rest_username, self.master.rest_password,
+                               self.servers[self.nodes_init].ip, self.servers[self.nodes_init].port,
+                               services=["kv"])
+            rebalance = self.task.rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
 
         # Check if node has to be killed or restarted during rebalance
         # Monitor Rebalance
