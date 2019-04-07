@@ -6,6 +6,7 @@ Created on Sep 14, 2017
 import copy
 import json as Json
 import logging
+import os
 import random
 import socket
 import string
@@ -18,26 +19,28 @@ from Jython_tasks.shutdown import shutdown_and_await_termination
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
-                                               doc_generator
+    doc_generator
 from membase.api.exception import \
     N1QLQueryException, DropIndexException, CreateIndexException, \
     DesignDocCreationException, QueryViewException, ReadDocumentException, \
     RebalanceFailedException, ServerUnavailableException, \
-    BucketCreationException
+    BucketCreationException, AutoFailoverException
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 
-#from com.couchbase.client.java import *
-#from com.couchbase.client.java.document import *
-#from com.couchbase.client.java.document.json import *
-#from com.couchbase.client.java.query import *
-#from com.couchbase.client.java.transcoder import JsonTranscoder
+# from com.couchbase.client.java import *
+# from com.couchbase.client.java.document import *
+# from com.couchbase.client.java.document.json import *
+# from com.couchbase.client.java.query import *
+# from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
 from java.lang import Thread
 from Jython_tasks import task_manager
 from copy import deepcopy
 from time import sleep
+
+from platform_utils.remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +86,7 @@ class Task(Callable):
 
     def call(self):
         raise NotImplementedError
+
 
 class rebalanceTask(Task):
 
@@ -484,8 +488,8 @@ class GenericLoadingTask(Task):
             retry_count = 0
             retry_docs = key_val
             success, fail = client.upsertMulti(retry_docs, self.exp, exp_unit=self.exp_unit, persist_to=persist_to,
-                                            replicate_to=replicate_to, timeout=timeout, time_unit=time_unit,
-                                            retry=self.retries, doc_type=doc_type, durability=durability)
+                                               replicate_to=replicate_to, timeout=timeout, time_unit=time_unit,
+                                               retry=self.retries, doc_type=doc_type, durability=durability)
             if fail:
                 try:
                     Thread.sleep(timeout)
@@ -584,7 +588,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.replicate_to = replicate_to
         self.time_unit = time_unit
         self.num_loaded = 0
-        #self.fail = {}
+        # self.fail = {}
 
         if proxy_client:
             log.info("Changing client to proxy %s:%s..."
@@ -599,13 +603,14 @@ class LoadDocumentsTask(GenericLoadingTask):
         key_value = doc_gen.next_batch()
         if self.op_type == 'create':
             success, fail = self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                              timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+                                              timeout=self.timeout, time_unit=self.time_unit,
+                                              doc_type=self.generator.doc_type)
             self.fail.update(fail)
         elif self.op_type == 'update':
             success, fail = self.batch_update(key_value, persist_to=self.persist_to,
-                              replicate_to=self.replicate_to,
-                              timeout=self.timeout, time_unit=self.time_unit,
-                              doc_type=self.generator.doc_type)
+                                              replicate_to=self.replicate_to,
+                                              timeout=self.timeout, time_unit=self.time_unit,
+                                              doc_type=self.generator.doc_type)
             self.fail.update(fail)
         elif self.op_type == 'delete':
             self.batch_delete(key_value)
@@ -688,7 +693,7 @@ class Durability(Task):
             Durability.tasks = []
             gen_start = int(self.generator.start)
             gen_end = max(int(self.generator.end), 1)
-            gen_range = max(int((self.generator.end-self.generator.start) / self.process_concurrency), 1)
+            gen_range = max(int((self.generator.end - self.generator.start) / self.process_concurrency), 1)
             for pos in range(gen_start, gen_end, gen_range):
                 partition_gen = copy.deepcopy(self.generator)
                 partition_gen.start = pos
@@ -728,6 +733,7 @@ class Durability(Task):
         3. Start the reader thread
         4. Keep track of non durable documents
         '''
+
         def __init__(self, cluster, bucket, client, generator, op_type, exp,
                      flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
@@ -782,7 +788,7 @@ class Durability(Task):
 
                 if len(f_docs) > 0:
                     Durability.create_failed[self.instance].update(f_docs)
-#                 print "CreateFailed = %s" % Durability.create_failed[self.instance]
+            #                 print "CreateFailed = %s" % Durability.create_failed[self.instance]
             elif self.op_type == 'update':
                 Durability.docs_to_be_updated[self.instance].update(self.batch_read(key_value))
                 s_docs, f_docs = self.batch_update(
@@ -797,7 +803,8 @@ class Durability(Task):
             else:
                 self.set_exception(Exception("Bad operation type: %s" % self.op_type))
             Durability.write_offset[self.instance] += len(key_value)
-#             print("Loader: WriteOffset" , Durability.write_offset[self.instance])
+
+        #             print("Loader: WriteOffset" , Durability.write_offset[self.instance])
 
         class Reader(Task):
             def __init__(self, generator, write_offset, instance, client):
@@ -819,11 +826,11 @@ class Durability(Task):
                               "Reader: FinalOffset=", self.end)
                         if self.generator._doc_gen.has_next():
                             key = self.generator._doc_gen.next()[0]
-#                             print "Reading: %s"%key
+                            #                             print "Reading: %s"%key
                             if key not in Durability.create_failed[self.instance].keys():
                                 map = self.client.getfromReplica(key, ReplicaMode.ALL)
                                 if len(map) <= Durability.replicate_to + 1:
-                                    print "Key isn't durable although SDK reports Durable, Key = ",key, " getfromReplica = ",map
+                                    print "Key isn't durable although SDK reports Durable, Key = ", key, " getfromReplica = ", map
                         if self.read_offset == self.end:
                             print "BREAKING!!"
                             break
@@ -833,6 +840,7 @@ class Durability(Task):
 
 class LoadDocumentsGeneratorsTask(Task):
     fail = {}
+
     def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
@@ -871,7 +879,7 @@ class LoadDocumentsGeneratorsTask(Task):
         else:
             self.bucket = bucket
         self.num_loaded = 0
-        #self.fail = {}
+        # self.fail = {}
 
     def call(self):
         self.start_task()
@@ -938,7 +946,7 @@ class LoadDocumentsGeneratorsTask(Task):
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-        gen_range = max(int((generator.end - generator.start)/self.process_concurrency), 1)
+        gen_range = max(int((generator.end - generator.start) / self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
             partition_gen.start = pos
@@ -952,7 +960,8 @@ class LoadDocumentsGeneratorsTask(Task):
             generators.append(batch_gen)
         for i in range(0, len(generators)):
             task = LoadDocumentsTask(self.cluster, self.bucket, self.clients[i], generators[i], self.op_type,
-                                     self.exp, self.exp_unit, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
+                                     self.exp, self.exp_unit, self.flag, persist_to=self.persit_to,
+                                     replicate_to=self.replicate_to,
                                      time_unit=self.time_unit, batch_size=self.batch_size,
                                      pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                                      compression=self.compression, throughput_concurrency=self.process_concurrency)
@@ -1079,7 +1088,7 @@ class LoadDocumentsForDgmTask(Task):
         return bucket_stat["vb_active_resident_items_ratio"]
 
     def _load_next_batch_of_docs(self, bucket):
-        doc_end_num = self.doc_start_num+self.doc_batch_size
+        doc_end_num = self.doc_start_num + self.doc_batch_size
         print("Doc load from {0} to {1}"
               .format(self.doc_start_num, doc_end_num))
         gen_load = doc_generator(self.key, self.doc_start_num, doc_end_num,
@@ -1181,7 +1190,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     continue
                 else:
                     wrong_value = "Key: {} Expected: {} Actual: {}" \
-                                  .format(key, expected_val, actual_val)
+                        .format(key, expected_val, actual_val)
                     wrong_values.append(wrong_value)
             else:
                 missing_keys.append(key)
@@ -1249,7 +1258,7 @@ class DocumentsValidatorTask(Task):
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-        gen_range = max(int((generator.end-generator.start) / self.process_concurrency), 1)
+        gen_range = max(int((generator.end - generator.start) / self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
             partition_gen.start = pos
@@ -1309,7 +1318,7 @@ class StatsWaitTask(Task):
                 if self.statCmd in ["all", "dcp"]:
                     self._get_all_stats_and_compare()
                 else:
-                    raise("Not supported. Implement the stat call")
+                    raise ("Not supported. Implement the stat call")
         finally:
             for _, conn in self.conns.items():
                 conn.close()
@@ -1536,7 +1545,7 @@ class ViewCreateTask(Task):
                     if (count < retry_count):
                         log.info(
                             "Design Doc {0} not yet available on node {1}:{2}. Retrying."
-                            .format(self.design_doc_name, node.ip, node.port))
+                                .format(self.design_doc_name, node.ip, node.port))
                         time.sleep(2)
                     else:
                         log.error("Design Doc {0} failed to replicate on node {1}:{2}"
@@ -1553,7 +1562,7 @@ class ViewCreateTask(Task):
             else:
                 self.set_exception(Exception(
                     "Design Doc {0} version mismatch on node {1}:{2}"
-                    .format(self.design_doc_name, node.ip, node.port)))
+                        .format(self.design_doc_name, node.ip, node.port)))
 
 
 class ViewDeleteTask(Task):
@@ -1669,7 +1678,7 @@ class ViewQueryTask(Task):
                 time.sleep(self.retry_time)
                 retries += 1
 
-        # catch and set all unexpected exceptions
+            # catch and set all unexpected exceptions
             except Exception as e:
                 self.set_exception(e)
                 self.complete_task()
@@ -1688,7 +1697,7 @@ class ViewQueryTask(Task):
                         self.expected_rows, len(content['rows'])))
 
             raised_error = content.get(u'error', '') or \
-                ''.join([str(item) for item in content.get(u'errors', [])])
+                           ''.join([str(item) for item in content.get(u'errors', [])])
             if raised_error:
                 raise QueryViewException(self.view_name, raised_error)
 
@@ -1796,7 +1805,7 @@ class N1QLQueryTask(Task):
                         log.info(actual_result)
                         raise Exception(
                             " INDEX usage in Query {0} :: NOT FOUND {1} :: as observed in result {2}"
-                            .format(self.query, self.index_name, self.actual_result))
+                                .format(self.query, self.index_name, self.actual_result))
             log.info(" <<<<< Done VERIFYING Query {0} >>>>>>"
                      .format(self.query))
             return True
@@ -2126,7 +2135,6 @@ class BucketCreateTask(Task):
 
 
 class MonitorActiveTask(Task):
-
     """
         Attempt to monitor active task that  is available in _active_tasks API.
         It allows to monitor indexer, bucket compaction.
@@ -2180,9 +2188,11 @@ class MonitorActiveTask(Task):
         tasks = self.rest.active_tasks()
         for task in tasks:
             if task["type"] == self.type and ((
-                        self.target_key == "designDocument" and task[self.target_key] == self.target_value) or (
-                        self.target_key == "original_target" and task[self.target_key]["type"] == self.target_value) or (
-                        self.type == 'indexer') ):
+                                                      self.target_key == "designDocument" and task[
+                                                  self.target_key] == self.target_value) or (
+                                                      self.target_key == "original_target" and task[self.target_key][
+                                                  "type"] == self.target_value) or (
+                                                      self.type == 'indexer')):
                 self.current_progress = task["progress"]
                 self.task = task
                 log.info("monitoring active task was found:" + str(task))
@@ -2207,7 +2217,7 @@ class MonitorActiveTask(Task):
             return True
 
     def check(self):
-        while(1):
+        while (1):
             tasks = self.rest.active_tasks()
             for task in tasks:
                 # if task still exists
@@ -2217,9 +2227,9 @@ class MonitorActiveTask(Task):
                                 task["progress"]))
                     # reached expected progress
                     if task["progress"] >= self.wait_progress:
-                            log.error("progress was reached %s"
-                                      % self.wait_progress)
-                            return True
+                        log.error("progress was reached %s"
+                                  % self.wait_progress)
+                        return True
                     # progress value was changed
                     if task["progress"] > self.current_progress:
                         self.current_progress = task["progress"]
@@ -2311,12 +2321,12 @@ class MonitorDBFragmentationTask(Task):
             stats = rest.fetch_bucket_stats(bucket=self.bucket)
             if self.get_view_frag:
                 new_frag_value = stats["op"]["samples"]["couch_views_fragmentation"][-1]
-                self.log.info("Current amount of views fragmentation = %d"
-                              % new_frag_value)
+                log.info("Current amount of views fragmentation = %d"
+                         % new_frag_value)
             else:
                 new_frag_value = stats["op"]["samples"]["couch_docs_fragmentation"][-1]
-                self.log.info("current amount of docs fragmentation = %d"
-                              % new_frag_value)
+                log.info("current amount of docs fragmentation = %d"
+                         % new_frag_value)
             if new_frag_value >= self.fragmentation_value:
                 self.set_result(True)
         except Exception, ex:
@@ -2324,3 +2334,436 @@ class MonitorDBFragmentationTask(Task):
             self.set_exception(ex)
         self.check()
         self.complete_task()
+
+
+class AutoFailoverNodesFailureTask(Task):
+    def __init__(self, task_manager, master, servers_to_fail, failure_type, timeout,
+                 pause=0, expect_auto_failover=True, timeout_buffer=3,
+                 check_for_failover=True, failure_timers=None,
+                 disk_timeout=0, disk_location=None, disk_size=200):
+        super(AutoFailoverNodesFailureTask, self).__init__("AutoFailoverNodesFailureTask")
+        self.task_manager = task_manager
+        self.master = master
+        self.servers_to_fail = servers_to_fail
+        self.num_servers_to_fail = self.servers_to_fail.__len__()
+        self.itr = 0
+        self.failure_type = failure_type
+        self.timeout = timeout
+        self.pause = pause
+        self.expect_auto_failover = expect_auto_failover
+        self.check_for_autofailover = check_for_failover
+        self.start_time = 0
+        self.timeout_buffer = timeout_buffer
+        self.current_failure_node = self.servers_to_fail[0]
+        self.max_time_to_wait_for_failover = self.timeout + \
+                                             self.timeout_buffer + 60
+        self.disk_timeout = disk_timeout
+        self.disk_location = disk_location
+        self.disk_size = disk_size
+        if failure_timers is None:
+            failure_timers = []
+        self.failure_timers = failure_timers
+        self.rebalance_in_progress = False
+
+    def call(self):
+        rest = RestConnection(self.master)
+        if rest._rebalance_progress_status() == "running":
+            self.rebalance_in_progress = True
+        return_val = False
+        while self.has_next() and not self.completed:
+            self.next()
+            if self.pause > 0 and self.pause > self.timeout:
+                return_val = self.check()
+        if self.pause == 0 or 0 < self.pause < self.timeout:
+            return_val = self.check()
+        self.complete_task()
+        return return_val
+
+    def check(self):
+        if not self.check_for_autofailover:
+            return True
+        rest = RestConnection(self.master)
+        max_timeout = self.timeout + self.timeout_buffer + self.disk_timeout
+        if self.start_time == 0:
+            message = "Did not inject failure in the system."
+            rest.print_UI_logs(10)
+            log.error(message)
+            self.set_exception(AutoFailoverException(message))
+            return False
+        if self.rebalance_in_progress:
+            status, stop_time = self._check_if_rebalance_in_progress(120)
+            if not status:
+                if stop_time == -1:
+                    message = "Rebalance already completed before failover " \
+                              "of node"
+                    log.error(message)
+                    self.set_exception(AutoFailoverException(message))
+                    return False
+                elif stop_time == -2:
+                    message = "Rebalance failed but no failed autofailover " \
+                              "message was printed in logs"
+                    log.warning(message)
+                else:
+                    message = "Rebalance not failed even after 2 minutes " \
+                              "after node failure."
+                    log.error(message)
+                    rest.print_UI_logs(10)
+                    self.set_exception(AutoFailoverException(message))
+                    return False
+            else:
+                self.start_time = stop_time
+        autofailover_initiated, time_taken = \
+            self._wait_for_autofailover_initiation(
+                self.max_time_to_wait_for_failover)
+        if self.expect_auto_failover:
+            if autofailover_initiated:
+                if time_taken < max_timeout + 1:
+                    log.info("Autofailover of node {0} successfully "
+                             "initiated in {1} sec".format(
+                        self.current_failure_node.ip, time_taken))
+                    rest.print_UI_logs(10)
+                    return True
+                else:
+                    message = "Autofailover of node {0} was initiated after " \
+                              "the timeout period. Expected  timeout: {1} " \
+                              "Actual time taken: {2}".format(
+                        self.current_failure_node.ip, self.timeout, time_taken)
+                    log.error(message)
+                    rest.print_UI_logs(10)
+                    self.set_exception(AutoFailoverException(message))
+                    return False
+            else:
+                message = "Autofailover of node {0} was not initiated after " \
+                          "the expected timeout period of {1}".format(
+                    self.current_failure_node.ip, self.timeout)
+                rest.print_UI_logs(10)
+                log.error(message)
+                self.set_exception(AutoFailoverException(message))
+                return False
+        else:
+            if autofailover_initiated:
+                message = "Node {0} was autofailed over but no autofailover " \
+                          "of the node was expected".format(
+                    self.current_failure_node.ip)
+                rest.print_UI_logs(10)
+                log.error(message)
+                self.set_exception(AutoFailoverException(message))
+                return False
+            else:
+                log.info("Node not autofailed over as expected")
+                rest.print_UI_logs(10)
+                return False
+
+    def has_next(self):
+        return self.itr < self.num_servers_to_fail
+
+    def next(self):
+        if self.pause != 0:
+            time.sleep(self.pause)
+            if self.pause > self.timeout and self.itr != 0:
+                rest = RestConnection(self.master)
+                status = rest.reset_autofailover()
+                self._rebalance()
+                if not status:
+                    self.set_exception(Exception("Reset of autofailover "
+                                                 "count failed"))
+                    return False
+        self.current_failure_node = self.servers_to_fail[self.itr]
+        log.info("before failure time: {}".format(time.ctime(time.time())))
+        if self.failure_type == "enable_firewall":
+            self._enable_firewall(self.current_failure_node)
+        elif self.failure_type == "disable_firewall":
+            self._disable_firewall(self.current_failure_node)
+        elif self.failure_type == "restart_couchbase":
+            self._restart_couchbase_server(self.current_failure_node)
+        elif self.failure_type == "stop_couchbase":
+            self._stop_couchbase_server(self.current_failure_node)
+        elif self.failure_type == "start_couchbase":
+            self._start_couchbase_server(self.current_failure_node)
+        elif self.failure_type == "restart_network":
+            self._stop_restart_network(self.current_failure_node,
+                                       self.timeout + self.timeout_buffer + 30)
+        elif self.failure_type == "restart_machine":
+            self._restart_machine(self.current_failure_node)
+        elif self.failure_type == "stop_memcached":
+            self._stop_memcached(self.current_failure_node)
+        elif self.failure_type == "start_memcached":
+            self._start_memcached(self.current_failure_node)
+        elif self.failure_type == "network_split":
+            self._block_incoming_network_from_node(self.servers_to_fail[0],
+                                                   self.servers_to_fail[
+                                                       self.itr + 1])
+            self.itr += 1
+        elif self.failure_type == "disk_failure":
+            self._fail_disk(self.current_failure_node)
+        elif self.failure_type == "disk_full":
+            self._disk_full_failure(self.current_failure_node)
+        elif self.failure_type == "recover_disk_failure":
+            self._recover_disk(self.current_failure_node)
+        elif self.failure_type == "recover_disk_full_failure":
+            self._recover_disk_full_failure(self.current_failure_node)
+        log.info("Start time = {}".format(time.ctime(self.start_time)))
+        self.itr += 1
+
+    def _enable_firewall(self, node):
+        node_failure_timer = self.failure_timers[self.itr]
+        self.task_manager.add_new_task(node_failure_timer)
+        time.sleep(2)
+        RemoteUtilHelper.enable_firewall(node)
+        log.info("Enabled firewall on {}".format(node))
+        self.task_manager.get_task_result(node_failure_timer)
+        self.start_time = node_failure_timer.start_time
+
+    def _disable_firewall(self, node):
+        shell = RemoteMachineShellConnection(node)
+        shell.disable_firewall()
+
+    def _restart_couchbase_server(self, node):
+        node_failure_timer = self.failure_timers[self.itr]
+        self.task_manager.add_new_task(node_failure_timer)
+        time.sleep(2)
+        shell = RemoteMachineShellConnection(node)
+        shell.restart_couchbase()
+        shell.disconnect()
+        log.info("Restarted the couchbase server on {}".format(node))
+        self.task_manager.get_task_result(node_failure_timer)
+        self.start_time = node_failure_timer.start_time
+
+    def _stop_couchbase_server(self, node):
+        node_failure_timer = self.failure_timers[self.itr]
+        self.task_manager.add_new_task(node_failure_timer)
+        time.sleep(1)
+        shell = RemoteMachineShellConnection(node)
+        shell.stop_couchbase()
+        shell.disconnect()
+        log.info("Stopped the couchbase server on {}".format(node))
+        self.task_manager.get_task_result(node_failure_timer)
+        self.start_time = node_failure_timer.start_time
+
+    def _start_couchbase_server(self, node):
+        shell = RemoteMachineShellConnection(node)
+        shell.start_couchbase()
+        shell.disconnect()
+        log.info("Started the couchbase server on {}".format(node))
+
+    def _stop_restart_network(self, node, stop_time):
+        node_failure_timer = self.failure_timers[self.itr]
+        self.task_manager.add_new_task(node_failure_timer)
+        time.sleep(2)
+        shell = RemoteMachineShellConnection(node)
+        shell.stop_network(stop_time)
+        shell.disconnect()
+        log.info("Stopped the network for {0} sec and restarted the "
+                 "network on {1}".format(stop_time, node))
+        self.task_manager.get_task_result(node_failure_timer)
+        self.start_time = node_failure_timer.start_time
+
+    def _restart_machine(self, node):
+        node_failure_timer = self.failure_timers[self.itr]
+        self.task_manager.add_new_task(node_failure_timer)
+        time.sleep(2)
+        shell = RemoteMachineShellConnection(node)
+        command = "/sbin/reboot"
+        shell.execute_command(command=command)
+        self.task_manager.get_task_result(node_failure_timer)
+        self.start_time = node_failure_timer.start_time
+
+    def _stop_memcached(self, node):
+        node_failure_timer = self.failure_timers[self.itr]
+        self.task_manager.add_new_task(node_failure_timer)
+        time.sleep(2)
+        shell = RemoteMachineShellConnection(node)
+        o, r = shell.stop_memcached()
+        log.info("Killed memcached. {0} {1}".format(o, r))
+        self.task_manager.get_task_result(node_failure_timer)
+        self.start_time = node_failure_timer.start_time
+
+    def _start_memcached(self, node):
+        shell = RemoteMachineShellConnection(node)
+        o, r = shell.start_memcached()
+        log.info("Started back memcached. {0} {1}".format(o, r))
+        shell.disconnect()
+
+    def _block_incoming_network_from_node(self, node1, node2):
+        shell = RemoteMachineShellConnection(node1)
+        log.info("Adding {0} into iptables rules on {1}".format(
+            node1.ip, node2.ip))
+        command = "iptables -A INPUT -s {0} -j DROP".format(node2.ip)
+        shell.execute_command(command)
+        self.start_time = time.time()
+
+    def _fail_disk(self, node):
+        shell = RemoteMachineShellConnection(node)
+        output, error = shell.unmount_partition(self.disk_location)
+        success = True
+        if output:
+            for line in output:
+                if self.disk_location in line:
+                    success = False
+        if success:
+            log.info("Unmounted disk at location : {0} on {1}".format(self.disk_location, node.ip))
+            self.start_time = time.time()
+        else:
+            log.info("Could not fail the disk at {0} on {1}".format(self.disk_location, node.ip))
+            self.set_exception(Exception("Could not fail the disk at {0} on {1}".format(self.disk_location, node.ip)))
+
+    def _recover_disk(self, node):
+        shell = RemoteMachineShellConnection(node)
+        o, r = shell.mount_partition(self.disk_location)
+        for line in o:
+            if self.disk_location in line:
+                log.info("Mounted disk at location : {0} on {1}".format(self.disk_location, node.ip))
+                return
+        self.set_exception(Exception("Could not mount disk at location {0} on {1}".format(self.disk_location, node.ip)))
+        raise Exception()
+
+    def _disk_full_failure(self, node):
+        shell = RemoteMachineShellConnection(node)
+        output, error = shell.fill_disk_space(self.disk_location, self.disk_size)
+        success = False
+        if output:
+            for line in output:
+                if self.disk_location in line:
+                    if "0 100% {0}".format(self.disk_location) in line:
+                        success = True
+        if success:
+            log.info("Filled up disk Space at {0} on {1}".format(self.disk_location, node.ip))
+            self.start_time = time.time()
+        else:
+            log.info("Could not fill the disk at {0} on {1}".format(self.disk_location, node.ip))
+            self.set_exception(Exception("Could not fill the disk at {0} on {1}".format(self.disk_location, node.ip)))
+
+    def _recover_disk_full_failure(self, node):
+        shell = RemoteMachineShellConnection(node)
+        delete_file = "{0}/disk-quota.ext3".format(self.disk_location)
+        output, error = shell.execute_command("rm -f {0}".format(delete_file))
+        log.info(output)
+        if error:
+            log.info(error)
+
+    def _check_for_autofailover_initiation(self, failed_over_node):
+        rest = RestConnection(self.master)
+        ui_logs = rest.get_logs(10)
+        ui_logs_text = [t["text"] for t in ui_logs]
+        ui_logs_time = [t["serverTime"] for t in ui_logs]
+        expected_log = "Starting failing over ['ns_1@{}']".format(
+            failed_over_node.ip)
+        if expected_log in ui_logs_text:
+            failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
+            return True, failed_over_time
+        return False, None
+
+    def _wait_for_autofailover_initiation(self, timeout):
+        autofailover_initated = False
+        while time.time() < timeout + self.start_time:
+            autofailover_initated, failed_over_time = \
+                self._check_for_autofailover_initiation(
+                    self.current_failure_node)
+            if autofailover_initated:
+                end_time = self._get_mktime_from_server_time(failed_over_time)
+                time_taken = end_time - self.start_time
+                return autofailover_initated, time_taken
+        return autofailover_initated, -1
+
+    def _get_mktime_from_server_time(self, server_time):
+        time_format = "%Y-%m-%dT%H:%M:%S"
+        server_time = server_time.split('.')[0]
+        mk_time = time.mktime(time.strptime(server_time, time_format))
+        return mk_time
+
+    def _rebalance(self):
+        rest = RestConnection(self.master)
+        nodes = rest.node_statuses()
+        rest.rebalance(otpNodes=[node.id for node in nodes])
+        rebalance_progress = rest.monitorRebalance()
+        if not rebalance_progress:
+            self.set_result(False)
+            self.set_exception(Exception("Failed to rebalance after failover"))
+
+    def _check_if_rebalance_in_progress(self, timeout):
+        rest = RestConnection(self.master)
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            try:
+                rebalance_status, progress = \
+                    rest._rebalance_status_and_progress()
+                if rebalance_status == "running":
+                    continue
+                elif rebalance_status is None and progress == 100:
+                    return False, -1
+            except RebalanceFailedException:
+                ui_logs = rest.get_logs(10)
+                ui_logs_text = [t["text"] for t in ui_logs]
+                ui_logs_time = [t["serverTime"] for t in ui_logs]
+                rebalace_failure_log = "Rebalance exited with reason"
+                for ui_log in ui_logs_text:
+                    if rebalace_failure_log in ui_log:
+                        rebalance_failure_time = ui_logs_time[
+                            ui_logs_text.index(ui_log)]
+                        failover_log = "Could not automatically fail over " \
+                                       "node ('ns_1@{}'). Rebalance is " \
+                                       "running.".format(
+                            self.current_failure_node.ip)
+                        if failover_log in ui_logs_text:
+                            return True, self._get_mktime_from_server_time(
+                                rebalance_failure_time)
+                        else:
+                            return False, -2
+        return False, -3
+
+
+class NodeDownTimerTask(Task):
+    def __init__(self, node, port=None, timeout=300):
+        Task.__init__(self, "NodeDownTimerTask")
+        log.info("Initializing NodeDownTimerTask")
+        self.node = node
+        self.port = port
+        self.timeout = timeout
+        self.start_time = 0
+
+    def call(self):
+        log.info("Starting execution of NodeDownTimerTask")
+        end_task = time.time() + self.timeout
+        while not self.completed and time.time() < end_task:
+            if not self.port:
+                try:
+                    self.start_time = time.time()
+                    response = os.system("ping -c 1 {} > /dev/null".format(
+                        self.node))
+                    if response != 0:
+                        log.info("Injected failure in {}. Caught "
+                                 "due to ping".format(self.node))
+                        self.complete_task()
+                        self.set_result(True)
+                        break
+                except Exception as e:
+                    log.warning("Unexpected exception caught {}".format(e))
+                    self.complete_task()
+                    return True
+                try:
+                    self.start_time = time.time()
+                    socket.socket().connect(("{}".format(self.node), 8091))
+                    socket.socket().close()
+                    socket.socket().connect(("{}".format(self.node), 11210))
+                    socket.socket().close()
+                except socket.error:
+                    log.info("Injected failure in {}. Caught due "
+                             "to ports".format(self.node))
+                    self.complete_task()
+                    return True
+            else:
+                try:
+                    self.start_time = time.time()
+                    socket.socket().connect(("{}".format(self.node),
+                                             int(self.port)))
+                    socket.socket().close()
+                    socket.socket().connect(("{}".format(self.node), 11210))
+                    socket.socket().close()
+                except socket.error:
+                    log.info("Injected failure in {}".format(self.node))
+                    self.complete_task()
+                    return True
+        if time.time() >= end_task:
+            self.complete_task()
+            log.info("Could not inject failure in {}".format(self.node))
+            return False

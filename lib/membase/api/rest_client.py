@@ -1846,15 +1846,35 @@ class RestConnection(object):
             settings.enabled = json_parsed["enabled"]
             settings.count = json_parsed["count"]
             settings.timeout = json_parsed["timeout"]
+            settings.can_abort_rebalance = json_parsed["canAbortRebalance"]
+            settings.failoverOnDataDiskIssuesEnabled = json_parsed["failoverOnDataDiskIssues"]["enabled"]
+            settings.failoverOnDataDiskIssuesTimeout = json_parsed["failoverOnDataDiskIssues"]["timePeriod"]
+            settings.maxCount = json_parsed["maxCount"]
+            settings.failoverServerGroup = json_parsed["failoverServerGroup"]
         return settings
 
-    def update_autofailover_settings(self, enabled, timeout):
+    def update_autofailover_settings(self, enabled, timeout, canAbortRebalance=False, enable_disk_failure=False,
+                                     disk_timeout=120, maxCount=1, enableServerGroup=False):
+        params_dict = {}
+        params_dict['timeout'] = timeout
         if enabled:
-            params = urllib.urlencode({'enabled': 'true',
-                                       'timeout': timeout})
+            params_dict['enabled'] = 'true'
+
         else:
-            params = urllib.urlencode({'enabled': 'false',
-                                       'timeout': timeout})
+            params_dict['enabled'] = 'false'
+        if canAbortRebalance:
+            params_dict['canAbortRebalance'] = 'true'
+        if enable_disk_failure:
+            params_dict['failoverOnDataDiskIssues[enabled]'] = 'true'
+            params_dict['failoverOnDataDiskIssues[timePeriod]'] = disk_timeout
+        else:
+            params_dict['failoverOnDataDiskIssues[enabled]'] = 'false'
+        params_dict['maxCount'] = maxCount
+        if enableServerGroup:
+            params_dict['failoverServerGroup'] = 'true'
+        else:
+            params_dict['failoverServerGroup'] = 'false'
+        params = urllib.urlencode(params_dict)
         api = self.baseUrl + 'settings/autoFailover'
         log.info('settings/autoFailover params : {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
@@ -3556,6 +3576,11 @@ class AutoFailoverSettings(object):
         self.enabled = True
         self.timeout = 0
         self.count = 0
+        self.failoverOnDataDiskIssuesEnabled = False
+        self.failoverOnDataDiskIssuesTimeout = 0
+        self.maxCount = 1
+        self.failoverServerGroup = False
+        self.can_abort_rebalance = False
 
 
 class AutoReprovisionSettings(object):

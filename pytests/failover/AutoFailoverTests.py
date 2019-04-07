@@ -37,13 +37,13 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        rebalance_task = self.cluster.async_rebalance(self.servers,
-                                                      self.servers_to_add,
-                                                      self.servers_to_remove)
+        rebalance_task = self.task.async_rebalance(self.servers,
+                                                   self.servers_to_add,
+                                                   self.servers_to_remove)
         self.sleep(5)
         self.failover_actions[self.failover_action](self)
         try:
-            rebalance_task.result()
+            self.task.jython_task_manager.get_task_result(rebalance_task)
         except RebalanceFailedException:
             pass
         except ServerUnavailableException:
@@ -67,9 +67,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        rebalance_success = self.cluster.rebalance(self.servers,
-                                                   self.servers_to_add,
-                                                   self.servers_to_remove)
+        rebalance_success = self.task.rebalance(self.servers,
+                                                self.servers_to_add,
+                                                self.servers_to_remove)
         if not rebalance_success:
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
