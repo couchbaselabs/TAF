@@ -24,13 +24,16 @@ class CouchbaseError(object):
     def __interrupt_process(self, process_name, action):
         if action == "stop":
             # Send SIGSTOP signal
-            return self.kill_process(process_name, process_name, signum=19)
+            return self.shell_conn.kill_process(process_name, process_name,
+                                                signum=19)
             # Send SIGCONT signal
         elif action == "resume":
-            return self.kill_process(process_name, process_name, signum=18)
+            return self.shell_conn.kill_process(process_name, process_name,
+                                                signum=18)
         elif action == "kill":
             # Send SIGKILL signal
-            return self.kill_process(process_name, process_name, signum=9)
+            return self.shell_conn.kill_process(process_name, process_name,
+                                                signum=9)
 
     def create(self, action=None, bucket_name="default"):
         if action == CouchbaseError.STOP_MEMCACHED:
