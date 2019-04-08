@@ -12,10 +12,8 @@ import socket
 import string
 import time
 from httplib import IncompleteRead
-
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
-from Jython_tasks.shutdown import shutdown_and_await_termination
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
@@ -26,20 +24,8 @@ from membase.api.exception import \
     RebalanceFailedException, ServerUnavailableException, \
     BucketCreationException, AutoFailoverException
 from membase.api.rest_client import RestConnection
-from memcached.helper.data_helper import MemcachedClientHelper
-
-# from com.couchbase.client.java import *
-# from com.couchbase.client.java.document import *
-# from com.couchbase.client.java.document.json import *
-# from com.couchbase.client.java.query import *
-# from com.couchbase.client.java.transcoder import JsonTranscoder
 from java.util.concurrent import Callable
-from java.util.concurrent import Executors, TimeUnit
 from java.lang import Thread
-from Jython_tasks import task_manager
-from copy import deepcopy
-from time import sleep
-
 from platform_utils.remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 
 log = logging.getLogger(__name__)
@@ -568,6 +554,7 @@ class GenericLoadingTask(Task):
 
 class LoadDocumentsTask(GenericLoadingTask):
     fail = {}
+    success = {}
 
     def __init__(self, cluster, bucket, client, generator, op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
@@ -588,8 +575,6 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.replicate_to = replicate_to
         self.time_unit = time_unit
         self.num_loaded = 0
-        # self.fail = {}
-
         if proxy_client:
             log.info("Changing client to proxy %s:%s..."
                      % (proxy_client.host, proxy_client.port))
@@ -606,12 +591,14 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               timeout=self.timeout, time_unit=self.time_unit,
                                               doc_type=self.generator.doc_type)
             self.fail.update(fail)
+            self.success.update(success)
         elif self.op_type == 'update':
             success, fail = self.batch_update(key_value, persist_to=self.persist_to,
                                               replicate_to=self.replicate_to,
                                               timeout=self.timeout, time_unit=self.time_unit,
                                               doc_type=self.generator.doc_type)
             self.fail.update(fail)
+            self.success.update(success)
         elif self.op_type == 'delete':
             self.batch_delete(key_value)
         elif self.op_type == 'read':
@@ -840,6 +827,7 @@ class Durability(Task):
 
 class LoadDocumentsGeneratorsTask(Task):
     fail = {}
+    success = {}
 
     def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, exp_unit="seconds", flag=0,
@@ -879,7 +867,6 @@ class LoadDocumentsGeneratorsTask(Task):
         else:
             self.bucket = bucket
         self.num_loaded = 0
-        # self.fail = {}
 
     def call(self):
         self.start_task()
@@ -921,6 +908,7 @@ class LoadDocumentsGeneratorsTask(Task):
                     log.info(e)
                 finally:
                     self.fail.update(task.fail)
+                    self.success.update(task.success)
                     log.info("Failed to load {} docs from {} to {}"
                              .format(task.fail.__len__(), task.generator._doc_gen.start, task.generator._doc_gen.end))
         except Exception as e:

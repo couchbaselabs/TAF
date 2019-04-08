@@ -5,7 +5,6 @@ import Jython_tasks.task as jython_tasks
 
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
-#from sdk_client import SDKSmartClient as VBucketAwareMemcached
 from sdk_client3 import SDKClient as VBucketAwareMemcached
 from tasks.taskmanager import TaskManager
 from BucketLib.BucketOperations import BucketHelper
@@ -29,7 +28,6 @@ class ServerTasks(object):
 
     def __init__(self, task_manager=jython_task_manager()):
 
-        self.task_manager = TaskManager("Cluster_Thread")
         self.jython_task_manager = task_manager
 
     def async_create_bucket(self, server, bucket):
@@ -43,8 +41,8 @@ class ServerTasks(object):
         """
 #         bucket_params['bucket_name'] = 'default'
         _task = conc.BucketCreateTask(server, bucket,
-                                      task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                                      task_manager=self.jython_task_manager)
+        self.jython_task_manager.schedule(_task)
         return _task
 
     def sync_create_bucket(self, server, bucket):
@@ -58,8 +56,8 @@ class ServerTasks(object):
         """
 #         bucket_params['bucket_name'] = 'default'
         _task = conc.BucketCreateTask(server, bucket,
-                                      task_manager=self.task_manager)
-        self.task_manager.schedule(_task)
+                                      task_manager=self.jython_task_manager)
+        self.jython_task_manager.schedule(_task)
         return _task.get_result()
 
     def async_bucket_delete(self, server, bucket='default'):
@@ -73,8 +71,8 @@ class ServerTasks(object):
         Returns:
           BucketDeleteTask - Task future that is a handle to the scheduled task
         """
-        _task = conc.BucketDeleteTask(server, self.task_manager, bucket)
-        self.task_manager.schedule(_task)
+        _task = conc.BucketDeleteTask(server, self.jython_task_manager, bucket)
+        self.jython_task_manager.schedule(_task)
         return _task
 
     def async_failover(self, servers=[], failover_nodes=[], graceful=False,
@@ -91,10 +89,10 @@ class ServerTasks(object):
           FailOverTask - A task future that is a handle to the scheduled task
         """
         _task = conc.FailoverTask(
-            servers, task_manager=self.task_manager,
+            servers, task_manager=self.jython_task_manager,
             to_failover=failover_nodes, graceful=graceful,
             use_hostnames=use_hostnames, wait_for_pending=wait_for_pending)
-        self.task_manager.schedule(_task)
+        self.jython_task_manager.schedule(_task)
         return _task
 
     def async_init_node(self, server, disabled_consistent_view=None,
@@ -128,13 +126,13 @@ class ServerTasks(object):
           NodeInitTask - A task future that is a handle to the scheduled task
         """
         _task = conc.NodeInitializeTask(
-            server, self.task_manager, disabled_consistent_view,
+            server, self.jython_task_manager, disabled_consistent_view,
             rebalanceIndexWaitingDisabled, rebalanceIndexPausingDisabled,
             maxParallelIndexers, maxParallelReplicaIndexers,
             port, quota_percent, services=services,
             index_quota_percent=index_quota_percent, gsi_type=gsi_type)
 
-        self.task_manager.schedule(_task)
+        self.jython_task_manager.schedule(_task)
         return _task
 
     def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
@@ -369,7 +367,7 @@ class ServerTasks(object):
             boolean - Whether or not the bucket was created."""
 
         _task = self.async_create_sasl_bucket(name, password, bucket_params)
-        self.task_manager.schedule(_task)
+        self.jython_task_manager.schedule(_task)
         return _task.get_result(timeout)
 
     def create_standard_bucket(self, name, port, bucket_params, timeout=None):
@@ -460,13 +458,13 @@ class ServerTasks(object):
         if batch_size > 1:
             _task = conc.BatchedValidateDataTask(
                 server, bucket, kv_store, max_verify, only_store_hash,
-                batch_size, timeout_sec, self.task_manager,
+                batch_size, timeout_sec, self.jython_task_manager,
                 compression=compression)
         else:
             _task = conc.ValidateDataTask(
                 server, bucket, kv_store, max_verify, only_store_hash,
-                replica_to_read, self.task_manager, compression=compression)
-        self.task_manager.schedule(_task)
+                replica_to_read, self.jython_task_manager, compression=compression)
+        self.jython_task_manager.schedule(_task)
         return _task
 
     def wait_for_stats(self, cluster, bucket, param, stat, comparison, value,
@@ -494,7 +492,7 @@ class ServerTasks(object):
         return self.jython_task_manager.get_task_result(_task)
 
     def shutdown(self, force=False):
-        self.task_manager.shutdown(force)
+        self.jython_task_manager.shutdown(force)
         if force:
             log.info("Cluster instance shutdown with force")
 
@@ -722,8 +720,8 @@ class ServerTasks(object):
         Returns:
           BucketFlushTask - A task future that is a handle for scheduled task
         """
-        _task = conc.BucketFlushTask(server, self.task_manager, bucket)
-        self.task_manager.schedule(_task)
+        _task = conc.BucketFlushTask(server, self.jython_task_manager, bucket)
+        self.jython_task_manager.schedule(_task)
         return _task
 
     def bucket_flush(self, server, bucket='default', timeout=None):
@@ -747,8 +745,8 @@ class ServerTasks(object):
 
         Returns:
             boolean - Whether or not the compaction started successfully"""
-        _task = conc.CompactBucketTask(server, self.task_manager, bucket)
-        self.task_manager.schedule(_task)
+        _task = conc.CompactBucketTask(server, self.jython_task_manager, bucket)
+        self.jython_task_manager.schedule(_task)
         return _task
 
     def compact_bucket(self, server, bucket="default"):
@@ -779,7 +777,7 @@ class ServerTasks(object):
         :return: task with the output or error message
         """
         _task = conc.CBASQueryExecuteTask(
-            master, cbas_server, self.task_manager, cbas_endpoint, statement,
+            master, cbas_server, self.jython_task_manager, cbas_endpoint, statement,
             bucket, mode, pretty)
-        self.task_manager.schedule(_task)
+        self.jython_task_manager.schedule(_task)
         return _task

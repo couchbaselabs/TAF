@@ -329,7 +329,7 @@ class BaseTestCase(unittest.TestCase):
                                                       index_quota_percent=self.index_quota_percent,
                                                       gsi_type=self.gsi_type))
         for task in init_tasks:
-            node_quota = task.get_result()
+            node_quota = cluster.jython_task_manager.get_task_result(task)
             if node_quota < quota or quota == 0:
                 quota = node_quota
         if quota < 100 and len(set([server.ip for server in self.servers])) != 1:
