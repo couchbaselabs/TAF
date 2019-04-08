@@ -1,8 +1,7 @@
 import logger
-import zlib
 
-from cb_cmd_utils.cbstats import Cbstats
-from cb_cmd_utils.cbepctl import Cbepctl
+from cb_tools.cbepctl import Cbepctl
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from dcpbase import DCPBase
 from membase.api.rest_client import RestConnection
@@ -66,7 +65,8 @@ class DCPRollBack(DCPBase):
                                                      bucket.name)
         for i in range(self.num_items/100):
             keyname = 'keyname-' + str(i)
-            vbId = ((zlib.crc32(keyname) >> 16) & 0x7fff) & (self.vbuckets-1)
+            vbId = self.bucket_util.get_vbucket_num_for_key(keyname,
+                                                            self.vbuckets)
             if vbucket_client.vBucketMap[vbId].split(':')[0] == cluster.servers[0].ip:
                 rc = client.get(keyname)
                 modified_kvs_active_on_node1[keyname] = rc[2]

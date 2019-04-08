@@ -2,7 +2,6 @@ from random import randint
 
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
-import zlib
 
 
 class DurabilityTestsBase(BaseTestCase):
@@ -58,9 +57,6 @@ class DurabilityTestsBase(BaseTestCase):
 
     def tearDown(self):
         super(DurabilityTestsBase, self).tearDown()
-
-    def get_vb_num(self, key):
-        return (((zlib.crc32(key)) >> 16) & 0x7fff) & (self.vbuckets-1)
 
     def get_random_node(self):
         rand_node_index = randint(1, self.nodes_init-1)

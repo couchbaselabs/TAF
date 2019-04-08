@@ -214,7 +214,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                         timeout=self.durability_timeout)
 
             # Validate the returned error from the SDK
-            vb_num = self.get_vb_num(key)
+            vb_num = self.bucket_util.get_vbucket_num_for_key(key,
+                                                              self.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 self.assertTrue("error" in fail, msg="No failure detected")
                 self.assertTrue("sync_write_in_progress" in fail["error"],
@@ -549,7 +550,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
             key = doc["key"]
             fail = doc["fail"]
             # Validate the returned error from the SDK
-            vb_num = self.get_vb_num(key)
+            vb_num = self.bucket_util.get_vbucket_num_for_key(key,
+                                                              self.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 self.assertTrue("error" in fail, msg="No failure detected")
                 self.assertTrue("sync_write_in_progress" in fail["error"],
@@ -1039,7 +1041,8 @@ class TimeoutTests(DurabilityTestsBase):
                 key = doc["key"]
                 fail = doc["fail"]
                 # Validate the returned error from the SDK
-                vb_num = self.get_vb_num(key)
+                vb_num = self.bucket_util.get_vbucket_num_for_key(
+                    key, self.vbuckets)
                 if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                     self.assertTrue("error" in fail, msg="No failure detected")
                     self.assertTrue("sync_write_in_progress" in fail["error"],
