@@ -6,7 +6,6 @@ import Jython_tasks.task as jython_tasks
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient as VBucketAwareMemcached
-from tasks.taskmanager import TaskManager
 from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.task_manager import TaskManager as jython_task_manager
 
@@ -289,7 +288,7 @@ class ServerTasks(object):
         Returns:
           RebalanceTask - A task future that is a handle to the scheduled task
         """
-        _task = jython_tasks.rebalanceTask(
+        _task = jython_tasks.RebalanceTask(
             servers, to_add, to_remove, use_hostnames=use_hostnames,
             services=services, check_vbucket_shuffling=check_vbucket_shuffling)
         self.jython_task_manager.add_new_task(_task)

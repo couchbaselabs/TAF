@@ -74,12 +74,12 @@ class Task(Callable):
         raise NotImplementedError
 
 
-class rebalanceTask(Task):
+class RebalanceTask(Task):
 
     def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
                  progress=30, use_hostnames=False, services=None,
                  check_vbucket_shuffling=True):
-        super(rebalanceTask, self).__init__("Rebalance_task")
+        super(RebalanceTask, self).__init__("Rebalance_task")
         self.servers = servers
         self.to_add = to_add
         self.to_remove = to_remove
