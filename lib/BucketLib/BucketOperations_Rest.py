@@ -7,7 +7,7 @@ Created on Sep 25, 2017
 import json
 import time
 import urllib
-from bucket import *
+from bucket import vBucket, Bucket
 from membase.api.exception import BucketCreationException, GetBucketInfoFailed, \
                                   BucketFlushFailed, BucketCompactionException
 from membase.api.rest_client import Node
@@ -279,18 +279,19 @@ class BucketHelper(RestConnection):
                        'ramQuotaMB': bucket_params.get('ramQuotaMB'),
                        'replicaNumber': bucket_params.get('replicaNumber'),
                        'bucketType': bucket_params.get('bucketType'),
-                       'replicaIndex': bucket_params.get('replicaIndex'),
-                       'threadsNumber': bucket_params.get('threadsNumber'),
-                       'flushEnabled': bucket_params.get('flushEnabled'),
-                       'evictionPolicy': bucket_params.get('evictionPolicy'),
-                       'compressionMode': bucket_params.get('compressionMode')}
+                       'threadsNumber': bucket_params.get('threadsNumber')}
+
+        # Add these parameters only in case of MEMBASE(Couchbase) bucket
+        if bucket_params.get("bucketType") == Bucket.bucket_type.MEMBASE:
+            init_params['flushEnabled'] = bucket_params.get('flushEnabled')
+            init_params['evictionPolicy'] = bucket_params.get('evictionPolicy')
+            init_params['compressionMode'] = bucket_params.get('compressionMode')
+            init_params['replicaIndex'] = bucket_params.get('replicaIndex')
 
         if bucket_params.get('lww'):
             init_params['maxTTL'] = bucket_params.get('lww')
         if bucket_params.get('maxTTL'):
             init_params['conflictResolutionType'] = 'lww'
-        if bucket_params.get('type') == 'ephemeral':
-            init_params.remove('replicaIndex')     # does not apply to ephemeral buckets, and is even rejected
 
         params = urllib.urlencode(init_params)
 
