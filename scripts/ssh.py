@@ -5,13 +5,16 @@ import sys
 from threading import Thread
 from datetime import datetime
 import uuid
+
 sys.path = [".", "lib"] + sys.path
-from remote.remote_util import RemoteMachineShellConnection
+from platform_utils.remote.remote_util import \
+    RemoteMachineShellConnection
 import TestInput
 import logging.config
 
 logging.config.fileConfig("scripts.logging.conf")
 log = logging.getLogger()
+
 
 def usage(error=None):
     print """\
@@ -44,6 +47,7 @@ class CommandRunner(object):
         print "\n".join(output)
         print "\n".join(error)
 
+
 class ScriptRunner(object):
     def __init__(self, server, script):
         self.server = server
@@ -54,10 +58,12 @@ class ScriptRunner(object):
     def run(self):
         remote_client = RemoteMachineShellConnection(self.server)
         remote_client.create_file(self.script_name, self.script_content)
-        output, error = remote_client.execute_command("chmod 777 {0} ; {0} ; rm -f {0}".format(self.script_name))
+        output, error = remote_client.execute_command(
+            "chmod 777 {0} ; {0} ; rm -f {0}".format(self.script_name))
         print self.server.ip
         print "\n".join(output)
         print "\n".join(error)
+
 
 class RemoteJob(object):
     def sequential_remote(self, input):
@@ -94,6 +100,7 @@ class RemoteJob(object):
         for remote_thread in remote_threads:
             remote_thread.join()
 
+
 def main():
     try:
         (opts, args) = getopt.getopt(sys.argv[1:], 'hi:p:', [])
@@ -103,7 +110,9 @@ def main():
 
         input = TestInput.TestInputParser.get_test_input(sys.argv)
         if not input.servers:
-            usage("ERROR: no servers specified. Please use the -i parameter.")
+            usage(
+                "ERROR: no servers specified. Please use the -i "
+                "parameter.")
     except IndexError:
         usage()
     except getopt.GetoptError, error:
@@ -129,13 +138,15 @@ def main():
 if __name__ == "__main__":
     main()
 
+
 def create_log_file(log_config_file_name, log_file_name, level):
     tmpl_log_file = open("jython.logging.conf")
     log_file = open(log_config_file_name, "w")
     log_file.truncate()
     for line in tmpl_log_file:
         newline = line.replace("@@LEVEL@@", level)
-        newline = newline.replace("@@FILENAME@@", log_file_name.replace('\\', '/'))
+        newline = newline.replace("@@FILENAME@@",
+                                  log_file_name.replace('\\', '/'))
         log_file.write(newline)
     log_file.close()
     tmpl_log_file.close()
