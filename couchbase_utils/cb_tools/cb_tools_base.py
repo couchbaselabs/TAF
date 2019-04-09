@@ -4,7 +4,7 @@ from testconstants import \
     LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \
     WIN_COUCHBASE_BIN_PATH, MAC_COUCHBASE_BIN_PATH
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
 
 
 class CbCmdBase():
@@ -40,5 +40,5 @@ class CbCmdBase():
         :output - Output for the command execution
         :error  - Buffer containing warnings/errors from the execution
         """
-        log.info("Executing: '%s'" % (cmd))
+        # log.info("Executing: '%s'" % (cmd))
         return self.shellConn.execute_command(cmd)

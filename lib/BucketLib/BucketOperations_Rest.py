@@ -8,10 +8,9 @@ import json
 import time
 import urllib
 from bucket import vBucket, Bucket
-from membase.api.exception import BucketCreationException, GetBucketInfoFailed, \
-                                  BucketFlushFailed, BucketCompactionException
-from membase.api.rest_client import Node
-from memcached.helper.kvstore import KVStore
+from membase.api.exception import \
+    BucketCreationException, GetBucketInfoFailed, \
+    BucketFlushFailed, BucketCompactionException
 from Rest_Connection import RestConnection
 import logger
 
@@ -40,12 +39,13 @@ class BucketHelper(RestConnection):
     def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
         api = '%s%s%s?basic_stats=true' \
                % (self.baseUrl, 'pools/default/buckets/', bucket.name)
-        status, content, header = self._http_request(api)
+        status, content, _ = self._http_request(api)
         num = 1
         while not status and num_attempt > num:
-            log.error("try to get {0} again after {1} sec".format(api, timeout))
+            log.error("try to get {0} again after {1} sec"
+                      .format(api, timeout))
             time.sleep(timeout)
-            status, content, header = self._http_request(api)
+            status, content, _ = self._http_request(api)
             num += 1
         if status:
             parsed = json.loads(content)
@@ -123,12 +123,12 @@ class BucketHelper(RestConnection):
                 return vbuckets_servers
             if bucket_name:
                 bucket_to_check = [bucket for bucket in buckets
-                               if bucket.name == bucket_name][0]
+                                   if bucket.name == bucket_name][0]
             else:
                 bucket_to_check = [bucket for bucket in buckets][0]
             vbuckets_servers[server] = {}
             vbs_active = [vb.id for vb in bucket_to_check.vbuckets
-                           if vb.master.startswith(str(server.ip))]
+                          if vb.master.startswith(str(server.ip))]
             vbs_replica = []
             for replica_num in xrange(0, bucket_to_check.replicaNumber):
                 vbs_replica.extend([vb.id for vb in bucket_to_check.vbuckets
@@ -143,16 +143,16 @@ class BucketHelper(RestConnection):
         bucket -- bucket name
         """
         api = self.baseUrl + 'pools/default/buckets/' + bucket
-        status, content, header = self._http_request(api)
+        _, content, _ = self._http_request(api)
         _stats = json.loads(content)
         return _stats['vBucketServerMap']['vBucketMap']
 
     def get_vbucket_map_and_server_list(self, bucket="default"):
         """ Return server list, replica and vbuckets map
         that matches to server list """
-        vbucket_map = self.fetch_vbucket_map(bucket)
+        # vbucket_map = self.fetch_vbucket_map(bucket)
         api = self.baseUrl + 'pools/default/buckets/' + bucket
-        status, content, header = self._http_request(api)
+        _, content, _ = self._http_request(api)
         _stats = json.loads(content)
         num_replica = _stats['vBucketServerMap']['numReplicas']
         vbucket_map = _stats['vBucketServerMap']['vBucketMap']
@@ -168,9 +168,10 @@ class BucketHelper(RestConnection):
             log.error('node_ip not specified')
             return None
         stats = {}
-        api = "{0}{1}{2}{3}{4}:{5}{6}".format(self.baseUrl, 'pools/default/buckets/',
-                                     bucket, "/nodes/", node.ip, node.port, "/stats")
-        status, content, header = self._http_request(api)
+        api = "{0}{1}{2}{3}{4}:{5}{6}" \
+              .format(self.baseUrl, 'pools/default/buckets/',
+                      bucket, "/nodes/", node.ip, node.port, "/stats")
+        status, content, _ = self._http_request(api)
         if status:
             json_parsed = json.loads(content)
             op = json_parsed["op"]
@@ -182,7 +183,8 @@ class BucketHelper(RestConnection):
                     else:
                         stats[stat_name] = samples[stat_name][-1]
                 else:
-                    raise Exception("Duplicate entry in the stats command {0}".format(stat_name))
+                    raise Exception("Duplicate entry in the stats command {0}"
+                                    .format(stat_name))
         return stats
 
     def get_bucket_status(self, bucket):
@@ -190,7 +192,7 @@ class BucketHelper(RestConnection):
             log.error("Bucket Name not Specified")
             return None
         api = self.baseUrl + 'pools/default/buckets'
-        status, content, header = self._http_request(api)
+        status, content, _ = self._http_request(api)
         if status:
             json_parsed = json.loads(content)
             for item in json_parsed:
@@ -205,8 +207,9 @@ class BucketHelper(RestConnection):
         bucket -- bucket name
         zoom -- stats zoom level (minute | hour | day | week | month | year)
         """
-        api = self.baseUrl + 'pools/default/buckets/{0}/stats?zoom={1}'.format(bucket, zoom)
-        status, content, header = self._http_request(api)
+        api = self.baseUrl + 'pools/default/buckets/{0}/stats?zoom={1}' \
+                             .format(bucket, zoom)
+        _, content, _ = self._http_request(api)
         return json.loads(content)
 
     def fetch_bucket_xdcr_stats(self, bucket='default', zoom='minute'):
@@ -215,8 +218,10 @@ class BucketHelper(RestConnection):
         bucket -- bucket name
         zoom -- stats zoom level (minute | hour | day | week | month | year)
         """
-        api = self.baseUrl + 'pools/default/buckets/@xdcr-{0}/stats?zoom={1}'.format(bucket, zoom)
-        status, content, header = self._http_request(api)
+        api = self.baseUrl \
+              + 'pools/default/buckets/@xdcr-{0}/stats?zoom={1}' \
+                .format(bucket, zoom)
+        _, content, _ = self._http_request(api)
         return json.loads(content)
 
     def get_bucket_stats(self, bucket='default'):
@@ -250,9 +255,7 @@ class BucketHelper(RestConnection):
 
     def delete_bucket(self, bucket='default'):
         api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/', bucket)
-#         if isinstance(bucket, Bucket):
-#             api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/', bucket.name)
-        status, content, header = self._http_request(api, 'DELETE')
+        status, _, header = self._http_request(api, 'DELETE')
 
         if int(header['status']) == 500:
             # According to http://docs.couchbase.com/couchbase-manual-2.5/cb-rest-api/#deleting-buckets
@@ -263,10 +266,10 @@ class BucketHelper(RestConnection):
         return status
 
     '''Load any of the three sample buckets'''
-    def load_sample(self,sample_name):
+    def load_sample(self, sample_name):
         api = '{0}{1}'.format(self.baseUrl, "sampleBuckets/install")
         data = '["{0}"]'.format(sample_name)
-        status, content, header = self._http_request(api, 'POST', data)
+        status, _, _ = self._http_request(api, 'POST', data)
         # Sleep to allow the sample bucket to be loaded
         time.sleep(10)
         return status
@@ -308,12 +311,14 @@ class BucketHelper(RestConnection):
                 log.info("The bucket still exists, sleep 1 sec and retry")
                 time.sleep(1)
             else:
-                raise BucketCreationException(ip=self.ip, bucket_name=bucket_params.get('name'))
+                raise BucketCreationException(
+                    ip=self.ip, bucket_name=bucket_params.get('name'))
 
         if (numsleep + 1) == maxwait:
             log.error("Tried to create the bucket for {0} secs.. giving up".
                       format(maxwait))
-            raise BucketCreationException(ip=self.ip, bucket_name=bucket_params.get('name'))
+            raise BucketCreationException(
+                ip=self.ip, bucket_name=bucket_params.get('name'))
 
         create_time = time.time() - create_start_time
         log.info("{0:.02f} seconds to create bucket {1}".
@@ -326,12 +331,9 @@ class BucketHelper(RestConnection):
                             flushEnabled=None, timeSynchronization=None,
                             maxTTL=None, compressionMode=None):
 
-        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket)
-#         if isinstance(bucket, Bucket):
-#             api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/', bucket.name)
-        params = urllib.urlencode({})
+        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
+                                 bucket)
         params_dict = {}
-        existing_bucket = self.get_bucket_json(bucket)
         if ramQuotaMB:
             params_dict["ramQuotaMB"] = ramQuotaMB
         if authType:
@@ -341,8 +343,8 @@ class BucketHelper(RestConnection):
             params_dict["saslPassword"] = saslPassword
         if replicaNumber:
             params_dict["replicaNumber"] = replicaNumber
-        #if proxyPort:
-        #    params_dict["proxyPort"] = proxyPort
+        # if proxyPort:
+        #     params_dict["proxyPort"] = proxyPort
         if replicaIndex:
             params_dict["replicaIndex"] = replicaIndex
         if flushEnabled:
@@ -357,19 +359,20 @@ class BucketHelper(RestConnection):
         params = urllib.urlencode(params_dict)
 
         log.info("%s with param: %s" % (api, params))
-        status, content, header = self._http_request(api, 'POST', params)
+        status, content, _ = self._http_request(api, 'POST', params)
         if timeSynchronization:
             if status:
                 raise Exception("Erroneously able to set bucket settings %s for bucket on time-sync" % (params, bucket))
             return status, content
         if not status:
-            raise Exception("Unable to set bucket settings %s for bucket" % (params, bucket))
+            raise Exception("Unable to set bucket settings %s for bucket"
+                            % (params, bucket))
         log.info("bucket %s updated" % bucket)
         return status
 
     def get_auto_compaction_settings(self):
         api = self.baseUrl + "settings/autoCompaction"
-        status, content, header = self._http_request(api)
+        _, content, _ = self._http_request(api)
         return json.loads(content)
 
     def set_auto_compaction(self, parallelDBAndVC="false",
@@ -426,7 +429,8 @@ class BucketHelper(RestConnection):
             params["allowedTimePeriod[abortOutside]"] = allowedTimePeriodAbort
 
         params = urllib.urlencode(params)
-        log.info("'%s' bucket's settings will be changed with parameters: %s" % (bucket, params))
+        log.info("'%s' bucket's settings will be changed with parameters: %s"
+                 % (bucket, params))
         return self._http_request(api, "POST", params)
 
     def disable_auto_compaction(self):
@@ -436,17 +440,16 @@ class BucketHelper(RestConnection):
         """
         api = self.baseUrl + "controller/setAutoCompaction"
         log.info("Disable autocompaction in cluster-wide setting")
-        status, content, header = self._http_request(api, "POST",
-                                  "parallelDBAndViewCompaction=false")
+        status, _, _ = self._http_request(api, "POST",
+                                          "parallelDBAndViewCompaction=false")
         return status
 
     def flush_bucket(self, bucket="default"):
-#         if isinstance(bucket, Bucket):
-#             bucket_name = bucket.name
-#         else:
         bucket_name = bucket
-        api = self.baseUrl + "pools/default/buckets/%s/controller/doFlush" % (bucket_name)
-        status, content, header = self._http_request(api, 'POST')
+        api = self.baseUrl \
+              + "pools/default/buckets/{0}/controller/doFlush" \
+                .format(bucket_name)
+        status, _, _ = self._http_request(api, 'POST')
         if not status:
             raise BucketFlushFailed(self.ip, bucket_name)
         log.info("Flush for bucket '%s' was triggered" % bucket_name)
@@ -454,16 +457,16 @@ class BucketHelper(RestConnection):
     def get_bucket_CCCP(self, bucket):
         log.info("Getting CCCP config ")
         api = '%spools/default/b/%s' % (self.baseUrl, bucket)
-#         if isinstance(bucket, Bucket):
-#             api = '%spools/default/b/%s' % (self.baseUrl, bucket.name)
-        status, content, header = self._http_request(api)
+        status, content, _ = self._http_request(api)
         if status:
             return json.loads(content)
         return None
 
     def compact_bucket(self, bucket="default"):
-        api = self.baseUrl + 'pools/default/buckets/{0}/controller/compactBucket'.format(bucket)
-        status, content, header = self._http_request(api, 'POST')
+        api = self.baseUrl \
+              + 'pools/default/buckets/{0}/controller/compactBucket' \
+                .format(bucket)
+        status, _, _ = self._http_request(api, 'POST')
         if status:
             log.info('bucket compaction successful')
         else:
@@ -472,10 +475,10 @@ class BucketHelper(RestConnection):
         return True
 
     def cancel_bucket_compaction(self, bucket="default"):
-        api = self.baseUrl + 'pools/default/buckets/{0}/controller/cancelBucketCompaction'.format(bucket)
-#         if isinstance(bucket, Bucket):
-#             api = self.baseUrl + 'pools/default/buckets/{0}/controller/cancelBucketCompaction'.format(bucket.name)
-        status, content, header = self._http_request(api, 'POST')
+        api = self.baseUrl \
+              + 'pools/default/buckets/{0}/controller/cancelBucketCompaction' \
+                .format(bucket)
+        status, _, _ = self._http_request(api, 'POST')
         log.info("Status is {0}".format(status))
         if status:
             log.info('Cancel bucket compaction successful')
@@ -507,11 +510,14 @@ class BucketHelper(RestConnection):
 
     # the same as Preview a Random Document on UI
     def get_random_key(self, bucket):
-        api = self.baseUrl + 'pools/default/buckets/%s/localRandomKey' % (bucket)
-        status, content, header = self._http_request(api, headers=self._create_capi_headers())
+        api = self.baseUrl + 'pools/default/buckets/{0}/localRandomKey' \
+                             .format(bucket)
+        status, content, _ = self._http_request(
+            api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         if not status:
-            raise Exception("unable to get random document/key for bucket %s" % (bucket))
+            raise Exception("unable to get random document/key for bucket %s"
+                            % (bucket))
         return json_parsed
 
     '''
@@ -523,7 +529,7 @@ class BucketHelper(RestConnection):
     def add_set_builtin_user(self, user_id, payload):
         url = "settings/rbac/users/local/" + user_id
         api = self.baseUrl + url
-        status, content, header = self._http_request(api, 'PUT', payload)
+        status, content, _ = self._http_request(api, 'PUT', payload)
         if not status:
             raise Exception(content)
         return json.loads(content)
@@ -535,7 +541,7 @@ class BucketHelper(RestConnection):
     def delete_builtin_user(self, user_id):
         url = "settings/rbac/users/local/" + user_id
         api = self.baseUrl + url
-        status, content, header = self._http_request(api, 'DELETE')
+        status, content, _ = self._http_request(api, 'DELETE')
         if not status:
             raise Exception(content)
         return json.loads(content)
@@ -548,7 +554,7 @@ class BucketHelper(RestConnection):
     def change_password_builtin_user(self, user_id, password):
         url = "controller/changePassword/" + user_id
         api = self.baseUrl + url
-        status, content, header = self._http_request(api, 'POST', password)
+        status, content, _ = self._http_request(api, 'POST', password)
         if not status:
             raise Exception(content)
         return json.loads(content)
