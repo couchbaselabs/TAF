@@ -139,7 +139,8 @@ class ServerTasks(object):
                             only_store_hash=True, batch_size=1, pause_secs=1,
                             timeout_secs=5, compression=True,
                             process_concurrency=8, retries=5,
-                            active_resident_threshold=100):
+                            active_resident_threshold=100,
+                            durability=""):
 
         log.info("Loading documents to {}".format(bucket.name))
         clients = []
@@ -157,7 +158,8 @@ class ServerTasks(object):
                 replicate_to=replicate_to, only_store_hash=only_store_hash,
                 batch_size=batch_size, pause_secs=pause_secs,
                 timeout_secs=timeout_secs, compression=compression,
-                process_concurrency=process_concurrency, retries=retries)
+                process_concurrency=process_concurrency, retries=retries,
+                durability=durability)
         else:
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, client, [generator],

@@ -559,7 +559,9 @@ class LoadDocumentsTask(GenericLoadingTask):
     def __init__(self, cluster, bucket, client, generator, op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True, throughput_concurrency=4, retries=5):
+                 compression=True, throughput_concurrency=4, retries=5,
+                 durability=""):
+
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
@@ -575,6 +577,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.replicate_to = replicate_to
         self.time_unit = time_unit
         self.num_loaded = 0
+        self.durability = durability
+
         if proxy_client:
             log.info("Changing client to proxy %s:%s..."
                      % (proxy_client.host, proxy_client.port))
@@ -589,7 +593,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         if self.op_type == 'create':
             success, fail = self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
                                               timeout=self.timeout, time_unit=self.time_unit,
-                                              doc_type=self.generator.doc_type)
+                                              doc_type=self.generator.doc_type, durability=self.durability)
             self.fail.update(fail)
             self.success.update(success)
         elif self.op_type == 'update':
@@ -833,8 +837,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True,
-                 process_concurrency=8, print_ops_rate=True, retries=5):
+                 compression=True, process_concurrency=8, print_ops_rate=True,
+                 retries=5, durability=""):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "DocumentsLoadGenTask_{}".format(time.time()))
         self.cluster = cluster
@@ -858,6 +862,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.buckets = None
         self.print_ops_rate = print_ops_rate
         self.retries = retries
+        self.durability = durability
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -952,7 +957,8 @@ class LoadDocumentsGeneratorsTask(Task):
                                      replicate_to=self.replicate_to,
                                      time_unit=self.time_unit, batch_size=self.batch_size,
                                      pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                     compression=self.compression, throughput_concurrency=self.process_concurrency)
+                                     compression=self.compression, throughput_concurrency=self.process_concurrency,
+                                     durability=self.durability)
             tasks.append(task)
         return tasks
 
