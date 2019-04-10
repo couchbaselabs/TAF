@@ -445,7 +445,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.remove_after_failover = self.input.param(
             "remove_after_failover", False)
         self.timeout_buffer = 120 if self.failover_orchestrator else 10
-        failover_not_expected = (self. max_count == 1 and
+        failover_not_expected = (self.max_count == 1 and
                                  self.num_node_failures > 1 and
                                  self.pause_between_failover_action < self.timeout or
                                  self.num_replicas < 1)
