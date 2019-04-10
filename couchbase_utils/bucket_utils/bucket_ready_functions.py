@@ -41,6 +41,7 @@ from memcached.helper.data_helper import VBucketAwareMemcached
 from remote.remote_util import RemoteMachineShellConnection
 from testconstants import MAX_COMPACTION_THRESHOLD
 from testconstants import MIN_COMPACTION_THRESHOLD
+from sdk_client3 import SDKClient
 
 
 # from couchbase_helper.stats_tools import StatsCommon
@@ -66,10 +67,10 @@ Parameters:
 
 class bucket_utils():
 
-    def __init__(self, cluster, task_manager, cluster_util):
+    def __init__(self, cluster, cluster_util):
         self.cluster = cluster
         self.task = ServerTasks()
-        self.task_manager = task_manager
+        self.task_manager = self.task.jython_task_manager
         self.cluster_util = cluster_util
         self.buckets = []
         self.input = TestInputSingleton.input
@@ -517,6 +518,87 @@ class bucket_utils():
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
             process_concurrency=process_concurrency, retries=retries)
+
+    def load_bucket_exceptions(self, cluster, bucket, generator, op_type,
+                               exp=0, flag=0, persist_to=0, replicate_to=0,
+                               only_store_hash=True, batch_size=1,
+                               pause_secs=1, timeout_secs=5, compression=True,
+                               durability="", process_concurrency=8, retries=5,
+                               ignore_exceptions=[], retry_exceptions=[],
+                               force_retry=False):
+
+        def crud(key, value=None):
+            result = None
+            if op_type == "update":
+                result = client.upsert(
+                    key, value, timeout=timeout_secs,
+                    persist_to=persist_to, replicate_to=replicate_to,
+                    durability=durability)
+            elif op_type == "create":
+                result = client.insert(
+                    key, value, timeout=timeout_secs,
+                    persist_to=persist_to, replicate_to=replicate_to,
+                    durability=durability)
+            elif op_type == "delete":
+                result = client.delete(
+                    key, timeout=timeout_secs,
+                    persist_to=persist_to, replicate_to=replicate_to,
+                    durability=durability)
+
+            return result
+
+        loader_task = self.task.async_load_gen_docs(
+            cluster, bucket, generator, op_type, exp=exp, flag=flag,
+            persist_to=persist_to, replicate_to=replicate_to,
+            only_store_hash=only_store_hash, batch_size=batch_size,
+            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            compression=compression,
+            process_concurrency=process_concurrency, retries=retries,
+            durability=durability)
+        self.task_manager.get_task_result(loader_task)
+
+        retried_exceptions = {"success": dict(), "fail": dict()}
+        unwanted_exceptions = {"success": dict(), "fail": dict()}
+
+        client = None
+        if force_retry:
+            client = SDKClient(RestConnection(cluster.master),
+                               bucket)
+            for key, failed_doc in loader_task.fail.items():
+                result = crud(key, failed_doc[2])
+                if result["status"]:
+                    retried_exceptions["success"].update({key: failed_doc})
+                else:
+                    retried_exceptions["fail"].update({key: failed_doc})
+        else:
+            if retry_exceptions:
+                client = SDKClient(RestConnection(cluster.master),
+                                   bucket)
+            for key, failed_doc in loader_task.fail.items():
+                found = False
+                exception = failed_doc[0]
+
+                for ex in ignore_exceptions:
+                    msg = exception.getMessage()
+                    if msg.find(ex) != -1:
+                        found = True
+                        break
+
+                for ex in retry_exceptions:
+                    if exception.find(ex) != -1:
+                        found = True
+                        result = crud(key, failed_doc[2])
+                        if result["status"]:
+                            retried_exceptions["success"].update({key: failed_doc})
+                        else:
+                            retried_exceptions["fail"].update({key: failed_doc})
+                        break
+                if not found:
+                    unwanted_exceptions["fail"].update({key: failed_doc})
+        if client:
+            client.close()
+
+        return unwanted_exceptions, retried_exceptions
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,

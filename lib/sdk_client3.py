@@ -11,7 +11,8 @@ import time
 
 from com.couchbase.client.java import Cluster
 from com.couchbase.client.java.json import JsonObject
-from com.couchbase.client.core.error import DocumentAlreadyExistsException, CouchbaseException
+from com.couchbase.client.core.error import DocumentAlreadyExistsException, CouchbaseException,\
+RequestTimeoutException
 from com.couchbase.client.core.error import DocumentDoesNotExistException, CASMismatchException
 from com.couchbase.client.core.error import TemporaryFailureException
 from com.couchbase.client.java.env import ClusterEnvironment
@@ -165,7 +166,7 @@ class SDKClient(object):
             log.error("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except (CouchbaseException, Exception) as ex:
+        except (CouchbaseException, Exception, RequestTimeoutException) as ex:
             log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
@@ -210,7 +211,7 @@ class SDKClient(object):
             log.error("Upsert: The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except (CouchbaseException, Exception) as ex:
+        except (CouchbaseException, Exception, RequestTimeoutException) as ex:
             log.error("Upsert: Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})

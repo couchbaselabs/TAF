@@ -45,7 +45,7 @@ class BaseTestCase(unittest.TestCase):
         self.cluster = CBCluster(servers=self.input.servers)
         self.task_manager = TaskManager(self.thread_to_use)
         self.cluster_util = cluster_utils(self.cluster, self.task_manager)
-        self.bucket_util = bucket_utils(self.cluster, self.task_manager, self.cluster_util)
+        self.bucket_util = bucket_utils(self.cluster, self.cluster_util)
         self.task = ServerTasks(self.task_manager)
         self.cleanup = False
         self.nonroot = False

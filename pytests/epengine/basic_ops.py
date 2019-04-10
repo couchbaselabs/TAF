@@ -8,9 +8,10 @@ from couchbase_helper.tuq_generators import JsonGenerator
 
 from membase.api.rest_client import RestConnection
 # from memcached.helper.data_helper import VBucketAwareMemcached
-from sdk_client import SDKSmartClient as VBucketAwareMemcached
+# from sdk_client import SDKSmartClient as VBucketAwareMemcached
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
+from error_simulation.cb_error import CouchbaseError
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -152,6 +153,55 @@ class basic_ops(BaseTestCase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
+
+    def test_doc_size_exceptions(self):
+        """
+        Basic tests for document CRUD operations using JSON docs
+        """
+#         self.sleep(10, "Wait for bucket to finish warm-up")
+        def_bucket = self.bucket_util.buckets[0]
+
+        self.cluster_util.add_node(self.servers[1])
+        if self.target_vbucket and type(self.target_vbucket) is not list:
+            self.target_vbucket = [self.target_vbucket]
+
+        self.log.info("Creating doc_generator..")
+        # Load basic docs into bucket
+        doc_create = doc_generator(
+            self.key, 0, 100, doc_size=self.doc_size,
+            doc_type=self.doc_type, target_vbucket=self.target_vbucket,
+            vbuckets=self.vbuckets)
+        self.log.info("doc_generator created")
+        unwanted, retried = self.bucket_util.load_bucket_exceptions(
+            self.cluster, def_bucket, doc_create, "create", 0,
+            batch_size=10, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            durability="majority")
+
+        err = CouchbaseError(RemoteMachineShellConnection(self.servers[1]))
+        err.create(CouchbaseError.STOP_MEMCACHED)
+
+        doc_create = doc_generator(
+            self.key, 100, 200, doc_size=self.doc_size,
+            doc_type=self.doc_type, target_vbucket=self.target_vbucket,
+            vbuckets=self.vbuckets)
+
+        unwanted, retried = self.bucket_util.load_bucket_exceptions(
+            self.cluster, def_bucket, doc_create, "create", 0,
+            batch_size=100, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            durability="majority", ignore_exceptions=["RequestTimeoutException"])
+
+        err.revert(CouchbaseError.STOP_MEMCACHED)
+
+        unwanted, retried = self.bucket_util.load_bucket_exceptions(
+            self.cluster, def_bucket, doc_create, "create", 0,
+            batch_size=100, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            durability="majority")
 
     def test_doc_size(self):
         """
