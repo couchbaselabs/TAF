@@ -553,8 +553,6 @@ class GenericLoadingTask(Task):
 
 
 class LoadDocumentsTask(GenericLoadingTask):
-    fail = {}
-    success = {}
 
     def __init__(self, cluster, bucket, client, generator, op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
@@ -578,6 +576,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.time_unit = time_unit
         self.num_loaded = 0
         self.durability = durability
+        self.fail = {}
+        self.success = {}
 
         if proxy_client:
             log.info("Changing client to proxy %s:%s..."
@@ -830,8 +830,6 @@ class Durability(Task):
 
 
 class LoadDocumentsGeneratorsTask(Task):
-    fail = {}
-    success = {}
 
     def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, exp_unit="seconds", flag=0,
@@ -872,6 +870,8 @@ class LoadDocumentsGeneratorsTask(Task):
         else:
             self.bucket = bucket
         self.num_loaded = 0
+        self.fail = {}
+        self.success = {}
 
     def call(self):
         self.start_task()
