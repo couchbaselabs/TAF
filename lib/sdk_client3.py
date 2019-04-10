@@ -17,7 +17,7 @@ from com.couchbase.client.core.error import TemporaryFailureException
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.java.kv import InsertOptions, UpsertOptions,\
-    RemoveOptions
+    RemoveOptions, PersistTo, ReplicateTo
 from com.couchbase.client.core.env import TimeoutConfig
 
 from java.time import Duration
@@ -27,6 +27,7 @@ from java.util.concurrent import TimeUnit
 from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
+from java.time.temporal import ChronoUnit
 
 
 log = logger.Logger.get_logger()
@@ -91,39 +92,46 @@ class SDKClient(object):
             self.cluster.shutdown()
             log.info("Closed down Cluster Connection.")
 
-    def delete(self, key, timeout=120, timeoutunit=TimeUnit.SECONDS, ttl=0,
-               ttlunit=TimeUnit.DAYS, durability=DurabilityLevel.MAJORITY,
-               max_retry=3):
-        retry_count = 0
-        retry = True
-        while retry_count <= max_retry and retry:
-            try:
-                options = RemoveOptions.removeOptions().timeout(self.getTime(timeout, timeoutunit)).expiry(self.getTime(ttl, ttlunit)).withDurabilityLevel(durability)
-                deleteResult = self.collection.remove(key, options)
-                print deleteResult
-                retry = False
-            except DocumentDoesNotExistException as e:
-                log.error("Exception: Document id {0} not found - {1}"
-                          .format(key, e))
-                retry = False
-                raise(e)
-            except CASMismatchException as e:
-                log.error("Exception: Cas mismatch for doc {0} - {1}"
-                          .format(key, e))
-                retry = False
-                raise(e)
-            except TemporaryFailureException as e:
-                log.warning("Exception: Retry for doc {0} - {1}"
-                            .format(key, e))
-            except CouchbaseException as e:
-                log.error("Generic exception for doc {0} - {1}"
-                          .format(key, e))
-                retry = False
-            except Exception as e:
-                print("Error during remove of {0} - {1}".format(key, e))
-                retry = False
+    def delete(self, key, persist_to=0, replicate_to=0,
+               timeout=5, time_unit="seconds",
+               durability=""):
 
-            retry_count += 1
+        result = dict()
+        try:
+            options = self.getRemoveOptions(persist_to=persist_to,
+                                            replicate_to=replicate_to,
+                                            timeout=timeout,
+                                            time_unit=time_unit,
+                                            durability=durability)
+
+            deleteResult = self.collection.remove(key, options)
+            result.update({"key": key, "value": None,
+                           "error": None, "status": True})
+        except DocumentDoesNotExistException as e:
+            log.error("Exception: Document id {0} not found - {1}"
+                      .format(key, e))
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
+        except CASMismatchException as e:
+            log.error("Exception: Cas mismatch for doc {0} - {1}"
+                      .format(key, e))
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
+        except TemporaryFailureException as e:
+            log.warning("Exception: Retry for doc {0} - {1}"
+                        .format(key, e))
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
+        except CouchbaseException as e:
+            log.error("Generic exception for doc {0} - {1}"
+                      .format(key, e))
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
+        except Exception as e:
+            log.error("Error during remove of {0} - {1}".format(key, e))
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
+        return result
 
     def delete_multi(self, keys, quiet=True, persist_to=0, replicate_to=0):
         try:
@@ -135,81 +143,83 @@ class SDKClient(object):
             except CouchbaseException:
                 raise
 
-    def getTime(self, var, timeunit):
-        time = {
-            TimeUnit.SECONDS: Duration.ofSeconds(var),
-            TimeUnit.MINUTES: Duration.ofMinutes(var),
-            TimeUnit.HOURS: Duration.ofHours(var),
-            TimeUnit.MILLISECONDS: Duration.ofMillis(var),
-            TimeUnit.DAYS: Duration.ofDays(var)
-        }
+    def insert(self, key, value, exp=0, exp_unit="seconds",
+               persist_to=0, replicate_to=0,
+               timeout=5, time_unit="seconds",
+               durability=""):
 
-        return time.get(timeunit)
-
-    def insert(self, key, value, timeout=120, timeoutunit=TimeUnit.SECONDS,
-               ttl=0, ttlunit=TimeUnit.DAYS,
-               durability=DurabilityLevel.MAJORITY):
-        success = dict()
-        fail = dict()
-
+        result = dict()
         content = self.__translate_to_json_object(value)
         try:
-            options = InsertOptions.insertOptions().timeout(self.getTime(timeout, timeoutunit)).expiry(self.getTime(ttl, ttlunit)).withDurabilityLevel(durability)
+            options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
+                                            persist_to=persist_to,
+                                            replicate_to=replicate_to,
+                                            timeout=timeout,
+                                            time_unit=time_unit,
+                                            durability=durability)
+
             insertResult = self.collection.insert(key, content, options)
-            success.update({"key": key, "value": content,
-                            "error": None, "status": True})
-            print insertResult
+            result.update({"key": key, "value": content,
+                           "error": None, "status": True})
         except DocumentAlreadyExistsException as ex:
-            print("The document already exists! => " + str(ex))
-            fail.update({"key": key, "value": content,
-                         "error": str(ex), "status": False})
+            log.error("The document already exists! => " + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
         except (CouchbaseException, Exception) as ex:
-            print("Something else happened: " + str(ex))
-            fail.update({"key": key, "value": content,
-                         "error": str(ex), "status": False})
-        return success, fail
+            log.error("Something else happened: " + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
+        return result
 
     def read(self, key):
-        success = dict()
-        fail = dict()
+        result = dict()
         getResult = self.collection.get(key)
         print getResult
         if getResult.isPresent():
-            print("Found document: cas=%s, content=%s"
+            log.info("Found document: cas=%s, content=%s"
                   % (str(getResult.get().cas()),
                      str(getResult.get().contentAsObject())))
-            success.update({"key": key,
-                            "value": str(getResult.get().contentAsObject()),
-                            "error": None, "status": True})
+            result.update({"key": key,
+                           "value": str(getResult.get().contentAsObject()),
+                           "error": None, "status": True})
         else:
-            print("Document not found!")
+            log.error("Document not found!")
+            result.update({"key": key, "value": None,
+                           "error": None, "status": False})
+        return result
 
-    def upsert(self, key, value, timeout=120, timeoutunit=TimeUnit.SECONDS,
-               ttl=0, ttlunit=TimeUnit.DAYS,
-               durability=DurabilityLevel.MAJORITY):
-        success = dict()
-        fail = dict()
+    def upsert(self, key, value, exp=0, exp_unit="seconds",
+               persist_to=0, replicate_to=0,
+               timeout=5, time_unit="seconds",
+               durability=""):
+
+        result = dict()
         content = self.__translate_to_json_object(value)
         try:
-            options = UpsertOptions.upsertOptions().timeout(self.getTime(timeout, timeoutunit)).expiry(self.getTime(ttl, ttlunit)).withDurabilityLevel(durability)
+            options = self.getUpsertOptions(exp=exp, exp_unit=exp_unit,
+                                            persist_to=persist_to,
+                                            replicate_to=replicate_to,
+                                            timeout=timeout,
+                                            time_unit=time_unit,
+                                            durability=durability)
+
             upsertResult = self.collection.upsert(key, content, options)
-            success.update({"key": key, "value": content,
-                            "error": None, "status": True})
-            print upsertResult
+            result.update({"key": key, "value": content,
+                           "error": None, "status": True})
         except DocumentAlreadyExistsException as ex:
-            print("Upsert: The document already exists! => " + str(ex))
-            fail.update({"key": key, "value": content,
-                         "error": str(ex), "status": False})
+            log.error("Upsert: The document already exists! => " + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
         except (CouchbaseException, Exception) as ex:
-            print("Upsert: Something else happened: " + str(ex))
-            fail.update({"key": key, "value": content,
-                         "error": str(ex), "status": False})
-        return success, fail
+            log.error("Upsert: Something else happened: " + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
+        return result
 
     def setMulti(self, keys, exp=0, exp_unit="seconds",
-                    persist_to=0, replicate_to=0,
-                    timeout=5, time_unit="seconds", retry=5,
-                    doc_type="json", durability=""):
+                 persist_to=0, replicate_to=0,
+                 timeout=5, time_unit="seconds", retry=5,
+                 doc_type="json", durability=""):
 
         docs = []
         for key, value in keys.items():
@@ -219,7 +229,6 @@ class SDKClient(object):
         result = doc_op().bulkInsert(self.collection, docs, exp, exp_unit, persist_to, replicate_to, durability,
                                      timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
-
 
     def upsertMulti(self, keys, exp=0, exp_unit="seconds",
                     persist_to=0, replicate_to=0,
@@ -290,30 +299,84 @@ class SDKClient(object):
                 map[id] = [id, cas, error]
         return map
 
+    def getInsertOptions(self, exp=0, exp_unit="seconds",
+                         persist_to=0, replicate_to=0,
+                         timeout=5, time_unit="seconds",
+                         durability=""):
+        options = None
+        if durability:
+            options = InsertOptions.insertOptions().timeout(self.getDuration(timeout, time_unit)).expiry(self.getDuration(exp, exp_unit)).withDurabilityLevel(self.getDurabilityLevel(durability))
+        else:
+            options = InsertOptions.insertOptions().timeout(self.getDuration(timeout, time_unit)).expiry(self.getDuration(exp, exp_unit)).withDurability(self.getPersistTo(persist_to), self.getReplicateTo(replicate_to))
 
-if __name__ == "__main__":
-    client = SDKClient("default", hosts=["10.112.180.102"],
-                       scheme="couchbase", password="password",
-                       compression=True)
-    """
-    print client.insert("dh_persist_key", '{"test":"value1"}', ttl=1)
-    client.read("dh_persist_key")
-    print client.upsert("dh_persist_key", '{"test":"value2"}', ttl=1,
-                        ttlunit=TimeUnit.MINUTES)
-    client.read("dh_persist_key")
-    client.delete("dh_persist_key")
-    client.close()
-    """
+        return options
 
-    from couchbase_helper.documentgenerator import \
-        doc_generator, BatchedDocumentGenerator
+    def getUpsertOptions(self, exp=0, exp_unit="seconds",
+                         persist_to=0, replicate_to=0,
+                         timeout=5, time_unit="seconds",
+                         durability=""):
+        options = None
+        if durability:
+            options = UpsertOptions.upsertOptions().timeout(self.getDuration(timeout, time_unit)).expiry(self.getDuration(exp, exp_unit)).withDurabilityLevel(self.getDurabilityLevel(durability))
+        else:
+            options = UpsertOptions.upsertOptions().timeout(self.getDuration(timeout, time_unit)).expiry(self.getDuration(exp, exp_unit)).withDurability(self.getPersistTo(persist_to), self.getReplicateTo(replicate_to))
 
-    doc_create = doc_generator("ritesh", 0, 10000, doc_size=10,
-                               doc_type="json", target_vbucket=None,
-                               vbuckets=1024)
-    batch_gen = BatchedDocumentGenerator(doc_create, 1000)
-    print batch_gen
-    key_value = batch_gen.next_batch()
-    print key_value
-    client.insert_multi(key_value, 100, TimeUnit.MINUTES, 1000)
-    client.close()
+        return options
+
+    def getRemoveOptions(self, persist_to=0, replicate_to=0,
+                         timeout=5, time_unit="seconds",
+                         durability=""):
+        options = None
+        if durability:
+            options = RemoveOptions.removeOptions().timeout(self.getDuration(timeout, time_unit)).withDurabilityLevel(self.getDurabilityLevel(durability))
+        else:
+            options = RemoveOptions.removeOptions().timeout(self.getDuration(timeout, time_unit)).withDurability(self.getPersistTo(persist_to), self.getReplicateTo(replicate_to))
+
+        return options
+
+    def getPersistTo(self, persistTo):
+        try:
+            persistList = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO, PersistTo.THREE, PersistTo.FOUR];
+            return persistList[persistTo]
+        except Exception as e:
+            pass
+
+        return PersistTo.ACTIVE
+
+    def getReplicateTo(self, replicateTo):
+        try:
+            replicateList = [ReplicateTo.NONE, ReplicateTo.ONE, ReplicateTo.TWO, ReplicateTo.THREE];
+            return replicateList[replicateTo]
+        except Exception as e:
+            pass
+
+        return ReplicateTo.NONE
+
+    def getDurabilityLevel(self, durabilityLevel):
+        if durabilityLevel.upper() == "MAJORITY":
+            return DurabilityLevel.MAJORITY
+
+        if durabilityLevel.upper() == "MAJORITY_AND_PERSIST_ON_MASTER":
+            return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER
+
+        if durabilityLevel.upper() == "PERSIST_TO_MAJORITY":
+            return DurabilityLevel.PERSIST_TO_MAJORITY
+
+        return None
+
+    def getDuration(self, time, timeUnit):
+        temporalUnit = None
+        if timeUnit.lower() == "milliseconds":
+            temporalUnit = ChronoUnit.MILLIS
+        elif timeUnit.lower() == "minutes":
+            temporalUnit = ChronoUnit.MINUTES
+        elif timeUnit.lower() == "hours":
+            temporalUnit = ChronoUnit.HOURS
+        elif timeUnit.lower() == "days":
+            temporalUnit = ChronoUnit.DAYS
+        elif timeUnit.lower() == "minutes":
+            temporalUnit = ChronoUnit.MINUTES
+        else:
+            temporalUnit = ChronoUnit.SECONDS
+
+        return Duration.of(time, temporalUnit)
