@@ -125,3 +125,58 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         # Call the generic method for testing
         self.enable_error_scenario_and_test_durability()
+
+    def test_non_overlapping_parallel_cruds(self):
+        """
+        Test to run non-overlapping durability cruds on single bucket
+        and make sure all CRUD operation succeeds
+
+        1. Run single task_1 with durability operation
+        2. Create parallel task to run either SyncWrite / Non-SyncWrite
+           operation based on the config param and run that over the docs
+           such that it will not overlap with the task_1
+        3. Make sure all CRUDs succeeded without any unexpected exceptions
+        """
+
+        # Create required doc_generators for CRUD ops
+        half_of_num_items = int(self.num_items/2)
+        gen_create = doc_generator(self.key, self.num_items, self.num_items*2)
+        gen_delete = doc_generator(self.key, 0, half_of_num_items)
+        gen_update = doc_generator(self.key, half_of_num_items,
+                                   self.num_items)
+
+        tasks = []
+        # Durability doc_loader for Create and Delete operations
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_create, "create", 0,
+            batch_size=10, process_concurrency=1,
+            durability=self.durability_level,
+            durability_timeout=self.durability_timeout))
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_delete, "delete", 0,
+            batch_size=10, process_concurrency=1,
+            durability=self.durability_level,
+            durability_timeout=self.durability_timeout))
+
+        # Non-SyncWrites for Update and Read operations
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_update, "update", 0,
+            batch_size=10, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_update, "read", 0,
+            batch_size=10, process_concurrency=1))
+
+        # Update num_items according to the CRUD operations
+        self.num_items += self.num_items - half_of_num_items
+
+        # Wait for all task to complete
+        for task in tasks:
+            # TODO: Receive failed docs and make sure only expected exceptions
+            #       are generated
+            self.task_manager.jython_task_manager.get_task_result(task)
+
+        # Verify doc count and other stats
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
