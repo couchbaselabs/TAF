@@ -26,6 +26,7 @@ class Bucket(object):
         VALUE_ONLY = "valueOnly"
         FULL_EVICTION = "fullEviction"
         NO_EVICTION = "noEviction"
+        NRU_EVICTION = "nruEviction"
 
     class bucket_compression_mode:
         ACTIVE = "active"
@@ -48,19 +49,31 @@ class Bucket(object):
 
     def __init__(self, new_params={}):
         self.name = new_params.get(Bucket.name, "default")
-        self.bucketType = new_params.get(Bucket.bucketType, Bucket.bucket_type.MEMBASE)
+        self.bucketType = new_params.get(Bucket.bucketType,
+                                         Bucket.bucket_type.MEMBASE)
         self.replicaNumber = new_params.get(Bucket.replicaNumber, 0)
         self.ramQuotaMB = new_params.get(Bucket.ramQuotaMB, 100)
-        self.kvs = {1:KVStore()}
-        self.evictionPolicy = new_params.get(Bucket.evictionPolicy, Bucket.bucket_eviction_policy.VALUE_ONLY)
+        self.kvs = {1: KVStore()}
+
+        if self.bucketType == Bucket.bucket_type.EPHEMERAL:
+            self.evictionPolicy = new_params.get(
+                Bucket.evictionPolicy,
+                Bucket.bucket_eviction_policy.NO_EVICTION)
+        else:
+            self.evictionPolicy = new_params.get(
+                Bucket.evictionPolicy,
+                Bucket.bucket_eviction_policy.VALUE_ONLY)
+
         self.replicaIndex = new_params.get(Bucket.replicaIndex, 0)
         self.priority = new_params.get(Bucket.priority, None)
-        self.threadsNumber = new_params.get(Bucket.threadsNumber,3)
+        self.threadsNumber = new_params.get(Bucket.threadsNumber, 3)
         self.uuid = None
         self.lww = new_params.get(Bucket.lww, False)
         self.maxTTL = new_params.get(Bucket.maxTTL, None)
         self.flushEnabled = new_params.get(Bucket.flushEnabled, 1)
-        self.compressionMode = new_params.get(Bucket.compressionMode, Bucket.bucket_compression_mode.PASSIVE)
+        self.compressionMode = new_params.get(
+            Bucket.compressionMode,
+            Bucket.bucket_compression_mode.PASSIVE)
         self.nodes = None
         self.stats = None
         self.servers = []

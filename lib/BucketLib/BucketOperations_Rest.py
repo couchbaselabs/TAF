@@ -282,14 +282,15 @@ class BucketHelper(RestConnection):
                        'ramQuotaMB': bucket_params.get('ramQuotaMB'),
                        'replicaNumber': bucket_params.get('replicaNumber'),
                        'bucketType': bucket_params.get('bucketType'),
-                       'threadsNumber': bucket_params.get('threadsNumber')}
+                       'replicaIndex': bucket_params.get('replicaIndex'),
+                       'threadsNumber': bucket_params.get('threadsNumber'),
+                       'flushEnabled': bucket_params.get('flushEnabled'),
+                       'evictionPolicy': bucket_params.get('evictionPolicy'),
+                       'compressionMode': bucket_params.get('compressionMode')}
 
-        # Add these parameters only in case of MEMBASE(Couchbase) bucket
-        if bucket_params.get("bucketType") == Bucket.bucket_type.MEMBASE:
-            init_params['flushEnabled'] = bucket_params.get('flushEnabled')
-            init_params['evictionPolicy'] = bucket_params.get('evictionPolicy')
-            init_params['compressionMode'] = bucket_params.get('compressionMode')
-            init_params['replicaIndex'] = bucket_params.get('replicaIndex')
+        # Remove 'replicaIndex' parameter in case of EPHEMERAL bucket
+        if bucket_params.get("bucketType") == Bucket.bucket_type.EPHEMERAL:
+            init_params.remove('replicaIndex')
 
         if bucket_params.get('lww'):
             init_params['maxTTL'] = bucket_params.get('lww')
