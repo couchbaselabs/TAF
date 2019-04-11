@@ -50,6 +50,7 @@ class FailoverBaseTest(BaseTestCase):
         self.during_ops = self.input.param("during_ops", None)
         self.graceful = self.input.param("graceful", True)
         self.failover_onebyone = self.input.param("failover_onebyone", False)
+        self.new_replica = self.input.param("new_replica", None)
         if self.recoveryType:
             self.recoveryType = self.recoveryType.split(":")
         if self.deltaRecoveryBuckets:

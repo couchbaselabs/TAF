@@ -7,6 +7,7 @@ from failover.failoverbasetest import FailoverBaseTest
 from membase.api.rest_client import RestConnection, RestHelper
 from membase.helper.rebalance_helper import RebalanceHelper
 from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
+from BucketLib.BucketOperations import BucketHelper
 
 GRACEFUL = "graceful"
 
@@ -132,11 +133,19 @@ class FailoverTests(FailoverBaseTest):
         else:
             self.run_failover_operations(self.chosen, failover_reason)
 
+        target_bucket = self.bucket_util.buckets[0]
+
+        # Update new_replica value, if provided in the conf
+        if self.new_replica:
+            self.num_replicas = self.new_replica
+            bucket_helper = BucketHelper(self.master)
+            bucket_helper.change_bucket_props(
+                target_bucket.name, replicaNumber=self.num_replicas)
+
         # Decide whether the durability is going to fail or not
         if self.num_failed_nodes >= 1 and self.num_replicas > 1:
             durability_will_fail = True
 
-        target_bucket = self.bucket_util.buckets[0]
         # Construct target vbucket list from the nodes
         # which are going to be failed over
         vbucket_list = list()

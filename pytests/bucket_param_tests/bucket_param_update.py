@@ -1,6 +1,6 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
-from BucketLib.BucketOperations_Rest import BucketHelper
+from BucketLib.BucketOperations import BucketHelper
 
 
 class Bucket_param_test(BaseTestCase):
