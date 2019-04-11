@@ -68,6 +68,7 @@ class SDKClient(object):
 
     def _createConn(self):
         try:
+            log.info("Creating cluster connection.")
             System.setProperty("com.couchbase.forceIPv4", "false")
             logger = Logger.getLogger("com.couchbase.client")
             logger.setLevel(Level.SEVERE)
@@ -89,8 +90,8 @@ class SDKClient(object):
     def close(self):
         log.info("Closing down the cluster.")
         if self.cluster:
-            self.cluster.environment().shutdown()
             self.cluster.shutdown()
+            self.cluster.environment().shutdown()
             log.info("Closed down Cluster Connection.")
 
     def delete(self, key, persist_to=0, replicate_to=0,
