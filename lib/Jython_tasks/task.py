@@ -1119,6 +1119,8 @@ class LoadDocumentsForDgmTask(Task):
 
 
 class ValidateDocumentsTask(GenericLoadingTask):
+    missing_keys = {}
+    wrong_values = {}
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  flag=0, proxy_client=None, batch_size=1, pause_secs=1,
                  timeout_secs=30, compression=True, throughput_concurrency=4):
@@ -1145,6 +1147,15 @@ class ValidateDocumentsTask(GenericLoadingTask):
 
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch()
+        if self.op_type == 'create':
+            self._process_values_for_create(key_value)
+        elif self.op_type == 'update':
+            self._process_values_for_update(key_value)
+        elif self.op_type == 'delete':
+            pass
+        else:
+            self.set_exception(Exception("Bad operation type: %s"
+                                         % self.op_type))
         result_map = self.batch_read(key_value)
         missing_keys, wrong_values = self.validate_key_val(result_map, key_value)
         if self.op_type == 'delete':
@@ -1159,13 +1170,9 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                                  .format(','.join(not_missing))))
         else:
             if missing_keys:
-                self.set_exception("Keys were missing. "
-                                   "Keys missing: {}"
-                                   .format(','.join(missing_keys)))
+                self.missing_keys.update(missing_keys)
             if wrong_values:
-                self.set_exception("Wrong key value. "
-                                   "Wrong key value: {}"
-                                   .format(','.join(wrong_values)))
+                self.wrong_values.update(wrong_values)
 
     def validate_key_val(self, map, key_value):
         missing_keys = []
@@ -1245,6 +1252,16 @@ class DocumentsValidatorTask(Task):
             self.task_manager.add_new_task(task)
         for task in tasks:
             self.task_manager.get_task_result(task)
+        if ValidateDocumentsTask.missing_keys:
+            self.set_exception("{} keys were missing. Missing keys: "
+                               "{}".format(
+                ValidateDocumentsTask.missing_keys.__len__(),
+                ValidateDocumentsTask.missing_keys))
+        if ValidateDocumentsTask.wrong_values:
+            self.set_exception("{} values were wrong. Wrong key-value: "
+                               "{}".format(
+                ValidateDocumentsTask.wrong_values.__len__(),
+                ValidateDocumentsTask.wrong_values))
         self.complete_task()
 
     def get_tasks(self, generator):
