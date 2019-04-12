@@ -1183,10 +1183,11 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 actual_val = {}
                 if map[key][1] != 0:
                     actual_val = Json.loads(map[key][2].toString())
-                elif map[key][0] != None:
-                    actual_val = map[key][0].toString()
+                elif map[key][2] != None:
+                    actual_val = map[key][2].toString()
                 else:
                     missing_keys.append(key)
+                    continue
                 if expected_val == actual_val:
                     continue
                 else:

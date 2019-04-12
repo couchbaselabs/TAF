@@ -5,6 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
@@ -63,6 +64,43 @@ public class doc_ops {
 		return returnValue;
 	}
 
+	public List<HashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
+			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
+			final DurabilityLevel durabilityLevel, final long timeOut, final String timeOutTimeUnit) {
+		final InsertOptions insertOptions = this.getInsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+				timeOut, timeOutTimeUnit, durabilityLevel);
+		final ReactiveCollection reactiveCollection = collection.reactive();
+		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
+				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
+					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+						final String id = documentToInsert.getT1();
+						final JsonObject content = documentToInsert.getT2();
+						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
+						returnValue.put("document", content);
+						returnValue.put("error", null);
+						returnValue.put("cas", 0);
+						returnValue.put("status", true);
+						returnValue.put("id", id);
+						return reactiveCollection.insert(id, content, insertOptions)
+								.map(new Function<MutationResult, HashMap<String, Object>>() {
+									public HashMap<String, Object> apply(MutationResult result) {
+										returnValue.put("result", result);
+										returnValue.put("cas", result.cas());
+										return returnValue;
+									}
+								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
+									public Mono<HashMap<String, Object>> apply(Throwable error) {
+										returnValue.put("error", error);
+										returnValue.put("status", false);
+										return Mono.just(returnValue);
+									}
+								});
+					}
+				}).subscribeOn(Schedulers.parallel()).collectList().block();
+		return returnValue;
+	}
+
+
 	public List<HashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
 			long expiry, final String expiryTimeUnit, final int persistTo, final int replicateTo,
 			final String durabilityLevel, final long timeOut, final String timeUnit) {
@@ -97,9 +135,42 @@ public class doc_ops {
 		return returnValue;
 	}
 
+	public List<HashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
+			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
+			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
+		final UpsertOptions upsertOptions = this.getUpsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+				timeOut, timeUnit, durabilityLevel);
+		final ReactiveCollection reactiveCollection = collection.reactive();
+		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
+				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
+					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+						final String id = documentToInsert.getT1();
+						final JsonObject content = documentToInsert.getT2();
+						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
+						returnValue.put("document", content);
+						returnValue.put("error", null);
+						returnValue.put("status", true);
+						returnValue.put("id", id);
+						return reactiveCollection.upsert(id, content, upsertOptions)
+								.map(new Function<MutationResult, HashMap<String, Object>>() {
+									public HashMap<String, Object> apply(MutationResult result) {
+										returnValue.put("result", result);
+										return returnValue;
+									}
+								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
+									public Mono<HashMap<String, Object>> apply(Throwable error) {
+										returnValue.put("error", error);
+										returnValue.put("status", false);
+										return Mono.just(returnValue);
+									}
+								});
+					}
+				}).subscribeOn(Schedulers.parallel()).collectList().block();
+		return returnValue;
+	}
+
 	public List<HashMap<String, Object>> bulkGet(Collection collection, List<String> keys) {
 		final ReactiveCollection reactiveCollection = collection.reactive();
-
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
 				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(String key) {
@@ -109,11 +180,14 @@ public class doc_ops {
 						retVal.put("content", null);
 						retVal.put("error", null);
 						retVal.put("status", false);
-						return reactiveCollection.get(key).map(new Function<GetResult, HashMap<String, Object>>() {
-							public HashMap<String, Object> apply(GetResult result) {
-								retVal.put("cas", result.cas());
-								retVal.put("content", result.contentAsObject());
-								retVal.put("status", true);
+						return reactiveCollection.get(key).map(new Function<Optional<GetResult>, HashMap<String, Object>>(){
+							public HashMap<String, Object> apply(Optional<GetResult> optionalResult) {
+								if (optionalResult.isPresent()){
+									GetResult result = optionalResult.get();
+									retVal.put("cas", result.cas());
+									retVal.put("result", result.contentAsObject());
+									retVal.put("status", true);
+								}
 								return retVal;
 							}
 						}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
@@ -136,10 +210,21 @@ public class doc_ops {
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
 
 		if (durabilitylevel != null) {
-			return InsertOptions.insertOptions().withDurability(persistto, replicateto)
-					.withDurabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
+			return InsertOptions.insertOptions().withDurabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
 		} else {
 			return InsertOptions.insertOptions().withDurability(persistto, replicateto).expiry(exp).timeout(timeout);
+		}
+	}
+
+	private InsertOptions getInsertOptions(long expiry, String expiryTimeUnit, PersistTo persistTo, ReplicateTo replicateTo,
+			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
+		Duration exp = this.getDuration(expiry, expiryTimeUnit);
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+
+		if (durabilityLevel != null) {
+			return InsertOptions.insertOptions().withDurabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
+		} else {
+			return InsertOptions.insertOptions().withDurability(persistTo, replicateTo).expiry(exp).timeout(timeout);
 		}
 	}
 
@@ -152,10 +237,21 @@ public class doc_ops {
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
 
 		if (durabilitylevel != null) {
-			return UpsertOptions.upsertOptions().withDurability(persistto, replicateto)
-					.withDurabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
+			return UpsertOptions.upsertOptions().withDurabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
 		} else {
 			return UpsertOptions.upsertOptions().withDurability(persistto, replicateto).expiry(exp).timeout(timeout);
+		}
+	}
+
+	private UpsertOptions getUpsertOptions(long expiry, String expiryTimeUnit, PersistTo persistTo, ReplicateTo replicateTo,
+			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
+		Duration exp = this.getDuration(expiry, expiryTimeUnit);
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+
+		if (durabilityLevel != null) {
+			return UpsertOptions.upsertOptions().withDurabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
+		} else {
+			return UpsertOptions.upsertOptions().withDurability(persistTo, replicateTo).expiry(exp).timeout(timeout);
 		}
 	}
 
