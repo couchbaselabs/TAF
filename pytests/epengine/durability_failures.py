@@ -1,7 +1,7 @@
 import time
 
 from cb_tools.cbstats import Cbstats
-from couchbase_helper.data_analysis_helper import DurabilityHelper
+from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
@@ -13,6 +13,8 @@ from remote.remote_util import RemoteMachineShellConnection
 class DurabilityFailureTests(DurabilityTestsBase):
     def setUp(self):
         super(DurabilityFailureTests, self).setUp()
+        self.durability = DurabilityHelper(self.log, len(self.cluster.servers),
+                                           self.durability_level)
         self.log.info("=== DurabilityFailureTests setup complete ===")
 
     def tearDown(self):
@@ -61,7 +63,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                         msg="Failover stats mismatch. {0} != {1}"
                             .format(vb_info["init"], vb_info["failure_stat"]))
 
-        self.assertTrue(DurabilityHelper.validate_durability_exception(
+        self.assertTrue(self.durability.validate_durability_exception(
             d_create_task.fail, "durability_not_possible"),
             msg=err_msg)
 
@@ -98,7 +100,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
-            self.assertTrue(DurabilityHelper.validate_durability_exception(
+            self.assertTrue(self.durability.validate_durability_exception(
                 task.fail, "durability_not_possible"),
                 msg=err_msg)
 
@@ -185,7 +187,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             durability=self.durability_level,
             timeout_secs=self.durability_timeout, retries=self.sdk_retries)
 
-        self.sleep(20, msg="Wait for task_1 ops to reach the server")
+        self.sleep(20, message="Wait for task_1 ops to reach the server")
 
         # SDK client for performing individual ops
         client = SDKClient(RestConnection(self.cluster.master),
@@ -193,6 +195,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Perform specified CRUD operation on sync_write docs
         while gen_create.has_next():
             key, value = gen_create.next()
+            fail = dict()
             if self.with_non_sync_writes:
                 pass
             else:
@@ -286,7 +289,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             durability=self.durability_level,
             timeout_secs=self.durability_timeout, retries=self.sdk_retries)
 
-        self.sleep(20, msg="Wait for task_1 ops to reach the server")
+        self.sleep(20, message="Wait for task_1 ops to reach the server")
 
         # SDK client for performing individual ops
         client = SDKClient(RestConnection(self.cluster.master),
@@ -536,7 +539,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             durability=self.durability_level,
             timeout_secs=self.durability_timeout, retries=self.sdk_retries)
 
-        self.sleep(20, msg="Wait for task_1 ops to reach the server")
+        self.sleep(20, message="Wait for task_1 ops to reach the server")
 
         tem_durability = self.durability_level
         tem_timeout = self.durability_timeout
@@ -630,7 +633,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             durability=self.durability_level,
             timeout_secs=self.durability_timeout, retries=self.sdk_retries)
 
-        self.sleep(30, msg="Wait for task_1 ops to reach the server")
+        self.sleep(30, message="Wait for task_1 ops to reach the server")
 
         # Initialize tasks and store the task objects
         doc_loader_task_2 = self.task.async_load_gen_docs(
@@ -755,7 +758,8 @@ class TimeoutTests(DurabilityTestsBase):
         # Update num_items value accordingly to the CRUD performed
         self.num_items += self.crud_batch_size - int(self.num_items/3)
 
-        self.sleep(time_to_wait, "Wait less than the durability_timeout value")
+        self.sleep(time_to_wait,
+                   message="Wait less than the durability_timeout value")
 
         # Fetch latest failover stats and validate the values are not changed
         for node in target_nodes:
@@ -768,8 +772,8 @@ class TimeoutTests(DurabilityTestsBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
-        # Disconnect the shell connection
-        shell_conn.disconnect()
+            # Disconnect the shell connection
+            shell_conn[node].disconnect()
 
         # Wait for document_loader tasks to complete
         for task in tasks:
@@ -851,7 +855,8 @@ class TimeoutTests(DurabilityTestsBase):
         # Update num_items value accordingly to the CRUD performed
         self.num_items += self.crud_batch_size - int(self.num_items/3)
 
-        self.sleep(time_to_wait, "Wait less than the durability_timeout value")
+        self.sleep(time_to_wait,
+                   message="Wait less than the durability_timeout value")
 
         # Fetch latest failover stats and validate the values are not changed
         vb_info["withinTimeout"] = cbstat_obj.failover_stats(self.bucket.name)
@@ -962,8 +967,8 @@ class TimeoutTests(DurabilityTestsBase):
         for node in target_nodes:
             error_sim[node.ip].create(self.simulate_error,
                                       bucket_name=self.bucket.name)
-        # Disconnect the shell connection
-        shell_conn.disconnect()
+            # Disconnect the shell connection
+            shell_conn[node].disconnect()
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
@@ -980,7 +985,7 @@ class TimeoutTests(DurabilityTestsBase):
         self.num_items += self.crud_batch_size - int(self.num_items/3)
 
         # Retry the same CRUDs after reverting the failure environment
-        tasks = []
+        tasks = list()
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=1,
@@ -1035,6 +1040,9 @@ class TimeoutTests(DurabilityTestsBase):
         cbstat_obj = Cbstats(shell_conn)
         error_sim = CouchbaseError(shell_conn)
         vb_info = dict()
+
+        # Variable to hold all the failed docs
+        failed_docs = list()
 
         self.durability_level = "persistActive"
 
@@ -1108,7 +1116,7 @@ class TimeoutTests(DurabilityTestsBase):
         self.num_items += self.crud_batch_size - int(self.num_items/3)
 
         # Retry the same CRUDs after reverting the failure environment
-        tasks = []
+        tasks = list()
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=1,

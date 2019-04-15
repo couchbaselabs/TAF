@@ -10,13 +10,6 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def tearDown(self):
         super(DiskAutofailoverTests, self).tearDown()
 
-    def _loadgen(self):
-        tasks = []
-        tasks.extend(self.async_load_all_buckets(self.run_time_create_load_gen, "create", 0))
-        tasks.extend(self.async_load_all_buckets(self.update_load_gen, "update", 0))
-        tasks.extend(self.async_load_all_buckets(self.delete_load_gen, "delete", 0))
-        return tasks
-
     def test_disk_autofailover_rest_api(self):
         disk_timeouts = self.input.param("disk_failover_timeouts", "5,10,30,60,120")
         disk_timeouts = disk_timeouts.split(",")
@@ -34,6 +27,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = self._loadgen()
         self.failover_expected = True
         self.failover_actions[self.failover_action]()
+        self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -44,6 +38,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = tasks
         self.failover_expected = (not self.failover_action == "disk_full")
         self.failover_actions[self.failover_action]()
+        self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -52,6 +47,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = self._loadgen()
         self.failover_expected = True
         self.failover_actions[self.failover_action]()
+        self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -64,12 +60,13 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         3. Fail a node and validate if node is failed over if required.
         4. Disable autofailover and validate.
 
-        :return: Nothing
+        :return: None
         """
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         self.loadgen_tasks = self._loadgen()
-        self.loadgen_tasks.extend(self._async_load_all_buckets(self.master, self.initial_load_gen, "read", 0))
+        self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.cluster.master, self.initial_load_gen, "read", 0))
         rebalance_task = self.cluster.async_rebalance(self.servers,
                                                       self.servers_to_add,
                                                       self.servers_to_remove)
@@ -82,10 +79,11 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             pass
         except ServerUnavailableException:
             pass
-        except:
+        except Exception:
             pass
         else:
             self.fail("Rebalance should fail since a node went down")
+        self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -98,12 +96,13 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         wait for the rebalance to be completed
         3. Fail a node and validate if node is failed over if required.
         4. Disable autofailover and validate.
-        :return: Nothing
+        :return: None
         """
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         self.loadgen_tasks = self._loadgen()
-        self.loadgen_tasks.extend(self._async_load_all_buckets(self.master, self.initial_load_gen, "read", 0))
+        self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.cluster.master, self.initial_load_gen, "read", 0))
         rebalance_success = self.cluster.rebalance(self.servers,
                                                    self.servers_to_add,
                                                    self.servers_to_remove)
@@ -111,6 +110,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
         self.failover_actions[self.failover_action]()
+        self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -123,12 +123,13 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         wait for the rebalance to be completed
         3. Fail a node and validate if node is failed over if required.
         4. Disable autofailover and validate.
-        :return: Nothing
+        :return: None
         """
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         self.loadgen_tasks = self._loadgen()
-        self.loadgen_tasks.extend(self._async_load_all_buckets(self.master, self.initial_load_gen, "read", 0))
+        self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.cluster.master, self.initial_load_gen, "read", 0))
         self.failover_actions[self.failover_action]()
         for node in self.servers_to_add:
             self.rest.add_node(user=self.orchestrator.rest_username,
@@ -145,6 +146,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         if (not rebalance_success or not started) and not \
                 self.failover_expected:
             self.fail("Rebalance failed. Check logs")
+        self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -154,7 +156,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         1. Enable autofailover and validate
         2. Fail a node and validate if node is failed over if required
         3. Addback node and validate that the addback was successful.
-        :return: Nothing
+        :return: None
         """
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
@@ -163,7 +165,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         self.loadgen_tasks = self._loadgen()
-        self.loadgen_tasks.extend(self._async_load_all_buckets(self.master, self.initial_load_gen, "read", 0))
+        self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.cluster.master, self.initial_load_gen, "read", 0))
         self.failover_actions[self.failover_action]()
         self.bring_back_failed_nodes_up()
         self.sleep(30)
@@ -178,6 +181,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         msg = "rebalance failed while recovering failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+        self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -188,7 +192,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         1. Enable autofailover and validate
         2. Fail a node and validate if node is failed over if required
         3. Rebalance of node if failover was successful and validate.
-        :return:
+        :return: None
         """
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
@@ -197,13 +201,16 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         self.loadgen_tasks = self._loadgen()
-        self.loadgen_tasks.extend(self._async_load_all_buckets(self.master, self.initial_load_gen, "read", 0))
+        self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.cluster.master, self.initial_load_gen, "read", 0))
         self.failover_actions[self.failover_action]()
         self.nodes = self.rest.node_statuses()
         self.remove_after_failover = True
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+        self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
+                            ejectedNodes=[])
         msg = "rebalance failed while removing failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+        self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()

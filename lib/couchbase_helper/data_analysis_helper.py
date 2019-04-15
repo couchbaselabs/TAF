@@ -919,35 +919,3 @@ class DataCollector(object):
                     return views_output
                 else:
                     return False
-
-
-class DurabilityHelper(object):
-    @staticmethod
-    def durability_succeeds(bucket_name, cluster_len, durability="MAJORITY",
-                            induced_error=None, failed_nodes=0):
-        durability_succeeds = True
-        bucket = BucketHelper.get_bucket_json(bucket_name)
-        configured_nodes = bucket["replicaNumber"] + 1
-        majority_value = floor(configured_nodes/2) + 1
-
-        if induced_error is None:
-            if (cluster_len-failed_nodes) < majority_value:
-                durability_succeeds = False
-        else:
-            if (durability == "MAJORITY"
-                    and induced_error in ["disk_failure", "disk_full"]):
-                durability_succeeds = True
-            elif (cluster_len-failed_nodes) < majority_value:
-                durability_succeeds = False
-
-        return durability_succeeds
-
-    @staticmethod
-    def validate_durability_exception(failed_docs, expected_exception):
-        validation_passed = True
-        for doc in failed_docs:
-            if expected_exception not in doc["error"]:
-                validation_passed = False
-                log.error("Unexpected exception '{0}' for key '{1}'"
-                          .format(doc["error"], doc["key"]))
-        return validation_passed
