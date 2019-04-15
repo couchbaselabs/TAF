@@ -1,6 +1,7 @@
 import time
 
 from cb_tools.cbstats import Cbstats
+from couchbase_helper.data_analysis_helper import DurabilityHelper
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
@@ -16,6 +17,102 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
     def tearDown(self):
         super(DurabilityFailureTests, self).tearDown()
+
+    def test_crud_failures(self):
+        """
+        Test to configure the cluster in such a way durability will always fail
+
+        1. Try creating the docs with durability set
+        2. Verify create failed with durability_not_possible exception
+        3. Create docs using async_writes
+        4. Perform update and delete ops with durability
+        5. Make sure these ops also fail with durability_not_possible exception
+        """
+
+        tasks = list()
+        shell_conn = RemoteMachineShellConnection(self.cluster.master)
+        cbstat_obj = Cbstats(shell_conn)
+        vb_info = dict()
+        gen_load = doc_generator(self.key, 0, self.num_items)
+        err_msg = "Doc mutation succeeded with, "  \
+                  "cluster size: {0}, replica: {1}" \
+                  .format(self.cluster.size, self.num_replicas)
+
+        # Fetch vbucket seq_no stats from failover command for verification
+        vb_info["init"] = cbstat_obj.failover_stats(self.bucket.name)
+
+        # Perform durable SET operation
+        d_create_task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_load, "create",
+            batch_size=10, process_concurrency=8,
+            durability=self.durability_level,
+            timeout_secs=self.durability_timeout, retries=self.sdk_retries)
+        self.task.jython_task_manager.get_task_result(d_create_task)
+
+        # Fetch vbucket seq_no status from failover command after CREATE task
+        vb_info["failure_stat"] = cbstat_obj.failover_stats(self.bucket.name)
+
+        # Verify initial doc load count
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(0)
+        self.assertTrue(d_create_task.failed_count == self.num_items,
+                        msg=err_msg)
+        self.assertTrue(vb_info["init"] == vb_info["create_failure"],
+                        msg="Failover stats mismatch. {0} != {1}"
+                            .format(vb_info["init"], vb_info["failure_stat"]))
+
+        self.assertTrue(DurabilityHelper.validate_durability_exception(
+            d_create_task.fail, "durability_not_possible"),
+            msg=err_msg)
+
+        # Perform aync_write to create the documents
+        async_create_task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_load, "create",
+            batch_size=10, process_concurrency=8,
+            timeout_secs=self.durability_timeout)
+        self.task.jython_task_manager.get_task_result(async_create_task)
+
+        # Fetch vbucket seq_no status from failover command after async CREATEs
+        vb_info["create_stat"] = cbstat_obj.failover_stats(self.bucket.name)
+
+        # Verify doc load count
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        # Start durable UPDATE operation
+        tasks.append(self.task.async_load_gen_docs(
+                self.cluster, self.bucket, gen_load, "update",
+                batch_size=10, process_concurrency=4,
+                durability=self.durability_level,
+                timeout_secs=self.durability_timeout,
+                retries=self.sdk_retries))
+        # Start durable DELETE operation
+        tasks.append(self.task.async_load_gen_docs(
+                self.cluster, self.bucket, gen_load, "delete",
+                batch_size=10, process_concurrency=4,
+                durability=self.durability_level,
+                timeout_secs=self.durability_timeout,
+                retries=self.sdk_retries))
+
+        # Wait for all tasks to complete and validate the exception
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+
+            self.assertTrue(DurabilityHelper.validate_durability_exception(
+                task.fail, "durability_not_possible"),
+                msg=err_msg)
+
+        # Verify doc count is unchanged due to durability failures
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        # Fetch vbucket seq_no status from failover after UPDATE/DELETE task
+        vb_info["failure_stat"] = cbstat_obj.failover_stats(self.bucket.name)
+
+        self.assertTrue(vb_info["create_failure"] == vb_info["failure_stat"],
+                        msg="Failover stats mismatch. {0} != {1}"
+                            .format(vb_info["failure_stat"],
+                                    vb_info["create_failure"]))
 
     def test_sync_write_in_progress(self):
         """
