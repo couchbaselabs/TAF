@@ -225,6 +225,7 @@ class basic_ops(BaseTestCase):
             self.cluster, def_bucket, doc_create, "create", 0,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
         print_ops_task.end_task()
@@ -248,6 +249,7 @@ class basic_ops(BaseTestCase):
                 self.cluster, def_bucket, doc_update, "update", 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
             # TODO: Proc to verify the mutation value in each doc
@@ -257,6 +259,7 @@ class basic_ops(BaseTestCase):
                 self.cluster, def_bucket, doc_update, "delete", 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
             expected_num_items = self.num_items - (self.num_items-num_item_start_for_crud)
@@ -279,6 +282,7 @@ class basic_ops(BaseTestCase):
                 self.cluster, bucket, gens_load, "create", 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
 
@@ -298,6 +302,7 @@ class basic_ops(BaseTestCase):
                 self.cluster, bucket, gens_load, "create", 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
 
@@ -313,6 +318,7 @@ class basic_ops(BaseTestCase):
                     self.cluster, bucket, gens_update, "create", 0,
                     batch_size=10, process_concurrency=8,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    durability=self.durability_level,
                     timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
                 self.task.jython_task_manager.get_task_result(task)
                 self.bucket_util.verify_stats_all_buckets(1)
@@ -398,6 +404,7 @@ class basic_ops(BaseTestCase):
             self.cluster, def_bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
@@ -425,6 +432,7 @@ class basic_ops(BaseTestCase):
             self.cluster, def_bucket, gen_create2, "create", 0,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()

@@ -77,6 +77,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         self.cluster, bucket, self.gen_update, "update", 0,
                         batch_size=20, persist_to=self.persist_to,
                         replicate_to=self.replicate_to,
+                        durability=self.durability_level,
                         pause_secs=5, timeout_secs=self.sdk_timeout,
                         retries=self.sdk_retries))
                 if("create" in self.doc_ops):
@@ -84,14 +85,17 @@ class RebalanceInTests(RebalanceBaseTest):
                         self.cluster, bucket, gen_create, "create", 0,
                         batch_size=20, persist_to=self.persist_to,
                         replicate_to=self.replicate_to,
+                        durability=self.durability_level,
                         pause_secs=5, timeout_secs=self.sdk_timeout,
                         retries=self.sdk_retries))
                 if("delete" in self.doc_ops):
-                    tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_delete, "delete", 0,
-                                                               batch_size=20, persist_to=self.persist_to,
-                                                               replicate_to=self.replicate_to,
-                                                               pause_secs=5, timeout_secs=self.sdk_timeout,
-                                                               retries=self.sdk_retries))
+                    tasks.append(self.task.async_load_gen_docs(
+                        self.cluster, bucket, gen_delete, "delete", 0,
+                        batch_size=20, persist_to=self.persist_to,
+                        replicate_to=self.replicate_to,
+                        durability=self.durability_level,
+                        pause_secs=5, timeout_secs=self.sdk_timeout,
+                        retries=self.sdk_retries))
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.cluster.nodes_in_cluster.extend(servs_in)
         for task in tasks:
@@ -143,6 +147,7 @@ class RebalanceInTests(RebalanceBaseTest):
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_update, "update", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level,
                 pause_secs=5, timeout_secs=self.sdk_timeout,
                 retries=self.sdk_retries))
         for task in tasks:
@@ -274,6 +279,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 self.cluster, bucket, self.cluster.master, gen_update,
                 "update", 0, batch_size=20, persist_to=self.persist_to,
                 replicate_to=self.replicate_to, pause_secs=5,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -351,6 +357,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         self.gen_update, "update", 0, batch_size=20,
                         persist_to=self.persist_to,
                         replicate_to=self.replicate_to, pause_secs=5,
+                        durability=self.durability_level,
                         timeout_secs=self.sdk_timeout,
                         retries=self.sdk_retries))
                 elif ("create" in self.doc_ops):
@@ -360,6 +367,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         self.cluster, bucket, gen_create,
                         "create", 0, batch_size=20, persist_to=self.persist_to,
                         replicate_to=self.replicate_to, pause_secs=5,
+                        durability=self.durability_level,
                         timeout_secs=self.sdk_timeout,
                         retries=self.sdk_retries))
                 elif ("delete" in self.doc_ops):
@@ -371,6 +379,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         self.cluster, bucket, gen_delete,
                         "delete", 0, batch_size=20, persist_to=self.persist_to,
                         replicate_to=self.replicate_to, pause_secs=5,
+                        durability=self.durability_level,
                         timeout_secs=self.sdk_timeout,
                         retries=self.sdk_retries))
         for task in tasks:
@@ -492,6 +501,7 @@ class RebalanceInTests(RebalanceBaseTest):
                             self.cluster, bucket, self.gen_update, "update", 0,
                             batch_size=20, persist_to=self.persist_to,
                             replicate_to=self.replicate_to, pause_secs=5,
+                            durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
                             retries=self.sdk_retries))
                     elif ("create" in self.doc_ops):
@@ -504,6 +514,7 @@ class RebalanceInTests(RebalanceBaseTest):
                             self.cluster, bucket, gen_create, "create", 0,
                             batch_size=20, persist_to=self.persist_to,
                             replicate_to=self.replicate_to, pause_secs=5,
+                            durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
                             retries=self.sdk_retries))
                     elif ("delete" in self.doc_ops):
@@ -518,6 +529,7 @@ class RebalanceInTests(RebalanceBaseTest):
                             self.cluster, bucket, gen_delete, "delete", 0,
                             batch_size=20, persist_to=self.persist_to,
                             replicate_to=self.replicate_to, pause_secs=5,
+                            durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
                             retries=self.sdk_retries))
             for task in tasks:

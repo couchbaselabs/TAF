@@ -141,6 +141,7 @@ class SwapRebalanceBase(BaseTestCase):
                 self.cluster, bucket, gen_create, "create", 0,
                 batch_size=20, persist_to=self.persist_to,
                 replicate_to=self.replicate_to, pause_secs=5,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
         return loaders
 
