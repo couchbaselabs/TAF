@@ -20,7 +20,9 @@ from com.couchbase.client.core.error import TemporaryFailureException
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.java.kv import InsertOptions, UpsertOptions, \
-                                         RemoveOptions, PersistTo, ReplicateTo
+                                         RemoveOptions, \
+                                         PersistTo, ReplicateTo, \
+                                         ReplicaMode, GetFromReplicaOptions
 from com.couchbase.client.core.env import TimeoutConfig
 
 from java.time import Duration
@@ -184,11 +186,30 @@ class SDKClient(object):
                      str(getResult.get().contentAsObject())))
             result.update({"key": key,
                            "value": str(getResult.get().contentAsObject()),
-                           "error": None, "status": True})
+                           "cas": getResult.get().cas(), "status": True})
         else:
             log.error("Document not found!")
             result.update({"key": key, "value": None,
-                           "error": None, "status": False})
+                           "cas": None, "status": False})
+        return result
+
+    def getFromReplica(self, key, replicaMode=ReplicaMode.ALL):
+        result = []
+        getResult = self.collection.getFromReplica(
+                        key,
+                        GetFromReplicaOptions.getFromReplicaOptions()
+                        .replicaMode(replicaMode))
+        for item in getResult.toArray():
+#             log.info("Found document: key=%s, cas=%s, content=%s"
+#                      % (key, str(item.cas()),
+#                         item.contentAsObject()))
+            result.append({"key": key,
+                           "value": item.contentAsObject(),
+                           "cas": item.cas(), "status": True})
+#         else:
+#             log.error("Document not found!")
+#             result.update({"key": key, "value": None,
+#                            "error": None, "status": False})
         return result
 
     def upsert(self, key, value, exp=0, exp_unit="seconds",

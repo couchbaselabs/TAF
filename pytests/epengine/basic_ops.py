@@ -135,15 +135,18 @@ class basic_ops(BaseTestCase):
         """
         Basic tests for document CRUD operations using JSON docs
         """
-        def_bucket = self.bucket_util.buckets[0]
+        nodes_init = self.cluster.servers[1:2]
+        self.task.rebalance([self.cluster.master], nodes_init, [])
+        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
 
+        def_bucket = self.bucket_util.buckets[0]
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
 
         self.log.info("Creating doc_generator..")
         # Load basic docs into bucket
         doc_create = doc_generator(
-            self.key, 0, 10000, doc_size=self.doc_size,
+            self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
             vbuckets=self.vbuckets)
         self.log.info("doc_generator created")
@@ -151,8 +154,13 @@ class basic_ops(BaseTestCase):
             self.cluster, def_bucket, doc_create, "create", 0,
             batch_size=10, process_concurrency=4,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            durability="majority", majority_value=self.num_replicas)
         self.task.jython_task_manager.get_task_result(task)
+        print(task.sdk_acked_curd_failed)
+        self.assertTrue(
+            len(task.sdk_acked_curd_failed) == 0,
+            "Durability failed for docs:" % task.sdk_acked_curd_failed)
 
     def test_doc_size_exceptions(self):
         """
