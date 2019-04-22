@@ -241,7 +241,9 @@ class SDKClient(object):
             content = self.__translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = doc_op().bulkInsert(self.collection, docs, exp, exp_unit, persist_to, replicate_to, durability, timeout,
+        result = doc_op().bulkUpsert(self.collection, docs, exp,
+                                     exp_unit, persist_to,
+                                     replicate_to, durability, timeout,
                                      time_unit)
         return self.__translate_upsert_multi_results(result)
 

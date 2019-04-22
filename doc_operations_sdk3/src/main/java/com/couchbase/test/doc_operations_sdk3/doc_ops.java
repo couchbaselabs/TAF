@@ -115,12 +115,14 @@ public class doc_ops {
 						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
 						returnValue.put("document", content);
 						returnValue.put("error", null);
+						returnValue.put("cas", 0);
 						returnValue.put("status", true);
 						returnValue.put("id", id);
 						return reactiveCollection.upsert(id, content, upsertOptions)
 								.map(new Function<MutationResult, HashMap<String, Object>>() {
 									public HashMap<String, Object> apply(MutationResult result) {
 										returnValue.put("result", result);
+										returnValue.put("cas", result.cas());
 										return returnValue;
 									}
 								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
@@ -149,12 +151,14 @@ public class doc_ops {
 						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
 						returnValue.put("document", content);
 						returnValue.put("error", null);
+						returnValue.put("cas", 0);
 						returnValue.put("status", true);
 						returnValue.put("id", id);
 						return reactiveCollection.upsert(id, content, upsertOptions)
 								.map(new Function<MutationResult, HashMap<String, Object>>() {
 									public HashMap<String, Object> apply(MutationResult result) {
 										returnValue.put("result", result);
+										returnValue.put("cas", result.cas());
 										return returnValue;
 									}
 								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
@@ -185,7 +189,7 @@ public class doc_ops {
 								if (optionalResult.isPresent()){
 									GetResult result = optionalResult.get();
 									retVal.put("cas", result.cas());
-									retVal.put("result", result.contentAsObject());
+									retVal.put("content", result.contentAsObject());
 									retVal.put("status", true);
 								}
 								return retVal;
