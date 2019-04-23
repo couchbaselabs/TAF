@@ -11,20 +11,21 @@ import time
 
 from com.couchbase.client.java import Cluster
 from com.couchbase.client.java.json import JsonObject
-from com.couchbase.client.core.error import DocumentAlreadyExistsException, CouchbaseException,\
-RequestTimeoutException
-from com.couchbase.client.core.error import DocumentDoesNotExistException, CASMismatchException
+from com.couchbase.client.core.error import DocumentAlreadyExistsException, \
+                                            CouchbaseException, \
+                                            RequestTimeoutException
+from com.couchbase.client.core.error import DocumentDoesNotExistException, \
+                                            CASMismatchException
 from com.couchbase.client.core.error import TemporaryFailureException
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.core.msg.kv import DurabilityLevel
-from com.couchbase.client.java.kv import InsertOptions, UpsertOptions,\
-    RemoveOptions, PersistTo, ReplicateTo
+from com.couchbase.client.java.kv import InsertOptions, UpsertOptions, \
+                                         RemoveOptions, PersistTo, ReplicateTo
 from com.couchbase.client.core.env import TimeoutConfig
 
 from java.time import Duration
 from java.lang import System
 from java.util.logging import Logger, Level, ConsoleHandler
-from java.util.concurrent import TimeUnit
 from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
@@ -38,7 +39,7 @@ class SDKClient(object):
     """
     Java SDK Client Implementation for testrunner - master branch
     """
-  
+
     def __init__(self, rest, bucket, info=None,  username="Administrator",
                  password="password",
                  quiet=True, certpath=None, transcoder=None, compression=True):
@@ -228,7 +229,8 @@ class SDKClient(object):
             content = self.__translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = doc_op().bulkInsert(self.collection, docs, exp, exp_unit, persist_to, replicate_to, durability,
+        result = doc_op().bulkInsert(self.collection, docs, exp, exp_unit,
+                                     persist_to, replicate_to, durability,
                                      timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
 
@@ -241,16 +243,38 @@ class SDKClient(object):
             content = self.__translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = doc_op().bulkUpsert(self.collection, docs, exp,
-                                     exp_unit, persist_to,
-                                     replicate_to, durability, timeout,
-                                     time_unit)
+        result = doc_op().bulkInsert(self.collection, docs, exp, exp_unit,
+                                     persist_to, replicate_to, durability,
+                                     timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
 
     def getMulti(self, keys):
         result = doc_op().bulkGet(self.collection, keys)
         return self.__translate_get_multi_results(result)
- 
+
+    def crud(self, op_type, key, value=None, exp=0, replicate_to=0,
+             persist_to=0, durability="", timeout=5, time_unit="seconds"):
+        result = None
+        if op_type == "update":
+            result = self.upsert(
+                key, value, exp=exp,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                timeout=timeout, time_unit=time_unit)
+        elif op_type == "create":
+            result = self.insert(
+                key, value, exp=exp,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                timeout=timeout, time_unit=time_unit)
+        elif op_type == "delete":
+            result = self.delete(
+                key, exp=exp,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                timeout=timeout, time_unit=time_unit)
+        return result
+
     def __translate_to_json_object(self, value, doc_type="json"):
 
         if type(value) == JsonObject:
@@ -307,12 +331,17 @@ class SDKClient(object):
                          persist_to=0, replicate_to=0,
                          timeout=5, time_unit="seconds",
                          durability=""):
-        options = None
         if durability:
-            options = InsertOptions.insertOptions().timeout(self.getDuration(timeout, time_unit)).expiry(self.getDuration(exp, exp_unit)).withDurabilityLevel(self.getDurabilityLevel(durability))
+            options = InsertOptions.insertOptions()\
+                .timeout(self.getDuration(timeout, time_unit))\
+                .expiry(self.getDuration(exp, exp_unit))\
+                .withDurabilityLevel(self.getDurabilityLevel(durability))
         else:
-            options = InsertOptions.insertOptions().timeout(self.getDuration(timeout, time_unit)).expiry(self.getDuration(exp, exp_unit)).withDurability(self.getPersistTo(persist_to), self.getReplicateTo(replicate_to))
-
+            options = InsertOptions.insertOptions()\
+                .timeout(self.getDuration(timeout, time_unit))\
+                .expiry(self.getDuration(exp, exp_unit))\
+                .withDurability(self.getPersistTo(persist_to),
+                                self.getReplicateTo(replicate_to))
         return options
 
     def getUpsertOptions(self, exp=0, exp_unit="seconds",
@@ -321,9 +350,16 @@ class SDKClient(object):
                          durability=""):
         options = None
         if durability:
-            options = UpsertOptions.upsertOptions().timeout(self.getDuration(timeout, time_unit)).expiry(self.getDuration(exp, exp_unit)).withDurabilityLevel(self.getDurabilityLevel(durability))
+            options = UpsertOptions.upsertOptions()\
+                .timeout(self.getDuration(timeout, time_unit))\
+                .expiry(self.getDuration(exp, exp_unit))\
+                .withDurabilityLevel(self.getDurabilityLevel(durability))
         else:
-            options = UpsertOptions.upsertOptions().timeout(self.getDuration(timeout, time_unit)).expiry(self.getDuration(exp, exp_unit)).withDurability(self.getPersistTo(persist_to), self.getReplicateTo(replicate_to))
+            options = UpsertOptions.upsertOptions()\
+                .timeout(self.getDuration(timeout, time_unit))\
+                .expiry(self.getDuration(exp, exp_unit))\
+                .withDurability(self.getPersistTo(persist_to),
+                                self.getReplicateTo(replicate_to))
 
         return options
 
@@ -332,15 +368,21 @@ class SDKClient(object):
                          durability=""):
         options = None
         if durability:
-            options = RemoveOptions.removeOptions().timeout(self.getDuration(timeout, time_unit)).withDurabilityLevel(self.getDurabilityLevel(durability))
+            options = RemoveOptions.removeOptions()\
+                .timeout(self.getDuration(timeout, time_unit))\
+                .withDurabilityLevel(self.getDurabilityLevel(durability))
         else:
-            options = RemoveOptions.removeOptions().timeout(self.getDuration(timeout, time_unit)).withDurability(self.getPersistTo(persist_to), self.getReplicateTo(replicate_to))
+            options = RemoveOptions.removeOptions()\
+                .timeout(self.getDuration(timeout, time_unit))\
+                .withDurability(self.getPersistTo(persist_to),
+                                self.getReplicateTo(replicate_to))
 
         return options
 
     def getPersistTo(self, persistTo):
         try:
-            persistList = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO, PersistTo.THREE, PersistTo.FOUR];
+            persistList = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO,
+                           PersistTo.THREE, PersistTo.FOUR]
             return persistList[persistTo]
         except Exception as e:
             pass
@@ -349,38 +391,40 @@ class SDKClient(object):
 
     def getReplicateTo(self, replicateTo):
         try:
-            replicateList = [ReplicateTo.NONE, ReplicateTo.ONE, ReplicateTo.TWO, ReplicateTo.THREE];
+            replicateList = [ReplicateTo.NONE, ReplicateTo.ONE,
+                             ReplicateTo.TWO, ReplicateTo.THREE]
             return replicateList[replicateTo]
-        except Exception as e:
+        except Exception:
             pass
 
         return ReplicateTo.NONE
 
-    def getDurabilityLevel(self, durabilityLevel):
-        if durabilityLevel.upper() == "MAJORITY":
+    def getDurabilityLevel(self, durability_level):
+        durability_level = durability_level.upper()
+        if durability_level == "MAJORITY":
             return DurabilityLevel.MAJORITY
 
-        if durabilityLevel.upper() == "MAJORITY_AND_PERSIST_ON_MASTER":
+        if durability_level == "MAJORITY_AND_PERSIST_ON_MASTER":
             return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER
 
-        if durabilityLevel.upper() == "PERSIST_TO_MAJORITY":
+        if durability_level == "PERSIST_TO_MAJORITY":
             return DurabilityLevel.PERSIST_TO_MAJORITY
 
         return None
 
-    def getDuration(self, time, timeUnit):
-        temporalUnit = None
-        if timeUnit.lower() == "milliseconds":
-            temporalUnit = ChronoUnit.MILLIS
-        elif timeUnit.lower() == "minutes":
-            temporalUnit = ChronoUnit.MINUTES
-        elif timeUnit.lower() == "hours":
-            temporalUnit = ChronoUnit.HOURS
-        elif timeUnit.lower() == "days":
-            temporalUnit = ChronoUnit.DAYS
-        elif timeUnit.lower() == "minutes":
-            temporalUnit = ChronoUnit.MINUTES
+    def getDuration(self, time, time_unit):
+        time_unit = time_unit.lower()
+        if time_unit == "milliseconds":
+            temporal_unit = ChronoUnit.MILLIS
+        elif time_unit == "minutes":
+            temporal_unit = ChronoUnit.MINUTES
+        elif time_unit == "hours":
+            temporal_unit = ChronoUnit.HOURS
+        elif time_unit == "days":
+            temporal_unit = ChronoUnit.DAYS
+        elif time_unit == "minutes":
+            temporal_unit = ChronoUnit.MINUTES
         else:
-            temporalUnit = ChronoUnit.SECONDS
+            temporal_unit = ChronoUnit.SECONDS
 
-        return Duration.of(time, temporalUnit)
+        return Duration.of(time, temporal_unit)

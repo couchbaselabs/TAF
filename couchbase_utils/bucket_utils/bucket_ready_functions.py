@@ -527,26 +527,6 @@ class bucket_utils():
                                ignore_exceptions=[], retry_exceptions=[],
                                force_retry=False):
 
-        def crud(key, value=None):
-            result = None
-            if op_type == "update":
-                result = client.upsert(
-                    key, value, timeout=timeout_secs,
-                    persist_to=persist_to, replicate_to=replicate_to,
-                    durability=durability)
-            elif op_type == "create":
-                result = client.insert(
-                    key, value, timeout=timeout_secs,
-                    persist_to=persist_to, replicate_to=replicate_to,
-                    durability=durability)
-            elif op_type == "delete":
-                result = client.delete(
-                    key, timeout=timeout_secs,
-                    persist_to=persist_to, replicate_to=replicate_to,
-                    durability=durability)
-
-            return result
-
         loader_task = self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
@@ -565,7 +545,11 @@ class bucket_utils():
             client = SDKClient(RestConnection(cluster.master),
                                bucket)
             for key, failed_doc in loader_task.fail.items():
-                result = crud(key, failed_doc[2])
+                result = client.crud(
+                    "create", key, failed_doc[2], exp=exp,
+                    replicate_to=replicate_to, persist_to=persist_to,
+                    durability=durability,
+                    timeout=timeout_secs, time_unit="seconds")
                 if result["status"]:
                     retried_exceptions["success"].update({key: failed_doc})
                 else:
@@ -587,7 +571,11 @@ class bucket_utils():
                 for ex in retry_exceptions:
                     if exception.find(ex) != -1:
                         found = True
-                        result = crud(key, failed_doc[2])
+                        result = client.crud(
+                            "create", key, failed_doc[2], exp=exp,
+                            replicate_to=replicate_to, persist_to=persist_to,
+                            durability=durability,
+                            timeout=timeout_secs, time_unit="seconds")
                         if result["status"]:
                             retried_exceptions["success"].update({key: failed_doc})
                         else:
