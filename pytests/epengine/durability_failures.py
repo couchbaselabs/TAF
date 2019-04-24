@@ -38,7 +38,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         gen_load = doc_generator(self.key, 0, self.num_items)
         err_msg = "Doc mutation succeeded with, "  \
                   "cluster size: {0}, replica: {1}" \
-                  .format(self.cluster.size, self.num_replicas)
+                  .format(len(self.cluster.nodes_in_cluster), self.num_replicas)
 
         # Fetch vbucket seq_no stats from failover command for verification
         vb_info["init"] = cbstat_obj.failover_stats(self.bucket.name)
@@ -57,7 +57,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(0)
-        self.assertTrue(d_create_task.failed_count == self.num_items,
+        self.assertTrue(len(d_create_task.fail.keys()) == self.num_items,
                         msg=err_msg)
         self.assertTrue(vb_info["init"] == vb_info["create_failure"],
                         msg="Failover stats mismatch. {0} != {1}"
@@ -231,7 +231,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
     def test_sync_write_in_progress_for_persist_active(self):
         """
         This test validates sync_write_in_progress error scenario with
-        durability=persistActive
+        durability=MAJORITY_AND_PERSIST_ON_MASTER
 
         1. Select a random node from cluster
         2. Get active & replica vbucket numbers from the target_node
@@ -247,7 +247,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         cbstat_obj = Cbstats(shell_conn)
         error_sim = CouchbaseError(shell_conn)
 
-        self.durability_level = "persistActive"
+        self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
 
         half_of_num_items = max(int(self.num_items/2), 1)
         # Override the crud_batch_size
@@ -575,7 +575,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
     def test_bulk_sync_write_in_progress_for_persist_active(self):
         """
         This test validates sync_write_in_progress error scenario with
-        durability=persistActive
+        durability=MAJORITY_AND_PERSIST_ON_MASTER
 
         1. Select a random node from cluster
         2. Get active & replica vbucket numbers from the target_node
@@ -591,7 +591,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         cbstat_obj = Cbstats(shell_conn)
         error_sim = CouchbaseError(shell_conn)
 
-        self.durability_level = "persistActive"
+        self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
 
         half_of_num_items = max(int(self.num_items/2), 1)
         # Override the crud_batch_size
@@ -792,7 +792,8 @@ class TimeoutTests(DurabilityTestsBase):
 
     def test_timeout_with_successful_crud_for_persist_active(self):
         """
-        Test to validate timeouts during CRUDs with persistActive
+        Test to validate timeouts during CRUDs with
+        durability=MAJORITY_AND_PERSIST_ON_MASTER
 
         1. Select a random node from cluster
         2. Get active & replica vbucket numbers from the target_node
@@ -809,7 +810,7 @@ class TimeoutTests(DurabilityTestsBase):
         error_sim = CouchbaseError(shell_conn)
         vb_info = dict()
 
-        self.durability_level = "persistActive"
+        self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.durability_timeout
@@ -1024,7 +1025,8 @@ class TimeoutTests(DurabilityTestsBase):
 
     def test_timeout_with_crud_failures_for_persist_active(self):
         """
-        Test to validate timeouts during CRUDs with persistActive
+        Test to validate timeouts during CRUDs with
+        durability=MAJORITY_AND_PERSIST_ON_MASTER
 
         1. Select a random node from cluster
         2. Get active & replica vbucket numbers from the target_node
@@ -1041,10 +1043,7 @@ class TimeoutTests(DurabilityTestsBase):
         error_sim = CouchbaseError(shell_conn)
         vb_info = dict()
 
-        # Variable to hold all the failed docs
-        failed_docs = list()
-
-        self.durability_level = "persistActive"
+        self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
 
         # Get active/replica vbucket list from the target_node
         active_vb_numbers = cbstat_obj.vbucket_list(self.bucket.name,

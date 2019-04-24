@@ -166,11 +166,12 @@ class MultiDurabilityTests(BaseTestCase):
         replicate_to = 0 if replica == 0 else int(replica/2) + 1
         # First-set of ops on multi-buckets
         dict_updater(0, self.bucket_dict, gen_create, "create",
-                     durability="majority", durability_timeout=5)
+                     durability="MAJORITY", durability_timeout=5)
         dict_updater(1, self.bucket_dict, gen_update, "update",
-                     durability="persistActive", durability_timeout=5)
+                     durability="MAJORITY_AND_PERSIST_ON_MASTER",
+                     durability_timeout=5)
         dict_updater(2, self.bucket_dict, gen_delete, "delete",
-                     durability="persistMajority", durability_timeout=5)
+                     durability="PERSIST_TO_MAJORITY", durability_timeout=5)
         dict_updater(3, self.bucket_dict, gen_update, "update",
                      persist_to=1, replicate_to=replicate_to)
         dict_updater(4, self.bucket_dict, gen_create, "create")
@@ -186,11 +187,12 @@ class MultiDurabilityTests(BaseTestCase):
         dict_updater(0, self.bucket_dict, gen_update, "update",
                      persist_to=persist_to, replicate_to=replicate_to)
         dict_updater(1, self.bucket_dict, gen_delete, "delete",
-                     durability="persistActive", durability_timeout=5)
+                     durability="MAJORITY_AND_PERSIST_ON_MASTER",
+                     durability_timeout=5)
         dict_updater(2, self.bucket_dict, gen_create, "create",
-                     durability="persistMajority", durability_timeout=5)
+                     durability="PERSIST_TO_MAJORITY", durability_timeout=5)
         dict_updater(3, self.bucket_dict, gen_update, "update",
-                     durability="majority", durability_timeout=5)
+                     durability="MAJORITY", durability_timeout=5)
         dict_updater(4, self.bucket_dict, gen_create, "create")
 
         # Call the generic doc_operation function

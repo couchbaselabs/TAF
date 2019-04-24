@@ -301,7 +301,7 @@ class Cbstats(CbCmdBase):
         if len(error) != 0:
             raise("\n".join(error))
 
-        pattern = "[ \t]vb_([0-9]+):([0-9A-Za-z:]+):[ \t]+([0-9]+)"
+        pattern = "[ \t]vb_([0-9]+):([0-9A-Za-z:_]+):[ \t]+([0-9]+)"
         regexp = re.compile(pattern)
 
         for line in output:
