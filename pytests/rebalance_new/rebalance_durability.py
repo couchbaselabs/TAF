@@ -1,6 +1,9 @@
 from math import floor
+
+from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
+from membase.helper.cluster_helper import ClusterOperationHelper
 from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -8,6 +11,8 @@ from remote.remote_util import RemoteMachineShellConnection
 class RebalanceDurability(RebalanceBaseTest):
     def setUp(self):
         super(RebalanceDurability, self).setUp()
+        self.delete_doc_index = self.num_items/2
+        self.items_deleted = 5000
 
     def tearDown(self):
         super(RebalanceDurability, self).tearDown()
@@ -19,9 +24,9 @@ class RebalanceDurability(RebalanceBaseTest):
 
         tasks = list()
         gen_create = self.get_doc_generator(self.num_items, self.num_items * 2)
-        gen_delete = self.get_doc_generator(self.num_items / 2, self.num_items)
+        gen_delete = self.get_doc_generator(
+            self.delete_doc_index, self.delete_doc_index+self.items_deleted)
         item_added = (self.num_items*2) - self.num_items
-        items_deleted = self.num_items - int(self.num_items/2)
 
         for bucket in self.bucket_util.buckets:
             if self.doc_ops is not None:
@@ -52,7 +57,8 @@ class RebalanceDurability(RebalanceBaseTest):
                         pause_secs=5, timeout_secs=self.sdk_timeout,
                         retries=self.sdk_retries))
                     # Update self.num_items as per the gen_delete value
-                    self.num_items -= items_deleted
+                    self.num_items -= self.items_deleted
+                    self.delete_doc_index += self.items_deleted
         return tasks
 
     def __wait_for_load_gen_tasks_complete(self, tasks):
@@ -297,5 +303,70 @@ class RebalanceDurability(RebalanceBaseTest):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc load count to match the overall CRUDs
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+    def test_multiple_scenarios(self):
+        """
+        Test multiple rebalance scenarios in single test with CRUDs in parallel
+
+        1. Rebalance_out orchestrator node
+        2. Rebalance_in nodes as given in nodes_in param
+        3. Update replica and do rebalance
+        4. Rebalance_out nodes as given in nodes_out param
+        5. Do Plain CRUDs at the end of all this to verify the cluster status
+        """
+        # Local function to wait for all crud task to complete
+        def wait_for_crud_task_and_verify_for_no_errors(tasks):
+            for task in tasks:
+                self.task.jython_task_manager.get_all_result(task)
+                self.assertTrue(len(task.fail.keys()) == 0,
+                                msg="Unexpected durability failures: {0}"
+                                .format(task.fail))
+
+        self.assertTrue(new_replica is not None)
+        def_bucket = self.bucket_util.buckets[0]
+        servers_in = [self.cluster.servers[self.nodes_init + i]
+                      for i in range(self.nodes_in)]
+        servers_out = [self.cluster.servers[self.num_servers - i - 1]
+                       for i in range(self.nodes_out)]
+
+        # Start CRUD operations
+        crud_tasks = self.__load_docs_in_all_buckets()
+
+        # Rebalance_out the orchestrator node
+        self.add_remove_servers_and_rebalance([], [self.cluster.servers[0]])
+
+        # Wait for all CRUD tasks to complete and verify no failures are seen
+        wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
+
+        # Start CRUD operations
+        crud_tasks = self.__load_docs_in_all_buckets()
+        # Rebalance_in multiple cluster nodes
+        self.add_remove_servers_and_rebalance([servers_in], [])
+        wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
+
+        # Start CRUD operations
+        crud_tasks = self.__load_docs_in_all_buckets()
+        # Update bucket replica value
+        bucket_helper = BucketHelper(self.cluster.servers[1])
+        bucket_helper.change_bucket_props(def_bucket.name,
+                                          replicaNumber=self.new_replica)
+        # Start and wait till rebalance is complete
+        rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
+
+        # Start CRUD operations
+        crud_tasks = self.__load_docs_in_all_buckets()
+        # Rebalance_out multiple cluster nodes
+        self.add_remove_servers_and_rebalance([], [servers_out])
+        wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
+
+        # Start CRUD operations
+        crud_tasks = self.__load_docs_in_all_buckets()
+        wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
+
+        # Doc count verification
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)

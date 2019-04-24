@@ -112,6 +112,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.loadgen_tasks = self._loadgen()
 
         self.failover_actions[self.failover_action](self)
+
+        # Update replica before rebalance due to failover
+        if self.replica_update_during == "before_rebalance":
+            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+
         for node in self.servers_to_add:
             self.rest.add_node(user=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
@@ -127,6 +132,15 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if (not rebalance_success or not started) and not \
                 self.failover_expected:
             self.fail("Rebalance failed. Check logs")
+
+        # Update replica after rebalance due to failover
+        if self.replica_update_during == "after_rebalance":
+            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+            msg = "rebalance failed while updating replica from {0} -> {1}" \
+                .format(self.replicas, self.new_replica)
+            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+
         self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -150,6 +164,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.loadgen_tasks = self._loadgen()
 
         self.failover_actions[self.failover_action](self)
+
+        # Update replica before rebalance due to failover
+        if self.replica_update_during == "before_rebalance":
+            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+
         self.bring_back_failed_nodes_up()
         self.sleep(30)
         self.log.info(self.server_to_fail[0])
@@ -163,6 +182,15 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         msg = "rebalance failed while recovering failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+
+        # Update replica after rebalance due to failover
+        if self.replica_update_during == "after_rebalance":
+            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+            msg = "rebalance failed while updating replica from {0} -> {1}" \
+                .format(self.replicas, self.new_replica)
+            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+
         self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -179,6 +207,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
             return
+        bucket = self.bucket_util.buckets[0]
         self.enable_autofailover_and_validate()
         self.sleep(5)
 
@@ -189,9 +218,23 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.failover_actions[self.failover_action](self)
         self.nodes = self.rest.node_statuses()
         self.remove_after_failover = True
+
+        # Update replica before rebalance due to failover
+        if self.replica_update_during == "before_rebalance":
+            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
         msg = "rebalance failed while removing failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+
+        # Update replica after rebalance due to failover
+        if self.replica_update_during == "after_rebalance":
+            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+            msg = "rebalance failed while updating replica from {0} -> {1}" \
+                  .format(self.replicas, self.new_replica)
+            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+
         self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()

@@ -13,6 +13,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.doc_size = self.input.param("doc_size", 10)
         self.key_size = self.input.param("key_size", 0)
         self.zone = self.input.param("zone", 1)
+        self.new_replica = self.input.param("new_replica", None)
         self.default_view_name = "default_view"
         self.defaul_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
         self.default_view = View(self.default_view_name, self.defaul_map_func, None)

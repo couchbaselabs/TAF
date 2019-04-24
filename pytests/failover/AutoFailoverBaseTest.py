@@ -27,6 +27,9 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.load_all_buckets(self.initial_load_gen, "create", 0)
         self.server_index_to_fail = self.input.param("server_index_to_fail",
                                                      None)
+        self.new_replica = self.input.param("new_replica", None)
+        self.replica_update_during = self.input.param("replica_update_during",
+                                                      None)
         if self.server_index_to_fail is None:
             self.server_to_fail = self._servers_to_fail()
         else:
