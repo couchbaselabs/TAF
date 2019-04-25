@@ -17,6 +17,8 @@
     <path>/${PROJECT_DIR_NAME}/sdk3.0/java-client-3.0.0-alpha.2-javadoc.jar</path>
     <path>/${PROJECT_DIR_NAME}/doc_operations_sdk3.jar</path>
     <path>/${PROJECT_DIR_NAME}</path>
+    <path>/TAF_Couchbaselabs/Transaction.jar</path>
+    <path>/TAF_Couchbaselabs/TransactionsExample-1.0.0-all.jar</path>
 </pydev_pathproperty>
     <pydev_property name="org.python.pydev.PYTHON_PROJECT_VERSION">jython interpreter</pydev_property>
     <pydev_property name="org.python.pydev.PYTHON_PROJECT_INTERPRETER">Default</pydev_property>

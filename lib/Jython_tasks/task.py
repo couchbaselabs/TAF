@@ -27,13 +27,12 @@ from membase.api.exception import \
 from membase.api.rest_client import RestConnection
 from java.util.concurrent import Callable
 from java.lang import Thread
-from platform_utils.remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
+from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 
 from reactor.util.function import Tuples
 
-
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
-import com.couchbase.client.java.json.JsonObject as JsonObject;
+import com.couchbase.client.java.json.JsonObject as JsonObject
 
 log = logging.getLogger(__name__)
 
