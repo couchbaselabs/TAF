@@ -546,7 +546,7 @@ class bucket_utils():
                                bucket)
             for key, failed_doc in loader_task.fail.items():
                 result = client.crud(
-                    "create", key, failed_doc[2], exp=exp,
+                    "create", key, failed_doc["value"], exp=exp,
                     replicate_to=replicate_to, persist_to=persist_to,
                     durability=durability,
                     timeout=timeout_secs, time_unit="seconds")
@@ -560,7 +560,7 @@ class bucket_utils():
                                    bucket)
             for key, failed_doc in loader_task.fail.items():
                 found = False
-                exception = failed_doc[0]
+                exception = failed_doc["error"]
 
                 for ex in ignore_exceptions:
                     msg = exception.getMessage()
@@ -572,12 +572,13 @@ class bucket_utils():
                     if exception.find(ex) != -1:
                         found = True
                         result = client.crud(
-                            "create", key, failed_doc[2], exp=exp,
+                            "create", key, failed_doc["value"], exp=exp,
                             replicate_to=replicate_to, persist_to=persist_to,
                             durability=durability,
                             timeout=timeout_secs, time_unit="seconds")
                         if result["status"]:
-                            retried_exceptions["success"].update({key: failed_doc})
+                            retried_exceptions["success"].update(
+                                {key: failed_doc})
                         else:
                             retried_exceptions["fail"].update({key: failed_doc})
                         break

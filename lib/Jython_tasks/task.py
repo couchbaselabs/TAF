@@ -110,8 +110,8 @@ class RebalanceTask(Task):
                    (self.thread_name, self.num_items, self.exception,
                     self.completed - self.started,)  # , self.result)
         elif self.completed:
-            print("Time: %s" % str(time.strftime("%H:%M:%S",
-                                                 time.gmtime(time.time()))))
+            log.info("Time: %s" % str(time.strftime("%H:%M:%S",
+                                                    time.gmtime(time.time()))))
             return "[%s] %s items loaded in %.2fs" % \
                    (self.thread_name, self.loaded,
                     self.completed - self.started,)  # , self.result)
@@ -441,68 +441,71 @@ class GenericLoadingTask(Task):
             key_val -- array of key/value dicts to load size = self.batch_size
             shared_client -- optional client to use for data loading
         """
-        success = {}
-        fail = {}
+        success = dict()
+        fail = dict()
         try:
             self._process_values_for_create(key_val)
             client = shared_client or self.client
-            retry_count = 0
             retry_docs = key_val
-            success, fail = client.setMulti(retry_docs, self.exp, exp_unit=self.exp_unit, persist_to=persist_to,
-                                            replicate_to=replicate_to, timeout=timeout, time_unit=time_unit,
-                                            retry=self.retries, doc_type=doc_type, durability=durability)
+            success, fail = client.setMulti(
+                retry_docs, self.exp, exp_unit=self.exp_unit,
+                persist_to=persist_to, replicate_to=replicate_to,
+                timeout=timeout, time_unit=time_unit, retry=self.retries,
+                doc_type=doc_type, durability=durability)
             if fail:
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
                     log.info(e)
-                log.info("There was failure. Trying to read the values {}".format(fail.__str__()))
-                read_map = self.batch_read(fail)
+                log.info("There was failure. Trying to read the values {}"
+                         .format(fail.__str__()))
+                read_map = self.batch_read(fail.keys())
                 for key, value in fail.items():
-                    if key in read_map:
-                        value = read_map[key]
-                        if value[1] != 0:
-                            success[key] = fail[key]
-                            fail.pop(key)
+                    if key in read_map and read_map[key]["cas"] != 0:
+                        success[key] = value
+                        success[key].pop("error")
+                        fail.pop(key)
                 log.info("Failed items after reads {}".format(fail.__str__()))
             return success, fail
         except Exception as error:
             log.error(error)
         return success, fail
 
-    def batch_update(self, key_val, shared_client=None, persist_to=0, replicate_to=0, timeout=5,
-                     time_unit="seconds", doc_type="json", durability=""):
-        success = {}
-        fail = {}
+    def batch_update(self, key_val, shared_client=None, persist_to=0,
+                     replicate_to=0, timeout=5, time_unit="seconds",
+                     doc_type="json", durability=""):
+        success = dict()
+        fail = dict()
         try:
             self._process_values_for_create(key_val)
             client = self.client or shared_client
-            retry_count = 0
             retry_docs = key_val
-            success, fail = client.upsertMulti(retry_docs, self.exp, exp_unit=self.exp_unit, persist_to=persist_to,
-                                               replicate_to=replicate_to, timeout=timeout, time_unit=time_unit,
-                                               retry=self.retries, doc_type=doc_type, durability=durability)
+            success, fail = client.upsertMulti(
+                retry_docs, self.exp, exp_unit=self.exp_unit,
+                persist_to=persist_to, replicate_to=replicate_to,
+                timeout=timeout, time_unit=time_unit,
+                retry=self.retries, doc_type=doc_type, durability=durability)
             if fail:
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
                     log.info(e)
-                log.info("There was failure. Trying to read the values {}".format(fail.__str__()))
-                read_map = self.batch_read(fail)
+                log.info("There was failure. Trying to read the values {}"
+                         .format(fail.__str__()))
+                read_map = self.batch_read(fail.keys())
                 for key, value in fail.items():
-                    if key in read_map:
-                        value = read_map[key]
-                        if value[1] != 0:
-                            success[key] = fail[key]
-                            fail.pop(key)
+                    if key in read_map and read_map[key]["cas"] != 0:
+                        success[key] = value
+                        success[key].pop("error")
+                        fail.pop(key)
                 log.info("Failed items after reads {}".format(fail.__str__()))
             return success, fail
         except Exception as error:
             log.error(error)
         return success, fail
 
-    def batch_delete(self, key_val, shared_client=None, persist_to=None, replicate_to=None,
-                     timeout=None, timeunit=None):
+    def batch_delete(self, key_val, shared_client=None, persist_to=None,
+                     replicate_to=None, timeout=None, timeunit=None):
         cant_deleted = []
         self.client = self.client or shared_client
         for key, _ in key_val.items():
@@ -510,7 +513,7 @@ class GenericLoadingTask(Task):
                 self.client.delete(key, persist_to=persist_to,
                                    replicate_to=replicate_to,
                                    timeout=timeout, timeunit=timeunit)
-            except Exception as error:
+            except Exception:
                 cant_deleted.append(key)
                 return
             except (ServerUnavailableException, socket.error, EOFError,
@@ -518,10 +521,10 @@ class GenericLoadingTask(Task):
                 self.set_exception(error)
         return cant_deleted
 
-    def batch_read(self, key_val, shared_client=None):
+    def batch_read(self, keys, shared_client=None):
         self.client = self.client or shared_client
         try:
-            result_map = self.client.getMulti(key_val.keys())
+            result_map = self.client.getMulti(keys)
             return result_map
         except Exception as error:
             self.set_exception(error)
@@ -539,7 +542,7 @@ class GenericLoadingTask(Task):
             except TypeError:
                 value = Json.dumps(value)
             except Exception, e:
-                print(e)
+                log.error(e)
             finally:
                 key_val[key] = value
 
@@ -614,7 +617,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         elif self.op_type == 'delete':
             self.batch_delete(key_value)
         elif self.op_type == 'read':
-            self.batch_read(key_value)
+            self.batch_read(key_value.keys())
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 
@@ -753,8 +756,9 @@ class Durability(Task):
             self.time_unit = time_unit
             self.instance = instance_num
             Durability.write_offset[self.instance] = generator._doc_gen.start
-            print("Docs start loading from", generator._doc_gen.start)
-            print("Instance num", self.instance)
+            log.info("Docs start loading from {0}"
+                     .format(generator._doc_gen.start))
+            log.info("Instance num {0}".format(self.instance))
 
         def call(self):
             self.start_task()
@@ -787,9 +791,9 @@ class Durability(Task):
 
                 if len(f_docs) > 0:
                     Durability.create_failed[self.instance].update(f_docs)
-            #                 print "CreateFailed = %s" % Durability.create_failed[self.instance]
             elif self.op_type == 'update':
-                Durability.docs_to_be_updated[self.instance].update(self.batch_read(key_value))
+                Durability.docs_to_be_updated[self.instance].update(
+                    self.batch_read(key_value.keys()))
                 s_docs, f_docs = self.batch_update(
                     key_value, persist_to=self.persist_to,
                     replicate_to=self.replicate_to, timeout=self.timeout,
@@ -797,13 +801,14 @@ class Durability(Task):
                     doc_type=self.generator.doc_type)
                 Durability.update_failed[self.instance].update(f_docs)
             elif self.op_type == 'delete':
-                Durability.docs_to_be_deleted[self.instance].update(self.batch_read(key_value))
-                Durability.delete_failed[self.instance].update(self.batch_delete(key_value))
+                Durability.docs_to_be_deleted[self.instance].update(
+                    self.batch_read(key_value.keys()))
+                Durability.delete_failed[self.instance].update(
+                    self.batch_delete(key_value))
             else:
-                self.set_exception(Exception("Bad operation type: %s" % self.op_type))
+                self.set_exception(Exception("Bad operation type: %s"
+                                             % self.op_type))
             Durability.write_offset[self.instance] += len(key_value)
-
-        #             print("Loader: WriteOffset" , Durability.write_offset[self.instance])
 
         class Reader(Task):
             def __init__(self, generator, write_offset, instance, client):
@@ -820,18 +825,22 @@ class Durability(Task):
                 self.start_task()
                 while True:
                     if self.read_offset <= Durability.write_offset[self.instance]:
-                        print("Reader: ReadOffset=", self.read_offset,
-                              "WriteOffset=", Durability.write_offset[self.instance],
-                              "Reader: FinalOffset=", self.end)
+                        log.info("Reader: ReadOffset={0}"
+                                 "WriteOffset={1}"
+                                 "Reader: FinalOffset={2}"
+                                 .format(self.read_offset,
+                                         Durability.write_offset[self.instance],
+                                         self.end))
                         if self.generator._doc_gen.has_next():
                             key = self.generator._doc_gen.next()[0]
-                            #                             print "Reading: %s"%key
                             if key not in Durability.create_failed[self.instance].keys():
-                                map = self.client.getfromReplica(key, ReplicaMode.ALL)
+                                map = self.client.getfromReplica(
+                                    key, ReplicaMode.ALL)
                                 if len(map) <= Durability.replicate_to + 1:
-                                    print "Key isn't durable although SDK reports Durable, Key = ", key, " getfromReplica = ", map
+                                    log.error("Key isn't durable although SDK reports Durable, Key={0} getfromReplica={1}"
+                                              .format(key, map))
                         if self.read_offset == self.end:
-                            print "BREAKING!!"
+                            log.info("BREAKING !!!")
                             break
                         self.read_offset += 1
                 self.complete_task()
@@ -842,9 +851,9 @@ class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True, process_concurrency=8, print_ops_rate=True,
-                 retries=5, durability=""):
+                 only_store_hash=True, batch_size=1, pause_secs=1,
+                 timeout_secs=5, compression=True, process_concurrency=8,
+                 print_ops_rate=True, retries=5, durability=""):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "DocumentsLoadGenTask_{}".format(time.time()))
         self.cluster = cluster
@@ -885,11 +894,13 @@ class LoadDocumentsGeneratorsTask(Task):
         self.start_task()
         if self.op_types:
             if len(self.op_types) != len(self.generators):
-                self.set_exception(Exception("not all generators have op_type!"))
+                self.set_exception(
+                    Exception("Not all generators have op_type!"))
                 self.complete_task()
         if self.buckets:
             if len(self.op_types) != len(self.buckets):
-                self.set_exception(Exception("not all generators have bucket specified!"))
+                self.set_exception(
+                    Exception("Not all generators have bucket specified!"))
                 self.complete_task()
         iterator = 0
         tasks = []
@@ -923,7 +934,9 @@ class LoadDocumentsGeneratorsTask(Task):
                     self.fail.update(task.fail)
                     self.success.update(task.success)
                     log.info("Failed to load {} docs from {} to {}"
-                             .format(task.fail.__len__(), task.generator._doc_gen.start, task.generator._doc_gen.end))
+                             .format(task.fail.__len__(),
+                                     task.generator._doc_gen.start,
+                                     task.generator._doc_gen.end))
         except Exception as e:
             log.info(e)
             self.set_exception(e)
@@ -960,13 +973,15 @@ class LoadDocumentsGeneratorsTask(Task):
                 self.batch_size)
             generators.append(batch_gen)
         for i in range(0, len(generators)):
-            task = LoadDocumentsTask(self.cluster, self.bucket, self.clients[i], generators[i], self.op_type,
-                                     self.exp, self.exp_unit, self.flag, persist_to=self.persit_to,
-                                     replicate_to=self.replicate_to,
-                                     time_unit=self.time_unit, batch_size=self.batch_size,
-                                     pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                     compression=self.compression, throughput_concurrency=self.process_concurrency,
-                                     durability=self.durability)
+            task = LoadDocumentsTask(
+                self.cluster, self.bucket, self.clients[i], generators[i],
+                self.op_type, self.exp, self.exp_unit, self.flag,
+                persist_to=self.persit_to, replicate_to=self.replicate_to,
+                time_unit=self.time_unit, batch_size=self.batch_size,
+                pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                compression=self.compression,
+                throughput_concurrency=self.process_concurrency,
+                durability=self.durability)
             tasks.append(task)
         return tasks
 
@@ -1091,8 +1106,8 @@ class LoadDocumentsForDgmTask(Task):
 
     def _load_next_batch_of_docs(self, bucket):
         doc_end_num = self.doc_start_num + self.doc_batch_size
-        print("Doc load from {0} to {1}"
-              .format(self.doc_start_num, doc_end_num))
+        log.info("Doc load from {0} to {1}"
+                 .format(self.doc_start_num, doc_end_num))
         gen_load = doc_generator(self.key, self.doc_start_num, doc_end_num,
                                  doc_type=self.doc_type)
         task = LoadDocumentsGeneratorsTask(
@@ -1109,8 +1124,8 @@ class LoadDocumentsForDgmTask(Task):
     def _load_bucket_into_dgm(self, bucket):
         dgm_value = self._get_bucket_dgm(bucket)
         while dgm_value > self.active_resident_threshold:
-            print("active_resident_items_ratio for {0} is {1}"
-                  .format(bucket.name, dgm_value))
+            log.info("active_resident_items_ratio for {0} is {1}"
+                     .format(bucket.name, dgm_value))
             self._load_next_batch_of_docs(bucket)
             # Update start/end to use it in next call
             self.doc_start_num += self.doc_batch_size
@@ -1164,7 +1179,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
-        result_map = self.batch_read(key_value)
+        result_map = self.batch_read(key_value.keys())
         missing_keys, wrong_values = self.validate_key_val(result_map, key_value)
         if self.op_type == 'delete':
             not_missing = []
@@ -1242,11 +1257,13 @@ class DocumentsValidatorTask(Task):
         self.start_task()
         if self.op_types:
             if len(self.op_types) != len(self.generators):
-                self.set_exception(Exception("not all generators have op_type!"))
+                self.set_exception(
+                    Exception("Not all generators have op_type!"))
                 self.complete_task()
         if self.buckets:
             if len(self.op_types) != len(self.buckets):
-                self.set_exception(Exception("not all generators have bucket specified!"))
+                self.set_exception(
+                    Exception("Not all generators have bucket specified!"))
                 self.complete_task()
         iterator = 0
         tasks = []
@@ -1334,11 +1351,10 @@ class StatsWaitTask(Task):
             self.cbstatObjList.append(Cbstats(remote_conn))
         try:
             while not self.stop and time.time() < timeout:
-                print(self.stop)
                 if self.statCmd in ["all", "dcp"]:
                     self._get_all_stats_and_compare()
                 else:
-                    raise ("Not supported. Implement the stat call")
+                    raise "Not supported. Implement the stat call"
         finally:
             for _, conn in self.conns.items():
                 conn.close()
@@ -1379,7 +1395,7 @@ class StatsWaitTask(Task):
             a = long(a)
         elif isinstance(b, (int, long)) and not a.isdigit():
             return False
-        print("Comparing %s %s %s" % (a, cmp_type, b))
+        log.info("Comparing %s %s %s" % (a, cmp_type, b))
         if (cmp_type == StatsWaitTask.EQUAL and a == b) or \
                 (cmp_type == StatsWaitTask.NOT_EQUAL and a != b) or \
                 (cmp_type == StatsWaitTask.LESS_THAN_EQ and a <= b) or \
@@ -2290,8 +2306,8 @@ class TestTask(Callable):
                    (self.thread_used, self.num_items, self.exception,
                     self.completed - self.started,)  # , self.result)
         elif self.completed:
-            print("Time: %s" %
-                  str(time.strftime("%H:%M:%S", time.gmtime(time.time()))))
+            log.info("Time: %s"
+                     % str(time.strftime("%H:%M:%S", time.gmtime(time.time()))))
             return "[%s] %s items loaded in %.2fs" % \
                    (self.thread_used, self.loaded,
                     self.completed - self.started,)  # , self.result)
@@ -2860,7 +2876,7 @@ class Atomicity(Task):
         for generator in self.generators:
             tasks.extend(self.get_tasks(generator, 0))
             iterator += 1
- 
+
         log.info("going to add verification task")
         for task in tasks:
             try:
@@ -2959,7 +2975,7 @@ class Atomicity(Task):
                 self.key_value = doc_gen.next_batch()
                 self._process_values_for_create(self.key_value)
                 Atomicity.all_keys.extend(self.key_value.keys())
-                
+
                 for op_type in self.op_type:
 
                     if op_type == 'general_create':
@@ -2974,7 +2990,7 @@ class Atomicity(Task):
                     docs.append(tuple)
 
                 last_batch = self.key_value
-            
+
             len_keys = len(Atomicity.all_keys)
             if len(Atomicity.update_keys) == 0:
                 Atomicity.update_keys = random.sample(Atomicity.all_keys,random.randint(1,len_keys))
@@ -3107,24 +3123,24 @@ class Atomicity(Task):
         def call(self):
             self.start_task()
             log.info("Starting Verification generation thread")
-            
+
             doc_gen = self.generator
             while self.has_next():
                 key_value = doc_gen.next_batch()
                 self.process_values_for_verification(key_value)
                 for client in Atomicity.clients:
-                    result_map = self.batch_read(key_value, client)
+                    result_map = self.batch_read(key_value.keys(), client)
                     wrong_values = self.validate_key_val(result_map, key_value, client)
-    
+
                     if wrong_values:
                         self.set_exception("Wrong key value. "
                                    "Wrong key value: {}".format(','.join(wrong_values)))
-                
+
             for key in self.delete_keys:
                 for client in Atomicity.clients:
                     if key in self.all_keys[client]:
                         self.all_keys[client].remove(key)
-            
+
             for client in Atomicity.clients:
                 if self.all_keys[client] and "time_out" not in self.op_type:
                     self.set_exception("Keys were missing. "
@@ -3132,7 +3148,7 @@ class Atomicity(Task):
 
             log.info("Completed Verification generation thread")
             self.complete_task()
-            
+
 
 
         def validate_key_val(self, map, key_value, client):

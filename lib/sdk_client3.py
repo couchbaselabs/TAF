@@ -302,30 +302,32 @@ class SDKClient(object):
             return success, fail
         for item in data:
             result = item['status']
-            id = item['id']
+            key = item['id']
             json_object = item["document"]
             if result:
-                success[id] = [id, item['cas'], json_object]
+                success[key] = dict()
+                success[key]['value'] = json_object
+                success[key]['cas'] = item['cas']
             else:
-                error = item['error']
-                fail[id] = [error, id, json_object]
+                fail[key] = dict()
+                fail[key]['value'] = json_object
+                fail[key]['error'] = item['error']
         return success, fail
 
     def __translate_get_multi_results(self, data):
-        map = dict()
+        get_result = dict()
         if data is None:
-            return map
+            return get_result
         for result in data:
-            id = result['id']
-            cas = result['cas']
-            status = result['status']
-            content = result['content']
-            error = result['error']
-            if status:
-                map[id] = [id, cas, content]
+            key = result['id']
+            get_result[key] = dict()
+            get_result[key]['cas'] = result['cas']
+
+            if result['status']:
+                get_result[key]['value'] = result['content']
             else:
-                map[id] = [id, cas, error]
-        return map
+                get_result[key]['error'] = result['error']
+        return get_result
 
     def getInsertOptions(self, exp=0, exp_unit="seconds",
                          persist_to=0, replicate_to=0,
