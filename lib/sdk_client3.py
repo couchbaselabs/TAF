@@ -412,7 +412,7 @@ class SDKClient(object):
         if durability_level == "PERSIST_TO_MAJORITY":
             return DurabilityLevel.PERSIST_TO_MAJORITY
 
-        return None
+        return DurabilityLevel.NONE
 
     def getDuration(self, time, time_unit):
         time_unit = time_unit.lower()
