@@ -226,6 +226,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         if 'target_vbucket' in kwargs:
             self.target_vbucket = kwargs['target_vbucket']
 
+        self.key_counter = self.start
         self.create_key_for_vbucket()
 
     def create_key_for_vbucket(self):

@@ -330,7 +330,7 @@ class RebalanceDurability(RebalanceBaseTest):
                                 msg="Unexpected durability failures: {0}"
                                 .format(task.fail))
 
-        self.assertTrue(new_replica is not None)
+        self.assertTrue(self.new_replica is not None)
         def_bucket = self.bucket_util.buckets[0]
         servers_in = [self.cluster.servers[self.nodes_init + i]
                       for i in range(self.nodes_in)]

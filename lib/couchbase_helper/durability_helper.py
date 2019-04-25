@@ -67,11 +67,11 @@ class DurabilityHelper:
         :return validation_passed:  Validation result of doc's exceptions (bool)
         """
         validation_passed = True
-        for doc in failed_docs:
-            if expected_exception not in doc["error"]:
+        for key, failed_doc in failed_docs.items():
+            if expected_exception not in str(failed_doc["error"]):
                 validation_passed = False
                 self.log.error("Unexpected exception '{0}' for key '{1}'"
-                               .format(doc["error"], doc["key"]))
+                               .format(failed_doc["error"], key))
         return validation_passed
 
     def retry_with_no_error(self, client, doc_list, op_type, timeout=5):
@@ -88,16 +88,19 @@ class DurabilityHelper:
         :return op_failed: Success status of all CRUDs (bool)
         """
         op_failed = False
-        for doc in doc_list:
+        for key, doc_info in doc_list.items():
+            # If doc expiry is not set, use exp=0
+            if "exp" not in doc_info:
+                doc_info["exp"] = 0
+
             result = client.crud(
-                op_type, doc["key"],
-                value=doc["value"], exp=doc["exp"],
+                op_type, key, value=doc_info["value"], exp=doc_info["exp"],
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability, timeout=timeout)
             if result["error"] is not None:
                 op_failed = True
                 self.log.error("Exception: '{0}' for '{1}' during '{2}'"
                                "with durability={3}, timeout={4}"
-                               .format(result["error"], doc["key"], op_type,
+                               .format(result["error"], key, op_type,
                                        self.durability, timeout))
         return op_failed

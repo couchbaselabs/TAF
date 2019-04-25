@@ -2,6 +2,7 @@ from random import randint
 
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
+from membase.api.rest_client import RestConnection
 
 
 class DurabilityTestsBase(BaseTestCase):
@@ -14,6 +15,7 @@ class DurabilityTestsBase(BaseTestCase):
         self.doc_ops = self.input.param("doc_ops", None)
         self.with_non_sync_writes = self.input.param("with_non_sync_writes",
                                                      False)
+        self.test_failure = None
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
         if self.num_replicas > 1:
@@ -27,6 +29,11 @@ class DurabilityTestsBase(BaseTestCase):
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+
+        # Disable auto-failover to avaid failover of nodes
+        status = RestConnection(self.cluster.master) \
+            .update_autofailover_settings(False, 120, False)
+        self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         # Create default bucket and add rbac user
         self.bucket_util.create_default_bucket(
@@ -47,6 +54,7 @@ class DurabilityTestsBase(BaseTestCase):
             self.cluster, self.bucket, doc_create, "create", 0,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
 
@@ -56,7 +64,15 @@ class DurabilityTestsBase(BaseTestCase):
         self.log.info("=== DurabilityBaseTests setup complete ===")
 
     def tearDown(self):
+        # Fail the test case, if the failure is set
+        if self.test_failure is not None:
+            self.fail(self.test_failure)
         super(DurabilityTestsBase, self).tearDown()
+
+    def _set_failure(self, msg):
+        self.log.error(msg)
+        if self.test_failure is None:
+            self.test_failure = msg
 
     def get_random_node(self):
         rand_node_index = randint(1, self.nodes_init-1)

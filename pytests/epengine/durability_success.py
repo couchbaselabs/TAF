@@ -1,14 +1,19 @@
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper
 from epengine.durability_base import DurabilityTestsBase
-from error_simulation.disk_error import DiskError
-from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
+from error_simulation.disk_error import DiskError
+from membase.api.rest_client import RestConnection
+from sdk_client3 import SDKClient
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class DurabilitySuccessTests(DurabilityTestsBase):
     def setUp(self):
         super(DurabilitySuccessTests, self).setUp()
+        self.durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.nodes_in_cluster), self.durability_level)
         self.log.info("=== DurabilitySuccessTests setup complete ===")
 
     def tearDown(self):
@@ -22,6 +27,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         4. Validate all mutations met the durability condition
         """
 
+        error_sim =dict()
         shell_conn = dict()
         cbstat_obj = dict()
         vb_info = dict()
@@ -45,15 +51,16 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         else:
             for node in target_nodes:
                 # Create shell_connections
-                shell_conn = RemoteMachineShellConnection(node)
+                shell_conn[node.ip] = RemoteMachineShellConnection(node)
 
                 # Perform specified action
-                error_sim = CouchbaseError(self.log, shell_conn)
-                error_sim.create(self.simulate_error,
-                                 bucket_name=self.bucket.name)
+                error_sim[node.ip] = CouchbaseError(self.log,
+                                                    shell_conn[node.ip])
+                error_sim[node.ip].create(self.simulate_error,
+                                          bucket_name=self.bucket.name)
 
                 # Disconnect the shell connection
-                shell_conn.disconnect()
+                shell_conn[node.ip].disconnect()
 
         # Perform CRUDs with induced error scenario is active
         tasks = list()
@@ -94,8 +101,43 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
             # Verify there is not failed docs in the task
-            if len(task.fail.keys) != 0:
-                self.fail("Some CRUD failed for {0}".format(task.fail))
+            if len(task.fail.keys()) != 0:
+                self._set_failure("Some CRUD failed for {0}".format(task.fail))
+
+        if self.simulate_error \
+                not in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:
+            # Revert the induced error condition
+            for node in target_nodes:
+                error_sim[node.ip].revert(self.simulate_error,
+                                          bucket_name=self.bucket.name)
+
+                # Disconnect the shell connection
+                shell_conn[node.ip].disconnect()
+
+        # Create a SDK client connection to retry operation
+        client = SDKClient(RestConnection(self.cluster.master),
+                           self.bucket.name)
+
+        # Retry failed docs (if any)
+        for index, task in enumerate(tasks):
+            if index == 0:
+                op_type = "create"
+            elif index == 1:
+                op_type = "update"
+            elif index == 2:
+                op_type = "read"
+            elif index == 3:
+                op_type = "delete"
+
+            op_failed = self.durability_helper.retry_with_no_error(
+                client, task.fail, op_type)
+            if op_failed:
+                self._set_failure(
+                    "CRUD '{0}' failed on retry with no error condition"
+                    .format(op_type))
+
+        # Close the SDK connection
+        client.close()
 
         # Fetch latest failover stats and validate the values are updated
         for node in target_nodes:
@@ -163,7 +205,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         gen_update = doc_generator(self.key, half_of_num_items,
                                    self.num_items)
 
-        tasks = []
+        tasks = list()
         # Durability doc_loader for Create and Delete operations
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_create, "create", 0,

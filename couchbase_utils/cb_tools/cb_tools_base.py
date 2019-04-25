@@ -1,13 +1,9 @@
-import logging
-
 from testconstants import \
     LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \
     WIN_COUCHBASE_BIN_PATH, MAC_COUCHBASE_BIN_PATH
 
-# log = logging.getLogger(__name__)
 
-
-class CbCmdBase():
+class CbCmdBase:
     def __init__(self, shell_conn, binary_name, port=11210,
                  username="Administrator", password="password"):
 

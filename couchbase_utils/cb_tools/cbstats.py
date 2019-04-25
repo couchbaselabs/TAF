@@ -157,7 +157,7 @@ class Cbstats(CbCmdBase):
                 curr_vb_type = match_result.group(2)
                 if curr_vb_type == vbucket_type:
                     vb_num = match_result.group(1)
-                    vb_list.append(vb_num)
+                    vb_list.append(int(vb_num))
 
         return vb_list
 

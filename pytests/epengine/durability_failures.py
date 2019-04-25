@@ -5,16 +5,16 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
-from sdk_client3 import SDKClient
 from membase.api.rest_client import RestConnection
+from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 
 
 class DurabilityFailureTests(DurabilityTestsBase):
     def setUp(self):
         super(DurabilityFailureTests, self).setUp()
-        self.durability = DurabilityHelper(self.log, len(self.cluster.servers),
-                                           self.durability_level)
+        self.durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.nodes_in_cluster), self.durability_level)
         self.log.info("=== DurabilityFailureTests setup complete ===")
 
     def tearDown(self):
@@ -32,16 +32,18 @@ class DurabilityFailureTests(DurabilityTestsBase):
         """
 
         tasks = list()
+        vb_info = dict()
         shell_conn = RemoteMachineShellConnection(self.cluster.master)
         cbstat_obj = Cbstats(shell_conn)
-        vb_info = dict()
-        gen_load = doc_generator(self.key, 0, self.num_items)
+        old_num_items = self.num_items
+        self.num_items *= 2
+        gen_load = doc_generator(self.key, old_num_items, self.num_items)
         err_msg = "Doc mutation succeeded with, "  \
                   "cluster size: {0}, replica: {1}" \
                   .format(len(self.cluster.nodes_in_cluster), self.num_replicas)
 
-        # Fetch vbucket seq_no stats from failover command for verification
-        vb_info["init"] = cbstat_obj.failover_stats(self.bucket.name)
+        # Fetch vbucket seq_no stats from vb_seqno command for verification
+        vb_info["init"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Perform durable SET operation
         d_create_task = self.task.async_load_gen_docs(
@@ -51,19 +53,19 @@ class DurabilityFailureTests(DurabilityTestsBase):
             timeout_secs=self.durability_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(d_create_task)
 
-        # Fetch vbucket seq_no status from failover command after CREATE task
-        vb_info["failure_stat"] = cbstat_obj.failover_stats(self.bucket.name)
+        # Fetch vbucket seq_no status from vb_seqno command after CREATE task
+        vb_info["failure_stat"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(0)
-        self.assertTrue(len(d_create_task.fail.keys()) == self.num_items,
+        self.bucket_util.verify_stats_all_buckets(old_num_items)
+        self.assertTrue(len(d_create_task.fail.keys()) == old_num_items,
                         msg=err_msg)
-        self.assertTrue(vb_info["init"] == vb_info["create_failure"],
+        self.assertTrue(vb_info["init"] == vb_info["failure_stat"],
                         msg="Failover stats mismatch. {0} != {1}"
                             .format(vb_info["init"], vb_info["failure_stat"]))
 
-        self.assertTrue(self.durability.validate_durability_exception(
+        self.assertTrue(self.durability_helper.validate_durability_exception(
             d_create_task.fail, "durability_not_possible"),
             msg=err_msg)
 
@@ -74,8 +76,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
             timeout_secs=self.durability_timeout)
         self.task.jython_task_manager.get_task_result(async_create_task)
 
-        # Fetch vbucket seq_no status from failover command after async CREATEs
-        vb_info["create_stat"] = cbstat_obj.failover_stats(self.bucket.name)
+        # Fetch vbucket seq_no status from vb_seqno command after async CREATEs
+        vb_info["create_stat"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Verify doc load count
         self.bucket_util._wait_for_stats_all_buckets()
@@ -100,21 +102,25 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
-            self.assertTrue(self.durability.validate_durability_exception(
-                task.fail, "durability_not_possible"),
+            self.assertTrue(len(task.fail.keys()) == self.num_items,
+                            msg="Few keys have not received exceptions: {0}"
+                                .format(task.fail))
+            self.assertTrue(
+                self.durability_helper.validate_durability_exception(
+                    task.fail, "durability_not_possible"),
                 msg=err_msg)
 
         # Verify doc count is unchanged due to durability failures
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-        # Fetch vbucket seq_no status from failover after UPDATE/DELETE task
-        vb_info["failure_stat"] = cbstat_obj.failover_stats(self.bucket.name)
+        # Fetch vbucket seq_no status from vb_seqno after UPDATE/DELETE task
+        vb_info["failure_stat"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
-        self.assertTrue(vb_info["create_failure"] == vb_info["failure_stat"],
+        self.assertTrue(vb_info["create_stat"] == vb_info["failure_stat"],
                         msg="Failover stats mismatch. {0} != {1}"
                             .format(vb_info["failure_stat"],
-                                    vb_info["create_failure"]))
+                                    vb_info["create_stat"]))
 
     def test_sync_write_in_progress(self):
         """
@@ -136,8 +142,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
         half_of_num_items = max(int(self.num_items/2), 1)
         target_vbuckets = list()
 
-        # Variable to hold one of the doc_generator object
-        gen_loader = None
+        # Variable to hold one of the doc_generator objects
+        gen_loader_1 = None
+        gen_loader_2 = None
 
         # Select nodes to affect and open required shell_connections
         target_nodes = self.getTargetNodes()
@@ -145,7 +152,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
             vb_info["init"] = dict()
-            vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
+            vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
@@ -173,16 +180,23 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Start CRUD operation based on the given 'doc_op' type
         if self.doc_ops[0] == "create":
             self.num_items += self.crud_batch_size
-            gen_loader = gen_create
-        if self.doc_ops[0] == "update":
-            gen_loader = gen_update
-        if self.doc_ops[0] == "delete":
-            gen_loader = gen_delete
+            gen_loader_1 = gen_create
+        elif self.doc_ops[0] == "update":
+            gen_loader_1 = gen_update
+        elif self.doc_ops[0] == "delete":
+            gen_loader_1 = gen_delete
             self.num_items -= half_of_num_items
+
+        if self.doc_ops[1] == "create":
+            gen_loader_2 = gen_create
+        elif self.doc_ops[1] == "update":
+            gen_loader_2 = gen_update
+        elif self.doc_ops[1] == "delete":
+            gen_loader_2 = gen_delete
 
         # Initialize tasks and store the task objects
         doc_loader_task_1 = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_loader, self.doc_ops[0], 0,
+            self.cluster, self.bucket, gen_loader_1, self.doc_ops[0], 0,
             batch_size=10, process_concurrency=8,
             durability=self.durability_level,
             timeout_secs=self.durability_timeout, retries=self.sdk_retries)
@@ -193,28 +207,19 @@ class DurabilityFailureTests(DurabilityTestsBase):
         client = SDKClient(RestConnection(self.cluster.master),
                            self.bucket)
         # Perform specified CRUD operation on sync_write docs
-        while gen_create.has_next():
-            key, value = gen_create.next()
-            fail = dict()
+        while gen_loader_2.has_next():
+            key, value = gen_loader_2.next()
             if self.with_non_sync_writes:
-                pass
+                fail = client.crud(self.doc_ops[1], key, value=value, exp=0)
             else:
-                if self.doc_ops[1] == "create":
-                    _, fail = client.insert(
-                        key, value, durability=self.durability_level,
-                        timeout=self.durability_timeout)
-                elif self.doc_ops[1] == "update":
-                    _, fail = client.upsert(
-                        key, value, durability=self.durability_level,
-                        timeout=self.durability_timeout)
-                elif self.doc_ops[1] == "delete":
-                    _, fail = client.delete(
-                        key, value, durability=self.durability_level,
-                        timeout=self.durability_timeout)
+                fail = client.crud(self.doc_ops[1], key, value=value, exp=0,
+                                   durability=self.durability_level,
+                                   timeout=2, time_unit="seconds")
 
             # Validate the returned error from the SDK
-            if "sync_write_in_progress" not in fail["error"]:
-                raise("Invalid exception: {0}".format(fail["error"]))
+            if "DurableWriteInProgressException" not in str(fail["error"]):
+                self._set_failure("Invalid exception: {0}"
+                                  .format(fail["error"]))
 
         # Revert the introduced error condition
         for node in target_nodes:
@@ -223,6 +228,25 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
+
+        # Cannot retry for CREATE/DELETE operation. So doing only for UPDATE
+        if self.doc_ops[1] == "update":
+            # Retry doc_op after reverting the induced error
+            while gen_loader_2.has_next():
+                key, value = gen_loader_2.next()
+                if self.with_non_sync_writes:
+                    fail = client.crud(self.doc_ops[1], key, value=value, exp=0)
+                else:
+                    fail = client.crud(self.doc_ops[1], key, value=value, exp=0,
+                                       durability=self.durability_level,
+                                       timeout=self.durability_timeout,
+                                       time_unit="seconds")
+                if "error" in fail:
+                    self._set_failure("CRUD failed without error condition: {0}"
+                                      .format(fail))
+
+        # Disconnect the client
+        client.close()
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
@@ -273,12 +297,13 @@ class DurabilityFailureTests(DurabilityTestsBase):
         error_sim.create(self.simulate_error, bucket_name=self.bucket.name)
 
         # Start CRUD operation based on the given 'doc_op' type
+        gen_loader = None
         if self.doc_ops[0] == "create":
             self.num_items += self.crud_batch_size
             gen_loader = gen_create
-        if self.doc_ops[0] == "update":
+        elif self.doc_ops[0] == "update":
             gen_loader = gen_update
-        if self.doc_ops[0] == "delete":
+        elif self.doc_ops[0] == "delete":
             gen_loader = gen_delete
             self.num_items -= half_of_num_items
 
@@ -295,36 +320,30 @@ class DurabilityFailureTests(DurabilityTestsBase):
         client = SDKClient(RestConnection(self.cluster.master),
                            self.bucket)
         # Perform specified CRUD operation on sync_write docs
-        while gen_create.has_next():
-            key, value = gen_create.next()
+        while gen_loader.has_next():
+            key, value = gen_loader.next()
             if self.with_non_sync_writes:
-                pass
+                fail = client.crud(self.doc_ops[1], key, value=value, exp=0)
             else:
-                if self.doc_ops[1] == "create":
-                    _, fail = client.insert(
-                        key, value, durability=self.durability_level,
-                        timeout=self.durability_timeout)
-                elif self.doc_ops[1] == "update":
-                    _, fail = client.upsert(
-                        key, value, durability=self.durability_level,
-                        timeout=self.durability_timeout)
-                elif self.doc_ops[1] == "delete":
-                    _, fail = client.delete(
-                        key, value, durability=self.durability_level,
-                        timeout=self.durability_timeout)
+                fail = client.crud(self.doc_ops[1], key, value=value, exp=0,
+                                   durability=self.durability_level,
+                                   timeout=self.durability_timeout,
+                                   time_unit="seconds")
 
             # Validate the returned error from the SDK
             vb_num = self.bucket_util.get_vbucket_num_for_key(key,
                                                               self.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
-                self.assertTrue("error" in fail, msg="No failure detected")
-                self.assertTrue("sync_write_in_progress" in fail["error"],
-                                msg="Invalid exception: {0}"
-                                .format(fail["error"]))
+                if "error" not in fail:
+                    self._set_failure("No failure detected for {0}"
+                                      .format(self.doc_ops[1]))
+                if "DurableWriteInProgressException" not in str(fail["error"]):
+                    self._set_failure("Invalid exception: {0}"
+                                      .format(fail["error"]))
             else:
-                self.assertTrue(fail["success"] is None,
-                                msg="CRUD failed for vbucket {0}"
-                                .format(vb_num))
+                if fail["success"] is not None:
+                    self._set_failure("CRUD failed for vbucket {0}"
+                                      .format(vb_num))
 
         # Revert the introduced error condition
         error_sim.revert(self.simulate_error, bucket_name=self.bucket.name)
@@ -372,7 +391,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                                      vbucket_type="replica")
 
         # Fetch vbuckets details from cbstats
-        vb_info["init"] = cbstat_obj.failover_stats(self.bucket.name)
+        vb_info["init"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Create doc_generators
         tasks = list()
@@ -410,17 +429,18 @@ class DurabilityFailureTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
 
-        doc_errors["create"] = self.task.jython_task_manager.get_task_result(
-            tasks[0])
-        doc_errors["update"] = self.task.jython_task_manager.get_task_result(
-            tasks[1])
-        doc_errors["read"] = self.task.jython_task_manager.get_task_result(
-            tasks[2])
-        doc_errors["delete"] = self.task.jython_task_manager.get_task_result(
-            tasks[3])
+        # Wait for all tasks to complete
+        for task in tasks:
+            self.task.jython_task_manager.get_all_result(task)
+
+        # Get the failed docs from the tasks
+        doc_errors["create"] = tasks[0].fail
+        doc_errors["update"] = tasks[1].fail
+        doc_errors["read"] = tasks[2].fail
+        doc_errors["delete"] = tasks[3].fail
 
         # Fetch the vbuckets stats after performing the CRUDs
-        vb_info["withDiskIssue"] = cbstat_obj.failover_stats(self.bucket.name)
+        vb_info["withDiskIssue"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Verify cbstats for the affected vbuckets are not updated during CRUDs
         for vb in range(self.vbuckets):
@@ -428,11 +448,11 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 for stat_name in vb_info["withDiskIssue"][vb].keys():
                     stat_before_crud = vb_info["init"][vb][stat_name]
                     stat_after_crud = vb_info["withDiskIssue"][vb][stat_name]
-                    msg = "Stat '{0}' mismatch for vbucket '{1}'. {2} != {3}" \
-                          .format(stat_name, vb, stat_before_crud,
-                                  stat_after_crud)
-                    self.assertTrue(stat_before_crud == stat_after_crud,
-                                    msg=msg)
+                    if stat_before_crud != stat_after_crud:
+                        self._set_failure(
+                            "Stat '{0}' mismatch for vbucket '{1}'. {2} != {3}"
+                            .format(stat_name, vb, stat_before_crud,
+                                    stat_after_crud))
 
         # Local function to validate the returned error types
         def validate_doc_errors(crud_type):
@@ -440,20 +460,21 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 vb_num = self.bucket_util.get_vbucket_num_for_key(
                     doc["key"], self.vbuckets)
                 if vb_num in active_vb_numbers:
-                    self.assertTrue("durability_not_possible" in doc["error"],
-                                    msg="Invalid exception {0}".format(doc))
+                    if "durability_not_possible" not in str(doc["error"]):
+                        self._set_failure("Invalid exception {0}".format(doc))
                 elif vb_num in replica_vb_numbers:
-                    if self.num_nodes_affected == 1:
-                        self.assertTrue(
-                            "durability_not_possible" in doc["error"],
-                            msg="Invalid exception {0}".format(doc))
+                    if self.num_nodes_affected == 1 \
+                            and "durability_not_possible" not in doc["error"]:
+                        self._set_failure("Invalid exception {0}".format(doc))
                 else:
-                    self.assertTrue(doc["error"] is None,
-                                    msg="Unexpected exception {0}".format(doc))
+                    if doc["error"] is not None:
+                        self._set_failure("Unexpected exception {0}"
+                                          .format(doc))
 
         # Verify the returned errors from doc_loader
         # Ideally there should be no errors should in doc reads
-        self.assertTrue(len(doc_errors["read"]) == 0, msg="Error in doc reads")
+        if len(doc_errors["read"]) != 0:
+            self._set_failure("Error in doc reads")
         # For "create" doc_loader validate using function
         validate_doc_errors("create")
         validate_doc_errors("delete")
@@ -462,7 +483,32 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Revert the induced error on the target_node
         error_sim.revert(self.simulate_error, self.bucket.name)
 
-        # TODO: Logic to retry failed docs
+        # SDK client for performing retry operations
+        client = SDKClient(RestConnection(self.cluster.master),
+                           self.bucket)
+        # Retry failed docs
+        create_failed = self.durability_helper.retry_with_no_error(
+            client, doc_errors["create"], "create")
+        read_failed = self.durability_helper.retry_with_no_error(
+            client, doc_errors["read"], "read")
+        delete_failed = self.durability_helper.retry_with_no_error(
+            client, doc_errors["delete"], "delete")
+        update_failed = self.durability_helper.retry_with_no_error(
+            client, doc_errors["update"], "update")
+
+        # Close the SDK client
+        client.close()
+
+        # Validate the retry operation status
+        msg = "Retry failed for '{0}' with no error conditions"
+        if create_failed:
+            self._set_failure(msg.format("create"))
+        if read_failed:
+            self._set_failure(msg.format("read"))
+        if delete_failed:
+            self._set_failure(msg.format("delete"))
+        if update_failed:
+            self._set_failure(msg.format("update"))
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
@@ -484,6 +530,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         cbstat_obj = dict()
         error_sim = dict()
         vb_info = dict()
+        expected_failed_doc_num = 0
 
         half_of_num_items = int(self.num_items/2)
         target_vbuckets = list()
@@ -497,7 +544,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
             vb_info["init"] = dict()
-            vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
+            vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
@@ -526,11 +573,14 @@ class DurabilityFailureTests(DurabilityTestsBase):
         if self.doc_ops[0] == "create":
             self.num_items += self.crud_batch_size
             gen_loader = gen_create
+            expected_failed_doc_num = self.crud_batch_size
         if self.doc_ops[0] == "update":
             gen_loader = gen_update
+            expected_failed_doc_num = self.num_items
         if self.doc_ops[0] == "delete":
             gen_loader = gen_delete
             self.num_items -= half_of_num_items
+            expected_failed_doc_num = half_of_num_items
 
         # Initialize tasks and store the task objects
         doc_loader_task_1 = self.task.async_load_gen_docs(
@@ -566,7 +616,17 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
-        # TODO: Add validation to verify the sync_in_write_errors
+        # Validation to verify the sync_in_write_errors in doc_loader_task_2
+        failed_docs = doc_loader_task_2.fail
+        if len(failed_docs.keys()) != expected_failed_doc_num:
+            self._set_failure("Exception not seen for some docs: {0}"
+                              .format(failed_docs))
+
+        valid_exception = self.durability_helper.validate_durability_exception(
+            failed_docs, "DurableWriteInProgressException")
+
+        if not valid_exception:
+            self._set_failure("Got invalid exception")
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
@@ -617,12 +677,13 @@ class DurabilityFailureTests(DurabilityTestsBase):
         error_sim.create(self.simulate_error, bucket_name=self.bucket.name)
 
         # Start CRUD operation based on the given 'doc_op' type
+        gen_loader = None
         if self.doc_ops[0] == "create":
             self.num_items += self.crud_batch_size
             gen_loader = gen_create
-        if self.doc_ops[0] == "update":
+        elif self.doc_ops[0] == "update":
             gen_loader = gen_update
-        if self.doc_ops[0] == "delete":
+        elif self.doc_ops[0] == "delete":
             gen_loader = gen_delete
             self.num_items -= half_of_num_items
 
@@ -637,7 +698,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         # Initialize tasks and store the task objects
         doc_loader_task_2 = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_loader, self.doc_ops[0], 0,
+            self.cluster, self.bucket, gen_loader, self.doc_ops[1], 0,
             batch_size=10, process_concurrency=8,
             durability=self.durability_level,
             timeout_secs=self.durability_timeout, retries=self.sdk_retries)
@@ -653,20 +714,33 @@ class DurabilityFailureTests(DurabilityTestsBase):
             vb_num = self.bucket_util.get_vbucket_num_for_key(key,
                                                               self.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
-                self.assertTrue("error" in fail, msg="No failure detected")
-                self.assertTrue("sync_write_in_progress" in fail["error"],
-                                msg="Invalid exception: {0}"
-                                .format(fail["error"]))
+                if "error" not in fail:
+                    self._set_failure("No failures detected")
+
+                if "DurableWriteInProgressException" not in str(fail["error"]):
+                    self._set_failure("Invalid exception: {0}"
+                                      .format(fail["error"]))
             else:
-                self.assertTrue(fail["success"] is None,
-                                msg="CRUD failed for vbucket {0}"
-                                .format(vb_num))
+                if fail["success"] is not None:
+                    self._set_failure("CRUD failed for vbucket {0}"
+                                      .format(vb_num))
 
         # Revert the introduced error condition
         error_sim.revert(self.simulate_error, bucket_name=self.bucket.name)
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
+
+        # Create SDK Client
+        client = SDKClient(RestConnection(self.cluster.master),
+                           self.bucket.name)
+
+        # Retry failed docs
+        self.durability_helper.retry_with_no_error(client, error_docs,
+                                                   self.doc_ops[1])
+
+        # Close the SDK connection
+        client.close()
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
@@ -676,6 +750,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
 class TimeoutTests(DurabilityTestsBase):
     def setUp(self):
         super(TimeoutTests, self).setUp()
+        self.durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.nodes_in_cluster), self.durability_level)
         self.log.info("=== DurabilityTimeoutTests setup complete ===")
 
     def tearDown(self):
@@ -710,7 +786,7 @@ class TimeoutTests(DurabilityTestsBase):
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
             vb_info["init"] = dict()
-            vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
+            vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
 
@@ -761,12 +837,14 @@ class TimeoutTests(DurabilityTestsBase):
         self.sleep(time_to_wait,
                    message="Wait less than the durability_timeout value")
 
-        # Fetch latest failover stats and validate the values are not changed
+        # Fetch latest stats and validate the values are not changed
         for node in target_nodes:
             vb_info["withinTimeout"][node.ip] = \
-                cbstat_obj[node.ip].failover_stats(self.bucket.name)
-            val = vb_info["init"][node.ip] == vb_info["withinTimeout"][node.ip]
-            self.assertTrue(val, msg="Mismatch in failover stats")
+                cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
+            if vb_info["init"][node.ip] != vb_info["withinTimeout"][node.ip]:
+                self._set_failure("Mismatch in vbucket_seqno. {0} != {1}"
+                                  .format(vb_info["init"][node.ip],
+                                          vb_info["withinTimeout"][node.ip]))
 
         # Revert the specified error scenario
         for node in target_nodes:
@@ -775,20 +853,46 @@ class TimeoutTests(DurabilityTestsBase):
             # Disconnect the shell connection
             shell_conn[node].disconnect()
 
-        # Wait for document_loader tasks to complete
-        for task in tasks:
+        # Create SDK Client
+        client = SDKClient(RestConnection(self.cluster.master),
+                           self.bucket.name)
+
+        # Wait for document_loader tasks to complete and retry failed docs
+        op_type = None
+        msg = "CRUD '{0}' failed after retry with no error condition"
+        for index, task in enumerate(tasks):
             self.task.jython_task_manager.get_task_result(task)
+
+            if index == 0:
+                op_type = "create"
+            elif index == 1:
+                op_type = "update"
+            elif index == 2:
+                op_type = "read"
+            elif index == 3:
+                op_type = "delete"
+
+            # Retry failed docs
+            retry_failed = self.durability_helper.retry_with_no_error(
+                client, task.fail, op_type)
+            if retry_failed:
+                self._set_failure(msg.format(op_type))
+
+        # Close the SDK connection
+        client.close()
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-        # Fetch latest failover stats and validate the values are updated
+        # Fetch latest stats and validate the values are updated
         for node in target_nodes:
             vb_info["afterCrud"][node.ip] = \
-                cbstat_obj[node.ip].failover_stats(self.bucket.name)
-            val = vb_info["init"][node.ip] != vb_info["afterCrud"][node.ip]
-            self.assertTrue(val, msg="Vbucket seq_no stats not updated")
+                cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
+            if vb_info["init"][node.ip] != vb_info["afterCrud"][node.ip]:
+                self._set_failure("Mismatch in vbucket_seqno. {0} != {1}"
+                                  .format(vb_info["init"][node.ip],
+                                          vb_info["withinTimeout"][node.ip]))
 
     def test_timeout_with_successful_crud_for_persist_active(self):
         """
@@ -816,7 +920,7 @@ class TimeoutTests(DurabilityTestsBase):
         expected_timeout = curr_time + self.durability_timeout
         time_to_wait = expected_timeout - 20
 
-        vb_info["init"] = cbstat_obj.failover_stats(self.bucket.name)
+        vb_info["init"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Perform specified action
         error_sim.create(self.simulate_error, bucket_name=self.bucket.name)
@@ -859,28 +963,56 @@ class TimeoutTests(DurabilityTestsBase):
         self.sleep(time_to_wait,
                    message="Wait less than the durability_timeout value")
 
-        # Fetch latest failover stats and validate the values are not changed
-        vb_info["withinTimeout"] = cbstat_obj.failover_stats(self.bucket.name)
-        val = vb_info["init"] == vb_info["withinTimeout"]
-        self.assertTrue(val, msg="Mismatch in failover stats")
+        # Fetch latest stats and validate the values are not changed
+        vb_info["withinTimeout"] = cbstat_obj.vbucket_seqno(self.bucket.name)
+        if vb_info["init"] != vb_info["withinTimeout"]:
+            self._set_failure("Mismatch in vbucket_seqno stats. {0} != {1}"
+                              .format(vb_info["init"],
+                                      vb_info["withinTimeout"]))
 
         # Revert the specified error scenario
         error_sim.revert(self.simulate_error, bucket_name=self.bucket.name)
         # Disconnect the shell connection
         shell_conn.disconnect()
 
-        # Wait for document_loader tasks to complete
-        for task in tasks:
+        # Create SDK Client
+        client = SDKClient(RestConnection(self.cluster.master),
+                           self.bucket.name)
+
+        # Wait for document_loader tasks to complete and retry failed docs
+        op_type = None
+        msg = "CRUD '{0}' failed after retry with no error condition"
+        for index, task in enumerate(tasks):
             self.task.jython_task_manager.get_task_result(task)
+
+            if index == 0:
+                op_type = "create"
+            elif index == 1:
+                op_type = "update"
+            elif index == 2:
+                op_type = "read"
+            elif index == 3:
+                op_type = "delete"
+
+            # Retry failed docs
+            retry_failed = self.durability_helper.retry_with_no_error(
+                client, task.fail, op_type)
+            if retry_failed:
+                self._set_failure(msg.format(op_type))
+
+        # Close the SDK connection
+        client.close()
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-        # Fetch latest failover stats and validate the values are updated
-        vb_info["afterCrud"] = cbstat_obj.failover_stats(self.bucket.name)
-        val = vb_info["init"] != vb_info["afterCrud"]
-        self.assertTrue(val, msg="Vbucket seq_no stats not updated")
+        # Fetch latest stats and validate the values are updated
+        vb_info["afterCrud"] = cbstat_obj.vbucket_seqno(self.bucket.name)
+        if vb_info["init"] != vb_info["afterCrud"]:
+            self._set_failure("Mismatch in vbucket_seqno. {0} != {1}"
+                              .format(vb_info["init"],
+                                      vb_info["withinTimeout"]))
 
     def test_timeout_with_crud_failures(self):
         """
@@ -911,7 +1043,7 @@ class TimeoutTests(DurabilityTestsBase):
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
             vb_info["init"] = dict()
-            vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
+            vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
 
@@ -958,6 +1090,7 @@ class TimeoutTests(DurabilityTestsBase):
         # Wait for document_loader tasks to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+            # TODO: Verify timeout exceptions for each doc_op
 
         # Check whether the timeout triggered properly
         timed_out_ok = int(time.time()) == expected_timeout \
@@ -975,12 +1108,12 @@ class TimeoutTests(DurabilityTestsBase):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-        # Fetch latest failover stats and validate the values are not changed
+        # Fetch latest stats and validate the values are not changed
         for node in target_nodes:
             vb_info["post_timeout"][node.ip] = \
-                cbstat_obj[node.ip].failover_stats(self.bucket.name)
+                cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
             val = vb_info["init"][node.ip] == vb_info["post_timeout"][node.ip]
-            self.assertTrue(val, msg="Mismatch in failover stats with timeout")
+            self.assertTrue(val, msg="Mismatch in vbucket_seqno with timeout")
 
         # Update num_items value accordingly to the CRUD performed
         self.num_items += self.crud_batch_size - int(self.num_items/3)
@@ -1011,15 +1144,18 @@ class TimeoutTests(DurabilityTestsBase):
         # Wait for document_loader tasks to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+            if len(task.fail.keys()) != 0:
+                self._set_failure("Failures in retry with no error condition"
+                                  .format(task.fail))
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-        # Fetch latest failover stats and validate the values are updated
+        # Fetch latest stats and validate the values are updated
         for node in target_nodes:
             vb_info["afterCrud"][node.ip] = \
-                cbstat_obj[node.ip].failover_stats(self.bucket.name)
+                cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
             val = vb_info["init"][node.ip] != vb_info["afterCrud"][node.ip]
             self.assertTrue(val, msg="Vbucket seq_no stats not updated")
 
@@ -1051,7 +1187,7 @@ class TimeoutTests(DurabilityTestsBase):
         replica_vb_numbers = cbstat_obj.vbucket_list(self.bucket.name,
                                                      vbucket_type="replica")
 
-        vb_info["init"] = cbstat_obj.failover_stats(self.bucket.name)
+        vb_info["init"] = cbstat_obj.vbucket_seqno(self.bucket.name)
         curr_time = int(time.time())
         expected_timeout = curr_time + self.durability_timeout
 
@@ -1093,6 +1229,7 @@ class TimeoutTests(DurabilityTestsBase):
         # Wait for document_loader tasks to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+            # TODO: Verify timeout exceptions for each doc_op
 
         # Check whether the timeout triggered properly
         timed_out_ok = int(time.time()) == expected_timeout \
@@ -1106,10 +1243,10 @@ class TimeoutTests(DurabilityTestsBase):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-        # Fetch latest failover stats and validate the values are not changed
-        vb_info["post_timeout"] = cbstat_obj.failover_stats(self.bucket.name)
+        # Fetch latest stats and validate the values are not changed
+        vb_info["post_timeout"] = cbstat_obj.vbucket_seqno(self.bucket.name)
         val = vb_info["init"] == vb_info["post_timeout"]
-        self.assertTrue(val, msg="Mismatch in failover stats with timeout")
+        self.assertTrue(val, msg="Mismatch in vbucket_seqno with timeout")
 
         # Update num_items value accordingly to the CRUD performed
         self.num_items += self.crud_batch_size - int(self.num_items/3)
@@ -1139,26 +1276,25 @@ class TimeoutTests(DurabilityTestsBase):
 
         # Wait for document_loader tasks to complete
         for task in tasks:
-            error_docs = self.task.jython_task_manager.get_task_result(task)
+            self.task.jython_task_manager.get_task_result(task)
 
-            for doc in error_docs:
-                key = doc["key"]
-                fail = doc["fail"]
+            for key, doc_info in task.fail.items():
+                fail = doc_info[0]
                 # Validate the returned error from the SDK
                 vb_num = self.bucket_util.get_vbucket_num_for_key(
                     key, self.vbuckets)
                 if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                     self.assertTrue("error" in fail, msg="No failure detected")
-                    self.assertTrue("sync_write_in_progress" in fail["error"],
-                                    msg="Invalid exception: {0}"
-                                    .format(fail["error"]))
+                    self.assertTrue(
+                        "DurableWriteInProgressException" in str(fail["error"]),
+                        msg="Invalid exception: {0}".format(fail["error"]))
                 else:
                     self.assertTrue(fail["success"] is None,
                                     msg="CRUD failed for vbucket {0}"
                                     .format(vb_num))
 
-        # Fetch latest failover stats and validate the values are updated
-        vb_info["afterCrud"] = cbstat_obj.failover_stats(self.bucket.name)
+        # Fetch latest stats and validate the values are updated
+        vb_info["afterCrud"] = cbstat_obj.vbucket_seqno(self.bucket.name)
         val = vb_info["init"] != vb_info["afterCrud"]
         self.assertTrue(val, msg="Vbucket seq_no stats not updated")
 
@@ -1167,8 +1303,23 @@ class TimeoutTests(DurabilityTestsBase):
         # Disconnect the shell connection
         shell_conn.disconnect()
 
-        for doc in error_docs:
-            doc.retry()
+        # Create SDK client for retry operation
+        client = SDKClient(RestConnection(self.cluster.master),
+                           self.bucket.name)
+
+        # Retry failed docs to succeed
+        op_type = None
+        for index, task in enumerate(tasks):
+            if index == 0:
+                op_type = "create"
+            elif index == 1:
+                op_type = "update"
+            elif index == 1:
+                op_type = "read"
+            elif index == 1:
+                op_type = "delete"
+            self.durability_helper.retry_with_no_error(
+                client, task.fail, op_type)
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
