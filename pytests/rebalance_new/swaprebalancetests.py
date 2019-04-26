@@ -784,10 +784,9 @@ class SwapRebalanceDurabilityTests(SwapRebalanceBase):
         master_shell_conn = RemoteMachineShellConnection(master)
         master_node_cb_stat = Cbstats(master_shell_conn)
 
-        # Update each vbucket's seq_no for latest value for verification
-        for vb_num in range(0, self.vbuckets):
-            vbucket_info_dict[vb_num] = master_node_cb_stat.vbucket_seqno(
-                def_bucket.name, vb_num, "abs_high_seqno")
+        # Fetch vb_seq_no after the CRUDs
+        vb_info["afterCrud"] = \
+            master_node_cb_stat.vbucket_seqno(def_bucket.name)
         """
 
         # Rest connection to add/rebalance/monitor nodes

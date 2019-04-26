@@ -176,11 +176,13 @@ class RebalanceDurability(RebalanceBaseTest):
         gen_update = doc_generator(self.key, 0, self.num_items)
         num_of_docs_to_insert = 1000
 
-        vbucket_info_dict = dict()
-
         # Connection to run cbstats command
         master_shell_conn = RemoteMachineShellConnection(self.cluster.master)
         master_node_cb_stat = Cbstats(master_shell_conn)
+
+        # Dict to store vb_seq_no info
+        vb_info = dict()
+        vb_info["init"] = master_node_cb_stat.vbucket_seqno(def_bucket.name)
 
         # Rebalance all nodes expect master one-by-one
         for _ in range(self.nodes_init-1):
@@ -215,18 +217,23 @@ class RebalanceDurability(RebalanceBaseTest):
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
 
+            # Fetch vb_seq_no after the CRUDs
+            vb_info["afterCrud"] = \
+                master_node_cb_stat.vbucket_seqno(def_bucket.name)
+
             if durability_will_fail:
                 self.log.info("Durability broken with cluster {0}, replica {1}"
                               .format(self.cluster.servers[:nodes_in_cluster],
                                       self.num_replicas))
                 # Verification of seq_no for each vbucket
                 for vb_num in range(0, self.vbuckets):
-                    tem_seqno = master_node_cb_stat.vbucket_seqno(
-                        def_bucket.name, vb_num, "abs_high_seqno")
-                    self.assertTrue(tem_seqno == vbucket_info_dict[vb_num],
-                                    "Seq_no mismatch for vbucket {0}. {1}->{2}"
-                                    .format(vb_num, vbucket_info_dict[vb_num],
-                                            tem_seqno))
+                    self.assertTrue(
+                        vb_info["init"][vb_num]["abs_high_seqno"]
+                        == vb_info["afterCrud"][vb_num]["abs_high_seq_no"],
+                        "Seq_no mismatch for vbucket {0}. {1}->{2}"
+                        .format(vb_num,
+                                vb_info["init"][vb_num]["abs_high_seqno"],
+                                vb_info["afterCrud"][vb_num]["abs_high_seqno"]))
                 # Break from loop that is running rebalance_out tasks
                 break
             else:
@@ -246,10 +253,9 @@ class RebalanceDurability(RebalanceBaseTest):
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
 
-            # Update each vbucket's seq_no for latest value for verification
-            for vb_num in range(0, self.vbuckets):
-                vbucket_info_dict[vb_num] = master_node_cb_stat.vbucket_seqno(
-                    def_bucket.name, vb_num, "abs_high_seqno")
+            # Fetch vb_seq_no after the CRUDs
+            vb_info["afterCrud"] = \
+                master_node_cb_stat.vbucket_seqno(def_bucket.name)
 
         # Disconnect the remote_shell connection
         master_shell_conn.disconnect()

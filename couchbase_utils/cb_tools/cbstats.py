@@ -243,41 +243,41 @@ class Cbstats(CbCmdBase):
 
         return result
 
-    def vbucket_seqno(self, bucket_name, vbucket_num, field_to_grep):
+    def vbucket_seqno(self, bucket_name):
         """
         Get a particular value of stat from the command,
           cbstats localhost:port vbucket-seqno
 
         Arguments:
         :bucket_name   - Name of the bucket to get the stats
-        :vbucket_num   - Target vbucket_number to fetch the stats
-        :field_to_grep - Target stat name string to grep
 
         Returns:
-        :result - Value of the 'field_to_grep' using regexp.
-                  If not matched, 'None'
+        :result - Dictionary of format stats["vb_num"]["stat_name"] = value
 
         Raise:
         :Exception returned from command line execution (if any)
         """
 
-        result = None
-        output, error = self.get_vbucket_stats(bucket_name, "vbucket-seqno",
-                                               vbucket_num,
-                                               field_to_grep=field_to_grep)
+        stats = dict()
+        output, error = self.get_stats(bucket_name, "vbucket-seqno")
         if len(error) != 0:
             raise("\n".join(error))
 
-        pattern = "[ \t]*vb_{0}:{1}:[ \t]*:[ \t]+([0-9]+)" \
-                  .format(vbucket_num, field_to_grep)
+        pattern = "[ \t]*vb_([0-9]+):([0-9a-zA-Z_]+):[ \t]+([0-9]+)"
         regexp = re.compile(pattern)
         for line in output:
             match_result = regexp.match(line)
-            if match_result:
-                result = match_result.group(1)
-                break
+            vb_num = match_result.group(1)
+            stat_name = match_result.group(2)
+            stat_value = match_result.group(3)
 
-        return result
+            # Create a sub_dict to state vbucket level stats
+            if vb_num not in stats:
+                stats[vb_num] = dict()
+            # Populate the values to the stats dictionary
+            stats[vb_num][stat_name] = stat_value
+
+        return stats
 
     def failover_stats(self, bucket_name):
         """
@@ -312,7 +312,8 @@ class Cbstats(CbCmdBase):
             stat_value = match_result.group(3)
 
             # Create a sub_dict to state vbucket level stats
-            stats[vb_num] = dict()
+            if vb_num not in stats:
+                stats[vb_num] = dict()
             # Populate the values to the stats dictionary
             stats[vb_num][stat_name] = stat_value
 

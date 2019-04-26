@@ -4,7 +4,7 @@ from dcpbase import DCPBase
 from membase.api.rest_client import RestConnection, RestHelper
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
-from cb_cmd_utils.cbstats import Cbstats
+from cb_tools.cbstats import Cbstats
 
 log = logger.Logger.get_logger()
 
@@ -37,16 +37,18 @@ class DCPMultiBucket(DCPBase):
                 dcp_client = self.dcp_client(nodeA, PRODUCER,
                                              bucket_name=bucket)
 
+            vb_info = cb_stat_obj.vbucket_seqno(bucket.name)
             for vb in vbuckets[0:16]:
                 vbucket = vb.id
-                vb_uuid, _, high_seqno = self.vb_info(cb_stat_obj, bucket.name,
-                                                      vbucket)
-                stream = dcp_client.stream_req(vbucket, 0, 0, high_seqno,
-                                               vb_uuid)
+                stream = dcp_client.stream_req(vbucket, 0, 0,
+                                               vb_info[vb]["high_seqno"],
+                                               vb_info[vb]["uuid"])
                 _ = stream.run()
-                self.assertTrue(high_seqno == stream.last_by_seqno,
+                self.assertTrue(vb_info[vb]["high_seqno"]
+                                == stream.last_by_seqno,
                                 msg="Mismatch in high_seqno. {0} == {1}"
-                                .format(high_seqno, stream.last_by_seqno))
+                                .format(vb_info[vb]["high_seqno"],
+                                        stream.last_by_seqno))
 
         # Disconnect the shell_conn
         shell_conn.disconnect()

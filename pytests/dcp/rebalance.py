@@ -6,7 +6,7 @@ from membase.api.rest_client import RestConnection, RestHelper
 from mc_bin_client import MemcachedError
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
-from cb_cmd_utils.cbstats import Cbstats
+from cb_tools.cbstats import Cbstats
 
 log = logger.Logger.get_logger()
 
@@ -20,17 +20,23 @@ class DCPRebalanceTests(DCPBase):
         # load some data
         vbucket = 0
         self.load_docs(self.master, vbucket, self.num_items)
-        vb_uuid, high_seqno = self.vb_info(self.master, vbucket)
+        shell_conn = RemoteMachineShellConnection(self.cluster.master)
+        cb_stat_obj = Cbstats(self.log, shell_conn)
+        # Fetch vbucket seqno stats
+        vb_stat = cb_stat_obj.vbucket_seqno(self.bucket_util.buckets[0].name)
         # stream
-        log.info("streaming vb {0} to seqno {1}".format(vbucket, high_seqno))
-        self.assertEquals(high_seqno, self.num_items)
+        log.info("streaming vb {0} to seqno {1}"
+                 .format(vbucket, vb_stat[vbucket]["high_seqno"]))
+        self.assertEquals(vb_stat[vbucket]["high_seqno"], self.num_items)
 
         dcp_client = self.dcp_client(self.master, PRODUCER, vbucket)
-        stream = dcp_client.stream_req(vbucket, 0, 0, high_seqno, vb_uuid)
+        stream = dcp_client.stream_req(vbucket, 0, 0,
+                                       vb_stat[vbucket]["high_seqno"],
+                                       vb_stat[vbucket]["uuid"])
 
         stream.run()
         last_seqno = stream.last_by_seqno
-        assert last_seqno == high_seqno, last_seqno
+        assert last_seqno == vb_stat[vbucket]["high_seqno"], last_seqno
 
         # verify rebalance
         assert task.result()
@@ -74,12 +80,10 @@ class DCPRebalanceTests(DCPBase):
         # Create connection for CbStats
         shell_conn = RemoteMachineShellConnection(self.cluster.master)
         cb_stat_obj = Cbstats(shell_conn)
+        vb_info = cb_stat_obj.vbucket_seqno(self.bucket_util.buckets[0].name)
 
-        bucket = self.bucket_util.buckets[0]
         for vb in range(0, self.vbuckets):
-            key = 'vb_{0}:high_seqno'.format(vbucket)
-            seq_no = cb_stat_obj.vbucket_seqno(bucket.name, vb, key)
-            total_mutations += int(seq_no)
+            total_mutations += int(vb_info[vb]["high_seqno"])
 
         # Disconnect the Cbstats shell_conn
         shell_conn.disconnect()
@@ -226,15 +230,16 @@ class DCPRebalanceTests(DCPBase):
         # Disconnect the Cbstats shell_conn
         shell_conn.disconnect()
 
+        # Fetch vbucket seqno stats
+        vb_stat = cb_stat_obj.vbucket_seqno(bucket.name)
         # Check failover table entries
         for vb_info in vbuckets[0:4]:
             vb = vb_info.id
             assert long(stats['vb_'+str(vb)+':num_entries']) == 2
 
-            vb_uuid, _, _ = self.vb_info(nodeA, vb)
             dcp_client = self.dcp_client(nodeA, PRODUCER)
-            stream = dcp_client.stream_req(vb, 0, 0,
-                                           self.num_items*3, vb_uuid)
+            stream = dcp_client.stream_req(vb, 0, 0, self.num_items*3,
+                                           vb_stat[vb]["uuid"])
 
             _ = stream.run()
             assert stream.last_by_seqno == self.num_items*3, \

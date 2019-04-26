@@ -4,7 +4,7 @@ from random import randint
 from dcpbase import DCPBase
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
-from cb_cmd_utils.cbstats import Cbstats
+from cb_tools.cbstats import Cbstats
 
 log = logger.Logger.get_logger()
 
@@ -35,16 +35,19 @@ class DCPCrashTests(DCPBase):
                             msg="Failed while is_ns_server_running check")
             self.sleep(5, "Waiting after ns_server started")
 
-            vb_uuid, high_seqno = self.vb_info(cb_stat_obj, bucket.name,
-                                               vbucket)
+            # Fetch vbucket seqno stats
+            vb_stat = cb_stat_obj.vbucket_seqno(bucket.name)
             dcp_client = self.dcp_client(nodeA, dcp.constants.PRODUCER)
             stream = dcp_client.stream_req(vbucket, 0, 0,
-                                           high_seqno, vb_uuid)
+                                           vb_stat[vbucket]["high_seqno"],
+                                           vb_stat[vbucket]["uuid"])
             stream.run()
 
-            self.assertTrue(stream.last_by_seqno == high_seqno,
+            self.assertTrue(stream.last_by_seqno
+                            == vb_stat[vbucket]["high_seqno"],
                             msg="Mismatch in high_seqno. {0} == {1}"
-                            .format(high_seqno, stream.last_by_seqno))
+                            .format(vb_stat[vbucket]["high_seqno"],
+                                    stream.last_by_seqno))
 
             # Update start/end values for next loop
             start = end
@@ -73,13 +76,15 @@ class DCPCrashTests(DCPBase):
                         msg="Failed while is_ns_server_running check")
         self.sleep(30, "Sleep to wait for ns_server to run")
 
-        _, high_seqno = self.vb_info(cb_stat_obj, bucket.name, vbucket)
+        vb_info = cb_stat_obj.vbucket_seqno(bucket.name)
         dcp_client = self.dcp_client(nodeA, dcp.constants.PRODUCER)
-        stream = dcp_client.stream_req(vbucket, 0, 0, high_seqno, 0)
+        stream = dcp_client.stream_req(vbucket, 0, 0,
+                                       vb_info[vbucket]["high_seqno"], 0)
         stream.run()
-        self.assertTrue(stream.last_by_seqno == high_seqno,
+        self.assertTrue(stream.last_by_seqno == vb_info[vbucket]["high_seqno"],
                         msg="Mismatch in high_seqno. {0} == {1}"
-                        .format(high_seqno, stream.last_by_seqno))
+                        .format(vb_info[vbucket]["high_seqno"],
+                                stream.last_by_seqno))
 
         # Disconnect shell Connection for the node
         shell_conn.disconnect()
@@ -114,13 +119,15 @@ class DCPCrashTests(DCPBase):
         self.assertTrue(rest.is_ns_server_running(),
                         msg="Failed while is_ns_server_running check")
 
-        _, high_seqno = self.vb_info(cb_stat_obj, bucket.name, vbucket)
+        vb_info = cb_stat_obj.vbucket_seqno(bucket.name)
         dcp_client = self.dcp_client(nodeA, dcp.constants.PRODUCER)
-        stream = dcp_client.stream_req(vbucket, 0, 0, high_seqno, 0)
+        stream = dcp_client.stream_req(vbucket, 0, 0,
+                                       vb_info[vbucket]["high_seqno"], 0)
         stream.run()
-        self.assertTrue(stream.last_by_seqno == high_seqno,
+        self.assertTrue(stream.last_by_seqno == vb_info[vbucket]["high_seqno"],
                         msg="Seq-no mismatch. {0} != {1}"
-                        .format(stream.last_by_seqno, high_seqno))
+                        .format(stream.last_by_seqno,
+                                vb_info[vbucket]["high_seqno"]))
 
         # Disconnect shell Connection for the node
         shell_conn.disconnect()

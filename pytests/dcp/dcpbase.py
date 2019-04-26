@@ -182,15 +182,6 @@ class DCPBase(BaseTestCase):
 
         return vbInfoMap
 
-    def vb_info(self, cb_stat_obj, bucket_name, vbucket):
-        uuid_pattern = 'vb_{0}:uuid'.format(vbucket)
-        hi_seqno_pattern = 'vb_{0}:high_seqno'.format(vbucket)
-
-        vb_uuid = cb_stat_obj.vbucket_seqno(bucket_name, vbucket, uuid_pattern)
-        high_seqno = cb_stat_obj.vbucket_seqno(bucket_name, vbucket,
-                                               hi_seqno_pattern)
-        return long(vb_uuid), long(high_seqno)
-
     def stop_node(self, index):
         status = False
         if self.use_cluster_run:
