@@ -691,7 +691,7 @@ class RemoteMachineShellConnection:
                 RemoteMachineHelper(self).is_process_running('erl')
                 return True
         elif self.info.distribution_type.lower() == 'mac':
-            output, error = self.execute_command('ls %s%s' 
+            output, error = self.execute_command('ls %s%s'
                                                  % (MAC_CB_PATH, VERSION_FILE))
             self.log_command_output(output, error)
             for line in output:
@@ -1054,7 +1054,8 @@ class RemoteMachineShellConnection:
     def read_remote_file(self, remote_path, filename):
         if self.file_exists(remote_path, filename):
             if self.remote:
-                out, err = self.execute_command_raw_jsch("cat %s" % os.path.join(remote_path, filename))
+                out, err = self.execute_command_raw_jsch(
+                    "cat %s" % os.path.join(remote_path, filename))
                 return out
             else:
                 txt = open('{0}/{1}'.format(remote_path, filename))
@@ -3201,7 +3202,7 @@ class RemoteMachineShellConnection:
         output = re.sub('\s+', '', output)
         return (output)
 
-    def execute_command(self, command, info=None, debug=True,
+    def execute_command(self, command, info=None, debug=False,
                         use_channel=False):
         if getattr(self, "info", None) is None and info is not None:
             self.info = info
