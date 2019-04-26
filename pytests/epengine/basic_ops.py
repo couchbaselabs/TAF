@@ -179,7 +179,8 @@ class basic_ops(BaseTestCase):
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
             durability="majority")
 
-        err = CouchbaseError(RemoteMachineShellConnection(self.servers[1]))
+        err = CouchbaseError(self.log,
+                             RemoteMachineShellConnection(self.servers[1]))
         err.create(CouchbaseError.STOP_MEMCACHED)
 
         doc_create = doc_generator(

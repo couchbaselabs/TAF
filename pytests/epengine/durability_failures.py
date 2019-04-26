@@ -147,7 +147,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
             target_vbuckets += cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
@@ -245,7 +245,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(shell_conn)
-        error_sim = CouchbaseError(shell_conn)
+        error_sim = CouchbaseError(self.log, shell_conn)
 
         self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
 
@@ -356,7 +356,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(shell_conn)
-        error_sim = CouchbaseError(shell_conn)
+        error_sim = CouchbaseError(self.log, shell_conn)
         vb_info = dict()
         doc_errors = dict()
 
@@ -499,7 +499,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
             target_vbuckets += cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
@@ -589,7 +589,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(shell_conn)
-        error_sim = CouchbaseError(shell_conn)
+        error_sim = CouchbaseError(self.log, shell_conn)
 
         self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
 
@@ -712,7 +712,7 @@ class TimeoutTests(DurabilityTestsBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.durability_timeout
@@ -807,7 +807,7 @@ class TimeoutTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(shell_conn)
-        error_sim = CouchbaseError(shell_conn)
+        error_sim = CouchbaseError(self.log, shell_conn)
         vb_info = dict()
 
         self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
@@ -913,7 +913,7 @@ class TimeoutTests(DurabilityTestsBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.durability_timeout
@@ -1040,7 +1040,7 @@ class TimeoutTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(shell_conn)
-        error_sim = CouchbaseError(shell_conn)
+        error_sim = CouchbaseError(self.log, shell_conn)
         vb_info = dict()
 
         self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"

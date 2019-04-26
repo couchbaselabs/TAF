@@ -2373,11 +2373,12 @@ class MonitorDBFragmentationTask(Task):
 
 
 class AutoFailoverNodesFailureTask(Task):
-    def __init__(self, task_manager, master, servers_to_fail, failure_type, timeout,
-                 pause=0, expect_auto_failover=True, timeout_buffer=3,
+    def __init__(self, task_manager, master, servers_to_fail, failure_type,
+                 timeout, pause=0, expect_auto_failover=True, timeout_buffer=3,
                  check_for_failover=True, failure_timers=None,
                  disk_timeout=0, disk_location=None, disk_size=200):
-        super(AutoFailoverNodesFailureTask, self).__init__("AutoFailoverNodesFailureTask")
+        super(AutoFailoverNodesFailureTask, self) \
+            .__init__("AutoFailoverNodesFailureTask")
         self.task_manager = task_manager
         self.master = master
         self.servers_to_fail = servers_to_fail

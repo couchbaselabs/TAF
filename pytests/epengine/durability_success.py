@@ -1,6 +1,7 @@
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
+from error_simulation.disk_error import DiskError
 from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
 
@@ -24,21 +25,35 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         shell_conn = dict()
         cbstat_obj = dict()
         vb_info = dict()
+        vb_info["init"] = dict()
+        vb_info["afterCrud"] = dict()
 
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
-            vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
                 self.bucket.name)
 
-        # Perform specified action
-        error_sim = CouchbaseError(shell_conn)
-        error_sim.create(self.simulate_error, bucket_name=self.bucket.name)
+        if self.simulate_error \
+                in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:
+            error_sim = DiskError(self.log, self.task_manager,
+                                  self.cluster.master, target_nodes,
+                                  60, 0, False, 120,
+                                  disk_location="/data")
+            error_sim.create(action=self.simulate_error)
+        else:
+            for node in target_nodes:
+                # Create shell_connections
+                shell_conn = RemoteMachineShellConnection(node)
 
-        # Disconnect the shell connection
-        shell_conn.disconnect()
+                # Perform specified action
+                error_sim = CouchbaseError(self.log, shell_conn)
+                error_sim.create(self.simulate_error,
+                                 bucket_name=self.bucket.name)
+
+                # Disconnect the shell connection
+                shell_conn.disconnect()
 
         # Perform CRUDs with induced error scenario is active
         tasks = list()
@@ -78,6 +93,9 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Wait for document_loader tasks to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+            # Verify there is not failed docs in the task
+            if len(task.fail.keys) != 0:
+                self.fail("Some CRUD failed for {0}".format(task.fail))
 
         # Fetch latest failover stats and validate the values are updated
         for node in target_nodes:

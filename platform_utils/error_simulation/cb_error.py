@@ -1,20 +1,18 @@
-import logger
 from cb_tools.cbepctl import Cbepctl
 
-log = logger.Logger.get_logger()
 
-
-class CouchbaseError(object):
+class CouchbaseError:
     # Constants used within this class
     STOP_BEAMSMP = "stop_beam.smp"
     STOP_MEMCACHED = "stop_memcached"
-    STOP_PERSISTENCE = "start_persistence"
+    STOP_PERSISTENCE = "stop_persistence"
     STOP_SERVER = "stop_server"
 
     KILL_MEMCACHED = "kill_memcached"
     KILL_BEAMSMP = "kill_beam.smp"
 
-    def __init__(self, shell_conn):
+    def __init__(self, logger, shell_conn):
+        self.log = logger
         self.shell_conn = shell_conn
 
     def __handle_shell_error(self, error):
@@ -54,7 +52,7 @@ class CouchbaseError(object):
             cbepctl_obj = Cbepctl(self.shell_conn)
             cbepctl_obj.persistence(bucket_name, "stop")
         else:
-            log.error("Unsupported action: '{0}'".format(action))
+            self.log.error("Unsupported action: '{0}'".format(action))
 
     def revert(self, action=None, bucket_name="default"):
         if action == CouchbaseError.STOP_MEMCACHED:
@@ -70,4 +68,4 @@ class CouchbaseError(object):
             cbepctl_obj = Cbepctl(self.shell_conn)
             cbepctl_obj.persistence(bucket_name, "start")
         else:
-            log.error("Unsupported action to revert: '{0}'".format(action))
+            self.log.error("Unsupported action to revert: '{0}'".format(action))
