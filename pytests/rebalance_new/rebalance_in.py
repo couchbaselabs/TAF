@@ -590,7 +590,7 @@ class RebalanceInTests(RebalanceBaseTest):
             timeout = max(self.wait_timeout * 4, len(self.bucket_util.buckets) * self.wait_timeout * self.num_items / 50000)
 
         for task in tasks:
-            self.task_manager.get_task_result(task)
+            self.task.jython_task_manager.get_task_result(task)
 
         for bucket in self.bucket_util.buckets:
             for view in views:
@@ -601,7 +601,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.servers[:self.nodes_init], "indexer",
             "_design/" + prefix + ddoc_name, wait_task=False)
         for active_task in active_tasks:
-            result = self.task_manager.get_task_result(active_task)
+            result = self.task.jython_task_manager.get_task_result(active_task)
             self.assertTrue(result)
 
         expected_rows = self.num_items
@@ -674,7 +674,7 @@ class RebalanceInTests(RebalanceBaseTest):
         tasks = []
         tasks = self.bucket_util.async_create_views(self.cluster.master, prefix + ddoc_name, views, 'default')
         for task in tasks:
-            self.task_manager.get_task_result(task)
+            self.task.jython_task_manager.get_task_result(task)
         for view in views:
             # run queries to create indexes
             self.bucket_util.query_view(self.cluster.master, prefix + ddoc_name, view.name, query)
@@ -702,7 +702,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
                                                     query, wait_time=timeout, expected_rows=expected_rows)
             # verify view queries results after rebalancing
-            self.task.jython_task_manager.get_task_result(rebalance)
+            self.task_manager.get_task_result(rebalance)
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
             self.sleep(60)
             self.bucket_util.perform_verify_queries(num_views, prefix, ddoc_name, self.default_view_name,
@@ -776,7 +776,7 @@ class RebalanceInTests(RebalanceBaseTest):
         ddoc_name = "ddoc1"
         prefix = ("", "dev_")[is_dev_ddoc]
 
-        query = {}
+        query = dict()
         query["connectionTimeout"] = 60000
         query["full_set"] = "true"
 
@@ -785,11 +785,10 @@ class RebalanceInTests(RebalanceBaseTest):
             expected_rows = self.max_verify
             query["limit"] = expected_rows
 
-        tasks = []
         tasks = self.bucket_util.async_create_views(
             self.cluster.master, prefix + ddoc_name, views, 'default')
         for task in tasks:
-            self.task_manager.get_task_result(task)
+            self.task.jython_task_manager.get_task_result(task)
         self.bucket_util.disable_compaction()
         fragmentation_monitor = self.cluster.async_monitor_view_fragmentation(
             self.cluster.master, prefix + ddoc_name, fragmentation_value,

@@ -67,9 +67,9 @@ Parameters:
 
 class bucket_utils():
 
-    def __init__(self, cluster, cluster_util):
+    def __init__(self, cluster, cluster_util, server_task):
         self.cluster = cluster
-        self.task = ServerTasks()
+        self.task = server_task
         self.task_manager = self.task.jython_task_manager
         self.cluster_util = cluster_util
         self.buckets = []
