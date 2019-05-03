@@ -13,6 +13,7 @@ from memcached.helper.data_helper import MemcachedClientHelper
 from membase.api.exception import RebalanceFailedException
 from remote.remote_util import RemoteMachineShellConnection
 from BucketLib.BucketOperations import BucketHelper
+from java.util.concurrent import ExecutionException
 
 
 class SwapRebalanceBase(BaseTestCase):
@@ -159,10 +160,11 @@ class SwapRebalanceBase(BaseTestCase):
             for loader in loaders:
                 self.task.jython_task_manager.stop_task(loader)
         for loader in loaders:
-            if do_stop:
-                self.task.jython_task_manager.get_task_result(loader)
-            else:
-                self.task.jython_task_manager.get_task_result(loader)
+            try:
+                self.task.jython_task_manager.get_task_result(
+                        loader)
+            except ExecutionException:
+                pass
 
     def create_buckets(self):
         if self.standard_buckets == 1:
@@ -672,7 +674,7 @@ class SwapRebalanceDurabilityTests(SwapRebalanceBase):
             bucket_helper = BucketHelper(self.cluster.master)
 
             # Recalculate replicate_to/persist_to as per new replica value
-            if self.self.durability_level is None:
+            if self.durability_level is None:
                 self.replicate_to = floor(self.replica_to_update/2) + 1
                 self.persist_to = floor(self.replica_to_update/2) + 2
 

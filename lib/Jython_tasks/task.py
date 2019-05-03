@@ -1270,10 +1270,11 @@ class ValidateDocumentsTask(GenericLoadingTask):
             if key in map:
                 expected_val = Json.loads(value)
                 actual_val = {}
-                if map[key][1] != 0:
-                    actual_val = Json.loads(map[key][2].toString())
-                elif map[key][2] != None:
-                    actual_val = map[key][2].toString()
+                if map[key]['cas'] != 0:
+                    actual_val = Json.loads(map[key][
+                                                'value'].toString())
+                elif map[key]['error'] is not None:
+                    actual_val = map[key]['error'].toString()
                 else:
                     missing_keys.append(key)
                     continue
