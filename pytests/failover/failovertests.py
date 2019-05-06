@@ -150,12 +150,16 @@ class FailoverTests(FailoverBaseTest):
         # which are going to be failed over
         vbucket_list = list()
         for target_node in self.chosen:
-            shell_conn = RemoteMachineShellConnection(target_node)
-            cb_stats = Cbstats(shell_conn)
-            vbuckets = cb_stats.vbucket_list(target_bucket.name,
-                                             self.target_vbucket_type)
-            shell_conn.disconnect()
-            vbucket_list += vbuckets
+            for server in self.servers:
+                if server.ip == target_node.ip:
+                    # Comment out the break once vbucket_list method is fixed
+                    break
+                    shell_conn = RemoteMachineShellConnection(server)
+                    cb_stats = Cbstats(shell_conn)
+                    vbuckets = cb_stats.vbucket_list(target_bucket.name,
+                                                     self.target_vbucket_type)
+                    shell_conn.disconnect()
+                    vbucket_list += vbuckets
 
         # Code to generate doc_loaders that will work on vbucket_type
         # based on targeted nodes. This will perform CRUD only on
@@ -589,9 +593,10 @@ class FailoverTests(FailoverBaseTest):
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, gen, op, 0, batch_size=20,
-                persist_to=self.persist_to, replicate_to=self.replicate_to,
-                pause_secs=5, timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries))
+                process_concurrency=1,
+                durability=self.durability_level, timeout_secs=self.sdk_timeout,
+                #durability_timeout=self.durability_timeout
+                ))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 

@@ -110,7 +110,7 @@ class Cbstats(CbCmdBase):
         output, error = self.get_stats(bucket_name, "all",
                                        field_to_grep=field_to_grep)
         if len(error) != 0:
-            raise("\n".join(error))
+            raise Exception("\n".join(error))
 
         pattern = "[ \t]*{0}[ \t]*:[ \t]+([0-9]+)".format(field_to_grep)
         regexp = re.compile(pattern)
@@ -147,7 +147,7 @@ class Cbstats(CbCmdBase):
                  bucket_name)
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
-            raise("\n".join(error))
+            raise Exception("\n".join(error))
 
         pattern = "[ \t]*vb_([0-9]+)[ \t]*:[ \t]+([a-zA-Z]+)"
         regexp = re.compile(pattern)
@@ -184,7 +184,7 @@ class Cbstats(CbCmdBase):
                                                vbucket_num,
                                                field_to_grep=field_to_grep)
         if len(error) != 0:
-            raise("\n".join(error))
+            raise Exception("\n".join(error))
 
         pattern = "[ \t]*vb_{0}:{1}:[ \t]*:[ \t]+([_0-9a-zA-Z:\-\,\[\]\. ]+)" \
                   .format(vbucket_num, field_to_grep)
@@ -230,7 +230,7 @@ class Cbstats(CbCmdBase):
 
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
-            raise("\n".join(error))
+            raise Exception("\n".join(error))
 
         pattern = "[ \t]*{0}[ \t]*:[ \t]+([a-zA-Z0-9]+)" \
                   .format(field_to_grep)
@@ -261,7 +261,7 @@ class Cbstats(CbCmdBase):
         stats = dict()
         output, error = self.get_stats(bucket_name, "vbucket-seqno")
         if len(error) != 0:
-            raise("\n".join(error))
+            raise Exception("\n".join(error))
 
         pattern = "[ \t]*vb_([0-9]+):([0-9a-zA-Z_]+):[ \t]+([0-9]+)"
         regexp = re.compile(pattern)
@@ -299,7 +299,7 @@ class Cbstats(CbCmdBase):
         stats = dict()
         output, error = self.get_stats(bucket_name, "failovers")
         if len(error) != 0:
-            raise("\n".join(error))
+            raise Exception("\n".join(error))
 
         pattern = "[ \t]vb_([0-9]+):([0-9A-Za-z:_]+):[ \t]+([0-9]+)"
         regexp = re.compile(pattern)
@@ -341,7 +341,7 @@ class Cbstats(CbCmdBase):
         def parse_failover_logs(output, error):
             is_ok = True
             if len(error) != 0:
-                raise("\n".join(error))
+                raise Exception("\n".join(error))
 
             pattern = "[ \t]vb_[0-9]+:{0}:[ \t]+([0-9]+)".format(field_to_grep)
             regexp = re.compile(pattern)
@@ -363,7 +363,7 @@ class Cbstats(CbCmdBase):
             try:
                 is_stat_ok = parse_failover_logs(output, error)
             except Exception as err:
-                raise(err)
+                raise Exception(err)
         else:
             for tem_vb in vbuckets_list:
                 output, error = self.get_vbucket_stats(
@@ -374,5 +374,5 @@ class Cbstats(CbCmdBase):
                     if not is_stat_ok:
                         break
                 except Exception as err:
-                    raise(err)
+                    raise Exception(err)
         return is_stat_ok
