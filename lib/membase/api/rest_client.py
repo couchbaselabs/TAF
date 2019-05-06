@@ -1049,16 +1049,19 @@ class RestConnection(object):
             else:
                 raise Exception("There is not zone with name: %s in cluster" % zone_name)
 
-        params = urllib.urlencode({'hostname': "{0}:{1}".format(remoteIp, port),
-                                   'user': user,
-                                   'password': password})
+        params = urllib.urlencode(
+            {'hostname': "http://{0}:{1}".format(remoteIp, port),
+             'user': user,
+             'password': password})
         if services != None:
             services = ','.join(services)
-            params = urllib.urlencode({'hostname': "{0}:{1}".format(remoteIp, port),
-                                   'user': user,
-                                   'password': password,
-                                   'services': services})
-        status, content, header = self._http_request(api, 'POST', params)
+            params = urllib.urlencode(
+                {'hostname': "http://{0}:{1}".format(remoteIp, port),
+                 'user': user,
+                 'password': password,
+                 'services': services})
+        status, content, header = self._http_request(api, 'POST',
+                                                     params)
         if status:
             json_parsed = json.loads(content)
             otpNodeId = json_parsed['otpNode']
