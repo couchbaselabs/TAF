@@ -218,6 +218,13 @@ class basic_ops(BaseTestCase):
         """
         doc_op = self.input.param("doc_op", None)
         def_bucket = self.bucket_util.buckets[0]
+        ignore_exceptions = list()
+        retry_exceptions = list()
+
+        if self.durability_level:
+            pass
+            #ignore_exceptions.append(
+            #    "com.couchbase.client.core.error.RequestTimeoutException")
 
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
@@ -239,6 +246,21 @@ class basic_ops(BaseTestCase):
         self.task.jython_task_manager.get_task_result(task)
         print_ops_task.end_task()
         self.task_manager.get_task_result(print_ops_task)
+
+        # Retry doc_exception code
+        doc_op_info_dict = dict()
+        doc_op_info_dict[task] = self.bucket_util.get_doc_op_info_dict(
+            def_bucket, "create", exp=0, replicate_to=self.replicate_to,
+            persist_to=self.persist_to, durability=self.durability_level,
+            timeout=self.sdk_timeout, time_unit="seconds",
+            ignore_exceptions=ignore_exceptions,
+            retry_exceptions=retry_exceptions)
+        self.bucket_util.verify_doc_op_task_exceptions(doc_op_info_dict,
+                                                       self.cluster)
+
+        if len(doc_op_info_dict[task]["unwanted"]["fail"].keys()) != 0:
+            self.fail("Failures in retry doc CRUDs: {0}"
+                      .format(doc_op_info_dict[task]["unwanted"]["fail"]))
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()

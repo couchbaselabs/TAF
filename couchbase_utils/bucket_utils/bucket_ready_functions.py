@@ -519,75 +519,99 @@ class bucket_utils():
             compression=compression,
             process_concurrency=process_concurrency, retries=retries)
 
-    def load_bucket_exceptions(self, cluster, bucket, generator, op_type,
-                               exp=0, flag=0, persist_to=0, replicate_to=0,
-                               only_store_hash=True, batch_size=1,
-                               pause_secs=1, timeout_secs=5, compression=True,
-                               durability="", process_concurrency=8, retries=5,
-                               ignore_exceptions=[], retry_exceptions=[],
-                               force_retry=False):
+    def get_doc_op_info_dict(self, bucket, op_type, exp=0, replicate_to=0,
+                             persist_to=0, durability="",
+                             timeout=5, time_unit="seconds",
+                             ignore_exceptions=[], retry_exceptions=[]):
+        info_dict = dict()
+        info_dict["bucket"] = bucket
+        info_dict["op_type"] = op_type
+        info_dict["exp"] = exp
+        info_dict["replicate_to"] = replicate_to
+        info_dict["persist_to"] = persist_to
+        info_dict["durability"] = durability
+        info_dict["timeout"] = timeout
+        info_dict["time_unit"] = time_unit
+        info_dict["ignore_exceptions"] = ignore_exceptions
+        info_dict["retry_exceptions"] = retry_exceptions
+        info_dict["retried"] = {"success": dict(), "fail": dict()}
+        info_dict["unwanted"] = {"success": dict(), "fail": dict()}
 
-        loader_task = self.task.async_load_gen_docs(
-            cluster, bucket, generator, op_type, exp=exp, flag=flag,
-            persist_to=persist_to, replicate_to=replicate_to,
-            only_store_hash=only_store_hash, batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs,
-            compression=compression,
-            process_concurrency=process_concurrency, retries=retries,
-            durability=durability)
-        self.task_manager.get_task_result(loader_task)
+        return info_dict
 
-        retried_exceptions = {"success": dict(), "fail": dict()}
-        unwanted_exceptions = {"success": dict(), "fail": dict()}
+    def verify_doc_op_task_exceptions(self, tasks_info, cluster,
+                                      force_retry=False):
+        """
+        :param tasks_info:  dict() of dict() of form,
+                            tasks_info[task_obj] = get_doc_op_info_dict()
+        :param cluster:     Cluster object
+        :param force_retry: Boolean
 
-        client = None
-        if force_retry:
-            client = SDKClient(RestConnection(cluster.master),
-                               bucket)
-            for key, failed_doc in loader_task.fail.items():
-                result = client.crud(
-                    "create", key, failed_doc["value"], exp=exp,
-                    replicate_to=replicate_to, persist_to=persist_to,
-                    durability=durability,
-                    timeout=timeout_secs, time_unit="seconds")
-                if result["status"]:
-                    retried_exceptions["success"].update({key: failed_doc})
-                else:
-                    retried_exceptions["fail"].update({key: failed_doc})
-        else:
-            if retry_exceptions:
+        :return: tasks_info dictionary updated with retried/unwanted docs
+        """
+        for task, task_info in tasks_info.items():
+            self.task_manager.get_task_result(task)
+
+            client = None
+            if force_retry:
                 client = SDKClient(RestConnection(cluster.master),
-                                   bucket)
-            for key, failed_doc in loader_task.fail.items():
-                found = False
-                exception = failed_doc["error"]
+                                   tasks_info["bucket"])
+                for key, failed_doc in task.fail.items():
+                    result = client.crud(
+                        task_info["op_type"], key, failed_doc["value"],
+                        exp=task_info["exp"],
+                        replicate_to=task_info["replicate_to"],
+                        persist_to=task_info["persist_to"],
+                        durability=task_info["durability"],
+                        timeout=task_info["timeout"],
+                        time_unit=task_info["time_unit"])
+                    if result["status"]:
+                        tasks_info[task]["retried"]["success"] \
+                            .update({key: failed_doc})
+                    else:
+                        tasks_info[task]["retried"]["fail"] \
+                            .update({key: failed_doc})
+            else:
+                if task_info["retry_exceptions"]:
+                    client = SDKClient(RestConnection(cluster.master),
+                                       task_info["bucket"])
+                for key, failed_doc in task.fail.items():
+                    found = False
+                    exception = failed_doc["error"]
+                    key_value = {key: failed_doc}
 
-                for ex in ignore_exceptions:
-                    msg = exception.getMessage()
-                    if msg.find(ex) != -1:
-                        found = True
-                        break
+                    for ex in task_info["ignore_exceptions"]:
+                        if str(exception).find(ex) != -1:
+                            found = True
+                            break
 
-                for ex in retry_exceptions:
-                    if exception.find(ex) != -1:
-                        found = True
-                        result = client.crud(
-                            "create", key, failed_doc["value"], exp=exp,
-                            replicate_to=replicate_to, persist_to=persist_to,
-                            durability=durability,
-                            timeout=timeout_secs, time_unit="seconds")
-                        if result["status"]:
-                            retried_exceptions["success"].update(
-                                {key: failed_doc})
-                        else:
-                            retried_exceptions["fail"].update({key: failed_doc})
-                        break
-                if not found:
-                    unwanted_exceptions["fail"].update({key: failed_doc})
-        if client:
-            client.close()
+                    for ex in task_info["retry_exceptions"]:
+                        if str(exception).find(ex) != -1:
+                            found = True
+                            result = client.crud(
+                                task_info["op_type"], key, failed_doc["value"],
+                                exp=task_info["exp"],
+                                replicate_to=task_info["replicate_to"],
+                                persist_to=task_info["persist_to"],
+                                durability=task_info["durability"],
+                                timeout=task_info["timeout"],
+                                time_unit=task_info["time_unit"])
+                            if result["status"]:
+                                tasks_info[task]["retried"]["success"] \
+                                    .update(key_value)
+                            else:
+                                tasks_info[task]["retried"]["fail"] \
+                                    .update(key_value)
+                            break
+                    if not found:
+                        tasks_info[task]["unwanted"]["fail"] \
+                            .update(key_value)
 
-        return unwanted_exceptions, retried_exceptions
+            # Close client for this task
+            if client:
+                client.close()
+
+        return tasks_info
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,
