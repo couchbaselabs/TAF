@@ -6,20 +6,13 @@ import traceback
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from membase.api.rest_client import RestHelper, RestConnection
-from membase.helper.cluster_helper import ClusterOperationHelper
-from membase.helper.rebalance_helper import RebalanceHelper
-# from couchbase_helper.data_analysis_helper import *
-# from security.rbac_base import RbacBase
-import testconstants
 from scripts.collect_server_info import cbcollectRunner
 from bucket_utils.bucket_ready_functions import bucket_utils
 from cluster_utils.cluster_ready_functions import cluster_utils
 from cluster_utils.cluster_ready_functions import CBCluster
-from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 import time
-import os
 
 log = logging.getLogger()
 
@@ -50,6 +43,7 @@ class BaseTestCase(unittest.TestCase):
                                         self.task)
         self.cleanup = False
         self.nonroot = False
+        self.test_failures = list()
         shell = RemoteMachineShellConnection(self.cluster.master)
         self.os_info = shell.extract_remote_info().type.lower()
         if self.os_info != 'windows':
@@ -312,6 +306,10 @@ class BaseTestCase(unittest.TestCase):
     def sleep(self, timeout=15, message=""):
         log.info("sleep for {0} secs. {1} ...".format(timeout, message))
         time.sleep(timeout)
+
+    def set_failure(self, message):
+        self.log.error(message)
+        self.test_failures.append(message)
 
     def _initialize_nodes(self, cluster, servers, disabled_consistent_view=None, rebalanceIndexWaitingDisabled=None,
                           rebalanceIndexPausingDisabled=None, maxParallelIndexers=None, maxParallelReplicaIndexers=None,
