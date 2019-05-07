@@ -536,80 +536,57 @@ class bucket_utils():
         info_dict["retry_exceptions"] = retry_exceptions
         info_dict["retried"] = {"success": dict(), "fail": dict()}
         info_dict["unwanted"] = {"success": dict(), "fail": dict()}
+        info_dict["ignored"] = dict()
 
         return info_dict
 
-    def verify_doc_op_task_exceptions(self, tasks_info, cluster,
-                                      force_retry=False):
+    def verify_doc_op_task_exceptions(self, tasks_info, cluster):
         """
         :param tasks_info:  dict() of dict() of form,
                             tasks_info[task_obj] = get_doc_op_info_dict()
         :param cluster:     Cluster object
-        :param force_retry: Boolean
-
         :return: tasks_info dictionary updated with retried/unwanted docs
         """
         for task, task_info in tasks_info.items():
             self.task_manager.get_task_result(task)
 
-            client = None
-            if force_retry:
-                client = SDKClient(RestConnection(cluster.master),
-                                   tasks_info["bucket"])
-                for key, failed_doc in task.fail.items():
-                    result = client.crud(
-                        task_info["op_type"], key, failed_doc["value"],
-                        exp=task_info["exp"],
-                        replicate_to=task_info["replicate_to"],
-                        persist_to=task_info["persist_to"],
-                        durability=task_info["durability"],
-                        timeout=task_info["timeout"],
-                        time_unit=task_info["time_unit"])
-                    if result["status"]:
-                        tasks_info[task]["retried"]["success"] \
-                            .update({key: failed_doc})
-                    else:
-                        tasks_info[task]["retried"]["fail"] \
-                            .update({key: failed_doc})
-            else:
-                if task_info["retry_exceptions"]:
-                    client = SDKClient(RestConnection(cluster.master),
-                                       task_info["bucket"])
-                for key, failed_doc in task.fail.items():
-                    found = False
-                    exception = failed_doc["error"]
-                    key_value = {key: failed_doc}
+            client = SDKClient(RestConnection(cluster.master),
+                               task_info["bucket"])
+            for key, failed_doc in task.fail.items():
+                found = False
+                exception = failed_doc["error"]
+                key_value = {key: failed_doc}
 
-                    for ex in task_info["ignore_exceptions"]:
-                        if str(exception).find(ex) != -1:
-                            found = True
-                            break
+                for ex in task_info["ignore_exceptions"]:
+                    if str(exception).find(ex) != -1:
+                        tasks_info[task]["ignored"].update(key_value)
+                        found = True
+                        break
+                if found:
+                    continue
 
-                    for ex in task_info["retry_exceptions"]:
-                        if str(exception).find(ex) != -1:
-                            found = True
-                            result = client.crud(
-                                task_info["op_type"], key, failed_doc["value"],
-                                exp=task_info["exp"],
-                                replicate_to=task_info["replicate_to"],
-                                persist_to=task_info["persist_to"],
-                                durability=task_info["durability"],
-                                timeout=task_info["timeout"],
-                                time_unit=task_info["time_unit"])
-                            if result["status"]:
-                                tasks_info[task]["retried"]["success"] \
-                                    .update(key_value)
-                            else:
-                                tasks_info[task]["retried"]["fail"] \
-                                    .update(key_value)
-                            break
-                    if not found:
-                        tasks_info[task]["unwanted"]["fail"] \
-                            .update(key_value)
+                result = client.crud(
+                    task_info["op_type"], key, failed_doc["value"],
+                    exp=task_info["exp"],
+                    replicate_to=task_info["replicate_to"],
+                    persist_to=task_info["persist_to"],
+                    durability=task_info["durability"],
+                    timeout=task_info["timeout"],
+                    time_unit=task_info["time_unit"])
 
+                dict_key = "unwanted"
+                for ex in task_info["retry_exceptions"]:
+                    if str(exception).find(ex) != -1:
+                        dict_key = "retried"
+                        found = True
+                        break
+
+                if result["status"]:
+                    tasks_info[task][dict_key]["success"].update(key_value)
+                else:
+                    tasks_info[task][dict_key]["fail"].update(key_value)
             # Close client for this task
-            if client:
-                client.close()
+            client.close()
 
         return tasks_info
 
