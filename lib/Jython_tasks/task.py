@@ -477,7 +477,7 @@ class GenericLoadingTask(Task):
         success = dict()
         fail = dict()
         try:
-            self._process_values_for_create(key_val)
+            self._process_values_for_update(key_val)
             client = self.client or shared_client
             retry_docs = key_val
             success, fail = client.upsertMulti(
