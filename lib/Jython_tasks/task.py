@@ -624,7 +624,7 @@ class LoadDocumentsTask(GenericLoadingTask):
 
 class Durability(Task):
     instances = 1
-    count = None
+    majority = None
     write_offset = []
     create_failed = []
     update_failed = []
@@ -644,7 +644,7 @@ class Durability(Task):
                  retries=5, durability="", majority_value=0):
 
         super(Durability, self).__init__("DurabilityDocumentsMainTask")
-        Durability.count = majority_value
+        Durability.majority = majority_value
         for _ in range(process_concurrency):
             Durability.write_offset.append(0)
             Durability.create_failed.append({})
@@ -760,6 +760,7 @@ class Durability(Task):
             self.time_unit = time_unit
             self.instance = instance_num
             self.durability = durability
+            self.bucket = bucket
             self.tasks = []
             Durability.write_offset[self.instance] = generator._doc_gen.start
             log.info("Docs start loading from {0}"
@@ -770,6 +771,7 @@ class Durability(Task):
         def call(self):
             self.start_task()
             reader_task = self.Reader(
+                self.bucket,
                 generator=self.generator,
                 op_type=self.op_type,
                 write_offset=Durability.write_offset[self.instance],
@@ -829,8 +831,9 @@ class Durability(Task):
             Durability.write_offset[self.instance] += len(key_value)
 
         class Reader(Task):
-            def __init__(self, generator, op_type, write_offset, instance, client):
+            def __init__(self, bucket, generator, op_type, write_offset, instance, client):
                 self.thread_name = "DurabilityDocumentReaderTask" + str(instance)
+                self.bucket = bucket
                 self.op_type = op_type
                 self.generator = copy.deepcopy(generator)
                 self.start = self.generator._doc_gen.start
@@ -856,13 +859,13 @@ class Durability(Task):
                             if self.op_type == 'create':
                                 result = self.client.getFromReplica(key, ReplicaMode.ALL)
                                 if key not in Durability.create_failed[self.instance].keys():
-                                    if len(result) != Durability.count:
+                                    if len(result) < Durability.majority:
                                         Durability.sdk_acked_curd_failed.update({key: val})
-                                        log.info("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
+                                        log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
                                                  (key,
                                                   result))
-                                elif len(result) > 0 and len(result) < Durability.count:
-                                    log.info("SDK threw exception but document is present in the Server -> %s:%s"%
+                                elif len(result) > 0:
+                                    log.error("SDK threw exception but document is present in the Server -> %s:%s"%
                                              (key,
                                               result))
                                     Durability.sdk_exception_crud_succeed.update({key: val})
@@ -871,39 +874,39 @@ class Durability(Task):
                             if self.op_type == 'update':
                                 result = self.client.getFromReplica(key, ReplicaMode.ALL)
                                 if key not in Durability.update_failed[self.instance].keys():
-                                    if len(result) <= Durability.count:
+                                    if len(result) < Durability.majority:
                                         Durability.sdk_acked_curd_failed.update({key: val})
-                                        log.info("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
+                                        log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
                                                  (key,
                                                   result))
-                                    elif len(result) >= Durability.count:
+                                    elif len(result) >= Durability.majority:
                                         temp_count = 0
                                         for doc in result:
                                             if doc["value"] == Durability.docs_to_be_updated[self.instance][key][2]:
                                                 Durability.sdk_acked_curd_failed.update({key: val})
-                                                log.info("Doc content is not updated although SDK reports Durable, Key = %s getfromReplica = %s"%
+                                                log.error("Doc content is not updated although SDK reports Durable, Key = %s getfromReplica = %s"%
                                                          (key,
                                                           result))
                                             else:
                                                 temp_count += 1
-                                        if temp_count < Durability.count:
+                                        if temp_count < Durability.majority:
                                             Durability.sdk_acked_curd_failed.update({key: val})
                                 else:
                                     for doc in result:
                                         if doc["value"] != Durability.docs_to_be_updated[self.instance][key][2]:
                                             Durability.sdk_exception_crud_succeed.update({key: val})
-                                            log.info("Doc content is updated although SDK threw exception, Key = %s getfromReplica = %s"%
+                                            log.error("Doc content is updated although SDK threw exception, Key = %s getfromReplica = %s"%
                                                      (key,
                                                       result))
                             if self.op_type == 'delete':
                                 result = self.client.getFromReplica(key, ReplicaMode.ALL)
                                 if key not in Durability.delete_failed[self.instance].keys():
-                                    if len(result) > 0 and len(result) < Durability.count:
+                                    if len(result) > (self.bucket.replicas+1 - Durability.majority):
                                         Durability.sdk_acked_curd_failed.update(result[0])
-                                        log.info("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
+                                        log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
                                                  (key,
                                                   result))
-                                elif len(result) >= Durability.count:
+                                elif len(result) >= Durability.majority:
                                     log.info("Document is rolled back to original during delete -> %s:%s"%(key,result))
                         if self.read_offset == self.end:
                             log.info("BREAKING!!")
