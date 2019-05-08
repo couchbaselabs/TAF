@@ -33,7 +33,8 @@ class RebalanceBaseTest(BaseTestCase):
                 self.cluster, bucket, gen_create, "create", 0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 batch_size=10, timeout_secs=self.sdk_timeout,
-                process_concurrency=8, retries=self.sdk_retries)
+                process_concurrency=8, retries=self.sdk_retries,
+                durability=self.durability_level)
             self.task.jython_task_manager.get_task_result(task)
             self.sleep(20)
             current_item = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)

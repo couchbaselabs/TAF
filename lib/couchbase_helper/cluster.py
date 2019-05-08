@@ -220,7 +220,7 @@ class ServerTasks(object):
                                     batch_size=1, pause_secs=1,
                                     timeout_secs=5, compression=True,
                                     process_concurrency=1, retries=5,
-                                    durability="", replicas=0):
+                                    durability=""):
 
         log.info("Loading documents to {}".format(bucket.name))
         clients = []
@@ -231,6 +231,8 @@ class ServerTasks(object):
             client = VBucketAwareMemcached(RestConnection(cluster.master),
                                            bucket)
             clients.append(client)
+
+        majority_value = (bucket.replicaNumber + 1)/2 + 1
         _task = jython_tasks.Durability(
             cluster, self.jython_task_manager, bucket, clients, generator,
             op_type, exp, flag=flag, persist_to=persist_to,
@@ -238,7 +240,7 @@ class ServerTasks(object):
             batch_size=batch_size, pause_secs=pause_secs,
             timeout_secs=timeout_secs, compression=compression,
             process_concurrency=process_concurrency, retries=retries,
-            durability=durability, replicas=replicas)
+            durability=durability, majority_value=majority_value)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

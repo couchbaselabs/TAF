@@ -901,7 +901,7 @@ class Durability(Task):
                             if self.op_type == 'delete':
                                 result = self.client.getFromReplica(key, ReplicaMode.ALL)
                                 if key not in Durability.delete_failed[self.instance].keys():
-                                    if len(result) > (self.bucket.replicas+1 - Durability.majority):
+                                    if len(result) > (self.bucket.replicaNumber+1 - Durability.majority):
                                         Durability.sdk_acked_curd_failed.update(result[0])
                                         log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
                                                  (key,

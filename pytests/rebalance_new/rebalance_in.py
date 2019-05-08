@@ -4,6 +4,7 @@ from membase.api.exception import RebalanceFailedException
 from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
+import Jython_tasks.task as jython_tasks
 
 
 class RebalanceInTests(RebalanceBaseTest):
@@ -25,26 +26,36 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             if(self.doc_ops is not None):
                 if("update" in self.doc_ops):
-                    tasks.append(self.task.async_load_gen_docs_durable(self.cluster, bucket, self.gen_update, "update", 0,
-                                                               batch_size=1, persist_to=self.persist_to,
-                                                               replicate_to=self.replicate_to,
-                                                               pause_secs=5, timeout_secs=self.sdk_timeout,
-                                                               retries=self.sdk_retries))
+                    tasks.append(self.task.async_load_gen_docs_durable(
+                        self.cluster, bucket, self.gen_update, "create", 0,
+                        batch_size=10, process_concurrency=4,
+                        replicate_to=self.replicate_to, persist_to=self.persist_to,
+                        timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                        durability="majority"))
                 if("create" in self.doc_ops):
-                    tasks.append(self.task.async_load_gen_docs_durable(self.cluster, bucket, gen_create, "create", 0,
-                                                               batch_size=1, persist_to=self.persist_to,
-                                                               replicate_to=self.replicate_to,
-                                                               pause_secs=5, timeout_secs=self.sdk_timeout,
-                                                               process_concurrency=1,
-                                                               retries=self.sdk_retries))
+                    tasks.append(self.task.async_load_gen_docs_durable(
+                        self.cluster, bucket, gen_create, "create", 0,
+                        batch_size=10, process_concurrency=4,
+                        replicate_to=self.replicate_to, persist_to=self.persist_to,
+                        timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                        durability="majority"))
                 if("delete" in self.doc_ops):
-                    tasks.append(self.task.async_load_gen_docs_durable(self.cluster, bucket, gen_delete, "delete", 0,
-                                                               batch_size=1, persist_to=self.persist_to,
-                                                               replicate_to=self.replicate_to,
-                                                               pause_secs=5, timeout_secs=self.sdk_timeout,
-                                                               retries=self.sdk_retries))
+                    tasks.append(self.task.async_load_gen_docs_durable(
+                        self.cluster, bucket, gen_delete, "delete", 0,
+                        batch_size=10, process_concurrency=4,
+                        replicate_to=self.replicate_to, persist_to=self.persist_to,
+                        timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                        durability="majority"))
         for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
+            self.task_manager.get_task_result(task)
+            if task.__class__ == Jython_tasks.Durability:
+                self.log.error(task.sdk_acked_curd_failed.keys())
+                self.log.error(task.sdk_exception_crud_succeed.keys())
+
+        for task in tasks:
+            if task.__class__ == jython_tasks.RebalanceTask:
+                self.assertTrue(task.result, "Rebalance Failed")
+
         self.cluster.nodes_in_cluster.extend(servs_in)
         self.sleep(60, "Wait for cluster to be ready after rebalance")
         tasks = []

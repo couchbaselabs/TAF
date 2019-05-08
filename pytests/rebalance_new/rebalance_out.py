@@ -5,7 +5,7 @@ from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
 from remote.remote_util import RemoteMachineShellConnection
-
+import Jython_tasks.task as jython_tasks
 
 class RebalanceOutTests(RebalanceBaseTest):
     def setUp(self):
@@ -13,6 +13,50 @@ class RebalanceOutTests(RebalanceBaseTest):
 
     def tearDown(self):
         super(RebalanceOutTests, self).tearDown()
+
+    def test_rebalance_out_with_ops_durable(self):
+        age = range(5)
+        first = ['james', 'sharon']
+        template = '{{ "age": {0}, "first_name": "{1}" }}'
+        gen_create = DocumentGenerator('test_docs', template, age, first, start=self.num_items,
+                                       end=self.num_items * 2)
+        gen_delete = DocumentGenerator('test_docs', template, age, first, start=self.num_items / 2, end=self.num_items)
+        servs_out = [self.cluster.servers[len(self.cluster.nodes_in_cluster) - i - 1] for i in range(self.nodes_out)]
+        tasks = []
+        task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], servs_out)
+        tasks.append(task)
+        for bucket in self.bucket_util.buckets:
+            if(self.doc_ops is not None):
+                if("update" in self.doc_ops):
+                    tasks.append(self.task.async_load_gen_docs_durable(
+                        self.cluster, bucket, self.gen_update, "create", 0,
+                        batch_size=10, process_concurrency=1,
+                        replicate_to=self.replicate_to, persist_to=self.persist_to,
+                        timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                        durability="majority"))
+                if("create" in self.doc_ops):
+                    tasks.append(self.task.async_load_gen_docs_durable(
+                        self.cluster, bucket, gen_create, "create", 0,
+                        batch_size=10, process_concurrency=1,
+                        replicate_to=self.replicate_to, persist_to=self.persist_to,
+                        timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                        durability="majority"))
+                if("delete" in self.doc_ops):
+                    tasks.append(self.task.async_load_gen_docs_durable(
+                        self.cluster, bucket, gen_delete, "delete", 0,
+                        batch_size=10, process_concurrency=1,
+                        replicate_to=self.replicate_to, persist_to=self.persist_to,
+                        timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                        durability="majority"))
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+            if task.__class__ == jython_tasks.Durability:
+                self.log.error(task.sdk_acked_curd_failed.keys())
+                self.log.error(task.sdk_exception_crud_succeed.keys())
+
+        for task in tasks:
+            if task.__class__ == jython_tasks.RebalanceTask:
+                self.assertTrue(task.result, "Rebalance Failed")
 
     def rebalance_out_with_ops(self):
         age = range(5)
