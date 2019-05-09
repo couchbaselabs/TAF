@@ -18,6 +18,7 @@ import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.client.java.kv.InsertOptions;
 import com.couchbase.client.java.kv.MutationResult;
 import com.couchbase.client.java.kv.PersistTo;
+import com.couchbase.client.java.kv.RemoveOptions;
 import com.couchbase.client.java.kv.ReplicateTo;
 import com.couchbase.client.java.kv.UpsertOptions;
 
@@ -205,6 +206,69 @@ public class doc_ops {
 		return returnValue;
 	}
 
+	public List<HashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, final int persistTo, final int replicateTo,
+			final String durabilityLevel, final long timeOut, final String timeUnit) {
+		final RemoveOptions removeOptions = this.getRemoveOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		final ReactiveCollection reactiveCollection = collection.reactive();
+		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
+				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
+					public Publisher<HashMap<String, Object>> apply(String key){
+						final HashMap<String, Object> retVal = new HashMap<String, Object>();
+						retVal.put("id", key);
+						retVal.put("cas", 0);
+						retVal.put("error", null);
+						retVal.put("status", false);
+						return reactiveCollection.remove(key, removeOptions)
+								.map(new Function<MutationResult, HashMap<String, Object>>() {
+									public HashMap<String, Object> apply(MutationResult result){
+										retVal.put("cas", result.cas());
+										retVal.put("status", true);
+										return retVal;
+									}
+								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
+									public Mono<HashMap<String, Object>> apply(Throwable error) {
+										retVal.put("error", error);
+										return Mono.just(retVal);
+							}
+								}).defaultIfEmpty(retVal);
+					}
+				}).subscribeOn(Schedulers.parallel()).collectList().block();
+		return returnValue;
+
+	}
+
+
+	public List<HashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, final PersistTo persistTo, final ReplicateTo replicateTo,
+			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
+		final RemoveOptions removeOptions = this.getRemoveOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		final ReactiveCollection reactiveCollection = collection.reactive();
+		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
+				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
+					public Publisher<HashMap<String, Object>> apply(String key){
+						final HashMap<String, Object> retVal = new HashMap<String, Object>();
+						retVal.put("id", key);
+						retVal.put("cas", 0);
+						retVal.put("error", null);
+						retVal.put("status", false);
+						return reactiveCollection.remove(key, removeOptions)
+								.map(new Function<MutationResult, HashMap<String, Object>>() {
+									public HashMap<String, Object> apply(MutationResult result){
+										retVal.put("cas", result.cas());
+										retVal.put("status", true);
+										return retVal;
+									}
+								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
+									public Mono<HashMap<String, Object>> apply(Throwable error) {
+										retVal.put("error", error);
+										return Mono.just(retVal);
+							}
+								}).defaultIfEmpty(retVal);
+					}
+				}).subscribeOn(Schedulers.parallel()).collectList().block();
+		return returnValue;
+	}
+
+
 	private InsertOptions getInsertOptions(long expiry, String expiryTimeUnit, int persistTo, int replicateTo,
 			long timeOut, String timeUnit, String durabilityLevel) {
 		PersistTo persistto = this.getPersistTo(persistTo);
@@ -214,9 +278,9 @@ public class doc_ops {
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
 
 		if (durabilitylevel != null) {
-			return InsertOptions.insertOptions().withDurabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
+			return InsertOptions.insertOptions().durabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
 		} else {
-			return InsertOptions.insertOptions().withDurability(persistto, replicateto).expiry(exp).timeout(timeout);
+			return InsertOptions.insertOptions().durability(persistto, replicateto).expiry(exp).timeout(timeout);
 		}
 	}
 
@@ -226,9 +290,9 @@ public class doc_ops {
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 
 		if (durabilityLevel != null) {
-			return InsertOptions.insertOptions().withDurabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
+			return InsertOptions.insertOptions().durabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
 		} else {
-			return InsertOptions.insertOptions().withDurability(persistTo, replicateTo).expiry(exp).timeout(timeout);
+			return InsertOptions.insertOptions().durability(persistTo, replicateTo).expiry(exp).timeout(timeout);
 		}
 	}
 
@@ -241,9 +305,9 @@ public class doc_ops {
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
 
 		if (durabilitylevel != null) {
-			return UpsertOptions.upsertOptions().withDurabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
+			return UpsertOptions.upsertOptions().durabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
 		} else {
-			return UpsertOptions.upsertOptions().withDurability(persistto, replicateto).expiry(exp).timeout(timeout);
+			return UpsertOptions.upsertOptions().durability(persistto, replicateto).expiry(exp).timeout(timeout);
 		}
 	}
 
@@ -253,9 +317,34 @@ public class doc_ops {
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 
 		if (durabilityLevel != null) {
-			return UpsertOptions.upsertOptions().withDurabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
+			return UpsertOptions.upsertOptions().durabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
 		} else {
-			return UpsertOptions.upsertOptions().withDurability(persistTo, replicateTo).expiry(exp).timeout(timeout);
+			return UpsertOptions.upsertOptions().durability(persistTo, replicateTo).expiry(exp).timeout(timeout);
+		}
+	}
+
+	private RemoveOptions getRemoveOptions(int persistTo, int replicateTo,
+			long timeOut, String timeUnit, String durabilityLevel) {
+		PersistTo persistto = this.getPersistTo(persistTo);
+		ReplicateTo replicateto = this.getReplicateTo(replicateTo);
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
+		if (durabilitylevel != null) {
+			return RemoveOptions.removeOptions().durabilityLevel(durabilitylevel).timeout(timeout);
+		}
+		else {
+			return RemoveOptions.removeOptions().durability(persistto, replicateto).timeout(timeout);
+		}
+	}
+
+	private RemoveOptions getRemoveOptions(PersistTo persistTo, ReplicateTo replicateTo,
+			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		if (durabilityLevel != null) {
+			return RemoveOptions.removeOptions().durabilityLevel(durabilityLevel).timeout(timeout);
+		}
+		else {
+			return RemoveOptions.removeOptions().durability(persistTo, replicateTo).timeout(timeout);
 		}
 	}
 
