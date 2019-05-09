@@ -160,7 +160,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         3. Using cbstats to verify the operation succeeds
         4. Validate all mutations are succeeded
 
-        Note: self.durability_timeout values is considered as 'seconds'
+        Note: self.sdk_timeout value is considered as 'seconds'
         """
         # Call the generic method for testing
         self.enable_error_scenario_and_test_durability()
@@ -175,7 +175,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         3. Using cbstats to verify the operation succeeds
         4. Validate all mutations are succeeded
 
-        Note: self.durability_timeout values is considered as 'seconds'
+        Note: self.sdk_timeout values is considered as 'seconds'
         """
         if self.num_replicas < 2:
             self.assertTrue(False, msg="Required: num_replicas > 1")
@@ -186,6 +186,71 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Call the generic method for testing
         self.enable_error_scenario_and_test_durability()
 
+    def test_non_overlapping_similar_crud(self):
+        """
+        Test to run non-overlapping durability cruds on single bucket
+        and make sure all CRUD operation succeeds
+
+        1. Run single task_1 with durability operation
+        2. Create parallel task to run either SyncWrite / Non-SyncWrite
+           operation based on the config param and run that over the docs
+           such that it will not overlap with other tasks
+        3. Make sure all CRUDs succeeded without any unexpected exceptions
+        """
+
+        doc_ops = self.input.param("doc_ops", "create")
+        doc_gen = dict()
+        half_of_num_items = int(self.num_items/2)
+
+        # Create required doc_generators for CRUD ops
+        read_gen = doc_generator(self.key, 0, self.num_items)
+        if doc_ops == "create":
+            doc_gen[0] = doc_generator(self.key, self.num_items,
+                                       self.num_items * 2)
+            doc_gen[1] = doc_generator(self.key, self.num_items * 2,
+                                       self.num_items * 3)
+            # Update expected self.num_items at the end of this op
+            self.num_items *= 3
+        elif doc_ops in ["update", "delete"]:
+            doc_gen[0] = doc_generator(self.key, 0, half_of_num_items)
+            doc_gen[1] = doc_generator(self.key, half_of_num_items,
+                                       self.num_items)
+
+            # Update expected self.num_items at the end of "delete" op
+            if doc_ops == "delete":
+                self.num_items = 0
+
+        tasks = list()
+        # Sync_Writes for doc_ops[0]
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, doc_gen[0], doc_ops, 0,
+            batch_size=10, process_concurrency=1,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout))
+
+        # Non_SyncWrites for doc_ops[1]
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, doc_gen[1], doc_ops, 0,
+            batch_size=10, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
+
+        # Generic reader task
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, read_gen, "read", 0,
+            batch_size=10, process_concurrency=1,
+            timeout_secs=self.sdk_timeout))
+
+        # Wait for all task to complete
+        for task in tasks:
+            # TODO: Receive failed docs and make sure only expected exceptions
+            #       are generated
+            self.task.jython_task_manager.get_task_result(task)
+
+        # Verify doc count and other stats
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
     def test_non_overlapping_parallel_cruds(self):
         """
         Test to run non-overlapping durability cruds on single bucket
@@ -194,39 +259,42 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         1. Run single task_1 with durability operation
         2. Create parallel task to run either SyncWrite / Non-SyncWrite
            operation based on the config param and run that over the docs
-           such that it will not overlap with the task_1
+           such that it will not overlap with the other tasks
         3. Make sure all CRUDs succeeded without any unexpected exceptions
         """
 
-        # Create required doc_generators for CRUD ops
+        doc_ops = self.input.param("doc_ops", "create;delete;update;read")
+        doc_ops = doc_ops.split(";")
         half_of_num_items = int(self.num_items/2)
-        gen_create = doc_generator(self.key, self.num_items, self.num_items*2)
-        gen_delete = doc_generator(self.key, 0, half_of_num_items)
-        gen_update = doc_generator(self.key, half_of_num_items,
-                                   self.num_items)
-
+        doc_gen = dict()
         tasks = list()
-        # Durability doc_loader for Create and Delete operations
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_create, "create", 0,
-            batch_size=10, process_concurrency=1,
-            durability=self.durability_level,
-            durability_timeout=self.durability_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_delete, "delete", 0,
-            batch_size=10, process_concurrency=1,
-            durability=self.durability_level,
-            durability_timeout=self.durability_timeout))
 
-        # Non-SyncWrites for Update and Read operations
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "update", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "read", 0,
-            batch_size=10, process_concurrency=1))
+        # Create required doc_generators for CRUD ops
+        doc_gen["create"] = doc_generator(self.key, self.num_items,
+                                          self.num_items * 2)
+        doc_gen["update"] = doc_generator(self.key, half_of_num_items,
+                                          self.num_items)
+        doc_gen["delete"] = doc_generator(self.key, 0, half_of_num_items)
+        doc_gen["read"] = doc_gen["update"]
+
+        for index in range(0, 4):
+            op_type = doc_ops[index]
+            doc_gen = doc_gen[op_type]
+
+            if index < 2:
+                # Durability doc_loader for first two ops specified in doc_ops
+                tasks.append(self.task.async_load_gen_docs(
+                    self.cluster, self.bucket, doc_gen, op_type, 0,
+                    batch_size=10, process_concurrency=1,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout))
+            else:
+                # Non-SyncWrites for last two ops specified in doc_ops
+                tasks.append(self.task.async_load_gen_docs(
+                    self.cluster, self.bucket, doc_gen, op_type, 0,
+                    batch_size=10, process_concurrency=1,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
 
         # Update num_items according to the CRUD operations
         self.num_items += self.num_items - half_of_num_items
@@ -235,7 +303,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         for task in tasks:
             # TODO: Receive failed docs and make sure only expected exceptions
             #       are generated
-            self.task_manager.jython_task_manager.get_task_result(task)
+            self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc count and other stats
         self.bucket_util._wait_for_stats_all_buckets()
