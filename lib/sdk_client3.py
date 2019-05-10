@@ -138,15 +138,14 @@ class SDKClient(object):
                            "error": str(e), "status": False})
         return result
 
-    def delete_multi(self, keys, quiet=True, persist_to=0, replicate_to=0):
-        try:
-            self.cb.remove_multi(keys, quiet, persist_to, replicate_to)
-        except CouchbaseException:
-            try:
-                time.sleep(10)
-                self.cb.remove_multi(keys, quiet, persist_to, replicate_to)
-            except CouchbaseException:
-                raise
+    def delete_multi(self, keys, persist_to=0,
+                     replicate_to=0, timeout=5, time_unit="seconds",
+                     durability=""):
+        result = doc_op().bulkDelete(self.collection, keys,
+                                     persist_to, replicate_to,
+                                     durability, timeout,
+                                     time_unit)
+        return result
 
     def insert(self, key, value, exp=0, exp_unit="seconds",
                persist_to=0, replicate_to=0,

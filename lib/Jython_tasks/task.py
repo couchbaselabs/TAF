@@ -505,21 +505,23 @@ class GenericLoadingTask(Task):
         return success, fail
 
     def batch_delete(self, key_val, shared_client=None, persist_to=None,
-                     replicate_to=None, timeout=None, timeunit=None):
-        cant_deleted = []
+                     replicate_to=None, timeout=None, timeunit=None,
+                     durability=""):
+        not_deleted = []
+        deleted = []
         self.client = self.client or shared_client
-        for key, _ in key_val.items():
-            try:
-                self.client.delete(key, persist_to=persist_to,
-                                   replicate_to=replicate_to,
-                                   timeout=timeout, timeunit=timeunit)
-            except Exception:
-                cant_deleted.append(key)
-                return
-            except (ServerUnavailableException, socket.error, EOFError,
-                    AttributeError) as error:
-                self.set_exception(error)
-        return cant_deleted
+        delete_result = self.client.delete_multi(key_val.keys(),
+                                                 persist_to=persist_to,
+                                                 replicate_to=replicate_to,
+                                                 timeout=timeout,
+                                                 time_unit=timeunit,
+                                                 durability=durability)
+        for result in delete_result:
+            if not result['status']:
+                not_deleted.append({result['id']: result['error']})
+            else:
+                deleted.append({result['id']: result['cas']})
+        return deleted, not_deleted
 
     def batch_read(self, keys, shared_client=None):
         self.client = self.client or shared_client
@@ -608,14 +610,24 @@ class LoadDocumentsTask(GenericLoadingTask):
             self.fail.update(fail)
             self.success.update(success)
         elif self.op_type == 'update':
-            success, fail = self.batch_update(key_value, persist_to=self.persist_to,
+            success, fail = self.batch_update(key_value,
+                                              persist_to=self.persist_to,
                                               replicate_to=self.replicate_to,
-                                              timeout=self.timeout, time_unit=self.time_unit,
-                                              doc_type=self.generator.doc_type)
+                                              timeout=self.timeout,
+                                              time_unit=self.time_unit,
+                                              doc_type=self.generator.doc_type,
+                                              durability=self.durability)
             self.fail.update(fail)
             self.success.update(success)
         elif self.op_type == 'delete':
-            self.batch_delete(key_value)
+            success, fail = self.batch_delete(key_value,
+                                              persist_to=self.persist_to,
+                                              replicate_to=self.replicate_to,
+                                              timeout=self.timeout,
+                                              timeunit=self.time_unit,
+                                              durability=self.durability)
+            self.fail.update(fail)
+            self.success.update(success)
         elif self.op_type == 'read':
             self.batch_read(key_value.keys())
         else:
@@ -822,8 +834,13 @@ class Durability(Task):
             elif self.op_type == 'delete':
                 self.docs_to_be_deleted.update(
                     self.batch_read(key_value.keys()))
-                self.delete_failed.update(
-                    self.batch_delete(key_value))
+                success, fail = self.batch_delete(key_value,
+                                                  persist_to=self.persist_to,
+                                                  replicate_to=self.replicate_to,
+                                                  timeout=self.timeout,
+                                                  timeunit=self.time_unit,
+                                                  durability=self.durability)
+                self.delete_failed.update(fail)
             else:
                 self.set_exception(Exception("Bad operation type: %s"
                                              % self.op_type))
@@ -3094,9 +3111,14 @@ class Atomicity(Task):
                 if op_type == "general_delete":
                     log.info("performing delete for keys {}".format(last_batch.keys()))
                     for self.client in Atomicity.clients:
-                        keys = self.batch_delete(last_batch, self.client)
-                        if keys:
-                            log.info("keys are not deleted {}".format(keys))
+                        success, fail = self.batch_delete(last_batch,
+                                                          persist_to=self.persist_to,
+                                                          replicate_to=self.replicate_to,
+                                                          timeout=self.timeout,
+                                                          timeunit=self.time_unit)
+                        if fail:
+                            log.info(
+                                "keys are not deleted {}".format(fail))
                     Atomicity.delete_keys = last_batch.keys()
 
                 if op_type == "create_delete":
