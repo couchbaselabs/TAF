@@ -623,18 +623,6 @@ class LoadDocumentsTask(GenericLoadingTask):
 
 
 class Durability(Task):
-    instances = 1
-    majority = None
-    write_offset = []
-    create_failed = []
-    update_failed = []
-    delete_failed = []
-    docs_to_be_updated = []
-    docs_to_be_deleted = []
-    sdk_acked_curd_failed = {}
-    sdk_exception_crud_succeed = {}
-    sdk_acked_pers_failed = {}
-    sdk_exception_pers_succeed = {}
 
     def __init__(self, cluster, task_manager, bucket, clients, generator,
                  op_type, exp, exp_unit="seconds", flag=0,
@@ -643,16 +631,15 @@ class Durability(Task):
                  compression=True, process_concurrency=8, print_ops_rate=True,
                  retries=5, durability="", majority_value=0):
 
-        super(Durability, self).__init__("DurabilityDocumentsMainTask")
-        Durability.majority = majority_value
-        for _ in range(process_concurrency):
-            Durability.write_offset.append(0)
-            Durability.create_failed.append({})
-            Durability.update_failed.append({})
-            Durability.delete_failed.append({})
-            Durability.docs_to_be_updated.append({})
-            Durability.docs_to_be_deleted.append({})
-
+        super(Durability, self).__init__("DurabilityDocumentsMainTask{}".format(time.time()))
+        self.majority_value = majority_value
+        self.create_failed = {}
+        self.update_failed = {}
+        self.delete_failed = {}
+        self.sdk_acked_curd_failed = {}
+        self.sdk_exception_crud_succeed = {}
+        self.sdk_acked_pers_failed = {}
+        self.sdk_exception_pers_succeed = {}
         self.cluster = cluster
         self.exp = exp
         self.exp_unit = exp_unit
@@ -684,41 +671,49 @@ class Durability(Task):
             self.bucket = bucket
 
     def call(self):
-        for _ in range(Durability.instances):
-            generators = []
-            self.tasks = []
-            gen_start = int(self.generator.start)
-            gen_end = max(int(self.generator.end), 1)
-            gen_range = max(int((self.generator.end - self.generator.start) / self.process_concurrency), 1)
-            for pos in range(gen_start, gen_end, gen_range):
-                partition_gen = copy.deepcopy(self.generator)
-                partition_gen.start = pos
-                partition_gen.itr = pos
-                partition_gen.end = pos + gen_range
-                if partition_gen.end > self.generator.end:
-                    partition_gen.end = self.generator.end
-                batch_gen = BatchedDocumentGenerator(
-                    partition_gen,
-                    self.batch_size)
-                generators.append(batch_gen)
-            i = 0
-            for generator in generators:
-                task = self.Loader(
-                    self.cluster, self.bucket, self.clients[i], generator,
-                    self.op_type, self.exp, self.exp_unit, self.flag,
-                    persist_to=self.persit_to, replicate_to=self.replicate_to,
-                    time_unit=self.time_unit, batch_size=self.batch_size,
-                    pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                    compression=self.compression,
-                    throughput_concurrency=self.process_concurrency,
-                    instance_num=i, durability=self.durability)
-                self.tasks.append(task)
-                i += 1
+        generators = []
+        self.tasks = []
+        gen_start = int(self.generator.start)
+        gen_end = max(int(self.generator.end), 1)
+        gen_range = max(int((self.generator.end - self.generator.start) / self.process_concurrency), 1)
+        for pos in range(gen_start, gen_end, gen_range):
+            partition_gen = copy.deepcopy(self.generator)
+            partition_gen.start = pos
+            partition_gen.itr = pos
+            partition_gen.end = pos + gen_range
+            if partition_gen.end > self.generator.end:
+                partition_gen.end = self.generator.end
+            batch_gen = BatchedDocumentGenerator(
+                partition_gen,
+                self.batch_size)
+            generators.append(batch_gen)
+        i = 0
+        for generator in generators:
+            task = self.Loader(
+                self.cluster, self.bucket, self.clients[i], generator,
+                self.op_type, self.exp, self.exp_unit, self.flag,
+                majority_value=self.majority_value,
+                persist_to=self.persit_to, replicate_to=self.replicate_to,
+                time_unit=self.time_unit, batch_size=self.batch_size,
+                pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                compression=self.compression,
+                throughput_concurrency=self.process_concurrency,
+                instance_num=i, durability=self.durability)
+            self.tasks.append(task)
+            i += 1
         try:
             for task in self.tasks:
                 self.task_manager.add_new_task(task)
             for task in self.tasks:
                 self.task_manager.get_task_result(task)
+                if task.__class__ == self.Loader:
+                    self.create_failed.update(task.create_failed)
+                    self.update_failed.update(task.update_failed)
+                    self.delete_failed.update(task.delete_failed)
+                    self.sdk_acked_curd_failed.update(task.sdk_acked_curd_failed)
+                    self.sdk_exception_crud_succeed.update(task.sdk_exception_crud_succeed)
+                    self.sdk_acked_pers_failed.update(task.sdk_acked_pers_failed)
+                    self.sdk_exception_pers_succeed.update(task.sdk_exception_pers_succeed)
         except Exception as e:
             self.set_exception(e)
         finally:
@@ -740,7 +735,8 @@ class Durability(Task):
         '''
 
         def __init__(self, cluster, bucket, client, generator, op_type, exp, exp_unit,
-                     flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
+                     flag=0, majority_value=0, persist_to=0, replicate_to=0,
+                     time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
                      compression=True, throughput_concurrency=4, retries=5,
                      instance_num=0, durability=""):
@@ -762,7 +758,17 @@ class Durability(Task):
             self.durability = durability
             self.bucket = bucket
             self.tasks = []
-            Durability.write_offset[self.instance] = generator._doc_gen.start
+            self.write_offset = self.generator._doc_gen.start
+            self.majority_value = majority_value
+            self.create_failed = {}
+            self.update_failed = {}
+            self.delete_failed = {}
+            self.docs_to_be_updated = {}
+            self.docs_to_be_deleted = {}
+            self.sdk_acked_curd_failed = {}
+            self.sdk_exception_crud_succeed = {}
+            self.sdk_acked_pers_failed = {}
+            self.sdk_exception_pers_succeed = {}
             log.info("Docs start loading from {0}"
                      .format(generator._doc_gen.start))
             log.info("Instance num {0}".format(self.instance))
@@ -770,14 +776,10 @@ class Durability(Task):
 
         def call(self):
             self.start_task()
-            reader_task = self.Reader(
-                self.bucket,
-                generator=self.generator,
-                op_type=self.op_type,
-                write_offset=Durability.write_offset[self.instance],
-                instance=self.instance, client=self.client)
+            import threading
+            reader = threading.Thread(target=self.Reader)
+            reader.start()
 
-            self.task_manager.add_new_task(reader_task)
             log.info("Starting load generation thread")
             try:
                 while self.has_next():
@@ -788,10 +790,7 @@ class Durability(Task):
 
             log.info("===========Tasks in DurabilityDocumentLoaderTask pool=======")
             self.task_manager.print_tasks_in_pool()
-            while not self.task_manager.futures[reader_task.thread_name].isDone():
-                continue
-            self.task_manager.get_task_result(reader_task)
-            self.task_manager.stop_task(reader_task)
+            reader.join()
             self.complete_task()
 
         def has_next(self):
@@ -809,9 +808,9 @@ class Durability(Task):
                     durability=self.durability)
 
                 if len(f_docs) > 0:
-                    Durability.create_failed[self.instance].update(f_docs)
+                    self.create_failed.update(f_docs)
             elif self.op_type == 'update':
-                Durability.docs_to_be_updated[self.instance].update(
+                self.docs_to_be_updated.update(
                     self.batch_read(key_value.keys()))
                 _, f_docs = self.batch_update(
                     key_value, persist_to=self.persist_to,
@@ -819,100 +818,88 @@ class Durability(Task):
                     durability=self.durability,
                     time_unit=self.time_unit,
                     doc_type=self.generator.doc_type)
-                Durability.update_failed[self.instance].update(f_docs)
+                self.update_failed.update(f_docs)
             elif self.op_type == 'delete':
-                Durability.docs_to_be_deleted[self.instance].update(
+                self.docs_to_be_deleted.update(
                     self.batch_read(key_value.keys()))
-                Durability.delete_failed[self.instance].update(
+                self.delete_failed.update(
                     self.batch_delete(key_value))
             else:
                 self.set_exception(Exception("Bad operation type: %s"
                                              % self.op_type))
-            Durability.write_offset[self.instance] += len(key_value)
+            self.write_offset += len(key_value)
 
-        class Reader(Task):
-            def __init__(self, bucket, generator, op_type, write_offset, instance, client):
-                self.thread_name = "DurabilityDocumentReaderTask" + str(instance)
-                self.bucket = bucket
-                self.op_type = op_type
-                self.generator = copy.deepcopy(generator)
-                self.start = self.generator._doc_gen.start
-                self.end = self.generator._doc_gen.end
-                self.write_offset = write_offset
-                self.read_offset = self.generator._doc_gen.start
-                self.instance = instance
-                self.client = client
+        def Reader(self):
+            self.generator_reader = copy.deepcopy(self.generator)
+            self.start = self.generator._doc_gen.start
+            self.end = self.generator._doc_gen.end
+            self.read_offset = self.generator._doc_gen.start
+            while True:
+                if self.read_offset < self.write_offset or self.read_offset == self.end:
+                    log.info("Reader: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"%
+                             (self.read_offset,
+                              self.write_offset,
+                              self.end))
 
-            def call(self):
-                self.start_task()
-                while True:
-                    if self.read_offset < Durability.write_offset[self.instance] or self.read_offset == self.end:
-                        log.info("Reader: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"%
-                                 (self.read_offset,
-                                  Durability.write_offset[self.instance],
-                                  self.end))
-
-                        if self.generator._doc_gen.has_next():
-                            doc = self.generator._doc_gen.next()
-                            key = doc[0]
-                            val = doc[1]
-                            if self.op_type == 'create':
-                                result = self.client.getFromReplica(key, ReplicaMode.ALL)
-                                if key not in Durability.create_failed[self.instance].keys():
-                                    if len(result) < Durability.majority:
-                                        Durability.sdk_acked_curd_failed.update({key: val})
-                                        log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
-                                                 (key,
-                                                  result))
-                                elif len(result) > 0:
-                                    log.error("SDK threw exception but document is present in the Server -> %s:%s"%
+                    if self.generator_reader._doc_gen.has_next():
+                        doc = self.generator_reader._doc_gen.next()
+                        key, val = doc[0], doc[1]
+                        if self.op_type == 'create':
+                            result = self.client.getFromReplica(key, ReplicaMode.ALL)
+                            if key not in self.create_failed.keys():
+                                if len(result) < self.majority_value:
+                                    self.sdk_acked_curd_failed.update({key: val})
+                                    log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
                                              (key,
                                               result))
-                                    Durability.sdk_exception_crud_succeed.update({key: val})
-                                else:
-                                    log.info("Document is rolled back to nothing during create -> %s:%s"%(key,result))
-                            if self.op_type == 'update':
-                                result = self.client.getFromReplica(key, ReplicaMode.ALL)
-                                if key not in Durability.update_failed[self.instance].keys():
-                                    if len(result) < Durability.majority:
-                                        Durability.sdk_acked_curd_failed.update({key: val})
-                                        log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
-                                                 (key,
-                                                  result))
-                                    elif len(result) >= Durability.majority:
-                                        temp_count = 0
-                                        for doc in result:
-                                            if doc["value"] == Durability.docs_to_be_updated[self.instance][key][2]:
-                                                Durability.sdk_acked_curd_failed.update({key: val})
-                                                log.error("Doc content is not updated although SDK reports Durable, Key = %s getfromReplica = %s"%
-                                                         (key,
-                                                          result))
-                                            else:
-                                                temp_count += 1
-                                        if temp_count < Durability.majority:
-                                            Durability.sdk_acked_curd_failed.update({key: val})
-                                else:
+                            elif len(result) > 0:
+                                log.error("SDK threw exception but document is present in the Server -> %s:%s"%
+                                         (key,
+                                          result))
+                                self.sdk_exception_crud_succeed.update({key: val})
+                            else:
+                                log.info("Document is rolled back to nothing during create -> %s:%s"%(key,result))
+                        if self.op_type == 'update':
+                            result = self.client.getFromReplica(key, ReplicaMode.ALL)
+                            if key not in self.update_failed[self.instance].keys():
+                                if len(result) < self.majority_value:
+                                    self.sdk_acked_curd_failed.update({key: val})
+                                    log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
+                                             (key,
+                                              result))
+                                elif len(result) >= self.majority_value:
+                                    temp_count = 0
                                     for doc in result:
-                                        if doc["value"] != Durability.docs_to_be_updated[self.instance][key][2]:
-                                            Durability.sdk_exception_crud_succeed.update({key: val})
-                                            log.error("Doc content is updated although SDK threw exception, Key = %s getfromReplica = %s"%
+                                        if doc["value"] == self.docs_to_be_updated[key][2]:
+                                            self.sdk_acked_curd_failed.update({key: val})
+                                            log.error("Doc content is not updated although SDK reports Durable, Key = %s getfromReplica = %s"%
                                                      (key,
                                                       result))
-                            if self.op_type == 'delete':
-                                result = self.client.getFromReplica(key, ReplicaMode.ALL)
-                                if key not in Durability.delete_failed[self.instance].keys():
-                                    if len(result) > (self.bucket.replicaNumber+1 - Durability.majority):
-                                        Durability.sdk_acked_curd_failed.update(result[0])
-                                        log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
+                                        else:
+                                            temp_count += 1
+                                    if temp_count < self.majority_value:
+                                        self.sdk_acked_curd_failed.update({key: val})
+                            else:
+                                for doc in result:
+                                    if doc["value"] != self.docs_to_be_updated[key][2]:
+                                        self.sdk_exception_crud_succeed.update({key: val})
+                                        log.error("Doc content is updated although SDK threw exception, Key = %s getfromReplica = %s"%
                                                  (key,
                                                   result))
-                                elif len(result) >= Durability.majority:
-                                    log.info("Document is rolled back to original during delete -> %s:%s"%(key,result))
-                        if self.read_offset == self.end:
-                            log.info("BREAKING!!")
-                            break
-                        self.read_offset += 1
-                self.complete_task()
+                        if self.op_type == 'delete':
+                            result = self.client.getFromReplica(key, ReplicaMode.ALL)
+                            if key not in self.delete_failed[self.instance].keys():
+                                if len(result) > (self.bucket.replicaNumber+1 - self.majority_value):
+                                    self.sdk_acked_curd_failed.update(result[0])
+                                    log.error("Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"%
+                                             (key,
+                                              result))
+                            elif len(result) >= self.majority_value:
+                                log.info("Document is rolled back to original during delete -> %s:%s"%(key,result))
+                    if self.read_offset == self.end:
+                        log.info("BREAKING!!")
+                        break
+                    self.read_offset += 1
 
 
 class LoadDocumentsGeneratorsTask(Task):
@@ -2874,6 +2861,7 @@ class NodeDownTimerTask(Task):
             self.complete_task()
             log.info("Could not inject failure in {}".format(self.node))
             return False
+
 
 class Atomicity(Task):
     instances = 1

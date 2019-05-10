@@ -33,21 +33,21 @@ class RebalanceOutTests(RebalanceBaseTest):
                         batch_size=10, process_concurrency=1,
                         replicate_to=self.replicate_to, persist_to=self.persist_to,
                         timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                        durability="majority"))
+                        durability=self.durability_level))
                 if("create" in self.doc_ops):
                     tasks.append(self.task.async_load_gen_docs_durable(
                         self.cluster, bucket, gen_create, "create", 0,
-                        batch_size=10, process_concurrency=1,
+                        batch_size=1, process_concurrency=1,
                         replicate_to=self.replicate_to, persist_to=self.persist_to,
                         timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                        durability="majority"))
+                        durability=self.durability_level))
                 if("delete" in self.doc_ops):
                     tasks.append(self.task.async_load_gen_docs_durable(
                         self.cluster, bucket, gen_delete, "delete", 0,
                         batch_size=10, process_concurrency=1,
                         replicate_to=self.replicate_to, persist_to=self.persist_to,
                         timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                        durability="majority"))
+                        durability=self.durability_level))
         for task in tasks:
             self.task_manager.get_task_result(task)
             if task.__class__ == jython_tasks.Durability:
