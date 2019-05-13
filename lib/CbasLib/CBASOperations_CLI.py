@@ -4,12 +4,15 @@ Created on Nov 14, 2017
 @author: riteshagarwal
 '''
 
-import logger
-from ClusterLib.ClusterOperations_Rest import ClusterHelper as cluster_helper_rest
-log = logger.Logger.get_logger()
+import json
+import logging
+from ClusterLib.ClusterOperations_Rest import ClusterHelper as ClusterHelperRest
 from remote.remote_util import RemoteMachineShellConnection
 
-class CBASHelper(cluster_helper_rest):
+log = logging.getLogger()
+
+
+class CBASHelper(ClusterHelperRest):
 
     def __init__(self, server, username, password, cb_version=None):
         self.server = server
@@ -18,7 +21,7 @@ class CBASHelper(cluster_helper_rest):
         self.password = password
         self.cb_version = cb_version
         super(CBASHelper, self).__init__(server)
-        
+
     def execute_statement_on_cbas(self, statement, server, mode=None):
         """
         Executes a statement on CBAS using the REST API through curl command
@@ -36,22 +39,22 @@ class CBASHelper(cluster_helper_rest):
         for line in output:
             response = response + line
         response = json.loads(response)
-        self.log.info(response)
+        log.info(response)
         shell.disconnect()
- 
+
         if "errors" in response:
             errors = response["errors"]
         else:
             errors = None
- 
+
         if "results" in response:
             results = response["results"]
         else:
             results = None
- 
+
         if "handle" in response:
             handle = response["handle"]
         else:
             handle = None
- 
+
         return response["status"], response["metrics"], errors, results, handle

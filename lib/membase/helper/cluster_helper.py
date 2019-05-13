@@ -1,16 +1,16 @@
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
-from mc_bin_client import MemcachedClient, MemcachedError
-from membase.api.exception import ServerAlreadyJoinedException
+from mc_bin_client import MemcachedClient
 from membase.helper.rebalance_helper import RebalanceHelper
 import memcacheConstants
-import logger
-import testconstants
+import logging
 import time
 import Queue
 from threading import Thread
 import traceback
+
+log = logging.getLogger()
 
 
 class ClusterOperationHelper(object):
@@ -19,7 +19,6 @@ class ClusterOperationHelper(object):
     # Returns True if cluster successfully finished then rebalance
     @staticmethod
     def add_and_rebalance(servers, wait_for_rebalance=True):
-        log = logger.Logger.get_logger()
         master = servers[0]
         all_nodes_added = True
         rebalanced = True
@@ -44,7 +43,6 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def add_all_nodes_or_assert(master, all_servers, rest_settings, test_case):
-        log = logger.Logger.get_logger()
         otpNodes = []
         all_nodes_added = True
         rest = RestConnection(master)
@@ -70,7 +68,6 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def verify_persistence(servers, test, keys_count=400000, timeout_in_seconds=300):
-        log = logger.Logger.get_logger()
         master = servers[0]
         rest = RestConnection(master)
         log.info("Verifying Persistence")
@@ -94,7 +91,6 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def persistence_verification(servers, bucket, timeout_in_seconds=1260):
-        log = logger.Logger.get_logger()
         verification_threads = []
         queue = Queue.Queue()
         rest = RestConnection(servers[0])
@@ -124,7 +120,6 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def persistence_verification_per_node(rest, bucket, queue=None, timeout=1260):
-        log = logger.Logger.get_logger()
         stat_key = 'ep_flusher_todo'
         start = time.time()
         stats = []
@@ -187,7 +182,6 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def flush_os_caches(servers):
-        log = logger.Logger.get_logger()
         for server in servers:
             try:
                 shell = RemoteMachineShellConnection(server)
@@ -209,7 +203,6 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def flushctl_set_per_node(server, key, val, bucket='default'):
-        log = logger.Logger.get_logger()
         rest = RestConnection(server)
         node = rest.get_nodes_self()
         mc = MemcachedClientHelper.direct_client(server, bucket)
@@ -250,7 +243,6 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def set_expiry_pager_sleep_time(master, bucket, value=30):
-        log = logger.Logger.get_logger()
         rest = RestConnection(master)
         servers = rest.get_nodes()
         for server in servers:
@@ -267,7 +259,6 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def get_mb_stats(servers, key):
-        log = logger.Logger.get_logger()
         for server in servers:
             c = MemcachedClient(server.ip, 11210)
             log.info("Get flush param on server {0}, {1}".format(server, key))
@@ -283,7 +274,6 @@ class ClusterOperationHelper(object):
 
         Default: +S 16:16
         """
-        log = logger.Logger.get_logger()
         for server in servers:
             sh = RemoteMachineShellConnection(server)
             product = "membase"
@@ -307,7 +297,6 @@ class ClusterOperationHelper(object):
         """
         ClusterOperationHelper.stop_cluster(servers)
 
-        log = logger.Logger.get_logger()
         for server in servers:
             sh = RemoteMachineShellConnection(server)
             product = "membase"
@@ -329,7 +318,6 @@ class ClusterOperationHelper(object):
 
         Default: None
         """
-        log = logger.Logger.get_logger()
         if value is None:
             return
         for server in servers:

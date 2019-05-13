@@ -1,5 +1,4 @@
 import json
-import json
 import time
 
 import testconstants
@@ -9,7 +8,7 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
 
-class N1QLHelper():
+class N1QLHelper:
     def __init__(self, version=None, master=None, shell=None,  max_verify=0, buckets=[], item_flag=0,
                  n1ql_port=8093, full_docs_list=[], log=None, input=None, database=None, use_rest=None):
         self.version = version

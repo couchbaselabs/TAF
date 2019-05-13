@@ -6,35 +6,33 @@ Created on Mar 14, 2019
 """
 
 import json as pyJson
-import logger
-import time
+import logging
 
-from com.couchbase.client.java import Cluster
-from com.couchbase.client.java.json import JsonObject
+from com.couchbase.client.core.env import TimeoutConfig
 from com.couchbase.client.core.error import DocumentAlreadyExistsException, \
                                             CouchbaseException, \
-                                            RequestTimeoutException
-from com.couchbase.client.core.error import DocumentDoesNotExistException, \
-                                            CASMismatchException
-from com.couchbase.client.core.error import TemporaryFailureException
-from com.couchbase.client.java.env import ClusterEnvironment
+                                            RequestTimeoutException \
+                                            DocumentDoesNotExistException, \
+                                            CASMismatchException, \
+                                            TemporaryFailureException
 from com.couchbase.client.core.msg.kv import DurabilityLevel
+from com.couchbase.client.java import Cluster
+from com.couchbase.client.java.env import ClusterEnvironment
+from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.java.kv import InsertOptions, UpsertOptions, \
                                          RemoveOptions, \
                                          PersistTo, ReplicateTo, \
                                          ReplicaMode, GetFromReplicaOptions
-from com.couchbase.client.core.env import TimeoutConfig
 
 from java.time import Duration
+from java.time.temporal import ChronoUnit
 from java.lang import System
 from java.util.logging import Logger, Level, ConsoleHandler
 from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
-from java.time.temporal import ChronoUnit
 
-
-log = logger.Logger.get_logger()
+log = logging.getLogger()
 
 
 class SDKClient(object):
@@ -45,10 +43,6 @@ class SDKClient(object):
     def __init__(self, rest, bucket, info=None,  username="Administrator",
                  password="password",
                  quiet=True, certpath=None, transcoder=None, compression=True):
-#         self.connection_string = \
-#             self._createString(scheme=scheme, bucket=bucket, hosts=hosts,
-#                                certpath=certpath, uhm_options=uhm_options,
-#                                compression=compression)
         self.rest = rest
         self.hosts = []
         if rest.ip == "127.0.0.1":
@@ -71,7 +65,7 @@ class SDKClient(object):
 
     def _createConn(self):
         try:
-            log.info("Creating cluster connection.")
+            log.info("Creating cluster connection")
             System.setProperty("com.couchbase.forceIPv4", "false")
             logger = Logger.getLogger("com.couchbase.client")
             logger.setLevel(Level.SEVERE)
@@ -91,11 +85,11 @@ class SDKClient(object):
             raise
 
     def close(self):
-        log.info("Closing down the cluster.")
+        log.info("Closing down the cluster")
         if self.cluster:
             self.cluster.shutdown()
             self.cluster.environment().shutdown()
-            log.info("Closed down Cluster Connection.")
+            log.info("Closed down Cluster Connection")
 
     def delete(self, key, persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
@@ -123,13 +117,11 @@ class SDKClient(object):
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except TemporaryFailureException as e:
-            log.warning("Exception: Retry for doc {0} - {1}"
-                        .format(key, e))
+            log.warning("Exception: Retry for doc {0} - {1}".format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except CouchbaseException as e:
-            log.error("Generic exception for doc {0} - {1}"
-                      .format(key, e))
+            log.error("Generic exception for doc {0} - {1}".format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except Exception as e:
@@ -181,8 +173,8 @@ class SDKClient(object):
         print getResult
         if getResult.isPresent():
             log.info("Found document: cas=%s, content=%s"
-                  % (str(getResult.get().cas()),
-                     str(getResult.get().contentAsObject())))
+                     % (str(getResult.get().cas()),
+                        str(getResult.get().contentAsObject())))
             result.update({"key": key,
                            "value": str(getResult.get().contentAsObject()),
                            "cas": getResult.get().cas(), "status": True})
@@ -199,16 +191,14 @@ class SDKClient(object):
                         GetFromReplicaOptions.getFromReplicaOptions()
                         .replicaMode(replicaMode))
         for item in getResult.toArray():
-#             log.info("Found document: key=%s, cas=%s, content=%s"
-#                      % (key, str(item.cas()),
-#                         item.contentAsObject()))
+            """
+            log.info("Found document: key=%s, cas=%s, content=%s"
+                     % (key, str(item.cas()),
+                        item.contentAsObject()))
+            """
             result.append({"key": key,
                            "value": item.contentAsObject(),
                            "cas": item.cas(), "status": True})
-#         else:
-#             log.error("Document not found!")
-#             result.update({"key": key, "value": None,
-#                            "error": None, "status": False})
         return result
 
     def upsert(self, key, value, exp=0, exp_unit="seconds",
@@ -230,7 +220,7 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True})
         except DocumentAlreadyExistsException as ex:
-            log.error("Upsert: The document already exists! => " + str(ex))
+            log.error("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except (CouchbaseException, Exception, RequestTimeoutException) as ex:
@@ -370,7 +360,6 @@ class SDKClient(object):
                          persist_to=0, replicate_to=0,
                          timeout=5, time_unit="seconds",
                          durability=""):
-        options = None
         if durability:
             options = UpsertOptions.upsertOptions()\
                 .timeout(self.getDuration(timeout, time_unit))\
@@ -382,13 +371,11 @@ class SDKClient(object):
                 .expiry(self.getDuration(exp, exp_unit))\
                 .durability(self.getPersistTo(persist_to),
                                 self.getReplicateTo(replicate_to))
-
         return options
 
     def getRemoveOptions(self, persist_to=0, replicate_to=0,
                          timeout=5, time_unit="seconds",
                          durability=""):
-        options = None
         if durability:
             options = RemoveOptions.removeOptions()\
                 .timeout(self.getDuration(timeout, time_unit))\

@@ -1,19 +1,21 @@
 import json
 import os
-import logger
+import logging
 
-from couchbase_helper.data_analysis_helper import DataAnalyzer, DataAnalysisResultAnalyzer, DataCollector
+from couchbase_helper.data_analysis_helper import DataAnalyzer, \
+                                                  DataAnalysisResultAnalyzer, \
+                                                  DataCollector
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
 
 class BackupRestoreValidationBase:
     def __init__(self):
-        self.log = logger.Logger.get_logger()
-        return
+        self.log = logging.getLogger()
 
     @staticmethod
-    def compare_vbucket_stats(prev_vbucket_stats, cur_vbucket_stats, compare_uuid=False, seqno_compare="=="):
+    def compare_vbucket_stats(prev_vbucket_stats, cur_vbucket_stats,
+                              compare_uuid=False, seqno_compare="=="):
         """
         Compares vbucket stats
         :param prev_vbucket_stats: old
@@ -31,22 +33,21 @@ class BackupRestoreValidationBase:
             comp_map["uuid"] = {'type': "string", 'operation': "filter"}
         data_analyzer = DataAnalyzer()
         result_analyzer = DataAnalysisResultAnalyzer()
-        compare_vbucket_seqnos_result = data_analyzer.compare_stats_dataset(prev_vbucket_stats,
-                                                                            cur_vbucket_stats,
-                                                                            "vbucket_id",
-                                                                            comparisonMap=comp_map)
+        compare_vbucket_seqnos_result = data_analyzer.compare_stats_dataset(
+            prev_vbucket_stats, cur_vbucket_stats, "vbucket_id",
+            comparisonMap=comp_map)
 
-        is_same, summary, result = result_analyzer.analyze_all_result(compare_vbucket_seqnos_result,
-                                                                      addedItems=False,
-                                                                      deletedItems=False,
-                                                                      updatedItems=False)
+        is_same, summary, result = result_analyzer.analyze_all_result(
+            compare_vbucket_seqnos_result,
+            addedItems=False, deletedItems=False, updatedItems=False)
         if not is_same:
             msg = "{0} is not true".format(summary)
             raise AssertionError(msg)
-        return True, "End Verification for vbucket sequence numbers comparison "
+        return True, "End Verification for vbucket sequence numbers comparison"
 
     @staticmethod
-    def compare_dictionary(expected, actual, is_equal=None, not_equal=None, extra=None, not_present=None):
+    def compare_dictionary(expected, actual, is_equal=None, not_equal=None,
+                           extra=None, not_present=None):
         """
         Recursively compares the input maps and generates the diff results
         :param expected: expected map
@@ -91,8 +92,9 @@ class BackupRestoreValidationBase:
                         not_equal[expected_key]["expected"].extend(expected_list)
                         not_equal[expected_key]["actual"].extend(actual_list)
                 elif isinstance(expected[expected_key], dict):
-                    return BackupRestoreValidationBase.compare_dictionary(expected[expected_key], actual[expected_key],
-                                                                          is_equal, not_equal, extra, not_present)
+                    return BackupRestoreValidationBase.compare_dictionary(
+                        expected[expected_key], actual[expected_key],
+                        is_equal, not_equal, extra, not_present)
             else:
                 if expected_key not in not_present:
                     not_present[expected_key] = {"expected": []}

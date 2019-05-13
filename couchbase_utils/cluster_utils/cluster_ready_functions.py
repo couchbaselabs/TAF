@@ -1,20 +1,19 @@
-'''
+"""
 Created on Sep 26, 2017
 
 @author: riteshagarwal
-'''
-import copy
-import types
+"""
 
-from Jython_tasks.task import PrintClusterStats, MonitorActiveTask
+import copy
+import logging
+import time
+
+import testconstants
 from couchbase_cli import CouchbaseCLI
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
-from membase.helper.cluster_helper import ClusterOperationHelper
+from Jython_tasks.task import PrintClusterStats, MonitorActiveTask
 from TestInput import TestInputSingleton
-import testconstants
-import logger
-import time
 
 
 class CBCluster:
@@ -34,7 +33,7 @@ class CBCluster:
         self.master = master
 
 
-class cluster_utils():
+class ClusterUtils:
 
     def __init__(self, cluster, task_manager):
         self.input = TestInputSingleton.input
@@ -43,7 +42,7 @@ class cluster_utils():
         self.rest = RestConnection(cluster.master)
         self.vbuckets = self.input.param("vbuckets", 1024)
         self.upr = self.input.param("upr", None)
-        self.log = logger.Logger.get_logger()
+        self.log = logging.getLogger()
 
     def cluster_cleanup(self, bucket_util):
         rest = RestConnection(self.cluster.master)
@@ -62,20 +61,18 @@ class cluster_utils():
                                       wait_if_warmup=False):
         for server in servers:
             rest = RestConnection(server)
-            log = logger.Logger.get_logger()
-            log.info("waiting for ns_server @ {0}:{1}"
-                     .format(server.ip, server.port))
+            self.log.info("Waiting for ns_server @ {0}:{1}"
+                          .format(server.ip, server.port))
             if RestHelper(rest).is_ns_server_running(wait_time):
-                log.info("ns_server @ {0}:{1} is running"
-                         .format(server.ip, server.port))
+                self.log.info("ns_server @ {0}:{1} is running"
+                              .format(server.ip, server.port))
             else:
-                log.info("ns_server {0} is not running in {1} sec"
-                         .format(server.ip, wait_time))
+                self.log.info("ns_server {0} is not running in {1} sec"
+                              .format(server.ip, wait_time))
                 return False
             return True
 
     def cleanup_cluster(self, wait_for_rebalance=True, master=None):
-        log = logger.Logger.get_logger()
         if master is None:
             master = self.cluster.master
         rest = RestConnection(master)
@@ -89,7 +86,7 @@ class cluster_utils():
                 nodes.remove(node)
 
         if len(nodes) > 1:
-            log.info("rebalancing all nodes in order to remove nodes")
+            self.log.info("Rebalancing all nodes in order to remove nodes")
             rest.log_client_error("Starting rebalance from test, ejected nodes %s" %
                                   [node.id for node in nodes if node.id != master_id])
             removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
@@ -102,9 +99,10 @@ class cluster_utils():
                 try:
                     rest = RestConnection(removed)
                 except Exception as ex:
-                    log.error("can't create rest connection after rebalance out for ejected nodes,\
-                               will retry after 10 seconds according to MB-8430: {0}"
-                              .format(ex))
+                    self.log.error("Can't create rest connection after "
+                                   "rebalance out for ejected nodes, will "
+                                   "retry after 10 seconds according to "
+                                   "MB-8430: {0}".format(ex))
                     time.sleep(10)
                     rest = RestConnection(removed)
                 start = time.time()
@@ -115,24 +113,26 @@ class cluster_utils():
                     else:
                         time.sleep(0.1)
                 if time.time() - start > 10:
-                    log.error("'pools' on node {0}:{1} - {2}".format(
-                           removed.ip, removed.port, rest.get_pools_info()["pools"]))
+                    self.log.error("'pools' on node {0}:{1} - {2}"
+                                   .format(removed.ip, removed.port,
+                                           rest.get_pools_info()["pools"]))
             for node in set([node for node in nodes if (node.id != master_id)]) - set(success_cleaned):
-                log.error("node {0}:{1} was not cleaned after removing from cluster"
-                          .format(removed.ip, removed.port))
+                self.log.error("Node {0}:{1} was not cleaned after "
+                               "removing from cluster"
+                               .format(removed.ip, removed.port))
                 try:
                     rest = RestConnection(node)
                     rest.force_eject_node()
                 except Exception as ex:
-                    log.error("force_eject_node {0}:{1} failed: {2}"
-                              .format(removed.ip, removed.port, ex))
+                    self.log.error("Force_eject_node {0}:{1} failed: {2}"
+                                   .format(removed.ip, removed.port, ex))
             if len(set([node for node in nodes if (node.id != master_id)])\
                     - set(success_cleaned)) != 0:
-                raise Exception("not all ejected nodes were cleaned successfully")
+                raise Exception("Not all ejected nodes were cleaned successfully")
 
-            log.info("removed all the nodes from cluster associated with {0} ? {1}"
-                     .format(self.cluster.master,
-                             [(node.id, node.port) for node in nodes if (node.id != master_id)]))
+            self.log.info("Removed all the nodes from cluster associated with {0} ? {1}"
+                          .format(self.cluster.master,
+                                  [(node.id, node.port) for node in nodes if (node.id != master_id)]))
 
     def get_nodes_in_cluster(self, master_node=None):
         rest = None
@@ -174,7 +174,7 @@ class cluster_utils():
         # MB-10136 & MB-9991
         if not result:
             raise Exception("Password didn't change!")
-        self.log.info("new password '%s' on nodes: %s"
+        self.log.info("New password '%s' on nodes: %s"
                       % (new_password, [node.ip for node in nodes]))
         for node in nodes:
             for server in self.cluster.servers:
@@ -197,7 +197,7 @@ class cluster_utils():
         if error:
             raise Exception("Port didn't change! %s" % error)
         self.port = new_port
-        self.log.info("new port '%s' on nodes: %s"
+        self.log.info("New port '%s' on nodes: %s"
                       % (new_port, [node.ip for node in nodes]))
         for node in nodes:
             for server in self.cluster.servers:
@@ -386,9 +386,9 @@ class cluster_utils():
                 ip = tokens[0]
                 port = int(tokens[1])
                 for server in servers:
-                    """ In tests use hostname, if IP in ini file use IP, we need
-                        to convert it to hostname to compare it with hostname
-                        in cluster """
+                    """ In tests use hostname, if IP in ini file use IP, we
+                        need to convert it to hostname to compare it with
+                        hostname in cluster """
                     if "couchbase.com" in ip and "couchbase.com" not in server.ip:
                         shell = RemoteMachineShellConnection(server)
                         hostname = shell.get_full_hostname()

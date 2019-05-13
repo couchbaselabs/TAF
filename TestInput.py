@@ -1,10 +1,9 @@
 import getopt
 import re
 from builds.build_query import BuildQuery
-import logger
+import logging
 import ConfigParser
 import os
-import collections
 
 #class to parse the inputs either from command line or from a ini file
 #command line supports a subset of
@@ -89,20 +88,17 @@ class TestInputServer(object):
         self.upgraded = False
 
     def __str__(self):
-        #ip_str = "ip:{0}".format(self.ip)
         ip_str = "ip:{0} port:{1}".format(self.ip, self.port)
         ssh_username_str = "ssh_username:{0}".format(self.ssh_username)
         return "{0} {1}".format(ip_str, ssh_username_str)
 
     def __repr__(self):
-        #ip_str = "ip:{0}".format(self.ip)
         ip_str = "ip:{0} port:{1}".format(self.ip, self.port)
         ssh_username_str = "ssh_username:{0}".format(self.ssh_username)
         return "{0} {1}".format(ip_str, ssh_username_str)
 
 
 class TestInputMembaseSetting(object):
-
     def __init__(self):
         self.rest_username = ''
         self.rest_password = ''
@@ -490,8 +486,8 @@ class TestInputParser():
             input.membase_settings = membase_setting
             return input
         except Exception:
-            log = logger.Logger.get_logger()
-            log.error("unable to parse input arguments")
+            log = logging.getLogger()
+            log.error("Unable to parse input arguments")
             raise
 
     @staticmethod
@@ -510,11 +506,9 @@ class TestInputParser():
                     break
         return input_build
 
-    #returns list of server objects
+    # Returns list of server objects
     @staticmethod
     def handle_command_line_s(argument):
-        #ip:port:username:password:clipath
-
         ips = argument.split(",")
         servers = []
 
@@ -523,12 +517,10 @@ class TestInputParser():
             if ip.find(":") == -1:
                 pass
             else:
+                """
+                info format: [ip, port, username, password, cli_path]
+                """
                 info = ip.split(":")
-                #info[0] : ip
-                #info[1] : port
-                #info[2] :username
-                #info[3] : password
-                #info[4] : cli path
                 server.ip = info[0]
                 server.port = info[1]
                 server.ssh_username = info[2]

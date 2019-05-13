@@ -1,6 +1,5 @@
 import json
 import os
-import logger
 import math
 
 from couchbase_helper.data_analysis_helper import DataCollector
@@ -23,7 +22,6 @@ class BackupRestoreValidations(BackupRestoreValidationBase):
         self.backups = backups
         self.num_items = num_items
         self.vbuckets = vbuckets
-        self.log = logger.Logger.get_logger()
 
     def validate_backup_create(self):
         """

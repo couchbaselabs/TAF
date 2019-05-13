@@ -1,12 +1,9 @@
-import logger
+from cb_tools.cbstats import Cbstats
+from couchbase_helper.documentgenerator import doc_generator
 from dcp.constants import PRODUCER
 from dcpbase import DCPBase
 from membase.api.rest_client import RestConnection, RestHelper
-from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
-from cb_tools.cbstats import Cbstats
-
-log = logger.Logger.get_logger()
 
 
 class DCPMultiBucket(DCPBase):

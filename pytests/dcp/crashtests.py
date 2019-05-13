@@ -1,12 +1,9 @@
-import logger
 import dcp.constants
 from random import randint
 from dcpbase import DCPBase
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
-
-log = logger.Logger.get_logger()
 
 
 class DCPCrashTests(DCPBase):

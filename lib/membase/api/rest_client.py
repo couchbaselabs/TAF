@@ -2,11 +2,10 @@ import base64
 import json
 import urllib
 import httplib2
-import logger
+import logging
 import traceback
 import socket
 import time
-import re
 import uuid
 from copy import deepcopy
 from threading import Thread
@@ -19,7 +18,9 @@ from membase.api.exception import BucketCreationException, ServerSelfJoinExcepti
     RebalanceFailedException, FailoverFailedException, DesignDocCreationException, QueryViewException, \
     ReadDocumentException, GetBucketInfoFailed, CompactViewFailed, SetViewInfoNotFound, AddNodeException, \
     BucketFlushFailed, CBRecoveryFailedException, XDCRException, SetRecoveryTypeFailed, BucketCompactionException
-log = logger.Logger.get_logger()
+
+log = logging.getLogger()
+
 
 class RestHelper(object):
     def __init__(self, rest_connection):
@@ -34,16 +35,17 @@ class RestHelper(object):
                     return True
                 else:
                     if status is not None:
-                        log.warn("server {0}:{1} status is {2}"\
-                            .format(self.rest.ip, self.rest.port, status.status))
+                        log.warn("Server {0}:{1} status is {2}"
+                                 .format(self.rest.ip, self.rest.port,
+                                         status.status))
                     else:
-                        log.warn("server {0}:{1} status is down"\
-                                           .format(self.rest.ip, self.rest.port))
+                        log.warn("Server {0}:{1} status is down"
+                                 .format(self.rest.ip, self.rest.port))
             except ServerUnavailableException:
-                log.error("server {0}:{1} is unavailable"\
-                                           .format(self.rest.ip, self.rest.port))
+                log.error("Server {0}:{1} is unavailable"
+                          .format(self.rest.ip, self.rest.port))
             time.sleep(2)
-        msg = 'unable to connect to the node {0} even after waiting {1} seconds'
+        msg = 'Unable to connect to the node {0} even after waiting {1} secs'
         log.error(msg.format(self.rest.ip, timeout_in_seconds))
         return False
 
@@ -61,7 +63,7 @@ class RestHelper(object):
             # -1 is error , -100 means could not retrieve progress
             progress = self.rest._rebalance_progress()
             if progress == -100:
-                log.error("unable to retrieve rebalanceProgress.try again in 2 seconds")
+                log.error("Unable to retrieve rebalanceProgress. Retrying..")
                 retry += 1
             else:
                 if previous_progress == progress:
@@ -72,15 +74,16 @@ class RestHelper(object):
             # sleep for 2 seconds
             time.sleep(wait_step)
         if progress <= 0:
-            log.error("rebalance progress code : {0}".format(progress))
+            log.error("Rebalance progress code: {0}".format(progress))
 
             return False
         elif retry >= 40:
-            log.error("rebalance stuck on {0}%".format(progress))
+            log.error("Rebalance stuck on {0}%".format(progress))
             return False
         else:
             duration = time.time() - start
-            log.info('rebalance reached >{0}% in {1} seconds '.format(progress, duration))
+            log.info('Rebalance reached >{0}% in {1} seconds '
+                     .format(progress, duration))
             return True
 
     # return true if cluster balanced, false if it needs rebalance
@@ -89,7 +92,7 @@ class RestHelper(object):
         status, content = self.rest.diag_eval(command)
         if status:
             return content.lower() == "false"
-        log.error("can't define if cluster balanced")
+        log.error("Can't define if cluster balanced")
         return None
 
 
@@ -134,7 +137,7 @@ class RestHelper(object):
         return status_reached
 
     def _wait_for_task_pid(self, pid, end_time, ddoc_name):
-        while (time.time() < end_time):
+        while time.time() < end_time:
             new_pid, _ = self.rest._get_indexer_task_pid(ddoc_name)
             if pid == new_pid:
                 time.sleep(5)
@@ -1076,7 +1079,7 @@ class RestConnection(object):
                 wanted_node.ip = remoteIp
                 wanted_node.print_UI_logs()
             except Exception, ex:
-                self.log(ex)
+                log.error(ex)
             if content.find('Prepare join failed. Node is already part of cluster') >= 0:
                 raise ServerAlreadyJoinedException(nodeIp=self.ip,
                                                    remoteIp=remoteIp)
@@ -1126,7 +1129,7 @@ class RestConnection(object):
                 wanted_node.ip = remoteIp
                 wanted_node.print_UI_logs()
             except Exception, ex:
-                self.log(ex)
+                log.error(ex)
             if content.find('Prepare join failed. Node is already part of cluster') >= 0:
                 raise ServerAlreadyJoinedException(nodeIp=self.ip,
                                                    remoteIp=remoteIp)
@@ -1835,8 +1838,8 @@ class RestConnection(object):
         try:
             return status, json_parsed[bucket_name+':'+index_name+':'+stat_name]
         except:
-            self.log.error("ERROR: Stat {0} not found for {1} on bucket {2}".
-                           format(stat_name, index_name, bucket_name))
+            log.error("ERROR: Stat {0} not found for {1} on bucket {2}"
+                      .format(stat_name, index_name, bucket_name))
 
     # return AutoFailoverSettings
     def get_autofailover_settings(self):
@@ -1985,7 +1988,7 @@ class RestConnection(object):
         api = self.baseUrl + '/nodes/self/controller/settings'
         from urllib3._collections import HTTPHeaderDict
         data = HTTPHeaderDict()
-        
+
         paths = {}
         if data_path:
             data.add('path', data_path)
@@ -2568,7 +2571,7 @@ class RestConnection(object):
                 return json_parsed[param]
         else:
             return None
-        
+
     def flush_bucket(self, bucket="default"):
         if isinstance(bucket, Bucket):
             bucket_name = bucket.name
@@ -3638,16 +3641,16 @@ class RestParser(object):
         node.memoryTotal = parsed['memoryTotal']
         node.mcdMemoryAllocated = parsed['mcdMemoryAllocated']
         node.mcdMemoryReserved = parsed['mcdMemoryReserved']
-        
+
         if 'indexMemoryQuota' in parsed:
             node.indexMemoryQuota = parsed['indexMemoryQuota']
-        if 'ftsMemoryQuota' in parsed:    
+        if 'ftsMemoryQuota' in parsed:
             node.ftsMemoryQuota = parsed['ftsMemoryQuota']
-        if 'cbasMemoryQuota' in parsed: 
+        if 'cbasMemoryQuota' in parsed:
             node.cbasMemoryQuota = parsed['cbasMemoryQuota']
-        if 'eventingMemoryQuota' in parsed: 
+        if 'eventingMemoryQuota' in parsed:
             node.eventingMemoryQuota = parsed['eventingMemoryQuota']
-        
+
         node.status = parsed['status']
         node.hostname = parsed['hostname']
         node.clusterCompatibility = parsed['clusterCompatibility']
@@ -3722,4 +3725,3 @@ class RestParser(object):
                         # mcdMemoryReserved - which is container host memory
                         node.mcdMemoryReserved = node.storageTotalRam * 0.70
         return node
-    

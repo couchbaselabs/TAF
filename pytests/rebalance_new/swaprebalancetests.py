@@ -1,9 +1,7 @@
 import time
 import datetime
-import logger
-
 from math import floor
-from TestInput import TestInputSingleton
+
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
@@ -19,7 +17,6 @@ from java.util.concurrent import ExecutionException
 class SwapRebalanceBase(BaseTestCase):
     def setUp(self):
         super(SwapRebalanceBase, self).setUp()
-        self.log = logger.Logger.get_logger()
         self.cluster_run = False
         rest = RestConnection(self.cluster.master)
         if len(set([server.ip for server in self.servers])) == 1:
@@ -876,10 +873,13 @@ class SwapRebalanceDurabilityTests(SwapRebalanceBase):
 
         # Load doc into all vbuckets to verify durability
         for vb_num in range(self.vbuckets):
-            self.bucket_util.load_bucket_with_durability(
-                def_bucket, 'test_docs', self.num_items, self.num_items+1000,
-                op_type="create", doc_size=self.doc_size,
-                doc_type=self.doc_type, target_vbucket=[vb_num],
-                vbuckets=self.vbuckets, replicate_to=self.replicate_to,
-                persist_to=self.persist_to,
-                durability_level=self.durability_level)
+            gen_create = doc_generator(
+                self.key, self.num_items, self.num_items+1000,
+                doc_size=self.doc_size, doc_type=self.doc_type,
+                vbuckets=self.vbuckets, target_vbucket=[vb_num])
+            task =  self.task.async_load_gen_docs(
+                self.cluster, def_bucket, gen_create, "create", 0,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability_level=self.durability_level,
+                timeout_secs=self.sdk_timeout)
+            self.task_manager.get_task_result(task)

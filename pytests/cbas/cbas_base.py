@@ -1,38 +1,31 @@
-import json
-from TestInput import TestInputSingleton
-from remote.remote_util import RemoteMachineShellConnection
 from basetestcase import BaseTestCase
-# from lib.couchbase_helper.analytics_helper import AnalyticsHelper
-from couchbase_helper.documentgenerator import DocumentGenerator
-from membase.api.rest_client import RestConnection, RestHelper
+from cbas_utils import cbas_utils
 from couchbase_helper.cluster import *
 from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 
-from cbas_utils import cbas_utils
-import logger
-from cluster_utils.cluster_ready_functions import cluster_utils
 
 class CBASBaseTest(BaseTestCase):
-    
     def setUp(self, add_defualt_cbas_node = True):
-        self.log = logger.Logger.get_logger()
         if self._testMethodDoc:
-            self.log.info("\n\nStarting Test: %s \n%s"%(self._testMethodName,self._testMethodDoc))
+            self.log.info("\n\nStarting Test: %s \n%s"
+                          % (self._testMethodName, self._testMethodDoc))
         else:
-            self.log.info("\n\nStarting Test: %s"%(self._testMethodName))
+            self.log.info("\n\nStarting Test: %s" % self._testMethodName)
         super(CBASBaseTest, self).setUp()
         self.cbas_node = self.input.cbas
         self.cbas_servers = []
         self.kv_servers = []
- 
+
         for server in self.cluster.servers:
             if "cbas" in server.services:
                 self.cbas_servers.append(server)
             if "kv" in server.services:
                 self.kv_servers.append(server)
             rest = RestConnection(server)
-            rest.set_data_path(data_path=server.data_path,index_path=server.index_path,cbas_path=server.cbas_path)
-            
+            rest.set_data_path(data_path=server.data_path,
+                               index_path=server.index_path,
+                               cbas_path=server.cbas_path)
+
         self._cb_cluster = self.cluster
         self.travel_sample_docs_count = 31591
         self.beer_sample_docs_count = 7303
@@ -42,8 +35,8 @@ class CBASBaseTest(BaseTestCase):
         self.cb_bucket_password = self.input.param('cb_bucket_password', None)
         self.expected_error = self.input.param("error", None)
         if self.expected_error:
-            self.expected_error = self.expected_error.replace("INVALID_IP",invalid_ip)
-            self.expected_error = self.expected_error.replace("PORT",self.cluster.master.port)
+            self.expected_error = self.expected_error.replace("INVALID_IP", invalid_ip)
+            self.expected_error = self.expected_error.replace("PORT" ,self.cluster.master.port)
         self.cb_server_ip = self.input.param("cb_server_ip", None)
         self.cb_server_ip = self.cb_server_ip.replace('INVALID_IP',invalid_ip) if self.cb_server_ip is not None else None
         self.cbas_dataset_name = self.input.param("cbas_dataset_name", 'travel_ds')
@@ -70,7 +63,8 @@ class CBASBaseTest(BaseTestCase):
         self.cbas_path = server.cbas_path
 
         self.rest = RestConnection(self.cluster.master)
-        self.log.info("Setting the min possible memory quota so that adding more nodes to the cluster wouldn't be a problem.")
+        self.log.info("Setting the min possible memory quota so that adding "
+                      "more nodes to the cluster wouldn't be a problem.")
         self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=MIN_KV_QUOTA)
         self.rest.set_service_memoryQuota(service='ftsMemoryQuota', memoryQuota=FTS_QUOTA)
         self.rest.set_service_memoryQuota(service='indexMemoryQuota', memoryQuota=INDEX_QUOTA)
@@ -85,13 +79,13 @@ class CBASBaseTest(BaseTestCase):
             self.log.info("Setting %d memory quota for CBAS" % CBAS_QUOTA)
             self.cbas_memory_quota = CBAS_QUOTA
             self.rest.set_service_memoryQuota(service='cbasMemoryQuota', memoryQuota=CBAS_QUOTA)
-        
+
         self.cbas_util = None
         # Drop any existing buckets and datasets
         if self.cbas_node:
             self.cbas_util = cbas_utils(self.cluster.master, self.cbas_node)
             self.cleanup_cbas()
-                    
+
         if not self.cbas_node and len(self.cbas_servers)>=1:
             self.cbas_node = self.cbas_servers[0]
             self.cbas_util = cbas_utils(self.cluster.master, self.cbas_node)
@@ -106,14 +100,14 @@ class CBASBaseTest(BaseTestCase):
                     When a node is added to the cluster, it is automatically cleaned-up.'''
                 self.cleanup_cbas()
                 self.cbas_servers.remove(self.cbas_node)
-        
+
         self.log.info("==============  CBAS_BASE setup was finished for test #{0} {1} ==============" \
-                          .format(self.case_number, self._testMethodName))
-        
+                      .format(self.case_number, self._testMethodName))
+
     def tearDown(self):
         self.cbas_util.closeConn()
         super(CBASBaseTest, self).tearDown()
-    
+
     def cleanup_cbas(self):
         """
         Drops all connections, datasets and buckets from CBAS

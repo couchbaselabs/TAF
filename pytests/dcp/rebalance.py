@@ -1,5 +1,4 @@
 import time
-import logger
 from dcp.constants import PRODUCER
 from dcpbase import DCPBase
 from membase.api.rest_client import RestConnection, RestHelper
@@ -8,15 +7,12 @@ from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
 
-log = logger.Logger.get_logger()
-
 
 class DCPRebalanceTests(DCPBase):
     def test_mutations_during_rebalance(self):
         # start rebalance
         task = self.cluster.async_rebalance([self.master], self.servers[1:],
                                             [])
-
         # load some data
         vbucket = 0
         self.load_docs(self.master, vbucket, self.num_items)
@@ -25,8 +21,8 @@ class DCPRebalanceTests(DCPBase):
         # Fetch vbucket seqno stats
         vb_stat = cb_stat_obj.vbucket_seqno(self.bucket_util.buckets[0].name)
         # stream
-        log.info("streaming vb {0} to seqno {1}"
-                 .format(vbucket, vb_stat[vbucket]["high_seqno"]))
+        self.log.info("Streaming vb {0} to seqno {1}"
+                      .format(vbucket, vb_stat[vbucket]["high_seqno"]))
         self.assertEquals(vb_stat[vbucket]["high_seqno"], self.num_items)
 
         dcp_client = self.dcp_client(self.master, PRODUCER, vbucket)

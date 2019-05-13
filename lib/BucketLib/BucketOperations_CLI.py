@@ -1,23 +1,16 @@
-'''
+"""
 Created on Sep 27, 2017
 
 @author: riteshagarwal
-'''
-from remote.remote_util import RemoteMachineShellConnection
-import json
-import time
-import urllib
-from bucket import *
-import logger
-from membase.api.rest_client import Node
-from memcached.helper.kvstore import KVStore
-from rest import Rest_Connection
-from BucketOperations_Rest import BucketHelper as bucket_helper_rest
-from com.couchbase.client.java import Bucket
-log = logger.Logger.get_logger()
-    
-class BucketHelper(bucket_helper_rest):
+"""
 
+import logging
+from remote.remote_util import RemoteMachineShellConnection
+from BucketOperations_Rest import BucketHelper as BucketHelperRest
+log = logging.getLogger()
+
+
+class BucketHelper(BucketHelperRest):
     def __init__(self, server, username, password, cb_version=None):
         self.server = server
         self.hostname = "%s:%s" % (server.ip, server.port)

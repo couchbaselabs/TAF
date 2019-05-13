@@ -1,23 +1,27 @@
-from random import shuffle
+import logging
 import time
-import logger
-from couchbase_helper.cluster import ServerTasks
+from random import shuffle
+
+from bucket_utils import Bucket
 from membase.api.exception import StatsUnavailableException, \
     ServerAlreadyJoinedException, RebalanceFailedException, \
     InvalidArgumentException, ServerSelfJoinException, \
     AddNodeException
 from membase.api.rest_client import RestConnection
-from memcached.helper.data_helper import MemcachedClientHelper, VBucketAwareMemcached
+from memcached.helper.data_helper import MemcachedClientHelper, \
+                                         VBucketAwareMemcached
 from mc_bin_client import MemcachedClient
-log = logger.Logger.get_logger()
+
+log = logging.getLogger()
 
 
-class RebalanceHelper():
+class RebalanceHelper:
     @staticmethod
-    #bucket is a json object that contains name,port,password
-    def wait_for_mc_stats_all_nodes(master, bucket, stat_key, stat_value, timeout_in_seconds=120, verbose=True):
-        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}".format(bucket, stat_key, \
-                                                                                stat_value, master.ip))
+    # bucket is a json object that contains name,port,password
+    def wait_for_mc_stats_all_nodes(master, bucket, stat_key, stat_value,
+                                    timeout_in_seconds=120, verbose=True):
+        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
+                 .format(bucket, stat_key, stat_value, master.ip))
         time_to_timeout = 0
         previous_stat_value = -1
         curr_stat_value = -1
@@ -27,10 +31,11 @@ class RebalanceHelper():
             rest = RestConnection(master)
             nodes = rest.node_statuses()
             for node in nodes:
-                _server = {"ip": node.ip, "port": node.port, "username": master.rest_username,
+                _server = {"ip": node.ip, "port": node.port,
+                           "username": master.rest_username,
                            "password": master.rest_password}
-                #failed over node is part of node_statuses but since its failed over memcached connections
-                #to this node will fail
+                # Failed over node is part of node_statuses but since
+                # its failed over memcached connections to this node will fail
                 node_self = RestConnection(_server).get_nodes_self()
                 if node_self.clusterMembership == 'active':
                     mc = MemcachedClientHelper.direct_client(_server, bucket)
@@ -73,10 +78,10 @@ class RebalanceHelper():
         return verified
 
     @staticmethod
-    #bucket is a json object that contains name,port,password
+    # bucket is a json object that contains name,port,password
     def wait_for_stats(master, bucket, stat_key, stat_value, timeout_in_seconds=120, verbose=True):
-        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}".format(bucket, stat_key, \
-                                                                                stat_value, master.ip))
+        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
+                 .format(bucket, stat_key, stat_value, master.ip))
         time_to_timeout = 0
         previous_stat_value = -1
         curr_stat_value = -1
@@ -122,8 +127,8 @@ class RebalanceHelper():
 
     @staticmethod
     def wait_for_stats_no_timeout(master, bucket, stat_key, stat_value, timeout_in_seconds=-1, verbose=True):
-        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}".format(bucket, stat_key, \
-                                                                                stat_value, master.ip))
+        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
+                 .format(bucket, stat_key, stat_value, master.ip))
         rest = RestConnection(master)
         stats = rest.get_bucket_stats(bucket)
 
@@ -137,8 +142,8 @@ class RebalanceHelper():
     @staticmethod
     #bucket is a json object that contains name,port,password
     def wait_for_mc_stats(master, bucket, stat_key, stat_value, timeout_in_seconds=120, verbose=True):
-        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}".format(bucket, stat_key, \
-                                                                                stat_value, master.ip))
+        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
+                 .format(bucket, stat_key, stat_value, master.ip))
         start = time.time()
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
@@ -161,8 +166,8 @@ class RebalanceHelper():
 
     @staticmethod
     def wait_for_mc_stats_no_timeout(master, bucket, stat_key, stat_value, timeout_in_seconds=-1, verbose=True):
-        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}".format(bucket, stat_key, \
-                                                                                stat_value, master.ip))
+        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
+                 .format(bucket, stat_key, stat_value, master.ip))
         # keep retrying until reaches the server
         stats = {}
         while not stats:
@@ -365,7 +370,6 @@ class RebalanceHelper():
     def print_taps_from_all_nodes(rest, bucket='default'):
         #get the port number from rest ?
 
-        log = logger.Logger.get_logger()
         nodes_for_stats = rest.get_nodes()
         for node_for_stat in nodes_for_stats:
             try:
@@ -416,10 +420,9 @@ class RebalanceHelper():
     @staticmethod
     def rebalance_in(servers, how_many, do_shuffle=True, monitor=True, do_check=True):
         servers_rebalanced = []
-        log = logger.Logger.get_logger()
         rest = RestConnection(servers[0])
         nodes = rest.node_statuses()
-        #are all ips the same
+        # are all ips the same
         nodes_on_same_ip = True
         firstIp = nodes[0].ip
         if len(nodes) == 1:
@@ -547,7 +550,6 @@ class RebalanceHelper():
 
     @staticmethod
     def begin_rebalance_in(master, servers, timeout=5):
-        log = logger.Logger.get_logger()
         rest = RestConnection(master)
         otpNode = None
 
@@ -569,9 +571,7 @@ class RebalanceHelper():
 
     @staticmethod
     def begin_rebalance_out(master, servers, timeout=5):
-        log = logger.Logger.get_logger()
         rest = RestConnection(master)
-
         master_node = rest.get_nodes_self()
 
         allNodes = []
@@ -593,7 +593,6 @@ class RebalanceHelper():
 
     @staticmethod
     def end_rebalance(master):
-        log = logger.Logger.get_logger()
         rest = RestConnection(master)
         result = False
         try:

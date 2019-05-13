@@ -1,32 +1,30 @@
-import logger
-import unittest
 import datetime
 import logging
+import unittest
+import time
 import traceback
+
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from membase.api.rest_client import RestHelper, RestConnection
 from scripts.collect_server_info import cbcollectRunner
-from bucket_utils.bucket_ready_functions import bucket_utils
-from cluster_utils.cluster_ready_functions import cluster_utils
+from bucket_utils.bucket_ready_functions import BucketUtils
+from cluster_utils.cluster_ready_functions import ClusterUtils
 from cluster_utils.cluster_ready_functions import CBCluster
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
-import time
-
-log = logging.getLogger()
 
 
 class BaseTestCase(unittest.TestCase):
     def setUp(self):
-        self.log = logger.Logger.get_logger()
+        self.log = logging.getLogger()
         self.tear_down_while_setup = True
         self.input = TestInputSingleton.input
         self.primary_index_created = False
         self.sdk_client_type = self.input.param("sdk_client_type", "java")
         if self.input.param("log_level", None):
-            log.setLevel(level=0)
-            for hd in log.handlers:
+            self.log.setLevel(level=0)
+            for hd in self.log.handlers:
                 if str(hd.__class__).find('FileHandler') != -1:
                     hd.setLevel(level=logging.DEBUG)
                 else:
@@ -37,10 +35,10 @@ class BaseTestCase(unittest.TestCase):
         self.thread_to_use = self.input.param("threads_to_use", 10)
         self.cluster = CBCluster(servers=self.input.servers)
         self.task_manager = TaskManager(self.thread_to_use)
-        self.cluster_util = cluster_utils(self.cluster, self.task_manager)
+        self.cluster_util = ClusterUtils(self.cluster, self.task_manager)
         self.task = ServerTasks(self.task_manager)
-        self.bucket_util = bucket_utils(self.cluster, self.cluster_util,
-                                        self.task)
+        self.bucket_util = BucketUtils(self.cluster, self.cluster_util,
+                                       self.task)
         self.cleanup = False
         self.nonroot = False
         self.test_failures = list()
@@ -124,17 +122,19 @@ class BaseTestCase(unittest.TestCase):
             if not self.skip_init_check_cbserver:
                 self.cb_version = None
                 if RestHelper(RestConnection(self.cluster.master)).is_ns_server_running():
-                    """ since every new couchbase version, there will be new features
-                        that test code will not work on previous release.  So we need
-                        to get couchbase version to filter out those tests. """
+                    """
+                    Since every new couchbase version, there will be new
+                    features that test code won't work on previous release.
+                    So we need to get couchbase version to filter out
+                    those tests.
+                    """
                     self.cb_version = RestConnection(self.cluster.master).get_nodes_version()
                 else:
-                    log.info("couchbase server does not run yet")
+                    self.log.info("couchbase server does not run yet")
                 self.protocol = self.cluster_util.get_protocol_type()
             self.services_map = None
 
-            log.info("==============  basetestcase setup was started for test #{0} {1}=============="
-                     .format(self.case_number, self._testMethodName))
+            self.__log_setup_status("started")
             if not self.skip_buckets_handle and not self.skip_init_check_cbserver:
                 self.cluster_util.cluster_cleanup(self.bucket_util)
 
@@ -145,43 +145,42 @@ class BaseTestCase(unittest.TestCase):
                     str(self.__class__).find('Upgrade_EpTests') != -1 or \
                     hasattr(self, 'skip_buckets_handle') and \
                     self.skip_buckets_handle:
-                log.info("any cluster operation in setup will be skipped")
+                self.log.info("any cluster operation in setup will be skipped")
                 self.primary_index_created = True
-                log.info("==============  basetestcase setup was finished for test #{0} {1} =============="
-                         .format(self.case_number, self._testMethodName))
+                self.__log_setup_status("finished")
                 return
             # avoid clean up if the previous test has been tear down
             if self.case_number == 1 or self.case_number > 1000:
                 if self.case_number > 1000:
-                    log.warn("teardDown for previous test failed. will retry..")
+                    self.log.warn("TearDown for previous test failed. will retry..")
                     self.case_number -= 1000
                 self.cleanup = True
                 if not self.skip_init_check_cbserver:
                     self.tearDownEverything()
                     self.tear_down_while_setup = False
-                #self.task = ServerTasks(self.task_manager)
             if not self.skip_init_check_cbserver:
-                log.info("initializing cluster")
+                self.log.info("Initializing cluster")
                 # self.cluster_util.reset_cluster()
-                master_services = self.cluster_util.get_services(self.servers[:1],
-                                                                 self.services_init,
-                                                                 start_node=0)
+                master_services = self.cluster_util.get_services(
+                    self.servers[:1], self.services_init, start_node=0)
                 if master_services is not None:
                     master_services = master_services[0].split(",")
 
-                self.quota = self._initialize_nodes(self.task, self.cluster.servers,
-                                                    self.disabled_consistent_view,
-                                                    self.rebalanceIndexWaitingDisabled,
-                                                    self.rebalanceIndexPausingDisabled,
-                                                    self.maxParallelIndexers,
-                                                    self.maxParallelReplicaIndexers,
-                                                    self.port,
-                                                    self.quota_percent,
-                                                    services=master_services)
+                self.quota = self._initialize_nodes(
+                    self.task,
+                    self.cluster.servers,
+                    self.disabled_consistent_view,
+                    self.rebalanceIndexWaitingDisabled,
+                    self.rebalanceIndexPausingDisabled,
+                    self.maxParallelIndexers,
+                    self.maxParallelReplicaIndexers,
+                    self.port,
+                    self.quota_percent,
+                    services=master_services)
 
                 self.cluster_util.change_env_variables()
                 self.cluster_util.change_checkpoint_params()
-                log.info("done initializing cluster")
+                self.log.info("Cluster initialized")
             else:
                 self.quota = ""
             if self.input.param("log_info", None):
@@ -195,11 +194,10 @@ class BaseTestCase(unittest.TestCase):
             if self.input.param("port", None):
                 self.port = str(self.input.param("port", None))
 
-            log.info("==============  basetestcase setup was finished for test #{0} {1} =============="
-                     .format(self.case_number, self._testMethodName))
+            self.__log_setup_status("finished")
 
             if not self.skip_init_check_cbserver:
-                self._log_start()
+                self.__log("started")
                 self.sleep(5)
         except Exception, e:
             traceback.print_exc()
@@ -215,22 +213,23 @@ class BaseTestCase(unittest.TestCase):
         try:
             if hasattr(self, 'skip_buckets_handle') and self.skip_buckets_handle:
                 return
-            test_failed = (hasattr(self, '_resultForDoCleanups') and \
-                           len(self._resultForDoCleanups.failures or \
+            test_failed = (hasattr(self, '_resultForDoCleanups') and
+                           len(self._resultForDoCleanups.failures or
                                self._resultForDoCleanups.errors)) or \
                           (hasattr(self, '_exc_info') and \
                            self._exc_info()[1] is not None)
 
             if test_failed and TestInputSingleton.input.param("stop-on-failure", False) \
                     or self.input.param("skip_cleanup", False):
-                log.warn("CLEANUP WAS SKIPPED")
+                self.log.warn("CLEANUP WAS SKIPPED")
             else:
 
                 if test_failed:
-                    # collect logs here instead of in test runner because we have not shut things down
+                    # collect logs here because we have not shut things down
                     if TestInputSingleton.param("get-cbcollect-info", False):
                         for server in self.servers:
-                            log.info("Collecting logs @ {0}".format(server.ip))
+                            self.log.info("Collecting logs @ {0}"
+                                          .format(server.ip))
                             self.get_cbcollect_info(server)
                         # collected logs so turn it off so it is not done later
                         TestInputSingleton.input.test_params["get-cbcollect-info"] = False
@@ -246,15 +245,13 @@ class BaseTestCase(unittest.TestCase):
                             except:
                                 pass
 
-                log.info("==============  basetestcase cleanup was started for test #{0} {1} =============="
-                         .format(self.case_number, self._testMethodName))
+                self.__log_setup_status("started")
                 rest = RestConnection(self.cluster.master)
                 alerts = rest.get_alerts()
                 if alerts is not None and len(alerts) != 0:
-                    log.warn("Alerts were found: {0}".format(alerts))
+                    self.log.warn("Alerts were found: {0}".format(alerts))
                 self.cluster_util.cluster_cleanup(self.bucket_util)
-                log.info("==============  basetestcase cleanup was finished for test #{0} {1} =============="
-                         .format(self.case_number, self._testMethodName))
+                self.__log_setup_status("finished")
         except BaseException:
             # kill memcached
             self.cluster_util.kill_memcached()
@@ -268,13 +265,26 @@ class BaseTestCase(unittest.TestCase):
                 self.cleanup = False
             else:
                 self.cluster_util.reset_env_variables()
-            log.info("==========================tasks in thread pool==================")
+            self.log.info("========== tasks in thread pool ==========")
             self.task_manager.print_tasks_in_pool()
-            log.info("====================================================")
+            self.log.info("==========================================")
             if not self.tear_down_while_setup:
                 self.task_manager.shutdown_task_manager()
                 self.task.shutdown(force=True)
-            self._log_finish()
+            self.__log("finished")
+
+    def __log(self, status):
+        try:
+            msg = "{0}: {1} {2}" \
+                .format(datetime.datetime.now(), self._testMethodName, status)
+            RestConnection(self.servers[0]).log_client_error(msg)
+        except:
+            pass
+
+    def __log_setup_status(self, status):
+        msg = "========= basetestcase setup {0} for test #{1} {2} =========" \
+              .format(status, self.case_number, self._testMethodName)
+        self.log.info(msg)
 
     def get_cbcollect_info(self, server):
         """Collect cbcollectinfo logs for all the servers in the cluster.
@@ -287,24 +297,11 @@ class BaseTestCase(unittest.TestCase):
             TestInputSingleton.input.test_params[
                 "get-cbcollect-info"] = False
         except Exception as e:
-            log.error("IMPOSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}".format(server.ip, e))
-
-    def _log_start(self):
-        try:
-            msg = "{0} : {1} started ".format(datetime.datetime.now(), self._testMethodName)
-            RestConnection(self.servers[0]).log_client_error(msg)
-        except:
-            pass
-
-    def _log_finish(self):
-        try:
-            msg = "{0} : {1} finished ".format(datetime.datetime.now(), self._testMethodName)
-            RestConnection(self.servers[0]).log_client_error(msg)
-        except:
-            pass
+            self.log.error("IMPOSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}"
+                           .format(server.ip, e))
 
     def sleep(self, timeout=15, message=""):
-        log.info("sleep for {0} secs. {1} ...".format(timeout, message))
+        self.log.info("sleep for {0} secs. {1} ...".format(timeout, message))
         time.sleep(timeout)
 
     def set_failure(self, message):
@@ -332,11 +329,11 @@ class BaseTestCase(unittest.TestCase):
             if node_quota < quota or quota == 0:
                 quota = node_quota
         if quota < 100 and len(set([server.ip for server in self.servers])) != 1:
-            log.warn("RAM quota was defined less than 100 MB:")
+            self.log.warn("RAM quota was defined less than 100 MB")
             for server in servers:
                 remote_client = RemoteMachineShellConnection(server)
                 ram = remote_client.extract_remote_info().ram
-                log.info("{0}: {1} MB".format(server.ip, ram))
+                self.log.info("{0}: {1} MB".format(server.ip, ram))
                 remote_client.disconnect()
 
         if self.jre_path:

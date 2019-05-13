@@ -1,27 +1,30 @@
-'''
+"""
 Created on Sep 25, 2017
 
 @author: riteshagarwal
-'''
-from BucketOperations_Rest import BucketHelper as bucket_helper_rest
-from Java_Connection import SDKClient
+"""
+
+import logging
+
+from BucketOperations_Rest import BucketHelper as BucketHelperRest
+from sdk_client3 import SDKClient
 from com.couchbase.client.core.endpoint.kv import AuthenticationException
 from com.couchbase.client.java.bucket import BucketType
 from com.couchbase.client.java.cluster import DefaultBucketSettings
 from com.couchbase.client.java.error import BucketDoesNotExistException
-import logger
 
 
-log = logger.Logger.get_logger()
+log = logging.getLogger()
 
-class BucketHelper(bucket_helper_rest, SDKClient):
+
+class BucketHelper(BucketHelperRest, SDKClient):
 
     def __init__(self,server):
         self.server = server
         super(BucketHelper, self).__init__(server)
         super(SDKClient, self).__init__(server)
         pass
-    
+
     def bucket_exists(self, bucket):
         try:
             self.connectCluster()
@@ -41,14 +44,14 @@ class BucketHelper(bucket_helper_rest, SDKClient):
         '''
         Boolean removeBucket(String name)
         Removes a Bucket identified by its name with the default management timeout.
-        
+
         This method throws:
-        
+
         java.util.concurrent.TimeoutException: If the timeout is exceeded.
         com.couchbase.client.core.CouchbaseException: If the underlying resources could not be enabled properly.
         com.couchbase.client.java.error.TranscodingException: If the server response could not be decoded.
         Note: Removing a Bucket is an asynchronous operation on the server side, so even if the response is returned there is no guarantee that the operation has finished on the server itself.
-        
+
         Parameters:
         name - the name of the bucket.
         Returns:
@@ -67,20 +70,20 @@ class BucketHelper(bucket_helper_rest, SDKClient):
             log.error(e)
             self.disconnectCluster()
             return False
-        
+
     def create_bucket(self, bucket_params={}):
         log.info("Connecting Cluster")
-        self.connectCluster()        
+        self.connectCluster()
         try:
             bucketSettings = DefaultBucketSettings.builder()
-            
+
             if bucket_params.get('bucketType') == "memcached":
                 bucketSettings.type(BucketType.MEMCACHED)
             elif bucket_params.get('bucketType') == "ephemeral":
                 bucketSettings.type(BucketType.EPHEMERAL)
             else:
                 bucketSettings.type(BucketType.COUCHBASE)
-                
+
             bucketSettings.replicas(bucket_params.get('replicaNumber'))
             bucketSettings.name(bucket_params.get('name'))
             bucketSettings.quota(bucket_params.get('ramQuotaMB'))

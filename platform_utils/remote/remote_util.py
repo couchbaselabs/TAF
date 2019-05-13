@@ -1,7 +1,7 @@
+import copy
 import os
 import re
 import sys
-import copy
 import urllib
 import uuid
 import time
@@ -11,53 +11,43 @@ import json
 import TestInput
 from subprocess import Popen, PIPE
 
-import logger
 from builds.build_query import BuildQuery
-import testconstants
 from testconstants import VERSION_FILE
-from testconstants import WIN_REGISTER_ID
 from testconstants import MEMBASE_VERSIONS
-from testconstants import COUCHBASE_VERSIONS
 from testconstants import MISSING_UBUNTU_LIB
-from testconstants import MV_LATESTBUILD_REPO
-from testconstants import SHERLOCK_BUILD_REPO
-from testconstants import COUCHBASE_VERSIONS
-from testconstants import WIN_CB_VERSION_3
-from testconstants import COUCHBASE_VERSION_2
-from testconstants import COUCHBASE_VERSION_3
-from testconstants import COUCHBASE_FROM_VERSION_3,\
-                          COUCHBASE_FROM_SPOCK, SYSTEMD_SERVER
+from testconstants import MV_LATESTBUILD_REPO, SHERLOCK_BUILD_REPO
+
+from testconstants import CB_VERSION_NAME, CB_REPO, CB_RELEASE_APT_GET_REPO, \
+                          CB_RELEASE_YUM_REPO
 from testconstants import COUCHBASE_RELEASE_VERSIONS_3, CB_RELEASE_BUILDS
-from testconstants import SHERLOCK_VERSION, WIN_PROCESSES_KILLED
-from testconstants import COUCHBASE_FROM_VERSION_4, COUCHBASE_FROM_WATSON,\
-                          COUCHBASE_FROM_SPOCK
-from testconstants import RPM_DIS_NAME
-from testconstants import LINUX_DISTRIBUTION_NAME, LINUX_CB_PATH, \
-                          LINUX_COUCHBASE_BIN_PATH
-from testconstants import WIN_COUCHBASE_BIN_PATH,\
-                          WIN_CB_PATH
-from testconstants import WIN_COUCHBASE_BIN_PATH_RAW
-from testconstants import WIN_TMP_PATH, WIN_TMP_PATH_RAW
-from testconstants import WIN_UNZIP, WIN_PSSUSPEND
+from testconstants import COUCHBASE_FROM_VERSION_3, COUCHBASE_FROM_VERSION_4,\
+                          COUCHBASE_FROM_WATSON, COUCHBASE_FROM_SPOCK, \
+                          COUCHBASE_VERSIONS, \
+                          COUCHBASE_VERSION_2, COUCHBASE_VERSION_3
 
 from testconstants import MAC_CB_PATH, MAC_COUCHBASE_BIN_PATH
 
-from testconstants import CB_VERSION_NAME
-from testconstants import CB_REPO
-from testconstants import CB_RELEASE_APT_GET_REPO
-from testconstants import CB_RELEASE_YUM_REPO
+from testconstants import LINUX_CAPI_INI, LINUX_DISTRIBUTION_NAME, \
+                          LINUX_CB_PATH, LINUX_COUCHBASE_BIN_PATH, \
+                          LINUX_STATIC_CONFIG, LINUX_LOG_PATH, \
+                          LINUX_COUCHBASE_LOGS_PATH, LINUX_CONFIG_FILE, \
+                          LINUX_MOXI_PATH
 
+from testconstants import WIN_COUCHBASE_BIN_PATH, WIN_COUCHBASE_BIN_PATH_RAW, \
+                          WIN_CB_PATH, WIN_PSSUSPEND, WIN_PROCESSES_KILLED, \
+                          WIN_REGISTER_ID, WIN_TMP_PATH, WIN_TMP_PATH_RAW, \
+                          WIN_UNZIP, WIN_COUCHBASE_LOGS_PATH, WIN_MB_PATH
+
+from testconstants import RPM_DIS_NAME, SYSTEMD_SERVER
 from testconstants import NR_INSTALL_LOCATION_FILE
 
 from membase.api.rest_client import RestConnection, RestHelper
 from com.jcraft.jsch import JSchException, JSchAuthCancelException, \
                             JSchPartialAuthException, SftpException
 
-log = logger.Logger.get_logger()
-logging.getLogger("paramiko").setLevel(logging.WARNING)
+log = logging.getLogger()
 
 try:
-    # import paramiko
     from com.jcraft.jsch import JSch
     from org.python.core.util import FileUtil
     from java.lang import System
@@ -109,7 +99,7 @@ class RemoteMachineHelper(object):
                 if not last_reported_pid:
                     last_reported_pid = process.pid
                 elif not last_reported_pid == process.pid:
-                    message = 'process {0} was restarted. old pid : {1} new pid : {2}'
+                    message = 'Process {0} restarted. old pid: {1}, new pid: {2}'
                     log.info(message.format(process_name, last_reported_pid,
                                             process.pid))
                     return False
@@ -118,11 +108,10 @@ class RemoteMachineHelper(object):
                 # we should have an option to wait for the process
                 # to start during the timeout
                 # process might have crashed
-                log.info("{0}:process {1} is not running or it has crashed!"
+                log.info("Node {0} process {1} is not running or crashed"
                          .format(self.remote_shell.ip, process_name))
                 return False
             time.sleep(1)
-        #            log.info('process {0} is running'.format(process_name))
         return True
 
     def is_process_running(self, process_name):
@@ -139,7 +128,7 @@ class RemoteMachineHelper(object):
             process = RemoteMachineProcess()
             process.pid = words[1]
             process.name = words[0]
-            log.info("process is running on {0}: {1}"
+            log.info("Process is running on {0}: {1}"
                      .format(self.remote_shell.ip, words))
             return process
         else:
@@ -180,18 +169,12 @@ class RemoteMachineShellConnection:
 #             self.ip += "%en0"
         self.remote = (self.ip != "localhost" and self.ip != "127.0.0.1")
         self._ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        log.info('connecting to {0} with username : {1} pem key : {2}'
-                 .format(ip, username, pkey_location))
+        log.debug('Connecting to {0} with username: {1} pem key : {2}'
+                  .format(ip, username, pkey_location))
         try:
             if self.remote:
                 self._ssh_client.connect(hostname=ip, username=username,
                                          key_filename=pkey_location)
-        except paramiko.AuthenticationException:
-            log.info("Authentication failed for {0}".format(self.ip))
-            exit(1)
-        except paramiko.BadHostKeyException:
-            log.info("Invalid Host key for {0}".format(self.ip))
-            exit(1)
         except Exception:
             log.info("Can't establish SSH session with {0}".format(self.ip))
             exit(1)
@@ -217,10 +200,9 @@ class RemoteMachineShellConnection:
             # self.ip += "%en0"
         self.remote = (self.ip != "localhost" and self.ip != "127.0.0.1")
         self.port = serverInfo.port
-        # self._ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        msg = 'connecting to {0} with username:{1} password:{2} ssh_key:{3}'
-        log.info(msg.format(serverInfo.ip, serverInfo.ssh_username,
-                            serverInfo.ssh_password, serverInfo.ssh_key))
+        msg = 'Connecting to {0} with username:{1} password:{2} ssh_key:{3}'
+        log.debug(msg.format(serverInfo.ip, serverInfo.ssh_username,
+                             serverInfo.ssh_password, serverInfo.ssh_key))
 
         # added attempts for connection because of PID check failed.
         # RNG must be re-initialized after fork() error
@@ -252,9 +234,8 @@ class RemoteMachineShellConnection:
                     log.error("Can't establish SSH session to node {1}: {0}"
                               .format(e, self.ip))
                     exit(1)
-        log.info("Connected to {0}".format(serverInfo.ip))
+        log.debug("Connected to {0}".format(serverInfo.ip))
         """
-        """ self.info.distribution_type.lower() == "ubuntu" """
         self.cmd_ext = ""
         self.bin_path = LINUX_COUCHBASE_BIN_PATH
         self.msi = False
@@ -278,7 +259,7 @@ class RemoteMachineShellConnection:
         attempt = 0
         while True:
             try:
-                log.info("Connect to node: %s as user: %s" % (self.ip, user))
+                log.debug("Connect to node: %s as user: %s" % (self.ip, user))
                 if self.remote and self.ssh_key == '':
                     self._ssh_client.connect(hostname=self.ip, username=user,
                                              password=self.password)
@@ -300,7 +281,7 @@ class RemoteMachineShellConnection:
                     log.error("Can't establish SSH session to node {1} :\
                                                    {0}".format(e, self.ip))
                     exit(1)
-        log.info("Connected to {0} as {1}".format(self.ip, user))
+        log.debug("Connected to {0} as {1}".format(self.ip, user))
 
     def sleep(self, timeout=1, message=""):
         log.info("{0}:sleep for {1} secs. {2} ..."
@@ -388,7 +369,7 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
             return [o[0].rstrip()]
         elif self.info.distribution_type.lower() == 'mac':
-            self.log.error('Not implemented')
+            log.error('Not implemented')
         elif self.info.type.lower() == "linux":
             o, r = self.execute_command("getconf _NPROCESSORS_ONLN")
             self.log_command_output(o, r)
@@ -424,7 +405,7 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command("open /Applications/Couchbase\ Server.app")
             self.log_command_output(o, r)
         else:
-            self.log.error("don't know operating system or product version")
+            log.error("don't know operating system or product version")
 
     def stop_server(self):
         self.extract_remote_info()
@@ -463,7 +444,7 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command("killall -9 epmd")
             self.log_command_output(o, r)
         else:
-            self.log.error("don't know operating system or product version")
+            log.error("don't know operating system or product version")
 
     def restart_couchbase(self):
         """
@@ -591,41 +572,41 @@ class RemoteMachineShellConnection:
         log.info("CHANGE LOG LEVEL TO %s".format(new_log_level))
         # ADD NON_ROOT user config_details
         output, error = self.execute_command("sed -i '/loglevel_default, /c \\{loglevel_default, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_ns_server, /c \\{loglevel_ns_server, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_stats, /c \\{loglevel_stats, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_rebalance, /c \\{loglevel_rebalance, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_cluster, /c \\{loglevel_cluster, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_views, /c \\{loglevel_views, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_error_logger, /c \\{loglevel_error_logger, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_mapreduce_errors, /c \\{loglevel_mapreduce_errors, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_user, /c \\{loglevel_user, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_xdcr, /c \\{loglevel_xdcr, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/loglevel_menelaus, /c \\{loglevel_menelaus, %s\}'. %s"
-                                             % (new_log_level, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_log_level, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
 
     def configure_log_location(self, new_log_location):
-        mv_logs = testconstants.LINUX_LOG_PATH + '/' + new_log_location
+        mv_logs = LINUX_LOG_PATH + '/' + new_log_location
         print " MV LOGS %s" % mv_logs
         error_log_tag = "error_logger_mf_dir"
         # ADD NON_ROOT user config_details
@@ -638,46 +619,46 @@ class RemoteMachineShellConnection:
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/%s, /c \\{%s, \"%s\"\}.' %s"
                                              % (error_log_tag, error_log_tag, mv_logs,
-                                                testconstants.LINUX_STATIC_CONFIG))
+                                                LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
 
     def change_stat_periodicity(self, ticks):
         # ADD NON_ROOT user config_details
         log.info("CHANGE STAT PERIODICITY TO every %s seconds" % ticks)
         output, error = self.execute_command("sed -i '$ a\{grab_stats_every_n_ticks, %s}.'  %s"
-                                             % (ticks, testconstants.LINUX_STATIC_CONFIG))
+                                             % (ticks, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
 
     def change_port_static(self, new_port):
         # ADD NON_ROOT user config_details
         log.info("=========CHANGE PORTS for REST: %s, MCCOUCH: %s,MEMCACHED: %s, MOXI: %s, CAPI: %s==============="
                  % (new_port, new_port+1, new_port+2, new_port+3, new_port+4))
-        output, error = self.execute_command("sed -i '/{rest_port/d' %s" % testconstants.LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("sed -i '/{rest_port/d' %s" % LINUX_STATIC_CONFIG)
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '$ a\{rest_port, %s}.' %s"
-                                             % (new_port, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_port, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
-        output, error = self.execute_command("sed -i '/{mccouch_port/d' %s" % testconstants.LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("sed -i '/{mccouch_port/d' %s" % LINUX_STATIC_CONFIG)
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '$ a\{mccouch_port, %s}.' %s"
-                                             % (new_port + 1, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_port + 1, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
-        output, error = self.execute_command("sed -i '/{memcached_port/d' %s" % testconstants.LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("sed -i '/{memcached_port/d' %s" % LINUX_STATIC_CONFIG)
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '$ a\{memcached_port, %s}.' %s"
-                                             % (new_port + 2, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_port + 2, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
-        output, error = self.execute_command("sed -i '/{moxi_port/d' %s" % testconstants.LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("sed -i '/{moxi_port/d' %s" % LINUX_STATIC_CONFIG)
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '$ a\{moxi_port, %s}.' %s"
-                                             % (new_port + 3, testconstants.LINUX_STATIC_CONFIG))
+                                             % (new_port + 3, LINUX_STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/port = /c\port = %s' %s"
-                                             % (new_port + 4, testconstants.LINUX_CAPI_INI))
+                                             % (new_port + 4, LINUX_CAPI_INI))
         self.log_command_output(output, error)
-        output, error = self.execute_command("rm %s" % testconstants.LINUX_CONFIG_FILE)
+        output, error = self.execute_command("rm %s" % LINUX_CONFIG_FILE)
         self.log_command_output(output, error)
-        output, error = self.execute_command("cat %s" % testconstants.LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("cat %s" % LINUX_STATIC_CONFIG)
         self.log_command_output(output, error)
 
     def is_couchbase_installed(self):
@@ -719,11 +700,11 @@ class RemoteMachineShellConnection:
     def is_moxi_installed(self):
         self.extract_remote_info()
         if self.info.type.lower() == 'windows':
-            self.log.error('Not implemented')
+            log.error('Not implemented')
         elif self.info.distribution_type.lower() == 'mac':
-            self.log.error('Not implemented')
+            log.error('Not implemented')
         elif self.info.type.lower() == "linux":
-            if self.file_exists(testconstants.LINUX_MOXI_PATH, 'moxi'):
+            if self.file_exists(LINUX_MOXI_PATH, 'moxi'):
                 return True
         return False
 
@@ -1441,7 +1422,7 @@ class RemoteMachineShellConnection:
         if self.file_exists(WIN_CB_PATH, VERSION_FILE):
             path_to_version = WIN_CB_PATH
         else:
-            path_to_version = testconstants.WIN_MB_PATH
+            path_to_version = WIN_MB_PATH
         try:
             log.info(path_to_version)
             f = sftp.open(os.path.join(path_to_version, VERSION_FILE), 'r+')
@@ -2091,7 +2072,7 @@ class RemoteMachineShellConnection:
             if enable_ipv6:
                 output, error = \
                     self.execute_command("sed -i '/ipv6, /c \\{ipv6, true\}'. %s"
-                                         % testconstants.LINUX_STATIC_CONFIG)
+                                         % LINUX_STATIC_CONFIG)
                 success &= self.log_command_output(output, error, track_words)
                 startserver = True
 
@@ -2158,7 +2139,7 @@ class RemoteMachineShellConnection:
         success = True
         track_words = ("warning", "error", "fail")
         if build.name.lower().find("membase") != -1:
-            remote_path = testconstants.WIN_MB_PATH
+            remote_path = WIN_MB_PATH
             abbr_product = "mb"
         elif build.name.lower().find("couchbase") != -1:
             remote_path = WIN_CB_PATH
@@ -2346,7 +2327,7 @@ class RemoteMachineShellConnection:
         self.extract_remote_info()
         log.info('deliverable_type : {0}'.format(self.info.deliverable_type))
         if self.info.type.lower() == 'windows':
-            self.log.error('Not implemented')
+            log.error('Not implemented')
         elif self.info.deliverable_type in ["rpm"]:
             output, error = self.execute_command('rpm -i /tmp/{0}'
                                                  .format(build.name))
@@ -2991,7 +2972,7 @@ class RemoteMachineShellConnection:
         log.info(self.info.distribution_type)
         type = self.info.distribution_type.lower()
         if type == 'windows':
-            self.log.error("Not implemented")
+            log.error("Not implemented")
         elif type == "ubuntu":
             uninstall_cmd = "dpkg -r {0};dpkg --purge {1};" \
                             .format("moxi-server", "moxi-server")
@@ -4401,7 +4382,7 @@ class RemoteMachineShellConnection:
         return o, r
 
     def remove_win_backup_dir(self):
-        win_paths = [WIN_CB_PATH, testconstants.WIN_MB_PATH]
+        win_paths = [WIN_CB_PATH, WIN_MB_PATH]
         for each_path in win_paths:
             backup_files = []
             files = self.list_files(each_path)
@@ -4415,7 +4396,7 @@ class RemoteMachineShellConnection:
                     self.execute_command("rm -rf '{0}{1}'".format(each_path, f))
 
     def remove_win_collect_tmp(self):
-        win_tmp_path = testconstants.WIN_TMP_PATH
+        win_tmp_path = WIN_TMP_PATH
         log.info("start remove tmp files from directory %s" % win_tmp_path)
         self.execute_command("rm -rf '%stmp*'" % win_tmp_path)
 
@@ -4973,9 +4954,9 @@ class RemoteUtilHelper(object):
         shell = RemoteMachineShellConnection(server)
         info = shell.extract_remote_info()
         if info.type.lower() != "windows":
-            path_to_log = testconstants.LINUX_COUCHBASE_LOGS_PATH
+            path_to_log = LINUX_COUCHBASE_LOGS_PATH
         else:
-            path_to_log = testconstants.WIN_COUCHBASE_LOGS_PATH
+            path_to_log = WIN_COUCHBASE_LOGS_PATH
         log_files = []
         files = shell.list_files(path_to_log)
         for f in files:

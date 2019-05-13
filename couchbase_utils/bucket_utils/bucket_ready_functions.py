@@ -1,20 +1,21 @@
-'''
+"""
 Created on Sep 26, 2017
 
 @author: riteshagarwal
-'''
-from collections import defaultdict
+"""
+
 import copy
 import crc32
 import exceptions
 import json
-import logger
+import logging
 import random
 import string
-from subprocess import call
 import time
 import uuid
 import zlib
+from subprocess import call
+from collections import defaultdict
 
 import mc_bin_client
 import memcacheConstants
@@ -25,27 +26,21 @@ from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from bucket_utils.Bucket import Bucket
-from couchbase_helper.cluster import ServerTasks
-from couchbase_helper.data_analysis_helper import \
-    DataCollector, DataAnalyzer, DataAnalysisResultAnalyzer
+from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
+                                                  DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
-from couchbase_helper.documentgenerator import DocumentGenerator
+from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
 from membase.api.exception import StatsUnavailableException
-from membase.api.rest_client import Node
-from membase.api.rest_client import RestConnection
+from membase.api.rest_client import Node, RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
 from membase.helper.rebalance_helper import RebalanceHelper
-from memcached.helper.data_helper import MemcachedClientHelper
-from memcached.helper.data_helper import VBucketAwareMemcached
+from memcached.helper.data_helper import MemcachedClientHelper, \
+                                         VBucketAwareMemcached
 from remote.remote_util import RemoteMachineShellConnection
-from testconstants import MAX_COMPACTION_THRESHOLD
-from testconstants import MIN_COMPACTION_THRESHOLD
+from testconstants import MAX_COMPACTION_THRESHOLD, \
+                          MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
-
-
 # from couchbase_helper.stats_tools import StatsCommon
-log = logger.Logger.get_logger()
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
@@ -65,20 +60,25 @@ Parameters:
 """
 
 
-class bucket_utils():
-
+class BucketUtils:
     def __init__(self, cluster, cluster_util, server_task):
         self.cluster = cluster
         self.task = server_task
         self.task_manager = self.task.jython_task_manager
         self.cluster_util = cluster_util
-        self.buckets = []
+        self.buckets = list()
         self.input = TestInputSingleton.input
         self.enable_time_sync = self.input.param("enable_time_sync", False)
         self.sdk_compression = self.input.param("sdk_compression", True)
         self.data_collector = DataCollector()
         self.data_analyzer = DataAnalyzer()
         self.result_analyzer = DataAnalysisResultAnalyzer()
+        self.log = logging.getLogger()
+
+    # Supporting APIs
+    def sleep(self, timeout=15, message=""):
+        self.log.info("sleep for {0} secs. {1} ...".format(timeout, message))
+        time.sleep(timeout)
 
     def assertTrue(self, expr, msg=None):
         if msg:
@@ -86,8 +86,9 @@ class bucket_utils():
         else:
             msg = "{0} is not true".format(expr)
         if not expr:
-            raise(msg)
+            raise(Exception(msg))
 
+    # Fetch/Create/Delete buckets
     def create_bucket(self, bucket):
         if not isinstance(bucket, Bucket):
             raise Exception("Create bucket needs Bucket object as parameter")
@@ -100,9 +101,8 @@ class bucket_utils():
             raise Exception("Could not create bucket {}".format(bucket.name))
 
     def delete_bucket(self, serverInfo, bucket, wait_for_bucket_deletion=True):
-        log = logger.Logger.get_logger()
-        log.info('deleting existing bucket {0} on {1}'
-                 .format(bucket, serverInfo))
+        self.log.info('Deleting existing bucket {0} on {1}'
+                      .format(bucket, serverInfo))
 
         bucket_conn = BucketHelper(serverInfo)
         if self.bucket_exists(bucket):
@@ -110,31 +110,32 @@ class bucket_utils():
             if not status:
                 try:
                     self.print_dataStorage_content([serverInfo])
-                    log.info(StatsCommon.get_stats([serverInfo], bucket, "timings"))
+                    self.log.info(StatsCommon.get_stats([serverInfo], bucket,
+                                                        "timings"))
                 except Exception as ex:
-                    log.error("Unable to get timings for bucket: {0}"
-                              .format(ex))
-            log.info('deleted bucket : {0} from {1}'
-                     .format(bucket, serverInfo.ip))
+                    self.log.error("Unable to get timings for bucket: {0}"
+                                   .format(ex))
+            self.log.info('Deleted bucket: {0} from {1}'
+                          .format(bucket, serverInfo.ip))
         msg = 'Bucket "{0}" not deleted even after waiting for two minutes' \
               .format(bucket)
         if wait_for_bucket_deletion:
             if not self.wait_for_bucket_deletion(bucket, bucket_conn, 200):
                 try:
                     self.print_dataStorage_content([serverInfo])
-                    log.info(StatsCommon.get_stats([serverInfo], bucket,
-                                                   "timings"))
+                    self.log.info(StatsCommon.get_stats([serverInfo], bucket,
+                                                        "timings"))
                 except Exception as ex:
-                    log.error("Unable to get timings for bucket: {0}"
-                              .format(ex))
-                log.info(msg)
+                    self.log.error("Unable to get timings for bucket: {0}"
+                                   .format(ex))
+                self.log.info(msg)
                 return False
             else:
                 return True
 
     def wait_for_bucket_deletion(self, bucket, bucket_conn,
                                  timeout_in_seconds=120):
-        log.info('waiting for bucket deletion to complete....')
+        self.log.info('waiting for bucket deletion to complete....')
         start = time.time()
         while (time.time() - start) <= timeout_in_seconds:
             if not self.bucket_exists(bucket):
@@ -145,8 +146,7 @@ class bucket_utils():
 
     def wait_for_bucket_creation(self, bucket, bucket_conn,
                                  timeout_in_seconds=120):
-        log = logger.Logger.get_logger()
-        log.info('waiting for bucket creation to complete....')
+        self.log.info('Waiting for bucket creation to complete....')
         start = time.time()
         while (time.time() - start) <= timeout_in_seconds:
             if self.bucket_exists(bucket):
@@ -166,24 +166,23 @@ class bucket_utils():
             return False
 
     def delete_all_buckets(self, servers):
-        log = logger.Logger.get_logger()
         for serverInfo in servers:
             buckets = []
             try:
                 buckets = self.get_all_buckets(serverInfo)
             except Exception as e:
-                log.error(e)
-                log.error('15 seconds sleep before calling get_buckets again')
+                self.log.error(e)
+                self.log.error('15 secs sleep before get_all_buckets() call')
                 time.sleep(15)
                 buckets = self.get_all_buckets(serverInfo)
-            log.info('deleting existing buckets {0} on {1}'
-                     .format([b.name for b in buckets], serverInfo.ip))
+            self.log.info('Deleting existing buckets {0} on {1}'
+                          .format([b.name for b in buckets], serverInfo.ip))
             for bucket in buckets:
-                log.info("remove bucket {0} ...".format(bucket.name))
+                self.log.info("Remove bucket {0} ...".format(bucket.name))
                 try:
                     status = self.delete_bucket(serverInfo, bucket)
                 except Exception as e:
-                    log.error(e)
+                    self.log.error(e)
                     raise e
                 if not status:
                     raise Exception("Bucket {0} could not be deleted"
@@ -301,7 +300,7 @@ class bucket_utils():
         rest = RestConnection(server)
         info = rest.get_nodes_self()
         if info.memoryQuota < 450.0:
-            log.error("at least need 450MB memoryQuota")
+            self.log.error("At least need 450MB memoryQuota")
             success = False
         else:
             available_ram = info.memoryQuota * bucket_ram_ratio
@@ -348,21 +347,7 @@ class bucket_utils():
             self._set_time_sync_on_buckets(['standard_bucket' + str(i)
                                             for i in range(num_buckets)])
 
-    def create_memcached_buckets(self, server, num_buckets, bucket_size=None):
-        if not num_buckets:
-            return
-        if bucket_size is None:
-            bucket_size = 100
-
-        for i in range(num_buckets):
-            name = 'memcached_bucket' + str(i)
-            bucket = Bucket({Bucket.name: name,
-                             Bucket.bucketType: Bucket.bucket_type.MEMCACHED,
-                             Bucket.ramQuotaMB: bucket_size})
-            self.create_bucket(bucket)
-            self.buckets.append(bucket)
-
-    def _all_buckets_delete(self, server):
+    def delete_all_buckets(self, server):
         delete_tasks = []
         for bucket in self.buckets:
             delete_tasks.append(self.task.async_bucket_delete(server,
@@ -372,7 +357,7 @@ class bucket_utils():
             task.result()
         self.buckets = []
 
-    def _all_buckets_flush(self):
+    def flush_all_buckets(self):
         flush_tasks = []
         for bucket in self.buckets:
             flush_tasks.append(self.task.async_bucket_flush(
@@ -382,7 +367,7 @@ class bucket_utils():
             task.result()
 
     def verify_stats_for_bucket(self, bucket, items, timeout=60):
-        log.info("Verifying stats for bucket {0}".format(bucket.name))
+        self.log.info("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
         servers = self.cluster.nodes_in_cluster
         if bucket.bucketType == Bucket.bucket_type.MEMCACHED:
@@ -419,17 +404,11 @@ class bucket_utils():
             for task in stats_tasks:
                 self.task_manager.get_task_result(task)
         except Exception as e:
-            log.info("{0}".format(e))
+            self.log.info("{0}".format(e))
             for task in stats_tasks:
                 self.task_manager.stop_task(task)
-            log.error("Unable to get expected stats from the selected node")
-
-            log.info("Printing taps for all nodes")
-            rest = RestConnection(self.cluster.master)
-            for bucket in self.buckets:
-                RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
-            raise Exception("Unable to get expected stats during {0} sec"
-                            .format(timeout))
+            self.log.error("Unable to get expected stats from the "
+                           "selected node")
 
             # In case of exception, close all connections
             for remote_conn in shell_conn_list:
@@ -464,15 +443,15 @@ class bucket_utils():
 
     def update_all_bucket_maxTTL(self, maxttl=0):
         for bucket in self.buckets:
-            log.info("Updating maxTTL for bucket {0} to {1}s"
-                     .format(bucket.name, maxttl))
+            self.log.info("Updating maxTTL for bucket {0} to {1}s"
+                          .format(bucket.name, maxttl))
             BucketHelper(self.cluster.master).change_bucket_props(
                 bucket, maxTTL=maxttl)
 
     def update_all_bucket_replicas(self, replicas=1):
         for bucket in self.buckets:
-            log.info("Updating replica for bucket {0} to {1}s"
-                     .format(bucket.name, replicas))
+            self.log.info("Updating replica for bucket {0} to {1}s"
+                          .format(bucket.name, replicas))
             BucketHelper(self.cluster.master).change_bucket_props(
                 bucket, replicaNumber=replicas)
 
@@ -496,28 +475,19 @@ class bucket_utils():
                     verified &= self.wait_till_total_numbers_match(
                         master, bucket, timeout_in_seconds=(timeout or 500))
                 if not verified:
-                    log.error("Lost items!!! Replication was completed but sum"
-                              "(curr_items) don't match the curr_items_total")
-                    raise Exception("Lost items!!! Replication was completed "
-                                    "but sum(curr_items) don't match the "
-                                    "curr_items_total")
+                    msg = "Lost items!!! Replication was completed " \
+                          "but sum (curr_items) don't match the " \
+                          "curr_items_total"
+                    self.log.error(msg)
+                    raise Exception(msg)
 
     def verify_stats_all_buckets(self, items, timeout=60):
         for bucket in self.buckets:
             self.verify_stats_for_bucket(bucket, items, timeout=timeout)
 
-    def _async_load_bucket(self, cluster, bucket, generator, op_type, exp=0,
-                           flag=0, persist_to=0, replicate_to=0,
-                           only_store_hash=True, batch_size=1, pause_secs=1,
-                           timeout_secs=5, compression=True,
-                           process_concurrency=8, retries=5):
-        return self.task.async_load_gen_docs(
-            cluster, bucket, generator, op_type, exp=exp, flag=flag,
-            persist_to=persist_to, replicate_to=replicate_to,
-            only_store_hash=only_store_hash, batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs,
-            compression=compression,
-            process_concurrency=process_concurrency, retries=retries)
+    # Bucket doc_ops support APIs
+    def key_generator(self, size=6, chars=string.ascii_uppercase + string.digits):
+        return ''.join(random.choice(chars) for _ in range(size))
 
     def get_doc_op_info_dict(self, bucket, op_type, exp=0, replicate_to=0,
                              persist_to=0, durability="",
@@ -590,6 +560,19 @@ class bucket_utils():
 
         return tasks_info
 
+    def _async_load_bucket(self, cluster, bucket, generator, op_type, exp=0,
+                           flag=0, persist_to=0, replicate_to=0,
+                           only_store_hash=True, batch_size=1, pause_secs=1,
+                           timeout_secs=5, compression=True,
+                           process_concurrency=8, retries=5):
+        return self.task.async_load_gen_docs(
+            cluster, bucket, generator, op_type, exp=exp, flag=flag,
+            persist_to=persist_to, replicate_to=replicate_to,
+            only_store_hash=only_store_hash, batch_size=batch_size,
+            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            compression=compression,
+            process_concurrency=process_concurrency, retries=retries)
+
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,
                                 only_store_hash=True, batch_size=1,
@@ -614,7 +597,7 @@ class bucket_utils():
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
             if bucket.bucketType != 'memcached':
-                log.info("BATCH SIZE for documents load: %s" % batch_size)
+                self.log.info("BATCH SIZE for documents load: %s" % batch_size)
                 tasks.append(self.task.async_load_gen_docs(
                     cluster, bucket, gen, op_type, exp, flag, persist_to,
                     replicate_to, only_store_hash, batch_size, pause_secs,
@@ -717,9 +700,6 @@ class bucket_utils():
                     self.log.info("Memory is full, %s bytes in use for %s and bucket %s!" %
                                   (memory_used, self.cluster.master.ip, bucket.name))
 
-    def key_generator(self, size=6, chars=string.ascii_uppercase + string.digits):
-        return ''.join(random.choice(chars) for _ in range(size))
-
     def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
                                     check_ep_items_remaining=False,
@@ -800,45 +780,12 @@ class bucket_utils():
             task.get_result(timeout)
 
     def disable_compaction(self, server=None, bucket="default"):
-
         server = server or self.cluster.servers[0]
         new_config = {"viewFragmntThresholdPercentage": None,
                       "dbFragmentThresholdPercentage": None,
                       "dbFragmentThreshold": None,
                       "viewFragmntThreshold": None}
         self.cluster_util.modify_fragmentation_config(new_config, bucket)
-
-    def _load_doc_data_all_buckets(self, data_op="create", batch_size=1000,
-                                   gen_load=None, start=0, end=1000):
-        # initialize the template for document generator
-        age = range(5)
-        first = ['james', 'sharon']
-        template = '{{ "mutated" : 0, "age": {0}, "first_name": "{1}" }}'
-        if gen_load is None:
-            gen_load = DocumentGenerator('test_docs', template, age, first,
-                                         start=start, end=end)
-
-        log.info("%s %s documents..." % (data_op, end-start))
-        self._load_all_buckets(self.cluster.master, gen_load, data_op, 0,
-                               batch_size=batch_size)
-        return gen_load
-
-    def load_bucket_with_durability(self, bucket, key, start, end,
-                                    op_type="create", doc_size=256,
-                                    doc_type="json", target_vbucket=None,
-                                    vbuckets=1024, replicate_to=0,
-                                    persist_to=0, durability_level=None):
-        doc_loader = doc_generator(
-            key, start, end, doc_size=doc_size, doc_type=doc_type,
-            target_vbucket=target_vbucket, vbuckets=vbuckets)
-        doc_loader_task = self.task_manager.async_load_gen_docs(
-                self.cluster, bucket, doc_loader, op_type, 0,
-                batch_size=10, persist_to=persist_to,
-                replicate_to=replicate_to,
-                pause_secs=5, timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries)
-        self.task_manager.jython_task_manager.get_task_result(doc_loader_task)
-        return
 
     def get_vbucket_seqnos(self, servers, buckets, skip_consistency=False,
                            per_node=True):
@@ -880,7 +827,7 @@ class bucket_utils():
         comp_map["purge_seqno"] = {'type': "string", 'operation': compare}
 
         new_vbucket_stats = dict()
-        log.info("Begin Verification for vbucket sequence numbers comparison")
+        self.log.info("Begin Verification for vbucket seq_nos comparison")
         if perNode:
             new_vbucket_stats = self.get_vbucket_seqnos_per_Node_Only(servers,
                                                                       buckets)
@@ -904,7 +851,7 @@ class bucket_utils():
                 deletedItems=False, updatedItems=False)
         if not isNotSame:
             raise Exception(summary)
-        log.info(" End Verification for vbucket sequence numbers comparison ")
+        self.log.info("End Verification for vbucket seq_nos comparison")
         return new_vbucket_stats
 
     def compare_per_node_for_vbucket_consistency(self, map1, check_abs_high_seqno=False, check_purge_seqno=False):
@@ -1012,12 +959,12 @@ class bucket_utils():
         """
         Method to check vbucket distribution analysis after rebalance
         """
-        log.info("Begin Verification for vb_distribution_analysis")
+        self.log.info("Begin Verification for vb_distribution_analysis")
         servers = self.cluster_util.get_kv_nodes(servers)
         active, replica = self.get_vb_distribution_active_replica(
             servers=servers, buckets=buckets)
         for bucket in active.keys():
-            log.info("Begin Verification for Bucket {0}".format(bucket))
+            self.log.info("Begin Verification for Bucket {0}".format(bucket))
             active_result = active[bucket]
             replica_result = replica[bucket]
             if graceful or type == "rebalance":
@@ -1047,7 +994,7 @@ class bucket_utils():
                             "std test failed for active vbuckets")
             self.assertTrue(replica_result["std"] >= 0.0 and replica_result["std"] <= std,
                             "std test failed for replica vbuckets")
-        log.info("End Verification for vb_distribution_analysis")
+        self.log.info("End Verification for vb_distribution_analysis")
 
     def data_analysis_active_replica_all(self, prev_data_set_active,
                                          prev_data_set_replica, servers,
@@ -1060,14 +1007,14 @@ class bucket_utils():
             2) Compare Previous Active and Replica data
             3) Compare Current Active and Replica data
         """
-        log.info(" Begin Verification for data comparison ")
+        self.log.info(" Begin Verification for data comparison ")
         info, curr_data_set_replica = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, getReplica=True,
             mode=mode)
         info, curr_data_set_active = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, getReplica=False,
             mode=mode)
-        log.info(" Comparing :: Prev vs Current :: Active and Replica ")
+        self.log.info(" Comparing :: Prev vs Current :: Active and Replica ")
         comparison_result_replica = self.data_analyzer.compare_all_dataset(
             info, prev_data_set_replica, curr_data_set_replica)
         comparison_result_active = self.data_analyzer.compare_all_dataset(
@@ -1080,18 +1027,18 @@ class bucket_utils():
                 comparison_result_active, deletedItems=False, addedItems=False,
                 updatedItems=False)
         if not logic_replica:
-            log.error(output_replica)
+            self.log.error(output_replica)
             raise Exception(output_replica)
         if not logic_active:
-            log.error(output_active)
+            self.log.error(output_active)
             raise Exception(output_active)
-        log.info(" Comparing :: Current :: Active and Replica ")
+        self.log.info("Comparing :: Current :: Active and Replica")
         comparison_result = self.data_analyzer.compare_all_dataset(
             info, curr_data_set_active, curr_data_set_replica)
         logic, summary, output = self.result_analyzer.analyze_all_result(
             comparison_result, deletedItems=False, addedItems=False,
             updatedItems=False)
-        log.info(" End Verification for data comparison ")
+        self.log.info("End Verification for data comparison")
 
     def data_analysis_all(self, prev_data_set, servers, buckets, path=None,
                           mode="disk", deletedItems=False, addedItems=False,
@@ -1100,7 +1047,7 @@ class bucket_utils():
         Method to do data analysis using cb transfer.
         This works at cluster level
         """
-        log.info(" Begin Verification for data comparison ")
+        self.log.info("Begin Verification for data comparison")
         servers = self.cluster_util.get_kv_nodes(servers)
         info, curr_data_set = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, mode=mode)
@@ -1111,7 +1058,7 @@ class bucket_utils():
             addedItems=addedItems, updatedItems=updatedItems)
         if not logic:
             raise Exception(summary)
-        log.info(" End Verification for data comparison ")
+        self.log.info("End Verification for data comparison")
 
     def get_data_set_all(self, servers, buckets, path=None, mode="disk"):
         """ Method to get all data set for buckets and from the servers """
@@ -1156,16 +1103,16 @@ class bucket_utils():
         info, disk_active_dataset = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, getReplica=False,
             mode=mode)
-        log.info(" Begin Verification for Active Vs Replica ")
+        self.log.info("Begin Verification for Active Vs Replica")
         comparison_result = self.data_analyzer.compare_all_dataset(
             info, disk_replica_dataset, disk_active_dataset)
         logic, summary, _ = self.result_analyzer.analyze_all_result(
             comparison_result, deletedItems=False, addedItems=False,
             updatedItems=False)
         if not logic:
-            log.error(summary)
+            self.log.error(summary)
             raise Exception(summary)
-        log.info(" End Verification for Active Vs Replica ")
+        self.log.info("End Verification for Active Vs Replica")
         return disk_replica_dataset, disk_active_dataset
 
     def data_active_and_replica_analysis(self, server, max_verify=None,
@@ -1254,7 +1201,7 @@ class bucket_utils():
         comp_map["seq"] = {'type': "long", 'operation': "<="}
         comp_map["num_entries"] = {'type': "string", 'operation': "<="}
 
-        log.info(" Begin Verification for failovers logs comparison ")
+        self.log.info(" Begin Verification for failovers logs comparison ")
         servers = self.cluster_util.get_kv_nodes(servers)
         new_failovers_stats = self.get_failovers_logs(servers, buckets)
         compare_failovers_result = self.data_analyzer.compare_stats_dataset(
@@ -1264,39 +1211,8 @@ class bucket_utils():
             updatedItems=False)
         if not isNotSame:
             raise Exception(summary)
-        log.info("End Verification for failovers logs comparison")
+        self.log.info("End Verification for failovers logs comparison")
         return new_failovers_stats
-
-    def load(self, generators_load, buckets=None, exp=0, flag=0,
-             kv_store=1, only_store_hash=True, batch_size=1, pause_secs=1,
-             timeout_secs=30, op_type='create', start_items=0,
-             verify_data=True):
-        if not buckets:
-            buckets = self.get_all_buckets(self.cluster.master)
-        gens_load = dict()
-        for bucket in buckets:
-            tmp_gen = []
-            for generator_load in generators_load:
-                tmp_gen.append(copy.deepcopy(generator_load))
-            gens_load[bucket] = copy.deepcopy(tmp_gen)
-        tasks = []
-        items = 0
-        for bucket in buckets:
-            for gen_load in gens_load[bucket]:
-                items += (gen_load.end - gen_load.start)
-        for bucket in buckets:
-            log.info("%s %s to %s documents.." % (op_type, items, bucket.name))
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster.master, bucket.name, gens_load[bucket],
-                bucket.kvs[kv_store], op_type, exp, flag, only_store_hash,
-                batch_size, pause_secs, timeout_secs,
-                compression=self.sdk_compression))
-        for task in tasks:
-            task.get_result()
-        self.num_items = items + start_items
-        if verify_data:
-            self.verify_cluster_stats(self.servers[:self.nodes_init])
-        log.info("LOAD IS FINISHED")
 
     def sync_ops_all_buckets(self, docs_gen_map={}, batch_size=10,
                              verify_data=True):
@@ -1499,7 +1415,6 @@ class bucket_utils():
 
     def create_default_buckets(self, servers, number_of_replicas=1,
                                assert_on_test=None):
-        log = logger.Logger.get_logger()
         for serverInfo in servers:
             ip_rest = BucketHelper(serverInfo)
             ip_rest.create_bucket(bucket='default', ramQuotaMB=256,
@@ -1510,7 +1425,7 @@ class bucket_utils():
             removed_all_buckets = self.wait_for_bucket_creation('default',
                                                                 ip_rest)
             if not removed_all_buckets:
-                log.error(msg)
+                self.log.error(msg)
                 if assert_on_test:
                     assert_on_test.fail(msg=msg)
 
@@ -1518,7 +1433,6 @@ class bucket_utils():
                                       timeout_in_seconds=300, log_msg='',
                                       admin_user='cbadminbucket',
                                       admin_pass='password'):
-        log = logger.Logger.get_logger()
         start_time = time.time()
         end_time = start_time + timeout_in_seconds
         ready_vbuckets = dict()
@@ -1555,7 +1469,7 @@ class bucket_utils():
                         if e.status == memcacheConstants.ERR_NOT_MY_VBUCKET:
                             # May receive while waiting for vbuckets, retry
                             continue
-                        log.error("%s: %s" % (log_msg, ex_msg))
+                        self.log.error("%s: %s" % (log_msg, ex_msg))
                         continue
                     except exceptions.EOFError:
                         # The client was disconnected for some reason. This can
@@ -1566,7 +1480,7 @@ class bucket_utils():
                         # http://review.couchbase.org/#/c/49781/
                         # Longer term when we don't disconnect clients in this
                         # state we should probably remove this code.
-                        log.error("Disconnected from the server, reconnecting")
+                        self.log.error("Reconnecting to the server")
                         client.reconnect()
                         client.sasl_auth_plain(
                             bucket.name.encode('ascii'),
@@ -1576,8 +1490,8 @@ class bucket_utils():
                     if c.find("\x01") > 0 or c.find("\x02") > 0:
                         ready_vbuckets[i] = True
                     elif i in ready_vbuckets:
-                        log.warning("vbucket state changed from active to {0}"
-                                    .format(c))
+                        self.log.warning("vbucket state changed from active "
+                                         "to {0}".format(c))
                         del ready_vbuckets[i]
                 client.close()
         return len(ready_vbuckets) == vbucket_count
@@ -1586,9 +1500,8 @@ class bucket_utils():
     # bucket { 'name' : 90,'password':,'port':1211'}
     def wait_for_memcached(self, node, bucket, timeout_in_seconds=300,
                            log_msg=''):
-        log = logger.Logger.get_logger()
         msg = "waiting for memcached bucket : {0} in {1} to accept set ops"
-        log.info(msg.format(bucket, node.ip))
+        self.log.info(msg.format(bucket, node.ip))
         all_vbuckets_ready = self.wait_for_vbuckets_ready_state(
             node, bucket, timeout_in_seconds, log_msg)
         # return (counter == vbucket_count) and all_vbuckets_ready
@@ -1619,8 +1532,9 @@ class bucket_utils():
                 if cluster_run:
                     call(["ls", "-lR", path])
                 else:
-                    log.info("Total number of files.  No need to printout all "
-                             "that flood the test log.")
+                    self.log.info(
+                        "Total number of files. No need to printout all "
+                        "that flood the test log.")
                     shell = RemoteMachineShellConnection(serverInfo)
                     # o, r = shell.execute_command("ls -LR '{0}'".format(path))
                     o, r = shell.execute_command("wc -l '{0}'".format(path))
@@ -1628,7 +1542,6 @@ class bucket_utils():
 
     def load_some_data(self, serverInfo, fill_ram_percentage=10.0,
                        bucket_name='default'):
-        log = logger.Logger.get_logger()
         if fill_ram_percentage <= 0.0:
             fill_ram_percentage = 5.0
         client = MemcachedClientHelper.direct_client(serverInfo, bucket_name)
@@ -1639,17 +1552,17 @@ class bucket_utils():
         testuuid = uuid.uuid4()
         info = bucket_conn.get_bucket(bucket_name)
         emptySpace = info.stats.ram - info.stats.memUsed
-        log.info('emptySpace : {0} fill_ram_percentage : {1}'
-                 .format(emptySpace, fill_ram_percentage))
+        self.log.info('emptySpace: {0} fill_ram_percentage: {1}'
+                      .format(emptySpace, fill_ram_percentage))
         fill_space = (emptySpace * fill_ram_percentage) / 100.0
-        log.info("fill_space {0}".format(fill_space))
+        self.log.info("fill_space {0}".format(fill_space))
         # each packet can be 10 KB
         packetSize = int(10 * 1024)
         number_of_buckets = int(fill_space) / packetSize
-        log.info('packetSize: {0}'.format(packetSize))
-        log.info('memory usage before key insertion : {0}'
-                 .format(info.stats.memUsed))
-        log.info('inserting {0} new keys to memcached @ {0}'
+        self.log.info('packetSize: {0}'.format(packetSize))
+        self.log.info('memory usage before key insertion: {0}'
+                      .format(info.stats.memUsed))
+        self.log.info('inserting {0} new keys to memcached @ {0}'
                  .format(number_of_buckets, serverInfo.ip))
         keys = ["key_%s_%d" % (testuuid, i) for i in range(number_of_buckets)]
         inserted_keys = []
@@ -1660,12 +1573,12 @@ class bucket_utils():
                 client.set(key, 0, 0, key)
                 inserted_keys.append(key)
             except mc_bin_client.MemcachedError as error:
-                log.error(error)
+                self.log.error(error)
                 client.close()
-                log.error("unable to push key: {0} to vbucket: {1}"
-                          .format(key, client.vbucketId))
-                self.fail("unable to push key: {0} to vbucket: {1}"
-                          .format(key, client.vbucketId))
+                msg = "unable to push key: {0} to vbucket: {1}" \
+                      .format(key, client.vbucketId)
+                self.log.error(msg)
+                self.fail(msg)
 
         client.close()
         return inserted_keys
@@ -1899,11 +1812,11 @@ class bucket_utils():
                 # now go through each vbucket and populate the info
             # who is master , who is replica
         # get the 'storageTotals'
-        log.debug('read {0} vbuckets'.format(len(bucket.vbuckets)))
+        self.log.debug('read {0} vbuckets'.format(len(bucket.vbuckets)))
         stats = parsed['basicStats']
         # vBucketServerMap
         bucketStats = Bucket.BucketStats()
-        log.debug('stats:{0}'.format(stats))
+        self.log.debug('Stats: {0}'.format(stats))
         bucketStats.opsPerSec = stats['opsPerSec']
         bucketStats.itemCount = stats['itemCount']
         if bucket.bucketType != "memcached":
@@ -1973,7 +1886,7 @@ class bucket_utils():
 
     def wait_till_total_numbers_match(self, master, bucket,
                                       timeout_in_seconds=120):
-        log.info('waiting for sum_of_curr_items == total_items....')
+        self.log.info('waiting for sum_of_curr_items == total_items....')
         start = time.time()
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
@@ -1984,10 +1897,10 @@ class bucket_utils():
                 else:
                     time.sleep(2)
             except StatsUnavailableException:
-                log.error("Unable to retrieve stats for any node!")
+                self.log.error("Unable to retrieve stats for any node!")
                 break
         if not verified:
-            log.info("Print taps for all nodes..")
+            self.log.info("Print taps for all nodes..")
             rest = RestConnection(master)
             RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
         return verified
@@ -2007,8 +1920,8 @@ class bucket_utils():
             server_stats = BucketHelper(master).get_bucket_stats_for_node(
                 bucket, server)
             if not server_stats:
-                log.info("unable to get stats from {0}:{1}"
-                         .format(server.ip, server.port))
+                self.log.info("Unable to get stats from {0}: {1}"
+                              .format(server.ip, server.port))
                 stats_received = False
             all_server_stats.append((server, server_stats))
         if not stats_received:
@@ -2018,39 +1931,40 @@ class bucket_utils():
             if not single_stats or "curr_items" not in single_stats:
                 continue
             sum += single_stats["curr_items"]
-            log.info("curr_items from {0}:{1} : {2}"
-                     .format(server.ip, server.port,
-                             single_stats["curr_items"]))
+            self.log.info("curr_items from {0}:{1} - {2}"
+                          .format(server.ip, server.port,
+                                  single_stats["curr_items"]))
             if 'vb_pending_num' in single_stats:
                 vbucket_pending_sum += single_stats['vb_pending_num']
-                log.info("vb_pending_num from {0}:{1} : {2}"
-                         .format(server.ip, server.port,
-                                 single_stats["vb_pending_num"]))
+                self.log.info("vb_pending_num from {0}:{1} - {2}"
+                              .format(server.ip, server.port,
+                                      single_stats["vb_pending_num"]))
             if 'vb_active_num' in single_stats:
                 vbucket_active_sum += single_stats['vb_active_num']
-                log.info("vb_active_num from {0}:{1} : {2}"
-                         .format(server.ip, server.port,
-                                 single_stats["vb_active_num"]))
+                self.log.info("vb_active_num from {0}:{1} - {2}"
+                              .format(server.ip, server.port,
+                                      single_stats["vb_active_num"]))
             if 'vb_replica_num' in single_stats:
                 vbucket_replica_sum += single_stats['vb_replica_num']
-                log.info("vb_replica_num from {0}:{1} : {2}"
-                         .format(server.ip, server.port,
-                                 single_stats["vb_replica_num"]))
+                self.log.info("vb_replica_num from {0}:{1} - {2}"
+                              .format(server.ip, server.port,
+                                      single_stats["vb_replica_num"]))
 
         msg = "sum of vb_active_num {0}, vb_pending_num {1}, vb_replica_num {2}"
-        log.info(msg.format(vbucket_active_sum, vbucket_pending_sum,
-                            vbucket_replica_sum))
+        self.log.info(msg.format(vbucket_active_sum, vbucket_pending_sum,
+                                 vbucket_replica_sum))
         msg = 'sum: {0} and sum * (replica_factor + 1) ({1}) : {2}'
-        log.info(msg.format(sum, replica_factor+1, (sum * (replica_factor+1))))
+        self.log.info(msg.format(sum, replica_factor+1,
+                                 (sum * (replica_factor+1))))
         master_stats = BucketHelper(master).get_bucket_stats(bucket)
         if "curr_items_tot" in master_stats:
-            log.info('curr_items_tot from master: {0}'
-                     .format(master_stats["curr_items_tot"]))
+            self.log.info('curr_items_tot from master: {0}'
+                          .format(master_stats["curr_items_tot"]))
         else:
-            raise Exception("bucket {0} stats doesnt contain 'curr_items_tot':"
+            raise Exception("Bucket {0} stats doesnt contain 'curr_items_tot':"
                             .format(bucket))
         if replica_factor >= len(nodes):
-            log.warn("the number of nodes is less than replica requires")
+            self.log.warn("Number of nodes is less than replica requires")
             delta = sum * (len(nodes)) - master_stats["curr_items_tot"]
         else:
             delta = sum * (replica_factor + 1) - master_stats["curr_items_tot"]
@@ -2061,12 +1975,12 @@ class bucket_utils():
                 missing_percentage = 0
             else:
                 missing_percentage = delta * 1.0 / (sum * (replica_factor + 1))
-            log.info("Nodes stats are: {0}"
-                     .format([node.ip for node in nodes]))
+            self.log.info("Nodes stats are: {0}"
+                          .format([node.ip for node in nodes]))
         else:
             missing_percentage = 1
-        log.info("delta : {0} missing_percentage : {1} replica_factor : {2}"
-                 .format(delta, missing_percentage, replica_factor))
+        self.log.info("Delta: {0} missing_percentage: {1} replica_factor: {2}"
+                      .format(delta, missing_percentage, replica_factor))
         # If no items missing then, return True
         if not delta:
             return True
@@ -2074,7 +1988,6 @@ class bucket_utils():
 
     def _wait_warmup_completed(self, servers, bucket_name, wait_time=300):
         warmed_up = False
-        log = logger.Logger.get_logger()
         for server in servers:
             mc = None
             start = time.time()
@@ -2089,13 +2002,15 @@ class bucket_utils():
                             and stats['ep_warmup_thread'] == 'complete':
                         break
                     else:
-                        log.info("Failed to get the server stats, retrying..")
+                        self.log.info("Failed to get the server stats, retrying..")
                         time.sleep(2)
                 except Exception as e:
-                    log.error("Failed to get ep_warmup_time stats from %s:%s, exception %s"
-                              % (server.ip, server.port, e))
+                    self.log.error("Failed to get ep_warmup_time stats "
+                                   "from %s:%s, exception %s"
+                                   % (server.ip, server.port, e))
             else:
-                self.fail("Failed to get ep_warmup_time stats from %s:%s after %s secs"
+                self.fail("Failed to get ep_warmup_time stats "
+                          "from %s:%s after %s secs"
                           % (server.ip, server.port, wait_time))
 
             # Waiting for warm-up
@@ -2103,13 +2018,13 @@ class bucket_utils():
             warmed_up = False
             while time.time() - start < wait_time and not warmed_up:
                 if mc.stats()["ep_warmup_thread"] == "complete":
-                    log.info("Warmup completed, Warmed up. %s items"
-                             % (mc.stats()["curr_items_tot"]))
+                    self.log.info("Warmup completed, Warmed up. %s items"
+                                  % (mc.stats()["curr_items_tot"]))
                     warmed_up = True
                     continue
                 elif mc.stats()["ep_warmup_thread"] == "running":
-                    log.info("still warming up .... curr_items_tot : %s"
-                             % (mc.stats()["curr_items_tot"]))
+                    self.log.info("still warming up .... curr_items_tot : %s"
+                                  % (mc.stats()["curr_items_tot"]))
                 else:
                     self.fail("Value of ep_warmup thread does not exist, exiting from this server")
                 time.sleep(5)
@@ -2143,12 +2058,12 @@ class bucket_utils():
             rolelist = [{'id': 'cbadminbucket', 'name': 'cbadminbucket',
                          'roles': 'admin'}]
 
-        log.info("**** add built-in '%s' user to node %s ****"
-                 % (testuser[0]["name"], node.ip))
+        self.log.info("**** add built-in '%s' user to node %s ****"
+                      % (testuser[0]["name"], node.ip))
         RbacUtil().create_user_source(testuser, 'builtin', node)
 
-        log.info("**** add '%s' role to '%s' user ****"
-                 % (rolelist[0]["roles"], testuser[0]["name"]))
+        self.log.info("**** add '%s' role to '%s' user ****"
+                      % (rolelist[0]["roles"], testuser[0]["name"]))
         status = RbacUtil().add_user_role(rolelist, RestConnection(node),
                                           'builtin')
         return status
@@ -2369,6 +2284,46 @@ class bucket_utils():
             ratio = 2.0 / 3.0
         return ratio
 
-    def sleep(self, timeout=15, message=""):
-        log.info("sleep for {0} secs. {1} ...".format(timeout, message))
-        time.sleep(timeout)
+    def start_parallel_cruds_for_all_buckets(
+            self, cluster, doc_ops, gen_create, gen_update, gen_delete,
+            exp=0, persist_to=0, replicate_to=0, durability="", sdk_timeout=10,
+            pause_secs=5, batch_size=20, process_concurrency=8,
+            retry_exceptions=[], ignore_exceptions=[],
+            task_verification=False):
+        tasks_info = dict()
+        if "update" in doc_ops:
+            tem_tasks_info = self._async_load_all_buckets(
+                cluster, gen_update, "update", exp, batch_size=batch_size,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability, pause_secs=pause_secs,
+                timeout_secs=sdk_timeout,
+                process_concurrency=process_concurrency,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+        if "create" in doc_ops:
+            tem_tasks_info = self._async_load_all_buckets(
+                cluster, gen_create, "create", exp, batch_size=batch_size,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability, pause_secs=pause_secs,
+                timeout_secs=sdk_timeout,
+                process_concurrency=process_concurrency,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+        if "delete" in doc_ops:
+            tem_tasks_info = self._async_load_all_buckets(
+                cluster, gen_delete, "delete", exp, batch_size=batch_size,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability, pause_secs=pause_secs,
+                timeout_secs=sdk_timeout,
+                process_concurrency=process_concurrency,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+
+        if task_verification:
+            self.verify_doc_op_task_exceptions(tasks_info, cluster)
+            self.log_doc_ops_task_failures(tasks_info)
+
+        return tasks_info

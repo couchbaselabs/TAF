@@ -8,7 +8,7 @@ import re
 import socket
 import BeautifulSoup
 import testconstants
-import logger
+import logging
 import traceback
 import sys
 from testconstants import WIN_CB_VERSION_3
@@ -21,6 +21,8 @@ from testconstants import COUCHBASE_FROM_VERSION_3, COUCHBASE_FROM_SPOCK
 from testconstants import CB_RELEASE_REPO
 from testconstants import CB_LATESTBUILDS_REPO
 from testconstants import CE_EE_ON_SAME_FOLDER
+
+log = logging.getLogger()
 
 
 class MembaseBuild(object):
@@ -69,7 +71,6 @@ class MembaseChange(object):
 
 class BuildQuery(object):
     def __init__(self):
-        self.log = logger.Logger.get_logger()
         pass
 
     # let's look at buildlatets or latest/sustaining or any other
@@ -101,7 +102,7 @@ class BuildQuery(object):
             if product == builds.product and builds.architecture_type == arch:
                 return builds
             else:
-                self.log.info("if build not found, url link may not match...")
+                log.info("if build not found, url link may not match...")
         return None
 
     def find_membase_build(self, builds, product, deliverable_type, os_architecture, build_version, is_amazon=False):
@@ -512,10 +513,11 @@ class BuildQuery(object):
                     index_url = "/index_" + version[:version.find("-")] + ".html"
                 else:
                     index_url = "/index_" + version + ".html"
-            #try this ten times
+            # Try this ten times
             for _ in range(0, 10):
                 try:
-                    self.log.info("Try collecting build information from url: %s" % (build_page + index_url))
+                    log.info("Try collecting build information from url: %s"
+                             % (build_page + index_url))
                     if timeout:
                         socket.setdefaulttimeout(timeout)
                     page = urllib2.urlopen(build_page + index_url)

@@ -6,13 +6,14 @@ Created on Sep 25, 2017
 from membase.api import httplib2
 import base64
 import json
-import logger
+import logging
 import traceback
 import socket
 import time
 from TestInput import TestInputSingleton
 from membase.api.exception import ServerUnavailableException
-log = logger.Logger.get_logger()
+
+log = logging.getLogger()
 
 
 class RestConnection(object):
@@ -97,29 +98,30 @@ class RestConnection(object):
         for iteration in xrange(5):
             http_res, success = self.init_http_request(self.baseUrl + 'nodes/self')
             if not success and type(http_res) == unicode and\
-               (http_res.find('Node is unknown to this cluster') > -1 or \
-                http_res.find('Unexpected server error, request logged') > -1):
-                log.error("Error {0} was gotten, 5 seconds sleep before retry"\
-                                                             .format(http_res))
+               (http_res.find('Node is unknown to this cluster') > -1 or
+                    http_res.find('Unexpected server error, request logged') > -1):
+                log.error("Error {0}, 5 seconds sleep before retry"
+                          .format(http_res))
                 time.sleep(5)
                 if iteration == 2:
-                    log.error("node {0}:{1} is in a broken state!"\
-                                        .format(self.ip, self.port))
+                    log.error("Node {0}:{1} is in a broken state!"
+                              .format(self.ip, self.port))
                     raise ServerUnavailableException(self.ip)
                 continue
             else:
                 break
-            
+
     def init_http_request(self, api):
         content = None
         try:
-            status, content, header = self._http_request(api, 'GET',
-                                                         headers=self._create_capi_headers())
+            status, content, header = self._http_request(
+                api, 'GET', headers=self._create_capi_headers())
             json_parsed = json.loads(content)
             if status:
                 return json_parsed, True
             else:
-                print("{0} with status {1}: {2}".format(api, status, json_parsed))
+                print("{0} with status {1}: {2}"
+                      .format(api, status, json_parsed))
                 return json_parsed, False
         except ValueError as e:
             if content is not None:
@@ -127,12 +129,12 @@ class RestConnection(object):
             else:
                 print e
             return content, False
-        
+
     def _create_capi_headers(self, username=None, password=None):
         if username==None:
             username = self.username
         if password==None:
-            password = self.password            
+            password = self.password
         authorization = base64.encodestring('%s:%s' % (username, password))
         return {'Content-Type': 'application/json',
                 'Authorization': 'Basic %s' % authorization,
@@ -146,7 +148,7 @@ class RestConnection(object):
             if val.startswith("Basic "):
                 return "auth: " + base64.decodestring(val[6:])
         return ""
-    
+
     def _http_request(self, api, method='GET', params='', headers=None, timeout=120):
         if not headers:
             headers = self._create_headers()
@@ -172,19 +174,21 @@ class RestConnection(object):
                     log.debug(''.join(traceback.format_stack()))
                     return False, content, response
             except socket.error as e:
-                log.error("socket error while connecting to {0} error {1} ".format(api, e))
+                log.error("Socket error while connecting to {0}. "
+                          "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
             except httplib2.ServerNotFoundError as e:
-                log.error("ServerNotFoundError error while connecting to {0} error {1} ".format(api, e))
+                log.error("ServerNotFoundError while connecting to {0}. "
+                          "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
             time.sleep(3)
 
     def _create_headers(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
+        authorization = base64.encodestring('%s:%s'
+                                            % (self.username,self.password))
         return {'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',
                 'Accept': '*/*'}
-

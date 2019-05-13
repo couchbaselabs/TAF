@@ -1,18 +1,16 @@
 import copy
-from documentgenerator import  DocumentGenerator
-import re
 import datetime
 import json
-import random, string
 import os
-import logger
+import random
+import re
+import string
 
+from documentgenerator import DocumentGenerator
 from data import COUNTRIES, COUNTRY_CODE, FIRST_NAMES, LAST_NAMES
 
-log = logger.Logger.get_logger()
 
 class TuqGenerators(object):
-
     def __init__(self, log, full_set):
         self.log = log
         self.full_set = full_set
@@ -67,18 +65,18 @@ class TuqGenerators(object):
         try:
             self._create_alias_map()
             from_clause = self._format_from_clause()
-            log.info("FROM clause ===== is %s" % from_clause)
+            self.log.info("FROM clause ===== is %s" % from_clause)
             where_clause = self._format_where_clause(from_clause)
-            log.info("WHERE clause ===== is %s" % where_clause)
+            self.log.info("WHERE clause ===== is %s" % where_clause)
             unnest_clause = self._format_unnest_clause(from_clause)
-            log.info("UNNEST clause ===== is %s" % unnest_clause)
+            self.log.info("UNNEST clause ===== is %s" % unnest_clause)
             select_clause = self._format_select_clause(from_clause)
-            log.info("SELECT clause ===== is %s" % select_clause)
+            self.log.info("SELECT clause ===== is %s" % select_clause)
             result = self._filter_full_set(select_clause, where_clause, unnest_clause)
             result = self._order_results(result)
             result = self._limit_and_offset(result)
             if print_expected_result:
-                log.info("Expected result is %s ..." % str(result[:15]))
+                self.log.info("Expected result is %s ..." % str(result[:15]))
             return result
         finally:
             self._clear_current_query()
@@ -414,7 +412,7 @@ class TuqGenerators(object):
                     condition += 'doc["%s"]%s,' % (attr[0].split('.')[0][:ind], attr[0].split('.')[0][ind:])
                 else:
                     condition += 'doc["%s"],' % attr[0]
-        log.info("ORDER clause ========= is %s" % condition)
+        self.log.info("ORDER clause ========= is %s" % condition)
         return condition
 
     def _order_results(self, result):
@@ -571,6 +569,7 @@ class TuqGenerators(object):
         self.aliases = {}
         self.attr_order_clause_greater_than_select = []
         self.parent_selected = False
+
 
 class JsonGenerator:
 
@@ -1022,31 +1021,32 @@ class JsonGenerator:
                     for day in join_day:
                         random.seed(count)
                         prefix = str(random.random()*100000)
-                        generators.append(DocumentGenerator(key_prefix + prefix,
-                                               template,
-                                               name, [year], [month], [day],
-                                               email, [info["title"]],
-                                               [info["type"]], [info["desc"]],
-                                               start=start, end=docs_per_day))
+                        generators.append(
+                            DocumentGenerator(key_prefix + prefix,
+                                              template,
+                                              name, [year], [month], [day],
+                                              email, [info["title"]],
+                                              [info["type"]], [info["desc"]],
+                                              start=start, end=docs_per_day))
         return generators
 
     def generate_docs_using_monster(self,
-            executatble_path = None, key_prefix=  "", bag_dir = "lib/couchbase_helper/monster/bags",
+            executatble_path=None, key_prefix="", bag_dir="lib/couchbase_helper/monster/bags",
             pod_name = None, num_items = 1, seed = None):
         "This method runs monster tool using localhost, creates a map of json based on a pattern"
-        list = []
+        doc_list = list()
         command = executatble_path
         dest_path = "/tmp/{0}.txt".format(int(random.random()*1000))
-        if pod_name == None:
-            return list
+        if pod_name is None:
+            return doc_list
         else:
             pod_path = "lib/couchbase_helper/monster/prod/%s" % pod_name
         command += " -bagdir {0}".format(bag_dir)
-        if seed != None:
+        if seed is not None:
             command += " -s {0}".format(seed)
         command += " -n {0}".format(num_items)
         command += " -o {0}".format(dest_path)
-        if pod_path != None:
+        if pod_path is not None:
             command += " {0}".format(pod_path)
         print "Will run the following command: {0}".format(command)
         # run command and generate temp file
@@ -1055,14 +1055,14 @@ class JsonGenerator:
         with open(dest_path) as f:
             i= 1
             for line in f.readlines():
-                key = "{0}{1}".format(key_prefix,i)
+                key = "{0}{1}".format(key_prefix, i)
                 data = json.loads(line[:len(line)-1])
                 data["_id"] = key
                 data["mutate"] = 0
-                list.append(data)
-                i+=1
+                doc_list.append(data)
+                i += 1
         os.remove(dest_path)
-        return list
+        return doc_list
 
     def _shuffle(self, data, isShuffle):
         if isShuffle:

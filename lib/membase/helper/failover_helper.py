@@ -1,6 +1,5 @@
+import logging
 from random import shuffle
-import logger
-from membase.helper.rebalance_helper import RebalanceHelper
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -9,13 +8,14 @@ not_enough_nodes = "there are not enough nodes to failover.cluster has{0} nodes 
 start_cluster = "rpc:call('{0}', ns_server_cluster_sup, start_cluster, [], infinity)."
 stop_cluster = "rpc:call('{0}', ns_server_cluster_sup, stop_cluster, [], infinity)."
 
+log = logging.getLogger()
+
 
 class FailoverHelper(object):
     def __init__(self, servers, test):
-        self.log = logger.Logger.get_logger()
         self.servers = servers
         self.test = test
-        # master is usually the first node ?
+        self.log = log
 
     # failover any node except self.servers[0]
     # assuming that replica = howmany

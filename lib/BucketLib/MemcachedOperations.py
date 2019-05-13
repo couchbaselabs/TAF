@@ -6,9 +6,8 @@ Created on Nov 3, 2017
 import copy
 import exceptions
 import time
-import uuid
 import zlib
-import logger
+import logging
 import mc_bin_client
 import crc32
 import socket
@@ -21,14 +20,14 @@ from threading import Thread
 import Queue
 from collections import defaultdict
 from BucketLib.BucketOperations import BucketHelper
-log = logger.Logger.get_logger()
 
-class MemcachedHelper():
+log = logging.getLogger()
 
+
+class MemcachedHelper:
     @staticmethod
     def wait_for_vbuckets_ready_state(node, bucket, timeout_in_seconds=300, log_msg='', admin_user='cbadminbucket',
                                       admin_pass='password'):
-        log = logger.Logger.get_logger()
         start_time = time.time()
         end_time = start_time + timeout_in_seconds
         ready_vbuckets = {}
@@ -107,7 +106,6 @@ class MemcachedHelper():
     def wait_for_memcached(node, bucket, timeout_in_seconds=300, log_msg=''):
 #         time.sleep(10)
 #         return True
-        log = logger.Logger.get_logger()
         msg = "waiting for memcached bucket : {0} in {1} to accept set ops"
         log.info(msg.format(bucket, node.ip))
         all_vbuckets_ready = MemcachedHelper.wait_for_vbuckets_ready_state(node,
@@ -117,7 +115,6 @@ class MemcachedHelper():
 
     @staticmethod
     def verify_data(server, keys, value_equal_to_key, verify_flags, test, debug=False, bucket="default"):
-        log = logger.Logger.get_logger()
         log_error_count = 0
         # verify all the keys
         client = MemcachedClientHelper.direct_client(server, bucket)
@@ -156,7 +153,6 @@ class MemcachedHelper():
 
     @staticmethod
     def keys_dont_exist(server, keys, bucket):
-        log = logger.Logger.get_logger()
         #verify all the keys
         client = MemcachedClientHelper.direct_client(server, bucket)
         vbucket_count = len(BucketHelper(server).get_vbuckets(bucket))
@@ -186,7 +182,6 @@ class MemcachedHelper():
 
     @staticmethod
     def keys_exist_or_assert_in_parallel(keys, server, bucket_name, test, concurrency=2):
-        log = logger.Logger.get_logger()
         verification_threads = []
         queue = Queue.Queue()
         for i in range(concurrency):
@@ -209,7 +204,6 @@ class MemcachedHelper():
     @staticmethod
     def keys_exist_or_assert(keys, server, bucket_name, test, queue=None):
         # we should try out at least three times
-        log = logger.Logger.get_logger()
         # verify all the keys
         client = MemcachedClientHelper.proxy_client(server, bucket_name)
         # populate key

@@ -1,21 +1,15 @@
+import logging
 from user_base_abc import UserBase
 from membase.api.rest_client import RestConnection
-import logger
-log = logger.Logger.get_logger()
+
+log = logging.getLogger()
+
 
 class InternalUser(UserBase):
-
-
-    def __init__(self,
-                 user_id=None,
-                 payload=None,
-                 host=None
-                 ):
-
+    def __init__(self, user_id=None, payload=None, host=None):
         self.user_id = user_id
         self.payload = payload
         self.host = host
-
 
     '''
     payload=name=<nameofuser>&roles=admin,cluster_admin&password=<password>
@@ -32,7 +26,8 @@ class InternalUser(UserBase):
             rest = RestConnection(self.host)
             response = rest.delete_builtin_user(self.user_id)
         except Exception as e:
-            log.info ("Exception while deleting user. Exception is -{0}".format(e))
+            log.info("Exception while deleting user. Exception - {0}"
+                     .format(e))
             response = False
         return response
 
@@ -46,7 +41,6 @@ class InternalUser(UserBase):
 
         rest = RestConnection(self.host)
         response = rest.change_password_builtin_user(self.user_id,self.password)
-
 
     def user_setup(self,user_id=None,host=None,payload=None):
         if user_id:
@@ -63,8 +57,8 @@ class InternalUser(UserBase):
         #     pre_spock = not cluster_compatibility
         # if pre_spock:
         #     log.info("At least one of the node in the cluster is on "
-        #              "pre-spock version. Not creating user since RBAC is a "
-        #              "spock feature.")
+        #              "pre-spock version. Not creating user since "
+        #              "RBAC is a spock feature."
         #     return
         self.delete_user()
         self.create_user()

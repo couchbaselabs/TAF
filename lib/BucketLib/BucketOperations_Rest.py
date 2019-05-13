@@ -1,24 +1,24 @@
-'''
+"""
 Created on Sep 25, 2017
 
 @author: riteshagarwal
-'''
+"""
 
 import json
+import logging
 import time
 import urllib
+
 from bucket import vBucket, Bucket
 from membase.api.exception import \
     BucketCreationException, GetBucketInfoFailed, \
     BucketFlushFailed, BucketCompactionException
 from Rest_Connection import RestConnection
-import logger
 
-log = logger.Logger.get_logger()
+log = logging.getLogger()
 
 
 class BucketHelper(RestConnection):
-
     def __init__(self, server):
         super(BucketHelper, self).__init__(server)
 
@@ -26,10 +26,11 @@ class BucketHelper(RestConnection):
         try:
             buckets = self.get_buckets()
             names = [item.name for item in buckets]
-            log.info("node {1} existing buckets : {0}".format(names, self.ip))
+            log.info("Node {1} existing buckets : {0}"
+                     .format(names, self.ip))
             for item in buckets:
                 if item.name == bucket:
-                    log.info("node {1} found bucket {0}"
+                    log.info("Node {1} found bucket {0}"
                              .format(bucket, self.ip))
                     return True
             return False
@@ -42,7 +43,7 @@ class BucketHelper(RestConnection):
         status, content, _ = self._http_request(api)
         num = 1
         while not status and num_attempt > num:
-            log.error("try to get {0} again after {1} sec"
+            log.error("Try to get {0} again after {1} sec"
                       .format(api, timeout))
             time.sleep(timeout)
             status, content, _ = self._http_request(api)
@@ -95,7 +96,7 @@ class BucketHelper(RestConnection):
                               'pools/default/buckets?basic_stats=true')
         status, content, _ = self._http_request(api)
         if not status:
-            log.error("Error while getting {0}. Please re-try".format(api))
+            log.error("Error while getting {0}. Please retry".format(api))
             raise GetBucketInfoFailed("all_buckets", content)
         return json.loads(content)
 
@@ -107,7 +108,7 @@ class BucketHelper(RestConnection):
                 return True
             else:
                 time.sleep(0.5)
-        msg = 'vbucket map is not ready for bucket {0} after waiting {1} seconds'
+        msg = 'vbucket map not ready for bucket {0} after waiting {1} seconds'
         log.info(msg.format(bucket, timeout_in_seconds))
         return False
 
@@ -249,7 +250,7 @@ class BucketHelper(RestConnection):
                                  bucket_name)
         status, content, _ = self._http_request(api)
         if not status:
-            log.error("error while getting {0}. Please re-try".format(api))
+            log.error("error while getting {0}. Please retry".format(api))
             raise GetBucketInfoFailed(bucket_name, content)
         return json.loads(content)
 
@@ -316,14 +317,14 @@ class BucketHelper(RestConnection):
                     ip=self.ip, bucket_name=bucket_params.get('name'))
 
         if (numsleep + 1) == maxwait:
-            log.error("Tried to create the bucket for {0} secs.. giving up".
-                      format(maxwait))
+            log.error("Tried to create the bucket for {0} secs. giving up"
+                      .format(maxwait))
             raise BucketCreationException(
                 ip=self.ip, bucket_name=bucket_params.get('name'))
 
         create_time = time.time() - create_start_time
-        log.info("{0:.02f} seconds to create bucket {1}".
-                 format(round(create_time, 2), bucket_params.get('name')))
+        log.info("{0:.02f} seconds to create bucket {1}"
+                 .format(round(create_time, 2), bucket_params.get('name')))
         return status
 
     def change_bucket_props(self, bucket, ramQuotaMB=None, authType=None,
@@ -430,7 +431,7 @@ class BucketHelper(RestConnection):
             params["allowedTimePeriod[abortOutside]"] = allowedTimePeriodAbort
 
         params = urllib.urlencode(params)
-        log.info("'%s' bucket's settings will be changed with parameters: %s"
+        log.info("'%s' bucket's settings will be changed with params: %s"
                  % (bucket, params))
         return self._http_request(api, "POST", params)
 
@@ -447,16 +448,15 @@ class BucketHelper(RestConnection):
 
     def flush_bucket(self, bucket="default"):
         bucket_name = bucket
-        api = self.baseUrl \
-              + "pools/default/buckets/{0}/controller/doFlush" \
-                .format(bucket_name)
+        api = self.baseUrl + "pools/default/buckets/{0}/controller/doFlush" \
+            .format(bucket_name)
         status, _, _ = self._http_request(api, 'POST')
         if not status:
             raise BucketFlushFailed(self.ip, bucket_name)
         log.info("Flush for bucket '%s' was triggered" % bucket_name)
 
     def get_bucket_CCCP(self, bucket):
-        log.info("Getting CCCP config ")
+        log.info("Getting CCCP config")
         api = '%spools/default/b/%s' % (self.baseUrl, bucket)
         status, content, _ = self._http_request(api)
         if status:
@@ -469,7 +469,7 @@ class BucketHelper(RestConnection):
                 .format(bucket)
         status, _, _ = self._http_request(api, 'POST')
         if status:
-            log.info('bucket compaction successful')
+            log.info('Bucket compaction successful')
         else:
             raise BucketCompactionException(bucket)
 

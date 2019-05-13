@@ -1,22 +1,26 @@
-'''
+"""
 Created on Sep 25, 2017
 
 @author: riteshagarwal
-'''
+"""
 
-from CbasLib.CBASOperations_Rest import CBASHelper as CBAS_helper_rest
-from Java_Connection import SDKClient
-import logger
 import json
+import logging
+import sys
+import time
+import traceback
+
 from com.couchbase.client.java.analytics import AnalyticsQuery, AnalyticsParams
+from com.couchbase.client.core import RequestCancelledException, \
+                                      CouchbaseException
 from java.lang import System, RuntimeException
 from java.util.concurrent import TimeoutException, RejectedExecutionException,\
-    TimeUnit
-from com.couchbase.client.core import RequestCancelledException,\
-    CouchbaseException
-import sys, time, traceback
+                                 TimeUnit
+from CbasLib.CBASOperations_Rest import CBASHelper as CBAS_helper_rest
+from sdk_client3 import SDKClient
 
-log = logger.Logger.get_logger()
+log = logging.getLogger()
+
 
 class CBASHelper(CBAS_helper_rest, SDKClient):
 
@@ -36,7 +40,7 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
         System.setProperty("com.couchbase.analyticsEnabled", "true");
         self.bucket = self.cluster.openBucket(bucket);
         self.connectionLive = True
-        
+
     def closeConn(self):
         if self.connectionLive:
             try:
@@ -52,7 +56,7 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     pass
                 self.disconnectCluster()
                 self.connectionLive = False
-                log.error("%s"%e)
+                log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
             except TimeoutException as e:
                 time.sleep(10)
@@ -63,10 +67,10 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     pass
                 self.disconnectCluster()
                 self.connectionLive = False
-                log.error("%s"%e)
+                log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
             except RuntimeException as e:
-                log.info("RuntimeException from Java SDK. %s"%str(e))
+                log.info("RuntimeException from Java SDK. %s" % str(e))
                 time.sleep(10)
                 try:
                     self.bucket.close()
@@ -75,11 +79,11 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     pass
                 self.disconnectCluster()
                 self.connectionLive = False
-                log.error("%s"%e)
+                log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
-                
-    def execute_statement_on_cbas(self, statement, mode, pretty=True, 
-        timeout=70, client_context_id=None, 
+
+    def execute_statement_on_cbas(self, statement, mode, pretty=True,
+        timeout=70, client_context_id=None,
         username=None, password=None, analytics_timeout=120, time_out_unit="s"):
 
         params = AnalyticsParams.build()
@@ -90,25 +94,25 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
         params = params.rawParam("clientContextID", client_context_id)
         if client_context_id:
             params = params.withContextId(client_context_id)
-        
+
         output = {}
         q = AnalyticsQuery.simple(statement, params)
         try:
             if mode or "EXPLAIN" in statement:
                 return CBAS_helper_rest.execute_statement_on_cbas(self, statement, mode, pretty, timeout, client_context_id, username, password)
-            
+
             result = self.bucket.query(q,timeout,TimeUnit.SECONDS)
-            
+
             output["status"] = result.status()
             output["metrics"] = str(result.info().asJsonObject())
-            
+
             try:
                 output["results"] = str(result.allRows())
             except:
                 output["results"] = None
-                
+
             output["errors"] = json.loads(str(result.errors()))
-            
+
             if str(output['status']) == "fatal":
                 log.error(output['errors'])
                 msg = output['errors'][0]['msg']
@@ -121,20 +125,20 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                 log.error("analytics query %s failed status:{0},content:{1}".format(
                     output["status"], result))
                 raise Exception("Analytics Service API failed")
-            
+
         except TimeoutException as e:
-            log.info("Request TimeoutException from Java SDK. %s"%str(e))
+            log.info("Request TimeoutException from Java SDK %s" % str(e))
             raise Exception("Request TimeoutException")
         except RequestCancelledException as e:
-            log.info("RequestCancelledException from Java SDK. %s"%str(e))
+            log.info("RequestCancelledException from Java SDK %s" % str(e))
             raise Exception("Request RequestCancelledException")
         except RejectedExecutionException as e:
-            log.info("Request RejectedExecutionException from Java SDK. %s"%str(e))
+            log.info("Request RejectedExecutionException from Java SDK %s" % str(e))
             raise Exception("Request Rejected")
         except CouchbaseException as e:
-            log.info("CouchbaseException from Java SDK. %s"%str(e))
+            log.info("CouchbaseException from Java SDK %s" % str(e))
             raise Exception("CouchbaseException")
         except RuntimeException as e:
-            log.info("RuntimeException from Java SDK. %s"%str(e))
+            log.info("RuntimeException from Java SDK %s" % str(e))
             raise Exception("Request RuntimeException")
         return output

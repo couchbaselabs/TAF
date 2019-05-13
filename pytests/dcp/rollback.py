@@ -1,5 +1,3 @@
-import logger
-
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
@@ -9,8 +7,6 @@ from remote.remote_util import RemoteMachineShellConnection
 
 from memcached.helper.data_helper import VBucketAwareMemcached, \
                                          MemcachedClientHelper
-
-log = logger.Logger.get_logger()
 
 
 class DCPRollBack(DCPBase):
