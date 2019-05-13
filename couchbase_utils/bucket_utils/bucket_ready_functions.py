@@ -202,7 +202,7 @@ class bucket_utils():
             # By default set 100Mb if unable to fetch proper value
             ramQuotaMB = 100
 
-        default_bucket = Bucket({Bucket.bucket_type: bucket_type,
+        default_bucket = Bucket({Bucket.bucketType: bucket_type,
                                  Bucket.ramQuotaMB: ramQuotaMB,
                                  Bucket.replicaNumber: replica,
                                  Bucket.compressionMode: compression_mode,

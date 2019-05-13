@@ -290,7 +290,7 @@ class BucketHelper(RestConnection):
 
         # Remove 'replicaIndex' parameter in case of EPHEMERAL bucket
         if bucket_params.get("bucketType") == Bucket.bucket_type.EPHEMERAL:
-            init_params.remove('replicaIndex')
+            init_params.pop('replicaIndex', None)
 
         if bucket_params.get('lww'):
             init_params['maxTTL'] = bucket_params.get('lww')
