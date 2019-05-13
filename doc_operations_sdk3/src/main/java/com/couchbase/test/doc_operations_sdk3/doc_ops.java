@@ -276,11 +276,11 @@ public class doc_ops {
 		Duration exp = this.getDuration(expiry, expiryTimeUnit);
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
-
-		if (durabilitylevel != null) {
-			return InsertOptions.insertOptions().durabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
-		} else {
-			return InsertOptions.insertOptions().durability(persistto, replicateto).expiry(exp).timeout(timeout);
+		if (persistTo != 0 || replicateTo !=0) {
+			return InsertOptions.insertOptions().durability(persistto, replicateto).timeout(timeout);
+		}
+		else {
+			return InsertOptions.insertOptions().timeout(timeout).durabilityLevel(durabilitylevel);
 		}
 	}
 
@@ -288,11 +288,11 @@ public class doc_ops {
 			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
 		Duration exp = this.getDuration(expiry, expiryTimeUnit);
 		Duration timeout = this.getDuration(timeOut, timeUnit);
-
-		if (durabilityLevel != null) {
-			return InsertOptions.insertOptions().durabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
-		} else {
-			return InsertOptions.insertOptions().durability(persistTo, replicateTo).expiry(exp).timeout(timeout);
+		if (persistTo == PersistTo.NONE|| replicateTo == ReplicateTo.NONE) {
+			return InsertOptions.insertOptions().durability(persistTo, replicateTo).timeout(timeout);
+		}
+		else {
+			return InsertOptions.insertOptions().durabilityLevel(durabilityLevel).timeout(timeout);
 		}
 	}
 
@@ -303,11 +303,11 @@ public class doc_ops {
 		Duration exp = this.getDuration(expiry, expiryTimeUnit);
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
-
-		if (durabilitylevel != null) {
-			return UpsertOptions.upsertOptions().durabilityLevel(durabilitylevel).expiry(exp).timeout(timeout);
-		} else {
-			return UpsertOptions.upsertOptions().durability(persistto, replicateto).expiry(exp).timeout(timeout);
+		if (persistTo != 0 || replicateTo !=0) {
+			return UpsertOptions.upsertOptions().durability(persistto, replicateto).timeout(timeout);
+		}
+		else {
+			return UpsertOptions.upsertOptions().durabilityLevel(durabilitylevel).timeout(timeout);
 		}
 	}
 
@@ -315,11 +315,11 @@ public class doc_ops {
 			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
 		Duration exp = this.getDuration(expiry, expiryTimeUnit);
 		Duration timeout = this.getDuration(timeOut, timeUnit);
-
-		if (durabilityLevel != null) {
-			return UpsertOptions.upsertOptions().durabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
-		} else {
-			return UpsertOptions.upsertOptions().durability(persistTo, replicateTo).expiry(exp).timeout(timeout);
+		if (persistTo == PersistTo.NONE|| replicateTo == ReplicateTo.NONE) {
+			return UpsertOptions.upsertOptions().durability(persistTo, replicateTo).timeout(timeout);
+		}
+		else {
+			return UpsertOptions.upsertOptions().durabilityLevel(durabilityLevel).timeout(timeout);
 		}
 	}
 
@@ -329,22 +329,23 @@ public class doc_ops {
 		ReplicateTo replicateto = this.getReplicateTo(replicateTo);
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
-		if (durabilitylevel != null) {
-			return RemoveOptions.removeOptions().durabilityLevel(durabilitylevel).timeout(timeout);
+		System.out.println(durabilitylevel);
+		if (persistTo != 0 || replicateTo !=0) {
+			return RemoveOptions.removeOptions().durability(persistto, replicateto).timeout(timeout);
 		}
 		else {
-			return RemoveOptions.removeOptions().durability(persistto, replicateto).timeout(timeout);
+			return RemoveOptions.removeOptions().durabilityLevel(durabilitylevel).timeout(timeout);
 		}
 	}
 
 	private RemoveOptions getRemoveOptions(PersistTo persistTo, ReplicateTo replicateTo,
 			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
 		Duration timeout = this.getDuration(timeOut, timeUnit);
-		if (durabilityLevel != null) {
-			return RemoveOptions.removeOptions().durabilityLevel(durabilityLevel).timeout(timeout);
+		if (persistTo == PersistTo.NONE || replicateTo == ReplicateTo.NONE) {
+			return RemoveOptions.removeOptions().durability(persistTo, replicateTo).timeout(timeout);
 		}
 		else {
-			return RemoveOptions.removeOptions().durability(persistTo, replicateTo).timeout(timeout);
+			return RemoveOptions.removeOptions().durabilityLevel(durabilityLevel).timeout(timeout);
 		}
 	}
 
@@ -391,7 +392,8 @@ public class doc_ops {
 		if (durabilityLevel.equalsIgnoreCase("PERSIST_TO_MAJORITY")) {
 			return DurabilityLevel.PERSIST_TO_MAJORITY;
 		}
-		return null;
+		
+		return DurabilityLevel.NONE;
 	}
 
 	private Duration getDuration(long time, String timeUnit) {

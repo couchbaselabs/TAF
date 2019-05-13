@@ -357,12 +357,12 @@ class SDKClient(object):
             options = InsertOptions.insertOptions()\
                 .timeout(self.getDuration(timeout, time_unit))\
                 .expiry(self.getDuration(exp, exp_unit))\
-                .withDurabilityLevel(self.getDurabilityLevel(durability))
+                .durabilityLevel(self.getDurabilityLevel(durability))
         else:
             options = InsertOptions.insertOptions()\
                 .timeout(self.getDuration(timeout, time_unit))\
                 .expiry(self.getDuration(exp, exp_unit))\
-                .withDurability(self.getPersistTo(persist_to),
+                .durability(self.getPersistTo(persist_to),
                                 self.getReplicateTo(replicate_to))
         return options
 
@@ -375,12 +375,12 @@ class SDKClient(object):
             options = UpsertOptions.upsertOptions()\
                 .timeout(self.getDuration(timeout, time_unit))\
                 .expiry(self.getDuration(exp, exp_unit))\
-                .withDurabilityLevel(self.getDurabilityLevel(durability))
+                .durabilityLevel(self.getDurabilityLevel(durability))
         else:
             options = UpsertOptions.upsertOptions()\
                 .timeout(self.getDuration(timeout, time_unit))\
                 .expiry(self.getDuration(exp, exp_unit))\
-                .withDurability(self.getPersistTo(persist_to),
+                .durability(self.getPersistTo(persist_to),
                                 self.getReplicateTo(replicate_to))
 
         return options
@@ -392,11 +392,11 @@ class SDKClient(object):
         if durability:
             options = RemoveOptions.removeOptions()\
                 .timeout(self.getDuration(timeout, time_unit))\
-                .withDurabilityLevel(self.getDurabilityLevel(durability))
+                .durabilityLevel(self.getDurabilityLevel(durability))
         else:
             options = RemoveOptions.removeOptions()\
                 .timeout(self.getDuration(timeout, time_unit))\
-                .withDurability(self.getPersistTo(persist_to),
+                .durability(self.getPersistTo(persist_to),
                                 self.getReplicateTo(replicate_to))
 
         return options
