@@ -11,7 +11,7 @@ import logging
 from com.couchbase.client.core.env import TimeoutConfig
 from com.couchbase.client.core.error import DocumentAlreadyExistsException, \
                                             CouchbaseException, \
-                                            RequestTimeoutException \
+                                            RequestTimeoutException, \
                                             DocumentDoesNotExistException, \
                                             CASMismatchException, \
                                             TemporaryFailureException
