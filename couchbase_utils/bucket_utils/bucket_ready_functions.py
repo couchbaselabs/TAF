@@ -347,16 +347,6 @@ class BucketUtils:
             self._set_time_sync_on_buckets(['standard_bucket' + str(i)
                                             for i in range(num_buckets)])
 
-    def delete_all_buckets(self, server):
-        delete_tasks = []
-        for bucket in self.buckets:
-            delete_tasks.append(self.task.async_bucket_delete(server,
-                                                              bucket.name))
-
-        for task in delete_tasks:
-            task.result()
-        self.buckets = []
-
     def flush_all_buckets(self):
         flush_tasks = []
         for bucket in self.buckets:

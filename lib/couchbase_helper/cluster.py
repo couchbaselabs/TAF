@@ -59,21 +59,6 @@ class ServerTasks(object):
         self.jython_task_manager.schedule(_task)
         return _task.get_result()
 
-    def async_bucket_delete(self, server, bucket='default'):
-        """
-        Asynchronously deletes a bucket
-
-        Parameters:
-          server - The server to delete the bucket on. (TestInputServer)
-          bucket - The name of the bucket to be deleted. (String)
-
-        Returns:
-          BucketDeleteTask - Task future that is a handle to the scheduled task
-        """
-        _task = conc.BucketDeleteTask(server, self.jython_task_manager, bucket)
-        self.jython_task_manager.schedule(_task)
-        return _task
-
     def async_failover(self, servers=[], failover_nodes=[], graceful=False,
                        use_hostnames=False, wait_for_pending=0):
         """
@@ -414,18 +399,6 @@ class ServerTasks(object):
         Returns:
             boolean - Whether or not the bucket was created."""
         _task = self.async_create_standard_bucket(name, port, bucket_params)
-        return _task.get_result(timeout)
-
-    def bucket_delete(self, server, bucket='default', timeout=None):
-        """Synchronously deletes a bucket
-
-        Parameters:
-            server - The server to delete the bucket on. (TestInputServer)
-            bucket - The name of the bucket to be deleted. (String)
-
-        Returns:
-            boolean - Whether or not the bucket was deleted."""
-        _task = self.async_bucket_delete(server, bucket)
         return _task.get_result(timeout)
 
     def init_node(self, server, async_init_node=True,

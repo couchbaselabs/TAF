@@ -226,7 +226,7 @@ class BaseTestCase(unittest.TestCase):
 
                 if test_failed:
                     # collect logs here because we have not shut things down
-                    if TestInputSingleton.param("get-cbcollect-info", False):
+                    if TestInputSingleton.input.param("get-cbcollect-info", False):
                         for server in self.servers:
                             self.log.info("Collecting logs @ {0}"
                                           .format(server.ip))
@@ -252,8 +252,9 @@ class BaseTestCase(unittest.TestCase):
                     self.log.warn("Alerts were found: {0}".format(alerts))
                 self.cluster_util.cluster_cleanup(self.bucket_util)
                 self.__log_setup_status("finished")
-        except BaseException:
+        except BaseException as e:
             # kill memcached
+            traceback.print_exc()
             self.cluster_util.kill_memcached()
             # increase case_number to retry tearDown in setup for the next test
             self.case_number += 1000
