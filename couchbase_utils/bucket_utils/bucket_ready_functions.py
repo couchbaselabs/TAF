@@ -167,7 +167,6 @@ class BucketUtils:
 
     def delete_all_buckets(self, servers):
         for serverInfo in servers:
-            buckets = []
             try:
                 buckets = self.get_all_buckets(serverInfo)
             except Exception as e:
@@ -476,7 +475,8 @@ class BucketUtils:
             self.verify_stats_for_bucket(bucket, items, timeout=timeout)
 
     # Bucket doc_ops support APIs
-    def key_generator(self, size=6, chars=string.ascii_uppercase + string.digits):
+    @staticmethod
+    def key_generator(size=6, chars=string.ascii_uppercase + string.digits):
         return ''.join(random.choice(chars) for _ in range(size))
 
     def get_doc_op_info_dict(self, bucket, op_type, exp=0, replicate_to=0,
@@ -484,6 +484,7 @@ class BucketUtils:
                              timeout=5, time_unit="seconds",
                              ignore_exceptions=[], retry_exceptions=[]):
         info_dict = dict()
+        info_dict["ops_failed"] = False
         info_dict["bucket"] = bucket
         info_dict["op_type"] = op_type
         info_dict["exp"] = exp
@@ -499,6 +500,72 @@ class BucketUtils:
         info_dict["ignored"] = dict()
 
         return info_dict
+
+    def doc_ops_tasks_status(self, tasks_info):
+        """
+        :param tasks_info: dict with "ops_failed" Bool value updated
+        :return: Aggregated success status for all tasks. (Boolean)
+        """
+        for task, _ in tasks_info:
+            if tasks_info[task]["ops_failed"]:
+                return False
+        return True
+
+    def log_doc_ops_task_failures(self, tasks_info):
+        """
+        Validated all exceptions and retires the doc_ops if required
+        from each task within the tasks_info dict().
+
+        If doc failures are seen, task["ops_failed"] will be marked as True
+
+        :param tasks_info: dictionary updated with retried/unwanted docs
+        """
+        for _, task_info in tasks_info.items():
+            op_type = task_info["op_type"]
+            ignored_keys = task_info["ignored"].keys()
+            retried_success_keys = task_info["retired"]["success"].keys()
+            retried_failed_keys = task_info["retired"]["fail"].keys()
+            unwanted_success_keys = task_info["unwanted"]["success"].keys()
+            unwanted_failed_keys = task_info["unwanted"]["fail"].keys()
+
+            # Success cases
+            if len(ignored_keys) > 0:
+                self.log.info("Ignored exceptions for '{0}': ({1}): {2}"
+                              .format(op_type, len(ignored_keys),
+                                      ignored_keys))
+
+            if len(retried_success_keys) > 0:
+                self.log.info("Docs succeeded for expected retries "
+                              "for '{0}' ({1}): {2}"
+                              .format(op_type, len(retried_success_keys),
+                                      retried_success_keys))
+
+            # Failure cases
+            if len(retried_failed_keys) > 0:
+                task_info["ops_failed"] = True
+                self.log.error("Docs failed after expected retry "
+                               "for '{0}' ({1}): {2}"
+                               .format(op_type, len(retried_failed_keys),
+                                       retried_failed_keys))
+                self.log.error("Exceptions for failure on retried docs: {0}"
+                               .format(task_info["retired"]["fail"]))
+
+            if len(unwanted_success_keys) > 0:
+                task_info["ops_failed"] = True
+                self.log.error("Unexpected exceptions, succeeded "
+                               "after retry for '{0}' ({1}): {2}"
+                               .format(op_type, len(unwanted_success_keys),
+                                       unwanted_success_keys))
+
+            if len(unwanted_failed_keys) > 0:
+                task_info["ops_failed"] = True
+                self.log.error("Unexpected exceptions, failed even "
+                               "after retry for '{0}' ({1}): {2}"
+                               .format(op_type, len(unwanted_failed_keys),
+                                       unwanted_failed_keys))
+                self.log.error("Exceptions for unwanted doc failures "
+                               "after retry: {0}"
+                               .format(task_info["unwanted"]["fail"]))
 
     def verify_doc_op_task_exceptions(self, tasks_info, cluster):
         """
@@ -550,17 +617,17 @@ class BucketUtils:
 
         return tasks_info
 
-    def _async_load_bucket(self, cluster, bucket, generator, op_type, exp=0,
-                           flag=0, persist_to=0, replicate_to=0,
-                           only_store_hash=True, batch_size=1, pause_secs=1,
-                           timeout_secs=5, compression=True,
-                           process_concurrency=8, retries=5):
+    def async_load_bucket(self, cluster, bucket, generator, op_type, exp=0,
+                          flag=0, persist_to=0, replicate_to=0,
+                          durability="", sdk_timeout=5,
+                          only_store_hash=True, batch_size=10, pause_secs=1,
+                          compression=True, process_concurrency=8, retries=5):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
+            durability=durability, timeout_secs=sdk_timeout,
             only_store_hash=only_store_hash, batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs,
-            compression=compression,
+            pause_secs=pause_secs, compression=compression,
             process_concurrency=process_concurrency, retries=retries)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
@@ -568,10 +635,11 @@ class BucketUtils:
                                 only_store_hash=True, batch_size=1,
                                 pause_secs=1, timeout_secs=30,
                                 sdk_compression=True, process_concurrency=8,
-                                retries=5, durability=""):
+                                retries=5, durability="",
+                                ignore_exceptions=[], retry_exceptions=[]):
 
         """
-        Asynchronously apply load generation to all bucekts in the
+        Asynchronously apply load generation to all buckets in the
         cluster.bucket.name, gen, op_type, exp
         Args:
             server - A server in the cluster. (TestInputServer)
@@ -580,82 +648,64 @@ class BucketUtils:
             exp - The expiration for the items if updated or created (int)
 
         Returns:
-            A list of all of the tasks created.
+            task_info - dict of dict populated using get_doc_op_info_dict()
         """
-        tasks = []
+        tasks_info = dict()
         self.buckets = self.get_all_buckets(cluster.master)
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
             if bucket.bucketType != 'memcached':
                 self.log.info("BATCH SIZE for documents load: %s" % batch_size)
-                tasks.append(self.task.async_load_gen_docs(
+                task = self.async_load_bucket(
                     cluster, bucket, gen, op_type, exp, flag, persist_to,
-                    replicate_to, only_store_hash, batch_size, pause_secs,
-                    timeout_secs, sdk_compression, process_concurrency,
-                    retries, durability=durability))
+                    replicate_to, durability, timeout_secs,
+                    only_store_hash, batch_size, pause_secs,
+                    sdk_compression, process_concurrency, retries)
+                tasks_info[task] = self.get_doc_op_info_dict(
+                    bucket, op_type, exp, replicate_to=replicate_to,
+                    persist_to=persist_to, durability=durability,
+                    timeout=timeout_secs, time_unit="seconds",
+                    ignore_exceptions=ignore_exceptions,
+                    retry_exceptions=retry_exceptions)
             else:
                 self._load_memcached_bucket(cluster.master, gen, bucket.name)
-        return tasks
+        return tasks_info
 
-    def _load_all_buckets(self, server, kv_gen, op_type, exp, kv_store=1,
-                          flag=0, only_store_hash=True, batch_size=5000,
-                          pause_secs=1, timeout_secs=30, proxy_client=None):
+    def sync_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
+                              persist_to=0, replicate_to=0,
+                              only_store_hash=True, batch_size=1,
+                              pause_secs=1, timeout_secs=30,
+                              sdk_compression=True, process_concurrency=8,
+                              retries=5, durability="",
+                              ignore_exceptions=[], retry_exceptions=[]):
+
         """
-        Synchronously applys load generation to all bucekts in the cluster.
-
+        Asynchronously apply load generation to all buckets in the
+        cluster.bucket.name, gen, op_type, exp
+        Then wait for all doc_loading tasks to complete and verify the
+        task's results and retry failed_docs if required.
         Args:
             server - A server in the cluster. (TestInputServer)
             kv_gen - The generator to use to generate load. (DocumentGenerator)
             op_type - "create", "read", "update", or "delete" (String)
             exp - The expiration for the items if updated or created (int)
-            kv_store - The index of the bucket's kv_store to use. (int)
-        """
-        if self.enable_bloom_filter:
-            for bucket in self.buckets:
-                ClusterOperationHelper.flushctl_set(
-                    self.cluster.master, "bfilter_enabled", 'true', bucket)
-        self.log.info("BATCH SIZE for documents load: %s" % batch_size)
-        tasks = self._async_load_all_buckets(
-            server, kv_gen, op_type, exp, kv_store, flag, only_store_hash,
-            batch_size, pause_secs, timeout_secs, proxy_client)
-        for task in tasks:
-            task.get_result()
-        """
-           Load bucket to DGM if params active_resident_threshold is passed
-        """
-        if self.active_resident_threshold:
-            stats_all_buckets = dict()
-            for bucket in self.buckets:
-                stats_all_buckets[bucket.name] = StatsCommon()
 
-            for bucket in self.buckets:
-                threshold_reached = False
-                while not threshold_reached:
-                    active_resident = \
-                        stats_all_buckets[bucket.name].get_stats(
-                            [self.cluster.master], bucket, '',
-                            'vb_active_perc_mem_resident')[server]
-                    if int(active_resident) > self.active_resident_threshold:
-                        self.log.info("Resident ratio %s > %s in %s, bucket %s"
-                                      "Continue loading to the cluster"
-                                      % (active_resident,
-                                         self.active_resident_threshold,
-                                         self.cluster.master.ip, bucket.name))
-                        random_key = self.key_generator()
-                        generate_load = BlobGenerator(
-                            random_key, '%s-' % random_key,
-                            self.value_size, end=batch_size * 50)
-                        self._load_bucket(
-                            bucket, self.cluster.master, generate_load,
-                            "create", exp=0, kv_store=1, flag=0,
-                            only_store_hash=True, batch_size=batch_size,
-                            pause_secs=5, timeout_secs=60)
-                    else:
-                        threshold_reached = True
-                        self.log.info("DGM achieved at %s %% for %s, bucket %s"
-                                      % (active_resident,
-                                         self.cluster.master.ip, bucket.name))
-                        break
+        Returns:
+            task_info - dict of dict populated using get_doc_op_info_dict()
+        """
+        # Start doc_loading in all buckets in async manner
+        tasks_info = self._async_load_all_buckets(
+            cluster, kv_gen, op_type, exp, flag,
+            persist_to, replicate_to,
+            only_store_hash, batch_size, pause_secs, timeout_secs,
+            sdk_compression, process_concurrency, retries, durability,
+            ignore_exceptions, retry_exceptions)
+
+        # Wait for all doc_loading tasks to complete and populate failures
+        self.verify_doc_op_task_exceptions(tasks_info, cluster)
+        self.log_doc_ops_task_failures(tasks_info)
+
+        return tasks_info
 
     def _load_all_ephemeral_buckets_until_no_more_memory(
             self, server, kv_gen, op_type, exp, increment, kv_store=1, flag=0,

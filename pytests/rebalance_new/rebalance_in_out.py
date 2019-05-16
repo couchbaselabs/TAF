@@ -1,11 +1,9 @@
-from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
 
 
 class RebalanceInOutTests(RebalanceBaseTest):
-
     def setUp(self):
         super(RebalanceInOutTests, self).setUp()
 
@@ -30,17 +28,21 @@ class RebalanceInOutTests(RebalanceBaseTest):
         if self.zone > 1:
             self.shuffle_nodes_between_zones_and_rebalance()
         gen = self.get_doc_generator(0, self.num_items)
-        tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
+        tasks_info = self.bucket_util._async_load_all_buckets(
+            self.cluster, gen, "update", 0)
+        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                       self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
-        for task in tasks:
-            self.task_manager.get_task_result(task)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
-        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
-        prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
+        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
+            self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
+        prev_failover_stats = self.bucket_util.get_failovers_logs(
+            self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
             self.cluster.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
@@ -74,11 +76,13 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         recovery_type = self.input.param("recoveryType", "full")
         gen = self.get_doc_generator(0, self.num_items)
-        tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
+        tasks_info = self.bucket_util._async_load_all_buckets(
+            self.cluster, gen, "update", 0)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
-        for task in tasks:
-            self.task_manager.get_task_result(task)
+        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                       self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
@@ -123,11 +127,13 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         fail_over = self.input.param("fail_over", False)
         gen = self.get_doc_generator(0, self.num_items)
-        tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0)
+        tasks_info = self.bucket_util._async_load_all_buckets(
+            self.cluster, gen, "update", 0)
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
-        for task in tasks:
-            self.task_manager.get_task_result(task)
+        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                       self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
@@ -172,17 +178,22 @@ class RebalanceInOutTests(RebalanceBaseTest):
         gen = self.get_doc_generator(0, self.num_items)
         batch_size = 50
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
-            tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0,
-                                                             batch_size=batch_size, timeout_secs=60)
+            tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen, "update", 0,
+                batch_size=batch_size, timeout_secs=60)
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
             self.sleep(10)
-            for task in tasks:
-                self.task_manager.get_task_result(task)
-            tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0,
-                                                             batch_size=batch_size, timeout_secs=60)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+
+            tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen, "update", 0,
+                batch_size=batch_size, timeout_secs=60)
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
-            for task in tasks:
-                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -203,20 +214,26 @@ class RebalanceInOutTests(RebalanceBaseTest):
         gen = self.get_doc_generator(0, self.num_items)
         batch_size = 50
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
-            tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=batch_size, timeout_secs=60)
+            tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen, "update", 0,
+                batch_size=batch_size, timeout_secs=60)
             compact_tasks = []
             for bucket in self.bucket_util.buckets:
                 compact_tasks.append(self.task.async_compact_bucket(self.cluster.master, bucket))
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
             self.sleep(10)
-            for task in tasks:
-                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task in compact_tasks:
                 task.get_result(self.wait_timeout * 20)
-            tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=batch_size, timeout_secs=60)
+            tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen, "update", 0,
+                batch_size=batch_size, timeout_secs=60)
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
-            for task in tasks:
-                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -236,15 +253,16 @@ class RebalanceInOutTests(RebalanceBaseTest):
         the point where we are adding back and removing at least half of the nodes.
         """
         init_num_nodes = self.input.param("init_num_nodes", 1)
-        #self.add_remove_servers_and_rebalance(self.cluster.servers[1:init_num_nodes], [])
         gen = self.get_doc_generator(0, self.num_items)
         for i in range(self.num_servers):
-            tasks = self.bucket_util._async_load_all_buckets(self.cluster, gen, "update", 0, batch_size=10, timeout_secs=60)
+            tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen, "update", 0, batch_size=10, timeout_secs=60)
             self.add_remove_servers_and_rebalance(self.cluster.servers[init_num_nodes:init_num_nodes + i + 1], [])
             self.sleep(10)
             self.add_remove_servers_and_rebalance([], self.cluster.servers[init_num_nodes:init_num_nodes + i + 1])
-            for task in tasks:
-                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -266,16 +284,21 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
         gen_delete = self.get_doc_generator(self.num_items / 2 + 2000, self.num_items)
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
-            tasks = self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update, "update", 0,
-                                                 pause_secs=5, batch_size=1, timeout_secs=60)
-            tasks.extend(self.bucket_util._async_load_all_buckets(self.cluster, gen_delete, "delete", 0,
-                                                      pause_secs=5, batch_size=1, timeout_secs=60))
+            tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_update, "update", 0,
+                pause_secs=5, batch_size=1, timeout_secs=60)
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen_delete, "delete", 0,
+                pause_secs=5, batch_size=1, timeout_secs=60)
+            tasks_info.update(tem_tasks_info.copy())
 
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
             self.sleep(60)
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
-            for task in tasks:
-                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+
             self._load_all_buckets(gen_delete, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
 

@@ -7,8 +7,6 @@ from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
 from couchbase_helper.tuq_generators import JsonGenerator
 
 from membase.api.rest_client import RestConnection
-# from memcached.helper.data_helper import VBucketAwareMemcached
-# from sdk_client import SDKSmartClient as VBucketAwareMemcached
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError

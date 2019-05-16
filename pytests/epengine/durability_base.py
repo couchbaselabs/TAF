@@ -15,7 +15,6 @@ class DurabilityTestsBase(BaseTestCase):
         self.doc_ops = self.input.param("doc_ops", None)
         self.with_non_sync_writes = self.input.param("with_non_sync_writes",
                                                      False)
-        self.test_failure = None
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
         if self.num_replicas > 1:
@@ -65,14 +64,7 @@ class DurabilityTestsBase(BaseTestCase):
 
     def tearDown(self):
         # Fail the test case, if the failure is set
-        if self.test_failure is not None:
-            self.fail(self.test_failure)
         super(DurabilityTestsBase, self).tearDown()
-
-    def _set_failure(self, msg):
-        self.log.error(msg)
-        if self.test_failure is None:
-            self.test_failure = msg
 
     def get_random_node(self):
         rand_node_index = randint(1, self.nodes_init-1)

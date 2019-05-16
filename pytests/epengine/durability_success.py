@@ -102,7 +102,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.task.jython_task_manager.get_task_result(task)
             # Verify there is not failed docs in the task
             if len(task.fail.keys()) != 0:
-                self._set_failure("Some CRUD failed for {0}".format(task.fail))
+                self.log_failure("Some CRUD failed for {0}".format(task.fail))
 
         if self.simulate_error \
                 not in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:
@@ -132,7 +132,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             op_failed = self.durability_helper.retry_with_no_error(
                 client, task.fail, op_type)
             if op_failed:
-                self._set_failure(
+                self.log_failure(
                     "CRUD '{0}' failed on retry with no error condition"
                     .format(op_type))
 
@@ -149,6 +149,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.validate_test_failure()
 
     def test_with_persistence_issues(self):
         """

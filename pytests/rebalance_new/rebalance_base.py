@@ -2,7 +2,8 @@ import copy
 
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import DocumentGenerator
+from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 
 
@@ -43,7 +44,11 @@ class RebalanceBaseTest(BaseTestCase):
                           .format(self.num_items))
         self.gen_load = self.get_doc_generator(0, self.num_items)
         # gen_update is used for doing mutation for 1/2th of uploaded data
-        self.gen_update = self.get_doc_generator(0, (self.num_items / 2 - 1))
+        self.gen_update = self.get_doc_generator(0, (self.num_items / 2))
+        self.durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.nodes_in_cluster),
+            durability=self.durability_level,
+            replicate_to=self.replicate_to, persist_to=self.persist_to)
         self.log.info("==========Finished rebalance base setup========")
 
     def tearDown(self):
@@ -117,20 +122,59 @@ class RebalanceBaseTest(BaseTestCase):
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster + to_add) - set(to_remove))
 
     def get_doc_generator(self, start, end):
-        age = range(5)
-        first = ['james', 'sharon']
-        body = [''.rjust(self.doc_size - 10, 'a')]
-        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-        generator = DocumentGenerator(self.key, template, age, first, body,
-                                      start=start, end=end)
-        return generator
+        return doc_generator(self.key, start, end, doc_size=self.doc_size,
+                             doc_type=self.doc_type,
+                             target_vbucket=self.target_vbucket,
+                             vbuckets=self.vbuckets)
 
     def _load_all_buckets(self, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
-        tasks = self.bucket_util._async_load_all_buckets(
-            self.cluster, kv_gen, op_type, exp, flag, self.persist_to,
-            self.replicate_to, only_store_hash, batch_size, pause_secs,
-            timeout_secs, compression)
-        for task in tasks:
-            self.task_manager.get_task_result(task)
+        tasks_info = self.bucket_util.sync_load_all_buckets(
+            self.cluster, kv_gen, op_type, exp, flag,
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            durability=self.durability_level, timeout_secs=timeout_secs,
+            only_store_hash=only_store_hash, batch_size=batch_size,
+            pause_secs=pause_secs, sdk_compression=compression,
+            process_concurrency=8)
+        self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
+                        "Doc_ops failed in rebalance_base._load_all_buckets")
+
+    def start_parallel_cruds(self, gen_create, gen_delete,
+                             retry_exceptions=[], ignore_exceptions=[],
+                             task_verification=False):
+        tasks_info = dict()
+        if "update" in self.doc_ops:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_update, "update", 0, batch_size=20,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, pause_secs=5,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+        if "create" in self.doc_ops:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen_create, "create", 0, batch_size=20,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, pause_secs=5,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+        if "delete" in self.doc_ops:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen_delete, "delete", 0, batch_size=20,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, pause_secs=5,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+
+        if task_verification:
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+
+        return tasks_info
