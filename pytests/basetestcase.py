@@ -242,6 +242,7 @@ class BaseTestCase(unittest.TestCase):
                                                                   TestInputSingleton.input.param('get_trace', None))
                                 output = shell.execute_command("pstack %s" % output[0].split()[1].strip())
                                 print(output[0])
+                                shell.disconnect()
                             except:
                                 pass
 

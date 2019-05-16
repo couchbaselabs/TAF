@@ -193,6 +193,7 @@ class ClusterUtils:
             user=self.cluster.master.rest_username,
             password=self.cluster.master.rest_password)
         self.log.info(output)
+        remote_client.disconnect()
         # MB-10136 & MB-9991
         if error:
             raise Exception("Port didn't change! %s" % error)
@@ -364,6 +365,7 @@ class ClusterUtils:
                 # Delete Path
                 shell.cleanup_data_config(data_path)
                 self.start_server(node)
+                shell.disconnect()
             time.sleep(10)
         except Exception, ex:
             self.log.info(ex)

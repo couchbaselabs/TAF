@@ -86,3 +86,4 @@ class FailoverHelper(object):
                 if node.ip == server.ip and str(node.port) == server.port:
                     shell = RemoteMachineShellConnection(server)
                     shell.start_couchbase()
+                    shell.disconnect()

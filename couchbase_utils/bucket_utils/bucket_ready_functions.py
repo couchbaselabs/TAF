@@ -1579,6 +1579,7 @@ class BucketUtils:
                     # o, r = shell.execute_command("ls -LR '{0}'".format(path))
                     o, r = shell.execute_command("wc -l '{0}'".format(path))
                     shell.log_command_output(o, r)
+                    shell.disconnect()
 
     def load_some_data(self, serverInfo, fill_ram_percentage=10.0,
                        bucket_name='default'):

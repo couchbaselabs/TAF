@@ -85,6 +85,7 @@ class N1QLHelper:
             string_curl = json.loads(new_curl)
             result = json.loads(string_curl)
             print result
+            shell.disconnect()
         if isinstance(result, str) or 'errors' in result:
             error_result = str(result)
             length_display = len(error_result)
@@ -363,6 +364,7 @@ class N1QLHelper:
             else:
                 cmd = "cd /cygdrive/c/tuq;./cbq-engine.exe -couchbase http://%s:%s/ >/dev/null 2>&1 &" % (server.ip, server.port)
             self.shell.execute_command(cmd)
+        self.shell.disconnect()
 
     def _parse_query_output(self, output):
         if output.find("cbq>") == 0:
@@ -393,6 +395,7 @@ class N1QLHelper:
         for _ in self.servers:
             shell_connection = RemoteMachineShellConnection(self.master)
             shell_connection.execute_command(cmd)
+            shell_connection.disconnect()
 
     def drop_primary_index(self, using_gsi = True, server = None):
         if server is None:

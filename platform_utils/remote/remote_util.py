@@ -142,42 +142,6 @@ class RemoteMachineHelper(object):
 
 
 class RemoteMachineShellConnection:
-    _ssh_client = None
-
-    def __init__(self, username='root',
-                 pkey_location='',
-                 ip='', port=8091):
-        self.username = username
-        self.use_sudo = True
-        self.nonroot = False
-        """ in nonroot, we could extract Couchbase Server at
-            any directory that non root user could create
-        """
-        self.nr_home_path = "/home/%s/" % self.username
-        if self.username == 'root':
-            self.use_sudo = False
-        elif self.username != "Administrator":
-            self.use_sudo = False
-            self.nonroot = True
-        # let's create a connection
-        self._ssh_client = paramiko.SSHClient()
-        self.input = TestInput.TestInputParser.get_test_input(sys.argv)
-        self.ip = ip
-        self.port = port
-        if self.ip.find(":") != -1:
-            self.ip = self.ip.replace('[', '').replace(']', '')
-#             self.ip += "%en0"
-        self.remote = (self.ip != "localhost" and self.ip != "127.0.0.1")
-        self._ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        log.debug('Connecting to {0} with username: {1} pem key : {2}'
-                  .format(ip, username, pkey_location))
-        try:
-            if self.remote:
-                self._ssh_client.connect(hostname=ip, username=username,
-                                         key_filename=pkey_location)
-        except Exception:
-            log.info("Can't establish SSH session with {0}".format(self.ip))
-            exit(1)
 
     def __init__(self, serverInfo):
         # let's create a connection
@@ -241,11 +205,23 @@ class RemoteMachineShellConnection:
         self.msi = False
         if self.nonroot:
             self.bin_path = self.nr_home_path + self.bin_path
+        self.connect()
         self.extract_remote_info()
         os_type = self.info.type.lower()
         if os_type == "windows":
             self.cmd_ext = ".exe"
             self.bin_path = WIN_COUCHBASE_BIN_PATH
+
+    def connect(self):
+        self.jsch = JSch()
+        self.session = self.jsch.getSession(self.username, self.ip, 22)
+        self.session.setPassword(self.password)
+        self.session.setConfig("StrictHostKeyChecking", "no")
+        self.session.connect()
+
+    def disconnect(self):
+        log.info("Disconnecting ssh_client for {0}".format(self.ip))
+        self.session.disconnect()
 
     """
         In case of non root user, we need to switch to root to
@@ -3211,12 +3187,7 @@ class RemoteMachineShellConnection:
 
         else:
             try:
-                jsch = JSch()
-                session = jsch.getSession(self.username, self.ip, 22)
-                session.setPassword(self.password)
-                session.setConfig("StrictHostKeyChecking", "no")
-                session.connect()
-                self._ssh_client = session.openChannel("exec")
+                self._ssh_client = self.session.openChannel("exec")
                 self._ssh_client.setInputStream(None)
 
                 instream = self._ssh_client.getInputStream()
@@ -3233,7 +3204,7 @@ class RemoteMachineShellConnection:
                 for line in fu.readlines():
                     error.append(line)
                 self._ssh_client.disconnect()
-                session.disconnect()
+#                 self.session.disconnect()
             except JSchException as e:
                 log.info("%s: %s" % (self.ip, str(e)))
         if debug:
@@ -3307,10 +3278,10 @@ class RemoteMachineShellConnection:
                                             .format(process_name), debug=False)
                 self.log_command_output(o, r)
 
-    def disconnect(self):
-        if self._ssh_client:
-            log.info("Disconnecting ssh_client for {0}".format(self.ip))
-            self._ssh_client.disconnect()
+#     def disconnect(self):
+#         if self._ssh_client:
+#             log.info("Disconnecting ssh_client for {0}".format(self.ip))
+#             self._ssh_client.disconnect()
 
     def extract_remote_info(self):
         # initialize params
@@ -4970,4 +4941,5 @@ class RemoteUtilHelper(object):
             if ' '.join(o).find(text_for_search) != -1:
                 is_txt_found = True
                 break
+        shell.disconnect()
         return is_txt_found

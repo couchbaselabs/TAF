@@ -154,6 +154,7 @@ class ClusterOperationHelper(object):
                 shell.start_couchbase()
             else:
                 shell.start_membase()
+            shell.disconnect()
 
     @staticmethod
     def stop_cluster(servers):
@@ -163,6 +164,7 @@ class ClusterOperationHelper(object):
                 shell.stop_couchbase()
             else:
                 shell.stop_membase()
+            shell.disconnect()
 
     @staticmethod
     def flushctl_start(servers, username=None, password=None):
@@ -189,6 +191,8 @@ class ClusterOperationHelper(object):
                 log.info("Clearing os caches on {0}".format(server))
             except:
                 pass
+            finally:
+                shell.disconnect()
 
     @staticmethod
     def flushctl_set(master, key, val, bucket='default'):
@@ -288,6 +292,7 @@ class ClusterOperationHelper(object):
             sh.log_command_output(o, r)
             msg = "modified erlang +%s to %s for server %s"
             log.info(msg % (sync_type, num_threads, server.ip))
+            sh.disconnect()
 
     @staticmethod
     def set_erlang_schedulers(servers, value="16:16"):
@@ -308,6 +313,7 @@ class ClusterOperationHelper(object):
             sh.log_command_output(o, r)
             log.info("modified erlang +A to %s for server %s"
                      % (value, server.ip))
+            sh.disconnect()
 
         ClusterOperationHelper.start_cluster(servers)
 
@@ -331,6 +337,7 @@ class ClusterOperationHelper(object):
             sh.log_command_output(o, r)
             msg = "modified erlang gc to full_sweep_after %s on %s " % (value, server.ip)
             log.info(msg)
+            sh.disconnect()
 
     @staticmethod
     def begin_rebalance_in(master, servers, timeout=5):

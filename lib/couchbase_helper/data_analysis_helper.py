@@ -894,6 +894,7 @@ class DataCollector(object):
             else:
                 raise Exception("Could not find file shard_0.fdb at %s"
                                 % server.ip)
+        conn.disconnect()
         return backup_data, status
 
     def get_views_definition_from_backup_file(self, server, backup_dir,
@@ -904,6 +905,7 @@ class DataCollector(object):
             /tmp/entbackup/backup/20*/default-*/views.json
         """
         conn = RemoteMachineShellConnection(server)
+        result = False
         backup_data = {}
         for bucket in buckets:
             backup_data[bucket.name] = {}
@@ -916,6 +918,6 @@ class DataCollector(object):
                 views_output = [x.strip(' ') for x in views_output]
                 if views_output:
                     views_output = " ".join(views_output)
-                    return views_output
-                else:
-                    return False
+                    result = views_output
+        conn.disconnect()
+        return result

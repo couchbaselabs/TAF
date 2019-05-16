@@ -504,7 +504,7 @@ class CompactBucketTask(Task):
             shell = RemoteMachineShellConnection(s)
             res = shell.execute_cbstats(
                 "", "raw", keyname="kvtimings", vbid="")
-
+            shell.disconnect()
             for i in res[0]:
                 # check for lines that look like
                 #    rw_0:compact_131072,262144:        8
