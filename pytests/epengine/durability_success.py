@@ -30,16 +30,21 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         error_sim =dict()
         shell_conn = dict()
         cbstat_obj = dict()
-        vb_info = dict()
-        vb_info["init"] = dict()
-        vb_info["afterCrud"] = dict()
+        failover_info = dict()
+        vb_info_info = dict()
+        failover_info["init"] = dict()
+        failover_info["afterCrud"] = dict()
+        vb_info_info["init"] = dict()
+        vb_info_info["afterCrud"] = dict()
 
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
-            vb_info["init"][node.ip] = cbstat_obj[node.ip].failover_stats(
+            vb_info_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
+            failover_info["init"][node.ip] = \
+                cbstat_obj[node.ip].failover_stats(self.bucket.name)
 
         if self.simulate_error \
                 in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:
@@ -59,9 +64,6 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 error_sim[node.ip].create(self.simulate_error,
                                           bucket_name=self.bucket.name)
 
-                # Disconnect the shell connection
-                shell_conn[node.ip].disconnect()
-
         # Perform CRUDs with induced error scenario is active
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
@@ -69,7 +71,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         gen_delete = doc_generator(self.key, 0,
                                    int(self.num_items/3))
         gen_read = doc_generator(self.key, int(self.num_items/3),
-                                 int(self.num_items/2))
+                                 self.num_items)
         gen_update = doc_generator(self.key, int(self.num_items/2),
                                    self.num_items)
 
@@ -77,21 +79,25 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update, "update", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_read, "read", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_delete, "delete", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
 
         # Update num_items value accordingly to the CRUD performed
@@ -141,12 +147,20 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         # Fetch latest failover stats and validate the values are updated
         for node in target_nodes:
-            vb_info["afterCrud"][node.ip] = \
+            vb_info_info["afterCrud"][node.ip] = \
+                cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
+            failover_info["afterCrud"][node.ip] = \
                 cbstat_obj[node.ip].failover_stats(self.bucket.name)
-            val = vb_info["init"][node.ip] != vb_info["afterCrud"][node.ip]
-            self.assertTrue(val, msg="Vbucket seq_no stats not updated")
 
-        # Verify initial doc load count
+            # Failover validation
+            val = failover_info["init"][node.ip] == failover_info["afterCrud"][node.ip]
+            self.assertTrue(val, msg="Failover stats got updated")
+
+            # Seq_no validation (High level)
+            val = vb_info_info["init"][node.ip] != vb_info_info["afterCrud"][node.ip]
+            self.assertTrue(val, msg="vbucket seq_no not updated after CRUDs")
+
+            # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.validate_test_failure()
