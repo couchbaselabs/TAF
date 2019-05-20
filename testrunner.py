@@ -3,30 +3,31 @@
 import base64
 import gzip
 from httplib import BadStatusLine
+import logging.config
+from optparse import OptionParser, OptionGroup
 import os
-import urllib2
-import sys
-import threading
 from os.path import basename, splitext
 from pprint import pprint
+import re
+import shutil
+import signal
+import sys
+from threading import Thread, Event
+import threading
+import time
+import unittest
+import urllib2
+
+from TestInput import TestInputParser, TestInputSingleton
+from scripts.collect_server_info import cbcollectRunner, couch_dbinfo_Runner
+from scripts.getcoredumps import Getcoredumps, Clearcoredumps
+from xunit import XUnitTestResult
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils", "platform_utils", "connections"] + sys.path
 
 if sys.hexversion < 0x02060000:
     print "Testrunner requires version 2.6+ of python"
     sys.exit()
 
-import re
-import time
-import unittest
-import logging.config
-from threading import Thread, Event
-from xunit import XUnitTestResult
-from TestInput import TestInputParser, TestInputSingleton
-from optparse import OptionParser, OptionGroup
-from scripts.collect_server_info import cbcollectRunner, couch_dbinfo_Runner
-from scripts.getcoredumps import Getcoredumps, Clearcoredumps
-import signal
-import shutil
 
 def usage(err=None):
     print """\
