@@ -261,7 +261,7 @@ class ServerTasks(object):
                                     batch_size=1, pause_secs=1,
                                     timeout_secs=5, compression=True,
                                     process_concurrency=1, retries=5,
-                                    durability=""):
+                                    durability="", check_persistence=False):
 
         self.log.debug("Loading documents to {}".format(bucket.name))
         clients = []
@@ -281,7 +281,8 @@ class ServerTasks(object):
             batch_size=batch_size, pause_secs=pause_secs,
             timeout_secs=timeout_secs, compression=compression,
             process_concurrency=process_concurrency, retries=retries,
-            durability=durability, majority_value=majority_value)
+            durability=durability, majority_value=majority_value,
+            check_persistence=check_persistence)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

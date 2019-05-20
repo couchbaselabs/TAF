@@ -3,6 +3,7 @@ Created on Sep 14, 2017
 
 @author: riteshagarwal
 """
+import zlib
 import copy
 import json as Json
 import json as pyJson
@@ -921,7 +922,7 @@ class Durability(Task):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, process_concurrency=8, print_ops_rate=True,
-                 retries=5, durability="", majority_value=0):
+                 retries=5, durability="", majority_value=0, check_persistence=False):
 
         super(Durability, self).__init__("DurabilityDocumentsMainTask{}".format(time.time()))
         self.majority_value = majority_value
@@ -936,6 +937,7 @@ class Durability(Task):
         self.exp = exp
         self.exp_unit = exp_unit
         self.durability = durability
+        self.check_persistence = check_persistence
         self.flag = flag
         self.persit_to = persist_to
         self.replicate_to = replicate_to
@@ -989,7 +991,7 @@ class Durability(Task):
                 time_unit=self.time_unit, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression,
-                instance_num=i, durability=self.durability)
+                instance_num=i, durability=self.durability, check_persistence=self.check_persistence)
             self.tasks.append(task)
             i += 1
         try:
@@ -1030,7 +1032,7 @@ class Durability(Task):
                      time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
                      compression=True, retries=5,
-                     instance_num=0, durability=""):
+                     instance_num=0, durability="", check_persistence=False):
             super(Durability.Loader, self).__init__(
                 cluster, bucket, client, batch_size=batch_size,
                 pause_secs=pause_secs, timeout_secs=timeout_secs,
@@ -1047,6 +1049,7 @@ class Durability(Task):
             self.time_unit = time_unit
             self.instance = instance_num
             self.durability = durability
+            self.check_persistence = check_persistence
             self.bucket = bucket
             self.tasks = []
             self.write_offset = self.generator._doc_gen.start
@@ -1068,6 +1071,9 @@ class Durability(Task):
         def call(self):
             self.start_task()
             import threading
+            if self.check_persistence:
+                persistence = threading.Thread(target=self.Persistence)
+                persistence.start()
             reader = threading.Thread(target=self.Reader)
             reader.start()
 
@@ -1081,6 +1087,8 @@ class Durability(Task):
 
             self.log.debug("===== Tasks in DurabilityDocumentLoaderTask pool =====")
             self.task_manager.print_tasks_in_pool()
+            if self.check_persistence:
+                persistence.join()
             reader.join()
             self.complete_task()
 
@@ -1125,17 +1133,104 @@ class Durability(Task):
                                              % self.op_type))
             self.write_offset += len(key_value)
 
+        def Persistence(self):
+            self.generator_reader = copy.deepcopy(self.generator)
+            self.start = self.generator_reader._doc_gen.start
+            self.generator_reader._doc_gen.itr = self.generator_reader._doc_gen.start
+            self.end = self.generator_reader._doc_gen.end
+            self.persistence_offset = self.generator_reader._doc_gen.start
+            shells = {}
+
+            for server in self.cluster.servers:
+                shell = RemoteMachineShellConnection(server)
+                shells.update({server.ip: Cbstats(shell)})
+
+            while True:
+                if self.persistence_offset < self.write_offset or self.persistence_offset == self.end:
+#                     log.info("Persistence: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"%
+#                              (self.persistence_offset,
+#                               self.write_offset,
+#                               self.end))
+                    if self.generator_reader._doc_gen.has_next():
+                        doc = self.generator_reader._doc_gen.next()
+                        key, val = doc[0], doc[1]
+                        vBucket = (((zlib.crc32(key)) >> 16) & 0x7fff) & (len(self.bucket.vbuckets)-1)
+                        nodes = [self.bucket.vbuckets[vBucket].master] + self.bucket.vbuckets[vBucket].replica
+                        count = 0
+                        if self.op_type == 'create':
+                            try:
+                                for node in nodes:
+                                    key_is_dirty = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key, "key_is_dirty")
+                                    if key_is_dirty in ["true", "True", "TRUE"]:
+                                        self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                    else:
+                                        self.test_log.debug("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                        count += 1
+                            except:
+                                pass
+                            if key not in self.create_failed.keys():
+                                if count < self.majority_value:
+                                    self.sdk_acked_pers_failed.update({key: val})
+                                    self.test_log.error("Key isn't persisted although SDK reports Durable, Key = %s"%key)
+                            elif count > 0:
+                                self.test_log.error("SDK threw exception but document is present in the Server -> %s"%key)
+                                self.sdk_exception_crud_succeed.update({key: val})
+                            else:
+                                self.test_log.error("Document is rolled back to nothing during create -> %s"%(key))
+
+                        if self.op_type == 'update':
+                            if key not in self.update_failed[self.instance].keys():
+                                try:
+                                    for node in nodes:
+                                        key_is_dirty = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key, "key_is_dirty")
+                                        if key_is_dirty in ["true", "True", "TRUE"]:
+                                            self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                        else:
+                                            self.test_log.debug("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                            count += 1
+                                except:
+                                    pass
+                                if count < self.majority_value:
+                                    self.sdk_acked_pers_failed.update({key: val})
+                                    self.test_log.error("Key isn't persisted although SDK reports Durable, Key = %s getfromReplica = %s"%key)
+                        if self.op_type == 'delete':
+                            for node in nodes:
+                                try:
+                                    key_is_dirty = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key, "key_is_dirty")
+                                    if key_is_dirty in ["true", "True", "TRUE"]:
+                                        self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                    else:
+                                        self.test_log.debug("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                        count += 1
+                                except Exception as e:
+                                    pass
+                            if key not in self.delete_failed[self.instance].keys():
+                                if count > (self.bucket.replicaNumber+1 - self.majority_value):
+                                    self.sdk_acked_pers_failed.update({key: val})
+                                    self.test_log.error("Key isn't Persisted-Delete although SDK reports Durable, Key = %s getfromReplica = %s"%key)
+                            elif count >= self.majority_value:
+                                self.test_log.error("Document is rolled back to original during delete -> %s"%(key))
+
+                    if self.persistence_offset == self.end:
+                        self.log.info("BREAKING PERSISTENCE!!")
+                        break
+                    self.persistence_offset = self.write_offset
+
+            for key, cbstat in shells.items():
+                cbstat.shellConn.disconnect()
+
         def Reader(self):
             self.generator_reader = copy.deepcopy(self.generator)
-            self.start = self.generator._doc_gen.start
-            self.end = self.generator._doc_gen.end
-            self.read_offset = self.generator._doc_gen.start
+            self.start = self.generator_reader._doc_gen.start
+            self.generator_reader._doc_gen.itr = self.generator_reader._doc_gen.start
+            self.end = self.generator_reader._doc_gen.end
+            self.read_offset = self.generator_reader._doc_gen.start
+
             while True:
                 if self.read_offset < self.write_offset or self.read_offset == self.end:
                     self.test_log.debug(
                         "Reader: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"
                         % (self.read_offset, self.write_offset, self.end))
-
                     if self.generator_reader._doc_gen.has_next():
                         doc = self.generator_reader._doc_gen.next()
                         key, val = doc[0], doc[1]
@@ -1199,7 +1294,6 @@ class Durability(Task):
                         self.test_log.fatal("BREAKING!!")
                         break
                     self.read_offset += 1
-
 
 class LoadDocumentsGeneratorsTask(Task):
 

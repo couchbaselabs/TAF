@@ -147,6 +147,7 @@ class basic_ops(BaseTestCase):
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
 
         def_bucket = self.bucket_util.buckets[0]
+        def_bucket.vbuckets = self.bucket_util.get_vbuckets(def_bucket.name)
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
 
@@ -162,12 +163,16 @@ class basic_ops(BaseTestCase):
             batch_size=10, process_concurrency=4,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-            durability="majority")
+            durability="majority", check_persistence=True)
+
         self.task.jython_task_manager.get_task_result(task)
         print(task.sdk_acked_curd_failed)
         self.assertTrue(
             len(task.sdk_acked_curd_failed) == 0,
-            "Durability failed for docs:" % task.sdk_acked_curd_failed)
+            "Durability failed for docs: %s" % task.sdk_acked_curd_failed)
+        self.assertTrue(
+            len(task.sdk_acked_pers_failed) == 0,
+            "Durability failed for docs: %s" % task.sdk_acked_pers_failed)
 
     def test_doc_size_exceptions(self):
         """
