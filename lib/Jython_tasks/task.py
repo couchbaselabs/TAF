@@ -507,8 +507,8 @@ class GenericLoadingTask(Task):
     def batch_delete(self, key_val, shared_client=None, persist_to=None,
                      replicate_to=None, timeout=None, timeunit=None,
                      durability=""):
-        not_deleted = []
-        deleted = []
+        not_deleted = dict()
+        deleted = dict()
         self.client = self.client or shared_client
         delete_result = self.client.delete_multi(key_val.keys(),
                                                  persist_to=persist_to,
@@ -518,9 +518,9 @@ class GenericLoadingTask(Task):
                                                  durability=durability)
         for result in delete_result:
             if not result['status']:
-                not_deleted.append({result['id']: result['error']})
+                not_deleted[result['id']] = result['error']
             else:
-                deleted.append({result['id']: result['cas']})
+                deleted[result['id']] = result['cas']
         return deleted, not_deleted
 
     def batch_read(self, keys, shared_client=None):
