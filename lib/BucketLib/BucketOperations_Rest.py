@@ -9,7 +9,7 @@ import logging
 import time
 import urllib
 
-from bucket import Bucket
+from bucket import vBucket, Bucket
 from membase.api.exception import \
     BucketCreationException, GetBucketInfoFailed, \
     BucketFlushFailed, BucketCompactionException
@@ -63,7 +63,7 @@ class BucketHelper(RestConnection):
                     counter = 0
                     for vbucket in vBucketMapForward:
                         # there will be n number of replicas
-                        vbucketInfo = Bucket.vBucket()
+                        vbucketInfo = vBucket()
                         vbucketInfo.master = serverList[vbucket[0]]
                         if vbucket:
                             for i in range(1, len(vbucket)):
@@ -78,7 +78,7 @@ class BucketHelper(RestConnection):
                 bucket.vbuckets = list()
                 for vbucket in vBucketMap:
                     # there will be n number of replicas
-                    vbucketInfo = Bucket.vBucket()
+                    vbucketInfo = vBucket()
                     vbucketInfo.master = serverList[vbucket[0]]
                     if vbucket:
                         for i in range(1, len(vbucket)):
