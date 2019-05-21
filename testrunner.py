@@ -18,11 +18,12 @@ import time
 import unittest
 import urllib2
 
+sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils", "platform_utils", "connections"] + sys.path
 from TestInput import TestInputParser, TestInputSingleton
 from scripts.collect_server_info import cbcollectRunner, couch_dbinfo_Runner
 from scripts.getcoredumps import Getcoredumps, Clearcoredumps
 from xunit import XUnitTestResult
-sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils", "platform_utils", "connections"] + sys.path
+
 
 if sys.hexversion < 0x02060000:
     print "Testrunner requires version 2.6+ of python"
