@@ -523,8 +523,8 @@ class BucketUtils:
         for _, task_info in tasks_info.items():
             op_type = task_info["op_type"]
             ignored_keys = task_info["ignored"].keys()
-            retried_success_keys = task_info["retired"]["success"].keys()
-            retried_failed_keys = task_info["retired"]["fail"].keys()
+            retried_success_keys = task_info["retried"]["success"].keys()
+            retried_failed_keys = task_info["retried"]["fail"].keys()
             unwanted_success_keys = task_info["unwanted"]["success"].keys()
             unwanted_failed_keys = task_info["unwanted"]["fail"].keys()
 
@@ -548,7 +548,7 @@ class BucketUtils:
                                .format(op_type, len(retried_failed_keys),
                                        retried_failed_keys))
                 self.log.error("Exceptions for failure on retried docs: {0}"
-                               .format(task_info["retired"]["fail"]))
+                               .format(task_info["retried"]["fail"]))
 
             if len(unwanted_success_keys) > 0:
                 task_info["ops_failed"] = True
