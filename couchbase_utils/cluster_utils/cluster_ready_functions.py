@@ -29,8 +29,22 @@ class CBCluster:
         self.nodes_in_cluster = []
         self.master = servers[0]
 
-    def update_master(self, master):
-        self.master = master
+    def update_master(self, node_in_cluster):
+        """
+        Update the master of the cluster with the orchestrator of the
+        cluster.
+        :param node_in_cluster: Any node that is still part of the
+        cluster. Note that we need to enable diag_eval on non local
+        hosts first before running this method.
+        :return:
+        """
+        rest = RestConnection(node_in_cluster)
+        command = "mb_master:master_node()."
+        status, content = rest.diag_eval(command)
+        master_ip = content.split("@")[1].replace("\\", '').replace(
+            "'", "")
+        self.master = [server for server in self.servers if server.ip ==
+                  master_ip][0]
 
 
 class ClusterUtils:
