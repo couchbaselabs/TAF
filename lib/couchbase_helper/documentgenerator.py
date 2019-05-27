@@ -130,15 +130,13 @@ class SubdocDocumentGenerator(KVGenerator):
     """ An idempotent document generator."""
 
     def __init__(self, name, template, *args, **kwargs):
-        """Initializes the document generator
+        """Initializes the Sub document generator
 
         Example:
-        Creates 10 documents, but only iterates through the first 5.
-
         age = range(5)
         first = ['james', 'sharon']
-        template = '{{ "age": {0}, "first_name": "{1}" }}'
-        gen = DocumentGenerator('test_docs', template, age, first,
+        template = '{{ "age": {0}, "first.name": "{1}" }}'
+        gen = SubdocDocumentGenerator('test_docs', template, age, first,
                                 start=0, end=5)
 
         Args:
@@ -165,6 +163,9 @@ class SubdocDocumentGenerator(KVGenerator):
         if 'end' in kwargs:
             self.end = kwargs['end']
 
+        if 'doc_type' in kwargs:
+            self.doc_type = kwargs['doc_type']
+
     """Creates the next generated document and increments the iterator.
     Returns:
         The document generated"""
@@ -172,9 +173,30 @@ class SubdocDocumentGenerator(KVGenerator):
         if self.itr >= self.end:
             raise StopIteration
 
+        seed_hash = self.name + '-' + str(self.itr)
+        self.random.seed(seed_hash)
+        doc_args = []
+        for arg in self.args:
+            value = self.random.choice(arg)
+            doc_args.append(value)
+        doc = self.template.format(*doc_args).replace('\'', '"') \
+            .replace('True', 'true') \
+            .replace('False', 'false') \
+            .replace('\\', '\\\\')
+        json_val = json.loads(doc)
+        return_val = []
+        for path, value in json_val.items():
+            return_val.append((path, value))
+        if self.name == "random_keys":
+            """ This will generate a random ascii key with 12 
+            characters """
+            doc_key = ''.join(self.random.choice(
+                ascii_uppercase + ascii_lowercase + digits) for _ in
+                              range(12))
+        else:
+            doc_key = self.name + '-' + str(self.itr)
         self.itr += 1
-        return self.name + '-' + str(self.itr), json.dumps(self.template) \
-                                                    .encode("ascii", "ignore")
+        return doc_key, return_val
 
 
 class DocumentGeneratorForTargetVbucket(KVGenerator):

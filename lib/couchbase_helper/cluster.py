@@ -2,7 +2,8 @@ import logging
 import tasks.tasks as conc
 import Jython_tasks.task as jython_tasks
 
-from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.documentgenerator import doc_generator, \
+    SubdocDocumentGenerator
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient as VBucketAwareMemcached
 from BucketLib.BucketOperations import BucketHelper
@@ -159,6 +160,54 @@ class ServerTasks(object):
                 durability=durability,
                 active_resident_threshold=active_resident_threshold,
                 task_identifier=task_identifier)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
+    def async_load_gen_sub_docs(self, cluster, bucket, generator,
+                                op_type, exp=0, path_create=False,
+                                xattr=False,
+                                flag=0, persist_to=0, replicate_to=0,
+                                only_store_hash=True, batch_size=1,
+                                pause_secs=1,
+                                timeout_secs=5, compression=True,
+                                process_concurrency=8, retries=5,
+                                durability=""):
+        self.log.debug(
+            "Loading sub documents to {}".format(bucket.name))
+        if not isinstance(generator, SubdocDocumentGenerator):
+            raise Exception("Document generator needs to be of"
+                            " type SubdocDocumentGenerator")
+        clients = []
+        gen_start = int(generator.start)
+        gen_end = max(int(generator.end), 1)
+        gen_range = max(int(
+            (generator.end - generator.start) / process_concurrency), 1)
+        for _ in range(gen_start, gen_end, gen_range):
+            client = VBucketAwareMemcached(
+                RestConnection(cluster.master),
+                bucket)
+            clients.append(client)
+        _task = jython_tasks.LoadSubDocumentsGeneratorsTask(cluster,
+                                                            self.jython_task_manager,
+                                                            bucket,
+                                                            clients,
+                                                            [generator],
+                                                            op_type,
+                                                            exp,
+                                                            create_paths=path_create,
+                                                            xattr=xattr,
+                                                            exp_unit="second",
+                                                            flag=flag,
+                                                            persist_to=persist_to,
+                                                            replicate_to=replicate_to,
+                                                            only_store_hash=only_store_hash,
+                                                            batch_size=batch_size,
+                                                            pause_secs=pause_secs,
+                                                            timeout_secs=timeout_secs,
+                                                            compression=compression,
+                                                            process_concurrency=process_concurrency,
+                                                            retries=retries,
+                                                            durability=durability)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

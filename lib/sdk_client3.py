@@ -22,7 +22,9 @@ from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.java.kv import InsertOptions, UpsertOptions, \
                                          RemoveOptions, \
                                          PersistTo, ReplicateTo, \
-                                         ReplicaMode, GetFromReplicaOptions
+    ReplicaMode, \
+    GetFromReplicaOptions, \
+    MutateInOptions
 
 from java.time import Duration
 from java.time.temporal import ChronoUnit
@@ -31,6 +33,8 @@ from java.util.logging import Logger, Level, ConsoleHandler
 from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
+import com.couchbase.test.doc_operations_sdk3.SubDocOperations as \
+    sub_doc_op
 
 
 class SDKClient(object):
@@ -289,6 +293,82 @@ class SDKClient(object):
                 timeout=timeout, time_unit=time_unit)
         return result
 
+    def sub_doc_insert_multi(self, keys, exp=0, exp_unit="seconds",
+                             persist_to=0, replicate_to=0,
+                             timeout=5, time_unit="seconds",
+                             doc_type="json", durability="",
+                             create_path=False,
+                             xattr=False):
+        """
+
+        :param keys: Documents to perform sub_doc operations on.
+        Must be a dictionary with Keys and List of tuples for
+        path and value.
+        :param exp: Expiry of document
+        :param exp_unit: Expiry time unit
+        :param persist_to: Persist to parameter
+        :param replicate_to: Replicate to parameter
+        :param timeout: timeout for the operation
+        :param time_unit: timeout time unit
+        :param retry:
+        :param doc_type: Document type
+        :param durability: Durability level parameter
+        :return:
+        """
+        mutate_in_specs = []
+        for key, value in keys.items():
+            mutate_in_spec = []
+            for _tuple in value:
+                _path = _tuple[0]
+                _val = _tuple[1]
+                _mutate_in_spec = sub_doc_op().getInsertMutateInSpec(
+                    _path, _val, create_path, xattr)
+                mutate_in_spec.append(_mutate_in_spec)
+            content = Tuples.of(key, mutate_in_spec)
+            mutate_in_specs.append(content)
+        result = sub_doc_op().bulkInsertSubDocOperation(
+            self.collection, mutate_in_specs, exp, exp_unit,
+            persist_to, replicate_to, durability, timeout, time_unit)
+        return self.__translate_upsert_multi_sub_doc_result(result)
+
+    def sub_doc_upsert_multi(self, keys, exp=0, exp_unit="seconds",
+                             persist_to=0, replicate_to=0,
+                             timeout=5, time_unit="seconds",
+                             doc_type="json", durability="",
+                             create_path=False,
+                             xattr=False):
+        """
+
+        :param keys: Documents to perform sub_doc operations on.
+        Must be a dictionary with Keys and List of tuples for
+        path and value.
+        :param exp: Expiry of document
+        :param exp_unit: Expiry time unit
+        :param persist_to: Persist to parameter
+        :param replicate_to: Replicate to parameter
+        :param timeout: timeout for the operation
+        :param time_unit: timeout time unit
+        :param retry:
+        :param doc_type: Document type
+        :param durability: Durability level parameter
+        :return:
+        """
+        mutate_in_specs = []
+        for key, value in keys.items():
+            mutate_in_spec = []
+            for _tuple in value:
+                _path = _tuple[0]
+                _val = _tuple[1]
+                _mutate_in_spec = sub_doc_op().getUpsertMutateInSpec(
+                    _path, _val, create_path, xattr)
+                mutate_in_spec.append(_mutate_in_spec)
+            content = Tuples.of(key, mutate_in_spec)
+            mutate_in_specs.append(content)
+        result = sub_doc_op().bulkUpsertSubDocOperation(
+            self.collection, mutate_in_specs, exp, exp_unit,
+            persist_to, replicate_to, durability, timeout, time_unit)
+        return self.__translate_upsert_multi_sub_doc_result(result)
+
     def __translate_to_json_object(self, value, doc_type="json"):
 
         if type(value) == JsonObject:
@@ -361,6 +441,25 @@ class SDKClient(object):
                 fail[key]['cas'] = result['cas']
         return success, fail
 
+    def __translate_upsert_multi_sub_doc_result(self, data):
+        success = dict()
+        fail = dict()
+        if data is None:
+            return success, fail
+        for item in data:
+            result = item['status']
+            key = item['id']
+            json_object = item["result"]
+            if result:
+                success[key] = dict()
+                success[key]['value'] = json_object
+                success[key]['cas'] = item['cas']
+            else:
+                fail[key] = dict()
+                fail[key]['value'] = json_object
+                fail[key]['error'] = item['error']
+        return success, fail
+
     def getInsertOptions(self, exp=0, exp_unit="seconds",
                          persist_to=0, replicate_to=0,
                          timeout=5, time_unit="seconds",
@@ -409,6 +508,21 @@ class SDKClient(object):
                                 self.getReplicateTo(replicate_to))
 
         return options
+
+    def getMutateInOptions(self, exp=0, exp_unit="seconds",
+                           persist_to=0, replicate_to=0, timeout=5,
+                           time_unit="seconds", durability=""):
+        if persist_to != 0 or replicate_to != 0:
+            options = MutateInOptions.mutateInOptions().durability(
+                self.getPersistTo(persist_to), self.getReplicateTo(
+                    replicate_to)).expiry(
+                self.getDuration(exp, exp_unit)).timeout(
+                self.getDuration(timeout, time_unit))
+        else:
+            MutateInOptions.mutateInOptions().durabilityLevel(
+                self.getDurabilityLevel(durability)).expiry(
+                self.getDuration(exp, exp_unit)).timeout(
+                self.getDuration(timeout, time_unit))
 
     def getPersistTo(self, persistTo):
         try:

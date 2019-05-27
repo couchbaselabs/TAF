@@ -348,7 +348,7 @@ public class doc_ops {
 		}
 	}
 
-	private PersistTo getPersistTo(int persistTo) {
+	protected PersistTo getPersistTo(int persistTo) {
 		switch (persistTo) {
 		case 0:
 			return PersistTo.NONE;
@@ -366,7 +366,7 @@ public class doc_ops {
 
 	}
 
-	private ReplicateTo getReplicateTo(int replicateTo) {
+	protected ReplicateTo getReplicateTo(int replicateTo) {
 		switch (replicateTo) {
 		case 0:
 			return ReplicateTo.NONE;
@@ -381,7 +381,7 @@ public class doc_ops {
 		}
 	}
 
-	private DurabilityLevel getDurabilityLevel(String durabilityLevel) {
+	protected DurabilityLevel getDurabilityLevel(String durabilityLevel) {
 		if (durabilityLevel.equalsIgnoreCase("MAJORITY")) {
 			return DurabilityLevel.MAJORITY;
 		}
@@ -395,7 +395,7 @@ public class doc_ops {
 		return DurabilityLevel.NONE;
 	}
 
-	private Duration getDuration(long time, String timeUnit) {
+	protected Duration getDuration(long time, String timeUnit) {
 		TemporalUnit temporalUnit;
 		if (timeUnit.equalsIgnoreCase("seconds")) {
 			temporalUnit = ChronoUnit.SECONDS;

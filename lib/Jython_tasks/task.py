@@ -18,7 +18,7 @@ from BucketLib.MemcachedOperations import MemcachedHelper
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
-    doc_generator
+    doc_generator, SubdocDocumentGenerator
 from membase.api.exception import \
     N1QLQueryException, DropIndexException, CreateIndexException, \
     DesignDocCreationException, QueryViewException, ReadDocumentException, \
@@ -606,6 +606,56 @@ class GenericLoadingTask(Task):
             self.set_exception(error)
         return success, fail
 
+    def batch_sub_doc_insert(self, key_value, persist_to=0,
+                             replicate_to=0, timeout=5,
+                             time_unit="seconds",
+                             doc_type="json", durability="",
+                             create_path=True, xattr=False):
+        success = dict()
+        fail = dict()
+        try:
+            retry_docs = key_value
+            success, fail = self.client.sub_doc_insert_multi(retry_docs,
+                                                             exp=self.exp,
+                                                             exp_unit=self.exp_unit,
+                                                             persist_to=persist_to,
+                                                             replicate_to=replicate_to,
+                                                             timeout=timeout,
+                                                             time_unit=time_unit,
+                                                             doc_type=doc_type,
+                                                             durability=durability,
+                                                             create_path=create_path,
+                                                             xattr=xattr)
+            return success, fail
+        except Exception as error:
+            self.log.error(error)
+        return success, fail
+
+    def batch_sub_doc_upsert(self, key_value, persist_to=0,
+                             replicate_to=0, timeout=5,
+                             time_unit="seconds",
+                             doc_type="json", durability="",
+                             create_path=True, xattr=False):
+        success = dict()
+        fail = dict()
+        try:
+            retry_docs = key_value
+            success, fail = self.client.sub_doc_upsert_multi(retry_docs,
+                                                             exp=self.exp,
+                                                             exp_unit=self.exp_unit,
+                                                             persist_to=persist_to,
+                                                             replicate_to=replicate_to,
+                                                             timeout=timeout,
+                                                             time_unit=time_unit,
+                                                             doc_type=doc_type,
+                                                             durability=durability,
+                                                             create_path=create_path,
+                                                             xattr=xattr)
+            return success, fail
+        except Exception as error:
+            self.log.error(error)
+        return success, fail
+
     def _process_values_for_create(self, key_val):
         for key, value in key_val.items():
             try:
@@ -724,6 +774,71 @@ class LoadDocumentsTask(GenericLoadingTask):
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
         self.docs_loaded += len(key_value)
 
+
+class LoadSubDocumentsTask(GenericLoadingTask):
+    def __init__(self, cluster, bucket, client, generator,
+                 op_type, exp, create_paths=False,
+                 xattr=False,
+                 exp_unit="seconds", flag=0,
+                 persist_to=0, replicate_to=0, time_unit="seconds",
+                 batch_size=1, pause_secs=1, timeout_secs=5,
+                 compression=True, throughput_concurrency=4, retries=5,
+                 durability=""):
+        super(LoadSubDocumentsTask, self).__init__(
+            cluster, bucket, client, batch_size=batch_size,
+            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            compression=compression,
+            throughput_concurrency=throughput_concurrency,
+            retries=retries)
+        self.generator = generator
+        self.op_type = op_type
+        self.exp = exp
+        self.create_path = create_paths
+        self.xattr = xattr
+        self.exp_unit = exp_unit
+        self.flag = flag
+        self.persist_to = persist_to
+        self.replicate_to = replicate_to
+        self.time_unit = time_unit
+        self.num_loaded = 0
+        self.durability = durability
+        self.fail = {}
+        self.success = {}
+
+    def has_next(self):
+        return self.generator.has_next()
+
+    def next(self, override_generator=None):
+        doc_gen = override_generator or self.generator
+        key_value = doc_gen.next_batch()
+        if self.op_type == 'insert':
+            success, fail = self.batch_sub_doc_insert(key_value,
+                                                      persist_to=self.persist_to,
+                                                      replicate_to=self.replicate_to,
+                                                      timeout=self.timeout,
+                                                      time_unit=self.time_unit,
+                                                      doc_type=self.generator.doc_type,
+                                                      durability=self.durability,
+                                                      create_path=self.create_path,
+                                                      xattr=self.xattr)
+            self.fail.update(fail)
+            self.success.update(success)
+        elif self.op_type == 'upsert':
+            success, fail = self.batch_sub_doc_upsert(key_value,
+                                                      persist_to=self.persist_to,
+                                                      replicate_to=self.replicate_to,
+                                                      timeout=self.timeout,
+                                                      time_unit=self.time_unit,
+                                                      doc_type=self.generator.doc_type,
+                                                      durability=self.durability,
+                                                      create_path=self.create_path,
+                                                      xattr=self.xattr
+                                                      )
+            self.fail.update(fail)
+            self.success.update(success)
+        else:
+            self.set_exception(
+                Exception("Bad operation type: %s" % self.op_type))
 
 class Durability(Task):
 
@@ -1165,6 +1280,173 @@ class LoadDocumentsGeneratorsTask(Task):
                 durability=self.durability,
                 task_identifier=self.task_identifier,
                 skip_read_on_error=self.skip_read_on_error)
+            tasks.append(task)
+        return tasks
+
+
+class LoadSubDocumentsGeneratorsTask(Task):
+
+    def __init__(self, cluster, task_manager, bucket, clients,
+                 generators,
+                 op_type, exp, create_paths=False,
+                 xattr=False, exp_unit="seconds", flag=0,
+                 persist_to=0, replicate_to=0, time_unit="seconds",
+                 only_store_hash=True, batch_size=1, pause_secs=1,
+                 timeout_secs=5, compression=True,
+                 process_concurrency=8,
+                 print_ops_rate=True, retries=5, durability=""):
+        super(LoadSubDocumentsGeneratorsTask, self).__init__(
+            "SubDocumentsLoadGenTask_{}".format(time.time()))
+        self.cluster = cluster
+        self.exp = exp
+        self.create_path = create_paths
+        self.xattr = xattr
+        self.exp_unit = exp_unit
+        self.flag = flag
+        self.persit_to = persist_to
+        self.replicate_to = replicate_to
+        self.time_unit = time_unit
+        self.only_store_hash = only_store_hash
+        self.pause_secs = pause_secs
+        self.timeout_secs = timeout_secs
+        self.compression = compression
+        self.process_concurrency = process_concurrency
+        self.clients = clients
+        self.task_manager = task_manager
+        self.batch_size = batch_size
+        self.generators = generators
+        self.input_generators = generators
+        self.op_types = None
+        self.buckets = None
+        self.print_ops_rate = print_ops_rate
+        self.retries = retries
+        self.durability = durability
+        if isinstance(op_type, list):
+            self.op_types = op_type
+        else:
+            self.op_type = op_type
+        if isinstance(bucket, list):
+            self.buckets = bucket
+        else:
+            self.bucket = bucket
+        self.num_loaded = 0
+        self.fail = {}
+        self.success = {}
+
+    def call(self):
+        self.start_task()
+        if self.op_types:
+            if len(self.op_types) != len(self.generators):
+                self.set_exception(
+                    Exception("Not all generators have op_type!"))
+                self.complete_task()
+        if self.buckets:
+            if len(self.op_types) != len(self.buckets):
+                self.set_exception(
+                    Exception(
+                        "Not all generators have bucket specified!"))
+                self.complete_task()
+        iterator = 0
+        tasks = []
+        for generator in self.generators:
+            if self.op_types:
+                self.op_type = self.op_types[iterator]
+            if self.buckets:
+                self.bucket = self.buckets[iterator]
+            tasks.extend(self.get_tasks(generator))
+            iterator += 1
+        if self.print_ops_rate:
+            self.print_ops_rate_tasks = []
+            if self.buckets:
+                for bucket in self.buckets:
+                    print_ops_rate_task = PrintOpsRate(self.cluster,
+                                                       bucket)
+                    self.print_ops_rate_tasks.append(
+                        print_ops_rate_task)
+                    self.task_manager.add_new_task(print_ops_rate_task)
+            else:
+                print_ops_rate_task = PrintOpsRate(self.cluster,
+                                                   self.bucket)
+                self.print_ops_rate_tasks.append(print_ops_rate_task)
+                self.task_manager.add_new_task(print_ops_rate_task)
+        try:
+            for task in tasks:
+                self.task_manager.add_new_task(task)
+            for task in tasks:
+                try:
+                    self.task_manager.get_task_result(task)
+                except Exception as e:
+                    self.log.error(e)
+                finally:
+                    self.fail.update(task.fail)
+                    self.success.update(task.success)
+                    self.log.debug("Failed to load {} sub_docs from {} "
+                                   "to {}"
+                                   .format(task.fail.__len__(),
+                                     task.generator._doc_gen.start,
+                                     task.generator._doc_gen.end))
+        except Exception as e:
+            self.log.error(e)
+            self.set_exception(e)
+        finally:
+            if self.print_ops_rate and hasattr(self,
+                                               "print_ops_rate_tasks"):
+                for print_ops_rate_task in self.print_ops_rate_tasks:
+                    print_ops_rate_task.end_task()
+                    self.task_manager.get_task_result(
+                        print_ops_rate_task)
+            self.log.debug("===========Tasks in loadgen pool=======")
+            self.task_manager.print_tasks_in_pool()
+            self.log.debug("============================")
+            for task in tasks:
+                self.task_manager.stop_task(task)
+            for client in self.clients:
+                client.close()
+        self.complete_task()
+        return self.fail
+
+    def get_tasks(self, generator):
+        generators = []
+        tasks = []
+        gen_start = int(generator.start)
+        gen_end = max(int(generator.end), 1)
+        gen_range = max(int((
+                                        generator.end -
+                                        generator.start) /
+                            self.process_concurrency),
+                        1)
+        for pos in range(gen_start, gen_end, gen_range):
+            if not isinstance(generator, SubdocDocumentGenerator):
+                self.set_exception("Document generator needs to be of"
+                                   " type SubdocDocumentGenerator")
+            partition_gen = copy.deepcopy(generator)
+            partition_gen.start = pos
+            partition_gen.itr = pos
+            partition_gen.end = pos + gen_range
+            if partition_gen.end > generator.end:
+                partition_gen.end = generator.end
+            batch_gen = BatchedDocumentGenerator(
+                partition_gen,
+                self.batch_size)
+            generators.append(batch_gen)
+        for i in range(0, len(generators)):
+            task = LoadSubDocumentsTask(self.cluster, self.bucket,
+                                        self.clients[i], generators[i],
+                                        self.op_type, self.exp,
+                                        create_paths=self.create_path,
+                                        xattr=self.xattr,
+                                        exp_unit=self.exp_unit,
+                                        flag=self.flag,
+                                        persist_to=self.persit_to,
+                                        replicate_to=self.replicate_to,
+                                        time_unit=self.time_unit,
+                                        batch_size=self.batch_size,
+                                        pause_secs=self.pause_secs,
+                                        timeout_secs=self.timeout_secs,
+                                        compression=self.compression,
+                                        throughput_concurrency=self.process_concurrency,
+                                        retries=self.retries,
+                                        durability=self.durability)
             tasks.append(task)
         return tasks
 
