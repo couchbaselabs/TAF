@@ -213,6 +213,7 @@ class RemoteMachineShellConnection:
             self.bin_path = WIN_COUCHBASE_BIN_PATH
 
     def connect(self):
+        log.info("Connecting ssh_client(JSch) for {0}".format(self.ip))
         self.jsch = JSch()
         self.session = self.jsch.getSession(self.username, self.ip, 22)
         self.session.setPassword(self.password)
@@ -220,7 +221,7 @@ class RemoteMachineShellConnection:
         self.session.connect()
 
     def disconnect(self):
-        log.info("Disconnecting ssh_client for {0}".format(self.ip))
+        log.info("Disconnecting ssh_client(JSch) for {0}".format(self.ip))
         self.session.disconnect()
 
     """
@@ -3175,7 +3176,7 @@ class RemoteMachineShellConnection:
         return self.execute_command_raw_jsch(command, debug=debug,
                                              use_channel=use_channel)
 
-    def execute_command_raw_jsch(self, command, debug=True, use_channel=False):
+    def execute_command_raw_jsch(self, command, debug=False, use_channel=False):
         if debug:
             log.info("running command.raw on {0}: {1}"
                      .format(self.ip, command))

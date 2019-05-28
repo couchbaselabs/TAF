@@ -386,6 +386,7 @@ class BucketUtils:
         stats_tasks.append(self.task.async_wait_for_stats(
             shell_conn_list, bucket, stat_cmd,
             'vb_replica_curr_items', '==', items * available_replicas))
+        self.sleep(5)
         stats_tasks.append(self.task.async_wait_for_stats(
             shell_conn_list, bucket, stat_cmd,
             'curr_items_tot', '==', items * (available_replicas + 1)))
@@ -399,9 +400,8 @@ class BucketUtils:
             self.log.error("Unable to get expected stats from the "
                            "selected node")
 
-            # In case of exception, close all connections
-            for remote_conn in shell_conn_list:
-                remote_conn.disconnect()
+        for remote_conn in shell_conn_list:
+            remote_conn.disconnect()
 
     def update_all_bucket_maxTTL(self, maxttl=0):
         for bucket in self.buckets:
@@ -747,9 +747,10 @@ class BucketUtils:
                     tasks.append(self.task.async_wait_for_stats(
                         [shell_conn], bucket, stat_cmd,
                         ep_items_remaining, "==", 0))
-            shell_conn.disconnect()
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+            for shell in task.shellConnList:
+                shell.disconnect()
 
     def verify_unacked_bytes_all_buckets(self, filter_list=[], sleep_time=5):
         """

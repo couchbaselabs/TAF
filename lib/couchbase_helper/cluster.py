@@ -338,6 +338,7 @@ class ServerTasks(object):
         Returns:
           RebalanceTask - Task future that is a handle to the scheduled task
         """
+        log.info("Starting StatsWaitTask for %s on bucket %s" % (stat, bucket.name))
         _task = jython_tasks.StatsWaitTask(shell_conn_list, bucket, stat_cmd,
                                            stat, comparison, value)
         self.jython_task_manager.add_new_task(_task)

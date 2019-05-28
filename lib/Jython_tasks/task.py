@@ -74,7 +74,7 @@ class Task(Callable):
     def complete_task(self):
         self.completed = True
         self.end_time = time.time()
-        log.info("Thread %s is completed:" % self.thread_name)
+        log.info("Thread %s is completed" % self.thread_name)
 
     def call(self):
         raise NotImplementedError
@@ -1409,7 +1409,6 @@ class StatsWaitTask(Task):
         self.stat = stat
         self.comparison = comparison
         self.value = value
-        self.conns = {}
         self.stop = False
         self.timeout = timeout
         self.cbstatObj = None
@@ -1430,15 +1429,11 @@ class StatsWaitTask(Task):
                 else:
                     raise "Not supported. Implement the stat call"
         finally:
-            for _, conn in self.conns.items():
-                conn.close()
+            pass
         if time.time() > timeout:
             self.set_exception("Could not verify stat {} within timeout {}"
                                .format(self.stat, self.timeout))
 
-        # Closes the shell_connection before ending the task
-        for remote_conn in self.shellConnList:
-            remote_conn.disconnect()
         self.complete_task()
 
     def _get_all_stats_and_compare(self):
@@ -2147,7 +2142,7 @@ class PrintClusterStats(Task):
 
 class PrintOpsRate(Task):
     def __init__(self, cluster, bucket, sleep=1):
-        super(PrintOpsRate, self).__init__("print_ops_rate{}"
+        super(PrintOpsRate, self).__init__("print_ops_rate {}"
                                            .format(bucket.name))
         self.cluster = cluster
         self.bucket = bucket
