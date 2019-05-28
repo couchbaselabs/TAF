@@ -383,10 +383,10 @@ class BucketUtils:
             shell_conn_list.append(remote_conn)
 
         # Create Tasks to verify total items/replica count in the bucket
-        stats_tasks.append(self.async_wait_for_stats(
+        stats_tasks.append(self.task.async_wait_for_stats(
             shell_conn_list, bucket, stat_cmd,
             'vb_replica_curr_items', '==', items * available_replicas))
-        stats_tasks.append(self.async_wait_for_stats(
+        stats_tasks.append(self.task.async_wait_for_stats(
             shell_conn_list, bucket, stat_cmd,
             'curr_items_tot', '==', items * (available_replicas + 1)))
         try:
@@ -402,33 +402,6 @@ class BucketUtils:
             # In case of exception, close all connections
             for remote_conn in shell_conn_list:
                 remote_conn.disconnect()
-
-    def async_wait_for_stats(self, shell_conn_list, bucket, stat_cmd, stat,
-                             comparison, value):
-        """
-        Asynchronously wait for stats
-
-        Waits for stats to match the criteria passed by the stats variable.
-        See couchbase.stats_tool.StatsCommon.build_stat_check(...)
-        for a description of the stats structure and how it can be built.
-
-        Parameters:
-            shell_conn_list - Objects of type 'RemoteMachineShellConnection'.
-                              Uses this object to execute cbstats binary in
-                              the cluster nodes
-            bucket     - The name of the bucket (String)
-            stat_cmd   - The stats name to fetch using cbstats. (String)
-            stat       - The stat that we want to get the value from. (String)
-            comparison - How to compare the stat result to the value specified.
-            value      - The value to compare to.
-
-        Returns:
-            RebalanceTask - Task future that is a handle to the scheduled task
-        """
-        _task = StatsWaitTask(shell_conn_list, bucket, stat_cmd, stat,
-                              comparison, value)
-        self.task_manager.add_new_task(_task)
-        return _task
 
     def update_all_bucket_maxTTL(self, maxttl=0):
         for bucket in self.buckets:
