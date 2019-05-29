@@ -295,10 +295,10 @@ class basic_ops(BaseTestCase):
         else:
             self.log.warning("Unsupported doc_operation")
 
-        self.log("Waiting for ep_all_items_remaining. Checking through cbstats for each node in the cluster.")
+        self.log.info("Waiting for ep_all_items_remaining. Checking through cbstats for each node in the cluster.")
         self.bucket_util._wait_for_stats_all_buckets()
 
-        self.log("Verifying bucket stats for the total number of items in bucket")
+        self.log.info("Verifying bucket stats for the total number of items in bucket")
         self.bucket_util.verify_stats_all_buckets(expected_num_items)
 
     def test_large_doc_size(self):
