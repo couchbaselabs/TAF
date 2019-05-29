@@ -271,6 +271,7 @@ class Installer(object):
                 mesg = "%s does not support cb version %s \n" % \
                        (info.distribution_version, version[:5])
                 remote_client.stop_current_python_running(mesg)
+        remote_client.disconnect()
         if info.type.lower() == "windows":
             if "-" in version:
                 msi_build = version.split("-")
@@ -297,7 +298,7 @@ class Installer(object):
             else:
                 print "Incorrect version format"
                 sys.exit()
-        remote_client.disconnect()
+
         if ok and not linux_repo:
             timeout = 300
             if "timeout" in params:
@@ -404,7 +405,9 @@ class Installer(object):
                             # "enterprise", "community")
                     """ check if URL is live """
                     remote_client = RemoteMachineShellConnection(server)
-                    if remote_client.is_url_live(build.url):
+                    url_live = remote_client.is_url_live(build.url)
+                    remote_client.disconnect()
+                    if url_live:
                         return build
                     else:
                         sys.exit(
@@ -720,7 +723,6 @@ class CouchbaseServerInstaller(Installer):
                 available """
                 remote_client.check_cmd("unzip")
                 remote_client.is_ntp_installed()
-                remote_client.disconnect()
                 # TODO: Make it work with windows
                 if "erlang_threads" in params:
                     num_threads = params.get('erlang_threads',
@@ -759,6 +761,9 @@ class CouchbaseServerInstaller(Installer):
                         server.ip))
             log.info('sleep for 5 seconds before trying again ...')
             time.sleep(5)
+
+        remote_client.disconnect()
+
         if not cluster_initialized:
             sys.exit("unable to initialize couchbase node")
 
@@ -931,6 +936,7 @@ class MongoInstaller(Installer):
         remote_client.execute_command("killall -9 mongod mongos")
         remote_client.execute_command(
             "rm -rf ./{0}".format(server.product_name))
+        remote_client.disconnect()
 
     def install(self, params):
         server = self.get_server(params)
@@ -946,6 +952,7 @@ class MongoInstaller(Installer):
 
         remote_client.execute_command(
             "tar -xzvf /tmp/{0}".format(server.product_tgz))
+        remote_client.disconnect()
 
     def initialize(self, params):
         server = self.get_server(params)
@@ -973,10 +980,12 @@ class MongoInstaller(Installer):
                  " --logpath ./{0}/log/mongos-27017.out" \
                  " --configdb " + server.ip + ":27019"). \
                     format(server.product_name))
+            remote_client.disconnect()
         else:
             log.error(
                 "Connection with MongoDB config server was not "
                 "established.")
+            remote_client.disconnect()
             sys.exit()
 
 
@@ -1252,6 +1261,7 @@ class ESInstaller(object):
             "~/elasticsearch/bin/plugin -u "
             "https://github.com/mobz/elasticsearch-head/archive"
             "/master.zip -i mobz/elasticsearch-head")
+        self.remote_client.disconnect()
         return True
 
     def __exit__(self):
@@ -1274,8 +1284,9 @@ class InstallerJob(object):
                     "couchbase", "couchbase-server", "cb"]:
                     success = True
                     for server in servers:
-                        success &= not RemoteMachineShellConnection(
-                            server).is_couchbase_installed()
+                        shell = RemoteMachineShellConnection(server)
+                        success &= not shell.is_couchbase_installed()
+                        shell.disconnect()
                     if not success:
                         print "Server:{0}.Couchbase is still" + \
                               " installed after uninstall".format(
@@ -1338,8 +1349,9 @@ class InstallerJob(object):
                                                          "cb"]:
             success = True
             for server in servers:
-                success &= not RemoteMachineShellConnection(
-                    server).is_couchbase_installed()
+                shell = RemoteMachineShellConnection(server)
+                success &= not shell.is_couchbase_installed()
+                shell.disconnect()
             if not success:
                 print "Server:{0}.Couchbase is still installed after " \
                       "uninstall".format(
@@ -1375,6 +1387,7 @@ class InstallerJob(object):
                 os.system(
                     "rm -f resources/windows/automation/*_172.23*")
                 os.system("rm -f resources/windows/automation/*_10.17*")
+                shell.disconnect()
         return success
 
 
@@ -1430,9 +1443,11 @@ def change_couchbase_indexer_ports(input):
         remote.write_remote_file(port_config_path, filename,
                                  output_lines)
         remote.delete_file(old_config_path, "/config.dat")
+        remote.disconnect()
     for node in input.servers:
         remote = RemoteMachineShellConnection(node)
         remote.start_server()
+        remote.disconnect()
 
 
 def main():
@@ -1513,8 +1528,9 @@ def main():
         print "verify installation..."
         success = True
         for server in input.servers:
-            success &= RemoteMachineShellConnection(
-                server).is_couchbase_installed()
+            shell = RemoteMachineShellConnection(server)
+            success &= shell.is_couchbase_installed()
+            shell.disconnect()
         if not success:
             sys.exit(log_install_failed)
     if "product" in input.test_params and input.test_params[
