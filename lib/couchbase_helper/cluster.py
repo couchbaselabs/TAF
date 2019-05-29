@@ -1,5 +1,4 @@
 import logging
-
 import tasks.tasks as conc
 import Jython_tasks.task as jython_tasks
 
@@ -7,7 +6,6 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient as VBucketAwareMemcached
 from BucketLib.BucketOperations import BucketHelper
-from Jython_tasks.task_manager import TaskManager as jython_task_manager
 
 
 """An API for scheduling tasks that run against Couchbase Server
@@ -16,8 +14,6 @@ This module is contains the top-level API's for scheduling and executing tasks.
 The API provides a way to run task do syncronously and asynchronously.
 """
 
-log = logging.getLogger(__name__)
-
 
 class ServerTasks(object):
     """
@@ -25,9 +21,10 @@ class ServerTasks(object):
     asynchronously on Couchbase cluster
     """
 
-    def __init__(self, task_manager=jython_task_manager()):
-
+    def __init__(self, task_manager):
         self.jython_task_manager = task_manager
+        self.log = logging.getLogger("infra")
+        self.log.debug("Initiating ServerTasks")
 
     def async_create_bucket(self, server, bucket):
         """
@@ -127,7 +124,7 @@ class ServerTasks(object):
                             active_resident_threshold=100,
                             durability=""):
 
-        log.info("Loading documents to {}".format(bucket.name))
+        self.log.debug("Loading documents to {}".format(bucket.name))
         clients = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
@@ -163,7 +160,7 @@ class ServerTasks(object):
                                      pause_secs=1, timeout_secs=5,
                                      compression=True,
                                      process_concurrency=8, retries=5):
-        log.info("Mutating documents to {}".format(bucket.name))
+        self.log.debug("Mutating documents to {}".format(bucket.name))
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
         _task = jython_tasks.ContinuousDocUpdateTask(
             cluster, self.jython_task_manager, bucket, client, [generator],
@@ -174,7 +171,7 @@ class ServerTasks(object):
             process_concurrency=process_concurrency, retries=retries)
         self.jython_task_manager.add_new_task(_task)
         return _task
-    
+
     def async_load_gen_docs_atomicity(self, cluster, buckets, generator, op_type,
                                        exp=0, flag=0, persist_to=0, replicate_to=0,
                                        only_store_hash=True, batch_size=1, pause_secs=1,
@@ -182,7 +179,7 @@ class ServerTasks(object):
                             process_concurrency=1, retries=5,
                             transaction_timeout=5, commit=True, durability=0):
 
-        log.info("Loading documents ")
+        self.log.debug("Loading documents")
         bucket_list=[]
         client_list=[]
         for bucket in buckets:
@@ -207,7 +204,7 @@ class ServerTasks(object):
                                     process_concurrency=1, retries=5,
                                     durability=""):
 
-        log.info("Loading documents to {}".format(bucket.name))
+        self.log.debug("Loading documents to {}".format(bucket.name))
         clients = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
@@ -246,8 +243,8 @@ class ServerTasks(object):
         Returns:
             _task - Async task created for DGM task
         """
-        log.info("Loading doc into {0} until dgm is {1}%"
-                 .format(bucket.name, active_resident_threshold))
+        self.log.debug("Loading doc into {0} until dgm is {1}%"
+                  .format(bucket.name, active_resident_threshold))
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
         _task = jython_tasks.LoadDocumentsForDgmTask(
             cluster, self.jython_task_manager, bucket, client, [generator],
@@ -285,7 +282,7 @@ class ServerTasks(object):
                             flag=0, only_store_hash=True, batch_size=1,
                             pause_secs=1, timeout_secs=5, compression=True,
                             process_concurrency=4):
-        log.info("Validating documents")
+        self.log.debug("Validating documents")
         client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
         _task = jython_tasks.DocumentsValidatorTask(
             cluster, self.jython_task_manager, bucket, client, [generator],
@@ -338,7 +335,7 @@ class ServerTasks(object):
         Returns:
           RebalanceTask - Task future that is a handle to the scheduled task
         """
-        log.info("Starting StatsWaitTask for %s on bucket %s" % (stat, bucket.name))
+        self.log.debug("Starting StatsWaitTask for %s on bucket %s" % (stat, bucket.name))
         _task = jython_tasks.StatsWaitTask(shell_conn_list, bucket, stat_cmd,
                                            stat, comparison, value)
         self.jython_task_manager.add_new_task(_task)
@@ -504,7 +501,7 @@ class ServerTasks(object):
     def shutdown(self, force=False):
         self.jython_task_manager.shutdown(force)
         if force:
-            log.info("Cluster instance shutdown with force")
+            self.log.warning("Cluster instance shutdown with force")
 
     def async_n1ql_query_verification(self, server, bucket, query,
                                       n1ql_helper=None,

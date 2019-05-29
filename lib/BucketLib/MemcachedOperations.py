@@ -12,16 +12,15 @@ import mc_bin_client
 import crc32
 import socket
 import ctypes
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 import memcacheConstants
-from memcached.helper.data_helper import MemcachedClientHelper, VBucketAwareMemcached
+from memcached.helper.data_helper import MemcachedClientHelper, \
+                                         VBucketAwareMemcached
 from mc_bin_client import MemcachedClient
 from threading import Thread
 import Queue
 from collections import defaultdict
 from BucketLib.BucketOperations import BucketHelper
-
-log = logging.getLogger()
 
 
 class MemcachedHelper:
@@ -31,6 +30,7 @@ class MemcachedHelper:
         start_time = time.time()
         end_time = start_time + timeout_in_seconds
         ready_vbuckets = {}
+        log = logging.getLogger("infra")
         rest = RestConnection(node)
 #         servers = rest.get_nodes()
         bucket_conn = BucketHelper(node)
@@ -106,6 +106,7 @@ class MemcachedHelper:
     def wait_for_memcached(node, bucket, timeout_in_seconds=300, log_msg=''):
 #         time.sleep(10)
 #         return True
+        log = logging.getLogger("infra")
         msg = "waiting for memcached bucket : {0} in {1} to accept set ops"
         log.info(msg.format(bucket, node.ip))
         all_vbuckets_ready = MemcachedHelper.wait_for_vbuckets_ready_state(node,
@@ -117,6 +118,7 @@ class MemcachedHelper:
     def verify_data(server, keys, value_equal_to_key, verify_flags, test, debug=False, bucket="default"):
         log_error_count = 0
         # verify all the keys
+        log = logging.getLogger("infra")
         client = MemcachedClientHelper.direct_client(server, bucket)
         vbucket_count = len(BucketHelper(server).get_vbuckets(bucket))
         # populate key
@@ -153,10 +155,11 @@ class MemcachedHelper:
 
     @staticmethod
     def keys_dont_exist(server, keys, bucket):
-        #verify all the keys
+        # verify all the keys
+        log = logging.getLogger("infra")
         client = MemcachedClientHelper.direct_client(server, bucket)
         vbucket_count = len(BucketHelper(server).get_vbuckets(bucket))
-        #populate key
+        # populate key
         for key in keys:
             try:
                 vbucketId = crc32.crc32_hash(key) & (vbucket_count - 1)
@@ -184,6 +187,7 @@ class MemcachedHelper:
     def keys_exist_or_assert_in_parallel(keys, server, bucket_name, test, concurrency=2):
         verification_threads = []
         queue = Queue.Queue()
+        log = logging.getLogger("infra")
         for i in range(concurrency):
             keys_chunk = MemcachedHelper.chunks(keys, len(keys) / concurrency)
             t = Thread(target=MemcachedHelper.keys_exist_or_assert,
@@ -205,6 +209,7 @@ class MemcachedHelper:
     def keys_exist_or_assert(keys, server, bucket_name, test, queue=None):
         # we should try out at least three times
         # verify all the keys
+        log = logging.getLogger("infra")
         client = MemcachedClientHelper.proxy_client(server, bucket_name)
         # populate key
         retry = 1

@@ -56,7 +56,7 @@ class ClusterUtils:
         self.rest = RestConnection(cluster.master)
         self.vbuckets = self.input.param("vbuckets", 1024)
         self.upr = self.input.param("upr", None)
-        self.log = logging.getLogger()
+        self.log = logging.getLogger("test")
 
     def cluster_cleanup(self, bucket_util):
         rest = RestConnection(self.cluster.master)
@@ -75,14 +75,14 @@ class ClusterUtils:
                                       wait_if_warmup=False):
         for server in servers:
             rest = RestConnection(server)
-            self.log.info("Waiting for ns_server @ {0}:{1}"
-                          .format(server.ip, server.port))
+            self.log.debug("Waiting for ns_server @ {0}:{1}"
+                           .format(server.ip, server.port))
             if RestHelper(rest).is_ns_server_running(wait_time):
-                self.log.info("ns_server @ {0}:{1} is running"
-                              .format(server.ip, server.port))
+                self.log.debug("ns_server @ {0}:{1} is running"
+                               .format(server.ip, server.port))
             else:
-                self.log.info("ns_server {0} is not running in {1} sec"
-                              .format(server.ip, wait_time))
+                self.log.error("ns_server {0} is not running in {1} sec"
+                               .format(server.ip, wait_time))
                 return False
             return True
 
@@ -100,7 +100,7 @@ class ClusterUtils:
                 nodes.remove(node)
 
         if len(nodes) > 1:
-            self.log.info("Rebalancing all nodes in order to remove nodes")
+            self.log.debug("Rebalancing all nodes in order to remove nodes")
             rest.log_client_error("Starting rebalance from test, ejected nodes %s" %
                                   [node.id for node in nodes if node.id != master_id])
             removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
@@ -144,9 +144,9 @@ class ClusterUtils:
                     - set(success_cleaned)) != 0:
                 raise Exception("Not all ejected nodes were cleaned successfully")
 
-            self.log.info("Removed all the nodes from cluster associated with {0} ? {1}"
-                          .format(self.cluster.master,
-                                  [(node.id, node.port) for node in nodes if (node.id != master_id)]))
+            self.log.debug("Removed all the nodes from cluster associated with {0} ? {1}"
+                           .format(self.cluster.master,
+                                   [(node.id, node.port) for node in nodes if (node.id != master_id)]))
 
     def get_nodes_in_cluster(self, master_node=None):
         rest = None
@@ -184,12 +184,12 @@ class ClusterUtils:
             cluster_name=None, cluster_username=None,
             cluster_password=new_password, cluster_port=False)
 
-        self.log.info(output)
+        self.log.debug(output)
         # MB-10136 & MB-9991
         if not result:
             raise Exception("Password didn't change!")
-        self.log.info("New password '%s' on nodes: %s"
-                      % (new_password, [node.ip for node in nodes]))
+        self.log.debug("New password '%s' on nodes: %s"
+                       % (new_password, [node.ip for node in nodes]))
         for node in nodes:
             for server in self.cluster.servers:
                 if server.ip == node.ip and int(server.port) == int(node.port):
@@ -206,14 +206,14 @@ class ClusterUtils:
             cluster_host="localhost:%s" % current_port,
             user=self.cluster.master.rest_username,
             password=self.cluster.master.rest_password)
-        self.log.info(output)
+        self.log.debug(output)
         remote_client.disconnect()
         # MB-10136 & MB-9991
         if error:
             raise Exception("Port didn't change! %s" % error)
         self.port = new_port
-        self.log.info("New port '%s' on nodes: %s"
-                      % (new_port, [node.ip for node in nodes]))
+        self.log.debug("New port '%s' on nodes: %s"
+                       % (new_port, [node.ip for node in nodes]))
         for node in nodes:
             for server in self.cluster.servers:
                 if server.ip == node.ip and int(server.port) == int(node.port):
@@ -226,7 +226,7 @@ class ClusterUtils:
                 env_dict = {}
                 if self.vbuckets:
                     env_dict["COUCHBASE_NUM_VBUCKETS"] = self.vbuckets
-                if self.upr != None:
+                if self.upr is not None:
                     if self.upr:
                         env_dict["COUCHBASE_REPL_TYPE"] = "upr"
                     else:
@@ -235,7 +235,7 @@ class ClusterUtils:
                     remote_client = RemoteMachineShellConnection(server)
                     remote_client.change_env_variables(env_dict)
                     remote_client.disconnect()
-            self.log.info("========= CHANGED ENVIRONMENT SETTING ===========")
+            self.log.debug("========= CHANGED ENVIRONMENT SETTING ===========")
 
     def reset_env_variables(self):
         if self.vbuckets != 1024 or self.upr is not None:
@@ -244,7 +244,7 @@ class ClusterUtils:
                     remote_client = RemoteMachineShellConnection(server)
                     remote_client.reset_env_variables()
                     remote_client.disconnect()
-            self.log.info("==== RESET ENVIRONMENT SETTING TO ORIGINAL ====")
+            self.log.debug("==== RESET ENVIRONMENT SETTING TO ORIGINAL ====")
 
     def change_log_info(self):
         for server in self.cluster.servers:
@@ -253,7 +253,7 @@ class ClusterUtils:
             remote_client.change_log_level(self.log_info)
             remote_client.start_couchbase()
             remote_client.disconnect()
-        self.log.info("========= CHANGED LOG LEVELS ===========")
+        self.log.debug("========= CHANGED LOG LEVELS ===========")
 
     def change_log_location(self):
         for server in self.cluster.servers:
@@ -262,7 +262,7 @@ class ClusterUtils:
             remote_client.configure_log_location(self.log_location)
             remote_client.start_couchbase()
             remote_client.disconnect()
-        self.log.info("========= CHANGED LOG LOCATION ===========")
+        self.log.debug("========= CHANGED LOG LOCATION ===========")
 
     def change_stat_info(self):
         for server in self.cluster.servers:
@@ -271,7 +271,7 @@ class ClusterUtils:
             remote_client.change_stat_periodicity(self.stat_info)
             remote_client.start_couchbase()
             remote_client.disconnect()
-        self.log.info("========= CHANGED STAT PERIODICITY ===========")
+        self.log.debug("========= CHANGED STAT PERIODICITY ===========")
 
     def change_port_info(self):
         for server in self.cluster.servers:
@@ -279,10 +279,10 @@ class ClusterUtils:
             remote_client.stop_couchbase()
             remote_client.change_port_static(self.port_info)
             server.port = self.port_info
-            self.log.info("New REST port %s" % server.port)
+            self.log.debug("New REST port %s" % server.port)
             remote_client.start_couchbase()
             remote_client.disconnect()
-        self.log.info("========= CHANGED ALL PORTS ===========")
+        self.log.debug("========= CHANGED ALL PORTS ===========")
 
     def force_eject_nodes(self):
         for server in self.cluster.servers:
@@ -324,10 +324,10 @@ class ClusterUtils:
                 shell = RemoteMachineShellConnection(server)
                 if shell.is_couchbase_installed():
                     shell.stop_couchbase()
-                    self.log.info("Couchbase stopped")
+                    self.log.debug("Couchbase stopped on {0}".format(server))
                 else:
                     shell.stop_membase()
-                    self.log.info("Membase stopped")
+                    self.log.debug("Membase stopped on {0}".format(server))
                 shell.disconnect()
                 break
 
@@ -338,10 +338,10 @@ class ClusterUtils:
                 shell = RemoteMachineShellConnection(server)
                 if shell.is_couchbase_installed():
                     shell.start_couchbase()
-                    self.log.info("Couchbase started")
+                    self.log.debug("Couchbase started on {0}".format(server))
                 else:
                     shell.start_membase()
-                    self.log.info("Membase started")
+                    self.log.debug("Membase started on {0}".format(server))
                 shell.disconnect()
                 break
 
@@ -382,7 +382,7 @@ class ClusterUtils:
                 shell.disconnect()
             time.sleep(10)
         except Exception, ex:
-            self.log.info(ex)
+            self.log.error(ex)
 
     def get_nodes_from_services_map(self, service_type="n1ql",
                                     get_all_nodes=False, servers=None,
@@ -392,9 +392,9 @@ class ClusterUtils:
         if not master:
             master = self.cluster.master
         services_map = self.get_services_map(master=master)
-        if (service_type not in services_map):
-            self.log.info("cannot find service node {0} in cluster "
-                          .format(service_type))
+        if service_type not in services_map:
+            self.log.warning("Cannot find service node {0} in cluster "
+                             .format(service_type))
         else:
             node_list = []
             for server_info in services_map[service_type]:
@@ -408,14 +408,14 @@ class ClusterUtils:
                     if "couchbase.com" in ip and "couchbase.com" not in server.ip:
                         shell = RemoteMachineShellConnection(server)
                         hostname = shell.get_full_hostname()
-                        self.log.info("convert IP: {0} to hostname: {1}"
-                                      .format(server.ip, hostname))
+                        self.log.debug("convert IP: {0} to hostname: {1}"
+                                       .format(server.ip, hostname))
                         server.ip = hostname
                         shell.disconnect()
                     if (port != 8091 and port == int(server.port)) or \
                             (port == 8091 and server.ip == ip):
                         node_list.append(server)
-            self.log.info("All nodes in cluster: {0}".format(node_list))
+            self.log.debug("All nodes in cluster: {0}".format(node_list))
             if get_all_nodes:
                 return node_list
             else:
@@ -606,7 +606,7 @@ class ClusterUtils:
 
             self.rebalance(wait_for_completion)
         else:
-            self.log.info("No Nodes provided to add in cluster")
+            self.log.warning("No Nodes provided to add in cluster")
 
         return otpNodes
 
@@ -617,7 +617,7 @@ class ClusterUtils:
         if started and wait_for_completion:
             result = self.rest.monitorRebalance()
             # self.assertTrue(result, "Rebalance operation failed after adding %s cbas nodes,"%self.cbas_servers)
-            self.log.info("successfully rebalanced cluster {0}".format(result))
+            self.log.debug("successfully rebalanced cluster {0}".format(result))
         else:
             result = started
         return result
@@ -652,7 +652,8 @@ class ClusterUtils:
                                           ejectedNodes=[node.id for node in otpnode],
                                           wait_for_rebalance=wait_for_rebalance)
         except Exception as e:
-            self.log.info("First time rebalance failed on Removal. Wait and try again. THIS IS A BUG.")
+            self.log.error("First time rebalance failed on Removal. "
+                           "Wait and try again. THIS IS A BUG.")
             time.sleep(5)
             removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
                                           ejectedNodes=[node.id for node in otpnode],
@@ -680,7 +681,7 @@ class ClusterUtils:
         self.log.info("--- End of cluster statistics ---")
 
     def async_print_cluster_stats(self, sleep=300):
-        _task = PrintClusterStats(self.cluster.master,sleep)
+        _task = PrintClusterStats(self.cluster.master, sleep)
         self.task_manager.add_new_task(_task)
         return _task
 
@@ -738,14 +739,16 @@ class ClusterUtils:
                 shell.log_command_output(output, error)
                 output = output[0].split(" ")
                 if node not in output:
-                    self.log.info("{0}".format(nodes))
-                    self.log.info("replicas of node {0} are in nodes {1}"
-                                  .format(node, output))
-                    self.log.info("replicas of node {0} are not in its zone {1}"
-                                  .format(node, group))
+                    self.log.debug("{0}".format(nodes))
+                    self.log.debug("replicas of node {0} are in nodes {1}"
+                                   .format(node, output))
+                    self.log.debug("replicas of node {0} are not in its zone {1}"
+                                   .format(node, group))
                 else:
-                    raise Exception("replica of node {0} are on its own zone {1}"
-                                    .format(node, group))
+                    exception_str = "Replica of node {0} are on its own zone {1}" \
+                                    .format(node, group)
+                    self.log.error(exception_str)
+                    raise Exception(exception_str)
         shell.disconnect()
 
     def modify_fragmentation_config(self, config, bucket="default"):

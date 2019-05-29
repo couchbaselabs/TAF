@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
 
 
-class UserBase():
+class UserBase:
 
     __metaclass__ = ABCMeta
 

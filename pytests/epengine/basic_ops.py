@@ -233,8 +233,9 @@ class basic_ops(BaseTestCase):
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
             vbuckets=self.vbuckets)
-        self.log.info("doc_generator created")
         print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
+        self.log.info("Loading {0} docs into the bucket: {1}"
+                      .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, doc_create, "create", 0,
             batch_size=10, process_concurrency=8,
@@ -246,6 +247,7 @@ class basic_ops(BaseTestCase):
         self.task_manager.get_task_result(print_ops_task)
 
         # Retry doc_exception code
+        self.log.info("Validating failed doc's (if any) exceptions")
         doc_op_info_dict = dict()
         doc_op_info_dict[task] = self.bucket_util.get_doc_op_info_dict(
             def_bucket, "create", exp=0, replicate_to=self.replicate_to,
@@ -261,9 +263,11 @@ class basic_ops(BaseTestCase):
                       .format(doc_op_info_dict[task]["unwanted"]["fail"]))
 
         # Verify initial doc load count
+        self.log.info("Validating doc_count and stats")
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
+        self.log.info("Creating doc_generator for doc_op")
         num_item_start_for_crud = int(floor(self.num_items / 2)) + 1
         doc_update = doc_generator(
             self.key, num_item_start_for_crud, self.num_items,
@@ -274,6 +278,7 @@ class basic_ops(BaseTestCase):
         num_of_mutations = 1
 
         if doc_op == "update":
+            self.log.info("Performing 'update' mutation over the docs")
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "update", 0,
                 batch_size=10, process_concurrency=8,
@@ -284,6 +289,7 @@ class basic_ops(BaseTestCase):
             # TODO: Proc to verify the mutation value in each doc
             # self.verify_doc_mutation(doc_update, num_of_mutations)
         elif doc_op == "delete":
+            self.log.info("Performing 'delete' mutation over the docs")
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "delete", 0,
                 batch_size=10, process_concurrency=8,
@@ -295,10 +301,10 @@ class basic_ops(BaseTestCase):
         else:
             self.log.warning("Unsupported doc_operation")
 
-        self.log.info("Waiting for ep_all_items_remaining. Checking through cbstats for each node in the cluster.")
+        self.log.info("Waiting for ep_all_items_remaining to be '0' using cbstats on each node")
         self.bucket_util._wait_for_stats_all_buckets()
 
-        self.log.info("Verifying bucket stats for the total number of items in bucket")
+        self.log.info("Validating doc_count")
         self.bucket_util.verify_stats_all_buckets(expected_num_items)
 
     def test_large_doc_size(self):

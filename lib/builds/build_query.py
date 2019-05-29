@@ -22,8 +22,6 @@ from testconstants import CB_RELEASE_REPO
 from testconstants import CB_LATESTBUILDS_REPO
 from testconstants import CE_EE_ON_SAME_FOLDER
 
-log = logging.getLogger()
-
 
 class MembaseBuild(object):
     def __init__(self):
@@ -71,12 +69,12 @@ class MembaseChange(object):
 
 class BuildQuery(object):
     def __init__(self):
-        pass
+        self.log = logging.getLogger("test")
 
     # let's look at buildlatets or latest/sustaining or any other
     # location
     def parse_builds(self):
-        #parse build page and create build object
+        # parse build page and create build object
         pass
 
     def find_build(self, builds, product, type, arch, version, toy='', openssl='', \
@@ -102,7 +100,7 @@ class BuildQuery(object):
             if product == builds.product and builds.architecture_type == arch:
                 return builds
             else:
-                log.info("if build not found, url link may not match...")
+                self.log.info("if build not found, url link may not match...")
         return None
 
     def find_membase_build(self, builds, product, deliverable_type, os_architecture, build_version, is_amazon=False):
@@ -516,8 +514,8 @@ class BuildQuery(object):
             # Try this ten times
             for _ in range(0, 10):
                 try:
-                    log.info("Try collecting build information from url: %s"
-                             % (build_page + index_url))
+                    self.log.info("Try collecting build info from url: %s"
+                                  % (build_page + index_url))
                     if timeout:
                         socket.setdefaulttimeout(timeout)
                     page = urllib2.urlopen(build_page + index_url)

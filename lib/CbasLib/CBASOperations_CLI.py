@@ -5,11 +5,8 @@ Created on Nov 14, 2017
 '''
 
 import json
-import logging
 from ClusterLib.ClusterOperations_Rest import ClusterHelper as ClusterHelperRest
 from remote.remote_util import RemoteMachineShellConnection
-
-log = logging.getLogger()
 
 
 class CBASHelper(ClusterHelperRest):
@@ -39,7 +36,7 @@ class CBASHelper(ClusterHelperRest):
         for line in output:
             response = response + line
         response = json.loads(response)
-        log.info(response)
+        self.log.info(response)
         shell.disconnect()
 
         if "errors" in response:

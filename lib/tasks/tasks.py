@@ -1,9 +1,5 @@
 import copy
-from httplib import IncompleteRead
-from java.util.concurrent import Callable, TimeUnit, CancellationException,\
-    TimeoutException
 import logging
-import socket
 import sys
 import time
 import traceback
@@ -13,15 +9,13 @@ from TestInput import TestInputServer
 from cb_tools.cbstats import Cbstats
 from membase.api.exception import BucketCreationException,\
     BucketCompactionException
-from membase.api.exception import N1QLQueryException, DropIndexException
-from membase.api.exception import CreateIndexException,\
-    RebalanceFailedException
 from membase.api.exception import FailoverFailedException, \
     ServerUnavailableException, BucketFlushFailed
 from membase.api.rest_client import RestConnection
-from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
+from java.util.concurrent import Callable, TimeUnit, CancellationException, \
+    TimeoutException
 
 
 CHECK_FLAG = False
@@ -32,8 +26,6 @@ CHECKING = 'CHECKING'
 FINISHED = 'FINISHED'
 CANCELLED = 'CANCELLED'
 
-log = logging.getLogger(__name__)
-
 
 class Task(Callable):
     def __init__(self, name, task_manager):
@@ -43,10 +35,12 @@ class Task(Callable):
         self.state = EXECUTING
         self.result = None
         self.future = None
-        log.info("*** TASK {0} Scheduled...".format(self.name))
+        self.log = logging.getLogger("infra")
+        self.test_log = logging.getLogger("test")
+        self.log.debug("*** TASK {0} Scheduled...".format(self.name))
 
     def call(self):
-        log.debug("*** TASK  {0} in progress...".format(self.name))
+        self.log.debug("*** TASK  {0} in progress...".format(self.name))
         if self.state == PENDING:
             self.state = EXECUTING
             self.future = self.task_manager.schedule(self)
@@ -74,13 +68,13 @@ class Task(Callable):
             else:
                 self.future.get()
             if self.state == FINISHED:
-                log.info("*** TASK  {0} Finished...".format(self.name))
+                self.log.debug("*** TASK  {0} Finished...".format(self.name))
                 return self.result
         except CancellationException as ex:
             self.state = CANCELLED
             self.result = False
         except TimeoutException as ex:
-            log.error("Task Timed Out")
+            self.log.error("Task Timed Out")
 
     def cancel(self, interrupt_if_running=True):
         check = self.future.cancel(interrupt_if_running)
@@ -94,8 +88,8 @@ class Task(Callable):
         return self.future.isCancelled()
 
     def set_unexpected_exception(self, e, suffix=""):
-        log.error("Unexpected exception [{0}] caught".format(e) + suffix)
-        log.error(''.join(traceback.format_stack()))
+        self.log.error("Unexpected exception [{0}] caught".format(e) + suffix)
+        self.log.error(''.join(traceback.format_stack()))
 
     @staticmethod
     def wait_until(value_getter, condition, timeout_secs=-1):
@@ -164,7 +158,7 @@ class NodeInitializeTask(Task):
             return
         info = Task.wait_until(lambda: rest.get_nodes_self(),
                                lambda x: x.memoryTotal > 0, 10)
-        log.info("server: %s, nodes/self: %s", self.server, info.__dict__)
+        self.test_log.debug("server: %s, nodes/self: %s", self.server, info.__dict__)
 
         username = self.server.rest_username
         password = self.server.rest_password
@@ -200,23 +194,24 @@ class NodeInitializeTask(Task):
 #             cb_version = info.version[:5]
 #             if cb_version in COUCHBASE_FROM_VERSION_4:
             if "index" in set_services:
-                log.info(
-                    "quota for index service will be %s MB" %
-                    (index_quota))
+                self.test_log.debug("Quota for index service will be %s MB"
+                                    % index_quota)
                 kv_quota -= index_quota
-                log.info("set index quota to node %s " % self.server.ip)
+                self.test_log.debug("Set index quota to node %s "
+                                    % self.server.ip)
                 rest.set_service_memoryQuota(
                     service='indexMemoryQuota', memoryQuota=index_quota)
             if "fts" in set_services:
-                log.info("quota for fts service will be %s MB" % (FTS_QUOTA))
+                self.test_log.debug("Quota for fts service will be %s MB"
+                                    % FTS_QUOTA)
                 kv_quota -= FTS_QUOTA
-                log.info(
-                    "set both index and fts quota at node %s " %
-                    self.server.ip)
+                self.test_log.debug("Set both index and fts quota at node %s"
+                                    % self.server.ip)
                 rest.set_service_memoryQuota(
                     service='ftsMemoryQuota', memoryQuota=FTS_QUOTA)
             if "cbas" in set_services:
-                log.info("quota for cbas service will be %s MB" % (CBAS_QUOTA))
+                self.test_log.debug("Quota for cbas service will be %s MB"
+                                    % CBAS_QUOTA)
                 kv_quota -= CBAS_QUOTA
                 rest.set_service_memoryQuota(
                     service="cbasMemoryQuota", memoryQuota=CBAS_QUOTA)
@@ -313,7 +308,7 @@ class BucketCreateTask(Task):
                 self.state = CHECKING
                 self.call()
             except Exception as e:
-                log.info(str(e))
+                self.test_log.error(str(e))
                 self.state = FINISHED
                 #self. set_unexpected_exception(e)
             return
@@ -327,11 +322,11 @@ class BucketCreateTask(Task):
 
         except BucketCreationException as e:
             self.state = FINISHED
-            log.info(str(e))
+            self.test_log.debug(str(e))
             #self. set_unexpected_exception(e)
         # catch and set all unexpected exceptions
         except Exception as e:
-            log.info(str(e))
+            self.test_log.error(str(e))
             self.state = FINISHED
             # self.set_unexpected_exception(e)
 
@@ -346,14 +341,14 @@ class BucketCreateTask(Task):
                 return
             if MemcachedHelper.wait_for_memcached(
                     self.server, self.bucket.name):
-                log.info(
-                    "bucket '{0}' was created with per node RAM quota: {1}".format(
-                        self.bucket, self.bucket.ramQuotaMB))
+                self.test_log.debug(
+                    "Bucket '{0}' created with per node RAM quota: {1}"
+                    .format(self.bucket, self.bucket.ramQuotaMB))
                 self.set_result(True)
                 self.state = FINISHED
                 return
             else:
-                log.warn(
+                self.test_log.warn(
                     "vbucket map not ready after try {0}".format(
                         self.retries))
                 if self.retries >= 5:
@@ -361,8 +356,8 @@ class BucketCreateTask(Task):
                     self.state = FINISHED
                     return
         except Exception as e:
-            log.error("Unexpected error: %s" % str(e))
-            log.warn(
+            self.test_log.error("Unexpected error: %s" % str(e))
+            self.test_log.warn(
                 "vbucket map not ready after try {0}".format(
                     self.retries))
             if self.retries >= 5:
@@ -391,9 +386,8 @@ class FailoverTask(Task):
     def execute(self):
         try:
             self._failover_nodes(self.task_manager)
-            log.info(
-                "{0} seconds sleep after failover, for nodes to go pending....".format(
-                    self.wait_for_pending))
+            self.test_log.debug("{0} seconds sleep after failover for nodes to go pending...."
+                                .format(self.wait_for_pending))
             time.sleep(self.wait_for_pending)
             self.state = FINISHED
             self.set_result(True)
@@ -413,9 +407,9 @@ class FailoverTask(Task):
             for node in rest.node_statuses():
                 if (server.hostname if self.use_hostnames else server.ip) == node.ip and int(
                         server.port) == int(node.port):
-                    log.info(
-                        "Failing over {0}:{1} with graceful={2}".format(
-                            node.ip, node.port, self.graceful))
+                    self.test_log.debug(
+                        "Failing over {0}:{1} with graceful={2}"
+                        .format(node.ip, node.port, self.graceful))
                     rest.fail_over(node.id, self.graceful)
 
 
@@ -452,9 +446,9 @@ class BucketFlushTask(Task):
                     self.server, self.bucket):
                 self.set_result(True)
             else:
-                log.error(
-                    "Unable to reach bucket {0} on server {1} after flush".format(
-                        self.bucket, self.server))
+                self.test_log.error(
+                    "Unable to reach bucket {0} on server {1} after flush"
+                    .format(self.bucket, self.server))
                 self.set_result(False)
             self.state = FINISHED
         except Exception as e:
@@ -486,7 +480,7 @@ class CompactBucketTask(Task):
             self.state = CHECKING
             self.call()
         except BucketCompactionException as e:
-            log.error("Bucket compaction failed for unknown reason")
+            self.test_log.error("Bucket compaction failed: {0}".format(e))
             self. set_unexpected_exception(e)
             self.state = FINISHED
             self.set_result(False)
@@ -529,7 +523,7 @@ class CompactBucketTask(Task):
     def _get_disk_size(self):
         stats = self.rest.fetch_bucket_stats(bucket=self.bucket)
         total_disk_size = stats["op"]["samples"]["couch_total_disk_size"][-1]
-        log.info("Disk size is = %d" % total_disk_size)
+        self.test_log.debug("Disk size is '%d'" % total_disk_size)
         return total_disk_size
 
 
@@ -567,7 +561,7 @@ class CBASQueryExecuteTask(Task):
                 self.state = CHECKING
                 self.call()
             else:
-                log.info("Some error")
+                self.test_log.error("Some error in CBASQueryExecuteTask")
                 traceback.print_exc(file=sys.stdout)
                 self.state = FINISHED
                 self.passed = False
@@ -586,7 +580,7 @@ class CBASQueryExecuteTask(Task):
                     self.set_result(True)
                     self.passed = True
                 else:
-                    log.info(self.errors)
+                    self.test_log.error(self.errors)
                     self.passed = False
                     self.set_result(False)
             else:
@@ -597,8 +591,8 @@ class CBASQueryExecuteTask(Task):
                     self.set_result(True)
                     self.passed = True
                 else:
-                    log.info(self.response["status"])
-                    log.info(self.errors)
+                    self.test_log.error(self.response["status"])
+                    self.test_log.error(self.errors)
                     self.passed = False
                     self.set_result(False)
             self.state = FINISHED

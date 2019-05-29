@@ -4,17 +4,12 @@ Created on Sep 25, 2017
 @author: riteshagarwal
 """
 
-import logging
-
 from BucketOperations_Rest import BucketHelper as BucketHelperRest
 from sdk_client3 import SDKClient
 from com.couchbase.client.core.endpoint.kv import AuthenticationException
 from com.couchbase.client.java.bucket import BucketType
 from com.couchbase.client.java.cluster import DefaultBucketSettings
 from com.couchbase.client.java.error import BucketDoesNotExistException
-
-
-log = logging.getLogger()
 
 
 class BucketHelper(BucketHelperRest, SDKClient):
@@ -28,15 +23,15 @@ class BucketHelper(BucketHelperRest, SDKClient):
     def bucket_exists(self, bucket):
         try:
             self.connectCluster()
-            hasBucket = self.clusterManager.hasBucket(bucket);
+            hasBucket = self.clusterManager.hasBucket(bucket)
             self.disconnectCluster()
             return hasBucket
         except BucketDoesNotExistException as e:
-            log.info(e)
+            self.log.error(e)
             self.disconnectCluster()
             return False
         except AuthenticationException as e:
-            log.info(e)
+            self.log.fatal(e)
             self.disconnectCluster()
             return False
 
@@ -63,16 +58,16 @@ class BucketHelper(BucketHelperRest, SDKClient):
             self.disconnectCluster()
             return True
         except BucketDoesNotExistException as e:
-            log.error(e)
+            self.log.error(e)
             self.disconnectCluster()
             return False
         except AuthenticationException as e:
-            log.error(e)
+            self.log.fatal(e)
             self.disconnectCluster()
             return False
 
-    def create_bucket(self, bucket_params={}):
-        log.info("Connecting Cluster")
+    def create_bucket(self, bucket_params=dict()):
+        self.log.debug("Connecting Cluster")
         self.connectCluster()
         try:
             bucketSettings = DefaultBucketSettings.builder()
@@ -91,16 +86,16 @@ class BucketHelper(BucketHelperRest, SDKClient):
             bucketSettings.indexReplicas(bucket_params.get('replicaIndex'))
             bucketSettings.build()
             self.clusterManager.insertBucket(bucketSettings)
-            log.info("Disconnecting Cluster")
+            self.log.debug("Disconnecting Cluster")
             self.disconnectCluster()
             return True
         except BucketDoesNotExistException as e:
-            log.info(e)
-            log.info("Disconnecting Cluster")
+            self.log.error(e)
+            self.log.debug("Disconnecting Cluster")
             self.disconnectCluster()
             return False
         except AuthenticationException as e:
-            log.info(e)
-            log.info("Disconnecting Cluster")
+            self.log.fatal(e)
+            self.log.debug("Disconnecting Cluster")
             self.disconnectCluster()
             return False

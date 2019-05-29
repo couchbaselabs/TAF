@@ -4,10 +4,8 @@ Created on Sep 27, 2017
 @author: riteshagarwal
 """
 
-import logging
 from remote.remote_util import RemoteMachineShellConnection
 from BucketOperations_Rest import BucketHelper as BucketHelperRest
-log = logging.getLogger()
 
 
 class BucketHelper(BucketHelperRest):

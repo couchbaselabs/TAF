@@ -10,7 +10,6 @@ from os.path import basename, splitext
 from pprint import pprint
 import re
 import shutil
-import signal
 import sys
 from threading import Thread, Event
 import threading
@@ -99,9 +98,8 @@ def create_log_file(log_config_file_name, log_file_name, level):
     log_file = open(log_config_file_name, "w")
     log_file.truncate()
     for line in tmpl_log_file:
-        newline = line.replace("@@LEVEL@@", level)
-        newline = newline.replace("@@FILENAME@@", log_file_name.replace('\\', '/'))
-        log_file.write(newline)
+        line = line.replace("@@FILENAME@@", log_file_name.replace('\\', '/'))
+        log_file.write(line)
     log_file.close()
     tmpl_log_file.close()
 
@@ -226,6 +224,7 @@ def get_server_logs(input, path):
         except Exception as e:
             print "unable to obtain diags from %s %s" % (diag_url, e)
 
+
 def get_logs_cluster_run(input, path, ns_server_path):
     print "grabbing logs (cluster-run)"
     path = path or "."
@@ -235,6 +234,7 @@ def get_logs_cluster_run(input, path, ns_server_path):
     except Exception as e:
         print "NOT POSSIBLE TO GRAB LOGS (CLUSTER_RUN)"
 
+
 def get_cbcollect_info(input, path):
     for server in input.servers:
         print "grabbing cbcollect from {0}".format(server.ip)
@@ -243,6 +243,7 @@ def get_cbcollect_info(input, path):
             cbcollectRunner(server, path).run()
         except Exception as e:
             print "NOT POSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}".format(server.ip, e)
+
 
 def get_couch_dbinfo(input, path):
     for server in input.servers:
@@ -260,6 +261,7 @@ def clear_old_core_dumps(_input, path):
             Clearcoredumps(server, path).run()
         except Exception as e:
             print "Unable to clear core dumps on {0} : {1}".format(server.ip, e)
+
 
 def get_core_dumps(_input, path):
     ret = False
@@ -300,6 +302,7 @@ class StoppableThreadWithResult(Thread):
     def join(self, timeout=None):
         Thread.join(self, timeout=None)
         return self._return
+
 
 def main():
 
@@ -357,11 +360,9 @@ def main():
 
         elif "EXCLUDE_GROUP" in runtime_test_params:
             if 'GROUP' in params and \
-                len(set(runtime_test_params["EXCLUDE_GROUP"].split(";")) & set(params["GROUP"].split(";"))) > 0:
-                    print "test '{0}' skipped, is in an excluded group".format(name)
-                    continue
-
-
+                    len(set(runtime_test_params["EXCLUDE_GROUP"].split(";")) & set(params["GROUP"].split(";"))) > 0:
+                print "test '{0}' skipped, is in an excluded group".format(name)
+                continue
 
         # Create Log Directory
         logs_folder = os.path.join(root_log_dir, "test_%s" % case_number)
@@ -486,8 +487,10 @@ def main():
         if fail_count > 0:
             sys.exit(1)
 
+
 def testfunc():
     pass
+
 
 if __name__ == "__main__":
     main()

@@ -5,7 +5,6 @@ Created on Sep 25, 2017
 """
 
 import json
-import logging
 import sys
 import time
 import traceback
@@ -18,8 +17,6 @@ from java.util.concurrent import TimeoutException, RejectedExecutionException,\
                                  TimeUnit
 from CbasLib.CBASOperations_Rest import CBASHelper as CBAS_helper_rest
 from sdk_client3 import SDKClient
-
-log = logging.getLogger()
 
 
 class CBASHelper(CBAS_helper_rest, SDKClient):
@@ -56,7 +53,7 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     pass
                 self.disconnectCluster()
                 self.connectionLive = False
-                log.error("%s" % e)
+                self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
             except TimeoutException as e:
                 time.sleep(10)
@@ -67,10 +64,10 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     pass
                 self.disconnectCluster()
                 self.connectionLive = False
-                log.error("%s" % e)
+                self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
             except RuntimeException as e:
-                log.info("RuntimeException from Java SDK. %s" % str(e))
+                self.log.info("RuntimeException from Java SDK. %s" % str(e))
                 time.sleep(10)
                 try:
                     self.bucket.close()
@@ -79,16 +76,18 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     pass
                 self.disconnectCluster()
                 self.connectionLive = False
-                log.error("%s" % e)
+                self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
 
     def execute_statement_on_cbas(self, statement, mode, pretty=True,
-        timeout=70, client_context_id=None,
-        username=None, password=None, analytics_timeout=120, time_out_unit="s"):
+                                  timeout=70, client_context_id=None,
+                                  username=None, password=None,
+                                  analytics_timeout=120, time_out_unit="s"):
 
         params = AnalyticsParams.build()
         params = params.rawParam("pretty", pretty)
-        params = params.rawParam("timeout", str(analytics_timeout)+ time_out_unit)
+        params = params.rawParam("timeout",
+                                 str(analytics_timeout) + time_out_unit)
         params = params.rawParam("username", username)
         params = params.rawParam("password", password)
         params = params.rawParam("clientContextID", client_context_id)
@@ -99,7 +98,9 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
         q = AnalyticsQuery.simple(statement, params)
         try:
             if mode or "EXPLAIN" in statement:
-                return CBAS_helper_rest.execute_statement_on_cbas(self, statement, mode, pretty, timeout, client_context_id, username, password)
+                return CBAS_helper_rest.execute_statement_on_cbas(
+                    self, statement, mode, pretty, timeout, client_context_id,
+                    username, password)
 
             result = self.bucket.query(q,timeout,TimeUnit.SECONDS)
 
@@ -114,7 +115,7 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
             output["errors"] = json.loads(str(result.errors()))
 
             if str(output['status']) == "fatal":
-                log.error(output['errors'])
+                self.log.error(output['errors'])
                 msg = output['errors'][0]['msg']
                 if "Job requirement" in  msg and "exceeds capacity" in msg:
                     raise Exception("Capacity cannot meet job requirement")
@@ -122,23 +123,25 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                 output["errors"] = None
                 pass
             else:
-                log.error("analytics query %s failed status:{0},content:{1}".format(
-                    output["status"], result))
+                self.log.error("Analytics query %s failed status:{0},result:{1}"
+                               .format(output["status"], result))
                 raise Exception("Analytics Service API failed")
 
         except TimeoutException as e:
-            log.info("Request TimeoutException from Java SDK %s" % str(e))
+            self.log.info("Request TimeoutException from Java SDK %s" % str(e))
             raise Exception("Request TimeoutException")
         except RequestCancelledException as e:
-            log.info("RequestCancelledException from Java SDK %s" % str(e))
+            self.log.info("RequestCancelledException from Java SDK %s"
+                          % str(e))
             raise Exception("Request RequestCancelledException")
         except RejectedExecutionException as e:
-            log.info("Request RejectedExecutionException from Java SDK %s" % str(e))
+            self.log.info("Request RejectedExecutionException from Java SDK %s"
+                          % str(e))
             raise Exception("Request Rejected")
         except CouchbaseException as e:
-            log.info("CouchbaseException from Java SDK %s" % str(e))
+            self.log.info("CouchbaseException from Java SDK %s" % str(e))
             raise Exception("CouchbaseException")
         except RuntimeException as e:
-            log.info("RuntimeException from Java SDK %s" % str(e))
+            self.log.info("RuntimeException from Java SDK %s" % str(e))
             raise Exception("Request RuntimeException")
         return output

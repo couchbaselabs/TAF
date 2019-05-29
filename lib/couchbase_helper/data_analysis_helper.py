@@ -1,12 +1,9 @@
-import logging
 import os.path
 import uuid
-from math import floor
 
 from remote.remote_util import RemoteMachineShellConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from membase.api.rest_client import RestConnection
-from BucketLib.BucketOperations import BucketHelper
 
 # constants used in this file only
 DELETED_ITEMS_FAILURE_ANALYSIS_FORMAT = \
@@ -24,8 +21,6 @@ UPDATED_ITEMS = "updatedItems"
 LOGICAL_RESULT = "logicalresult"
 RESULT = "result"
 MEMCACHED_PORT = 11210
-
-log = logging.getLogger()
 
 
 class DataAnalysisResultAnalyzer:

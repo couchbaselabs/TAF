@@ -36,5 +36,4 @@ class CbCmdBase:
         :output - Output for the command execution
         :error  - Buffer containing warnings/errors from the execution
         """
-        # log.info("Executing: '%s'" % (cmd))
         return self.shellConn.execute_command(cmd)

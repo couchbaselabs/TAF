@@ -2,14 +2,14 @@ import logging
 from user_base_abc import UserBase
 from membase.api.rest_client import RestConnection
 
-log = logging.getLogger()
-
 
 class InternalUser(UserBase):
     def __init__(self, user_id=None, payload=None, host=None):
         self.user_id = user_id
+        self.password = ""
         self.payload = payload
         self.host = host
+        self.log = logging.getLogger("infra")
 
     '''
     payload=name=<nameofuser>&roles=admin,cluster_admin&password=<password>
@@ -17,21 +17,20 @@ class InternalUser(UserBase):
     '''
     def create_user(self):
         rest = RestConnection(self.host)
-        response = rest.add_set_builtin_user(self.user_id,self.payload)
+        response = rest.add_set_builtin_user(self.user_id, self.payload)
         return response
 
     def delete_user(self):
-        response = True
         try:
             rest = RestConnection(self.host)
             response = rest.delete_builtin_user(self.user_id)
         except Exception as e:
-            log.info("Exception while deleting user. Exception - {0}"
-                     .format(e))
+            self.log.error("Exception while deleting user. Exception - {0}"
+                           .format(e))
             response = False
         return response
 
-    def change_password(self,user_id=None, password=None,host=None):
+    def change_password(self, user_id=None, password=None, host=None):
         if user_id:
             self.user_id = user_id
         if password:
@@ -40,25 +39,27 @@ class InternalUser(UserBase):
             self.host = host
 
         rest = RestConnection(self.host)
-        response = rest.change_password_builtin_user(self.user_id,self.password)
+        response = rest.change_password_builtin_user(self.user_id,
+                                                     self.password)
+        return response
 
-    def user_setup(self,user_id=None,host=None,payload=None):
+    def user_setup(self, user_id=None, host=None, payload=None):
         if user_id:
             self.user_id = user_id
-        if host :
+        if host:
             self.host = host
         if payload:
             self.payload = payload
-        rest = RestConnection(self.host)
+        # rest = RestConnection(self.host)
         # cluster_compatibility = rest.check_cluster_compatibility("5.0")
         # if cluster_compatibility is None:
         #     pre_spock = True
         # else:
         #     pre_spock = not cluster_compatibility
         # if pre_spock:
-        #     log.info("At least one of the node in the cluster is on "
-        #              "pre-spock version. Not creating user since "
-        #              "RBAC is a spock feature."
+        #     self.log.info("At least one of the node in the cluster is on "
+        #                   "pre-spock version. Not creating user since "
+        #                   "RBAC is a spock feature."
         #     return
         self.delete_user()
         self.create_user()

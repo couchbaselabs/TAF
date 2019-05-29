@@ -11,7 +11,7 @@ from remote.remote_util import RemoteMachineShellConnection
 
 class BackupRestoreValidationBase:
     def __init__(self):
-        self.log = logging.getLogger()
+        self.log = logging.getLogger("test")
 
     @staticmethod
     def compare_vbucket_stats(prev_vbucket_stats, cur_vbucket_stats,

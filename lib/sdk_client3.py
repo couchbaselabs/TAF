@@ -32,8 +32,6 @@ from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 
-log = logging.getLogger()
-
 
 class SDKClient(object):
     """
@@ -43,6 +41,7 @@ class SDKClient(object):
     def __init__(self, rest, bucket, info=None,  username="Administrator",
                  password="password",
                  quiet=True, certpath=None, transcoder=None, compression=True):
+        self.log = logging.getLogger("infra")
         self.rest = rest
         self.hosts = []
         if rest.ip == "127.0.0.1":
@@ -65,7 +64,7 @@ class SDKClient(object):
 
     def _createConn(self):
         try:
-            log.info("Creating cluster connection")
+            self.log.debug("Creating cluster connection")
             System.setProperty("com.couchbase.forceIPv4", "false")
             logger = Logger.getLogger("com.couchbase.client")
             logger.setLevel(Level.SEVERE)
@@ -85,11 +84,11 @@ class SDKClient(object):
             raise
 
     def close(self):
-        log.info("Closing down the cluster")
+        self.log.debug("Closing down the cluster")
         if self.cluster:
             self.cluster.shutdown()
             self.cluster.environment().shutdown()
-            log.info("Closed down Cluster Connection")
+            self.log.debug("Closed down Cluster Connection")
 
     def delete(self, key, persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
@@ -107,25 +106,27 @@ class SDKClient(object):
             result.update({"key": key, "value": None,
                            "error": None, "status": True})
         except DocumentDoesNotExistException as e:
-            log.error("Exception: Document id {0} not found - {1}"
-                      .format(key, e))
+            self.log.error("Exception: Document id {0} not found - {1}"
+                           .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except CASMismatchException as e:
-            log.error("Exception: Cas mismatch for doc {0} - {1}"
+            self.log.error("Exception: Cas mismatch for doc {0} - {1}"
                       .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except TemporaryFailureException as e:
-            log.warning("Exception: Retry for doc {0} - {1}".format(key, e))
+            self.log.warning("Exception: Retry for doc {0} - {1}"
+                             .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except CouchbaseException as e:
-            log.error("Generic exception for doc {0} - {1}".format(key, e))
+            self.log.error("Generic exception for doc {0} - {1}"
+                           .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except Exception as e:
-            log.error("Error during remove of {0} - {1}".format(key, e))
+            self.log.error("Error during remove of {0} - {1}".format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         return result
@@ -158,11 +159,11 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True})
         except DocumentAlreadyExistsException as ex:
-            log.error("The document already exists! => " + str(ex))
+            self.log.error("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except (CouchbaseException, Exception, RequestTimeoutException) as ex:
-            log.error("Something else happened: " + str(ex))
+            self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         return result
@@ -172,14 +173,14 @@ class SDKClient(object):
         getResult = self.collection.get(key)
         print getResult
         if getResult.isPresent():
-            log.info("Found document: cas=%s, content=%s"
-                     % (str(getResult.get().cas()),
-                        str(getResult.get().contentAsObject())))
+            self.log.debug("Found document: cas=%s, content=%s"
+                           % (str(getResult.get().cas()),
+                              str(getResult.get().contentAsObject())))
             result.update({"key": key,
                            "value": str(getResult.get().contentAsObject()),
                            "cas": getResult.get().cas(), "status": True})
         else:
-            log.error("Document not found!")
+            self.log.error("Document not found!")
             result.update({"key": key, "value": None,
                            "cas": None, "status": False})
         return result
@@ -192,7 +193,7 @@ class SDKClient(object):
                         .replicaMode(replicaMode))
         for item in getResult.toArray():
             """
-            log.info("Found document: key=%s, cas=%s, content=%s"
+            self.log.info("Found document: key=%s, cas=%s, content=%s"
                      % (key, str(item.cas()),
                         item.contentAsObject()))
             """
@@ -220,11 +221,11 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True})
         except DocumentAlreadyExistsException as ex:
-            log.error("Upsert: Document already exists! => " + str(ex))
+            self.log.error("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except (CouchbaseException, Exception, RequestTimeoutException) as ex:
-            log.error("Upsert: Something else happened: " + str(ex))
+            self.log.error("Upsert: Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         return result

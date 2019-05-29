@@ -5,10 +5,11 @@ Created on Sep 26, 2017
 """
 
 import copy
+import logging
+
 import crc32
 import exceptions
 import json
-import logging
 import random
 import string
 import time
@@ -73,7 +74,7 @@ class BucketUtils:
         self.data_collector = DataCollector()
         self.data_analyzer = DataAnalyzer()
         self.result_analyzer = DataAnalysisResultAnalyzer()
-        self.log = logging.getLogger()
+        self.log = logging.getLogger("test")
 
     # Supporting APIs
     def sleep(self, timeout=15, message=""):
@@ -174,10 +175,10 @@ class BucketUtils:
                 self.log.error('15 secs sleep before get_all_buckets() call')
                 time.sleep(15)
                 buckets = self.get_all_buckets(serverInfo)
-            self.log.info('Deleting existing buckets {0} on {1}'
-                          .format([b.name for b in buckets], serverInfo.ip))
+            self.log.debug('Deleting existing buckets {0} on {1}'
+                           .format([b.name for b in buckets], serverInfo.ip))
             for bucket in buckets:
-                self.log.info("Remove bucket {0} ...".format(bucket.name))
+                self.log.debug("Remove bucket {0} ...".format(bucket.name))
                 try:
                     status = self.delete_bucket(serverInfo, bucket)
                 except Exception as e:
@@ -356,7 +357,7 @@ class BucketUtils:
             task.result()
 
     def verify_stats_for_bucket(self, bucket, items, timeout=60):
-        self.log.info("Verifying stats for bucket {0}".format(bucket.name))
+        self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
         servers = self.cluster.nodes_in_cluster
         if bucket.bucketType == Bucket.bucket_type.MEMCACHED:
@@ -394,7 +395,7 @@ class BucketUtils:
             for task in stats_tasks:
                 self.task_manager.get_task_result(task)
         except Exception as e:
-            self.log.info("{0}".format(e))
+            self.log.error("{0}".format(e))
             for task in stats_tasks:
                 self.task_manager.stop_task(task)
             self.log.error("Unable to get expected stats from the "

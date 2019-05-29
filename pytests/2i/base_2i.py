@@ -1,4 +1,3 @@
-import logging
 import random
 import time
 
@@ -9,7 +8,6 @@ from couchbase_helper.query_definitions import SQLDefinitionGenerator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
-log = logging.getLogger(__name__)
 
 class BaseSecondaryIndexingTests(QueryTests):
 
@@ -101,7 +99,7 @@ class BaseSecondaryIndexingTests(QueryTests):
                                                                                   gsi_type=self.gsi_type,
                                                                                   desc=desc)
 
-        log.info("Creating index {0}...".format(query_definition.index_name))
+        self.log.info("Creating index {0}...".format(query_definition.index_name))
         return self.rest.create_index_with_rest(ind_content)
 
     def async_build_index(self, bucket, index_list=None):
@@ -305,7 +303,7 @@ class BaseSecondaryIndexingTests(QueryTests):
         if expected_result == None:
             expected_result = self.gen_results.generate_expected_result(print_expected_result=False)
         self.query = self.gen_results.query
-        log.info("Query : {0}".format(self.query))
+        self.log.info("Query : {0}".format(self.query))
         msg, check = self.n1ql_helper.run_query_and_verify_result(query=self.query, server=self.n1ql_node, timeout=500,
                                             expected_result=expected_result, scan_consistency=scan_consistency,
                                             scan_vector=scan_vector, verify_results=verify_results)
@@ -502,7 +500,7 @@ class BaseSecondaryIndexingTests(QueryTests):
                     else:
                         tasks += self.async_multi_drop_index(self.bucket_util.buckets, query_definitions)
             except Exception, ex:
-                log.info(ex)
+                self.log.error(ex)
                 raise
         return tasks
 
@@ -547,7 +545,7 @@ class BaseSecondaryIndexingTests(QueryTests):
         if use_percentage == 1.0:
             for bucket in self.bucket_util.buckets:
                 scan_vector = []
-                self.log.info("analyzing for bucket {0}".format(bucket.name))
+                self.log.debug("analyzing for bucket {0}".format(bucket.name))
                 map = sequence_bucket_map[bucket.name]
                 for i in range(1024):
                     key = "vb_" + str(i)
@@ -561,7 +559,7 @@ class BaseSecondaryIndexingTests(QueryTests):
                 vbuckets_number_list = range(0,total)
                 if use_random:
                     vbuckets_number_list  =  random.sample(xrange(0,self.vbuckets), total)
-                self.log.info("analyzing for bucket {0}".format(bucket.name))
+                self.log.debug("analyzing for bucket {0}".format(bucket.name))
                 map = sequence_bucket_map[bucket.name]
                 for key in map.keys():
                     vb = int(key.split("vb_")[1])
@@ -635,7 +633,7 @@ class BaseSecondaryIndexingTests(QueryTests):
         bucket_map = self.bucket_util.get_buckets_itemCount()
         count = 0
         while not self._verify_items_count() and count < 15:
-            self.log.info("All Items Yet to be Indexed...")
+            self.log.debug("All Items Yet to be Indexed...")
             self.sleep(5)
             count += 1
         self.assertTrue(self._verify_items_count(), "All Items didn't get Indexed...")

@@ -15,9 +15,9 @@ from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.cluster import ServerTasks
 
 
-class cbas_utils():
+class cbas_utils:
     def __init__(self, master, cbas_node):
-        self.log = logging.getLogger()
+        self.log = logging.getLogger("infra")
         self.cbas_node = cbas_node
         self.master = master
         self.cbas_helper = CBASHelper(master, cbas_node)

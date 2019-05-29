@@ -1,121 +1,134 @@
 import datetime
 import logging
-import unittest
 import time
 import traceback
+import unittest
 
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from membase.api.rest_client import RestHelper, RestConnection
 from scripts.collect_server_info import cbcollectRunner
 from bucket_utils.bucket_ready_functions import BucketUtils
-from cluster_utils.cluster_ready_functions import ClusterUtils
-from cluster_utils.cluster_ready_functions import CBCluster
+from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 
 
 class BaseTestCase(unittest.TestCase):
     def setUp(self):
-        self.log = logging.getLogger()
-        self.tear_down_while_setup = True
         self.input = TestInputSingleton.input
-        self.primary_index_created = False
-        self.sdk_client_type = self.input.param("sdk_client_type", "java")
-        if self.input.param("log_level", None):
-            self.log.setLevel(level=0)
-            for hd in self.log.handlers:
-                if str(hd.__class__).find('FileHandler') != -1:
-                    hd.setLevel(level=logging.DEBUG)
-                else:
-                    hd.setLevel(level=getattr(logging, self.input.param("log_level", None)))
-        self.servers = self.input.servers
-        self.buckets = []
-        self.case_number = self.input.param("case_number", 0)
+
+        # Framework specific parameters
+        self.log_level = self.input.param("log_level", "info").upper()
+        self.infra_log_level = self.input.param("infra_log_level", "error").upper()
+        self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
+        self.tear_down_while_setup = self.input.param("tear_down_while_setup", True)
+        self.test_timeout = self.input.param("test_timeout", 3600)
         self.thread_to_use = self.input.param("threads_to_use", 10)
-        self.cluster = CBCluster(servers=self.input.servers)
+        self.case_number = self.input.param("case_number", 0)
+        # End of framework parameters
+
+        # Cluster level info settings
+        self.log_info = self.input.param("log_info", None)
+        self.log_location = self.input.param("log_location", None)
+        self.stat_info = self.input.param("stat_info", None)
+        self.port = self.input.param("port", None)
+        self.port_info = self.input.param("port_info", None)
+
+        self.servers = self.input.servers
+        self.cluster = CBCluster(servers=self.servers)
+        self.num_servers = self.input.param("servers", len(self.cluster.servers))
+
+        self.primary_index_created = False
+        self.index_quota_percent = self.input.param("index_quota_percent", None)
+        self.gsi_type = self.input.param("gsi_type", 'plasma')
+        # CBAS setting
+        self.jre_path = self.input.param("jre_path", None)
+        # End of cluster info parameters
+
+        # Bucket specific params
+        self.bucket_type = self.input.param("bucket_type", "membase")
+        self.bucket_size = self.input.param("bucket_size", None)
+        self.standard_buckets = self.input.param("standard_buckets", 1)
+        self.vbuckets = self.input.param("vbuckets", 1024)
+        self.num_replicas = self.input.param("replicas", 1)
+        self.active_resident_threshold = int(self.input.param("active_resident_threshold", 100))
+        self.compression_mode = self.input.param("compression_mode", 'passive')
+        # End of bucket parameters
+
+        # Doc specific params
+        self.key_size = self.input.param("key_size", 0)
+        self.doc_size = self.input.param("doc_size", 10)
+        self.doc_type = self.input.param("doc_type", "json")
+        self.num_items = self.input.param("num_items", 100000)
+        self.target_vbucket = self.input.param("target_vbucket", None)
+        self.maxttl = self.input.param("maxttl", 0)
+        # End of doc specific parameters
+
+        # Client specific params
+        self.sdk_client_type = self.input.param("sdk_client_type", "java")
+        self.sdk_compression = self.input.param("sdk_compression", True)
+        self.replicate_to = self.input.param("replicate_to", 0)
+        self.persist_to = self.input.param("persist_to", 0)
+        self.sdk_retries = self.input.param("sdk_retries", 5)
+        self.sdk_timeout = self.input.param("sdk_timeout", 5)
+        self.durability_level = self.input.param("durability", "")
+        self.durability_timeout = self.input.param("durability_timeout", 0)
+        # End of client specific parameters
+
+        # initial number of items in the cluster
+        self.services_init = self.input.param("services_init", None)
+        self.nodes_init = self.input.param("nodes_init", 1)
+        self.nodes_in = self.input.param("nodes_in", 1)
+        self.nodes_out = self.input.param("nodes_out", 1)
+        self.services_in = self.input.param("services_in", None)
+        self.forceEject = self.input.param("forceEject", False)
+        self.value_size = self.input.param("value_size", 1)
+        self.wait_timeout = self.input.param("wait_timeout", 60)
+        self.dgm_run = self.input.param("dgm_run", False)
+        self.verify_unacked_bytes = self.input.param("verify_unacked_bytes", False)
+        self.disabled_consistent_view = self.input.param("disabled_consistent_view", None)
+        self.rebalanceIndexWaitingDisabled = self.input.param("rebalanceIndexWaitingDisabled", None)
+        self.rebalanceIndexPausingDisabled = self.input.param("rebalanceIndexPausingDisabled", None)
+        self.maxParallelIndexers = self.input.param("maxParallelIndexers", None)
+        self.maxParallelReplicaIndexers = self.input.param("maxParallelReplicaIndexers", None)
+        self.quota_percent = self.input.param("quota_percent", None)
+        if not hasattr(self, 'skip_buckets_handle'):
+            self.skip_buckets_handle = self.input.param("skip_buckets_handle", False)
+
+        # Initiate logging variables
+        self.log = logging.getLogger("test")
+        self.infra_log = logging.getLogger("infra")
+
+        # Configure loggers
+        self.log.setLevel(self.log_level)
+        self.infra_log.setLevel(self.infra_log_level)
+
+        # Support lib objects for testcase execution
         self.task_manager = TaskManager(self.thread_to_use)
         self.cluster_util = ClusterUtils(self.cluster, self.task_manager)
         self.task = ServerTasks(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster, self.cluster_util,
                                        self.task)
+        # End of library object creation
+
+        self.buckets = []
         self.cleanup = False
         self.nonroot = False
         self.test_failure = None
+
         shell = RemoteMachineShellConnection(self.cluster.master)
         self.os_info = shell.extract_remote_info().type.lower()
         if self.os_info != 'windows':
             if self.cluster.master.ssh_username != "root":
                 self.nonroot = True
         shell.disconnect()
+
         """ some tests need to bypass checking cb server at set up
             to run installation """
         self.skip_init_check_cbserver = self.input.param("skip_init_check_cbserver", False)
 
         try:
-            # Framework specific params
-            self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
-            self.log_info = self.input.param("log_info", None)
-            self.log_location = self.input.param("log_location", None)
-            # kill hang test and jump to next one.
-            self.test_timeout = self.input.param("test_timeout", 3600)
-
-            # Bucket specific params
-            self.bucket_type = self.input.param("bucket_type", "membase")
-            self.bucket_size = self.input.param("bucket_size", None)
-            self.standard_buckets = self.input.param("standard_buckets", 1)
-            self.vbuckets = self.input.param("vbuckets", 1024)
-            self.num_replicas = self.input.param("replicas", 1)
-            self.active_resident_threshold = int(self.input.param("active_resident_threshold", 100))
-            self.compression_mode = self.input.param("compression_mode", 'passive')
-            # end of bucket parameters spot (this is ongoing)
-
-            # Doc specific params
-            self.key_size = self.input.param("key_size", 0)
-            self.doc_size = self.input.param("doc_size", 10)
-            self.doc_type = self.input.param("doc_type", "json")
-            self.num_items = self.input.param("num_items", 100000)
-            self.target_vbucket = self.input.param("target_vbucket", None)
-            self.maxttl = self.input.param("maxttl", 0)
-
-            # Client specific params
-            self.sdk_compression = self.input.param("sdk_compression", True)
-            self.replicate_to = self.input.param("replicate_to", 0)
-            self.persist_to = self.input.param("persist_to", 0)
-            self.sdk_retries = self.input.param("sdk_retries", 5)
-            self.sdk_timeout = self.input.param("sdk_timeout", 5)
-            self.durability_level = self.input.param("durability", "")
-            self.durability_timeout = self.input.param("durability_timeout", 0)
-
-            self.index_quota_percent = self.input.param("index_quota_percent", None)
-            self.num_servers = self.input.param("servers", len(self.cluster.servers))
-
-            # initial number of items in the cluster
-            self.services_init = self.input.param("services_init", None)
-            self.nodes_init = self.input.param("nodes_init", 1)
-            self.nodes_in = self.input.param("nodes_in", 1)
-            self.nodes_out = self.input.param("nodes_out", 1)
-            self.services_in = self.input.param("services_in", None)
-            self.forceEject = self.input.param("forceEject", False)
-            self.value_size = self.input.param("value_size", 1)
-            self.wait_timeout = self.input.param("wait_timeout", 60)
-            self.dgm_run = self.input.param("dgm_run", False)
-            self.verify_unacked_bytes = self.input.param("verify_unacked_bytes", False)
-            self.disabled_consistent_view = self.input.param("disabled_consistent_view", None)
-            self.rebalanceIndexWaitingDisabled = self.input.param("rebalanceIndexWaitingDisabled", None)
-            self.rebalanceIndexPausingDisabled = self.input.param("rebalanceIndexPausingDisabled", None)
-            self.maxParallelIndexers = self.input.param("maxParallelIndexers", None)
-            self.maxParallelReplicaIndexers = self.input.param("maxParallelReplicaIndexers", None)
-            self.quota_percent = self.input.param("quota_percent", None)
-            self.port = None
-            self.stat_info = self.input.param("stat_info", None)
-            self.port_info = self.input.param("port_info", None)
-            if not hasattr(self, 'skip_buckets_handle'):
-                self.skip_buckets_handle = self.input.param("skip_buckets_handle", False)
-            self.gsi_type = self.input.param("gsi_type", 'plasma')
-            # jre-path for cbas
-            self.jre_path = self.input.param("jre_path", None)
-
             if self.skip_setup_cleanup:
                 self.buckets = self.bucket_util.get_all_buckets()
                 return
@@ -130,12 +143,13 @@ class BaseTestCase(unittest.TestCase):
                     """
                     self.cb_version = RestConnection(self.cluster.master).get_nodes_version()
                 else:
-                    self.log.info("couchbase server does not run yet")
+                    self.log.debug("couchbase server does not run yet")
                 self.protocol = self.cluster_util.get_protocol_type()
             self.services_map = None
 
             self.__log_setup_status("started")
             if not self.skip_buckets_handle and not self.skip_init_check_cbserver:
+                self.log.debug("Cleaning up cluster")
                 self.cluster_util.cluster_cleanup(self.bucket_util)
 
             # avoid any cluster operations in setup for new upgrade
@@ -145,7 +159,7 @@ class BaseTestCase(unittest.TestCase):
                     str(self.__class__).find('Upgrade_EpTests') != -1 or \
                     hasattr(self, 'skip_buckets_handle') and \
                     self.skip_buckets_handle:
-                self.log.info("any cluster operation in setup will be skipped")
+                self.log.warning("any cluster operation in setup will be skipped")
                 self.primary_index_created = True
                 self.__log_setup_status("finished")
                 return
@@ -183,16 +197,17 @@ class BaseTestCase(unittest.TestCase):
                 self.log.info("Cluster initialized")
             else:
                 self.quota = ""
-            if self.input.param("log_info", None):
+
+            if self.log_info:
                 self.cluster_util.change_log_info()
-            if self.input.param("log_location", None):
+            if self.log_location:
                 self.cluster_util.change_log_location()
-            if self.input.param("stat_info", None):
+            if self.stat_info:
                 self.cluster_util.change_stat_info()
-            if self.input.param("port_info", None):
+            if self.port_info:
                 self.cluster_util.change_port_info()
-            if self.input.param("port", None):
-                self.port = str(self.input.param("port", None))
+            if self.port:
+                self.port = str(self.port)
 
             self.__log_setup_status("finished")
 
@@ -220,16 +235,15 @@ class BaseTestCase(unittest.TestCase):
                            self._exc_info()[1] is not None)
 
             if test_failed and TestInputSingleton.input.param("stop-on-failure", False) \
-                    or self.input.param("skip_cleanup", False):
+                   or self.input.param("skip_cleanup", False):
                 self.log.warn("CLEANUP WAS SKIPPED")
             else:
-
                 if test_failed:
                     # collect logs here because we have not shut things down
                     if TestInputSingleton.input.param("get-cbcollect-info", False):
                         for server in self.servers:
-                            self.log.info("Collecting logs @ {0}"
-                                          .format(server.ip))
+                            self.infra_log.info("Collecting logs @ {0}"
+                                                .format(server.ip))
                             self.get_cbcollect_info(server)
                         # collected logs so turn it off so it is not done later
                         TestInputSingleton.input.test_params["get-cbcollect-info"] = False
@@ -241,7 +255,7 @@ class BaseTestCase(unittest.TestCase):
                                 output, _ = shell.execute_command("ps -aef|grep %s" %
                                                                   TestInputSingleton.input.param('get_trace', None))
                                 output = shell.execute_command("pstack %s" % output[0].split()[1].strip())
-                                print(output[0])
+                                self.infra_log.debug(output[0])
                                 shell.disconnect()
                             except:
                                 pass
@@ -250,12 +264,14 @@ class BaseTestCase(unittest.TestCase):
                 rest = RestConnection(self.cluster.master)
                 alerts = rest.get_alerts()
                 if alerts is not None and len(alerts) != 0:
-                    self.log.warn("Alerts were found: {0}".format(alerts))
+                    self.infra_log.warn("Alerts found: {0}".format(alerts))
+                self.log.debug("Cleaning up cluster")
                 self.cluster_util.cluster_cleanup(self.bucket_util)
                 self.__log_setup_status("finished")
         except BaseException as e:
             # kill memcached
             traceback.print_exc()
+            self.log.warning("Killing memcached due to {0}".format(e))
             self.cluster_util.kill_memcached()
             # increase case_number to retry tearDown in setup for the next test
             self.case_number += 1000
@@ -267,9 +283,9 @@ class BaseTestCase(unittest.TestCase):
                 self.cleanup = False
             else:
                 self.cluster_util.reset_env_variables()
-            self.log.info("========== tasks in thread pool ==========")
+            self.infra_log.info("========== tasks in thread pool ==========")
             self.task_manager.print_tasks_in_pool()
-            self.log.info("==========================================")
+            self.infra_log.info("==========================================")
             if not self.tear_down_while_setup:
                 self.task_manager.shutdown_task_manager()
                 self.task.shutdown(force=True)
@@ -313,7 +329,7 @@ class BaseTestCase(unittest.TestCase):
             for server in servers:
                 remote_client = RemoteMachineShellConnection(server)
                 ram = remote_client.extract_remote_info().ram
-                self.log.info("{0}: {1} MB".format(server.ip, ram))
+                self.log.debug("{0}: {1} MB".format(server.ip, ram))
                 remote_client.disconnect()
 
         if self.jre_path:
@@ -334,8 +350,8 @@ class BaseTestCase(unittest.TestCase):
             TestInputSingleton.input.test_params[
                 "get-cbcollect-info"] = False
         except Exception as e:
-            self.log.error("IMPOSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}"
-                           .format(server.ip, e))
+            self.infra_log.error("IMPOSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}"
+                                 .format(server.ip, e))
 
     def sleep(self, timeout=15, message=""):
         self.log.info("sleep for {0} secs. {1} ...".format(timeout, message))

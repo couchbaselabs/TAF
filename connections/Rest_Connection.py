@@ -13,14 +13,13 @@ import time
 from TestInput import TestInputSingleton
 from membase.api.exception import ServerUnavailableException
 
-log = logging.getLogger()
-
 
 class RestConnection(object):
 
     def __new__(self, serverInfo={}, node=None):
         # allow port to determine
         # behavior of restconnection
+        self.log = logging.getLogger("infra")
         port = None
         if isinstance(serverInfo, dict):
             if 'port' in serverInfo:
@@ -100,11 +99,11 @@ class RestConnection(object):
             if not success and type(http_res) == unicode and\
                (http_res.find('Node is unknown to this cluster') > -1 or
                     http_res.find('Unexpected server error, request logged') > -1):
-                log.error("Error {0}, 5 seconds sleep before retry"
+                self.log.error("Error {0}, 5 seconds sleep before retry"
                           .format(http_res))
                 time.sleep(5)
                 if iteration == 2:
-                    log.error("Node {0}:{1} is in a broken state!"
+                    self.log.error("Node {0}:{1} is in a broken state!"
                               .format(self.ip, self.port))
                     raise ServerUnavailableException(self.ip)
                 continue
@@ -170,16 +169,16 @@ class RestConnection(object):
                     message = '{0} {1} body: {2} headers: {3} error: {4} reason: {5} {6} {7}'.\
                               format(method, api, params, headers, response['status'], reason,
                                      content.rstrip('\n'), self._get_auth(headers))
-                    log.error(message)
-                    log.debug(''.join(traceback.format_stack()))
+                    self.log.error(message)
+                    self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response
             except socket.error as e:
-                log.error("Socket error while connecting to {0}. "
+                self.log.error("Socket error while connecting to {0}. "
                           "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
             except httplib2.ServerNotFoundError as e:
-                log.error("ServerNotFoundError while connecting to {0}. "
+                self.log.error("ServerNotFoundError while connecting to {0}. "
                           "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)

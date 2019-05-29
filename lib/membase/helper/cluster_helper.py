@@ -10,8 +10,6 @@ import Queue
 from threading import Thread
 import traceback
 
-log = logging.getLogger()
-
 
 class ClusterOperationHelper(object):
     # the first ip is taken as the master ip
@@ -22,6 +20,7 @@ class ClusterOperationHelper(object):
         master = servers[0]
         all_nodes_added = True
         rebalanced = True
+        log = logging.getLogger("infra")
         rest = RestConnection(master)
         if len(servers) > 1:
             for serverInfo in servers[1:]:
@@ -45,6 +44,7 @@ class ClusterOperationHelper(object):
     def add_all_nodes_or_assert(master, all_servers, rest_settings, test_case):
         otpNodes = []
         all_nodes_added = True
+        log = logging.getLogger("infra")
         rest = RestConnection(master)
         for serverInfo in all_servers:
             if serverInfo.ip != master.ip:
@@ -69,14 +69,15 @@ class ClusterOperationHelper(object):
     @staticmethod
     def verify_persistence(servers, test, keys_count=400000, timeout_in_seconds=300):
         master = servers[0]
+        log = logging.getLogger("infra")
         rest = RestConnection(master)
         log.info("Verifying Persistence")
         buckets = rest.get_buckets()
         for bucket in buckets:
-        # Load some data
-            l_threads = MemcachedClientHelper.create_threads([master], bucket.name,
-                                                                     - 1, keys_count, {1024: 0.50, 512: 0.50}, 2, -1,
-                                                                     True, True)
+            # Load some data
+            l_threads = MemcachedClientHelper.create_threads(
+                [master], bucket.name, - 1, keys_count,
+                {1024: 0.50, 512: 0.50}, 2, -1, True, True)
             [t.start() for t in l_threads]
             # Do persistence verification
             ready = ClusterOperationHelper.persistence_verification(servers, bucket.name, timeout_in_seconds)
@@ -92,6 +93,7 @@ class ClusterOperationHelper(object):
     @staticmethod
     def persistence_verification(servers, bucket, timeout_in_seconds=1260):
         verification_threads = []
+        log = logging.getLogger("infra")
         queue = Queue.Queue()
         rest = RestConnection(servers[0])
         nodes = rest.get_nodes()
@@ -123,6 +125,7 @@ class ClusterOperationHelper(object):
         stat_key = 'ep_flusher_todo'
         start = time.time()
         stats = []
+        log = logging.getLogger("infra")
         # Collect stats data points
         while time.time() - start <= timeout:
             _new_stats = rest.get_bucket_stats(bucket)
@@ -184,6 +187,7 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def flush_os_caches(servers):
+        log = logging.getLogger("infra")
         for server in servers:
             try:
                 shell = RemoteMachineShellConnection(server)
@@ -207,6 +211,7 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def flushctl_set_per_node(server, key, val, bucket='default'):
+        log = logging.getLogger("infra")
         rest = RestConnection(server)
         node = rest.get_nodes_self()
         mc = MemcachedClientHelper.direct_client(server, bucket)
@@ -247,6 +252,7 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def set_expiry_pager_sleep_time(master, bucket, value=30):
+        log = logging.getLogger("infra")
         rest = RestConnection(master)
         servers = rest.get_nodes()
         for server in servers:
@@ -263,6 +269,7 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def get_mb_stats(servers, key):
+        log = logging.getLogger("infra")
         for server in servers:
             c = MemcachedClient(server.ip, 11210)
             log.info("Get flush param on server {0}, {1}".format(server, key))
@@ -278,6 +285,7 @@ class ClusterOperationHelper(object):
 
         Default: +S 16:16
         """
+        log = logging.getLogger("infra")
         for server in servers:
             sh = RemoteMachineShellConnection(server)
             product = "membase"
@@ -300,6 +308,7 @@ class ClusterOperationHelper(object):
         Set num of erlang schedulers.
         Also erase async option (+A)
         """
+        log = logging.getLogger("infra")
         ClusterOperationHelper.stop_cluster(servers)
 
         for server in servers:
@@ -324,6 +333,7 @@ class ClusterOperationHelper(object):
 
         Default: None
         """
+        log = logging.getLogger("infra")
         if value is None:
             return
         for server in servers:

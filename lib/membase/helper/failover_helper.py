@@ -8,14 +8,12 @@ not_enough_nodes = "there are not enough nodes to failover.cluster has{0} nodes 
 start_cluster = "rpc:call('{0}', ns_server_cluster_sup, start_cluster, [], infinity)."
 stop_cluster = "rpc:call('{0}', ns_server_cluster_sup, stop_cluster, [], infinity)."
 
-log = logging.getLogger()
-
 
 class FailoverHelper(object):
     def __init__(self, servers, test):
         self.servers = servers
         self.test = test
-        self.log = log
+        self.log = logging.getLogger("test")
 
     # failover any node except self.servers[0]
     # assuming that replica = howmany
