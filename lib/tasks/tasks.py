@@ -10,6 +10,7 @@ import traceback
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from TestInput import TestInputServer
+from cb_tools.cbstats import Cbstats
 from membase.api.exception import BucketCreationException,\
     BucketCompactionException
 from membase.api.exception import N1QLQueryException, DropIndexException
@@ -502,8 +503,7 @@ class CompactBucketTask(Task):
             s.ssh_username = self.server.ssh_username
             s.ssh_password = self.server.ssh_password
             shell = RemoteMachineShellConnection(s)
-            res = shell.execute_cbstats(
-                "", "raw", keyname="kvtimings", vbid="")
+            res = Cbstats(shell).get_kvtimings()
             shell.disconnect()
             for i in res[0]:
                 # check for lines that look like
