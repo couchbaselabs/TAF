@@ -72,7 +72,7 @@ class MultiDurabilityTests(BaseTestCase):
                 replicate_to=bucket_info[0]["replicate_to"],
                 persist_to=bucket_info[0]["persist_to"],
                 durability=bucket_info[0]["durability"],
-                durability_timeout=bucket_info[0]["durability_timeout"]))
+                sdk_timeout=bucket_info[0]["sdk_timeout"]))
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket_info[1]["object"],
                 bucket_info[1]["loader"],
@@ -81,7 +81,7 @@ class MultiDurabilityTests(BaseTestCase):
                 replicate_to=bucket_info[1]["replicate_to"],
                 persist_to=bucket_info[1]["persist_to"],
                 durability=bucket_info[1]["durability"],
-                durability_timeout=bucket_info[1]["durability_timeout"]))
+                sdk_timeout=bucket_info[1]["sdk_timeout"]))
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket_info[2]["object"],
                 bucket_info[2]["loader"],
@@ -90,7 +90,7 @@ class MultiDurabilityTests(BaseTestCase):
                 replicate_to=bucket_info[2]["replicate_to"],
                 persist_to=bucket_info[2]["persist_to"],
                 durability=bucket_info[2]["durability"],
-                durability_timeout=bucket_info[2]["durability_timeout"]))
+                sdk_timeout=bucket_info[2]["sdk_timeout"]))
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket_info[3]["object"],
                 bucket_info[3]["loader"],
@@ -99,7 +99,7 @@ class MultiDurabilityTests(BaseTestCase):
                 replicate_to=bucket_info[3]["replicate_to"],
                 persist_to=bucket_info[3]["persist_to"],
                 durability=bucket_info[3]["durability"],
-                durability_timeout=bucket_info[3]["durability_timeout"]))
+                sdk_timeout=bucket_info[3]["sdk_timeout"]))
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket_info[4]["object"],
                 bucket_info[4]["loader"],
@@ -108,7 +108,7 @@ class MultiDurabilityTests(BaseTestCase):
                 replicate_to=bucket_info[4]["replicate_to"],
                 persist_to=bucket_info[4]["persist_to"],
                 durability=bucket_info[4]["durability"],
-                durability_timeout=bucket_info[4]["durability_timeout"]))
+                sdk_timeout=bucket_info[4]["sdk_timeout"]))
 
             # Wait for all tasks to complete
             for task in tasks:
@@ -126,13 +126,13 @@ class MultiDurabilityTests(BaseTestCase):
         # based on the values passed to it
         def dict_updater(index, bucket_dict, doc_gen, op_type,
                          persist_to=0, replicate_to=0, durability=None,
-                         durability_timeout=0):
+                         sdk_timeout=0):
             bucket_dict[index]["loader"] = doc_gen
             bucket_dict[index]["op_type"] = "create"
             bucket_dict[index]["persist_to"] = persist_to
             bucket_dict[index]["replicate_to"] = replicate_to
             bucket_dict[index]["durability"] = durability
-            bucket_dict[index]["durability_timeout"] = durability_timeout
+            bucket_dict[index]["sdk_timeout"] = sdk_timeout
             if "num_items" not in bucket_dict[index]:
                 bucket_dict[index]["num_items"] = self.num_items
             if op_type == "create":
@@ -166,12 +166,12 @@ class MultiDurabilityTests(BaseTestCase):
         replicate_to = 0 if replica == 0 else int(replica/2) + 1
         # First-set of ops on multi-buckets
         dict_updater(0, self.bucket_dict, gen_create, "create",
-                     durability="MAJORITY", durability_timeout=5)
+                     durability="MAJORITY", sdk_timeout=5)
         dict_updater(1, self.bucket_dict, gen_update, "update",
                      durability="MAJORITY_AND_PERSIST_ON_MASTER",
-                     durability_timeout=5)
+                     sdk_timeout=5)
         dict_updater(2, self.bucket_dict, gen_delete, "delete",
-                     durability="PERSIST_TO_MAJORITY", durability_timeout=5)
+                     durability="PERSIST_TO_MAJORITY", sdk_timeout=5)
         dict_updater(3, self.bucket_dict, gen_update, "update",
                      persist_to=1, replicate_to=replicate_to)
         dict_updater(4, self.bucket_dict, gen_create, "create")
@@ -188,11 +188,11 @@ class MultiDurabilityTests(BaseTestCase):
                      persist_to=persist_to, replicate_to=replicate_to)
         dict_updater(1, self.bucket_dict, gen_delete, "delete",
                      durability="MAJORITY_AND_PERSIST_ON_MASTER",
-                     durability_timeout=5)
+                     sdk_timeout=5)
         dict_updater(2, self.bucket_dict, gen_create, "create",
-                     durability="PERSIST_TO_MAJORITY", durability_timeout=5)
+                     durability="PERSIST_TO_MAJORITY", sdk_timeout=5)
         dict_updater(3, self.bucket_dict, gen_update, "update",
-                     durability="MAJORITY", durability_timeout=5)
+                     durability="MAJORITY", sdk_timeout=5)
         dict_updater(4, self.bucket_dict, gen_create, "create")
 
         # Call the generic doc_operation function

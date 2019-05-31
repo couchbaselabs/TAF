@@ -594,9 +594,8 @@ class FailoverTests(FailoverBaseTest):
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, gen, op, 0, batch_size=20,
                 process_concurrency=1,
-                durability=self.durability_level, timeout_secs=self.sdk_timeout,
-                #durability_timeout=self.durability_timeout
-                ))
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 

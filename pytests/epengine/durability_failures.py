@@ -50,7 +50,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_load, "create",
             batch_size=10, process_concurrency=8,
             durability=self.durability_level,
-            timeout_secs=self.durability_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(d_create_task)
 
         # Fetch vbucket seq_no status from vb_seqno command after CREATE task
@@ -73,7 +73,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         async_create_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_load, "create",
             batch_size=10, process_concurrency=8,
-            timeout_secs=self.durability_timeout)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(async_create_task)
 
         # Fetch vbucket seq_no status from vb_seqno command after async CREATEs
@@ -88,14 +88,14 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.cluster, self.bucket, gen_load, "update",
                 batch_size=10, process_concurrency=4,
                 durability=self.durability_level,
-                timeout_secs=self.durability_timeout,
+                timeout_secs=self.sdk_timeout,
                 retries=self.sdk_retries))
         # Start durable DELETE operation
         tasks.append(self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_load, "delete",
                 batch_size=10, process_concurrency=4,
                 durability=self.durability_level,
-                timeout_secs=self.durability_timeout,
+                timeout_secs=self.sdk_timeout,
                 retries=self.sdk_retries))
 
         # Wait for all tasks to complete and validate the exception
@@ -199,7 +199,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_loader_1, self.doc_ops[0], 0,
             batch_size=self.crud_batch_size, process_concurrency=8,
             durability=self.durability_level,
-            timeout_secs=self.durability_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
 
         self.sleep(20, message="Wait for task_1 ops to reach the server")
 
@@ -239,7 +239,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 else:
                     fail = client.crud(self.doc_ops[1], key, value=value, exp=0,
                                        durability=self.durability_level,
-                                       timeout=self.durability_timeout,
+                                       timeout=self.sdk_timeout,
                                        time_unit="seconds")
                 if "error" in fail:
                     self.log_failure("CRUD failed without error condition: {0}"
@@ -313,7 +313,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_loader, self.doc_ops[0], 0,
             batch_size=10, process_concurrency=8,
             durability=self.durability_level,
-            timeout_secs=self.durability_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
 
         self.sleep(20, message="Wait for task_1 ops to reach the server")
 
@@ -328,7 +328,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             else:
                 fail = client.crud(self.doc_ops[1], key, value=value, exp=0,
                                    durability=self.durability_level,
-                                   timeout=self.durability_timeout,
+                                   timeout=self.sdk_timeout,
                                    time_unit="seconds")
 
             # Validate the returned error from the SDK
@@ -590,12 +590,12 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_loader, self.doc_ops[0], 0,
             batch_size=10, process_concurrency=8,
             durability=self.durability_level,
-            timeout_secs=self.durability_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
 
         self.sleep(20, message="Wait for task_1 ops to reach the server")
 
         tem_durability = self.durability_level
-        tem_timeout = self.durability_timeout
+        tem_timeout = self.sdk_timeout
         if self.with_non_sync_writes:
             tem_durability = None
             tem_timeout = self.sdk_timeout
@@ -696,7 +696,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_loader, self.doc_ops[0], 0,
             batch_size=10, process_concurrency=8,
             durability=self.durability_level,
-            timeout_secs=self.durability_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
 
         self.sleep(30, message="Wait for task_1 ops to reach the server")
 
@@ -705,7 +705,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_loader, self.doc_ops[1], 0,
             batch_size=10, process_concurrency=8,
             durability=self.durability_level,
-            timeout_secs=self.durability_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
 
         # Wait for doc_loader_task_2 to complete
         error_docs = self.task.jython_task_manager.get_task_result(
@@ -778,7 +778,7 @@ class TimeoutTests(DurabilityTestsBase):
         5. Validate all mutations are succeeded after reverting
            the error condition
 
-        Note: self.durability_timeout values is considered as 'seconds'
+        Note: self.sdk_timeout values is considered as 'seconds'
         """
 
         shell_conn = dict()
@@ -796,7 +796,7 @@ class TimeoutTests(DurabilityTestsBase):
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
 
         curr_time = int(time.time())
-        expected_timeout = curr_time + self.durability_timeout
+        expected_timeout = curr_time + self.sdk_timeout
         time_to_wait = expected_timeout - 20
 
         # Perform specified action
@@ -840,7 +840,7 @@ class TimeoutTests(DurabilityTestsBase):
         self.num_items += self.crud_batch_size - int(self.num_items/3)
 
         self.sleep(time_to_wait,
-                   message="Wait less than the durability_timeout value")
+                   message="Wait less than the sdk_timeout value")
 
         # Fetch latest stats and validate the values are not changed
         for node in target_nodes:
@@ -923,7 +923,7 @@ class TimeoutTests(DurabilityTestsBase):
         self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
 
         curr_time = int(time.time())
-        expected_timeout = curr_time + self.durability_timeout
+        expected_timeout = curr_time + self.sdk_timeout
         time_to_wait = expected_timeout - 20
 
         vb_info["init"] = cbstat_obj.vbucket_seqno(self.bucket.name)
@@ -967,7 +967,7 @@ class TimeoutTests(DurabilityTestsBase):
         self.num_items += self.crud_batch_size - int(self.num_items/3)
 
         self.sleep(time_to_wait,
-                   message="Wait less than the durability_timeout value")
+                   message="Wait less than the sdk_timeout value")
 
         # Fetch latest stats and validate the values are not changed
         vb_info["withinTimeout"] = cbstat_obj.vbucket_seqno(self.bucket.name)
@@ -1037,7 +1037,7 @@ class TimeoutTests(DurabilityTestsBase):
         5. Validate all mutations are succeeded after reverting
            the error condition
 
-        Note: self.durability_timeout values is considered as 'seconds'
+        Note: self.sdk_timeout values is considered as 'seconds'
         """
 
         shell_conn = dict()
@@ -1055,7 +1055,7 @@ class TimeoutTests(DurabilityTestsBase):
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
 
         curr_time = int(time.time())
-        expected_timeout = curr_time + self.durability_timeout
+        expected_timeout = curr_time + self.sdk_timeout
 
         # Perform specified action
         for node in target_nodes:
@@ -1197,7 +1197,7 @@ class TimeoutTests(DurabilityTestsBase):
 
         vb_info["init"] = cbstat_obj.vbucket_seqno(self.bucket.name)
         curr_time = int(time.time())
-        expected_timeout = curr_time + self.durability_timeout
+        expected_timeout = curr_time + self.sdk_timeout
 
         # Perform specified action
         error_sim.create(self.simulate_error, bucket_name=self.bucket.name)

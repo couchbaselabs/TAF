@@ -663,7 +663,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                 # Retry failed docs to verify it succeeds with no failure
                 self.durability_helper.retry_with_no_error(
                     client, failed_docs[op_type], op_type,
-                    timeout=self.durability_timeout)
+                    timeout=self.sdk_timeout)
 
             # Closing the SDK client
             client.close()
