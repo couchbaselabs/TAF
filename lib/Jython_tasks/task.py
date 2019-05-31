@@ -1478,7 +1478,7 @@ class StatsWaitTask(Task):
                 if self.statCmd in ["all", "dcp"]:
                     self._get_all_stats_and_compare()
                 else:
-                    raise "Not supported. Implement the stat call"
+                    raise Exception("Not supported. Implement the stat call")
         finally:
             for _, conn in self.conns.items():
                 conn.close()

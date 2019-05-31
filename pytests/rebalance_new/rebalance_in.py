@@ -15,15 +15,17 @@ class RebalanceInTests(RebalanceBaseTest):
         super(RebalanceInTests, self).tearDown()
 
     def test_rebalance_in_with_ops_durable(self):
-        gen_create = self.get_doc_generator(self.num_items, self.num_items * 2)
-        gen_delete = self.get_doc_generator(self.num_items / 2, self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items * 2)
+        self.gen_delete = self.get_doc_generator(self.num_items / 2,
+                                                 self.num_items)
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, [])
         time.sleep(15)
 
-        tasks_info = self.start_parallel_cruds(gen_create, gen_delete)
+        tasks_info = self.start_parallel_cruds()
 
         self.task_manager.get_task_result(rebalance_task)
         for task in tasks_info.keys():
@@ -45,20 +47,21 @@ class RebalanceInTests(RebalanceBaseTest):
                         batch_size=10))
                 if "create" in self.doc_ops:
                     tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, gen_create, "create", 0,
+                        self.cluster, bucket, self.gen_create, "create", 0,
                         batch_size=10, process_concurrency=8))
                 if "delete" in self.doc_ops:
                     tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, gen_delete, "delete", 0,
+                        self.cluster, bucket, self.gen_delete, "delete", 0,
                         batch_size=10))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.verify_stats_all_buckets(self.num_items * 2)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def test_rebalance_in_with_ops(self):
-        gen_create = self.get_doc_generator(self.num_items, self.num_items * 2)
-        gen_delete = self.get_doc_generator(int(self.num_items / 2),
-                                            self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items * 2)
+        self.gen_delete = self.get_doc_generator(int(self.num_items / 2),
+                                                 self.num_items)
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
@@ -69,7 +72,7 @@ class RebalanceInTests(RebalanceBaseTest):
 
         # CRUDs while rebalance is running in parallel
         tasks_info = self.start_parallel_cruds(
-            gen_create, gen_delete, retry_exceptions=retry_exceptions)
+            retry_exceptions=retry_exceptions)
 
         # Waif for rebalance and doc mutation tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -84,15 +87,19 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             current_items = self.bucket_util.get_bucket_current_item_count(
                 self.cluster, bucket)
-            self.num_items = current_items
+            if current_items != self.num_items:
+                self.log.warn("%s bucket items:, Actual %d, Expected %d"
+                              % (bucket.name, current_items, self.num_items))
+                self.log.warn("Overwritting self.num_items=%d" % current_items)
+                self.num_items = current_items
 
         # CRUDs after rebalance operations
-        gen_create = self.get_doc_generator(self.num_items, self.num_items * 2)
-        gen_delete = self.get_doc_generator(int(self.num_items / 2),
-                                            self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items * 2)
+        self.gen_delete = self.get_doc_generator(int(self.num_items / 2),
+                                                 self.num_items)
 
-        self.start_parallel_cruds(gen_create, gen_delete,
-                                  retry_exceptions=retry_exceptions,
+        self.start_parallel_cruds(retry_exceptions=retry_exceptions,
                                   task_verification=True)
 
         self.bucket_util._wait_for_stats_all_buckets()
@@ -112,12 +119,13 @@ class RebalanceInTests(RebalanceBaseTest):
         the curr_items_total.
         Once all nodes have been rebalanced in the test is finished.
         """
-        gen_update = self.get_doc_generator(0, self.num_items)
+        self.gen_update = self.get_doc_generator(0, self.num_items)
         std = self.std_vbucket_dist or 1.0
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket, gen_update, "update", 0, batch_size=20,
+                self.cluster, bucket, self.gen_update, "update", 0,
+                batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 pause_secs=5, timeout_secs=self.sdk_timeout,
@@ -180,12 +188,12 @@ class RebalanceInTests(RebalanceBaseTest):
         Once all nodes have been rebalanced in the test is finished.
         """
 
-        gen_update = self.get_doc_generator(0, self.num_items)
+        self.gen_update = self.get_doc_generator(0, self.num_items)
         std = self.std_vbucket_dist or 1.0
         tasks_info = dict()
         for bucket in self.bucket_util.buckets:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, bucket, self.cluster.master, gen_update,
+                self.cluster, bucket, self.cluster.master, self.gen_update,
                 "update", 0)
             tasks_info.update(tem_tasks_info.copy())
         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
@@ -248,12 +256,12 @@ class RebalanceInTests(RebalanceBaseTest):
         """
 
         fail_over = self.input.param("fail_over", False)
-        gen_update = self.get_doc_generator(0, self.num_items)
+        self.gen_update = self.get_doc_generator(0, self.num_items)
         std = self.std_vbucket_dist or 1.0
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket, self.cluster.master, gen_update,
+                self.cluster, bucket, self.cluster.master, self.gen_update,
                 "update", 0, batch_size=20, persist_to=self.persist_to,
                 replicate_to=self.replicate_to, pause_secs=5,
                 durability=self.durability_level,
@@ -322,8 +330,10 @@ class RebalanceInTests(RebalanceBaseTest):
         """
 
         compaction_tasks = list()
-        gen_create = self.get_doc_generator(self.num_items, self.num_items*2)
-        gen_delete = self.get_doc_generator(self.num_items/2, self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items * 2)
+        self.gen_delete = self.get_doc_generator(self.num_items / 2,
+                                                 self.num_items)
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = [self.task.async_rebalance(
@@ -333,7 +343,7 @@ class RebalanceInTests(RebalanceBaseTest):
             compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
 
-        tasks_info = self.start_parallel_cruds(gen_create, gen_delete)
+        tasks_info = self.start_parallel_cruds()
 
         self.task_manager.get_task_result(rebalance_task)
 
@@ -351,26 +361,25 @@ class RebalanceInTests(RebalanceBaseTest):
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
     def rebalance_in_with_ops_batch(self):
-        gen_delete = self.get_doc_generator((self.num_items / 2 - 1), self.num_items)
-        gen_create = self.get_doc_generator(self.num_items+1, self.num_items*3/2)
+        self.gen_delete = self.get_doc_generator((self.num_items / 2 - 1), self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items+1, self.num_items*3/2)
         servs_in = [self.cluster.servers[i + 1] for i in range(self.nodes_in)]
         rebalance = self.task.async_rebalance(self.cluster.servers[:1], servs_in, [])
-        if (self.doc_ops is not None):
+        if self.doc_ops is not None:
             # define which doc's ops will be performed during rebalancing
             # allows multiple of them but one by one
-            if ("update" in self.doc_ops):
-                self._load_all_buckets(self.gen_update, "update", 0,
-                                       4294967295, True,
-                                       batch_size=20, pause_secs=5,
-                                       timeout_secs=180)
-            if ("create" in self.doc_ops):
-                self._load_all_buckets(gen_create, "create", 0, 4294967295,
-                                       True, batch_size=20,
-                                       pause_secs=5, timeout_secs=180)
-            if ("delete" in self.doc_ops):
-                self._load_all_buckets(gen_delete, "delete", 0, 4294967295,
-                                       True, batch_size=20,
-                                       pause_secs=5, timeout_secs=180)
+            if "update" in self.doc_ops:
+                self._load_all_buckets(
+                    self.gen_update, "update", 0, 4294967295, True,
+                    batch_size=20, pause_secs=5, timeout_secs=180)
+            if "create" in self.doc_ops:
+                self._load_all_buckets(
+                    self.gen_create, "create", 0, 4294967295, True,
+                    batch_size=20, pause_secs=5, timeout_secs=180)
+            if "delete" in self.doc_ops:
+                self._load_all_buckets(
+                    self.gen_delete, "delete", 0, 4294967295, True,
+                    batch_size=20, pause_secs=5, timeout_secs=180)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.cluster.nodes_in_cluster.extend(servs_in)
         self.sleep(60)
@@ -476,11 +485,11 @@ class RebalanceInTests(RebalanceBaseTest):
                     op_type = "create"
                     # 1/2th of initial data will be added in each iteration
                     tem_num_items = int(self.num_items * (1 + i / 2.0))
-                    gen_create = self.get_doc_generator(num_of_items,
-                                                        tem_num_items)
+                    self.gen_create = self.get_doc_generator(num_of_items,
+                                                             tem_num_items)
                     num_of_items = tem_num_items
                     task = self.task.async_load_gen_docs(
-                        self.cluster, bucket, gen_create, "create", 0,
+                        self.cluster, bucket, self.gen_create, "create", 0,
                         batch_size=20, persist_to=self.persist_to,
                         replicate_to=self.replicate_to, pause_secs=5,
                         durability=self.durability_level,
@@ -493,11 +502,11 @@ class RebalanceInTests(RebalanceBaseTest):
                     # empty base or couple items
                     tem_del_start_num = int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1
                     tem_del_end_num = int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0)))
-                    gen_delete = self.get_doc_generator(tem_del_start_num,
-                                                        tem_del_end_num)
+                    self.gen_delete = self.get_doc_generator(tem_del_start_num,
+                                                             tem_del_end_num)
                     num_of_items -= (tem_del_end_num - tem_del_start_num + 1)
                     task = self.task.async_load_gen_docs(
-                        self.cluster, bucket, gen_delete, "delete", 0,
+                        self.cluster, bucket, self.gen_delete, "delete", 0,
                         batch_size=20, persist_to=self.persist_to,
                         replicate_to=self.replicate_to, pause_secs=5,
                         durability=self.durability_level,
@@ -845,16 +854,21 @@ class RebalanceInTests(RebalanceBaseTest):
         Once all nodes have been rebalanced in the test is finished.
         """
 
-        gen_delete = self.get_doc_generator(self.num_items / 2,
-                                            self.num_items)
+        self.gen_delete = self.get_doc_generator(self.num_items / 2,
+                                                 self.num_items)
 
         for i in range(self.num_servers)[1:]:
-            rebalance = self.task.async_rebalance(self.cluster.servers[:i], [self.cluster.servers[i]], [])
-            self._load_all_buckets(self.cluster.master, self.gen_update, "update", 0)
-            self._load_all_buckets(self.cluster.master, gen_delete, "delete", 0)
+            rebalance = self.task.async_rebalance(self.cluster.servers[:i],
+                                                  [self.cluster.servers[i]],
+                                                  [])
+            self._load_all_buckets(self.cluster.master, self.gen_update,
+                                   "update", 0)
+            self._load_all_buckets(self.cluster.master, self.gen_delete,
+                                   "delete", 0)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.cluster.nodes_in_cluster.extend([self.cluster.servers[i]])
-            self._load_all_buckets(self.cluster.master, gen_delete, "create", 0)
+            self._load_all_buckets(self.cluster.master, self.gen_delete,
+                                   "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 

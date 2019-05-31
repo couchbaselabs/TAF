@@ -20,6 +20,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.default_view = View(self.default_view_name, self.defaul_map_func, None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
+        self.print_cluster_stat = self.input.param("print_cluster_stat", False)
         self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -27,25 +28,27 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
         self.sleep(10)
-        gen_create = self.get_doc_generator(0, self.num_items)
-        self.print_cluster_stat = self.input.param("print_cluster_stat", False)
+        self.gen_create = self.get_doc_generator(0, self.num_items)
         if self.print_cluster_stat:
             self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
-                self.cluster, bucket, gen_create, "create", 0,
+                self.cluster, bucket, self.gen_create, "create", 0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 batch_size=10, timeout_secs=self.sdk_timeout,
                 process_concurrency=8, retries=self.sdk_retries,
                 durability=self.durability_level)
             self.task.jython_task_manager.get_task_result(task)
             self.sleep(20)
-            current_item = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            current_item = self.bucket_util.get_bucket_current_item_count(
+                self.cluster, bucket)
             self.num_items = current_item
             self.log.info("Inserted {} number of items after loadgen"
                           .format(self.num_items))
         self.gen_load = self.get_doc_generator(0, self.num_items)
-        # gen_update is used for doing mutation for 1/2th of uploaded data
+        # Initialize doc_generators
+        self.gen_create = None
+        self.gen_delete = None
         self.gen_update = self.get_doc_generator(0, (self.num_items / 2))
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.nodes_in_cluster),
@@ -142,8 +145,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
                         "Doc_ops failed in rebalance_base._load_all_buckets")
 
-    def start_parallel_cruds(self, gen_create, gen_delete,
-                             retry_exceptions=[], ignore_exceptions=[],
+    def start_parallel_cruds(self, retry_exceptions=[], ignore_exceptions=[],
                              task_verification=False):
         tasks_info = dict()
         if "update" in self.doc_ops:
@@ -157,22 +159,24 @@ class RebalanceBaseTest(BaseTestCase):
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, gen_create, "create", 0, batch_size=20,
+                self.cluster, self.gen_create, "create", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions)
             tasks_info.update(tem_tasks_info.items())
+            self.num_items += (self.gen_create.end - self.gen_create.start)
         if "delete" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, gen_delete, "delete", 0, batch_size=20,
+                self.cluster, self.gen_delete, "delete", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions)
             tasks_info.update(tem_tasks_info.items())
+            self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
         if task_verification:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,

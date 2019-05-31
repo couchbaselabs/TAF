@@ -105,8 +105,8 @@ class BucketHelper(RestConnection):
                 return True
             else:
                 time.sleep(0.5)
-        msg = 'vbucket map not ready for bucket {0} after waiting {1} seconds'
-        self.log.info(msg.format(bucket, timeout_in_seconds))
+        msg = 'Vbucket map not ready for bucket {0} after waiting {1} seconds'
+        self.log.warn(msg.format(bucket, timeout_in_seconds))
         return False
 
     def get_vbuckets(self, bucket):

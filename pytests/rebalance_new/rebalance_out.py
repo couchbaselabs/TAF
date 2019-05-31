@@ -14,14 +14,15 @@ class RebalanceOutTests(RebalanceBaseTest):
         super(RebalanceOutTests, self).tearDown()
 
     def test_rebalance_out_with_ops_durable(self):
-        gen_create = doc_generator(self.key, self.num_items, self.num_items*2)
-        gen_delete = doc_generator(self.key, self.num_items / 2,
+        self.gen_create = doc_generator(self.key, self.num_items,
+                                        self.num_items * 2)
+        self.gen_delete = doc_generator(self.key, self.num_items / 2,
                                    self.num_items)
         servs_out = [self.cluster.servers[len(self.cluster.nodes_in_cluster) - i - 1] for i in range(self.nodes_out)]
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], servs_out)
 
-        tasks_info = self.start_parallel_cruds(gen_create, gen_delete)
+        tasks_info = self.start_parallel_cruds()
         for task in tasks_info.keys():
             if task.__class__ == jython_tasks.Durability:
                 for crud_dict in [task.sdk_acked_curd_failed,
@@ -32,16 +33,16 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
     def rebalance_out_with_ops(self):
-        gen_create = doc_generator(self.key, self.num_items, self.num_items*2)
-        gen_delete = doc_generator(self.key, self.num_items / 2,
+        self.gen_create = doc_generator(self.key, self.num_items,
+                                        self.num_items * 2)
+        self.gen_delete = doc_generator(self.key, self.num_items / 2,
                                    self.num_items)
         servs_out = [self.cluster.servers[self.num_servers - i - 1]
                      for i in range(self.nodes_out)]
         tasks = list()
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], servs_out)
-        tasks_info = self.self.start_parallel_cruds(
-            gen_create, gen_delete)
+        tasks_info = self.self.start_parallel_cruds()
         self.task.jython_task_manager.get_task_result(rebalance_task)
 
         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
@@ -57,12 +58,12 @@ class RebalanceOutTests(RebalanceBaseTest):
                 if "create" in self.doc_ops:
                     tasks.append(
                         self.task.async_validate_docs(
-                            self.cluster, bucket, gen_create, "create", 0,
+                            self.cluster, bucket, self.gen_create, "create", 0,
                             batch_size=10, process_concurrency=8))
                 if "delete" in self.doc_ops:
                     tasks.append(
                         self.task.async_validate_docs(
-                            self.cluster, bucket, gen_delete, "delete", 0,
+                            self.cluster, bucket, self.gen_delete, "delete", 0,
                             batch_size=10))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -78,12 +79,13 @@ class RebalanceOutTests(RebalanceBaseTest):
         curr_items_total. We also check for data and its meta-data, vbucket sequene numbers"""
 
     def rebalance_out_after_ops(self):
-        gen_delete = self.get_doc_generator(self.num_items / 2, self.num_items)
-        gen_create = self.get_doc_generator(self.num_items, self.num_items * 3 / 2)
+        self.gen_delete = self.get_doc_generator(self.num_items / 2,
+                                                 self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        self.self.start_parallel_cruds(gen_create, gen_delete,
-                                       task_verification=True)
+        self.self.start_parallel_cruds(task_verification=True)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
@@ -118,12 +120,13 @@ class RebalanceOutTests(RebalanceBaseTest):
     curr_items_total. We also check for data and its meta-data, vbucket sequene numbers"""
 
     def rebalance_out_with_failover_full_addback_recovery(self):
-        gen_delete = self.get_doc_generator(self.num_items / 2, self.num_items)
-        gen_create = self.get_doc_generator(self.num_items + 1, self.num_items * 3 / 2)
+        self.gen_delete = self.get_doc_generator(self.num_items / 2,
+                                                 self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items + 1,
+                                                 self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        self.self.start_parallel_cruds(gen_create, gen_delete,
-                                       task_verification=True)
+        self.start_parallel_cruds(task_verification=True)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
@@ -160,12 +163,13 @@ class RebalanceOutTests(RebalanceBaseTest):
     def rebalance_out_with_failover(self):
         fail_over = self.input.param("fail_over", False)
         self.rest = RestConnection(self.cluster.master)
-        gen_delete = self.get_doc_generator(self.num_items / 2, self.num_items)
-        gen_create = self.get_doc_generator(self.num_items, self.num_items * 3 / 2)
+        self.gen_delete = self.get_doc_generator(self.num_items / 2,
+                                                 self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        self.self.start_parallel_cruds(gen_create, gen_delete,
-                                       task_verification=True)
+        self.self.start_parallel_cruds(task_verification=True)
         ejectedNode = self.cluster_util.find_node_info(self.cluster.master, self.cluster.servers[self.nodes_init - 1])
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
@@ -204,8 +208,10 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced the test is finished."""
 
     def rebalance_out_with_compaction_and_ops(self):
-        gen_delete = self.get_doc_generator(self.num_items / 2, self.num_items)
-        gen_create = self.get_doc_generator(self.num_items + 1, self.num_items * 3 / 2)
+        self.gen_delete = self.get_doc_generator(self.num_items / 2,
+                                                 self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items + 1,
+                                                 self.num_items * 3 / 2)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:1], [], servs_out)
@@ -214,7 +220,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             compaction_task.append(self.task.async_compact_bucket(self.cluster.master, bucket))
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        tasks_info = self.self.start_parallel_cruds(gen_create, gen_delete)
+        tasks_info = self.self.start_parallel_cruds()
         self.task.jython_task_manager.get_task_result(rebalance_task)
 
         self.bucket_util.verify_doc_op_task_exceptions(
@@ -280,11 +286,13 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced out of the cluster the test finishes."""
 
     def incremental_rebalance_out_with_ops(self):
-        gen_delete = self.get_doc_generator(self.num_items/2, self.num_items)
-        gen_create = self.get_doc_generator(self.num_items, self.num_items * 3 / 2)
+        self.gen_delete = self.get_doc_generator(self.num_items/2,
+                                                 self.num_items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items * 3 / 2)
         for i in reversed(range(1, self.num_servers, 2)):
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
-            tasks_info = self.start_parallel_cruds(gen_create, gen_delete)
+            tasks_info = self.start_parallel_cruds()
             self.task.jython_task_manager.get_task_result(rebalance_task)
 
             self.bucket_util.verify_doc_op_task_exceptions(
