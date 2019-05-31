@@ -1483,6 +1483,8 @@ class StatsWaitTask(Task):
             for _, conn in self.conns.items():
                 conn.close()
         if time.time() > timeout:
+            for shell in self.shellConnList:
+                shell.disconnect()
             self.set_exception("Could not verify stat {} within timeout {}"
                                .format(self.stat, self.timeout))
 
@@ -1498,6 +1500,8 @@ class StatsWaitTask(Task):
                 if tem_stat and tem_stat != "None":
                     stat_result += int(tem_stat)
         except Exception as error:
+            for shell in self.shellConnList:
+                shell.disconnect()
             self.set_exception(error)
             self.stop = True
             return False
@@ -2186,6 +2190,7 @@ class PrintClusterStats(Task):
                     self.test_log.info("{0} => {1}".format(cluster_node,
                                                            node_stats))
                 self.test_log.info("--- End of cluster statistics ---")
+                self.test_log.info("Sleeping in %s for %s seconds" % (self.thread_name, self.sleep))
                 time.sleep(self.sleep)
             except Exception as e:
                 self.test_log.error(e.message)

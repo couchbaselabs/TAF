@@ -28,7 +28,9 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.add_rbac_user()
         self.sleep(10)
         gen_create = self.get_doc_generator(0, self.num_items)
-        self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
+        self.print_cluster_stat = self.input.param("print_cluster_stat", False)
+        if self.print_cluster_stat:
+            self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_create, "create", 0,
@@ -52,7 +54,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.log.info("==========Finished rebalance base setup========")
 
     def tearDown(self):
-        if hasattr(self, "print_cluster_stat_task") and self.print_cluster_stat_task:
+        if self.print_cluster_stat:
             self.print_cluster_stat_task.end_task()
             self.task_manager.get_task_result(self.print_cluster_stat_task)
         self.cluster_util.print_cluster_stats()
