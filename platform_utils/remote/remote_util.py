@@ -187,7 +187,7 @@ class RemoteMachineShellConnection:
             self.bin_path = WIN_COUCHBASE_BIN_PATH
 
     def connect(self):
-        self.log.debug("Connecting to {0} with username: {1}, password: {2}"
+        self.log.info("Connecting to {0} with username: {1}, password: {2}"
                        .format(self.ip, self.username, self.password))
         self.jsch = JSch()
         self.session = self.jsch.getSession(self.username, self.ip, 22)
@@ -196,7 +196,7 @@ class RemoteMachineShellConnection:
         self.session.connect()
 
     def disconnect(self):
-        self.log.debug("Disconnecting ssh_client for {0}".format(self.ip))
+        self.log.info("Disconnecting ssh_client for {0}".format(self.ip))
         self.session.disconnect()
 
     """
@@ -1012,34 +1012,24 @@ class RemoteMachineShellConnection:
             # binary and then return True if binary is installed
 
     def get_file(self, remotepath, filename, todir="."):
-        jsch = JSch()
-        session = jsch.getSession(self.username, self.ip, 22)
-        session.setPassword(self.password)
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.connect()
-        channel = session.openChannel("sftp")
-        # errstream=channel.getErrStream()
+        channel = self.session.openChannel("sftp")
         channel.connect()
         channelSftp = channel
+        result = False
         try:
             channelSftp.cd(remotepath)
             if self.file_exists(remotepath, filename):
                 channelSftp.get('{0}/{1}'.format(remotepath, filename), todir)
                 channel.disconnect()
-                session.disconnect()
-                return True
+                result = True
             else:
                 os.system("cp {0}/{1} {2}".format(remotepath, filename, todir))
+        except:
+            pass
+        finally:
             channel.disconnect()
-            session.disconnect()
 
-        except JSchException:
-            channel.disconnect()
-            session.disconnect()
-        except SftpException:
-            channel.disconnect()
-            session.disconnect()
-        return False
+        return result
 
     def read_remote_file(self, remote_path, filename):
         if self.file_exists(remote_path, filename):
@@ -1070,28 +1060,19 @@ class RemoteMachineShellConnection:
         self.create_file(filepath, file_data)
 
     def remove_directory(self, remote_path):
+        result = False
         if self.remote:
-            jsch = JSch()
-            session = jsch.getSession(self.username, self.ip, 22)
-            session.setPassword(self.password)
-            session.setConfig("StrictHostKeyChecking", "no")
-            session.connect()
-            channel = session.openChannel("sftp")
-            # errstream=channel.getErrStream()
+            channel = self.session.openChannel("sftp")
             channel.connect()
             channelSftp = channel
             try:
                 channelSftp.rmdir(remote_path)
+                result = True
+            except:
+                pass
+            finally:
                 channel.disconnect()
-                session.disconnect()
-                return True
-            except JSchException:
-                channel.disconnect()
-                session.disconnect()
-            except SftpException:
-                channel.disconnect()
-                session.disconnect()
-            return False
+            return result
         else:
             try:
                 p = Popen("rm -rf {0}".format(remote_path), shell=True,
@@ -1114,14 +1095,16 @@ class RemoteMachineShellConnection:
         sftp.rmdir(remote_path)
 
     def remove_directory_recursive(self, remote_path):
+        result = False
         if self.remote:
             sftp = self._ssh_client.open_sftp()
             try:
                 self.log.info("%s - Removing {0} directory"
                               % (self.ip, remote_path))
                 self.rmtree(sftp, remote_path)
-            except IOError:
-                return False
+                result = True
+            except:
+                pass
             finally:
                 sftp.close()
         else:
@@ -1130,19 +1113,13 @@ class RemoteMachineShellConnection:
                           stdout=PIPE, stderr=PIPE)
                 p.communicate()
             except IOError:
-                return False
-        return True
+                result = False
+        return result
 
     def list_files(self, remote_path):
         files = []
         if self.remote:
-            jsch = JSch()
-            session = jsch.getSession(self.username, self.ip, 22)
-            session.setPassword(self.password)
-            session.setConfig("StrictHostKeyChecking", "no")
-            session.connect()
-            channel = session.openChannel("sftp")
-            # errstream=channel.getErrStream()
+            channel = self.session.openChannel("sftp")
             channel.connect()
             channelSftp = channel
             try:
@@ -1150,17 +1127,11 @@ class RemoteMachineShellConnection:
                 filenames = channelSftp.ls(remote_path)
                 for name in filenames:
                     files.append({'path': remote_path, 'file': name})
+            except:
+                pass
+            finally:
                 channel.disconnect()
-                session.disconnect()
-                return False
-            except JSchException:
-                channel.disconnect()
-                session.disconnect()
-                return []
-            except SftpException:
-                channel.disconnect()
-                session.disconnect()
-                return []
+            return files
         else:
             p = Popen("ls {0}".format(remote_path), shell=True,
                       stdout=PIPE, stderr=PIPE)
@@ -1172,12 +1143,7 @@ class RemoteMachineShellConnection:
          Check if file ending with this pattern is present in remote machine
         """
         files_matched = []
-        jsch = JSch()
-        session = jsch.getSession(self.username, self.ip, 22)
-        session.setPassword(self.password)
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.connect()
-        channel = session.openChannel("sftp")
+        channel = self.session.openChannel("sftp")
         # errstream=channel.getErrStream()
         channel.connect()
         channelSftp = channel
@@ -1190,7 +1156,6 @@ class RemoteMachineShellConnection:
         except SftpException:
             pass
         channel.disconnect()
-        session.disconnect()
 
         if len(files_matched) > 0:
             self.log.info("%s - Found these files %s"
@@ -1201,13 +1166,7 @@ class RemoteMachineShellConnection:
     # machine or not
     def file_starts_with(self, remotepath, pattern):
         files_matched = []
-        jsch = JSch()
-        session = jsch.getSession(self.username, self.ip, 22)
-        session.setPassword(self.password)
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.connect()
-        channel = session.openChannel("sftp")
-        # errstream=channel.getErrStream()
+        channel = self.session.openChannel("sftp")
         channel.connect()
         channelSftp = channel
         try:
@@ -1216,10 +1175,10 @@ class RemoteMachineShellConnection:
             for name in filenames:
                 if name.startswith(pattern):
                     files_matched.append("{0}/{1}".format(remotepath, name))
-        except SftpException:
+        except:
             pass
-        channel.disconnect()
-        session.disconnect()
+        finally:
+            channel.disconnect()
 
         if len(files_matched) > 0:
             self.log.info("%s - Found these files %s"
@@ -1227,52 +1186,33 @@ class RemoteMachineShellConnection:
         return files_matched
 
     def file_exists(self, remotepath, filename, pause_time=30):
-        jsch = JSch()
-        session = jsch.getSession(self.username, self.ip, 22)
-        session.setPassword(self.password)
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.connect()
-        channel = session.openChannel("sftp")
-        # errstream=channel.getErrStream()
+        channel = self.session.openChannel("sftp")
         channel.connect()
         channelSftp = channel
+        result = False
         try:
             channelSftp.cd(remotepath)
             filenames = channelSftp.ls(remotepath)
             for name in filenames:
                 if name.getFilename() == filename and int(name.getAttrs().getSize()) > 0:
                     channel.disconnect()
-                    session.disconnect()
-                    return True
+                    result = True
                 elif name.getFilename() == filename and int(name.getAttrs().getSize()) == 0:
                     if name.getFilename() == NR_INSTALL_LOCATION_FILE:
                         continue
                     self.log.info("%s - Deleting file %s"
                                   % (self.ip, filename))
                     channel.rm(remotepath + filename)
+        except:
+            pass
+        finally:
             channel.disconnect()
-            session.disconnect()
-            return False
-        except JSchException:
-            channel.disconnect()
-            session.disconnect()
-            return False
-        except SftpException:
-            channel.disconnect()
-            session.disconnect()
-            return False
+        return result
 
     def delete_file(self, remotepath, filename):
-        jsch = JSch()
-        session = jsch.getSession(self.username, self.ip, 22)
-        session.setPassword(self.password)
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.connect()
-        channel = session.openChannel("sftp")
-        # errstream=channel.getErrStream()
+        channel = self.session.openChannel("sftp")
         channel.connect()
         channelSftp = channel
-        # sftp = self._ssh_client.open_sftp()
         delete_file = False
         try:
             filenames = channelSftp.ls(remotepath)
@@ -1291,17 +1231,11 @@ class RemoteMachineShellConnection:
                         self.log.error("%s - Failed to remove %s"
                                        % (self.ip, filename))
                         delete_file = False
+        except:
+            pass
+        finally:
             channel.disconnect()
-            session.disconnect()
-            return delete_file
-        except JSchException:
-            channel.disconnect()
-            session.disconnect()
-            return False
-        except SftpException:
-            channel.disconnect()
-            session.disconnect()
-            return False
+        return delete_file
 
     def download_binary_in_win(self, url, version, msi_install=False):
         self.terminate_processes(self.info, [s for s in WIN_PROCESSES_KILLED])
@@ -1351,58 +1285,38 @@ class RemoteMachineShellConnection:
         return file_status
 
     def copy_file_local_to_remote(self, src_path, des_path):
-        jsch = JSch()
-        session = jsch.getSession(self.username, self.ip, 22)
-        session.setPassword(self.password)
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.connect()
-        channel = session.openChannel("sftp")
+        channel = self.session.openChannel("sftp")
         # errstream=channel.getErrStream()
         channel.connect()
         channelSftp = channel
+        result = False
         try:
             channelSftp.put(src_path, des_path)
+            result = True
+        except:
+            pass
+        finally:
             channel.disconnect()
-            session.disconnect()
-            return True
-        except JSchException:
-            channel.disconnect()
-            session.disconnect()
-            return False
-        except SftpException:
-            channel.disconnect()
-            session.disconnect()
-            return False
+
+        return result
 
     def copy_file_remote_to_local(self, rem_path, des_path):
-        jsch = JSch()
-        session = jsch.getSession(self.username, self.ip, 22)
-        session.setPassword(self.password)
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.connect()
-        channel = session.openChannel("sftp")
-        # errstream=channel.getErrStream()
+        channel = self.session.openChannel("sftp")
         channel.connect()
         channelSftp = channel
+        result = False
         try:
             channelSftp.get(rem_path, des_path)
+            result = True
+        except:
+            pass
+        finally:
             channel.disconnect()
-            session.disconnect()
-            return True
-        except JSchException:
-            channel.disconnect()
-            session.disconnect()
-            return False
-        except SftpException:
-            channel.disconnect()
-            session.disconnect()
-            return False
+        return result
 
-    # copy multi files from local to remote server
     def copy_files_local_to_remote(self, src_path, des_path):
         files = os.listdir(src_path)
         self.log.info("copy files from {0} to {1}".format(src_path, des_path))
-        # self.execute_batch_command("cp -r  {0}/* {1}".format(src_path, des_path))
         for tem_file in files:
             if tem_file.find("wget") != 1:
                 a = ""
@@ -1743,29 +1657,18 @@ class RemoteMachineShellConnection:
         os.remove(des_file)
 
     def create_directory(self, remote_path):
-        jsch = JSch()
-        session = jsch.getSession(self.username, self.ip, 22)
-        session.setPassword(self.password)
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.connect()
-        channel = session.openChannel("sftp")
-        # errstream=channel.getErrStream()
+        channel = self.session.openChannel("sftp")
         channel.connect()
         channelSftp = channel
+        result = False
         try:
             channelSftp.ls(remote_path)
-            channel.disconnect()
-            session.disconnect()
-        except JSchException:
-            channel.disconnect()
-            session.disconnect()
-            return False
         except SftpException:
             channelSftp.mkdir(remote_path)
+        finally:
             channel.disconnect()
-            session.disconnect()
-        else:
-            return True
+            result = True
+        return result
 
     # this function will remove the automation directory in windows
     def create_multiple_dir(self, dir_paths):
@@ -1779,9 +1682,10 @@ class RemoteMachineShellConnection:
                     else:
                         self.log.error("Can not delete {0} directory or directory {0} does not exist.".format(dir_path))
                 self.create_directory(dir_path)
-            sftp.close()
-        except IOError:
+        except:
             pass
+        finally:
+            sftp.close()
 
     def couchbase_upgrade(self, build, save_upgrade_config=False, forcefully=False):
         # upgrade couchbase server
@@ -3249,8 +3153,6 @@ class RemoteMachineShellConnection:
 #                 self.session.disconnect()
             except JSchException as e:
                 self.log.error("JSch exception on %s: %s" % (self.ip, str(e)))
-        self.log.debug("Command executed on {0}, Output: {1}"
-                  .format(self.ip, output))
         return output, error
 
     def execute_command_raw(self, command, debug=True, use_channel=False):
