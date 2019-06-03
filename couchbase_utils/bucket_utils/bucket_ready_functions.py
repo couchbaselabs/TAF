@@ -143,13 +143,13 @@ class BucketUtils:
 
     def wait_for_bucket_deletion(self, bucket, bucket_conn,
                                  timeout_in_seconds=120):
-        self.log.info('waiting for bucket deletion to complete....')
+        self.log.info("Waiting for bucket %s deletion to finish" % bucket.name)
         start = time.time()
         while (time.time() - start) <= timeout_in_seconds:
             if not self.bucket_exists(bucket):
                 return True
             else:
-                time.sleep(2)
+                self.sleep(2)
         return False
 
     def wait_for_bucket_creation(self, bucket, bucket_conn,
@@ -2010,10 +2010,10 @@ class BucketUtils:
         return False
 
     def _wait_warmup_completed(self, servers, bucket, wait_time=300):
+        self.log.info("Waiting for bucket %s to complete warmup" % bucket.name)
         warmed_up = False
         start = time.time()
         for server in servers:
-            """
             # Cbstats implementation to wait for bucket warmup
             warmed_up = False
             shell = RemoteMachineShellConnection(server)
@@ -2026,8 +2026,8 @@ class BucketUtils:
                 self.sleep(2, "Warmup not complete for %s on %s"
                            % (bucket.name, server.ip))
             shell.disconnect()
-            """
 
+            """
             # Try to get the stats for 5 minutes, else hit out.
             while time.time() - start < wait_time:
                 # Get the warm-up time for each server
@@ -2066,6 +2066,7 @@ class BucketUtils:
                     self.fail("Value of ep_warmup thread does not exist, exiting from this server")
                 time.sleep(5)
             mc.close()
+            """
         return warmed_up
 
     def add_rbac_user(self, testuser=None, rolelist=None, node=None):
