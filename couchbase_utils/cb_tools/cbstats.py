@@ -128,7 +128,7 @@ class Cbstats(CbCmdBase):
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        pattern = "[ \t]*{0}[ \t]*:[ \t]+([0-9]+)".format(field_to_grep)
+        pattern = "[ \t]*{0}[ \t]*:[ \t]+([a-zA-Z0-9]+)".format(field_to_grep)
         regexp = re.compile(pattern)
         for line in output:
             match_result = regexp.match(line)

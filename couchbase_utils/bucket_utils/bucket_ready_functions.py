@@ -27,6 +27,7 @@ from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from bucket_utils.Bucket import Bucket
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
@@ -90,12 +91,18 @@ class BucketUtils:
             raise(Exception(msg))
 
     # Fetch/Create/Delete buckets
-    def create_bucket(self, bucket):
+    def create_bucket(self, bucket, wait_for_warmup=True):
         if not isinstance(bucket, Bucket):
             raise Exception("Create bucket needs Bucket object as parameter")
+        self.log.info("Creating bucket: %s" % bucket.name)
         _task = BucketCreateTask(self.cluster.master, bucket)
         self.task_manager.add_new_task(_task)
         result = self.task_manager.get_task_result(_task)
+        if wait_for_warmup:
+            warmed_up = self._wait_warmup_completed(
+                self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+            if not warmed_up:
+                raise("Bucket %s not warmed up" % bucket.name)
         if result:
             self.buckets.append(bucket)
         else:
@@ -190,7 +197,7 @@ class BucketUtils:
 
     def create_default_bucket(self, bucket_type=Bucket.bucket_type.MEMBASE,
                               ram_quota=None, replica=1, maxTTL=0,
-                              compression_mode="off"):
+                              compression_mode="off", wait_for_warmup=True):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ramQuotaMB = ram_quota
@@ -206,7 +213,7 @@ class BucketUtils:
                                  Bucket.replicaNumber: replica,
                                  Bucket.compressionMode: compression_mode,
                                  Bucket.maxTTL: maxTTL})
-        self.create_bucket(default_bucket)
+        self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
 
@@ -2002,17 +2009,31 @@ class BucketUtils:
             return True
         return False
 
-    def _wait_warmup_completed(self, servers, bucket_name, wait_time=300):
+    def _wait_warmup_completed(self, servers, bucket, wait_time=300):
         warmed_up = False
+        start = time.time()
         for server in servers:
-            mc = None
-            start = time.time()
+            """
+            # Cbstats implementation to wait for bucket warmup
+            warmed_up = False
+            shell = RemoteMachineShellConnection(server)
+            cbstat_obj = Cbstats(shell)
+            while time.time() - start < wait_time:
+                result = cbstat_obj.all_stats(bucket.name, "ep_warmup_thread")
+                if result == "complete":
+                    warmed_up = True
+                    break
+                self.sleep(2, "Warmup not complete for %s on %s"
+                           % (bucket.name, server.ip))
+            shell.disconnect()
+            """
+
             # Try to get the stats for 5 minutes, else hit out.
             while time.time() - start < wait_time:
-                # Get the wamrup time for each server
+                # Get the warm-up time for each server
                 try:
                     mc = MemcachedClientHelper.direct_client(server,
-                                                             bucket_name)
+                                                             bucket)
                     stats = mc.stats()
                     if stats is not None and 'ep_warmup_thread' in stats \
                             and stats['ep_warmup_thread'] == 'complete':
