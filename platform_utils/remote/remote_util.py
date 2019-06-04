@@ -55,7 +55,6 @@ except ImportError:
              "paramiko due to import error. "
              "ssh connections to remote machines will fail!")
 
-
 class RemoteMachineInfo(object):
     def __init__(self):
         self.type = ''
@@ -146,8 +145,11 @@ class RemoteMachineHelper(object):
 
 
 class RemoteMachineShellConnection:
+    connections = 0
+    disconnections = 0
 
     def __init__(self, serverInfo):
+        RemoteMachineShellConnection.connections += 1
         self.jsch = None
         self.session = None
         self.input = TestInput.TestInputParser.get_test_input(sys.argv)
@@ -198,6 +200,7 @@ class RemoteMachineShellConnection:
     def disconnect(self):
         self.log.info("Disconnecting ssh_client for {0}".format(self.ip))
         self.session.disconnect()
+        RemoteMachineShellConnection.disconnections += 1
 
     """
         In case of non root user, we need to switch to root to
