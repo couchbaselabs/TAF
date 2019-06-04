@@ -1666,11 +1666,29 @@ class RemoteMachineShellConnection:
         result = False
         try:
             channelSftp.ls(remote_path)
+            result = True
         except SftpException:
             channelSftp.mkdir(remote_path)
+            result = True
+        except SftpException:
+            self.log.debug("Creating Directory...")
+            complPath = remote_path.split("/")
+            channelSftp.cd("/")
+            for dir in complPath:
+                if dir:
+                    try:
+                        self.log.debug("Current Dir : " + channelSftp.pwd())
+                        channelSftp.cd(dir)
+                    except:
+                        channelSftp.mkdir(dir)
+                        self.give_directory_permissions_to_couchbase(dir)
+                        channelSftp.cd(dir)
+            result = True
+        except:
+            result = False
+            pass
         finally:
             channel.disconnect()
-            result = True
         return result
 
     # this function will remove the automation directory in windows

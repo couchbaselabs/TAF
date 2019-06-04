@@ -519,9 +519,9 @@ class MembaseServerInstaller(Installer):
             build = self.build_url(params)
             remote_client.download_binary_in_win(build.url,
                                                  params["version"])
-            success = remote_client.install_server_win(build, params[
-                "version"], \
-                                                       vbuckets=vbuckets)
+            success = remote_client.install_server_win(
+                build, params["version"],
+                vbuckets=vbuckets)
         else:
             downloaded = remote_client.download_build(build)
             if not downloaded:
@@ -529,8 +529,8 @@ class MembaseServerInstaller(Installer):
                           '0}' \
                           .format(build.url, params["server"].ip))
                 return False
-            path = server.data_path or '/tmp'
-            success &= remote_client.install_server(build, path=path,
+
+            success &= remote_client.install_server(build,
                                                     vbuckets=vbuckets, \
                                                     swappiness=swappiness,
                                                     openssl=openssl)
