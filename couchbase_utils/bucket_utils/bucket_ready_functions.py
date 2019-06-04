@@ -2020,7 +2020,7 @@ class BucketUtils:
             cbstat_obj = Cbstats(shell)
             while time.time() - start < wait_time:
                 result = cbstat_obj.all_stats(bucket.name, "ep_warmup_thread")
-                if result == "complete":
+                if result is not None and result == "complete":
                     warmed_up = True
                     break
                 self.sleep(2, "Warmup not complete for %s on %s"
