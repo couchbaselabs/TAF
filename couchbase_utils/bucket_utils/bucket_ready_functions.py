@@ -2012,6 +2012,10 @@ class BucketUtils:
         return False
 
     def _wait_warmup_completed(self, servers, bucket, wait_time=300):
+        # Return True, if bucket_type is not equal to MEMBASE
+        if bucket.bucketType != Bucket.bucket_type.MEMBASE:
+            return True
+
         self.log.info("Waiting for bucket %s to complete warmup" % bucket.name)
         warmed_up = False
         start = time.time()

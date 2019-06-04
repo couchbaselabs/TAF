@@ -35,7 +35,8 @@ class basic_ops(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.create_default_bucket(
-            replica=self.num_replicas, compression_mode=self.compression_mode)
+            replica=self.num_replicas, compression_mode=self.compression_mode,
+            bucket_type=self.bucket_type)
         self.bucket_util.add_rbac_user()
 
         # self.src_bucket = RestConnection(self.cluster.master).get_buckets()

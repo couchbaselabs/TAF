@@ -4,6 +4,7 @@ import time
 import traceback
 import unittest
 
+from BucketLib.bucket import Bucket
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from membase.api.rest_client import RestHelper, RestConnection
@@ -47,7 +48,8 @@ class BaseTestCase(unittest.TestCase):
         # End of cluster info parameters
 
         # Bucket specific params
-        self.bucket_type = self.input.param("bucket_type", "membase")
+        self.bucket_type = self.input.param("bucket_type",
+                                            Bucket.bucket_type.MEMBASE)
         self.bucket_size = self.input.param("bucket_size", None)
         self.standard_buckets = self.input.param("standard_buckets", 1)
         self.vbuckets = self.input.param("vbuckets", 1024)
