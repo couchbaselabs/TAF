@@ -492,7 +492,7 @@ def main():
                 print result["name"], " pass"
         if fail_count > 0:
             sys.exit(1)
-
+    sys.exit(0)
 
 def testfunc():
     pass
