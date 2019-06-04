@@ -85,16 +85,16 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
                                    self.num_items+self.crud_batch_size,
-                                   vbuckets=target_vbuckets)
+                                   target_vbucket=target_vbuckets)
         gen_delete = doc_generator(self.key, 0,
                                    int(self.num_items/3),
-                                   vbuckets=target_vbuckets)
+                                   target_vbucket=target_vbuckets)
         gen_read = doc_generator(self.key, int(self.num_items/3),
                                  self.num_items,
-                                 vbuckets=target_vbuckets)
+                                 target_vbucket=target_vbuckets)
         gen_update = doc_generator(self.key, int(self.num_items/2),
                                    self.num_items,
-                                   vbuckets=target_vbuckets)
+                                   target_vbucket=target_vbuckets)
 
         self.log.info("Starting parallel doc_ops - Create/Read/Update/Delete")
         tasks.append(self.task.async_load_gen_docs(
@@ -123,7 +123,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
 
         # Update num_items value accordingly to the CRUD performed
-        self.num_items += self.crud_batch_size - int(self.num_items/3)
+        self.num_items += len(gen_create.doc_keys) - len(gen_delete.doc_keys)
 
         # Wait for document_loader tasks to complete
         for task in tasks:
@@ -168,6 +168,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         client.close()
 
         # Fetch latest failover stats and validate the values are updated
+        self.log.info("Validating failover and seqno cbstats")
         for node in target_nodes:
             vb_info_info["afterCrud"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
@@ -191,6 +192,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.assertTrue(val, msg="vbucket seq_no not updated after CRUDs")
 
         # Verify doc count
+        self.log.info("Validating doc count")
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.validate_test_failure()
