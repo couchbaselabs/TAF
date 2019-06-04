@@ -34,6 +34,8 @@ import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 
 
 class SDKClient(object):
+    sdk_connections = 0
+    sdk_disconnections = 0
     """
     Java SDK Client Implementation for testrunner - master branch
     """
@@ -61,6 +63,7 @@ class SDKClient(object):
         self.default_timeout = 0
         self.cluster = None
         self._createConn()
+        SDKClient.sdk_connections += 1
 
     def _createConn(self):
         try:
@@ -89,6 +92,7 @@ class SDKClient(object):
             self.cluster.shutdown()
             self.cluster.environment().shutdown()
             self.log.debug("Closed down Cluster Connection")
+            SDKClient.sdk_disconnections += 1
 
     def delete(self, key, persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",

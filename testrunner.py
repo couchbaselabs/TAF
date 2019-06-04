@@ -18,6 +18,7 @@ import unittest
 import urllib2
 
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils", "platform_utils", "connections"] + sys.path
+from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputParser, TestInputSingleton
 from scripts.collect_server_info import cbcollectRunner, couch_dbinfo_Runner
@@ -422,9 +423,11 @@ def main():
                 print ("========TEST WAS STOPPED DUE TO  TIMEOUT=========")
                 result.errors = [(name, "Test was stopped due to timeout")]
         time_taken = time.time() - start_time
-        print("During the test, Connections: %s, Disconnections: %s" %
+        print("During the test, Remote Connections: %s, Disconnections: %s" %
               (RemoteMachineShellConnection.connections,
                RemoteMachineShellConnection.disconnections))
+        print("SDK Connections: %s, Disconnections: %s" % 
+              (SDKClient.sdk_connections, SDKClient.sdk_disconnections))
         # Concat params to test name
         # To make tests more readable
         params = ''
