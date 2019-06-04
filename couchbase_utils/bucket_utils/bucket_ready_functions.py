@@ -393,11 +393,13 @@ class BucketUtils:
         # Create Tasks to verify total items/replica count in the bucket
         stats_tasks.append(self.task.async_wait_for_stats(
             shell_conn_list, bucket, stat_cmd,
-            'vb_replica_curr_items', '==', items * available_replicas))
+            'vb_replica_curr_items', '==', items * available_replicas,
+            timeout=timeout))
         self.sleep(5)
         stats_tasks.append(self.task.async_wait_for_stats(
             shell_conn_list, bucket, stat_cmd,
-            'curr_items_tot', '==', items * (available_replicas + 1)))
+            'curr_items_tot', '==', items * (available_replicas + 1),
+            timeout=timeout))
         try:
             for task in stats_tasks:
                 self.task_manager.get_task_result(task)

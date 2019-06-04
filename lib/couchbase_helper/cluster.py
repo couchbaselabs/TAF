@@ -314,7 +314,7 @@ class ServerTasks(object):
         return _task
 
     def async_wait_for_stats(self, shell_conn_list, bucket, stat_cmd, stat,
-                             comparison, value):
+                             comparison, value, timeout=60):
         """
         Asynchronously wait for stats
 
@@ -331,13 +331,15 @@ class ServerTasks(object):
           stat       - The stat that we want to get the value from. (String)
           comparison - How to compare the stat result to the value specified.
           value      - The value to compare to.
+          timeout    - Timeout for stat verification task
 
         Returns:
           RebalanceTask - Task future that is a handle to the scheduled task
         """
         self.log.debug("Starting StatsWaitTask for %s on bucket %s" % (stat, bucket.name))
         _task = jython_tasks.StatsWaitTask(shell_conn_list, bucket, stat_cmd,
-                                           stat, comparison, value)
+                                           stat, comparison, value,
+                                           timeout=timeout)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
