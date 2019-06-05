@@ -329,7 +329,6 @@ public class doc_ops {
 		ReplicateTo replicateto = this.getReplicateTo(replicateTo);
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
-		System.out.println(durabilitylevel);
 		if (persistTo != 0 || replicateTo !=0) {
 			return RemoveOptions.removeOptions().durability(persistto, replicateto).timeout(timeout);
 		}
@@ -392,7 +391,7 @@ public class doc_ops {
 		if (durabilityLevel.equalsIgnoreCase("PERSIST_TO_MAJORITY")) {
 			return DurabilityLevel.PERSIST_TO_MAJORITY;
 		}
-		
+
 		return DurabilityLevel.NONE;
 	}
 
