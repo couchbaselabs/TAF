@@ -336,8 +336,8 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  self.num_items)
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
-        rebalance_task = [self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, [])]
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], servs_in, [])
 
         for bucket in self.bucket_util.buckets:
             compaction_tasks.append(self.task.async_compact_bucket(
