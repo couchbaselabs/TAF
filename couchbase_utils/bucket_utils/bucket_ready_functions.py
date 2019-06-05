@@ -726,7 +726,7 @@ class BucketUtils:
     def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
                                     check_ep_items_remaining=False,
-                                    timeout=360):
+                                    timeout=60):
         """
         Waits for queues to drain on all servers and buckets in a cluster.
 
@@ -749,14 +749,16 @@ class BucketUtils:
                     continue
                 tasks.append(self.task.async_wait_for_stats(
                     [shell_conn], bucket, stat_cmd,
-                    'ep_queue_size', ep_queue_size_cond, ep_queue_size))
+                    'ep_queue_size', ep_queue_size_cond, ep_queue_size,
+                    timeout=timeout))
                 if check_ep_items_remaining:
                     stat_cmd = 'dcp'
                     ep_items_remaining = 'ep_{0}_items_remaining' \
                                          .format(stat_cmd)
                     tasks.append(self.task.async_wait_for_stats(
                         [shell_conn], bucket, stat_cmd,
-                        ep_items_remaining, "==", 0))
+                        ep_items_remaining, "==", 0,
+                        timeout=timeout))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
             for shell in task.shellConnList:

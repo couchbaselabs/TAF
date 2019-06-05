@@ -685,7 +685,7 @@ class DataCollector(object):
 
             example:: unacked_bytes in dcp
         """
-        bucketMap = {}
+        bucketMap = dict()
         for bucket in buckets:
             bucketMap[bucket.name] = True
         for bucket in buckets:
@@ -693,13 +693,13 @@ class DataCollector(object):
                 client = MemcachedClientHelper.direct_client(server, bucket)
                 stats = client.stats('dcp')
                 for key in stats.keys():
-                    filter = False
+                    do_filter = False
                     if stat_name in key:
                         for filter_key in filter_list:
                             if filter_key in key:
-                                filter = True
+                                do_filter = True
                         value = int(stats[key])
-                        if not filter:
+                        if not do_filter:
                             if value != compare_value:
                                 if "eq_dcpq:mapreduce_view" in key:
                                     if value >= flow_control_buffer_size:

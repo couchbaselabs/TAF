@@ -39,13 +39,12 @@ class RebalanceBaseTest(BaseTestCase):
                 process_concurrency=8, retries=self.sdk_retries,
                 durability=self.durability_level)
             self.task.jython_task_manager.get_task_result(task)
-            self.sleep(20)
-            current_item = self.bucket_util.get_bucket_current_item_count(
-                self.cluster, bucket)
-            self.num_items = current_item
-            self.log.info("Inserted {} number of items after loadgen"
-                          .format(self.num_items))
-        self.gen_load = self.get_doc_generator(0, self.num_items)
+
+        self.log.info("Verifying num_items counts after doc_ops")
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.log.info("Inserted '%d' doc items" % self.num_items)
+
         # Initialize doc_generators
         self.gen_create = None
         self.gen_delete = None
