@@ -40,8 +40,8 @@ class DurabilityTestsBase(BaseTestCase):
             bucket_type=self.bucket_type)
         self.bucket_util.add_rbac_user()
 
+        self.cluster_util.print_cluster_stats()
         self.bucket = self.bucket_util.buckets[0]
-
         self.log.info("Creating doc_generator..")
         doc_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,

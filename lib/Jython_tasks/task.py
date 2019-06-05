@@ -510,19 +510,24 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
             if fail:
+                failed_item_table = TableView()
+                failed_item_table.set_headers(["Doc_Key", "Exception"])
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
                     self.test_log.error(e)
-                self.test_log.warning("Trying to read values {0} after failure"
-                                      .format(fail.__str__()))
+                self.test_log.debug("Trying to read values {0} after failure"
+                                    .format(fail.__str__()))
                 read_map = self.batch_read(fail.keys())
                 for key, value in fail.items():
                     if key in read_map and read_map[key]["cas"] != 0:
                         success[key] = value
                         success[key].pop("error")
                         fail.pop(key)
-                self.test_log.error("Failed items after reads {}".format(fail.__str__()))
+                    else:
+                        failed_item_table.add_row([key, value['error']])
+                self.test_log.error("Failed items after reads:")
+                failed_item_table.display()
             return success, fail
         except Exception as error:
             self.test_log.error(error)
@@ -543,20 +548,24 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit,
                 retry=self.retries, doc_type=doc_type, durability=durability)
             if fail:
+                failed_item_table = TableView()
+                failed_item_table.set_headers(["Doc_Key", "Exception"])
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
                     self.test_log.error(e)
-                self.test_log.warning("Trying to read values {0} after failure"
-                                      .format(fail.__str__()))
+                self.test_log.debug("Trying to read values {0} after failure"
+                                    .format(fail.__str__()))
                 read_map = self.batch_read(fail.keys())
                 for key, value in fail.items():
                     if key in read_map and read_map[key]["cas"] != 0:
                         success[key] = value
                         success[key].pop("error")
                         fail.pop(key)
-                self.test_log.error("Failed items after reads {}"
-                                    .format(fail.__str__()))
+                    else:
+                        failed_item_table.add_row([key, value['error']])
+                self.test_log.error("Failed items after reads:")
+                failed_item_table.display()
             return success, fail
         except Exception as error:
             self.test_log.error(error)

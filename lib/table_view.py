@@ -38,6 +38,10 @@ class TableView:
         print(row_buffer)
 
     def display(self):
+        # Nothing to display if there are no data rows
+        if len(self.rows) == 0:
+            return
+
         # Set max_width of each cell using headers
         max_widths = [len(header) for header in self.headers]
 
