@@ -20,7 +20,6 @@ class RebalanceBaseTest(BaseTestCase):
         self.default_view = View(self.default_view_name, self.defaul_map_func, None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-        self.print_cluster_stat = self.input.param("print_cluster_stat", False)
         self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -29,8 +28,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.add_rbac_user()
         self.sleep(10)
         self.gen_create = self.get_doc_generator(0, self.num_items)
-        if self.print_cluster_stat:
-            self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
+        self.cluster_util.print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, self.gen_create, "create", 0,
@@ -56,9 +54,6 @@ class RebalanceBaseTest(BaseTestCase):
         self.log.info("==========Finished rebalance base setup========")
 
     def tearDown(self):
-        if self.print_cluster_stat:
-            self.print_cluster_stat_task.end_task()
-            self.task_manager.get_task_result(self.print_cluster_stat_task)
         self.cluster_util.print_cluster_stats()
         super(RebalanceBaseTest, self).tearDown()
 

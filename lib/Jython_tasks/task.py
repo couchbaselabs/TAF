@@ -33,6 +33,7 @@ import com.couchbase.test.transactions.SimpleTransaction as Transaction
 import com.couchbase.client.java.json.JsonObject as JsonObject
 from com.couchbase.client.java.kv import ReplicaMode
 from Jython_tasks.task_manager import TaskManager
+from table_view import TableView
 
 
 class Task(Callable):
@@ -138,6 +139,19 @@ class RebalanceTask(Task):
         self.old_vbuckets = {}
         self.thread_used = "Rebalance_task"
 
+        cluster_stats = self.rest.get_cluster_stats()
+        self.table = TableView()
+        self.table.set_headers(["Nodes", "Services", "Status"])
+        for node in servers:
+            self.table.add_row(
+                [node.ip,
+                 cluster_stats[node.ip+":"+node.port]["services"],
+                 "Cluster node"])
+        for node in to_remove:
+            self.table.add_row([node.ip,
+                                cluster_stats[node.ip+node.port]["services"],
+                                "--- OUT --->"])
+
     def __str__(self):
         if self.exception:
             return "[%s] %s download error %s in %.2fs" % \
@@ -182,6 +196,8 @@ class RebalanceTask(Task):
                     self.test_log.debug("This is swap rebalance and we will monitor vbuckets shuffling")
             self.add_nodes()
             self.start_rebalance()
+            self.test_log.info("Rebalance Overview")
+            self.table.display()
             self.check()
             # self.task_manager.schedule(self)
         except Exception as e:
@@ -198,8 +214,7 @@ class RebalanceTask(Task):
         services_for_node = None
         node_index = 0
         for node in self.to_add:
-            self.test_log.debug("Adding node {0}:{1} to cluster"
-                                .format(node.ip, node.port))
+            self.table.add_row([node.ip, services_for_node, "<--- IN ---"])
             if self.services is not None:
                 services_for_node = [self.services[node_index]]
                 node_index += 1
@@ -2170,35 +2185,6 @@ class DropIndexTask(Task):
         # catch and set all unexpected exceptions
         except Exception as e:
             self.set_exception(e)
-
-
-class PrintClusterStats(Task):
-    def __init__(self, node, sleep=5):
-        super(PrintClusterStats, self).__init__("print_cluster_stats")
-        self.node = node
-        self.sleep = sleep
-        self.stop_task = False
-
-    def call(self):
-        self.start_task()
-        rest = RestConnection(self.node)
-        while not self.stop_task:
-            try:
-                cluster_stat = rest.get_cluster_stats()
-                self.test_log.info("------- Cluster statistics -------")
-                for cluster_node, node_stats in cluster_stat.items():
-                    self.test_log.info("{0} => {1}".format(cluster_node,
-                                                           node_stats))
-                self.test_log.info("--- End of cluster statistics ---")
-                self.test_log.info("Sleeping in %s for %s seconds" % (self.thread_name, self.sleep))
-                time.sleep(self.sleep)
-            except Exception as e:
-                self.test_log.error(e.message)
-                time.sleep(self.sleep)
-        self.complete_task()
-
-    def end_task(self):
-        self.stop_task = True
 
 
 class PrintOpsRate(Task):

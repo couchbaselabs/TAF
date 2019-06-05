@@ -1313,7 +1313,7 @@ class RestConnection(object):
         api = self.baseUrl + "controller/rebalance"
         status, content, header = self._http_request(api, 'POST', params)
         if status:
-            self.test_log.info('Rebalance operation started')
+            self.test_log.debug('Rebalance operation started')
         else:
             self.test_log.error('Rebalance operation failed: {0}'.format(content))
             # extract the error

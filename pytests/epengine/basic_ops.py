@@ -43,6 +43,7 @@ class basic_ops(BaseTestCase):
         self.src_bucket = self.bucket_util.get_all_buckets()
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
+        self.cluster_util.print_cluster_stats()
         self.log.info("==========Finished Basic_ops base setup========")
 
     def tearDown(self):
@@ -316,7 +317,6 @@ class basic_ops(BaseTestCase):
         self.doc_size *= 1024000
         gens_load = self.generate_docs_bigdata(
             docs_per_day=self.num_items, document_size=self.doc_size)
-        self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gens_load, "create", 0,
@@ -336,7 +336,6 @@ class basic_ops(BaseTestCase):
         # check with compression_mode as active, passive and off
         gens_load = self.generate_docs_bigdata(
             docs_per_day=1, document_size=(self.doc_size * 1024000))
-        self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gens_load, "create", 0,

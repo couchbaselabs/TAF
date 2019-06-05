@@ -12,7 +12,8 @@ import testconstants
 from couchbase_cli import CouchbaseCLI
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
-from Jython_tasks.task import PrintClusterStats, MonitorActiveTask
+from table_view import TableView
+from Jython_tasks.task import MonitorActiveTask
 from TestInput import TestInputSingleton
 
 
@@ -648,19 +649,22 @@ class ClusterUtils:
 
         helper = RestHelper(self.rest)
         try:
-            removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
-                                          ejectedNodes=[node.id for node in otpnode],
-                                          wait_for_rebalance=wait_for_rebalance)
+            removed = helper.remove_nodes(
+                knownNodes=[node.id for node in nodes],
+                ejectedNodes=[node.id for node in otpnode],
+                wait_for_rebalance=wait_for_rebalance)
         except Exception as e:
             self.log.error("First time rebalance failed on Removal. "
                            "Wait and try again. THIS IS A BUG.")
             time.sleep(5)
-            removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
-                                          ejectedNodes=[node.id for node in otpnode],
-                                          wait_for_rebalance=wait_for_rebalance)
+            removed = helper.remove_nodes(
+                knownNodes=[node.id for node in nodes],
+                ejectedNodes=[node.id for node in otpnode],
+                wait_for_rebalance=wait_for_rebalance)
         if wait_for_rebalance:
             removed
-#             self.assertTrue(removed, "Rebalance operation failed while removing %s,"%otpnode)
+            # self.assertTrue(removed,
+            # "Rebalance operation failed while removing %s,"%otpnode)
 
     def get_victim_nodes(self, nodes, master=None, chosen=None,
                          victim_type="master", victim_count=1):
@@ -673,17 +677,24 @@ class ClusterUtils:
         return victim_nodes
 
     def print_cluster_stats(self):
+        self.log.info("Cluster statistics")
+        table = TableView()
+        table.set_headers(["Node", "Services", "CPU_utilization",
+                           "Mem_total", "Mem_free",
+                           "Swap_mem_total", "Swap_mem_used"])
         rest = RestConnection(self.cluster.master)
         cluster_stat = rest.get_cluster_stats()
-        self.log.info("------- Cluster statistics -------")
         for cluster_node, node_stats in cluster_stat.items():
-            self.log.info("{0} => {1}".format(cluster_node, node_stats))
-        self.log.info("--- End of cluster statistics ---")
-
-    def async_print_cluster_stats(self, sleep=60):
-        _task = PrintClusterStats(self.cluster.master, sleep)
-        self.task_manager.add_new_task(_task)
-        return _task
+            row = list()
+            row.append(cluster_node.split(':')[0])
+            row.append(str(node_stats["services"]))
+            row.append(str(node_stats["cpu_utilization"]))
+            row.append(str(node_stats["mem_total"]))
+            row.append(str(node_stats["mem_free"]))
+            row.append(str(node_stats["swap_mem_total"]))
+            row.append(str(node_stats["swap_mem_used"]))
+            table.add_row(row)
+        table.display()
 
     def verify_replica_distribution_in_zones(self, nodes):
         """

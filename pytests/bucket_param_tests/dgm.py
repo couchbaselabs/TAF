@@ -20,7 +20,7 @@ class Bucket_DGM_Tests(BaseTestCase):
         doc_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, vbuckets=self.vbuckets)
-        self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
+        self.cluster_util.print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_create, "create", 0,
