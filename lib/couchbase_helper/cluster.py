@@ -176,23 +176,25 @@ class ServerTasks(object):
                                        exp=0, flag=0, persist_to=0, replicate_to=0,
                                        only_store_hash=True, batch_size=1, pause_secs=1,
                                         timeout_secs=5, compression=True,
-                            process_concurrency=1, retries=5,
-                            transaction_timeout=5, commit=True, durability=0):
+                            process_concurrency=1, retries=5, update_count=1,
+                            transaction_timeout=5, commit=True, durability=0, sync=True):
 
-        self.log.debug("Loading documents")
+        self.log.info("Loading documents ")
         bucket_list=[]
         client_list=[]
         for bucket in buckets:
             client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
             client_list.append(client)
             bucket_list.append(client.collection)
+        
         _task = jython_tasks.Atomicity(cluster, self.jython_task_manager, bucket_list, client, client_list, [generator],
                                                         op_type, exp, flag=flag, persist_to=persist_to,
                                                         replicate_to=replicate_to, only_store_hash=only_store_hash,
                                                         batch_size=batch_size,
                                                         pause_secs=pause_secs, timeout_secs=timeout_secs,
                                                         compression=compression,
-                                                        process_concurrency=process_concurrency, retries=retries,transaction_timeout=transaction_timeout, commit=commit, durability=durability)
+                                                        process_concurrency=process_concurrency, retries=retries, update_count=update_count, 
+                                                        transaction_timeout=transaction_timeout, commit=commit, durability=durability, sync=sync)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

@@ -232,7 +232,8 @@ class FailoverTests(FailoverBaseTest):
         """ Method to run rebalance after failover and verify """
         # Need a delay > min because MB-7168
         _servers_ = self.filter_servers(self.servers, chosen)
-        self.bucket_util._wait_for_stats_all_buckets(
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets(
             check_ep_items_remaining=True)
         self.sleep(5, "after failover before invoking rebalance...")
         # Rebalance after Failover operation
@@ -265,7 +266,8 @@ class FailoverTests(FailoverBaseTest):
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
         #  Drain Queue and make sure intra-cluster replication is complete
         self.log.info("Begin VERIFICATION for Rebalance after Failover Only")
-        self.bucket_util.verify_cluster_stats(self.num_items, self.master,
+        if not self.atomicity:
+            self.bucket_util.verify_cluster_stats(self.num_items, self.master,
                                               check_bucket_stats=True,
                                               check_ep_items_remaining=True)
         # Verify all data set with meta data if failover happens after failover
@@ -305,7 +307,8 @@ class FailoverTests(FailoverBaseTest):
         verificaiton steps
         """
         _servers_ = self.filter_servers(self.servers, chosen)
-        self.bucket_util._wait_for_stats_all_buckets(
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets(
             check_ep_items_remaining=True)
         recoveryTypeMap = self.define_maps_during_failover(self.recoveryType)
         fileMapsForVerification = self.create_file(chosen, self.buckets,
@@ -364,13 +367,15 @@ class FailoverTests(FailoverBaseTest):
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
 
         # Drain ep_queue & make sure that intra-cluster replication is complete
-        self.bucket_util._wait_for_stats_all_buckets(
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets(
             check_ep_items_remaining=True)
 
         self.log.info("Begin VERIFICATION for Add-back and rebalance")
 
         # Verify Stats of cluster and Data is max_verify > 0
-        self.bucket_util.verify_cluster_stats(self.servers, self.master,
+        if not self.atomicity:
+            self.bucket_util.verify_cluster_stats(self.servers, self.master,
                                               check_bucket_stats=True,
                                               check_ep_items_remaining=True)
 
@@ -589,21 +594,43 @@ class FailoverTests(FailoverBaseTest):
         # self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
 
     def load_all_buckets(self, gen, op):
-        tasks = []
-        for bucket in self.bucket_util.buckets:
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket, gen, op, 0, batch_size=20,
-                process_concurrency=1,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout))
-        for task in tasks:
+        if self.atomicity:
+            task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
+                                             gen, op , exp=0,
+                                             batch_size=10,
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+                                             retries=self.sdk_retries, transaction_timeout=self.transaction_timeout,
+                                             commit=self.transaction_commit, durability=self.durability_level)
             self.task.jython_task_manager.get_task_result(task)
+        else:
+            tasks = []
+            for bucket in self.bucket_util.buckets:
+                tasks.append(self.task.async_load_gen_docs(
+                    self.cluster, bucket, gen, op, 0, batch_size=20,
+                    process_concurrency=1,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout))
+            for task in tasks:
+                self.task.jython_task_manager.get_task_result(task)
 
     def load_initial_data(self):
         """ Method to run operations Update/Delete/Create """
         # Load All Buckets if num_items > 0
-        self.load_all_buckets(self.gen_initial_create, "create")
-        self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True)
+        if self.atomicity:
+            task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
+                                             self.gen_initial_create, "create" , exp=0,
+                                             batch_size=10,
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+                                             retries=self.sdk_retries, transaction_timeout=self.transaction_timeout, 
+                                             commit=self.transaction_commit, durability=self.durability_level)
+            self.task.jython_task_manager.get_task_result(task)
+        else:
+            self.load_all_buckets(self.gen_initial_create, "create")
+            self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True)
         # self.bucket_util._verify_stats_all_buckets(self.servers, timeout=120)
 
     def run_mutation_operations(self):

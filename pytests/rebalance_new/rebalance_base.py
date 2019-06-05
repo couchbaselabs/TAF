@@ -20,29 +20,39 @@ class RebalanceBaseTest(BaseTestCase):
         self.default_view = View(self.default_view_name, self.defaul_map_func, None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
+        self.print_cluster_stat = self.input.param("print_cluster_stat", False)
         self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
-        self.sleep(60)
+        self.sleep(10)
         self.gen_create = self.get_doc_generator(0, self.num_items)
-        self.cluster_util.print_cluster_stats()
-        for bucket in self.bucket_util.buckets:
-            task = self.task.async_load_gen_docs(
-                self.cluster, bucket, self.gen_create, "create", 0,
-                persist_to=self.persist_to, replicate_to=self.replicate_to,
-                batch_size=10, timeout_secs=self.sdk_timeout,
-                process_concurrency=8, retries=self.sdk_retries,
-                durability=self.durability_level)
-            self.task.jython_task_manager.get_task_result(task)
-
-        self.log.info("Verifying num_items counts after doc_ops")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
-        self.log.info("Inserted '%d' doc items" % self.num_items)
-
+        if not self.atomicity:
+            if self.print_cluster_stat:
+                self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
+            for bucket in self.bucket_util.buckets:
+                task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, self.gen_create, "create", 0,
+                    persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    batch_size=10, timeout_secs=self.sdk_timeout,
+                    process_concurrency=8, retries=self.sdk_retries,
+                    durability=self.durability_level)
+                self.task.jython_task_manager.get_task_result(task)
+                self.log.info("Verifying num_items counts after doc_ops")
+                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util.verify_stats_all_buckets(self.num_items)
+                self.log.info("Inserted '%d' doc items" % self.num_items)
+        else:
+            task = self.task.async_load_gen_docs_atomicity(
+                        self.cluster,self.bucket_util.buckets, self.gen_create, "create",0,
+                        batch_size=20,process_concurrency=8,replicate_to=self.replicate_to,
+                        persist_to=self.persist_to,timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+                        transaction_timeout=self.transaction_timeout, commit=True,
+                        durability=self.durability_level)
+        self.task.jython_task_manager.get_task_result(task)
+        self.gen_load = self.get_doc_generator(0, self.num_items)
         # Initialize doc_generators
         self.gen_create = None
         self.gen_delete = None
@@ -54,6 +64,9 @@ class RebalanceBaseTest(BaseTestCase):
         self.log.info("==========Finished rebalance base setup========")
 
     def tearDown(self):
+        if self.print_cluster_stat:
+            self.print_cluster_stat_task.end_task()
+            self.task_manager.get_task_result(self.print_cluster_stat_task)
         self.cluster_util.print_cluster_stats()
         super(RebalanceBaseTest, self).tearDown()
 
@@ -138,6 +151,47 @@ class RebalanceBaseTest(BaseTestCase):
             process_concurrency=8)
         self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
                         "Doc_ops failed in rebalance_base._load_all_buckets")
+
+    def _load_all_buckets_atomicty(self, kv_gen, op_type):
+        task = self.task.async_load_gen_docs_atomicity(
+                    self.cluster,self.bucket_util.buckets, kv_gen, op_type,0,
+                    batch_size=10,process_concurrency=8,replicate_to=self.replicate_to,
+                    persist_to=self.persist_to,timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+                    transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,
+                    durability=self.durability_level)
+        self.task.jython_task_manager.get_task_result(task)
+
+
+    def start_parallel_cruds_atomicity(self):
+        tasks = []
+        if("update" in self.doc_ops):
+            tasks.append(self.task.async_load_gen_docs_atomicity(
+                          self.cluster, self.bucket_util.buckets, self.gen_update,
+                         "rebalance_only_update",0,batch_size=20,process_concurrency=8,
+                          replicate_to=self.replicate_to,persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+                          transaction_timeout=self.transaction_timeout,
+                          commit=self.transaction_commit,durability=self.durability_level))
+        if("create" in self.doc_ops):
+            tasks.append(self.task.async_load_gen_docs_atomicity(
+                          self.cluster, self.bucket_util.buckets, self.gen_update,
+                         "create",0,batch_size=20,process_concurrency=8,
+                          replicate_to=self.replicate_to,persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+                          transaction_timeout=self.transaction_timeout,
+                          commit=self.transaction_commit,durability=self.durability_level))
+        if("delete" in self.doc_ops):
+            tasks.append(self.task.async_load_gen_docs_atomicity(
+                          self.cluster, self.bucket_util.buckets, self.gen_update,
+                         "rebalance_delete",0,batch_size=20,process_concurrency=8,
+                          replicate_to=self.replicate_to,persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+                          transaction_timeout=self.transaction_timeout,
+                          commit=self.transaction_commit,durability=self.durability_level))
+
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+
 
     def start_parallel_cruds(self, retry_exceptions=[], ignore_exceptions=[],
                              task_verification=False):

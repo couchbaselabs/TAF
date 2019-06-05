@@ -131,6 +131,36 @@ class SwapRebalanceBase(BaseTestCase):
             test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
                                       .format(timeout))
 
+    def start_load_phase_atomicity(self): 
+        gen_create = doc_generator('test_docs', 0, self.num_items)
+        task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
+                                             gen_create, "create" , exp=0,
+                                             batch_size=10,
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+                                             retries=self.sdk_retries, transaction_timeout=self.transaction_timeout, commit=self.transaction_commit)
+        return task
+    
+    def start_access_phase_atomicity(self):
+        gen_create = doc_generator('test_docs', 0, self.num_items)
+        task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
+                                             gen_create, "validate" , exp=0,
+                                             batch_size=10,
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+                                             retries=self.sdk_retries, transaction_timeout=self.transaction_timeout, commit=self.transaction_commit)
+        return task
+
+    def stop_load_atomicity(self, loaders, do_stop=True):
+        if do_stop:
+            self.task.jython_task_manager.stop_task(loaders)
+        try:
+            self.task.jython_task_manager.get_task_result(loaders)
+        except ExecutionException:
+            pass
+        
     def start_load_phase(self):
         loaders = []
         gen_create = doc_generator('test_docs', 0, self.num_items)
@@ -186,7 +216,8 @@ class SwapRebalanceBase(BaseTestCase):
         # verification strategy, since it was removed because for using 'tap'
         # RebalanceHelper.wait_for_replication(servers_in_cluster,
         #                                      self.bucket_util, self.task)
-        self.items_verification(self, self.cluster.master)
+        if not self.atomicity:
+            self.items_verification(self, self.cluster.master)
 
     def _common_test_body_swap_rebalance(self, do_stop_start=False):
         master = self.cluster.master
@@ -205,10 +236,16 @@ class SwapRebalanceBase(BaseTestCase):
         self.create_buckets()
 
         self.log.info("DATA LOAD PHASE")
-        self.loaders = self.start_load_phase()
+        if self.atomicity:
+            self.loaders = self.start_load_phase_atomicity()
+        else:
+            self.loaders = self.start_load_phase()
 
         # Wait till load phase is over
-        self.stop_load(self.loaders, do_stop=False)
+        if self.atomicity:
+            self.stop_load_atomicity(self.loaders, do_stop=False)
+        else:
+            self.stop_load(self.loaders, do_stop=False)
         self.log.info("DONE LOAD PHASE")
 
         # Start the swap rebalance
@@ -244,7 +281,10 @@ class SwapRebalanceBase(BaseTestCase):
 
         if self.do_access:
             self.log.info("DATA ACCESS PHASE")
-            self.loaders = self.start_access_phase()
+            if self.atomicity:
+                self.loaders = self.start_access_phase_atomicity()
+            else:
+                self.loaders = self.start_access_phase()
 
         self.log.info("SWAP REBALANCE PHASE")
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
@@ -301,10 +341,16 @@ class SwapRebalanceBase(BaseTestCase):
         self.assertTrue(status, msg="Rebalance was failed")
 
         self.log.info("DATA LOAD PHASE")
-        self.loaders = self.start_load_phase()
+        if self.atomicity:
+            self.loaders = self.start_load_phase_atomicity()
+        else:
+            self.loaders = self.start_load_phase()
 
         # Wait till load phase is over
-        self.stop_load(self.loaders, do_stop=False)
+        if self.atomicity:
+            self.stop_load_atomicity(self.loaders, do_stop=False)
+        else:
+            self.stop_load(self.loaders, do_stop=False)
         self.log.info("DONE LOAD PHASE")
 
         # Start the swap rebalance
@@ -339,7 +385,10 @@ class SwapRebalanceBase(BaseTestCase):
             master = new_swap_servers[0]
 
         self.log.info("DATA ACCESS PHASE")
-        self.loaders = self.start_access_phase()
+        if self.atomicity:
+                self.loaders = self.start_access_phase_atomicity()
+        else:
+            self.loaders = self.start_access_phase()
 
         self.log.info("SWAP REBALANCE PHASE")
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
@@ -422,10 +471,16 @@ class SwapRebalanceBase(BaseTestCase):
         self.assertTrue(status, msg="Rebalance was failed")
 
         self.log.info("DATA LOAD PHASE")
-        self.loaders = self.start_load_phase()
+        if self.atomicity:
+            self.loaders = self.start_load_phase_atomicity()
+        else:
+            self.loaders = self.start_load_phase()
 
         # Wait till load phase is over
-        self.stop_load(self.loaders, do_stop=False)
+        if self.atomicity:
+            self.stop_load_atomicity(self.loaders, do_stop=False)
+        else:
+            self.stop_load(self.loaders, do_stop=False)
         self.log.info("DONE LOAD PHASE")
 
         # Start the swap rebalance
@@ -461,7 +516,10 @@ class SwapRebalanceBase(BaseTestCase):
             master = not_failed_over[-1]
 
         self.log.info("DATA ACCESS PHASE")
-        self.loaders = self.start_access_phase()
+        if self.atomicity:
+                self.loaders = self.start_access_phase_atomicity()
+        else:
+            self.loaders = self.start_access_phase()
 
         # Failover selected nodes
         for node in optNodesIds:
@@ -532,10 +590,16 @@ class SwapRebalanceBase(BaseTestCase):
         self.assertTrue(status, msg="Rebalance was failed")
 
         self.log.info("DATA LOAD PHASE")
-        self.loaders = self.start_load_phase()
+        if self.atomicity:
+            self.loaders = self.start_load_phase_atomicity()
+        else:
+            self.loaders = self.start_load_phase()
 
         # Wait till load phase is over
-        self.stop_load(self.loaders, do_stop=False)
+        if self.atomicity:
+            self.stop_load_atomicity(self.loaders, do_stop=False)
+        else:
+            self.stop_load(self.loaders, do_stop=False)
         self.log.info("DONE LOAD PHASE")
 
         # Start the swap rebalance
@@ -569,7 +633,10 @@ class SwapRebalanceBase(BaseTestCase):
             master = new_swap_servers[0]
 
         self.log.info("DATA ACCESS PHASE")
-        self.loaders = self.start_access_phase()
+        if self.atomicity:
+                self.loaders = self.start_access_phase_atomicity()
+        else:
+            self.loaders = self.start_access_phase()
 
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        ejectedNodes=optNodesIds)
@@ -641,12 +708,15 @@ class SwapRebalanceDurabilityTests(SwapRebalanceBase):
         data_load_tasks = self.start_load_phase()
 
         # Wait for data loading tasks to complete
-        for task in data_load_tasks:
-            self.task.jython_task_manager.get_task_result(task)
-
-        # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        if self.atomicity:
+            self.task.jython_task_manager.get_task_result(data_load_tasks)
+        else:
+            for task in data_load_tasks:
+                self.task.jython_task_manager.get_task_result(task)
+        
+            # Verify initial doc load count
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def tearDown(self):
         super(SwapRebalanceDurabilityTests, self).tearDown()
@@ -872,14 +942,25 @@ class SwapRebalanceDurabilityTests(SwapRebalanceBase):
                             [toBeEjectedNodes[0]], [])
 
         # Load doc into all vbuckets to verify durability
-        for vb_num in range(self.vbuckets):
-            gen_create = doc_generator(
-                self.key, self.num_items, self.num_items+1000,
-                doc_size=self.doc_size, doc_type=self.doc_type,
-                vbuckets=self.vbuckets, target_vbucket=[vb_num])
-            task =  self.task.async_load_gen_docs(
-                self.cluster, def_bucket, gen_create, "create", 0,
-                replicate_to=self.replicate_to, persist_to=self.persist_to,
-                durability_level=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+        if self.atomicity:
+            gen_create = doc_generator('test_', 0, self.num_items)
+            task = self.task.async_load_gen_docs_atomicity(self.cluster, def_bucket,
+                                             gen_create, self.op_type , exp=0,
+                                             batch_size=10,
+                                             process_concurrency=8,
+                                             replicate_to=self.replicate_to,
+                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+                                             retries=self.sdk_retries, transaction_timeout=self.transaction_timeout, commit=self.transaction_commit)
             self.task_manager.get_task_result(task)
+        else:
+            for vb_num in range(self.vbuckets):
+                gen_create = doc_generator(
+                    self.key, self.num_items, self.num_items+1000,
+                    doc_size=self.doc_size, doc_type=self.doc_type,
+                    vbuckets=self.vbuckets, target_vbucket=[vb_num])
+                task =  self.task.async_load_gen_docs(
+                    self.cluster, def_bucket, gen_create, "create", 0,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    durability_level=self.durability_level,
+                    timeout_secs=self.sdk_timeout)
+                self.task_manager.get_task_result(task)

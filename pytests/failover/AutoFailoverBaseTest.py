@@ -74,13 +74,23 @@ class AutoFailoverBaseTest(BaseTestCase):
 
     def _loadgen(self):
         tasks = []
-        tasks.extend(self.async_load_all_buckets(self.run_time_create_load_gen,
+        if self.atomicity:
+            tasks.extend(self.async_load_all_buckets_atomicity(self.run_time_create_load_gen,
                                                  "create", 0))
-        tasks.extend(self.async_load_all_buckets(self.update_load_gen,
+            tasks.extend(self.async_load_all_buckets_atomicity(self.update_load_gen,
                                                  "update", 0))
-        tasks.extend(self.async_load_all_buckets(self.delete_load_gen,
+            tasks.extend(self.async_load_all_buckets_atomicity(self.delete_load_gen,
+                                                 "delete", 0))
+            
+        else:
+            tasks.extend(self.async_load_all_buckets(self.run_time_create_load_gen,
+                                                     "create", 0))
+            tasks.extend(self.async_load_all_buckets(self.update_load_gen,
+                                                     "update", 0))
+            tasks.extend(self.async_load_all_buckets(self.delete_load_gen,
                                                  "delete", 0))
         return tasks
+    
 
     def set_up_cluster(self):
         nodes_init = self.cluster.servers[1:self.nodes_init] \
@@ -118,6 +128,19 @@ class AutoFailoverBaseTest(BaseTestCase):
         generator = DocumentGenerator(self.key, template, age, first, body,
                                       start=start, end=end)
         return generator
+    
+    def async_load_all_buckets_atomicity(self, kv_gen, op_type, exp=0, batch_size=20):
+        
+        task = self.task.async_load_gen_docs_atomicity(
+                        self.cluster,self.bucket_util.buckets, kv_gen, op_type,exp,
+                        batch_size=batch_size,process_concurrency=8,timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+                        transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,durability=self.durability_level)
+        return task
+
+    
+    def load_all_buckets_atomicity(self, kv_gen, op_type, exp, batch_size=20):
+        task = self.async_load_all_buckets(kv_gen, op_type, exp, batch_size)
+        self.task_manager.get_task_result(task)
 
     def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
         tasks = []

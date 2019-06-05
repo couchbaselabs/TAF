@@ -4,6 +4,7 @@ from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
+from membase.helper.rebalance_helper import RebalanceHelper
 
 
 class RebalanceOutTests(RebalanceBaseTest):
@@ -42,12 +43,16 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks = list()
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], servs_out)
-        tasks_info = self.self.start_parallel_cruds()
+        if self.atomicity:
+            self.start_parallel_cruds_atomicity()
+        else:
+            tasks_info = self.start_parallel_cruds()
         self.task.jython_task_manager.get_task_result(rebalance_task)
 
-        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                       self.cluster)
-        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         for bucket in self.bucket_util.buckets:
             if self.doc_ops is not None:
@@ -67,7 +72,8 @@ class RebalanceOutTests(RebalanceBaseTest):
                             batch_size=10))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        if not self.atomicity:
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     """Rebalances nodes out of a cluster while doing docs ops:create, delete, update.
 
@@ -85,17 +91,22 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                  self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        self.self.start_parallel_cruds(task_verification=True)
+        if self.atomicity:
+            self.start_parallel_cruds_atomicity()
+        else:
+            self.start_parallel_cruds(task_verification=True)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
         record_data_set = self.bucket_util.get_data_set_all(self.cluster.servers[:self.num_servers], self.bucket_util.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.add_remove_servers_and_rebalance([], servs_out)
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
-        self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
+        if not self.atomicity:
+            self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+            self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats,
                                                          self.cluster.servers[:self.num_servers - self.nodes_out], self.bucket_util.buckets)
         new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(prev_vbucket_stats,
@@ -169,17 +180,21 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                  self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        self.self.start_parallel_cruds(task_verification=True)
+        if self.atomicity:
+            self.start_parallel_cruds_atomicity()
+        else:
+            tasks_info = self.start_parallel_cruds()
         ejectedNode = self.cluster_util.find_node_info(self.cluster.master, self.cluster.servers[self.nodes_init - 1])
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
-        self.bucket_util._wait_for_stats_all_buckets()
+        if not self.atomicity:
+            self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+            self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         record_data_set = self.bucket_util.get_data_set_all(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.rest = RestConnection(self.cluster.master)
-        chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
+        chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
         new_server_list = self.cluster_util.add_remove_servers(
             self.cluster.servers, self.cluster.servers[:self.nodes_init],
             [self.cluster.servers[self.nodes_init - 1], chosen[0]], [])
@@ -189,7 +204,8 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[chosen[0].id, ejectedNode.id])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
         self.cluster.nodes_in_cluster = new_server_list
-        self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
+        if not self.atomicity:
+            self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         self.sleep(30)
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.bucket_util.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -220,7 +236,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             compaction_task.append(self.task.async_compact_bucket(self.cluster.master, bucket))
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        tasks_info = self.self.start_parallel_cruds()
+        tasks_info = self.start_parallel_cruds()
         self.task.jython_task_manager.get_task_result(rebalance_task)
 
         self.bucket_util.verify_doc_op_task_exceptions(
@@ -270,8 +286,9 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         self.task.jython_task_manager.get_task_result(rebalance)
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-        self.bucket_util.verify_cluster_stats(self.num_items)
-        self.bucket_util.verify_unacked_bytes_all_buckets()
+        if not self.atomicity:
+            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_unacked_bytes_all_buckets()
 
 
     """Rebalances nodes out of a cluster while doing docs' ops.
@@ -292,16 +309,22 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                  self.num_items * 3 / 2)
         for i in reversed(range(1, self.num_servers, 2)):
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
-            tasks_info = self.start_parallel_cruds()
+            if self.atomicity:
+                self.start_parallel_cruds_atomicity()
+            else:
+                tasks_info = self.start_parallel_cruds()
             self.task.jython_task_manager.get_task_result(rebalance_task)
 
-            self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
-            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            if not self.atomicity:
+                self.bucket_util.verify_doc_op_task_exceptions(
+                    tasks_info, self.cluster)
+                self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(self.cluster.servers[i:i + 2]))
-            self.bucket_util.verify_cluster_stats(self.num_items)
-        self.bucket_util.verify_unacked_bytes_all_buckets()
+            if not self.atomicity:
+                self.bucket_util.verify_cluster_stats(self.num_items)
+        if not self.atomicity:
+            self.bucket_util.verify_unacked_bytes_all_buckets()
 
     """Rebalances nodes out of a cluster during view queries.
 
@@ -328,7 +351,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks = list()
         for bucket in self.bucket_util.buckets:
             temp = self.bucket_util.make_default_views(
-                self.default_view_name, num_views, is_dev_ddoc)
+                self.default_view, num_views, is_dev_ddoc)
             temp_tasks = self.bucket_util.async_create_views(
                 self.cluster.master, ddoc_name, temp, bucket)
             views += temp
@@ -345,7 +368,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                 # run queries to create indexes
                 self.cluster.query_view(self.cluster.master, prefix + ddoc_name, view.name, query)
 
-        active_tasks = self.cluster.async_monitor_active_task(
+        active_tasks = self.cluster_util.async_monitor_active_task(
             self.cluster.servers, "indexer", "_design/" + prefix + ddoc_name,
             wait_task=False)
         for active_task in active_tasks:
@@ -360,7 +383,7 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         for bucket in self.bucket_util.buckets:
             self.bucket_util.perform_verify_queries(
-                num_views, prefix, ddoc_name, query, bucket=bucket,
+                num_views, prefix, ddoc_name, self.default_view_name, query, bucket=bucket,
                 wait_time=timeout, expected_rows=expected_rows)
 
         servs_out = self.cluster.servers[-self.nodes_out:]
@@ -378,8 +401,9 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.bucket_util.perform_verify_queries(
                 num_views, prefix, ddoc_name, query, bucket=bucket,
                 wait_time=timeout, expected_rows=expected_rows)
-        self.bucket_util.verify_cluster_stats(self.num_items)
-        self.bucket_util.verify_unacked_bytes_all_buckets()
+        if not self.atomicity:
+            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_unacked_bytes_all_buckets()
 
     """Rebalances nodes out of a cluster during view queries incrementally.
 
@@ -481,8 +505,9 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.cluster.servers, [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-        self.bucket_util.verify_cluster_stats(self.num_items)
-        self.bucket_util.verify_unacked_bytes_all_buckets()
+        if not self.atomicity:
+            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_unacked_bytes_all_buckets()
 
 
     """Rebalances nodes out of a cluster while doing mutations and deletions.

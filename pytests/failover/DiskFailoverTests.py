@@ -27,7 +27,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = self._loadgen()
         self.failover_expected = True
         self.failover_actions[self.failover_action]()
-        self.validate_loadgen_tasks()
+        if not self.atomicity:
+            self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -38,7 +39,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = tasks
         self.failover_expected = (not self.failover_action == "disk_full")
         self.failover_actions[self.failover_action]()
-        self.validate_loadgen_tasks()
+        if not self.atomicity:
+            self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -47,7 +49,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = self._loadgen()
         self.failover_expected = True
         self.failover_actions[self.failover_action]()
-        self.validate_loadgen_tasks()
+        if not self.atomicity:
+            self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -110,7 +113,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
         self.failover_actions[self.failover_action]()
-        self.validate_loadgen_tasks()
+        if not self.atomicity:
+            self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -146,7 +150,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         if (not rebalance_success or not started) and not \
                 self.failover_expected:
             self.fail("Rebalance failed. Check logs")
-        self.validate_loadgen_tasks()
+        if not self.atomicity:
+            self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -181,7 +186,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         msg = "rebalance failed while recovering failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
-        self.validate_loadgen_tasks()
+        if not self.atomicity:
+            self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -211,6 +217,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         msg = "rebalance failed while removing failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
-        self.validate_loadgen_tasks()
+        if not self.atomicity:
+            self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()

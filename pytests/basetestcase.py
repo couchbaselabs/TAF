@@ -66,6 +66,16 @@ class BaseTestCase(unittest.TestCase):
         self.target_vbucket = self.input.param("target_vbucket", None)
         self.maxttl = self.input.param("maxttl", 0)
         # End of doc specific parameters
+        
+        #transactions parameters
+        self.transaction_timeout = self.input.param("transaction_timeout", 100)
+        self.transaction_commit = self.input.param("transaction_commit", True)
+        self.update_count = self.input.param("update_count", 1)
+        self.sync = self.input.param("sync", True)
+        self.default_bucket = self.input.param("default_bucket", True)
+        self.num_buckets = self.input.param("num_buckets", 0)
+        self.atomicity = self.input.param("atomicity", False)
+        # end of transaction parameters
 
         # Client specific params
         self.sdk_client_type = self.input.param("sdk_client_type", "java")

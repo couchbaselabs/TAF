@@ -73,8 +73,12 @@ class RebalanceInTests(RebalanceBaseTest):
             ]
 
         # CRUDs while rebalance is running in parallel
-        tasks_info = self.start_parallel_cruds(
-            retry_exceptions=retry_exceptions)
+        if self.atomicity:
+            self.start_parallel_cruds_atomicity()
+
+        else:
+            tasks_info = self.start_parallel_cruds(
+                retry_exceptions=retry_exceptions)
 
         self.sleep(10, "wait for rebalance to start")
 
@@ -84,32 +88,37 @@ class RebalanceInTests(RebalanceBaseTest):
 
         self.cluster.nodes_in_cluster.extend(servs_in)
 
-        self.bucket_util.verify_doc_op_task_exceptions(
-            tasks_info, self.cluster)
-        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         self.sleep(20, "Wait for cluster to be ready after rebalance")
 
-        for bucket in self.bucket_util.buckets:
-            current_items = self.bucket_util.get_bucket_current_item_count(
-                self.cluster, bucket)
-            if current_items != self.num_items:
-                self.log.warn("%s bucket items:, Actual %d, Expected %d"
-                              % (bucket.name, current_items, self.num_items))
-                self.log.warn("Overwritting self.num_items=%d" % current_items)
-                self.num_items = current_items
+        if not self.atomicity:
+            for bucket in self.bucket_util.buckets:
+                current_items = self.bucket_util.get_bucket_current_item_count(
+                    self.cluster, bucket)
+                if current_items != self.num_items:
+                    self.log.warn("%s bucket items:, Actual %d, Expected %d"
+                                  % (bucket.name, current_items, self.num_items))
+                    self.log.warn("Overwritting self.num_items=%d" % current_items)
+                    self.num_items = current_items
 
         # CRUDs after rebalance operations
         self.gen_create = self.get_doc_generator(self.num_items,
                                                  self.num_items * 2)
         self.gen_delete = self.get_doc_generator(int(self.num_items / 2),
                                                  self.num_items)
-
-        self.start_parallel_cruds(retry_exceptions=retry_exceptions,
+        if self.atomicity:
+            self.start_parallel_cruds_atomicity()
+        else:
+            self.start_parallel_cruds(retry_exceptions=retry_exceptions,
                                   task_verification=True)
 
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def rebalance_in_after_ops(self):
         """
@@ -480,13 +489,22 @@ class RebalanceInTests(RebalanceBaseTest):
                 if "update" in self.doc_ops:
                     op_type = "update"
                     # 1/2th of data will be updated in each iteration
-                    task = self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.gen_update, "update", 0,
-                        batch_size=20, persist_to=self.persist_to,
-                        replicate_to=self.replicate_to, pause_secs=5,
-                        durability=self.durability_level,
-                        timeout_secs=self.sdk_timeout,
-                        retries=self.sdk_retries)
+                    if self.atomicity:
+                        task = self.task.async_load_gen_docs_atomicity(
+                                    self.cluster, self.bucket_util.buckets, self.gen_update,
+                                    "rebalance_only_update",0,batch_size=20,timeout_secs=self.sdk_timeout,
+                                    process_concurrency=8, retries=self.sdk_retries,
+                                    transaction_timeout=self.transaction_timeout,
+                                    commit=self.transaction_commit,
+                                    durability=self.durability_level)
+                    else:
+                        task = self.task.async_load_gen_docs(
+                                    self.cluster, bucket, self.gen_update, "update", 0,
+                                    batch_size=20, persist_to=self.persist_to,
+                                    replicate_to=self.replicate_to, pause_secs=5,
+                                    durability=self.durability_level,
+                                    timeout_secs=self.sdk_timeout,
+                                    retries=self.sdk_retries)
                 elif "create" in self.doc_ops:
                     op_type = "create"
                     # 1/2th of initial data will be added in each iteration
@@ -494,13 +512,21 @@ class RebalanceInTests(RebalanceBaseTest):
                     self.gen_create = self.get_doc_generator(num_of_items,
                                                              tem_num_items)
                     num_of_items = tem_num_items
-                    task = self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=20, persist_to=self.persist_to,
-                        replicate_to=self.replicate_to, pause_secs=5,
-                        durability=self.durability_level,
-                        timeout_secs=self.sdk_timeout,
-                        retries=self.sdk_retries)
+                    if self.atomicity:
+                        task = self.task.async_load_gen_docs_atomicity(
+                                    self.cluster, bucket, self.gen_create,"create",0,
+                                    batch_size=10,timeout_secs=self.sdk_timeout,process_concurrency=8,
+                                    retries=self.sdk_retries,
+                                    transaction_timeout=self.transaction_timeout,
+                                    commit=self.transaction_commit,durability=self.durability_level)
+                    else:
+                        task = self.task.async_load_gen_docs(
+                                    self.cluster, bucket, self.gen_create, "create", 0,
+                                    batch_size=20, persist_to=self.persist_to,
+                                    replicate_to=self.replicate_to, pause_secs=5,
+                                    durability=self.durability_level,
+                                    timeout_secs=self.sdk_timeout,
+                                    retries=self.sdk_retries)
                 elif "delete" in self.doc_ops:
                     op_type = "delete"
                     # 1/(num_servers) of initial data will be removed after
@@ -511,34 +537,47 @@ class RebalanceInTests(RebalanceBaseTest):
                     self.gen_delete = self.get_doc_generator(tem_del_start_num,
                                                              tem_del_end_num)
                     num_of_items -= (tem_del_end_num - tem_del_start_num + 1)
-                    task = self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.gen_delete, "delete", 0,
-                        batch_size=20, persist_to=self.persist_to,
-                        replicate_to=self.replicate_to, pause_secs=5,
-                        durability=self.durability_level,
-                        timeout_secs=self.sdk_timeout,
-                        retries=self.sdk_retries)
+                    if self.atomicity:
+                        task = self.task.async_load_gen_docs_atomicity(
+                                    self.cluster, self.bucket_util.buckets, self.gen_delete,
+                                    "rebalance_delete",0, batch_size=10,
+                                    timeout_secs=self.sdk_timeout,process_concurrency=8,
+                                    retries=self.sdk_retries,
+                                    transaction_timeout=self.transaction_timeout,
+                                    commit=self.transaction_commit,
+                                    durability=self.durability_level)
+                    else:
+                        task = self.task.async_load_gen_docs(
+                                    self.cluster, bucket, self.gen_delete, "delete", 0,
+                                    batch_size=20, persist_to=self.persist_to,
+                                    replicate_to=self.replicate_to, pause_secs=5,
+                                    durability=self.durability_level,
+                                    timeout_secs=self.sdk_timeout,
+                                    retries=self.sdk_retries)
             if task:
-                tasks_info[task] = dict()
-                tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
-                    bucket, op_type=op_type, exp=0,
-                    replicate_to=self.replicate_to,
-                    persist_to=self.persist_to,
-                    durability=self.durability_level,
-                    timeout=self.sdk_timeout,
-                    retry_exceptions=retry_exceptions)
+                if self.atomicity:
+                    self.task.jython_task_manager.get_task_result(task)
+                else:
+                    tasks_info[task] = dict()
+                    tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
+                                            bucket, op_type=op_type, exp=0,
+                                            replicate_to=self.replicate_to,
+                                            persist_to=self.persist_to,
+                                            durability=self.durability_level,
+                                            timeout=self.sdk_timeout,
+                                            retry_exceptions=retry_exceptions)
 
-            self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
-            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+                    self.bucket_util.verify_doc_op_task_exceptions(
+                            tasks_info, self.cluster)
+                    self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
 
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
             self.sleep(60, "Wait for cluster to be ready after rebalance")
-
-        self.bucket_util.verify_unacked_bytes_all_buckets()
-        self.bucket_util.verify_cluster_stats(num_of_items)
+        if not self.atomicity:
+            self.bucket_util.verify_unacked_bytes_all_buckets()
+            self.bucket_util.verify_cluster_stats(num_of_items)
 
     def rebalance_in_with_queries(self):
         """
@@ -558,8 +597,8 @@ class RebalanceInTests(RebalanceBaseTest):
 
         Added reproducer for MB-6683
         """
-
-        self.bucket_util._wait_for_stats_all_buckets()
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets()
 
         num_views = self.input.param("num_views", 5)
         is_dev_ddoc = self.input.param("is_dev_ddoc", True)
@@ -761,8 +800,9 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.nodes_in_cluster.extend(servs_in)
             self.task.jython_task_manager.get_task_result(rebalance)
         self.sleep(60)
-        self.bucket_util.verify_cluster_stats(self.num_items)
-        self.bucket_util.verify_unacked_bytes_all_buckets()
+        if not self.atomicity:
+            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def rebalance_in_with_ddoc_compaction(self):
         """
@@ -867,15 +907,29 @@ class RebalanceInTests(RebalanceBaseTest):
             rebalance = self.task.async_rebalance(self.cluster.servers[:i],
                                                   [self.cluster.servers[i]],
                                                   [])
-            self._load_all_buckets(self.cluster.master, self.gen_update,
+            if self.atomicity:
+                self._load_all_buckets_atomicty(self.cluster.master, self.gen_update,
                                    "update", 0)
-            self._load_all_buckets(self.cluster.master, self.gen_delete,
-                                   "delete", 0)
+                self.sleep(20)
+                self._load_all_buckets_atomicty(self.cluster.master, self.gen_delete,
+                                   "rebalance_delete", 0)
+                self.sleep(20)
+            else:
+                self._load_all_buckets(self.cluster.master, self.gen_update,
+                                       "update", 0)
+                self._load_all_buckets(self.cluster.master, self.gen_delete,
+                                       "delete", 0)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.cluster.nodes_in_cluster.extend([self.cluster.servers[i]])
-            self._load_all_buckets(self.cluster.master, self.gen_delete,
+            self.sleep(20)
+            if self.atomicity:
+                self._load_all_buckets_atomicty(self.cluster.master, self.gen_delete,
                                    "create", 0)
-            self.bucket_util.verify_cluster_stats(self.num_items)
+                self.sleep(20)
+            else:
+                self._load_all_buckets(self.cluster.master, self.gen_delete,
+                                   "create", 0)
+                self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def incremental_rebalance_in_with_mutation_and_expiration(self):
