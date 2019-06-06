@@ -128,6 +128,7 @@ class RebalanceTask(Task):
         self.services = services
         self.monitor_vbuckets_shuffling = False
         self.check_vbucket_shuffling = check_vbucket_shuffling
+        self.result = False
         try:
             self.rest = RestConnection(self.servers[0])
         except ServerUnavailableException, e:

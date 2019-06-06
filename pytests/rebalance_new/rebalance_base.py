@@ -26,7 +26,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
-        self.sleep(10)
+        self.sleep(30)
         self.gen_create = self.get_doc_generator(0, self.num_items)
         self.cluster_util.print_cluster_stats()
         for bucket in self.bucket_util.buckets:

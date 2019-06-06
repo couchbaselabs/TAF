@@ -68,14 +68,20 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.servers[:self.nodes_init], servs_in, [])
 
         retry_exceptions = [
-            "com.couchbase.client.core.error.TemporaryFailureException"]
+            "com.couchbase.client.core.error.TemporaryFailureException",
+            "com.couchbase.client.core.error.RequestCanceledException"
+            ]
 
         # CRUDs while rebalance is running in parallel
         tasks_info = self.start_parallel_cruds(
             retry_exceptions=retry_exceptions)
 
+        self.sleep(10, "wait for rebalance to start")
+
         # Waif for rebalance and doc mutation tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
         self.cluster.nodes_in_cluster.extend(servs_in)
 
         self.bucket_util.verify_doc_op_task_exceptions(
