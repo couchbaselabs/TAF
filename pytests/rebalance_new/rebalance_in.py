@@ -526,7 +526,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
-            self.task.jython_task_manager.get_all_result(rebalance_task)
+            self.task.jython_task_manager.get_task_result(rebalance_task)
 
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
             self.sleep(60, "Wait for cluster to be ready after rebalance")
