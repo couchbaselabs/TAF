@@ -512,7 +512,7 @@ class GenericLoadingTask(Task):
                 doc_type=doc_type, durability=durability)
             if fail:
                 failed_item_table = TableView()
-                failed_item_table.set_headers(["Doc_Key", "Exception"])
+                failed_item_table.set_headers(["Create doc_Id", "Exception"])
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
@@ -550,7 +550,7 @@ class GenericLoadingTask(Task):
                 retry=self.retries, doc_type=doc_type, durability=durability)
             if fail:
                 failed_item_table = TableView()
-                failed_item_table.set_headers(["Doc_Key", "Exception"])
+                failed_item_table.set_headers(["Update doc_Id", "Exception"])
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
@@ -575,21 +575,21 @@ class GenericLoadingTask(Task):
     def batch_delete(self, key_val, shared_client=None, persist_to=None,
                      replicate_to=None, timeout=None, timeunit=None,
                      durability=""):
-        not_deleted = dict()
-        deleted = dict()
         self.client = self.client or shared_client
-        delete_result = self.client.delete_multi(key_val.keys(),
+        success, fail = self.client.delete_multi(key_val.keys(),
                                                  persist_to=persist_to,
                                                  replicate_to=replicate_to,
                                                  timeout=timeout,
                                                  time_unit=timeunit,
                                                  durability=durability)
-        for result in delete_result:
-            if not result['status']:
-                not_deleted[result['id']] = result['error']
-            else:
-                deleted[result['id']] = result['cas']
-        return deleted, not_deleted
+        if fail:
+            failed_item_view = TableView()
+            failed_item_view.set_headers(["Delete doc_Id", "Exception"])
+            for key, exception in fail.items():
+                failed_item_view.add_row([key, exception])
+            self.test_log.error("Delete failed details")
+            failed_item_view.display()
+        return success, fail
 
     def batch_read(self, keys, shared_client=None):
         self.client = self.client or shared_client

@@ -142,7 +142,7 @@ class SDKClient(object):
                                      persist_to, replicate_to,
                                      durability, timeout,
                                      time_unit)
-        return result
+        return self.__tranlate_delete_multi_results(result)
 
     def insert(self, key, value, exp=0, exp_unit="seconds",
                persist_to=0, replicate_to=0,
@@ -327,6 +327,22 @@ class SDKClient(object):
                 fail[key] = dict()
                 fail[key]['value'] = json_object
                 fail[key]['error'] = item['error']
+        return success, fail
+
+    def __tranlate_delete_multi_results(self, data):
+        success = dict()
+        fail = dict()
+        if data is None:
+            return success, fail
+        for result in data:
+            key = result['id']
+            if result['status']:
+                success[key] = dict()
+                success[key]['cas'] = result['cas']
+            else:
+                fail[key] = dict()
+                fail[key]['cas'] = result['cas']
+                fail[key]['error'] = result['error']
         return success, fail
 
     def __translate_get_multi_results(self, data):
