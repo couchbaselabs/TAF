@@ -1668,22 +1668,27 @@ class RemoteMachineShellConnection:
             channelSftp.ls(remote_path)
             result = True
         except SftpException:
-            channelSftp.mkdir(remote_path)
-            result = True
-        except SftpException:
-            self.log.debug("Creating Directory...")
-            complPath = remote_path.split("/")
-            channelSftp.cd("/")
-            for dir in complPath:
-                if dir:
-                    try:
-                        self.log.debug("Current Dir : " + channelSftp.pwd())
-                        channelSftp.cd(dir)
-                    except:
-                        channelSftp.mkdir(dir)
-                        self.give_directory_permissions_to_couchbase(dir)
-                        channelSftp.cd(dir)
-            result = True
+            try:
+                channelSftp.mkdir(remote_path)
+                result = True
+            except SftpException:
+                self.log.debug("Creating Directory...")
+                complPath = remote_path.split("/")
+                channelSftp.cd("/")
+                for dir in complPath:
+                    if dir:
+                        try:
+                            self.log.debug("Current Dir : " + channelSftp.pwd())
+                            channelSftp.cd(dir)
+                        except:
+                            try:
+                                channelSftp.mkdir(dir)
+                                self.give_directory_permissions_to_couchbase(dir)
+                                channelSftp.cd(dir)
+                                result = True
+                            except:
+                                result = False
+                                break
         except:
             result = False
             pass
@@ -3145,7 +3150,7 @@ class RemoteMachineShellConnection:
                                              use_channel=use_channel)
 
     def execute_command_raw_jsch(self, command, debug=True, use_channel=False):
-        self.log.debug("Running command.raw on {0}: {1}".format(self.ip, command))
+        self.log.debug("Running command on {0}: {1}".format(self.ip, command))
         output = []
         error = []
         if not self.remote:
