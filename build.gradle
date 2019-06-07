@@ -1,0 +1,137 @@
+group 'com.couchbase.qe'
+version '1.0.0-alpha.1'
+
+//buildscript {
+//    repositories {
+//        maven {
+//            url "https://plugins.gradle.org/m2/"
+//        }
+//    }
+//    dependencies {
+//        classpath "gradle.plugin.com.github.rzabini:gradle-jython:1.0.10"
+//    }
+//}
+//
+//apply plugin: "com.github.rzabini.gradle-jython"
+apply plugin: 'java-library'
+apply plugin: 'maven-publish'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    jcenter()
+    maven { url 'http://files.couchbase.com/maven2/' }
+    maven { url 'https://repo.spring.io/milestone' }
+    
+    // Pull in any jars in folder 'libs'.  Only the transactions jar should be placed here.
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+//task myjthon(type:JavaExec) {
+//    main = org.python.util.jython
+//    classpath = sourceSets.main.runtimeClasspath
+//}
+
+//task myjthon2(type: JavaExec) {
+//    main = "-jar";
+//    args "jython testrunner.py"
+//}
+
+//task runFinalJar(type: JavaExec) {
+//    classpath = files('build/libs/foo.jar')
+//    classpath += sourceSets.main.runtimeClasspath
+//    main = full.package.classname
+//}
+
+configurations {
+    myjython
+}
+
+dependencies {
+    myjython group: 'org.python', name: 'jython', version: '2.7.1b3'
+}
+
+
+// This was a nightmare.  Useful references:
+
+// Classpath section of https://wiki.python.org/jython/LearningJython
+
+// import sys
+// print(sys.path)
+// ['', '/usr/share/jython/Lib', '__classpath__', '__pyclasspath__/', '/usr/share/jython/Lib/site-packages']
+
+
+dependencies {
+
+    compile name: 'couchbase-transactions-1.0.0-alpha.4'
+
+	// Include transactions dependencies.  When txns is GA and available on a Maven repo, this won't
+	// be needed.
+    compile 'com.couchbase.client:java-client:3.0.0-alpha.3'
+    compile "io.projectreactor:reactor-core:3.2.1.RELEASE"
+    compile group: 'io.projectreactor.addons', name: 'reactor-adapter', version: '3.2.0.RELEASE'
+    compile group: 'io.projectreactor.addons', name: 'reactor-extra', version: '3.2.0.RELEASE'
+    compile 'io.reactivex:rxjava-reactive-streams:1.2.1'
+
+    // Other dependencies of TAF
+    compile group: 'com.jcraft', name: 'jsch', version: '0.1.55'
+}
+
+task runTool(type: JavaExec) {
+    println(sourceSets.main.runtimeClasspath)
+
+    main = "org.python.util.jython"
+//    jythonpath = sourceSets.main.resources.srcDirs.collect { it.toString() }.join(":")
+//    print(jythonpath)
+    environment([
+//            'JYTHONPATH':
+'JYTHONPATH': "/usr/share/jython/Lib:/usr/share/jython/Lib/site-packages",
+//            'CLASSPATH': "/usr/share/jython/Lib"
+    ])
+    args "-S", "testrunner.py"
+    classpath configurations.myjython
+}
+
+task testrunner(type:Exec) {
+    def jythonpath = sourceSets.main.runtimeClasspath.asPath
+//    println(sourceSets.main.runtimeClasspath)
+//    println(sourceSets.main.compileClasspath)
+//    println(configurations.generateMatchers)
+//    println(sourceSets.main.runtimeClasspath.asPath)
+//    println("jythonpath: " + jythonpath)
+
+    if (!project.hasProperty("jython")) {
+        throw new Exception("Must specify -P jython '/path/to/jython'")
+    }
+
+    if (!project.hasProperty("args")) {
+        throw new Exception("Must specify -P args 'all_testrunner_args'")
+    }
+
+    def jythonLocation = project.property("jython")
+    def testRunnerArgs = project.property("args").split()
+
+
+    def cmd = [jythonLocation,'-J-cp', jythonpath, 'testrunner.py']
+
+    testRunnerArgs.each { cmd.add(it) }
+
+    println(project.property("args").getClass())
+    println(testRunnerArgs.getClass())
+    println(cmd.getClass())
+//            .addAll(testRunnerArgs)
+    println("Running: " + cmd.join(" "))
+    commandLine cmd
+
+}
+
+
+
+//
+//task testrunner(type:jython.JythonTask) {
+//    script file('testrunner.py')
+//}
