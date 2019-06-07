@@ -235,7 +235,6 @@ class basic_ops(BaseTestCase):
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
             vbuckets=self.vbuckets)
-        print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
         self.log.info("Loading {0} docs into the bucket: {1}"
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_docs(
@@ -245,8 +244,6 @@ class basic_ops(BaseTestCase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
-        print_ops_task.end_task()
-        self.task_manager.get_task_result(print_ops_task)
 
         # Retry doc_exception code
         self.log.info("Validating failed doc's (if any) exceptions")
