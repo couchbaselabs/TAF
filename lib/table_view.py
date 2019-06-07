@@ -1,5 +1,9 @@
 class TableView:
-    def __init__(self):
+    def __init__(self, logger):
+        """
+        :param logger: Logger level method to use.
+                       Example: log.info / log.debug
+        """
         self.h_sep = "-"
         self.v_sep = None
         self.join_sep = None
@@ -7,6 +11,7 @@ class TableView:
         self.headers = list()
         self.rows = list()
         self.set_show_vertical_lines(True)
+        self.log = logger
 
     def set_show_vertical_lines(self, show_vertical_lines):
         self.v_sep = "|" if show_vertical_lines else ""
@@ -18,15 +23,15 @@ class TableView:
     def add_row(self, row_data):
         self.rows.append(row_data)
 
-    def print_line(self, max_widths):
+    def get_line(self, max_widths):
         row_buffer = ""
         for index, width in enumerate(max_widths):
             line = self.h_sep * (width + len(self.v_sep) + 1)
             last_char = self.join_sep if index == len(max_widths) - 1 else ""
             row_buffer += self.join_sep + line + last_char
-        print(row_buffer)
+        return row_buffer + "\n"
 
-    def print_row(self, row, max_widths):
+    def get_row(self, row, max_widths):
         row_buffer = ""
         for index, data in enumerate(row):
             v_str = self.v_sep if index == len(row) - 1 else ""
@@ -35,9 +40,9 @@ class TableView:
             else:
                 line = "{} {:" + str(max_widths[index]) + "s} {}"
                 row_buffer += line.format(self.v_sep, data, v_str)
-        print(row_buffer)
+        return row_buffer + "\n"
 
-    def display(self):
+    def display(self, message):
         # Nothing to display if there are no data rows
         if len(self.rows) == 0:
             return
@@ -55,11 +60,13 @@ class TableView:
                 max_widths[index] = max(max_widths[index], len(str(item)))
 
         # Start printing to console
+        table_data_buffer = message + "\n"
         if self.headers:
-            self.print_line(max_widths)
-            self.print_row(self.headers, max_widths)
+            table_data_buffer += self.get_line(max_widths)
+            table_data_buffer += self.get_row(self.headers, max_widths)
 
-        self.print_line(max_widths)
+        table_data_buffer += self.get_line(max_widths)
         for row in self.rows:
-            self.print_row(row, max_widths)
-        self.print_line(max_widths)
+            table_data_buffer += self.get_row(row, max_widths)
+        table_data_buffer += self.get_line(max_widths)
+        self.log(table_data_buffer)

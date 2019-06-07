@@ -141,17 +141,19 @@ class RebalanceTask(Task):
         self.thread_used = "Rebalance_task"
 
         cluster_stats = self.rest.get_cluster_stats()
-        self.table = TableView()
+        self.table = TableView(self.test_log.info)
         self.table.set_headers(["Nodes", "Services", "Status"])
-        for node in servers:
-            self.table.add_row(
-                [node.ip,
-                 cluster_stats[node.ip+":"+node.port]["services"],
-                 "Cluster node"])
-        for node in to_remove:
-            self.table.add_row([node.ip,
-                                cluster_stats[node.ip+node.port]["services"],
-                                "--- OUT --->"])
+        node_ips_to_remove = [node.ip for node in to_remove]
+        for node, stat in cluster_stats.items():
+            node_ip = node.split(':')[0]
+            if node_ip in node_ips_to_remove:
+                self.table.add_row([node_ip,
+                                    cluster_stats[node]["services"],
+                                    "--- OUT --->"])
+            else:
+                self.table.add_row([node_ip,
+                                    stat["services"],
+                                    "Cluster node"])
 
     def __str__(self):
         if self.exception:
@@ -197,8 +199,7 @@ class RebalanceTask(Task):
                     self.test_log.debug("This is swap rebalance and we will monitor vbuckets shuffling")
             self.add_nodes()
             self.start_rebalance()
-            self.test_log.info("Rebalance Overview")
-            self.table.display()
+            self.table.display("Rebalance Overview")
             self.check()
             # self.task_manager.schedule(self)
         except Exception as e:
@@ -511,7 +512,7 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
             if fail:
-                failed_item_table = TableView()
+                failed_item_table = TableView(self.test_log.info)
                 failed_item_table.set_headers(["Create doc_Id", "Exception"])
                 try:
                     Thread.sleep(timeout)
@@ -527,8 +528,7 @@ class GenericLoadingTask(Task):
                         fail.pop(key)
                     else:
                         failed_item_table.add_row([key, value['error']])
-                self.test_log.error("Failed items after reads:")
-                failed_item_table.display()
+                failed_item_table.display("Failed items after reads:")
             return success, fail
         except Exception as error:
             self.test_log.error(error)
@@ -549,7 +549,7 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit,
                 retry=self.retries, doc_type=doc_type, durability=durability)
             if fail:
-                failed_item_table = TableView()
+                failed_item_table = TableView(self.test_log.info)
                 failed_item_table.set_headers(["Update doc_Id", "Exception"])
                 try:
                     Thread.sleep(timeout)
@@ -565,8 +565,7 @@ class GenericLoadingTask(Task):
                         fail.pop(key)
                     else:
                         failed_item_table.add_row([key, value['error']])
-                self.test_log.error("Failed items after reads:")
-                failed_item_table.display()
+                failed_item_table.display("Failed items after reads:")
             return success, fail
         except Exception as error:
             self.test_log.error(error)
@@ -583,12 +582,11 @@ class GenericLoadingTask(Task):
                                                  time_unit=timeunit,
                                                  durability=durability)
         if fail:
-            failed_item_view = TableView()
+            failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Delete doc_Id", "Exception"])
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
-            self.test_log.error("Delete failed details")
-            failed_item_view.display()
+            failed_item_view.display("Delete failed details")
         return success, fail
 
     def batch_read(self, keys, shared_client=None):

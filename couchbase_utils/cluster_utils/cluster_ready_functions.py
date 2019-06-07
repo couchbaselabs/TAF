@@ -677,8 +677,7 @@ class ClusterUtils:
         return victim_nodes
 
     def print_cluster_stats(self):
-        self.log.info("Cluster statistics")
-        table = TableView()
+        table = TableView(self.log.info)
         table.set_headers(["Node", "Services", "CPU_utilization",
                            "Mem_total", "Mem_free",
                            "Swap_mem_total", "Swap_mem_used"])
@@ -694,7 +693,7 @@ class ClusterUtils:
             row.append(str(node_stats["swap_mem_total"]))
             row.append(str(node_stats["swap_mem_used"]))
             table.add_row(row)
-        table.display()
+        table.display("Cluster statistics")
 
     def verify_replica_distribution_in_zones(self, nodes):
         """
