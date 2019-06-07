@@ -70,3 +70,30 @@ class TableView:
             table_data_buffer += self.get_row(row, max_widths)
         table_data_buffer += self.get_line(max_widths)
         self.log(table_data_buffer)
+
+
+def plot_graph(logger, bucket_name, ops_trend):
+    max_width = 100
+    max_ops = max([ops_list[-1] for ops_list in ops_trend])
+    if max_ops == 0:
+        return
+
+    table_view = TableView(logger.info)
+    table_view.set_headers(["Min", "Trend", "Max"])
+    for ops_list in ops_trend:
+        dots_plotted = 0
+        curr_line = ""
+        last_index = len(ops_list) - 1
+        for index, ops in enumerate(ops_list):
+            dot_to_fill = int(ops * max_width / max_ops) - 1 - dots_plotted
+            dots_plotted += dot_to_fill
+            curr_line += dot_to_fill * "."
+            if index == last_index:
+                curr_line += "X"
+            else:
+                curr_line += "*"
+        table_view.add_row([str("%.3f" % ops_list[0]),
+                            curr_line,
+                            str("%.3f" % ops_list[-1])])
+    table_view.display("Ops Trend for bucket '%s'" % bucket_name)
+
