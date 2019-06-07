@@ -1,0 +1,36 @@
+<configuration>
+
+    <!--Default log level is info-->
+    <root level="info">
+        <!--Log to stdout and file-->
+        <!--These appenders are defined further down-->
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!--Control transactions output-->
+    <!-- Output must also be enabled with logDirectly on TransactionsConfig -->
+    <logger name="com.couchbase.transactions" level="trace">
+    </logger>
+
+    <!--Control transactions cleanup output-->
+    <!-- Output must also be enabled with logDirectlyCleanup on TransactionsConfig -->
+    <logger name="com.couchbase.transactions.cleanup" level="trace">
+    </logger>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>output.log</file>
+        <append>false</append>
+        <immediateFlush>false</immediateFlush>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+</configuration>

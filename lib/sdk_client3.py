@@ -9,10 +9,10 @@ import json as pyJson
 import logging
 
 from com.couchbase.client.core.env import TimeoutConfig
-from com.couchbase.client.core.error import DocumentAlreadyExistsException, \
+from com.couchbase.client.core.error import KeyExistsException, \
                                             CouchbaseException, \
                                             RequestTimeoutException, \
-                                            DocumentDoesNotExistException, \
+                                            KeyNotFoundException, \
                                             CASMismatchException, \
                                             TemporaryFailureException
 from com.couchbase.client.core.msg.kv import DurabilityLevel

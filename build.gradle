@@ -1,0 +1,70 @@
+group 'com.couchbase.qe'
+version '1.0.0-alpha.1'
+
+apply plugin: 'java-library'
+apply plugin: 'maven-publish'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    jcenter()
+    maven { url 'http://files.couchbase.com/maven2/' }
+    maven { url 'https://repo.spring.io/milestone' }
+    maven { url "https://oss.sonatype.org/content/repositories/snapshots" }
+    
+    // Pull in any jars in folder 'libs'
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+
+dependencies {
+    // This will transitively pull in all dependencies of transactions, including Couchbase java-client
+    compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.0.0-alpha.5-SNAPSHOT'
+    
+    compile group: 'com.jcraft', name: 'jsch', version: '0.1.54'
+
+    compile 'org.ini4j:ini4j:0.5.1'
+    compile 'org.apache.logging.log4j:log4j-slf4j-impl:2.11.1'
+    compile 'com.google.guava:guava:22.0'
+    compile 'commons-cli:commons-cli:1.4'
+    compileOnly 'org.projectlombok:lombok:1.18.8'
+    compile 'ch.qos.logback:logback-classic:1.1.2'
+    compile 'net.sourceforge.argparse4j:argparse4j:0.8.1'
+}
+
+// Task that runs "jython testrunner.py" with the correct CLASSPATH
+task testrunner(type:Exec) {
+
+    // Want to check if these properties exist so can signal usage errors, but unfortunately gradle seems to run this
+    // task always during initialisation, and barfs on this.
+//    if (!project.hasProperty("jython")) {
+//        throw new Exception("Must specify -P jython '/path/to/jython'")
+//    }
+//
+//    if (!project.hasProperty("args")) {
+//        throw new Exception("Must specify -P args 'all_testrunner_args'")
+//    }
+
+    if (project.hasProperty("args") && project.hasProperty("jython")) {
+        def jythonpath = sourceSets.main.runtimeClasspath.asPath
+
+        def jythonLocation = project.property("jython")
+        def testRunnerArgs = project.property("args").split()
+
+        // Add the build output containing the built Java source.  Should get this from a gradle variable really but it's
+        // very unlikely to ever change.
+        def cmd = [jythonLocation, '-J-cp', jythonpath + ":build/classes/java/main", 'testrunner.py']
+
+        testRunnerArgs.each { cmd.add(it) }
+
+        println("Running: " + cmd.join(" "))
+
+        commandLine cmd
+    }
+}
+
+testrunner.dependsOn(compileJava)
