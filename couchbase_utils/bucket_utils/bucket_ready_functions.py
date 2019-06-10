@@ -340,7 +340,7 @@ class BucketUtils:
         for i in range(num_buckets):
             name = 'standard_bucket' + str(i)
             bucket_priority = None
-            if bucket_priorities is not None:
+            if bucket_priorities!=[]:
                 tem_prioroty = bucket_priorities[i]
                 bucket_priority = self.get_bucket_priority(tem_prioroty)
 
