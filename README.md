@@ -10,6 +10,50 @@ Download Jython Installer from https://www.jython.org/downloads.html
 
 Install it wherever you like.
 
+# Test Environment
+This test-suite requires:
+ 
+- A Couchbase cluster with credentials Administrator:password.
+- ssh access.
+
+One way of setting this up is:
+
+`git clone https://github.com/couchbaselabs/vagrants.git`
+
+Choose one of those subfolders, and run `vagrant up` in it.
+
+`vagrant status` --> shows the ip address of the node
+
+Login to those nodes on port 8091, and setup a Couchbase cluster.  You must use credentials Administrator:password.
+
+Change the password of the nodes:
+```
+vagrant ssh node1
+sudo passwd
+--change password(enter password twice)
+
+cd /etc/ssh
+vi sshd-config
+```
+
+Insert this config:
+
+```
+AcceptEnv LANG LC_*
+ChallengeResponseAuthentication no
+GSSAPIAuthentication no
+PermitRootLogin yes
+PrintMotd no
+Subsystem sftp /usr/libexec/openssh/sftp-server
+UseDNS no
+UsePAM yes
+X11Forwarding yes
+```
+
+restart sshd:
+
+`sudo systemctl restart sshd` or `sudo service restart sshd`, depending on your vagrant's Linux flavour.
+
 # Running
 
 When running Jython, you have to supply the CLASSPATH.  For a typical Java program this is long, and typically project management tools 
