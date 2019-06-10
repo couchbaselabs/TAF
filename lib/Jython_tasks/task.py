@@ -528,7 +528,8 @@ class GenericLoadingTask(Task):
                         fail.pop(key)
                     else:
                         failed_item_table.add_row([key, value['error']])
-                failed_item_table.display("Failed items after reads:")
+                if fail:
+                    failed_item_table.display("Failed items after reads:")
             return success, fail
         except Exception as error:
             self.test_log.error(error)
