@@ -3154,6 +3154,7 @@ class Atomicity(Task):
                     for self.client in Atomicity.clients:
                         self.batch_update(last_batch, self.client, persist_to=self.persist_to, replicate_to=self.replicate_to,
                                   timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
+                    Atomicity.update_keys = []
                     Atomicity.update_keys.extend(last_batch.keys())
                     Atomicity.mutate = 1
 
