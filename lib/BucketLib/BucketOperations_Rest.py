@@ -340,7 +340,7 @@ class BucketHelper(RestConnection):
         if saslPassword:
             params_dict["authType"] = "sasl"
             params_dict["saslPassword"] = saslPassword
-        if replicaNumber:
+        if replicaNumber is not None:
             params_dict["replicaNumber"] = replicaNumber
         # if proxyPort:
         #     params_dict["proxyPort"] = proxyPort

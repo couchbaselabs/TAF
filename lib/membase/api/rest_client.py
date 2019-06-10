@@ -1354,7 +1354,6 @@ class RestConnection(object):
         return status, content
 
     def get_admin_credentials(self):
-
         code = 'ns_config:search_node_prop(node(), ns_config:latest(), memcached, admin_user)'
         status, id = self.diag_eval(code)
 

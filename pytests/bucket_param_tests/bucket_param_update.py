@@ -27,23 +27,23 @@ class Bucket_param_test(BaseTestCase):
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_create, "create", 0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level,
                 batch_size=10, process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
-            # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+        # Verify initial doc load count
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.log.info("==========Finished Bucket_param_test setup========")
 
     def tearDown(self):
         super(Bucket_param_test, self).tearDown()
 
     def generic_replica_update(self, doc_ops, bucket_helper_obj,
-                               replicas_to_update):
+                               replicas_to_update, start_doc_for_insert):
         update_replicateTo_persistTo = self.input.param(
             "update_replicateTo_persistTo", False)
         def_bucket = self.bucket_util.get_all_buckets()[0]
-        start_doc_for_insert = 0
-        start_doc_for_delete = 0
+        start_doc_for_delete = start_doc_for_insert
         incr_val_for_delete = int(self.num_items/3)
 
         for replica_num in replicas_to_update:
@@ -73,33 +73,37 @@ class Bucket_param_test(BaseTestCase):
             self.log.info("Updating replica count of bucket to {0}"
                           .format(replica_num))
 
+            # Used for testing old durability feature
             if update_replicateTo_persistTo:
                 if self.self.durability_level is None:
                     self.replicate_to = replica_num
                     self.persist_to = replica_num + 1
 
-            bucket_helper_obj.change_bucket_props(def_bucket.name,
-                                                  replicaNumber=replica_num)
+            bucket_helper_obj.change_bucket_props(
+                def_bucket.name, replicaNumber=replica_num)
 
             if "create" in doc_ops:
                 # Start doc create task in parallel with replica_update
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, def_bucket, doc_create, "create", 0,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level,
                     batch_size=10, process_concurrency=8))
-                self.num_items *= 2
+                self.num_items += (doc_create.end - doc_create.start)
                 start_doc_for_insert = self.num_items
             if "update" in doc_ops:
                 # Start doc update task in parallel with replica_update
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, def_bucket, doc_update, "update", 0,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level,
                     batch_size=10, process_concurrency=8))
             if "delete" in doc_ops:
                 # Start doc update task in parallel with replica_update
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, def_bucket, doc_delete, "delete", 0,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level,
                     batch_size=10, process_concurrency=8))
                 self.num_items -= (incr_val_for_delete - start_doc_for_delete)
                 start_doc_for_delete += incr_val_for_delete
@@ -108,12 +112,25 @@ class Bucket_param_test(BaseTestCase):
             tasks.append(self.task.async_rebalance(self.cluster.servers,
                                                    [], []))
 
+            self.sleep(10, "Wait for rebalance to start")
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
+
+            self.log.info("Performing doc_ops after rebalance operation")
+            update_task = self.task.async_load_gen_docs(
+                self.cluster, def_bucket, doc_update, "update", 0,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level,
+                batch_size=10, process_concurrency=8)
+            self.task_manager.get_task_result(update_task)
+
+            # Update the bucket's replica number
+            def_bucket.replicaNumber = replica_num
 
             # Verify doc load count after each mutation cycle
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
+        return start_doc_for_insert
 
     def test_replica_update(self):
         if self.nodes_init < 2:
@@ -128,9 +145,16 @@ class Bucket_param_test(BaseTestCase):
 
         bucket_helper = BucketHelper(self.cluster.master)
 
+        start_doc_for_insert = 0
         # Replica increment tests
-        self.generic_replica_update(doc_ops, bucket_helper,
-                                    range(1, min(4, self.nodes_init)))
+        start_doc_for_insert = self.generic_replica_update(
+            doc_ops,
+            bucket_helper,
+            range(1, min(4, self.nodes_init)),
+            start_doc_for_insert)
         # Replica decrement tests
-        self.generic_replica_update(doc_ops, bucket_helper,
-                                    range(min(4, self.nodes_init), 1, -1))
+        start_doc_for_insert = self.generic_replica_update(
+            doc_ops,
+            bucket_helper,
+            range(min(4, self.nodes_init)-2, -1, -1),
+            start_doc_for_insert)
