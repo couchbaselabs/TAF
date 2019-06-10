@@ -1830,19 +1830,26 @@ class RestConnection(object):
     def get_cluster_stats(self):
         """
         Reads cluster nodes statistics using `pools/default` rest GET method
-        :return stat_dict - Dictionary of CPU & Memory status each cluster node:
+        :return stat_dict: Dictionary of CPU & Memory status each cluster node
         """
         stat_dict = dict()
         json_output = self.get_pools_default()
         if 'nodes' in json_output:
             for node_stat in json_output['nodes']:
                 stat_dict[node_stat['hostname']] = dict()
+                stat_dict[node_stat['hostname']]['version'] = node_stat['version']
                 stat_dict[node_stat['hostname']]['services'] = node_stat['services']
                 stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats']['cpu_utilization_rate']
                 stat_dict[node_stat['hostname']]['mem_free'] = node_stat['systemStats']['mem_free']
                 stat_dict[node_stat['hostname']]['mem_total'] = node_stat['systemStats']['mem_total']
                 stat_dict[node_stat['hostname']]['swap_mem_used'] = node_stat['systemStats']['swap_used']
                 stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats']['swap_total']
+                stat_dict[node_stat['hostname']]['active_item_count'] = 0
+                stat_dict[node_stat['hostname']]['replica_item_count'] = 0
+                if 'curr_items' in node_stat['interestingStats']:
+                    stat_dict[node_stat['hostname']]['active_item_count'] = node_stat['interestingStats']['curr_items']
+                if 'vb_replica_curr_items' in node_stat['interestingStats']:
+                    stat_dict[node_stat['hostname']]['replica_item_count'] = node_stat['interestingStats']['vb_replica_curr_items']
         return stat_dict
 
     def get_fts_stats(self, index_name, bucket_name, stat_name):

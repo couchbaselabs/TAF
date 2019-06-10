@@ -680,7 +680,8 @@ class ClusterUtils:
         table = TableView(self.log.info)
         table.set_headers(["Node", "Services", "CPU_utilization",
                            "Mem_total", "Mem_free",
-                           "Swap_mem_total", "Swap_mem_used"])
+                           "Swap_mem_total", "Swap_mem_used",
+                           "Active Items", "Replica Items", "Version"])
         rest = RestConnection(self.cluster.master)
         cluster_stat = rest.get_cluster_stats()
         for cluster_node, node_stats in cluster_stat.items():
@@ -692,6 +693,9 @@ class ClusterUtils:
             row.append(str(node_stats["mem_free"]))
             row.append(str(node_stats["swap_mem_total"]))
             row.append(str(node_stats["swap_mem_used"]))
+            row.append(str(node_stats["active_item_count"]))
+            row.append(str(node_stats["replica_item_count"]))
+            row.append(node_stats["version"])
             table.add_row(row)
         table.display("Cluster statistics")
 

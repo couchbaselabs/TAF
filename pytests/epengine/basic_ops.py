@@ -44,6 +44,7 @@ class basic_ops(BaseTestCase):
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
         self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished Basic_ops base setup========")
 
     def tearDown(self):

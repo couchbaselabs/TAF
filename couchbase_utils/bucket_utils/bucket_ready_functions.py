@@ -39,6 +39,7 @@ from membase.helper.rebalance_helper import RebalanceHelper
 from memcached.helper.data_helper import MemcachedClientHelper, \
                                          VBucketAwareMemcached
 from remote.remote_util import RemoteMachineShellConnection
+from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
                           MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
@@ -235,6 +236,26 @@ class BucketUtils:
         b = self.get_bucket_object_from_name(bucket)
         return None if not b else b.vbuckets
 
+    def print_bucket_stats(self):
+        table = TableView(self.log.info)
+        table.set_headers(["Bucket", "Type", "Replicas",
+                           "TTL", "Items", "RAM Quota",
+                           "RAM Used", "Disk Used"])
+        self.get_all_buckets()
+        if len(self.buckets) == 0:
+            table.add_row(["No buckets", "", "", "", "", "", "", ""])
+        else:
+            for bucket in self.buckets:
+                table.add_row(
+                    [bucket.name, bucket.bucketType,
+                     str(bucket.replicaNumber),
+                     str(bucket.maxTTL),
+                     str(bucket.stats.itemCount),
+                     str(bucket.stats.ram),
+                     str(bucket.stats.memUsed),
+                     str(bucket.stats.diskUsed)])
+        table.display("Bucket statistics")
+
     def get_vbucket_num_for_key(self, doc_key, total_vbuckets=1024):
         """
         Calculates vbucket number based on the document's key
@@ -340,7 +361,7 @@ class BucketUtils:
         for i in range(num_buckets):
             name = 'standard_bucket' + str(i)
             bucket_priority = None
-            if bucket_priorities!=[]:
+            if len(bucket_priorities) != 0:
                 tem_prioroty = bucket_priorities[i]
                 bucket_priority = self.get_bucket_priority(tem_prioroty)
 
@@ -1806,6 +1827,8 @@ class BucketUtils:
             bucket.servers.extend(serverList)
             if "numReplicas" in vBucketServerMap:
                 bucket.replicaNumber = vBucketServerMap["numReplicas"]
+            if "serverList" in vBucketServerMap:
+                bucket.replicaServers = vBucketServerMap["serverList"]
             # vBucketMapForward
             if 'vBucketMapForward' in vBucketServerMap:
                 # let's gather the forward map

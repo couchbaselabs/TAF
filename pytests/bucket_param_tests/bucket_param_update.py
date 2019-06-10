@@ -30,6 +30,8 @@ class Bucket_param_test(BaseTestCase):
                 durability=self.durability_level,
                 batch_size=10, process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -81,6 +83,7 @@ class Bucket_param_test(BaseTestCase):
 
             bucket_helper_obj.change_bucket_props(
                 def_bucket.name, replicaNumber=replica_num)
+            self.bucket_util.print_bucket_stats()
 
             if "create" in doc_ops:
                 # Start doc create task in parallel with replica_update
@@ -109,12 +112,17 @@ class Bucket_param_test(BaseTestCase):
                 start_doc_for_delete += incr_val_for_delete
 
             # Start rebalance task with doc_ops in parallel
-            tasks.append(self.task.async_rebalance(self.cluster.servers,
-                                                   [], []))
+            rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
+            self.sleep(5, "Wait for rebalance to start")
 
-            self.sleep(10, "Wait for rebalance to start")
+            # Wait for all tasks to complete
+            self.task.jython_task_manager.get_task_result(rebalance)
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
+
+            # Assert if rebalance failed
+            self.assertTrue(rebalance.result,
+                            "Rebalance failed after replica update")
 
             self.log.info("Performing doc_ops after rebalance operation")
             update_task = self.task.async_load_gen_docs(

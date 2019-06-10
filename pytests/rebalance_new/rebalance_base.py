@@ -20,7 +20,6 @@ class RebalanceBaseTest(BaseTestCase):
         self.default_view = View(self.default_view_name, self.defaul_map_func, None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-        self.print_cluster_stat = self.input.param("print_cluster_stat", False)
         self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         if nodes_init:
@@ -31,8 +30,6 @@ class RebalanceBaseTest(BaseTestCase):
         self.sleep(60)
         self.gen_create = self.get_doc_generator(0, self.num_items)
         if not self.atomicity:
-            if self.print_cluster_stat:
-                self.print_cluster_stat_task = self.cluster_util.async_print_cluster_stats()
             for bucket in self.bucket_util.buckets:
                 task = self.task.async_load_gen_docs(
                     self.cluster, bucket, self.gen_create, "create", 0,
@@ -41,10 +38,9 @@ class RebalanceBaseTest(BaseTestCase):
                     process_concurrency=8, retries=self.sdk_retries,
                     durability=self.durability_level)
                 self.task.jython_task_manager.get_task_result(task)
-                self.log.info("Verifying num_items counts after doc_ops")
-                self.bucket_util._wait_for_stats_all_buckets()
-                self.bucket_util.verify_stats_all_buckets(self.num_items)
-                self.log.info("Inserted '%d' doc items" % self.num_items)
+            self.log.info("Verifying num_items counts after doc_ops")
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
         else:
             task = self.task.async_load_gen_docs_atomicity(
                         self.cluster,self.bucket_util.buckets, self.gen_create, "create",0,
@@ -62,12 +58,11 @@ class RebalanceBaseTest(BaseTestCase):
             self.log, len(self.cluster.nodes_in_cluster),
             durability=self.durability_level,
             replicate_to=self.replicate_to, persist_to=self.persist_to)
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished rebalance base setup========")
 
     def tearDown(self):
-        if self.print_cluster_stat:
-            self.print_cluster_stat_task.end_task()
-            self.task_manager.get_task_result(self.print_cluster_stat_task)
         self.cluster_util.print_cluster_stats()
         super(RebalanceBaseTest, self).tearDown()
 
