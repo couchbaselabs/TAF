@@ -8,9 +8,10 @@ from datetime import datetime
 import subprocess
 import platform
 
-sys.path = [".", "lib"] + sys.path
+sys.path = [".", "platform_utils"] + sys.path
 from testconstants import WIN_COUCHBASE_BIN_PATH_RAW
 import TestInput
+from remote.remote_util import RemoteMachineShellConnection
 
 
 def usage(error=None):
@@ -53,8 +54,6 @@ class couch_dbinfo_Runner(object):
         file_name = "%s-%s-couch-dbinfo.txt" % (
             self.server.ip, time_stamp())
         if not self.local:
-            from lib.remote.remote_util import \
-                RemoteMachineShellConnection
             remote_client = RemoteMachineShellConnection(self.server)
             print "Collecting dbinfo from %s\n" % self.server.ip
             output, error = remote_client.execute_couch_dbinfo(
@@ -96,8 +95,6 @@ class cbcollectRunner(object):
     def run(self):
         file_name = "%s-%s-diag.zip" % (self.server.ip, time_stamp())
         if not self.local:
-            from lib.remote.remote_util import \
-                RemoteMachineShellConnection
             remote_client = RemoteMachineShellConnection(self.server)
             print "Collecting logs from %s\n" % self.server.ip
             output, error = remote_client.execute_cbcollect_info(
