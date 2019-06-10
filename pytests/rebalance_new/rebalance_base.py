@@ -23,8 +23,9 @@ class RebalanceBaseTest(BaseTestCase):
         self.print_cluster_stat = self.input.param("print_cluster_stat", False)
         self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        if nodes_init:
+            self.task.rebalance([self.cluster.master], nodes_init, [])
+            self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
         self.sleep(60)
