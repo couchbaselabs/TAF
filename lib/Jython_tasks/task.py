@@ -3200,7 +3200,8 @@ class Atomicity(Task):
                 if op_type == "rebalance_only_update":
                     Atomicity.update_keys.extend(Atomicity.all_keys)
                     exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, True, Atomicity.updatecount)
-                    Atomicity.mutate = Atomicity.updatecount
+                    if self.commit:
+                        Atomicity.mutate = Atomicity.updatecount
 
                 if op_type == "rebalance_delete":
                     Atomicity.delete_keys.extend(Atomicity.all_keys)

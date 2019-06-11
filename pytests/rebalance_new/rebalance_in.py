@@ -683,8 +683,10 @@ class RebalanceInTests(RebalanceBaseTest):
                     num_views, prefix, ddoc_name, self.default_view_name,
                     query, bucket=bucket, wait_time=timeout,
                     expected_rows=expected_rows)
-
-            self.bucket_util.verify_cluster_stats(self.num_items)
+                
+            if not self.atomicity:
+                self.bucket_util.verify_cluster_stats(self.num_items)
+                
             if reproducer:
                 rebalance = self.task.async_rebalance(self.cluster.servers, [], servs_in)
                 self.task.jython_task_manager.get_task_result(rebalance)
@@ -918,11 +920,9 @@ class RebalanceInTests(RebalanceBaseTest):
                                                   [self.cluster.servers[i]],
                                                   [])
             if self.atomicity:
-                self._load_all_buckets_atomicty(self.cluster.master, self.gen_update,
-                                   "update", 0)
+                self._load_all_buckets_atomicty(self.gen_update, "rebalance_only_update")
                 self.sleep(20)
-                self._load_all_buckets_atomicty(self.cluster.master, self.gen_delete,
-                                   "rebalance_delete", 0)
+                self._load_all_buckets_atomicty(self.gen_delete, "rebalance_delete")
                 self.sleep(20)
             else:
                 self._load_all_buckets(self.cluster.master, self.gen_update,
@@ -934,8 +934,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.nodes_in_cluster.extend([self.cluster.servers[i]])
             self.sleep(20)
             if self.atomicity:
-                self._load_all_buckets_atomicty(self.cluster.master, self.gen_delete,
-                                   "create", 0)
+                self._load_all_buckets_atomicty(self.gen_delete, "create")
                 self.sleep(20)
             else:
                 self._load_all_buckets(self.cluster.master, self.gen_delete,

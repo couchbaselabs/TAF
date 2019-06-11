@@ -166,7 +166,7 @@ class RebalanceBaseTest(BaseTestCase):
                          "rebalance_only_update",0,batch_size=20,process_concurrency=8,
                           replicate_to=self.replicate_to,persist_to=self.persist_to,
                           timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout,
+                          transaction_timeout=self.transaction_timeout, update_count=self.update_count,
                           commit=self.transaction_commit,durability=self.durability_level))
         if("create" in self.doc_ops):
             tasks.append(self.task.async_load_gen_docs_atomicity(
