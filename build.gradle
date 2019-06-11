@@ -19,13 +19,13 @@ repositories {
     }
 }
 
-configurations {
-    myjython
-}
-
-dependencies {
-    myjython group: 'org.python', name: 'jython', version: '2.7.1b3'
-}
+//configurations {
+//    myjython
+//}
+//
+//dependencies {
+//    myjython group: 'org.python', name: 'jython', version: '2.7.1b3'
+//}
 
 
 dependencies {
@@ -47,24 +47,29 @@ dependencies {
 
 // Task that runs "jython testrunner.py" with the correct CLASSPATH
 task testrunner(type:Exec) {
-    def jythonpath = sourceSets.main.runtimeClasspath.asPath
 
-    if (!project.hasProperty("jython")) {
-        throw new Exception("Must specify -P jython '/path/to/jython'")
+//    if (!project.hasProperty("jython")) {
+//        throw new Exception("Must specify -P jython '/path/to/jython'")
+//    }
+//
+//    if (!project.hasProperty("args")) {
+//        throw new Exception("Must specify -P args 'all_testrunner_args'")
+//    }
+
+    if (project.hasProperty("args") && project.hasProperty("jython")) {
+        def jythonpath = sourceSets.main.runtimeClasspath.asPath
+
+        def jythonLocation = project.property("jython")
+        def testRunnerArgs = project.property("args").split()
+
+        def cmd = [jythonLocation, '-J-cp', jythonpath + ":build/classes/java/main", 'testrunner.py']
+
+        testRunnerArgs.each { cmd.add(it) }
+
+        println("Running: " + cmd.join(" "))
+
+        commandLine cmd
     }
-
-    if (!project.hasProperty("args")) {
-        throw new Exception("Must specify -P args 'all_testrunner_args'")
-    }
-
-    def jythonLocation = project.property("jython")
-    def testRunnerArgs = project.property("args").split()
-
-    def cmd = [jythonLocation,'-J-cp', jythonpath + ":.", 'testrunner.py']
-
-    testRunnerArgs.each { cmd.add(it) }
-
-    println("Running: " + cmd.join(" "))
-
-    commandLine cmd
 }
+
+testrunner.dependsOn(compileJava)

@@ -25,6 +25,8 @@ from scripts.collect_server_info import cbcollectRunner, couch_dbinfo_Runner
 from scripts.getcoredumps import Getcoredumps, Clearcoredumps
 from xunit import XUnitTestResult
 
+# Temporary hack to get around this module not being automatically found.  Needs fixing properly
+import Atomicity.basic_ops
 
 if sys.hexversion < 0x02060000:
     print "Testrunner requires version 2.6+ of python"

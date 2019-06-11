@@ -1,4 +1,4 @@
-package com.couchbase.test.transactions;
+package com.couchbase.test.doc_operations_sdk3;
 
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
