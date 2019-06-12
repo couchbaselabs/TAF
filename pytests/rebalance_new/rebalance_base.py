@@ -24,7 +24,7 @@ class RebalanceBaseTest(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         if nodes_init:
             self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
         self.sleep(60)

@@ -1536,6 +1536,9 @@ class StatsWaitTask(Task):
             time.sleep(5)
             return False
         else:
+            self.test_log.debug("Ready: %s %s %s %s. Received: %s for bucket '%s'"
+                               % (self.stat, stat_result, self.comparison,
+                                  self.value, val_dict, self.bucket.name))
             self.stop = True
             return True
 
