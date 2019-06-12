@@ -295,8 +295,8 @@ class RebalanceTask(Task):
                                                    new_vbuckets))
                             raise Exception(msg)
             (status, progress) = self.rest._rebalance_status_and_progress()
-            self.test_log.debug("Rebalance - status: %s, progress: %s", status,
-                                progress)
+            self.test_log.info("Rebalance - status: %s, progress: %s", status,
+                               progress)
             # if ServerUnavailableException
             if progress == -100:
                 self.retry_get_progress += 1
@@ -590,12 +590,14 @@ class GenericLoadingTask(Task):
         return success, fail
 
     def batch_read(self, keys, shared_client=None):
+        success = dict()
+        fail = dict()
         self.client = self.client or shared_client
         try:
-            result_map = self.client.getMulti(keys)
-            return result_map
+            success, fail = self.client.getMulti(keys)
         except Exception as error:
             self.set_exception(error)
+        return success, fail
 
     def _process_values_for_create(self, key_val):
         for key, value in key_val.items():
@@ -644,7 +646,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
             retries=retries)
-        self.thread_name = "LoadDocumentsTask_".format(generator._doc_gen.start, "-", str(generator._doc_gen.end), op_type, durability) 
+        self.thread_name = "LoadDocumentsTask_{}_{}_{}_{}".format(generator._doc_gen.start, generator._doc_gen.end, op_type, durability)
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
@@ -695,7 +697,9 @@ class LoadDocumentsTask(GenericLoadingTask):
             self.fail.update(fail)
             self.success.update(success)
         elif self.op_type == 'read':
-            self.batch_read(key_value.keys())
+            success, fail = self.batch_read(key_value.keys())
+            self.fail.update(fail)
+            self.success.update(success)
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 

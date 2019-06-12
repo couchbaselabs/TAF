@@ -346,19 +346,21 @@ class SDKClient(object):
         return success, fail
 
     def __translate_get_multi_results(self, data):
-        get_result = dict()
+        success = dict()
+        fail = dict()
         if data is None:
-            return get_result
+            return success, fail
         for result in data:
             key = result['id']
-            get_result[key] = dict()
-            get_result[key]['cas'] = result['cas']
-
             if result['status']:
-                get_result[key]['value'] = result['content']
+                success[key] = dict()
+                success[key]['value'] = result['content']
+                success[key]['cas'] = result['cas']
             else:
-                get_result[key]['error'] = result['error']
-        return get_result
+                fail[key] = dict()
+                fail[key]['error'] = result['error']
+                fail[key]['cas'] = result['cas']
+        return success, fail
 
     def getInsertOptions(self, exp=0, exp_unit="seconds",
                          persist_to=0, replicate_to=0,
