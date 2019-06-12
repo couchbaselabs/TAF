@@ -66,8 +66,8 @@ class BaseTestCase(unittest.TestCase):
         self.target_vbucket = self.input.param("target_vbucket", None)
         self.maxttl = self.input.param("maxttl", 0)
         # End of doc specific parameters
-        
-        #transactions parameters
+
+        # Transactions parameters
         self.transaction_timeout = self.input.param("transaction_timeout", 100)
         self.transaction_commit = self.input.param("transaction_commit", True)
         self.update_count = self.input.param("update_count", 1)
@@ -253,6 +253,8 @@ class BaseTestCase(unittest.TestCase):
                     # collect logs here because we have not shut things down
                     if TestInputSingleton.input.param("get-cbcollect-info", False):
                         for server in self.servers:
+                            self.log.critical("Skipping CBCOLLECT !!")
+                            break
                             self.infra_log.info("Collecting logs @ {0}"
                                                 .format(server.ip))
                             self.get_cbcollect_info(server)
@@ -261,6 +263,8 @@ class BaseTestCase(unittest.TestCase):
 
                     if TestInputSingleton.input.param('get_trace', None):
                         for server in self.servers:
+                            self.log.critical("Skipping get_trace !!")
+                            break
                             try:
                                 shell = RemoteMachineShellConnection(server)
                                 output, _ = shell.execute_command("ps -aef|grep %s" %
