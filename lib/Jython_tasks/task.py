@@ -364,7 +364,7 @@ class RebalanceTask(Task):
 class GenericLoadingTask(Task):
     def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1,
                  timeout_secs=60, compression=True,
-                 throughput_concurrency=8, retries=5,transaction=False, commit=False):
+                 retries=5,transaction=False, commit=False):
         super(GenericLoadingTask, self).__init__("Loadgen_task_{}"
                                                  .format(time.time()))
         self.batch_size = batch_size
@@ -373,7 +373,6 @@ class GenericLoadingTask(Task):
         self.cluster = cluster
         self.bucket = bucket
         self.client = client
-        self.process_concurrency = throughput_concurrency
         self.random = random.Random()
         self.retries = retries
 
@@ -637,15 +636,15 @@ class LoadDocumentsTask(GenericLoadingTask):
     def __init__(self, cluster, bucket, client, generator, op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True, throughput_concurrency=4, retries=5,
+                 compression=True, retries=5,
                  durability=""):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
-            throughput_concurrency=throughput_concurrency, retries=retries)
-
+            retries=retries)
+        self.thread_name = "LoadDocumentsTask_".format(generator._doc_gen.start, "-", str(generator._doc_gen.end), op_type, durability) 
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
@@ -776,7 +775,6 @@ class Durability(Task):
                 time_unit=self.time_unit, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression,
-                throughput_concurrency=self.process_concurrency,
                 instance_num=i, durability=self.durability)
             self.tasks.append(task)
             i += 1
@@ -817,13 +815,13 @@ class Durability(Task):
                      flag=0, majority_value=0, persist_to=0, replicate_to=0,
                      time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
-                     compression=True, throughput_concurrency=4, retries=5,
+                     compression=True, retries=5,
                      instance_num=0, durability=""):
             super(Durability.Loader, self).__init__(
                 cluster, bucket, client, batch_size=batch_size,
                 pause_secs=pause_secs, timeout_secs=timeout_secs,
                 compression=compression,
-                throughput_concurrency=throughput_concurrency, retries=retries)
+                retries=retries)
             self.thread_name = "DurabilityDocumentLoaderTask" + str(instance_num)
             self.generator = generator
             self.op_type = op_type
@@ -1127,7 +1125,6 @@ class LoadDocumentsGeneratorsTask(Task):
                 time_unit=self.time_unit, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression,
-                throughput_concurrency=self.process_concurrency,
                 durability=self.durability)
             tasks.append(task)
         return tasks
@@ -1185,7 +1182,6 @@ class ContinuousDocUpdateTask(Task):
                 only_store_hash=self.only_store_hash,
                 batch_size=self.batch_size, pause_secs=self.pause_secs,
                 timeout_secs=self.timeout_secs, compression=self.compression,
-                process_concurrency=self.process_concurrency,
                 retries=self.retries)
             self.task_manager.add_new_task(task)
             self.task_manager.get_task_result(task)
@@ -1291,14 +1287,14 @@ class LoadDocumentsForDgmTask(Task):
 class ValidateDocumentsTask(GenericLoadingTask):
     missing_keys = {}
     wrong_values = {}
+
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  flag=0, proxy_client=None, batch_size=1, pause_secs=1,
-                 timeout_secs=30, compression=True, throughput_concurrency=4):
+                 timeout_secs=30, compression=True):
         super(ValidateDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
-            compression=compression,
-            throughput_concurrency=throughput_concurrency)
+            compression=compression)
 
         self.generator = generator
         self.op_type = op_type
@@ -1460,8 +1456,7 @@ class DocumentsValidatorTask(Task):
                 self.cluster, self.bucket, self.client, generator,
                 self.op_type, self.exp, self.flag, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                compression=self.compression,
-                throughput_concurrency=self.process_concurrency)
+                compression=self.compression)
             tasks.append(task)
         return tasks
 
@@ -3043,7 +3038,7 @@ class Atomicity(Task):
                                              self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
                                              time_unit=self.time_unit, batch_size=self.batch_size,
                                              pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                             compression=self.compression, throughput_concurrency=self.process_concurrency,
+                                             compression=self.compression,
                                              instance_num = 1,transaction=self.transaction, commit=self.commit)
                 tasks.append(task)
         else:
@@ -3051,7 +3046,7 @@ class Atomicity(Task):
                 task = Atomicity.Validate(self.cluster, self.bucket, self.client, generator, self.op_type,
                                             self.exp, self.flag,  batch_size=self.batch_size,
                                             pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                            compression=self.compression, throughput_concurrency=self.process_concurrency)
+                                            compression=self.compression)
                 tasks.append(task)
         return tasks
 
@@ -3069,7 +3064,7 @@ class Atomicity(Task):
             super(Atomicity.Loader, self).__init__(cluster, bucket, client, batch_size=batch_size,
                                                     pause_secs=pause_secs,
                                                     timeout_secs=timeout_secs, compression=compression,
-                                                    throughput_concurrency=throughput_concurrency, retries=retries, transaction=transaction, commit=commit)
+                                                    retries=retries, transaction=transaction, commit=commit)
 
             self.generator = generator
             self.op_type = []
@@ -3082,7 +3077,6 @@ class Atomicity(Task):
             self.replicate_to = replicate_to
             self.compression = compression
             self.pause_secs = pause_secs
-            self.throughput_concurrency = throughput_concurrency
             self.timeout_secs = timeout_secs
             self.time_unit = time_unit
             self.instance = instance_num
@@ -3250,11 +3244,10 @@ class Atomicity(Task):
 
         def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
                      proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=30,
-                     compression=True, throughput_concurrency=4):
+                     compression=True):
             super(Atomicity.Validate, self).__init__(cluster, bucket, client, batch_size=batch_size,
                                                         pause_secs=pause_secs,
-                                                        timeout_secs=timeout_secs, compression=compression,
-                                                        throughput_concurrency=throughput_concurrency)
+                                                        timeout_secs=timeout_secs, compression=compression)
 
             self.generator = generator
             self.op_type = op_type
