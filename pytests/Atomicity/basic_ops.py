@@ -75,7 +75,8 @@ class basic_ops(BaseTestCase):
         
         if self.standard_buckets > 1:
             self.bucket_util.create_standard_buckets(self.cluster.master, self.standard_buckets, bucket_size=100)
-            
+        
+        self.sleep(20)
         self.log.info("going to create a task")
         task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
                                              gen_create, self.op_type , exp=0,
