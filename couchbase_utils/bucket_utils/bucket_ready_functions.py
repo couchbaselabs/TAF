@@ -100,6 +100,7 @@ class BucketUtils:
         self.task_manager.add_new_task(_task)
         result = self.task_manager.get_task_result(_task)
         if wait_for_warmup:
+            self.sleep(2)
             warmed_up = self._wait_warmup_completed(
                 self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
             if not warmed_up:
@@ -369,7 +370,6 @@ class BucketUtils:
                              Bucket.ramQuotaMB: bucket_size,
                              Bucket.priority: bucket_priority})
             self.create_bucket(bucket)
-            self.buckets.append(bucket)
 
         if self.enable_time_sync:
             self._set_time_sync_on_buckets(['standard_bucket' + str(i)

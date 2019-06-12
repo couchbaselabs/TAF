@@ -3011,7 +3011,9 @@ class Atomicity(Task):
                 Atomicity.task_manager.get_task_result(task)
             except Exception as e:
                 self.set_exception(e)
-        self.client.close()
+                
+        for client in Atomicity.clients:
+            client.close()
 
     def get_tasks(self, generator, load):
         generators = []
@@ -3164,7 +3166,11 @@ class Atomicity(Task):
                 if op_type == "general_delete":
                     self.test_log.debug("performing delete for keys {}".format(last_batch.keys()))
                     for self.client in Atomicity.clients:
-                        keys = self.batch_delete(last_batch, self.client)
+                        keys = self.batch_delete(last_batch, self.client, persist_to=self.persist_to,
+                                              replicate_to=self.replicate_to,
+                                              timeout=self.timeout,
+                                              timeunit=self.time_unit,
+                                              durability="")
                         if keys:
                             self.test_log.info("keys are not deleted {}".format(keys))
                     Atomicity.delete_keys = last_batch.keys()
