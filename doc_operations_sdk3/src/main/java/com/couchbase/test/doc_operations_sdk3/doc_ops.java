@@ -277,10 +277,10 @@ public class doc_ops {
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
 		if (persistTo != 0 || replicateTo !=0) {
-			return InsertOptions.insertOptions().durability(persistto, replicateto).timeout(timeout);
+			return InsertOptions.insertOptions().expiry(exp).durability(persistto, replicateto).timeout(timeout); 
 		}
 		else {
-			return InsertOptions.insertOptions().timeout(timeout).durabilityLevel(durabilitylevel);
+			return InsertOptions.insertOptions().expiry(exp).timeout(timeout).durabilityLevel(durabilitylevel);
 		}
 	}
 
@@ -289,10 +289,10 @@ public class doc_ops {
 		Duration exp = this.getDuration(expiry, expiryTimeUnit);
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		if (persistTo == PersistTo.NONE|| replicateTo == ReplicateTo.NONE) {
-			return InsertOptions.insertOptions().durability(persistTo, replicateTo).timeout(timeout);
+			return InsertOptions.insertOptions().expiry(exp).durability(persistTo, replicateTo).timeout(timeout);
 		}
 		else {
-			return InsertOptions.insertOptions().durabilityLevel(durabilityLevel).timeout(timeout);
+			return InsertOptions.insertOptions().expiry(exp).durabilityLevel(durabilityLevel).timeout(timeout);
 		}
 	}
 
@@ -304,10 +304,10 @@ public class doc_ops {
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
 		if (persistTo != 0 || replicateTo !=0) {
-			return UpsertOptions.upsertOptions().durability(persistto, replicateto).timeout(timeout);
+			return UpsertOptions.upsertOptions().expiry(exp).durability(persistto, replicateto).timeout(timeout);
 		}
 		else {
-			return UpsertOptions.upsertOptions().durabilityLevel(durabilitylevel).timeout(timeout);
+			return UpsertOptions.upsertOptions().expiry(exp).durabilityLevel(durabilitylevel).timeout(timeout);
 		}
 	}
 
@@ -316,10 +316,10 @@ public class doc_ops {
 		Duration exp = this.getDuration(expiry, expiryTimeUnit);
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		if (persistTo == PersistTo.NONE|| replicateTo == ReplicateTo.NONE) {
-			return UpsertOptions.upsertOptions().durability(persistTo, replicateTo).timeout(timeout);
+			return UpsertOptions.upsertOptions().expiry(exp).durability(persistTo, replicateTo).timeout(timeout);
 		}
 		else {
-			return UpsertOptions.upsertOptions().durabilityLevel(durabilityLevel).timeout(timeout);
+			return UpsertOptions.upsertOptions().expiry(exp).durabilityLevel(durabilityLevel).timeout(timeout);
 		}
 	}
 
