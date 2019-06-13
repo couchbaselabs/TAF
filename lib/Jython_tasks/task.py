@@ -1486,7 +1486,6 @@ class StatsWaitTask(Task):
         self.stat = stat
         self.comparison = comparison
         self.value = value
-        self.conns = {}
         self.stop = False
         self.timeout = timeout
         self.cbstatObj = None
@@ -1507,8 +1506,7 @@ class StatsWaitTask(Task):
                 else:
                     raise Exception("Not supported. Implement the stat call")
         finally:
-            for _, conn in self.conns.items():
-                conn.close()
+            pass
         if time.time() > timeout:
             for shell in self.shellConnList:
                 shell.disconnect()
@@ -1522,7 +1520,7 @@ class StatsWaitTask(Task):
         val_dict = dict()
         try:
             for cb_stat_obj in self.cbstatObjList:
-                tem_stat = cb_stat_obj.all_stats(self.bucket.name, self.stat)
+                tem_stat = cb_stat_obj.all_stats(self.bucket.name, field_to_grep=self.stat, stat_name=self.statCmd)
                 val_dict[cb_stat_obj.shellConn.ip] = tem_stat
                 if tem_stat and tem_stat != "None":
                     stat_result += int(tem_stat)

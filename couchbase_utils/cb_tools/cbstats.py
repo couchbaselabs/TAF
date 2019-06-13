@@ -104,7 +104,7 @@ class Cbstats(CbCmdBase):
         return self._execute_cmd(cmd)
 
     # Below are wrapper functions for above command executor APIs
-    def all_stats(self, bucket_name, field_to_grep):
+    def all_stats(self, bucket_name, field_to_grep, stat_name="all"):
         """
         Get a particular value of stat from the command,
           cbstats localhost:port all
@@ -123,7 +123,7 @@ class Cbstats(CbCmdBase):
         """
 
         result = None
-        output, error = self.get_stats(bucket_name, "all",
+        output, error = self.get_stats(bucket_name, stat_name,
                                        field_to_grep=field_to_grep)
         if len(error) != 0:
             raise Exception("\n".join(error))
