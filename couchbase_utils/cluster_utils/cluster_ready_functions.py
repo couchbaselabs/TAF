@@ -765,36 +765,6 @@ class ClusterUtils:
                     raise Exception(exception_str)
         shell.disconnect()
 
-    def modify_fragmentation_config(self, config, bucket="default"):
-        rest = RestConnection(self.cluster.master)
-        _config = {"parallelDBAndVC": "false",
-                   "dbFragmentThreshold": None,
-                   "viewFragmntThreshold": None,
-                   "dbFragmentThresholdPercentage": 100,
-                   "viewFragmntThresholdPercentage": 100,
-                   "allowedTimePeriodFromHour": None,
-                   "allowedTimePeriodFromMin": None,
-                   "allowedTimePeriodToHour": None,
-                   "allowedTimePeriodToMin": None,
-                   "allowedTimePeriodAbort": None,
-                   "autoCompactionDefined": "true"}
-        for key in config:
-            _config[key] = config[key]
-
-        rest.set_auto_compaction(
-            parallelDBAndVC=_config["parallelDBAndVC"],
-            dbFragmentThreshold=_config["dbFragmentThreshold"],
-            viewFragmntThreshold=_config["viewFragmntThreshold"],
-            dbFragmentThresholdPercentage=_config["dbFragmentThresholdPercentage"],
-            viewFragmntThresholdPercentage=_config["viewFragmntThresholdPercentage"],
-            allowedTimePeriodFromHour=_config["allowedTimePeriodFromHour"],
-            allowedTimePeriodFromMin=_config["allowedTimePeriodFromMin"],
-            allowedTimePeriodToHour=_config["allowedTimePeriodToHour"],
-            allowedTimePeriodToMin=_config["allowedTimePeriodToMin"],
-            allowedTimePeriodAbort=_config["allowedTimePeriodAbort"],
-            bucket=bucket)
-        time.sleep(5)
-
     def async_monitor_active_task(self, servers, type_task,
                                   target_value, wait_progress=100,
                                   num_iteration=100, wait_task=True):
@@ -822,3 +792,49 @@ class ClusterUtils:
             self.task_manager.add_new_task(_task)
             _tasks.append(_task)
         return _tasks
+
+    def pick_node(self, master):
+        log = logging.getLogger("infra")
+        rest = RestConnection(master)
+        nodes = rest.node_statuses()
+        node_picked = None
+        nodes_on_same_ip = True
+
+        firstIp = nodes[0].ip
+        for node in nodes:
+            if node.ip != firstIp:
+                nodes_on_same_ip = False
+                break
+
+        for node in nodes:
+            node_picked = node
+            if not nodes_on_same_ip:
+                if node_picked.ip != master.ip:
+                    log.info("Picked node ... {0}:{1}"
+                             .format(node_picked.ip, node_picked.port))
+                    break
+            else:
+                # temp fix - port numbers of master(machine ip and localhost: 9000 match
+                if int(node_picked.port) == int(master.port):
+                    log.info("Not picking the master node {0}:{1}..try again.."
+                             .format(node_picked.ip, node_picked.port))
+                else:
+                    log.info("Picked  node {0}:{1}"
+                             .format(node_picked.ip, node_picked.port))
+                    break
+        return node_picked
+
+    def pick_nodes(self, master, howmany=1, target_node=None):
+        rest = RestConnection(master)
+        nodes = rest.node_statuses()
+        picked = []
+        for node_for_stat in nodes:
+            if node_for_stat.ip != master.ip or str(node_for_stat.port) != master.port:
+                if target_node is None:
+                    picked.append(node_for_stat)
+                elif target_node.ip == node_for_stat.ip:
+                    picked.append(node_for_stat)
+                    return picked
+                if len(picked) == howmany:
+                    break
+        return picked

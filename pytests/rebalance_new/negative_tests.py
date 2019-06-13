@@ -53,7 +53,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
         try:
             self.rest = RestConnection(self.cluster.master)
             nodes = self.get_nodes()
-            chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             # Mark Node for failover
             success_failed_over = self.rest.fail_over(chosen[0].id,
                                                       graceful=False)
@@ -74,7 +74,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
         try:
             self.rest = RestConnection(self.cluster.master)
             nodes = self.get_nodes()
-            chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             # Mark Node for failover
             success_failed_over = self.rest.fail_over(chosen[0].id,
                                                       graceful=False)
@@ -111,7 +111,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
     def rebalance_graceful_failover_running_cannot_rebalance(self):
         self.rest = RestConnection(self.cluster.master)
         nodes = self.get_nodes()
-        chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         success_failed_over = self.rest.fail_over(chosen[0].id, graceful=True)
         status = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes[1:])
         self.assertFalse(status, "Rebalance did not fail as expected")

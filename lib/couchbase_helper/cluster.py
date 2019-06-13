@@ -303,6 +303,46 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
+    def async_monitor_view_fragmentation(self, server,
+                                         design_doc_name,
+                                         fragmentation_value,
+                                         bucket="default"):
+        """Asynchronously monitor view fragmentation.
+           When <fragmentation_value> is reached on the
+           index file for <design_doc_name> this method
+           will return.
+        Parameters:
+            server - The server to handle fragmentation config task. (TestInputServer)
+            design_doc_name - design doc with views represented in index file. (String)
+            fragmentation_value - target amount of fragmentation within index file to detect. (String)
+            bucket - The name of the bucket design_doc belongs to. (String)
+        Returns:
+            MonitorViewFragmentationTask - A task future that is a handle to the scheduled task."""
+
+        _task = jython_tasks.MonitorViewFragmentationTask(server, design_doc_name,
+                                             fragmentation_value, bucket)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
+    def async_compact_view(self, server, design_doc_name, bucket="default", with_rebalance=False):
+        """Asynchronously run view compaction.
+        Compacts index file represented by views within the specified <design_doc_name>
+        Parameters:
+            server - The server to handle fragmentation config task. (TestInputServer)
+            design_doc_name - design doc with views represented in index file. (String)
+            bucket - The name of the bucket design_doc belongs to. (String)
+            with_rebalance - there are two cases that process this parameter:
+                "Error occured reading set_view _info" will be ignored if True
+                (This applies to rebalance in case),
+                and with concurrent updates(for instance, with rebalance)
+                it's possible that compaction value has not changed significantly
+        Returns:
+            ViewCompactionTask - A task future that is a handle to the scheduled task."""
+
+        _task = jython_tasks.ViewCompactionTask(server, design_doc_name, bucket, with_rebalance)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
     def async_rebalance(self, servers, to_add, to_remove, use_hostnames=False,
                         services=None, check_vbucket_shuffling=True):
         """

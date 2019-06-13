@@ -23,7 +23,8 @@ from membase.api.exception import \
     N1QLQueryException, DropIndexException, CreateIndexException, \
     DesignDocCreationException, QueryViewException, ReadDocumentException, \
     RebalanceFailedException, ServerUnavailableException, \
-    BucketCreationException, AutoFailoverException
+    BucketCreationException, AutoFailoverException, GetBucketInfoFailed,\
+    CompactViewFailed, SetViewInfoNotFound
 from membase.api.rest_client import RestConnection
 from java.util.concurrent import Callable
 from java.lang import Thread
@@ -47,6 +48,7 @@ class Task(Callable):
         self.end_time = None
         self.log = logging.getLogger("infra")
         self.test_log = logging.getLogger("test")
+        self.result = False
 
     def __str__(self):
         if self.exception:
@@ -79,6 +81,9 @@ class Task(Callable):
         self.completed = True
         self.end_time = time.time()
         self.log.debug("Thread %s is completed:" % self.thread_name)
+
+    def set_result(self, result):
+        self.result = result
 
     def call(self):
         raise NotImplementedError
@@ -689,7 +694,6 @@ class LoadDocumentsTask(GenericLoadingTask):
                 skip_read_on_error=self.skip_read_on_error)
             self.fail.update(fail)
             self.success.update(success)
-            self.docs_loaded += len(key_value)
         elif self.op_type == 'update':
             success, fail = self.batch_update(key_value,
                                               persist_to=self.persist_to,
@@ -718,6 +722,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             self.docs_loaded += len(key_value)
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
+        self.docs_loaded += len(key_value)
 
 
 class Durability(Task):
@@ -1522,8 +1527,6 @@ class StatsWaitTask(Task):
 
     def call(self):
         self.start_task()
-        # import pydevd
-        # pydevd.settrace(trace_only_current_thread=False)
         start_time = time.time()
         timeout = start_time + self.timeout
         self.cbstatObjList = list()
@@ -1864,7 +1867,8 @@ class ViewQueryTask(Task):
     def __init__(self, server, design_doc_name, view_name,
                  query, expected_rows=None,
                  bucket="default", retry_time=2):
-        Task.__init__(self, "query_view_task")
+        Task.__init__(self, "query_view_task_{}_{}".format(design_doc_name,
+                                                           view_name))
         self.server = server
         self.bucket = bucket
         self.view_name = view_name
@@ -1887,10 +1891,12 @@ class ViewQueryTask(Task):
 
                 if self.expected_rows is None:
                     # no verification
+                    self.result = True
                     self.complete_task()
                     return content
                 else:
                     return_value = self.check()
+                    self.result = return_value
                     self.complete_task()
                     return return_value
 
@@ -1903,6 +1909,7 @@ class ViewQueryTask(Task):
             except Exception as e:
                 self.set_exception(e)
                 self.complete_task()
+                self.result = True
                 return False
 
     def check(self):
@@ -2405,23 +2412,22 @@ class MonitorActiveTask(Task):
                 if self.current_progress >= self.wait_progress:
                     self.test_log.debug("Got expected progress: %s"
                                         % self.current_progress)
-                    return True
-                else:
-                    return self.check()
+                    self.result = True
         if self.wait_task:
             # task is not performed
             self.test_log.error("Expected active task %s:%s was not found"
                                 % (self.type, self.target_value))
-            return False
+            self.result = False
         else:
             # task was completed
             self.test_log.debug("task for monitoring %s:%s completed"
                                 % (self.type, self.target_value))
-            return True
+            self.result = True
 
     def check(self):
-        while True:
-            tasks = self.rest.active_tasks()
+        tasks = self.rest.active_tasks()
+        self.test_log.info("tasks running on the server: %s" % tasks)
+        if self.task in tasks and self.task is not None:
             for task in tasks:
                 # if task still exists
                 if task == self.task:
@@ -2430,29 +2436,35 @@ class MonitorActiveTask(Task):
                                            task["progress"]))
                     # reached expected progress
                     if task["progress"] >= self.wait_progress:
-                        self.test_log.error("Progress reached %s"
-                                            % self.wait_progress)
-                        return True
+                        self.test_log.info("Progress for task %s reached %s"
+                                           % (self.task, self.wait_progress))
+                        self.result = True
+                        return
                     # progress value was changed
                     if task["progress"] > self.current_progress:
                         self.current_progress = task["progress"]
                         self.current_iter = 0
-                        break
+                        self.check()
                     # progress value was not changed
                     elif task["progress"] == self.current_progress:
                         if self.current_iter < self.num_iterations:
                             time.sleep(2)
                             self.current_iter += 1
-                            break
-                        # num iteration with the same progress = num_iterations
+                            self.check()
                         else:
                             self.test_log.error("Progress for active task was not changed during %s sec"
                                                 % 2 * self.num_iterations)
-                            return False
+                            self.result = False
+                            return
                     else:
                         self.test_log.error("Progress for task %s:%s changed direction!"
                                             % (self.type, self.target_value))
-                        return False
+                        self.result = False
+                        return
+        else:
+            self.test_log.info("Task %s is not running on the server"
+                               % (self.task))
+            self.result = True
 
 
 class MonitorDBFragmentationTask(Task):
@@ -3380,3 +3392,248 @@ class Atomicity(Task):
                     finally:
                         key_val[key] = value
 
+class MonitorViewFragmentationTask(Task):
+
+    """
+        Attempt to monitor fragmentation that is occurring for a given design_doc.
+        execute stage is just for preliminary sanity checking of values and environment.
+        Check function looks at index file accross all nodes and attempts to calculate
+        total fragmentation occurring by the views within the design_doc.
+        Note: If autocompaction is enabled and user attempts to monitor for fragmentation
+        value higher than level at which auto_compaction kicks in a warning is sent and
+        it is best user to use lower value as this can lead to infinite monitoring.
+    """
+
+    def __init__(self, server, design_doc_name, fragmentation_value=10, bucket="default"):
+
+        Task.__init__(self, "monitor_frag_task")
+        self.server = server
+        self.bucket = bucket
+        self.fragmentation_value = fragmentation_value
+        self.design_doc_name = design_doc_name
+        self.result = False
+
+    def call(self):
+        self.start_task()
+        # sanity check of fragmentation value
+        print "self.fragmentation_value: %s" % self.fragmentation_value
+        if self.fragmentation_value < 0 or self.fragmentation_value > 100:
+            err_msg = "Invalid value for fragmentation %d" % self.fragmentation_value
+            self.set_exception(Exception(err_msg))
+
+        try:
+            auto_compact_percentage = self._get_current_auto_compaction_percentage()
+            if auto_compact_percentage != "undefined" and auto_compact_percentage < self.fragmentation_value:
+                self.log.warn("Auto compaction is set to %s. Therefore fragmentation_value %s may not be reached" % (auto_compact_percentage, self.fragmentation_value))
+
+        except GetBucketInfoFailed as e:
+            self.set_exception(e)
+        except Exception as e:
+            self.set_exception(e)
+        self.check()
+        self.complete_task()
+
+    def _get_current_auto_compaction_percentage(self):
+        """ check at bucket level and cluster level for compaction percentage """
+
+        auto_compact_percentage = None
+        rest = BucketHelper(self.server)
+
+        content = rest.get_bucket_json(self.bucket)
+        if content["autoCompactionSettings"] == False:
+            # try to read cluster level compaction settings
+            content = rest.cluster_status()
+
+        auto_compact_percentage = content["autoCompactionSettings"]["viewFragmentationThreshold"]["percentage"]
+
+        return auto_compact_percentage
+
+    def check(self):
+
+        rest = RestConnection(self.server)
+        new_frag_value = 0
+        timeout = 300
+        while new_frag_value < self.fragmentation_value and timeout > 0:
+            new_frag_value = MonitorViewFragmentationTask.calc_ddoc_fragmentation(
+                rest, self.design_doc_name, bucket=self.bucket)
+            self.log.info("%s: current amount of fragmentation = %d, \
+            required: %d" % (self.design_doc_name,
+                             new_frag_value, self.fragmentation_value))
+            if new_frag_value > self.fragmentation_value:
+                self.result = True
+                break
+            timeout -= 1
+            sleep(1)
+
+    @staticmethod
+    def aggregate_ddoc_info(rest, design_doc_name, bucket="default", with_rebalance=False):
+
+        nodes = rest.node_statuses()
+        info = []
+        for node in nodes:
+            server_info = {"ip": node.ip,
+                           "port": node.port,
+                           "username": rest.username,
+                           "password": rest.password}
+            rest = RestConnection(server_info)
+            status = False
+            try:
+                status, content = rest.set_view_info(bucket, design_doc_name)
+            except Exception as e:
+                print(str(e))
+                if "Error occured reading set_view _info" in str(e) and with_rebalance:
+                    print("node {0} {1} is not ready yet?: {2}".format(
+                                    node.id, node.port, e.message))
+                else:
+                    raise e
+            if status:
+                info.append(content)
+        return info
+
+    @staticmethod
+    def calc_ddoc_fragmentation(rest, design_doc_name, bucket="default", with_rebalance=False):
+
+        total_disk_size = 0
+        total_data_size = 0
+        total_fragmentation = 0
+        nodes_ddoc_info = \
+            MonitorViewFragmentationTask.aggregate_ddoc_info(rest,
+                                                         design_doc_name,
+                                                         bucket, with_rebalance)
+        total_disk_size = sum([content['disk_size'] for content in nodes_ddoc_info])
+        total_data_size = sum([content['data_size'] for content in nodes_ddoc_info])
+
+        if total_disk_size > 0 and total_data_size > 0:
+            total_fragmentation = \
+                (total_disk_size - total_data_size) / float(total_disk_size) * 100
+
+        return total_fragmentation
+
+
+class ViewCompactionTask(Task):
+
+    """
+        Executes view compaction for a given design doc. This is technicially view compaction
+        as represented by the api and also because the fragmentation is generated by the
+        keys emitted by map/reduce functions within views.  Task will check that compaction
+        history for design doc is incremented and if any work was really done.
+    """
+
+    def __init__(self, server, design_doc_name, bucket="default", with_rebalance=False):
+
+        Task.__init__(self, "view_compaction_task")
+        self.server = server
+        self.bucket = bucket
+        self.design_doc_name = design_doc_name
+        self.ddoc_id = "_design%2f" + design_doc_name
+        self.compaction_revision = 0
+        self.precompacted_fragmentation = 0
+        self.with_rebalance = with_rebalance
+        self.rest = RestConnection(self.server)
+        self.result = False
+ 
+    def call(self):
+        try:
+            self.compaction_revision, self.precompacted_fragmentation = \
+                self._get_compaction_details()
+            self.log.info("{0}: stats compaction before triggering it: ({1},{2})".
+                          format(self.design_doc_name,
+                                 self.compaction_revision, self.precompacted_fragmentation))
+            if self.precompacted_fragmentation == 0:
+                self.log.info("%s: There is nothing to compact, fragmentation is 0" %
+                              self.design_doc_name)
+                self.set_result(False)
+                return
+            self.rest.ddoc_compaction(self.ddoc_id, self.bucket)
+            self.check()
+        except (CompactViewFailed, SetViewInfoNotFound) as ex:
+            self.result = False
+            self.set_exception(ex)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.result = False
+            self.set_exception(e)
+
+    # verify compaction history incremented and some defraging occurred
+    def check(self):
+
+        try:
+            _compaction_running = self._is_compacting()
+            new_compaction_revision, fragmentation = self._get_compaction_details()
+            self.log.info("{0}: stats compaction:revision and fragmentation: ({1},{2})".
+                          format(self.design_doc_name,
+                                 new_compaction_revision, fragmentation))
+
+            if new_compaction_revision == self.compaction_revision and _compaction_running :
+                # compaction ran successfully but compaction was not changed
+                # perhaps we are still compacting
+                self.log.info("design doc {0} is compacting".format(self.design_doc_name))
+                self.check()
+            elif new_compaction_revision > self.compaction_revision or\
+                 self.precompacted_fragmentation > fragmentation:
+                self.log.info("{1}: compactor was run, compaction revision was changed on {0}".format(new_compaction_revision,
+                                                                                                      self.design_doc_name))
+                frag_val_diff = fragmentation - self.precompacted_fragmentation
+                self.log.info("%s: fragmentation went from %d to %d" % \
+                              (self.design_doc_name,
+                               self.precompacted_fragmentation, fragmentation))
+
+                if frag_val_diff > 0:
+
+                    # compaction ran successfully but datasize still same
+                    # perhaps we are still compacting
+                    if self._is_compacting():
+                        self.check()
+                    self.log.info("compaction was completed, but fragmentation value {0} is more than before compaction {1}".
+                                  format(fragmentation, self.precompacted_fragmentation))
+                    # probably we already compacted, but no work needed to be done
+                    self.set_result(self.with_rebalance)
+                else:
+                    self.set_result(True)
+            else:
+                # Sometimes the compacting is not started immediately
+                for i in xrange(17):
+                    time.sleep(3)
+                    if self._is_compacting():
+                        self.check()
+                    else:
+                        new_compaction_revision, fragmentation = self._get_compaction_details()
+                        self.log.info("{2}: stats compaction: ({0},{1})".
+                          format(new_compaction_revision, fragmentation,
+                                 self.design_doc_name))
+                        # case of rebalance when with concurrent updates it's possible that
+                        # compaction value has not changed significantly
+                        if new_compaction_revision > self.compaction_revision and self.with_rebalance:
+                            self.log.info("the compaction revision was increased")
+                            self.set_result(True)
+                            return
+                        else:
+                            continue
+                # print details in case of failure
+                self.log.info("design doc {0} is compacting:{1}".format(self.design_doc_name, self._is_compacting()))
+                new_compaction_revision, fragmentation = self._get_compaction_details()
+                self.log.error("stats compaction still: ({0},{1})".
+                          format(new_compaction_revision, fragmentation))
+                status, content = self.rest.set_view_info(self.bucket, self.design_doc_name)
+                stats = content["stats"]
+                self.log.warn("general compaction stats:{0}".format(stats))
+                self.set_exception(Exception("Check system logs, looks like compaction failed to start"))
+
+        except (SetViewInfoNotFound) as ex:
+            self.result = False
+            self.set_exception(ex)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.result = False
+            self.set_exception(e)
+
+    def _get_compaction_details(self):
+        status, content = self.rest.set_view_info(self.bucket, self.design_doc_name)
+        curr_no_of_compactions = content["stats"]["compactions"]
+        curr_ddoc_fragemtation = \
+            MonitorViewFragmentationTask.calc_ddoc_fragmentation(self.rest, self.design_doc_name, self.bucket, self.with_rebalance)
+        return (curr_no_of_compactions, curr_ddoc_fragemtation)
+
+    def _is_compacting(self):
+        status, content = self.rest.set_view_info(self.bucket, self.design_doc_name)
+        return content["compact_running"] == True

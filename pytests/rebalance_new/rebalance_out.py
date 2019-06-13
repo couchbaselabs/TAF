@@ -197,7 +197,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         record_data_set = self.bucket_util.get_data_set_all(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.rest = RestConnection(self.cluster.master)
-        chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         new_server_list = self.cluster_util.add_remove_servers(
             self.cluster.servers, self.cluster.servers[:self.nodes_init],
             [self.cluster.servers[self.nodes_init - 1], chosen[0]], [])

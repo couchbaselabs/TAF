@@ -1651,7 +1651,7 @@ class RestConnection(object):
                 # get otp,get status
                 node = OtpNode(id=value['otpNode'],
                                status=value['status'])
-                if node.ip == '127.0.0.1':
+                if node.ip == '127.0.0.1' or node.ip == 'cb.local':
                     node.ip = self.ip
                 node.port = int(key[key.rfind(":") + 1:])
                 node.replication = value['replication']
@@ -2479,80 +2479,6 @@ class RestConnection(object):
               "|| N <- ns_node_disco:nodes_wanted()]." % mc_threads
 
         return self.diag_eval(cmd)
-
-    def get_auto_compaction_settings(self):
-        api = self.baseUrl + "settings/autoCompaction"
-        status, content, header = self._http_request(api)
-        return json.loads(content)
-
-    def set_auto_compaction(self, parallelDBAndVC="false",
-                            dbFragmentThreshold=None,
-                            viewFragmntThreshold=None,
-                            dbFragmentThresholdPercentage=None,
-                            viewFragmntThresholdPercentage=None,
-                            allowedTimePeriodFromHour=None,
-                            allowedTimePeriodFromMin=None,
-                            allowedTimePeriodToHour=None,
-                            allowedTimePeriodToMin=None,
-                            allowedTimePeriodAbort=None,
-                            bucket=None):
-        """Reset compaction values to default, try with old fields (dp4 build)
-        and then try with newer fields"""
-        params = {}
-        api = self.baseUrl
-
-        if bucket is None:
-            # setting is cluster wide
-            api = api + "controller/setAutoCompaction"
-        else:
-            # overriding per/bucket compaction setting
-            api = api + "pools/default/buckets/" + bucket
-            params["autoCompactionDefined"] = "true"
-            # reuse current ram quota in mb per node
-            num_nodes = len(self.node_statuses())
-            bucket_info = self.get_bucket_json(bucket)
-            quota = self.get_bucket_json(bucket)["quota"]["ram"] / (1048576 * num_nodes)
-            params["ramQuotaMB"] = quota
-            if bucket_info["authType"] == "sasl" and bucket_info["name"] != "default":
-                params["authType"] = self.get_bucket_json(bucket)["authType"]
-                params["saslPassword"] = self.get_bucket_json(bucket)["saslPassword"]
-
-        params["parallelDBAndViewCompaction"] = parallelDBAndVC
-        # Need to verify None because the value could be = 0
-        if dbFragmentThreshold is not None:
-            params["databaseFragmentationThreshold[size]"] = dbFragmentThreshold
-        if viewFragmntThreshold is not None:
-            params["viewFragmentationThreshold[size]"] = viewFragmntThreshold
-        if dbFragmentThresholdPercentage is not None:
-            params["databaseFragmentationThreshold[percentage]"] = dbFragmentThresholdPercentage
-        if viewFragmntThresholdPercentage is not None:
-            params["viewFragmentationThreshold[percentage]"] = viewFragmntThresholdPercentage
-        if allowedTimePeriodFromHour is not None:
-            params["allowedTimePeriod[fromHour]"] = allowedTimePeriodFromHour
-        if allowedTimePeriodFromMin is not None:
-            params["allowedTimePeriod[fromMinute]"] = allowedTimePeriodFromMin
-        if allowedTimePeriodToHour is not None:
-            params["allowedTimePeriod[toHour]"] = allowedTimePeriodToHour
-        if allowedTimePeriodToMin is not None:
-            params["allowedTimePeriod[toMinute]"] = allowedTimePeriodToMin
-        if allowedTimePeriodAbort is not None:
-            params["allowedTimePeriod[abortOutside]"] = allowedTimePeriodAbort
-
-        params = urllib.urlencode(params)
-        self.test_log.info("'%s' bucket's settings will be changed with parameters: %s"
-                           % (bucket, params))
-        return self._http_request(api, "POST", params)
-
-    def disable_auto_compaction(self):
-        """
-           Cluster-wide Setting
-              Disable autocompaction on doc and view
-        """
-        api = self.baseUrl + "controller/setAutoCompaction"
-        self.test_log.info("Disable autocompaction in cluster-wide setting")
-        status, content, header = self._http_request(api, "POST",
-                                  "parallelDBAndViewCompaction=false")
-        return status
 
     def set_indexer_compaction(self, mode="circular", indexDayOfWeek=None, indexFromHour=0,
                                 indexFromMinute=0, abortOutside=False,

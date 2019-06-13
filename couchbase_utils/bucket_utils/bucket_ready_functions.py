@@ -511,7 +511,7 @@ class BucketUtils:
         :param tasks_info: dict with "ops_failed" Bool value updated
         :return: Aggregated success status for all tasks. (Boolean)
         """
-        for task, _ in tasks_info:
+        for task, _ in tasks_info.items():
             if tasks_info[task]["ops_failed"]:
                 return False
         return True
@@ -833,7 +833,35 @@ class BucketUtils:
                       "dbFragmentThresholdPercentage": None,
                       "dbFragmentThreshold": None,
                       "viewFragmntThreshold": None}
-        self.cluster_util.modify_fragmentation_config(new_config, bucket)
+        self.modify_fragmentation_config(new_config, bucket)
+
+    def modify_fragmentation_config(self, config, bucket="default"):
+        bucket_op = BucketHelper(self.cluster.master)
+        _config = {"parallelDBAndVC": "false",
+                   "dbFragmentThreshold": None,
+                   "viewFragmntThreshold": None,
+                   "dbFragmentThresholdPercentage": 100,
+                   "viewFragmntThresholdPercentage": 100,
+                   "allowedTimePeriodFromHour": None,
+                   "allowedTimePeriodFromMin": None,
+                   "allowedTimePeriodToHour": None,
+                   "allowedTimePeriodToMin": None,
+                   "allowedTimePeriodAbort": None,
+                   "autoCompactionDefined": "true"}
+        _config.update(config)
+        bucket_op.set_auto_compaction(
+            parallelDBAndVC=_config["parallelDBAndVC"],
+            dbFragmentThreshold=_config["dbFragmentThreshold"],
+            viewFragmntThreshold=_config["viewFragmntThreshold"],
+            dbFragmentThresholdPercentage=_config["dbFragmentThresholdPercentage"],
+            viewFragmntThresholdPercentage=_config["viewFragmntThresholdPercentage"],
+            allowedTimePeriodFromHour=_config["allowedTimePeriodFromHour"],
+            allowedTimePeriodFromMin=_config["allowedTimePeriodFromMin"],
+            allowedTimePeriodToHour=_config["allowedTimePeriodToHour"],
+            allowedTimePeriodToMin=_config["allowedTimePeriodToMin"],
+            allowedTimePeriodAbort=_config["allowedTimePeriodAbort"],
+            bucket=bucket)
+        time.sleep(5)
 
     def get_vbucket_seqnos(self, servers, buckets, skip_consistency=False,
                            per_node=True):
@@ -2154,11 +2182,13 @@ class BucketUtils:
                     server, design_doc_name, view, bucket, with_query,
                     check_replication=check_replication)
                 tasks.append(t_)
+                time.sleep(5)
         else:
             t_ = self.async_create_view(
                 server, design_doc_name, None, bucket, with_query,
                 check_replication=check_replication)
             tasks.append(t_)
+            time.sleep(5)
         return tasks
 
     def create_views(self, server, design_doc_name, views, bucket="default",
@@ -2305,6 +2335,7 @@ class BucketUtils:
                                query, wait_time=120, bucket="default",
                                expected_rows=None, retry_time=2, server=None):
         tasks = []
+        result = True
         if server is None:
             server = self.cluster.master
         if expected_rows is None:
@@ -2316,12 +2347,16 @@ class BucketUtils:
         try:
             for task in tasks:
                 self.task_manager.get_task_result(task)
+                if not task.result:
+                    self.log.error("Task {} is failed".format(task.thread_name))
+                result = result and task.result
         except Exception as e:
             print e
             for task in tasks:
                 task.cancel()
             raise Exception("Failed to get expected results for view query after {0} sec"
                             .format(wait_time))
+        return result
 
     def make_default_views(self, default_view, prefix, count,
                            is_dev_ddoc=False, different_map=False):
@@ -2336,9 +2371,11 @@ class BucketUtils:
                                   % str(i), None, is_dev_ddoc))
             return views
         else:
-            return [View("{0}{1}".format(ref_view.name, i),
-                         ref_view.map_func, None, is_dev_ddoc)
-                    for i in xrange(count)]
+            return [
+                View("{0}{1}".format(ref_view.name, i),
+                     ref_view.map_func, None, is_dev_ddoc)
+                for i in xrange(count)
+                ]
 
     def async_print_bucket_ops(self, bucket, sleep=1):
         task = PrintOpsRate(self.cluster, bucket, sleep)

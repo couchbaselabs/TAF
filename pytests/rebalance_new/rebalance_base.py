@@ -25,9 +25,9 @@ class RebalanceBaseTest(BaseTestCase):
         if nodes_init:
             self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
-        self.sleep(60)
+        self.bucket_util.create_default_bucket(replica=self.num_replicas)
+        self.sleep(20)
         self.gen_create = self.get_doc_generator(0, self.num_items)
         if not self.atomicity:
             for bucket in self.bucket_util.buckets:
@@ -135,11 +135,11 @@ class RebalanceBaseTest(BaseTestCase):
                              target_vbucket=self.target_vbucket,
                              vbuckets=self.vbuckets)
 
-    def _load_all_buckets(self, kv_gen, op_type, exp, flag=0,
+    def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
         tasks_info = self.bucket_util.sync_load_all_buckets(
-            self.cluster, kv_gen, op_type, exp, flag,
+            cluster, kv_gen, op_type, exp, flag,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
             durability=self.durability_level, timeout_secs=timeout_secs,
             only_store_hash=only_store_hash, batch_size=batch_size,

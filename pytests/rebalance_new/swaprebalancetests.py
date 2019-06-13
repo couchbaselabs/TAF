@@ -251,7 +251,7 @@ class SwapRebalanceBase(BaseTestCase):
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
-        toBeEjectedNodes = RebalanceHelper.pick_nodes(master,
+        toBeEjectedNodes = self.cluster_util.pick_nodes(master,
                                                       howmany=self.num_swap)
         optNodesIds = [node.id for node in toBeEjectedNodes]
 
@@ -356,7 +356,7 @@ class SwapRebalanceBase(BaseTestCase):
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
-        toBeEjectedNodes = RebalanceHelper.pick_nodes(master,
+        toBeEjectedNodes = self.cluster_util.pick_nodes(master,
                                                       howmany=self.num_swap)
         optNodesIds = [node.id for node in toBeEjectedNodes]
         if self.swap_orchestrator:
@@ -486,7 +486,7 @@ class SwapRebalanceBase(BaseTestCase):
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
-        toBeEjectedNodes = RebalanceHelper.pick_nodes(
+        toBeEjectedNodes = self.cluster_util.pick_nodes(
             master, howmany=self.failover_factor)
         optNodesIds = [node.id for node in toBeEjectedNodes]
 
@@ -605,7 +605,7 @@ class SwapRebalanceBase(BaseTestCase):
         # Start the swap rebalance
         self.log.info("current nodes : {0}"
                       .format(RebalanceHelper.getOtpNodeIds(master)))
-        toBeEjectedNodes = RebalanceHelper.pick_nodes(
+        toBeEjectedNodes = self.cluster_util.pick_nodes(
             master, howmany=self.failover_factor)
         optNodesIds = [node.id for node in toBeEjectedNodes]
         if self.fail_orchestrator:
@@ -757,7 +757,7 @@ class SwapRebalanceDurabilityTests(SwapRebalanceBase):
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
-        toBeEjectedNodes = RebalanceHelper.pick_nodes(master,
+        toBeEjectedNodes = self.cluster_util.pick_nodes(master,
                                                       howmany=self.nodes_out)
         optNodesIds = [node.id for node in toBeEjectedNodes]
 
@@ -864,7 +864,7 @@ class SwapRebalanceDurabilityTests(SwapRebalanceBase):
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
-        toBeEjectedNodes = RebalanceHelper.pick_nodes(master,
+        toBeEjectedNodes = self.cluster_util.pick_nodes(master,
                                                       howmany=self.nodes_out)
         optNodesIds = [node.id for node in toBeEjectedNodes]
 

@@ -399,10 +399,10 @@ class BucketHelper(RestConnection):
             api = api + "pools/default/buckets/" + bucket
             params["autoCompactionDefined"] = "true"
             # reuse current ram quota in mb per node
-            num_nodes = len(self.node_statuses())
+#             num_nodes = len(self.node_statuses())
             bucket_info = self.get_bucket_json(bucket)
-            quota = self.get_bucket_json(bucket)["quota"]["ram"] / (1048576 * num_nodes)
-            params["ramQuotaMB"] = quota
+#             quota = self.get_bucket_json(bucket)["quota"]["ram"] / (1048576 * num_nodes)
+#             params["ramQuotaMB"] = quota
             if bucket_info["authType"] == "sasl" and bucket_info["name"] != "default":
                 params["authType"] = self.get_bucket_json(bucket)["authType"]
                 params["saslPassword"] = self.get_bucket_json(bucket)["saslPassword"]

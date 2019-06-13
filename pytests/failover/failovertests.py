@@ -79,10 +79,10 @@ class FailoverTests(FailoverBaseTest):
 
         # Find nodes that will under go failover
         if self.failoverMaster:
-            self.chosen = RebalanceHelper.pick_nodes(
+            self.chosen = self.cluster_util.pick_nodes(
                 self.master, howmany=1, target_node=self.servers[0])
         else:
-            self.chosen = RebalanceHelper.pick_nodes(
+            self.chosen = self.cluster_util.pick_nodes(
                 self.master, howmany=self.num_failed_nodes)
 
         # Perform operations - Create/Update/Delete

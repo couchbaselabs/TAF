@@ -204,14 +204,17 @@ class RebalanceInTests(RebalanceBaseTest):
         Once all nodes have been rebalanced in the test is finished.
         """
 
-        self.gen_update = self.get_doc_generator(0, self.num_items)
+        self.gen_update = self.get_doc_generator(0, self.num_items/2)
+        self.gen_create = self.get_doc_generator(self.num_items, self.num_items*2)
+        self.gen_delete = self.get_doc_generator(self.num_items/2, self.num_items)
         std = self.std_vbucket_dist or 1.0
-        tasks_info = dict()
-        for bucket in self.bucket_util.buckets:
-            tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, bucket, self.cluster.master, self.gen_update,
-                "update", 0)
-            tasks_info.update(tem_tasks_info.copy())
+#         tasks_info = dict()
+#         for bucket in self.bucket_util.buckets:
+#             tem_tasks_info = self.bucket_util._async_load_all_buckets(
+#                 self.cluster, bucket, self.cluster.master, self.gen_update,
+#                 "update", 0)
+#             tasks_info.update(tem_tasks_info.copy())
+        tasks_info = self.start_parallel_cruds()
         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                        self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
@@ -278,11 +281,12 @@ class RebalanceInTests(RebalanceBaseTest):
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket, self.cluster.master, self.gen_update,
-                "update", 0, batch_size=20, persist_to=self.persist_to,
-                replicate_to=self.replicate_to, pause_secs=5,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
+                                    self.cluster, bucket, self.gen_update, "update", 0,
+                                    batch_size=20, persist_to=self.persist_to,
+                                    replicate_to=self.replicate_to, pause_secs=5,
+                                    durability=self.durability_level,
+                                    timeout_secs=self.sdk_timeout,
+                                    retries=self.sdk_retries))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
@@ -619,11 +623,12 @@ class RebalanceInTests(RebalanceBaseTest):
         views = list()
         tasks = list()
         for bucket in self.bucket_util.buckets:
-            temp = self.bucket_util.make_default_views(
-                self.default_view, num_views, is_dev_ddoc,
-                different_map=reproducer)
+            temp = self.bucket_util.make_default_views(self.default_view,
+                                                       self.default_view_name,
+                                                       num_views, is_dev_ddoc,
+                                                       different_map=reproducer)
             temp_tasks = self.bucket_util.async_create_views(
-                self.cluster.master, prefix + ddoc_name, temp, bucket)
+                self.cluster.master, ddoc_name, temp, bucket)
             views += temp
             tasks += temp_tasks
 
@@ -645,8 +650,8 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.servers[:self.nodes_init], "indexer",
             "_design/" + prefix + ddoc_name, wait_task=False)
         for active_task in active_tasks:
-            result = self.task.jython_task_manager.get_task_result(active_task)
-            self.assertTrue(result)
+            self.task.jython_task_manager.get_task_result(active_task)
+            self.assertTrue(active_task.result)
 
         expected_rows = self.num_items
         if self.max_verify:
@@ -655,10 +660,12 @@ class RebalanceInTests(RebalanceBaseTest):
         query["stale"] = "false"
 
         for bucket in self.bucket_util.buckets:
-            self.bucket_util.perform_verify_queries(
+            result = self.bucket_util.perform_verify_queries(
                 num_views, prefix, ddoc_name, self.default_view_name,
                 query, bucket=bucket, wait_time=timeout,
                 expected_rows=expected_rows)
+            self.assertTrue(result, "Failure in view query")
+
         for i in xrange(iterations_to_try):
             servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
             rebalance = self.task.async_rebalance([self.cluster.master],
@@ -668,10 +675,11 @@ class RebalanceInTests(RebalanceBaseTest):
             # See that the result of view queries are same as
             # the expected during the test
             for bucket in self.bucket_util.buckets:
-                self.bucket_util.perform_verify_queries(
+                result = self.bucket_util.perform_verify_queries(
                     num_views, prefix, ddoc_name, self.default_view_name,
                     query, bucket=bucket, wait_time=timeout,
                     expected_rows=expected_rows)
+                self.assertTrue(result, "Failure in view query")
 
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance Failed")
@@ -679,14 +687,15 @@ class RebalanceInTests(RebalanceBaseTest):
             self.sleep(60)
             # verify view queries results after rebalancing
             for bucket in self.bucket_util.buckets:
-                self.bucket_util.perform_verify_queries(
+                result = self.bucket_util.perform_verify_queries(
                     num_views, prefix, ddoc_name, self.default_view_name,
                     query, bucket=bucket, wait_time=timeout,
                     expected_rows=expected_rows)
-                
+                self.assertTrue(result, "Failure in view query")
+
             if not self.atomicity:
                 self.bucket_util.verify_cluster_stats(self.num_items)
-                
+
             if reproducer:
                 rebalance = self.task.async_rebalance(self.cluster.servers, [], servs_in)
                 self.task.jython_task_manager.get_task_result(rebalance)
@@ -714,6 +723,7 @@ class RebalanceInTests(RebalanceBaseTest):
         num_views = self.input.param("num_views", 5)
         is_dev_ddoc = self.input.param("is_dev_ddoc", False)
         views = self.bucket_util.make_default_views(self.default_view,
+                                                    self.default_view_name,
                                                     num_views, is_dev_ddoc)
         ddoc_name = "ddoc1"
         prefix = ("", "dev_")[is_dev_ddoc]
@@ -725,7 +735,7 @@ class RebalanceInTests(RebalanceBaseTest):
         query["full_set"] = "true"
 
         tasks = self.bucket_util.async_create_views(
-            self.cluster.master, prefix + ddoc_name, views, 'default')
+            self.cluster.master, ddoc_name, views, 'default')
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         for view in views:
@@ -737,8 +747,8 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.master, "indexer", "_design/" + prefix + ddoc_name,
             wait_task=False)
         for active_task in active_tasks:
-            result = active_task.check()
-            self.assertTrue(result)
+            self.task.jython_task_manager.get_task_result(active_task)
+            self.assertTrue(active_task.result)
 
         expected_rows = None
         if self.max_verify:
@@ -746,9 +756,10 @@ class RebalanceInTests(RebalanceBaseTest):
             query["limit"] = expected_rows
         query["stale"] = "false"
 
-        self.bucket_util.perform_verify_queries(
+        result = self.bucket_util.perform_verify_queries(
             num_views, prefix, ddoc_name, self.default_view_name, query,
             wait_time=timeout, expected_rows=expected_rows)
+        self.assertTrue(result, "Failure in view query")
 
         query["stale"] = "update_after"
         for i in range(1, self.num_servers, 2):
@@ -756,17 +767,20 @@ class RebalanceInTests(RebalanceBaseTest):
                 self.cluster.servers[:i], self.cluster.servers[i:i + 2], [])
             self.sleep(self.wait_timeout / 5)
             # Verify the result of view queries are same as expected during the test
-            self.bucket_util.perform_verify_queries(
+            result = self.bucket_util.perform_verify_queries(
                 num_views, prefix, ddoc_name, self.default_view_name, query,
                 wait_time=timeout, expected_rows=expected_rows)
+            self.assertTrue(result, "Failure in view query")
+
             # Verify view queries results after rebalancing
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance Failed")
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
             self.sleep(60)
-            self.bucket_util.perform_verify_queries(
+            result = self.bucket_util.perform_verify_queries(
                 num_views, prefix, ddoc_name, self.default_view_name, query,
                 wait_time=timeout, expected_rows=expected_rows)
+            self.assertTrue(result, "Failure in view query")
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -835,7 +849,9 @@ class RebalanceInTests(RebalanceBaseTest):
         fragmentation_value = self.input.param("fragmentation_value", 80)
         # now dev_ indexes are not auto-updated, doesn't work with dev view
         is_dev_ddoc = False
-        views = self.bucket_util.make_default_views(self.default_view, num_views, is_dev_ddoc)
+        views = self.bucket_util.make_default_views(self.default_view,
+                                                    self.default_view_name,
+                                                    num_views, is_dev_ddoc)
         ddoc_name = "ddoc1"
         prefix = ("", "dev_")[is_dev_ddoc]
 
@@ -849,52 +865,58 @@ class RebalanceInTests(RebalanceBaseTest):
             query["limit"] = expected_rows
 
         tasks = self.bucket_util.async_create_views(
-            self.cluster.master, prefix + ddoc_name, views, 'default')
+            self.cluster.master, ddoc_name, views, 'default')
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.bucket_util.disable_compaction()
-        fragmentation_monitor = self.cluster.async_monitor_view_fragmentation(
+        fragmentation_monitor = self.task.async_monitor_view_fragmentation(
             self.cluster.master, prefix + ddoc_name, fragmentation_value,
             'default')
-        end_time = time.time() + self.wait_timeout * 30
+
+        end_time = time.time() + self.wait_timeout * 5
         # generate load until fragmentation reached
-        while fragmentation_monitor.state != "FINISHED" and end_time > time.time():
+        while not fragmentation_monitor.result and end_time > time.time():
             # update docs to create fragmentation
-            self._load_all_buckets(self.cluster.master, self.gen_update, "update", 0)
+            self._load_all_buckets(self.cluster, self.gen_update, "update", 0)
             for view in views:
                 # run queries to create indexes
-                self.cluster.query_view(self.cluster.master, prefix + ddoc_name, view.name, query)
-        if end_time < time.time() and fragmentation_monitor.state != "FINISHED":
-            self.fail("impossible to reach compaction value {0} after {1} sec".
-                      format(fragmentation_value, (self.wait_timeout * 30)))
-
-        fragmentation_monitor.result()
+                result = self.bucket_util.query_view(self.cluster.master, prefix + ddoc_name, view.name, query)
+                self.assertTrue(result, "Failure in view query")
+        self.task.jython_task_manager.get_task_result(fragmentation_monitor)
+        self.assertTrue(fragmentation_monitor.result,
+                        "unable to reach compaction value {0} after {1} sec"
+                        .format(fragmentation_value, time.time()-end_time))
 
         for _ in xrange(3):
-            active_tasks = self.cluster.async_monitor_active_task(
+            active_tasks = self.cluster_util.async_monitor_active_task(
                 self.cluster.master, "indexer",
                 "_design/" + prefix + ddoc_name, wait_task=False)
             for active_task in active_tasks:
-                result = active_task.result()
-                self.assertTrue(result)
+                self.task.jython_task_manager.get_task_result(active_task)
+                self.assertTrue(active_task.result)
             self.sleep(2)
 
         query["stale"] = "false"
 
-        self.bucket_util.perform_verify_queries(
+        result = self.bucket_util.perform_verify_queries(
             num_views, prefix, ddoc_name, self.default_view_name, query,
             wait_time=self.wait_timeout*3, expected_rows=expected_rows)
+        self.assertTrue(result, "Failure in view query")
 
-        compaction_task = self.cluster.async_compact_view(
+        compaction_task = self.task.async_compact_view(
             self.cluster.master, prefix + ddoc_name, 'default',
             with_rebalance=True)
         servs_in = self.cluster.servers[1:self.nodes_in + 1]
         rebalance = self.task.async_rebalance([self.cluster.master], servs_in, [])
-        result = compaction_task.result(self.wait_timeout * 10)
-        self.assertTrue(result)
+
+        self.task.jython_task_manager.get_task_result(compaction_task)
+        self.assertTrue(compaction_task.result, "Compaction did not happened")
+
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
+
         self.cluster.nodes_in_cluster.extend(servs_in)
+
         self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -925,9 +947,9 @@ class RebalanceInTests(RebalanceBaseTest):
                 self._load_all_buckets_atomicty(self.gen_delete, "rebalance_delete")
                 self.sleep(20)
             else:
-                self._load_all_buckets(self.cluster.master, self.gen_update,
+                self._load_all_buckets(self.cluster, self.gen_update,
                                        "update", 0)
-                self._load_all_buckets(self.cluster.master, self.gen_delete,
+                self._load_all_buckets(self.cluster, self.gen_delete,
                                        "delete", 0)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance Failed")
@@ -937,7 +959,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 self._load_all_buckets_atomicty(self.gen_delete, "create")
                 self.sleep(20)
             else:
-                self._load_all_buckets(self.cluster.master, self.gen_delete,
+                self._load_all_buckets(self.cluster, self.gen_delete,
                                    "create", 0)
                 self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -961,12 +983,12 @@ class RebalanceInTests(RebalanceBaseTest):
         for i in range(self.num_servers)[1:]:
             rebalance = self.task.async_rebalance(self.cluster.servers[:i],
                                                   [self.cluster.servers[i]], [])
-            self._load_all_buckets(self.cluster.master, self.gen_update, "update", 0)
-            self._load_all_buckets(self.cluster.master, gen_2, "update", 5)
+            self._load_all_buckets(self.cluster, self.gen_update, "update", 0)
+            self._load_all_buckets(self.cluster, gen_2, "update", 5)
             self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance Failed")
-            self._load_all_buckets(self.cluster.master, gen_2, "create", 0)
+            self._load_all_buckets(self.cluster, gen_2, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 

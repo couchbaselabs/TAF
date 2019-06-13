@@ -105,7 +105,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
         for node in servs_in:
             self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password, node.ip, node.port)
-        chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         # Mark Node for failover
         self.sleep(30)
         success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
@@ -156,7 +156,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.cluster.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.rest = RestConnection(self.cluster.master)
-        chosen = RebalanceHelper.pick_nodes(self.cluster.master, howmany=1)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
         result_nodes = [node for node in result_nodes if node.ip != chosen[0].ip]
         for node in servs_in:
