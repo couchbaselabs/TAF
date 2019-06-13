@@ -659,6 +659,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.durability = durability
         self.fail = {}
         self.success = {}
+        self.docs_loaded = 0
 
         if proxy_client:
             self.log.debug("Changing client to proxy %s:%s..."
@@ -677,6 +678,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               doc_type=self.generator.doc_type, durability=self.durability)
             self.fail.update(fail)
             self.success.update(success)
+            self.docs_loaded += len(key_value)
         elif self.op_type == 'update':
             success, fail = self.batch_update(key_value,
                                               persist_to=self.persist_to,
@@ -1073,6 +1075,7 @@ class LoadDocumentsGeneratorsTask(Task):
             for task in tasks:
                 try:
                     self.task_manager.get_task_result(task)
+                    self.log.debug("Items loaded in task {} are {}".format(task.thread_name, task.docs_loaded))
                 except Exception as e:
                     self.test_log.error(e)
                 finally:
@@ -1099,6 +1102,7 @@ class LoadDocumentsGeneratorsTask(Task):
             self.log.debug("======================================")
             for task in tasks:
                 self.task_manager.stop_task(task)
+                self.test_log.debug("AFTER STOP TASK: Items loaded in task {} are {}".format(task.thread_name, task.docs_loaded))
             for client in self.clients:
                 client.close()
         self.complete_task()

@@ -3,6 +3,7 @@ import threading
 
 from java.util.concurrent import Executors, TimeUnit
 from threading import InterruptedException
+from time import sleep
 
 
 class TaskManager:
@@ -33,9 +34,16 @@ class TaskManager:
         self.add_new_task(task)
 
     def stop_task(self, task):
-        self.log.debug("Stopping task {0}".format(task.thread_name))
         future = self.futures[task.thread_name]
+        i = 0
+        while not future.isDone() and i < 30:
+            self.log.debug("task {0}{1}".format(task.thread_name, future.isDone()))
+            sleep(1)
+            i += 1
+        else:
+            self.log.debug("Task {0} in already finished. No need to stop task".format(task.thread_name))
         if not future.isDone():
+            self.log.debug("Stopping task {0}".format(task.thread_name))
             future.cancel(True)
 
     def shutdown_task_manager(self, timeout=5):
