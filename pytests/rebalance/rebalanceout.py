@@ -608,7 +608,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.expiry_items = self.input.param("expiry_items", 100000)
         self.max_expiry = self.input.param("max_expiry", 30)
         thread_list = []
-        self._expiry_pager(self.master, val=1000000)
+        self.bucket_util._expiry_pager(val=1000000)
         for bucket in self.buckets:
             RestConnection(self.master).set_auto_compaction(dbFragmentThreshold=100, bucket = bucket.name)
         num_items = self.expiry_items

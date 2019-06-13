@@ -284,7 +284,8 @@ class BucketHelper(RestConnection):
                        'threadsNumber': bucket_params.get('threadsNumber'),
                        'flushEnabled': bucket_params.get('flushEnabled'),
                        'evictionPolicy': bucket_params.get('evictionPolicy'),
-                       'compressionMode': bucket_params.get('compressionMode')}
+                       'compressionMode': bucket_params.get('compressionMode'),
+                       'maxTTL': bucket_params.get('maxTTL')}
 
         # Remove 'replicaIndex' parameter in case of EPHEMERAL bucket
         if bucket_params.get("bucketType") == Bucket.bucket_type.EPHEMERAL:

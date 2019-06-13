@@ -123,7 +123,6 @@ class BaseTestCase(unittest.TestCase):
                                        self.task)
         # End of library object creation
 
-        self.buckets = []
         self.cleanup = False
         self.nonroot = False
         self.test_failure = None

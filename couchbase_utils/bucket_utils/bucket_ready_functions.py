@@ -27,6 +27,7 @@ from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from bucket_utils.Bucket import Bucket
+from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
@@ -1273,12 +1274,12 @@ class BucketUtils:
                 self.load(docs_gen_map[key], op_type=op_type, exp=self.expiry,
                           verify_data=verify_data, batch_size=batch_size)
         if "expiry" in docs_gen_map.keys():
-            self._expiry_pager(self.cluster.master)
+            self._expiry_pager()
 
     def async_ops_all_buckets(self, docs_gen_map={}, batch_size=10):
         tasks = []
         if "expiry" in docs_gen_map.keys():
-            self._expiry_pager(self.cluster.master)
+            self._expiry_pager()
         for key in docs_gen_map.keys():
             if key != "remaining":
                 op_type = key
@@ -1297,10 +1298,16 @@ class BucketUtils:
         self.task_manager.add_new_task(_task)
         return _task
 
-    def _expiry_pager(self, master, val=10):
-        for bucket in self.buckets:
-            ClusterOperationHelper.flushctl_set(master, "exp_pager_stime",
-                                                val, bucket)
+    def _expiry_pager(self, val=10):
+        for node in self.cluster_util.get_kv_nodes():
+            shell_conn = RemoteMachineShellConnection(node)
+            cbepctl_obj = Cbepctl(shell_conn)
+            for bucket in self.buckets:
+                cbepctl_obj.set(bucket.name,
+                                "flush_param",
+                                "exp_pager_stime",
+                                val)
+            shell_conn.disconnect()
 
     def _run_compaction(self, number_of_times=100):
         try:
