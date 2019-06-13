@@ -20,7 +20,7 @@ class TaskManager:
         future = self.pool.submit(task)
         self.futures[task.thread_name] = future
         self.tasks.append(task)
-        self.log.debug("Added new task: {0}".format(future))
+        self.log.debug("Added new task: {0}".format(task.thread_name))
 
     def get_all_result(self):
         return self.pool.invokeAll(self.tasks)

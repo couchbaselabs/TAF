@@ -34,6 +34,7 @@ import com.couchbase.client.java.json.JsonObject as JsonObject
 from com.couchbase.client.java.kv import ReplicaMode
 from Jython_tasks.task_manager import TaskManager
 from table_view import TableView, plot_graph
+from time import sleep
 
 
 class Task(Callable):
@@ -1076,6 +1077,11 @@ class LoadDocumentsGeneratorsTask(Task):
                 try:
                     self.task_manager.get_task_result(task)
                     self.log.debug("Items loaded in task {} are {}".format(task.thread_name, task.docs_loaded))
+                    i = 0
+                    while task.docs_loaded < task.generator._doc_gen.end - task.generator._doc_gen.start and i < 60:
+                        self.log.error("Bug in java Futures task. Items loaded in task {} is {}".format(task.thread_name, task.docs_loaded))
+                        sleep(1)
+                        i += 1
                 except Exception as e:
                     self.test_log.error(e)
                 finally:
@@ -3349,8 +3355,4 @@ class Atomicity(Task):
                         value = value[0:index] + self.random.choice(string.ascii_uppercase) + value[index + 1:]
                     finally:
                         key_val[key] = value
-
-
-
-
 
