@@ -1102,7 +1102,7 @@ class LoadDocumentsGeneratorsTask(Task):
             self.log.debug("======================================")
             for task in tasks:
                 self.task_manager.stop_task(task)
-                self.test_log.debug("AFTER STOP TASK: Items loaded in task {} are {}".format(task.thread_name, task.docs_loaded))
+                self.log.debug("AFTER STOP TASK: Items loaded in task {} are {}".format(task.thread_name, task.docs_loaded))
             for client in self.clients:
                 client.close()
         self.complete_task()
