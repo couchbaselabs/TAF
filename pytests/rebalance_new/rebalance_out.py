@@ -54,19 +54,21 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-        for bucket in self.bucket_util.buckets:
-            if self.doc_ops is not None:
-                if "update" in self.doc_ops:
-                    tasks.append(self.task.async_validate_docs(
+        self.sleep(20)
+        if not self.atomicity:
+            for bucket in self.bucket_util.buckets:
+                if self.doc_ops is not None:
+                    if "update" in self.doc_ops:
+                        tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_update, "update", 0,
                         batch_size=10))
-                if "create" in self.doc_ops:
-                    tasks.append(
+                    if "create" in self.doc_ops:
+                        tasks.append(
                         self.task.async_validate_docs(
                             self.cluster, bucket, self.gen_create, "create", 0,
                             batch_size=10, process_concurrency=8))
-                if "delete" in self.doc_ops:
-                    tasks.append(
+                    if "delete" in self.doc_ops:
+                        tasks.append(
                         self.task.async_validate_docs(
                             self.cluster, bucket, self.gen_delete, "delete", 0,
                             batch_size=10))
@@ -96,6 +98,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         else:
             self.start_parallel_cruds(task_verification=True)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
+        
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
@@ -113,7 +116,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                         self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets,
                                                         perNode=False)
         self.sleep(60)
-        self.bucket_util.data_analysis_all(record_data_set, self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets)
+        self.bucket_util.data_analysis_all(record_data_set, self.cluster.servers[:self.num_servers - self.nodes_out], self.bucket_util.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(new_vbucket_stats, new_failover_stats)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
@@ -210,7 +213,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.bucket_util.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
+        self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets,num_replicas =self.num_replicas,std=1.0, total_vbuckets=self.vbuckets)
 
 
     """Rebalances nodes out of a cluster while doing docs ops:create, delete, update along with compaction.

@@ -3294,7 +3294,7 @@ class Atomicity(Task):
                     self.process_values_for_verification(key_value)
                     for client in Atomicity.clients:
                         result_map = self.batch_read(key_value.keys(), client)
-                        wrong_values = self.validate_key_val(result_map, key_value, client)
+                        wrong_values = self.validate_key_val(result_map[0], key_value, client)
 
                         if wrong_values:
                             self.set_exception("Wrong key value. "
