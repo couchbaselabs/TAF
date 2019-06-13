@@ -350,20 +350,25 @@ def main():
         if "GROUP" in runtime_test_params and "ALL" not in runtime_test_params["GROUP"].split(";"):
             if 'GROUP' not in params:         # params is the .conf file parameters.
                 # this test is not in any groups so we do not run it
-                print "test '{0}' skipped, a group was requested and this is not any groups".format(name)
-                continue
-
-            # there is a group for this test case, if that group is not specified at run time then do not run it
-            elif len( set(runtime_test_params["GROUP"].split(";")) & set(params["GROUP"].split(";")) ) == 0:
-                print "test '{0}' skipped, is not in the requested group".format(name)
+                print("Test '{0}' skipped, group requested but test has no group"
+                      .format(name))
                 continue
             else:
-                pass # the test was in requested group, will run it
-
+                skip_test = False
+                tc_groups = params["GROUP"].split(";")
+                for run_group in runtime_test_params["GROUP"].split(";"):
+                    if run_group not in tc_groups:
+                        skip_test = True
+                        break
+                if skip_test:
+                    print("Test '{0}' skipped, GROUP not satisfied"
+                          .format(name))
+                    continue
         elif "EXCLUDE_GROUP" in runtime_test_params:
             if 'GROUP' in params and \
                     len(set(runtime_test_params["EXCLUDE_GROUP"].split(";")) & set(params["GROUP"].split(";"))) > 0:
-                print "test '{0}' skipped, is in an excluded group".format(name)
+                print("Test '{0}' skipped, is in an excluded group"
+                      .format(name))
                 continue
 
         # Create Log Directory
@@ -426,7 +431,7 @@ def main():
         print("During the test, Remote Connections: %s, Disconnections: %s" %
               (RemoteMachineShellConnection.connections,
                RemoteMachineShellConnection.disconnections))
-        print("SDK Connections: %s, Disconnections: %s" % 
+        print("SDK Connections: %s, Disconnections: %s" %
               (SDKClient.sdk_connections, SDKClient.sdk_disconnections))
         # Concat params to test name
         # To make tests more readable
@@ -493,9 +498,6 @@ def main():
         if fail_count > 0:
             sys.exit(1)
     sys.exit(0)
-
-def testfunc():
-    pass
 
 
 if __name__ == "__main__":
