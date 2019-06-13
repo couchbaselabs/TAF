@@ -690,6 +690,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               durability=self.durability)
             self.fail.update(fail)
             self.success.update(success)
+            self.docs_loaded += len(key_value)
         elif self.op_type == 'delete':
             success, fail = self.batch_delete(key_value,
                                               persist_to=self.persist_to,
@@ -699,10 +700,12 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               durability=self.durability)
             self.fail.update(fail)
             self.success.update(success)
+            self.docs_loaded += len(key_value)
         elif self.op_type == 'read':
             success, fail = self.batch_read(key_value.keys())
             self.fail.update(fail)
             self.success.update(success)
+            self.docs_loaded += len(key_value)
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
 

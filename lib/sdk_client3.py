@@ -175,7 +175,6 @@ class SDKClient(object):
     def read(self, key):
         result = dict()
         getResult = self.collection.get(key)
-#         print getResult
         if getResult.isPresent():
             self.log.debug("Found document: cas=%s, content=%s"
                            % (str(getResult.get().cas()),
