@@ -122,7 +122,7 @@ class ServerTasks(object):
                             timeout_secs=5, compression=True,
                             process_concurrency=8, retries=5,
                             active_resident_threshold=100,
-                            durability=""):
+                            durability="", print_ops_rate=True):
 
         self.log.debug("Loading documents to {}".format(bucket.name))
         clients = []
@@ -141,7 +141,7 @@ class ServerTasks(object):
                 batch_size=batch_size, pause_secs=pause_secs,
                 timeout_secs=timeout_secs, compression=compression,
                 process_concurrency=process_concurrency, retries=retries,
-                durability=durability)
+                durability=durability, print_ops_rate=print_ops_rate)
         else:
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, client, [generator],
@@ -150,7 +150,8 @@ class ServerTasks(object):
                 batch_size=batch_size, pause_secs=pause_secs,
                 timeout_secs=timeout_secs, compression=compression,
                 process_concurrency=process_concurrency, retries=retries,
-                active_resident_threshold=active_resident_threshold)
+                active_resident_threshold=active_resident_threshold,
+                print_ops_rate=print_ops_rate)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -186,14 +187,14 @@ class ServerTasks(object):
             client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
             client_list.append(client)
             bucket_list.append(client.collection)
-        
+
         _task = jython_tasks.Atomicity(cluster, self.jython_task_manager, bucket_list, client, client_list, [generator],
                                                         op_type, exp, flag=flag, persist_to=persist_to,
                                                         replicate_to=replicate_to, only_store_hash=only_store_hash,
                                                         batch_size=batch_size,
                                                         pause_secs=pause_secs, timeout_secs=timeout_secs,
                                                         compression=compression,
-                                                        process_concurrency=process_concurrency, retries=retries, update_count=update_count, 
+                                                        process_concurrency=process_concurrency, retries=retries, update_count=update_count,
                                                         transaction_timeout=transaction_timeout, commit=commit, durability=durability, sync=sync)
         self.jython_task_manager.add_new_task(_task)
         return _task

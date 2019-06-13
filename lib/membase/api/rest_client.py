@@ -1785,8 +1785,6 @@ class RestConnection(object):
         versions = []
         for node in nodes:
             versions.append(node.version)
-        if logging:
-            self.test_log.info("Node versions in cluster {0}".format(versions))
         return versions
 
     def check_cluster_compatibility(self, version):

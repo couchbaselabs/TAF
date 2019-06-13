@@ -368,7 +368,7 @@ class BaseTestCase(unittest.TestCase):
                                  .format(server.ip, e))
 
     def sleep(self, timeout=15, message=""):
-        self.log.info("sleep for {0} secs. {1} ...".format(timeout, message))
+        self.log.info("{0}. Sleep for {1} secs ...".format(message, timeout))
         time.sleep(timeout)
 
     def log_failure(self, message):

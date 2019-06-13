@@ -188,7 +188,6 @@ class RebalanceBaseTest(BaseTestCase):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
-
     def start_parallel_cruds(self, retry_exceptions=[], ignore_exceptions=[],
                              task_verification=False):
         tasks_info = dict()

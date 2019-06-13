@@ -2229,8 +2229,8 @@ class PrintOpsRate(Task):
                     'samples' in bucket_stats['op'] and \
                     'ops' in bucket_stats['op']['samples']:
                 ops = bucket_stats['op']['samples']['ops'][-1]
-                self.test_log.info("Ops rate for '%s': %f"
-                                   % (self.bucket.name, ops))
+                self.test_log.debug("Ops rate for '%s': %f"
+                                    % (self.bucket.name, ops))
                 if t_ops_rate and t_ops_rate[-1] > ops:
                     ops_rate_trend.append(t_ops_rate)
                     t_ops_rate = list()
@@ -3026,7 +3026,7 @@ class Atomicity(Task):
                 Atomicity.task_manager.get_task_result(task)
             except Exception as e:
                 self.set_exception(e)
-                
+
         for client in Atomicity.clients:
             client.close()
 
