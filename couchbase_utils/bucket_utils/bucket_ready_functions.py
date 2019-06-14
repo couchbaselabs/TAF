@@ -2165,11 +2165,11 @@ class BucketUtils:
                      timeout=None, check_replication=False):
         if len(views):
             for view in views:
-                self.cluster.create_view(
+                self.create_view(
                     server, design_doc_name, view, bucket, timeout,
                     check_replication=check_replication)
         else:
-            self.cluster.create_view(
+            self.create_view(
                 server, design_doc_name, None, bucket, timeout,
                 check_replication=check_replication)
 
