@@ -640,14 +640,19 @@ class LoadDocumentsTask(GenericLoadingTask):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, retries=5,
-                 durability=""):
+                 durability="", task_identifier=""):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
             retries=retries)
-        self.thread_name = "LoadDocumentsTask_{}_{}_{}_{}".format(generator._doc_gen.start, generator._doc_gen.end, op_type, durability)
+        self.thread_name = "LoadDocumentsTask-{}_{}_{}_{}_{}" \
+            .format(task_identifier,
+                    generator._doc_gen.start,
+                    generator._doc_gen.end,
+                    op_type,
+                    durability)
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
@@ -1004,7 +1009,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1,
                  timeout_secs=5, compression=True, process_concurrency=8,
-                 print_ops_rate=True, retries=5, durability=""):
+                 print_ops_rate=True, retries=5, durability="",
+                 task_identifier=""):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "DocumentsLoadGenTask_{}".format(time.time()))
         self.cluster = cluster
@@ -1029,6 +1035,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.print_ops_rate = print_ops_rate
         self.retries = retries
         self.durability = durability
+        self.task_identifier = task_identifier
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1063,7 +1070,7 @@ class LoadDocumentsGeneratorsTask(Task):
             tasks.extend(self.get_tasks(generator))
             iterator += 1
         if self.print_ops_rate:
-            self.print_ops_rate_tasks = []
+            self.print_ops_rate_tasks = list()
             if self.buckets:
                 for bucket in self.buckets:
                     print_ops_rate_task = PrintOpsRate(self.cluster, bucket)
@@ -1079,7 +1086,8 @@ class LoadDocumentsGeneratorsTask(Task):
             for task in tasks:
                 try:
                     self.task_manager.get_task_result(task)
-                    self.log.debug("Items loaded in task {} are {}".format(task.thread_name, task.docs_loaded))
+                    self.log.info("Items loaded in task {} are {}"
+                                  .format(task.thread_name, task.docs_loaded))
                     i = 0
                     while task.docs_loaded < task.generator._doc_gen.end - task.generator._doc_gen.start and i < 60:
                         self.log.error("Bug in java Futures task. Items loaded in task {} is {}".format(task.thread_name, task.docs_loaded))
@@ -1111,7 +1119,8 @@ class LoadDocumentsGeneratorsTask(Task):
             self.log.debug("======================================")
             for task in tasks:
                 self.task_manager.stop_task(task)
-                self.log.debug("AFTER STOP TASK: Items loaded in task {} are {}".format(task.thread_name, task.docs_loaded))
+                self.log.info("Task '{0}' complete. Loaded {1} items"
+                              .format(task.thread_name, task.docs_loaded))
             for client in self.clients:
                 client.close()
         self.complete_task()
@@ -1142,7 +1151,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 time_unit=self.time_unit, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression,
-                durability=self.durability)
+                durability=self.durability,
+                task_identifier=self.task_identifier)
             tasks.append(task)
         return tasks
 
@@ -1219,7 +1229,8 @@ class LoadDocumentsForDgmTask(Task):
                  time_unit="seconds", only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5,
-                 active_resident_threshold=99):
+                 durability="", active_resident_threshold=99,
+                 task_identifier=""):
         super(LoadDocumentsForDgmTask, self).__init__(
             "LoadDocumentsForDgmTask {}".format(time.time()))
         self.cluster = cluster
@@ -1227,6 +1238,7 @@ class LoadDocumentsForDgmTask(Task):
         self.flag = flag
         self.persist_to = persist_to
         self.replicate_to = replicate_to
+        self.durability = durability
         self.time_unit = time_unit
         self.only_store_hash = only_store_hash
         self.pause_secs = pause_secs
@@ -1248,6 +1260,7 @@ class LoadDocumentsForDgmTask(Task):
         self.doc_start_num = self.generators[0].start
         self.doc_batch_size = self.generators[0].end - self.generators[0].start
         self.doc_type = self.generators[0].doc_type
+        self.task_identifier = task_identifier
 
         if isinstance(op_type, list):
             self.op_types = op_type
@@ -1277,7 +1290,8 @@ class LoadDocumentsForDgmTask(Task):
             only_store_hash=self.only_store_hash, batch_size=self.batch_size,
             pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
             compression=self.compression,
-            process_concurrency=self.process_concurrency, retries=self.retries)
+            process_concurrency=self.process_concurrency, retries=self.retries,
+            durability=self.durability, task_identifier=self.task_identifier)
         self.task_manager.add_new_task(task)
         self.task_manager.get_task_result(task)
 

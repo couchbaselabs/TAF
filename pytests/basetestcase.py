@@ -21,7 +21,7 @@ class BaseTestCase(unittest.TestCase):
 
         # Framework specific parameters
         self.log_level = self.input.param("log_level", "info").upper()
-        self.infra_log_level = self.input.param("infra_log_level", "error").upper()
+        self.infra_log_level = self.input.param("infra_log_level", "info").upper()
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
         self.tear_down_while_setup = self.input.param("tear_down_while_setup", True)
         self.test_timeout = self.input.param("test_timeout", 3600)

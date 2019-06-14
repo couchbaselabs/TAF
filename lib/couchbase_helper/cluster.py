@@ -122,7 +122,8 @@ class ServerTasks(object):
                             timeout_secs=5, compression=True,
                             process_concurrency=8, retries=5,
                             active_resident_threshold=100,
-                            durability="", print_ops_rate=True):
+                            durability="", print_ops_rate=True,
+                            task_identifier=""):
 
         self.log.debug("Loading documents to {}".format(bucket.name))
         clients = []
@@ -136,12 +137,14 @@ class ServerTasks(object):
         if active_resident_threshold == 100:
             _task = jython_tasks.LoadDocumentsGeneratorsTask(
                 cluster, self.jython_task_manager, bucket, clients,
-                [generator], op_type, exp, exp_unit="second", flag=flag, persist_to=persist_to,
-                replicate_to=replicate_to, only_store_hash=only_store_hash,
+                [generator], op_type, exp, exp_unit="second", flag=flag,
+                persist_to=persist_to, replicate_to=replicate_to,
+                only_store_hash=only_store_hash,
                 batch_size=batch_size, pause_secs=pause_secs,
                 timeout_secs=timeout_secs, compression=compression,
-                process_concurrency=process_concurrency, retries=retries,
-                durability=durability, print_ops_rate=print_ops_rate)
+                process_concurrency=process_concurrency,
+                print_ops_rate=print_ops_rate, retries=retries,
+                durability=durability, task_identifier=task_identifier)
         else:
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, client, [generator],
@@ -149,9 +152,11 @@ class ServerTasks(object):
                 replicate_to=replicate_to, only_store_hash=only_store_hash,
                 batch_size=batch_size, pause_secs=pause_secs,
                 timeout_secs=timeout_secs, compression=compression,
-                process_concurrency=process_concurrency, retries=retries,
+                process_concurrency=process_concurrency,
+                print_ops_rate=print_ops_rate, retries=retries,
+                durability=durability,
                 active_resident_threshold=active_resident_threshold,
-                print_ops_rate=print_ops_rate)
+                task_identifier=task_identifier)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
