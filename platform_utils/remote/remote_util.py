@@ -3161,6 +3161,7 @@ class RemoteMachineShellConnection:
             try:
                 self._ssh_client = self.session.openChannel("exec")
                 self._ssh_client.setInputStream(None)
+                self._ssh_client.setErrStream(None)
 
                 instream = self._ssh_client.getInputStream()
                 errstream = self._ssh_client.getErrStream()
@@ -3171,10 +3172,13 @@ class RemoteMachineShellConnection:
                 fu = FileUtil.wrap(instream)
                 for line in fu.readlines():
                     output.append(line)
+                fu.close()
 
-                fu = FileUtil.wrap(errstream)
-                for line in fu.readlines():
+                fu1 = FileUtil.wrap(errstream)
+                for line in fu1.readlines():
                     error.append(line)
+                fu1.close()
+
                 self._ssh_client.disconnect()
 #                 self.session.disconnect()
             except JSchException as e:
