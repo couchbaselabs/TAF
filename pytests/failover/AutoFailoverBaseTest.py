@@ -77,12 +77,8 @@ class AutoFailoverBaseTest(BaseTestCase):
     def _loadgen(self):
         tasks = []
         if self.atomicity:
-            tasks.extend(self.async_load_all_buckets_atomicity(self.run_time_create_load_gen,
+            tasks.append(self.async_load_all_buckets_atomicity(self.run_time_create_load_gen,
                                                  "create", 0))
-            tasks.extend(self.async_load_all_buckets_atomicity(self.update_load_gen,
-                                                 "update", 0))
-            tasks.extend(self.async_load_all_buckets_atomicity(self.delete_load_gen,
-                                                 "delete", 0))
 
         else:
             tasks.extend(self.async_load_all_buckets(self.run_time_create_load_gen,
@@ -108,6 +104,8 @@ class AutoFailoverBaseTest(BaseTestCase):
         Fetch active/replica vbucket list from the
         nodes which are going to be failed over
         """
+        if not len(self.bucket_util.buckets):
+            return
         bucket = self.bucket_util.buckets[0]
         # Reset the values
         self.active_vb_in_failover_nodes = list()
@@ -500,7 +498,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.key = 'test_docs'.rjust(self.key_size, '0')
         self.num_items = self.input.param("num_items", 1000000)
         self.update_items = self.input.param("update_items", 100000)
-        self.delete_items = self.input.param("delete_items", 100000)
+        self.delete_items = self.input.param("delete_items", 100000)  
         self.add_back_node = self.input.param("add_back_node", True)
         self.recovery_strategy = self.input.param("recovery_strategy",
                                                   "delta")
@@ -822,7 +820,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             services=services, index_quota_percent=self.index_quota_percent,
             gsi_type=self.gsi_type))
         for task in init_tasks:
-            task.get_result()
+            self.task.jython_task_manager.get_task_result(task)
 
     def fail_disk_via_disk_failure(self):
         node_down_timer_tasks = []

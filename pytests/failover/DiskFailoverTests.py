@@ -5,7 +5,10 @@ from membase.api.exception import RebalanceFailedException, ServerUnavailableExc
 class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def setUp(self):
         super(DiskAutofailoverTests, self).setUp()
-        self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 10)
+        if self.atomicity:
+            self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 2)
+        else:
+            self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 10)
 
     def tearDown(self):
         super(DiskAutofailoverTests, self).tearDown()
@@ -27,7 +30,10 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = self._loadgen()
         self.failover_expected = True
         self.failover_actions[self.failover_action]()
-        if not self.atomicity:
+        if self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        else:
             self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
@@ -39,7 +45,10 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = tasks
         self.failover_expected = (not self.failover_action == "disk_full")
         self.failover_actions[self.failover_action]()
-        if not self.atomicity:
+        if self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        else:
             self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
@@ -49,7 +58,10 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.loadgen_tasks = self._loadgen()
         self.failover_expected = True
         self.failover_actions[self.failover_action]()
-        if not self.atomicity:
+        if self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        else:
             self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
