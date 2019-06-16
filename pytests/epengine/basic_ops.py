@@ -362,8 +362,6 @@ class basic_ops(BaseTestCase):
 
     def test_diag_eval_curl(self):
         # Check if diag/eval can be done only by local host
-        # epengine.basic_ops.basic_ops.test_diag_eval_curl,disable_diag_eval_non_local=True
-
         self.disable_diag_eval_on_non_local_host = self.input.param("disable_diag_eval_non_local", False)
         port = self.cluster.master.port
 
@@ -383,11 +381,11 @@ class basic_ops(BaseTestCase):
             self.assertNotEquals("API is accessible from localhost only", output[0])
 
         # Disable allow_nonlocal_eval
-        if self.disable_diag_eval_on_non_local_host:
-            command = cmd_base + '-X POST -d \'ns_config:set(allow_nonlocal_eval, false).\''
-            output, error = shell.execute_command(command)
+        if not self.disable_diag_eval_on_non_local_host:
+            command = cmd_base + '-X POST -d \'ns_config:set(allow_nonlocal_eval, true).\''
+            _, _ = shell.execute_command(command)
 
-        # check ip address on diag/eval will not work fine when allow_nonlocal_eval is disabled
+        # Check ip address on diag/eval will not work fine when allow_nonlocal_eval is disabled
         cmd = []
         cmd_base = 'curl http://{0}:{1}@{2}:{3}/diag/eval ' \
             .format(self.cluster.master.rest_username,
@@ -420,7 +418,7 @@ class basic_ops(BaseTestCase):
                              int(stats['vb_active_itm_memory_uncompressed']))
 
     def test_compression_active_and_off(self):
-        '''
+        """
         test reproducer for MB-29272,
         Load some documents with compression mode set to active
         get the cbstats
@@ -429,14 +427,14 @@ class basic_ops(BaseTestCase):
         epengine.basic_ops.basic_ops.test_compression_active_and_off,items=10000,compression_mode=active
 
         :return:
-        '''
+        """
         # Load some documents with compression mode as active
         gen_create = BlobGenerator('eviction', 'eviction-', self.value_size,
                                    end=self.num_items)
-        gen_create2 = BlobGenerator('eviction2', 'eviction2-', self.value_size,
+        gen_create2 = BlobGenerator('eviction2_', 'eviction2-',
+                                    self.value_size,
                                     end=self.num_items)
         def_bucket = self.bucket_util.get_all_buckets()[0]
-        print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=8,
@@ -446,10 +444,9 @@ class basic_ops(BaseTestCase):
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
-        print_ops_task.end_task()
 
         remote = RemoteMachineShellConnection(self.cluster.master)
-        for bucket in self.buckets:
+        for bucket in self.bucket_util.buckets:
             # change compression mode to off
             output, _ = remote.execute_couchbase_cli(
                 cli_command='bucket-edit', cluster_host="localhost:8091",
@@ -464,7 +461,6 @@ class basic_ops(BaseTestCase):
 
         # Load data and check stats to see compression
         # is not done for newly added data
-        print_ops_task = self.bucket_util.async_print_bucket_ops(def_bucket)
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create2, "create", 0,
             batch_size=10, process_concurrency=8,
@@ -473,8 +469,7 @@ class basic_ops(BaseTestCase):
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
-        print_ops_task.end_task()
+        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
@@ -484,7 +479,7 @@ class basic_ops(BaseTestCase):
         mc.bucket_select('default')
 
         count = 0
-        while (count < 1000000):
+        while count < 1000000:
             count += 1
             try:
                 mc.get_random_key()
