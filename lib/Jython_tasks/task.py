@@ -492,7 +492,7 @@ class GenericLoadingTask(Task):
     # start of batch methods
     def batch_create(self, key_val, shared_client=None, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
-                     doc_type="json", durability=""):
+                     doc_type="json", durability="", skip_read_on_error=False):
         """
         standalone method for creating key/values in batch (sans kvstore)
 
@@ -518,18 +518,19 @@ class GenericLoadingTask(Task):
                     Thread.sleep(timeout)
                 except Exception as e:
                     self.test_log.error(e)
-                self.test_log.debug("Trying to read values {0} after failure"
-                                    .format(fail.__str__()))
-                read_map = self.batch_read(fail.keys())
-                for key, value in fail.items():
-                    if key in read_map and read_map[key]["cas"] != 0:
-                        success[key] = value
-                        success[key].pop("error")
-                        fail.pop(key)
-                    else:
-                        failed_item_table.add_row([key, value['error']])
+                if not skip_read_on_error:
+                    self.test_log.debug("Reading values {0} after failure"
+                                        .format(fail.__str__()))
+                    read_map = self.batch_read(fail.keys())
+                    for key, value in fail.items():
+                        if key in read_map and read_map[key]["cas"] != 0:
+                            success[key] = value
+                            success[key].pop("error")
+                            fail.pop(key)
+                        else:
+                            failed_item_table.add_row([key, value['error']])
                 if fail:
-                    failed_item_table.display("Failed items after reads:")
+                    failed_item_table.display("Failed items:")
             return success, fail
         except Exception as error:
             self.test_log.error(error)
@@ -640,7 +641,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, retries=5,
-                 durability="", task_identifier=""):
+                 durability="", task_identifier="", skip_read_on_error=False):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
@@ -666,6 +667,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.fail = {}
         self.success = {}
         self.docs_loaded = 0
+        self.skip_read_on_error = skip_read_on_error
 
         if proxy_client:
             self.log.debug("Changing client to proxy %s:%s..."
@@ -679,9 +681,12 @@ class LoadDocumentsTask(GenericLoadingTask):
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch()
         if self.op_type == 'create':
-            success, fail = self.batch_create(key_value, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                              timeout=self.timeout, time_unit=self.time_unit,
-                                              doc_type=self.generator.doc_type, durability=self.durability)
+            success, fail = self.batch_create(
+                key_value,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                timeout=self.timeout, time_unit=self.time_unit,
+                doc_type=self.generator.doc_type, durability=self.durability,
+                skip_read_on_error=self.skip_read_on_error)
             self.fail.update(fail)
             self.success.update(success)
             self.docs_loaded += len(key_value)
@@ -1010,7 +1015,7 @@ class LoadDocumentsGeneratorsTask(Task):
                  only_store_hash=True, batch_size=1, pause_secs=1,
                  timeout_secs=5, compression=True, process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
-                 task_identifier=""):
+                 task_identifier="", skip_read_on_error=False):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "DocumentsLoadGenTask_{}".format(time.time()))
         self.cluster = cluster
@@ -1036,6 +1041,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.retries = retries
         self.durability = durability
         self.task_identifier = task_identifier
+        self.skip_read_on_error = skip_read_on_error
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1152,7 +1158,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression,
                 durability=self.durability,
-                task_identifier=self.task_identifier)
+                task_identifier=self.task_identifier,
+                skip_read_on_error=self.skip_read_on_error)
             tasks.append(task)
         return tasks
 
