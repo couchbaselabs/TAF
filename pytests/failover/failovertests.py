@@ -123,9 +123,9 @@ class FailoverTests(FailoverBaseTest):
         # Capture  vbucket and failover stats if test version >= 2.5.*
         if self.version_greater_than_2_5 and self.upr_check:
             prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
-                self.servers, self.buckets)
+                self.servers[:self.nodes_init], self.buckets)
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.servers, self.buckets)
+                self.servers[:self.nodes_init], self.buckets)
 
         # Perform Operations related to failover
         if self.withMutationOps or self.withViewsOps or self.compact:

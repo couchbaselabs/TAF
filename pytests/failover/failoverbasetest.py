@@ -85,6 +85,7 @@ class FailoverBaseTest(BaseTestCase):
         self.bucket_util.add_rbac_user()
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
+        self.buckets = self.bucket_util.get_all_buckets()
         self.log.info("== FailoverBaseTest setup finished for test #{0} {1} =="
                       .format(self.case_number, self._testMethodName))
 
