@@ -43,6 +43,16 @@ class InternalUser(UserBase):
                                                      self.password)
         return response
 
+    def exists_users(self):
+        try:
+            rest = RestConnection(self.host)
+            response = rest.retrieve_user_roles()
+        except Exception as e:
+            self.log.error("Exception while getting user roles. Exception - {0}"
+                           .format(e))
+            response = False
+        return response
+
     def user_setup(self, user_id=None, host=None, payload=None):
         if user_id:
             self.user_id = user_id
@@ -61,5 +71,8 @@ class InternalUser(UserBase):
         #                   "pre-spock version. Not creating user since "
         #                   "RBAC is a spock feature."
         #     return
-        self.delete_user()
+        # check if the atleast some users exist before running
+        resp = self.exists_users(self.user_id)
+        if resp:
+         self.delete_user()
         self.create_user()
