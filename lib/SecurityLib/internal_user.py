@@ -72,7 +72,7 @@ class InternalUser(UserBase):
         #                   "RBAC is a spock feature."
         #     return
         # check if the atleast some users exist before running
-        resp = self.exists_users(self.user_id)
+        resp = self.exists_users()
         if resp:
          self.delete_user()
         self.create_user()
