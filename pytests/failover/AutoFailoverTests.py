@@ -6,6 +6,11 @@ from membase.api.exception import RebalanceFailedException, \
 class AutoFailoverTests(AutoFailoverBaseTest):
     def setUp(self):
         super(AutoFailoverTests, self).setUp()
+        if self.atomicity:
+            self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 2)
+        else:
+            self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 10)
+        
 
     def tearDown(self):
         super(AutoFailoverTests, self).tearDown()
@@ -22,11 +27,16 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
-        if self.durability_level:
+        if self.durability_level or self.atomicity:
             self.loadgen_tasks = self._loadgen()
 
         self.failover_actions[self.failover_action](self)
-        self.validate_loadgen_tasks()
+        if self.atomicity:
+            # Wait for all tasks to complete
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        else:
+            self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
     def test_autofailover_during_rebalance(self):
@@ -44,7 +54,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
-        if self.durability_level:
+        if self.durability_level or self.atomicity:
             self.loadgen_tasks = self._loadgen()
 
         rebalance_task = self.task.async_rebalance(self.servers,
@@ -62,7 +72,12 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             pass
         else:
             self.fail("Rebalance should fail since a node went down")
-        self.validate_loadgen_tasks()
+        if self.atomicity:
+            # Wait for all tasks to complete
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        else:
+            self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
     def test_autofailover_after_rebalance(self):
@@ -108,7 +123,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
-        if self.durability_level:
+        if self.durability_level or self.atomicity:
             self.loadgen_tasks = self._loadgen()
 
         self.failover_actions[self.failover_action](self)
@@ -141,7 +156,12 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
-        self.validate_loadgen_tasks()
+        if self.atomicity:
+            # Wait for all tasks to complete
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        else:
+            self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
     def test_autofailover_and_addback_of_node(self):
@@ -160,7 +180,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
-        if self.durability_level:
+        if self.durability_level or self.atomicity:
             self.loadgen_tasks = self._loadgen()
 
         self.failover_actions[self.failover_action](self)
@@ -191,7 +211,12 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
-        self.validate_loadgen_tasks()
+        if self.atomicity:
+            # Wait for all tasks to complete
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        else:
+            self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
     def test_autofailover_and_remove_failover_node(self):
