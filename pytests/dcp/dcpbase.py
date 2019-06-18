@@ -171,13 +171,9 @@ class DCPBase(BaseTestCase):
         failover_stats = cb_stat_obj.failover_stats(bucket_name)
         id_key = '{0}:id'.format(table_entry)
         for vbucket in self.vbuckets:
-            hi_seqno_pattern = 'vb_{0}:high_seqno'.format(vbucket)
-
-            seqno = cb_stat_obj.vbucket_details(bucket_name, vbucket,
-                                                hi_seqno_pattern)
-
+            seqno = cb_stat_obj.vbucket_details(bucket_name)
             vb_uuid, high_seqno = (long(failover_stats[vbucket][id_key]),
-                                   long(seqno))
+                                   long(seqno[vbucket]["high_seqno"]))
             vbInfoMap[vbucket] = (vb_uuid, high_seqno)
 
         return vbInfoMap
