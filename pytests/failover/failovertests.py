@@ -77,20 +77,6 @@ class FailoverTests(FailoverBaseTest):
         # Variable to track the number of nodes failed
         num_nodes_failed = 1
 
-        # Check if the test case has to be run for 3.0.0
-        versions = self.rest.get_nodes_versions()
-        self.version_greater_than_2_5 = True
-        for version in versions:
-            if "3" > version:
-                self.version_greater_than_2_5 = False
-
-        # Do not run this this test if graceful category is being used
-        if not self.version_greater_than_2_5 \
-                and (self.graceful or self.recoveryType is not None):
-            self.log.error("Can't apply graceful failover to nodes with version < 3.*")
-            self.log.error("Please check configuration params: SKIPPING TEST")
-            return
-
         # Find nodes that will under go failover
         if self.failoverMaster:
             self.chosen = RebalanceHelper.pick_nodes(
@@ -120,12 +106,10 @@ class FailoverTests(FailoverBaseTest):
             record_static_data_set = self.bucket_util.get_data_set_all(
                 self.cluster.servers, self.buckets, path=None)
 
-        # Capture  vbucket and failover stats if test version >= 2.5.*
-        if self.version_greater_than_2_5 and self.upr_check:
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
-                self.servers[:self.nodes_init], self.buckets)
-            prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.servers[:self.nodes_init], self.buckets)
+        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
+            self.servers[:self.nodes_init], self.buckets)
+        prev_failover_stats = self.bucket_util.get_failovers_logs(
+            self.servers[:self.nodes_init], self.buckets)
 
         # Perform Operations related to failover
         if self.withMutationOps or self.withViewsOps or self.compact:

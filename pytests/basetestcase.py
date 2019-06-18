@@ -154,7 +154,8 @@ class BaseTestCase(unittest.TestCase):
                     self.cb_version = RestConnection(self.cluster.master).get_nodes_version()
                 else:
                     self.log.debug("couchbase server does not run yet")
-                self.protocol = self.cluster_util.get_protocol_type()
+                # We stopped supporting TAP protocol since 3.x and 3.x support also has stopped
+                self.protocol = "dcp"
             self.services_map = None
 
             self.__log_setup_status("started")
