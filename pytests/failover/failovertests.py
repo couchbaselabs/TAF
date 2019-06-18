@@ -625,7 +625,7 @@ class FailoverTests(FailoverBaseTest):
                                              process_concurrency=8,
                                              replicate_to=self.replicate_to,
                                              persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries, transaction_timeout=self.transaction_timeout, 
+                                             retries=self.sdk_retries, transaction_timeout=self.transaction_timeout,
                                              commit=self.transaction_commit, durability=self.durability_level)
             self.task.jython_task_manager.get_task_result(task)
         else:

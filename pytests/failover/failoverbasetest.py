@@ -81,7 +81,8 @@ class FailoverBaseTest(BaseTestCase):
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.append(self.cluster.master)
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(bucket_type=self.bucket_type,
+                                               replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
