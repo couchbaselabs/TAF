@@ -353,7 +353,8 @@ class BucketUtils:
         return success
 
     def create_standard_buckets(self, server, num_buckets, bucket_size=None,
-                                bucket_priorities=None):
+                                bucket_priorities=None, maxttl=0,
+                                compression_mode="active"):
         if bucket_priorities is None:
             bucket_priorities = []
         if not num_buckets:
@@ -369,7 +370,9 @@ class BucketUtils:
 
             bucket = Bucket({Bucket.name: name,
                              Bucket.ramQuotaMB: bucket_size,
-                             Bucket.priority: bucket_priority})
+                             Bucket.priority: bucket_priority,
+                             Bucket.maxTTL: maxttl,
+                             Bucket.compressionMode: compression_mode})
             self.create_bucket(bucket)
 
         if self.enable_time_sync:
