@@ -362,16 +362,6 @@ class ClusterOperationHelper(object):
         RebalanceHelper.end_rebalance(master)
 
     @staticmethod
-    # Returns the otpNode for Orchestrator
-    def find_orchestrator(master):
-        rest = RestConnection(master)
-        command = "node(global:whereis_name(ns_orchestrator))"
-        status, content = rest.diag_eval(command)
-        # Get rid of single quotes 'ns_1@10.1.3.74'
-        content = content.replace("'", '')
-        return status, content
-
-    @staticmethod
     def set_vbuckets(master, vbuckets):
         rest = RestConnection(master)
         command = "rpc:eval_everywhere(ns_config, set, [couchbase_num_vbuckets_default, {0}]).".format(vbuckets)

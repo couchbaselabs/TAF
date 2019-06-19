@@ -59,6 +59,17 @@ class ClusterUtils:
         self.upr = self.input.param("upr", None)
         self.log = logging.getLogger("test")
 
+    def find_orchestrator(self, master=None):
+        if not master:
+            master = self.cluster.master
+
+        rest = RestConnection(master)
+        command = "node(global:whereis_name(ns_orchestrator))"
+        status, content = rest.diag_eval(command)
+        # Get rid of single quotes 'ns_1@10.1.3.74'
+        content = content.replace("'", '')
+        return status, content
+
     def cluster_cleanup(self, bucket_util):
         rest = RestConnection(self.cluster.master)
         if rest._rebalance_progress_status() == 'running':
