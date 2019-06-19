@@ -76,6 +76,7 @@ class FailoverTests(FailoverBaseTest):
         durability_will_fail = False
         # Variable to track the number of nodes failed
         num_nodes_failed = 1
+        
 
         # Find nodes that will under go failover
         if self.failoverMaster:
@@ -104,12 +105,12 @@ class FailoverTests(FailoverBaseTest):
         prev_failover_stats = {}
         if not self.withMutationOps:
             record_static_data_set = self.bucket_util.get_data_set_all(
-                self.cluster.servers, self.buckets, path=None)
+                self.cluster.servers, self.bucket_util.buckets, path=None)
 
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
-            self.servers[:self.nodes_init], self.buckets)
+            self.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(
-            self.servers[:self.nodes_init], self.buckets)
+            self.servers[:self.nodes_init], self.bucket_util.buckets)
 
         # Perform Operations related to failover
         if self.withMutationOps or self.withViewsOps or self.compact:
@@ -265,12 +266,11 @@ class FailoverTests(FailoverBaseTest):
         # Check Failover logs :: Not sure about this logic,
         # currently not checking, will update code once confirmed
         # Currently, only  for checking case where we  have graceful failover
-        if self.version_greater_than_2_5 and self.graceful and self.upr_check:
-            new_failover_stats = self.bucket_util.compare_failovers_logs(
-                prev_failover_stats, _servers_, self.buckets)
-            new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
-                prev_vbucket_stats, _servers_, self.buckets)
-            self.bucket_util.compare_vbucketseq_failoverlogs(
+        new_failover_stats = self.bucket_util.compare_failovers_logs(
+                prev_failover_stats, _servers_, self.bucket_util.buckets)
+        new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
+                prev_vbucket_stats, _servers_, self.bucket_util.buckets)
+        self.bucket_util.compare_vbucketseq_failoverlogs(
                 new_vbucket_stats, new_failover_stats)
         # Verify Active and Replica Bucket Count
         if self.num_replicas > 0:
@@ -364,7 +364,7 @@ class FailoverTests(FailoverBaseTest):
                                               check_ep_items_remaining=True)
 
         # Verify recovery Type succeeded if we added-back nodes
-        self.verify_for_recovery_type(chosen, self.server_map, self.buckets,
+        self.verify_for_recovery_type(chosen, self.server_map, self.bucket_util.buckets,
                                       recoveryTypeMap, fileMapsForVerification,
                                       self.deltaRecoveryBuckets)
 
@@ -372,24 +372,24 @@ class FailoverTests(FailoverBaseTest):
         if not self.withMutationOps:
             self.sleep(60)
             self.bucket_util.data_analysis_all(record_static_data_set,
-                                               self.servers, self.buckets,
+                                               self.servers, self.bucket_util.buckets,
                                                path=None, addedItems=None)
 
         # Verify if vbucket sequence numbers and failover logs are as expected
         # We will check only for version > 2.5.* & if the failover is graceful
-        if self.version_greater_than_2_5 and self.graceful and self.upr_check:
-            new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
-                prev_vbucket_stats, self.servers, self.buckets, perNode=False)
-            new_failover_stats = self.bucket_util.compare_failovers_logs(
-                prev_failover_stats, self.servers, self.buckets)
-            self.bucket_util.compare_vbucketseq_failoverlogs(
+        
+        new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
+                prev_vbucket_stats, self.servers, self.bucket_util.buckets, perNode=False)
+        new_failover_stats = self.bucket_util.compare_failovers_logs(
+                prev_failover_stats, self.servers, self.bucket_util.buckets)
+        self.bucket_util.compare_vbucketseq_failoverlogs(
                 new_vbucket_stats, new_failover_stats)
 
         # Verify Active and Replica Bucket Count
         if self.num_replicas > 0:
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.buckets,
+                servers=nodes, buckets=self.bucket_util.buckets,
                 num_replicas=self.num_replicas,
                 total_vbuckets=self.total_vbuckets, std=20.0)
 
