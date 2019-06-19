@@ -3,6 +3,9 @@ from BucketLib.BucketOperations import BucketHelper
 
 
 class DurabilityHelper:
+    EQUAL = '=='
+    GREATER_THAN_EQ = '>='
+
     def __init__(self, logger, cluster_len, durability="MAJORITY",
                  replicate_to=0, persist_to=0):
         """
@@ -24,6 +27,20 @@ class DurabilityHelper:
         # These are induced error_types with which durability=MAJORITY
         # should not be affected.
         self.disk_error_types = ["disk_failure", "disk_full"]
+
+    @staticmethod
+    def __compare(lhs_val, rhs_val, comparison):
+        """
+        :param lhs_val:
+        :param rhs_val:
+        :param comparison:
+        :return: Bool denoting comparison result
+        """
+        if comparison == DurabilityHelper.EQUAL:
+            return lhs_val == rhs_val
+        elif comparison == DurabilityHelper.GREATER_THAN_EQ:
+            return lhs_val >= rhs_val
+        return False
 
     def durability_succeeds(self, bucket_name,
                             induced_error=None, failed_nodes=0):
@@ -104,3 +121,79 @@ class DurabilityHelper:
                                .format(result["error"], key, op_type,
                                        self.durability, timeout))
         return op_failed
+
+    def verify_vbucket_details_stats(self, bucket, cbstat_obj,
+                                     vbuckets=1024,
+                                     expected_val=dict(),
+                                     one_less_node=False):
+        """
+
+        :param bucket: Bucket object
+        :param cbstat_obj: Cbstats class object
+        :param vbuckets: Total vbucket count for the bucket. Default 1024
+        :param expected_val: dict() containing expected key,value pairs
+        :param one_less_node: Bool value denoting,
+                              num_nodes == bucket.replicaNumber
+        :return verification_failed: Bool value denoting verification
+                                     failed or not
+        """
+        verification_failed = False
+        vb_details_stats = cbstat_obj.vbucket_details(bucket.name)
+        ops_val = dict()
+        ops_val["ops_create"] = 0
+        ops_val["ops_delete"] = 0
+        ops_val["ops_update"] = 0
+        ops_val["ops_reject"] = 0
+        ops_val["ops_get"] = 0
+        ops_val["rollback_item_count"] = 0
+        ops_val["sync_write_aborted_count"] = 0
+        ops_val["sync_write_committed_count"] = 0
+        ops_val["pending_writes"] = 0
+        for vb_num in range(0, vbuckets):
+            vb_num = str(vb_num)
+            for op_type in ["ops_create", "ops_delete", "ops_update",
+                            "ops_reject", "ops_get",
+                            "rollback_item_count", "sync_write_aborted_count",
+                            "sync_write_committed_count", "pending_writes"]:
+                ops_val[op_type] += int(vb_details_stats[vb_num][op_type])
+
+        for op_type in ["ops_create", "ops_delete", "ops_update",
+                        "ops_reject", "ops_get",
+                        "rollback_item_count", "sync_write_aborted_count",
+                        "sync_write_committed_count", "pending_writes"]:
+            self.log.info("%s for %s: %s" % (op_type, bucket.name,
+                                             ops_val[op_type]))
+
+        # Verification block
+        comparison_op = DurabilityHelper.EQUAL
+        if bucket.replicaNumber > 1:
+            comparison_op = DurabilityHelper.GREATER_THAN_EQ
+
+        for op_type in ["ops_create", "ops_delete", "ops_update"]:
+            if op_type in expected_val:
+                rhs_val = expected_val[op_type] * (bucket.replicaNumber + 1)
+                if one_less_node:
+                    rhs_val = expected_val[op_type] * bucket.replicaNumber
+
+                if not DurabilityHelper.__compare(
+                        ops_val[op_type], rhs_val, comparison_op):
+                    verification_failed = True
+                    self.log.error("Mismatch in %s stats. %s %s %s"
+                                   % (op_type,
+                                      ops_val[op_type],
+                                      comparison_op,
+                                      rhs_val))
+
+        for op_type in ["ops_reject", "ops_get",
+                        "rollback_item_count", "sync_write_aborted_count",
+                        "sync_write_committed_count", "pending_writes"]:
+            if op_type in expected_val \
+                    and not DurabilityHelper.__compare(ops_val[op_type],
+                                                       expected_val[op_type],
+                                                       DurabilityHelper.EQUAL):
+                verification_failed = True
+                self.log.error("Mismatch in %s stats. %s != %s"
+                               % (op_type,
+                                  ops_val[op_type],
+                                  expected_val[op_type]))
+        return verification_failed

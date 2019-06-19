@@ -1,15 +1,17 @@
 import time
 import json
-from math import floor
 
 from basetestcase import BaseTestCase
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
 
 from membase.api.rest_client import RestConnection
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
+from table_view import TableView
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -39,8 +41,12 @@ class basic_ops(BaseTestCase):
             bucket_type=self.bucket_type)
         self.bucket_util.add_rbac_user()
 
-        # self.src_bucket = RestConnection(self.cluster.master).get_buckets()
         self.src_bucket = self.bucket_util.get_all_buckets()
+        self.durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.nodes_in_cluster),
+            durability=self.durability_level,
+            replicate_to=self.replicate_to,
+            persist_to=self.persist_to)
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
         self.cluster_util.print_cluster_stats()
@@ -222,6 +228,18 @@ class basic_ops(BaseTestCase):
         ignore_exceptions = list()
         retry_exceptions = list()
 
+        # Stat validation reference variables
+        verification_dict = dict()
+        ref_val = dict()
+        ref_val["ops_create"] = 0
+        ref_val["ops_update"] = 0
+        ref_val["ops_delete"] = 0
+        ref_val["rollback_item_count"] = 0
+        ref_val["sync_write_aborted_count"] = 0
+        ref_val["sync_write_committed_count"] = 0
+
+        one_less_node = self.nodes_init == self.num_replicas
+
         if self.durability_level:
             pass
             #ignore_exceptions.append(
@@ -262,13 +280,38 @@ class basic_ops(BaseTestCase):
             self.fail("Failures in retry doc CRUDs: {0}"
                       .format(doc_op_info_dict[task]["unwanted"]["fail"]))
 
-        # Verify initial doc load count
-        self.log.info("Validating doc_count and stats")
+        self.log.info("Wait for ep_all_items_remaining to become '0'")
         self.bucket_util._wait_for_stats_all_buckets()
+
+        # Update ref_val
+        ref_val["ops_create"] = self.num_items + len(task.fail.keys())
+        ref_val["sync_write_committed_count"] = self.num_items
+        # Validate vbucket stats
+        verification_dict["ops_create"] = ref_val["ops_create"]
+        verification_dict["rollback_item_count"] = \
+            ref_val["rollback_item_count"]
+        if self.durability_level:
+            verification_dict["sync_write_aborted_count"] = \
+                ref_val["sync_write_aborted_count"]
+            verification_dict["sync_write_committed_count"] = \
+                ref_val["sync_write_committed_count"]
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstat_obj = Cbstats(shell)
+        failed = self.durability_helper.verify_vbucket_details_stats(
+            def_bucket, cbstat_obj,
+            vbuckets=self.vbuckets, expected_val=verification_dict,
+            one_less_node=one_less_node)
+        shell.disconnect()
+        if failed:
+            self.fail("Cbstat vbucket-details verification failed")
+
+        # Verify initial doc load count
+        self.log.info("Validating doc_count in buckets")
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         self.log.info("Creating doc_generator for doc_op")
-        num_item_start_for_crud = int(floor(self.num_items / 2)) + 1
+        num_item_start_for_crud = int(self.num_items / 2)
         doc_update = doc_generator(
             self.key, num_item_start_for_crud, self.num_items,
             doc_size=self.doc_size, doc_type=self.doc_type,
@@ -286,8 +329,28 @@ class basic_ops(BaseTestCase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
-            # TODO: Proc to verify the mutation value in each doc
-            # self.verify_doc_mutation(doc_update, num_of_mutations)
+            ref_val["ops_update"] = (doc_update.end - doc_update.start
+                                     + len(task.fail.keys()))
+            if self.durability_level:
+                ref_val["sync_write_committed_count"] += \
+                    (doc_update.end - doc_update.start)
+
+            # Read all the values to validate update operation
+            task = self.task.async_load_gen_docs(
+                self.cluster, def_bucket, doc_update, "read", 0,
+                batch_size=10, process_concurrency=8,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+            self.task.jython_task_manager.get_task_result(task)
+
+            op_failed_tbl = TableView(self.log.error)
+            op_failed_tbl.set_headers(["Update failed key", "CAS", "Value"])
+            for key, value in task.success.items():
+                if json.loads(str(value["value"]))["mutated"] != 1:
+                    op_failed_tbl.add_row([key, value["cas"], value["value"]])
+
+            op_failed_tbl.display("Update failed for keys:")
+            if len(op_failed_tbl.rows) != 0:
+                self.fail("Update failed for few keys")
         elif doc_op == "delete":
             self.log.info("Performing 'delete' mutation over the docs")
             task = self.task.async_load_gen_docs(
@@ -297,12 +360,57 @@ class basic_ops(BaseTestCase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
-            expected_num_items = self.num_items - (self.num_items-num_item_start_for_crud)
+            expected_num_items = self.num_items \
+                                 - (self.num_items - num_item_start_for_crud)
+            ref_val["ops_delete"] = (doc_update.end - doc_update.start
+                                     + len(task.fail.keys()))
+            if self.durability_level:
+                ref_val["sync_write_committed_count"] += \
+                    (doc_update.end - doc_update.start)
+
+            # Read all the values to validate update operation
+            task = self.task.async_load_gen_docs(
+                self.cluster, def_bucket, doc_update, "read", 0,
+                batch_size=10, process_concurrency=8,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+            self.task.jython_task_manager.get_task_result(task)
+
+            op_failed_tbl = TableView(self.log.error)
+            op_failed_tbl.set_headers(["Delete failed key", "CAS", "Value"])
+            for key, value in task.success.items():
+                op_failed_tbl.add_row([key, value["cas"], value["value"]])
+
+            op_failed_tbl.display("Delete failed for keys:")
+            if len(op_failed_tbl.rows) != 0:
+                self.fail("Delete failed for few keys")
         else:
             self.log.warning("Unsupported doc_operation")
 
-        self.log.info("Waiting for ep_all_items_remaining to be '0' using cbstats on each node")
+        self.log.info("Wait for ep_all_items_remaining to become '0'")
         self.bucket_util._wait_for_stats_all_buckets()
+
+        # Validate vbucket stats
+        verification_dict["ops_create"] = ref_val["ops_create"]
+        verification_dict["ops_update"] = ref_val["ops_update"]
+        verification_dict["ops_delete"] = ref_val["ops_delete"]
+
+        verification_dict["rollback_item_count"] = \
+            ref_val["rollback_item_count"]
+        if self.durability_level:
+            verification_dict["sync_write_aborted_count"] = \
+                ref_val["sync_write_aborted_count"]
+            verification_dict["sync_write_committed_count"] = \
+                ref_val["sync_write_committed_count"]
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstat_obj = Cbstats(shell)
+        failed = self.durability_helper.verify_vbucket_details_stats(
+            def_bucket, cbstat_obj,
+            vbuckets=self.vbuckets, expected_val=verification_dict,
+            one_less_node=one_less_node)
+        shell.disconnect()
+        if failed:
+            self.fail("Cbstat vbucket-details verification failed")
 
         self.log.info("Validating doc_count")
         self.bucket_util.verify_stats_all_buckets(expected_num_items)
