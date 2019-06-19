@@ -415,8 +415,9 @@ class SwapRebalanceBase(BaseTestCase):
                 times = 20
             for _ in xrange(times):
                 try:
-                    _mc = MemcachedClientHelper.direct_client(master, bucket)
-                    pid = _mc.stats()["pid"]
+                    shell = RemoteMachineShellConnection(master)
+                    pid = shell.get_memcache_pid()
+                    shell.disconnect()
                     break
                 except EOFError as e:
                     self.log.error("{0}.Retry in 2 sec".format(e))
