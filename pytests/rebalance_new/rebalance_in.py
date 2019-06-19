@@ -762,7 +762,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.assertTrue(result, "Failure in view query")
 
         query["stale"] = "update_after"
-        for i in range(1, self.num_servers, 2):
+        for i in range(self.nodes_init, self.num_servers, 2):
             rebalance = self.task.async_rebalance(
                 self.cluster.servers[:i], self.cluster.servers[i:i + 2], [])
             self.sleep(self.wait_timeout / 5)
