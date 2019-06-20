@@ -35,7 +35,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             # Wait for all tasks to complete
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
-        else:
+        elif self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -76,7 +76,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             # Wait for all tasks to complete
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
-        else:
+        elif self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -105,7 +105,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
         self.failover_actions[self.failover_action](self)
-        self.validate_loadgen_tasks()
+        if self.durability_level:
+            self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
     def test_rebalance_after_autofailover(self):
@@ -160,7 +161,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             # Wait for all tasks to complete
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
-        else:
+        elif self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -215,7 +216,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             # Wait for all tasks to complete
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
-        else:
+        elif self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -261,5 +262,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                   .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
-        self.validate_loadgen_tasks()
+        if self.durability_level:
+            self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()

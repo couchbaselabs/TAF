@@ -98,7 +98,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             pass
         else:
             self.fail("Rebalance should fail since a node went down")
-        self.validate_loadgen_tasks()
+        if not self.atomicity:
+            self.validate_loadgen_tasks()
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 

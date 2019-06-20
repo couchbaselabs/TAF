@@ -105,7 +105,7 @@ class BucketUtils:
             warmed_up = self._wait_warmup_completed(
                 self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
             if not warmed_up:
-                raise("Bucket %s not warmed up" % bucket.name)
+                raise Exception("Bucket %s not warmed up" % bucket.name)
         if result:
             self.buckets.append(bucket)
         else:
