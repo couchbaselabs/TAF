@@ -24,7 +24,14 @@ class basic_ops(BaseTestCase):
         if self.default_bucket:
             self.bucket_util.create_default_bucket(replica=self.num_replicas,
                                                compression_mode=self.compression_mode, ram_quota=100)
-        time.sleep(10)
+            
+        if self.num_buckets:
+            self.bucket_util.create_multiple_buckets(self.cluster.master, self.num_replicas, bucket_count=self.num_buckets, bucket_type=Bucket.bucket_type.EPHEMERAL, eviction_policy = Bucket.bucket_eviction_policy.NO_EVICTION)
+         
+        if self.standard_buckets > 1:
+            self.bucket_util.create_standard_buckets(self.cluster.master, self.standard_buckets, bucket_size=100)
+           
+        time.sleep(20)
 
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
@@ -68,15 +75,7 @@ class basic_ops(BaseTestCase):
 
             output,error = shell.execute_command('date')
             self.log.info('Date after is set behind {0}'.format( output ))
-
-        if self.num_buckets:
-            self.bucket_util.create_multiple_buckets(self.cluster.master, self.num_replicas, bucket_count=self.num_buckets, bucket_type=Bucket.bucket_type.EPHEMERAL, eviction_policy = Bucket.bucket_eviction_policy.NO_EVICTION)
-            
         
-        if self.standard_buckets > 1:
-            self.bucket_util.create_standard_buckets(self.cluster.master, self.standard_buckets, bucket_size=100)
-        
-        self.sleep(20)
         self.log.info("going to create a task")
         task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
                                              gen_create, self.op_type , exp=0,
