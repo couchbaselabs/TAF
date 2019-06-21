@@ -277,7 +277,7 @@ public class doc_ops {
 		Duration timeout = this.getDuration(timeOut, timeUnit);
 		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
 		if (persistTo != 0 || replicateTo !=0) {
-			return InsertOptions.insertOptions().expiry(exp).durability(persistto, replicateto).timeout(timeout); 
+			return InsertOptions.insertOptions().expiry(exp).durability(persistto, replicateto).timeout(timeout);
 		}
 		else {
 			return InsertOptions.insertOptions().expiry(exp).timeout(timeout).durabilityLevel(durabilitylevel);
@@ -391,7 +391,7 @@ public class doc_ops {
 		if (durabilityLevel.equalsIgnoreCase("PERSIST_TO_MAJORITY")) {
 			return DurabilityLevel.PERSIST_TO_MAJORITY;
 		}
-		
+
 		return DurabilityLevel.NONE;
 	}
 

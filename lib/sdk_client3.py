@@ -19,9 +19,12 @@ from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.java import Cluster
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.java.json import JsonObject
-from com.couchbase.client.java.kv import InsertOptions, UpsertOptions, \
-                                         RemoveOptions, \
-                                         PersistTo, ReplicateTo, \
+from com.couchbase.client.java.kv import \
+    InsertOptions,\
+    UpsertOptions, \
+    RemoveOptions, \
+    PersistTo,\
+    ReplicateTo, \
     ReplicaMode, \
     GetFromReplicaOptions, \
     MutateInOptions
@@ -33,8 +36,7 @@ from java.util.logging import Logger, Level, ConsoleHandler
 from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
-import com.couchbase.test.doc_operations_sdk3.SubDocOperations as \
-    sub_doc_op
+import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 
 class SDKClient(object):
@@ -67,6 +69,7 @@ class SDKClient(object):
         self.default_timeout = 0
         self.cluster = None
         self._createConn()
+        self.sub_doc_op = sub_doc_op()
         SDKClient.sdk_connections += 1
 
     def _createConn(self):
@@ -86,9 +89,7 @@ class SDKClient(object):
             self.bucketObj = self.cluster.bucket(self.bucket)
             self.collection = self.bucketObj.defaultCollection()
         except Exception as e:
-            print("Exception: " + str(e))
-#             self.cluster.disconnect()
-            raise
+            raise Exception("SDK Connection error: " + str(e))
 
     def close(self):
         self.log.debug("Closing down the cluster")
@@ -98,6 +99,216 @@ class SDKClient(object):
             self.log.debug("Closed down Cluster Connection")
             SDKClient.sdk_disconnections += 1
 
+    # Translate APIs for document operations
+    def __translate_to_json_object(self, value, doc_type="json"):
+
+        if type(value) == JsonObject:
+            return value
+
+        json_obj = JsonObject.create()
+        try:
+            if doc_type.find("json") != -1:
+                if type(value) != dict:
+                    value = pyJson.loads(value)
+                for field, val in value.items():
+                    json_obj.put(field, val)
+                return json_obj
+            elif doc_type.find("binary") != -1:
+                pass
+        except Exception:
+            pass
+
+        return json_obj
+
+    def __translate_upsert_multi_results(self, data):
+        success = dict()
+        fail = dict()
+        if data is None:
+            return success, fail
+        for item in data:
+            result = item['status']
+            key = item['id']
+            json_object = item["document"]
+            if result:
+                success[key] = dict()
+                success[key]['value'] = json_object
+                success[key]['cas'] = item['cas']
+            else:
+                fail[key] = dict()
+                fail[key]['value'] = json_object
+                fail[key]['error'] = item['error']
+        return success, fail
+
+    def __tranlate_delete_multi_results(self, data):
+        success = dict()
+        fail = dict()
+        if data is None:
+            return success, fail
+        for result in data:
+            key = result['id']
+            if result['status']:
+                success[key] = dict()
+                success[key]['cas'] = result['cas']
+            else:
+                fail[key] = dict()
+                fail[key]['cas'] = result['cas']
+                fail[key]['error'] = result['error']
+        return success, fail
+
+    def __translate_get_multi_results(self, data):
+        success = dict()
+        fail = dict()
+        if data is None:
+            return success, fail
+        for result in data:
+            key = result['id']
+            if result['status']:
+                success[key] = dict()
+                success[key]['value'] = result['content']
+                success[key]['cas'] = result['cas']
+            else:
+                fail[key] = dict()
+                fail[key]['error'] = result['error']
+                fail[key]['cas'] = result['cas']
+        return success, fail
+
+    # Translate APIs for sub-document operations
+    def __translate_upsert_multi_sub_doc_result(self, data):
+        success = dict()
+        fail = dict()
+        if data is None:
+            return success, fail
+        for item in data:
+            result = item['status']
+            key = item['id']
+            json_object = item["result"]
+            if result:
+                success[key] = dict()
+                success[key]['value'] = json_object
+                success[key]['cas'] = item['cas']
+            else:
+                fail[key] = dict()
+                fail[key]['value'] = json_object
+                fail[key]['error'] = item['error']
+            print('Done')
+        return success, fail
+
+    # Document operations' getOptions APIs
+    def getInsertOptions(self, exp=0, exp_unit="seconds",
+                         persist_to=0, replicate_to=0,
+                         timeout=5, time_unit="seconds",
+                         durability=""):
+        if durability:
+            options = InsertOptions.insertOptions() \
+                .timeout(self.getDuration(timeout, time_unit)) \
+                .expiry(self.getDuration(exp, exp_unit)) \
+                .durabilityLevel(self.getDurabilityLevel(durability))
+        else:
+            options = InsertOptions.insertOptions() \
+                .timeout(self.getDuration(timeout, time_unit)) \
+                .expiry(self.getDuration(exp, exp_unit)) \
+                .durability(self.getPersistTo(persist_to),
+                            self.getReplicateTo(replicate_to))
+        return options
+
+    def getUpsertOptions(self, exp=0, exp_unit="seconds",
+                         persist_to=0, replicate_to=0,
+                         timeout=5, time_unit="seconds",
+                         durability=""):
+        if durability:
+            options = UpsertOptions.upsertOptions() \
+                .timeout(self.getDuration(timeout, time_unit)) \
+                .expiry(self.getDuration(exp, exp_unit)) \
+                .durabilityLevel(self.getDurabilityLevel(durability))
+        else:
+            options = UpsertOptions.upsertOptions() \
+                .timeout(self.getDuration(timeout, time_unit)) \
+                .expiry(self.getDuration(exp, exp_unit)) \
+                .durability(self.getPersistTo(persist_to),
+                            self.getReplicateTo(replicate_to))
+        return options
+
+    def getRemoveOptions(self, persist_to=0, replicate_to=0,
+                         timeout=5, time_unit="seconds",
+                         durability=""):
+        if durability:
+            options = RemoveOptions.removeOptions() \
+                .timeout(self.getDuration(timeout, time_unit)) \
+                .durabilityLevel(self.getDurabilityLevel(durability))
+        else:
+            options = RemoveOptions.removeOptions() \
+                .timeout(self.getDuration(timeout, time_unit)) \
+                .durability(self.getPersistTo(persist_to),
+                            self.getReplicateTo(replicate_to))
+
+        return options
+
+    def getMutateInOptions(self, exp=0, exp_unit="seconds",
+                           persist_to=0, replicate_to=0, timeout=5,
+                           time_unit="seconds", durability=""):
+        if persist_to != 0 or replicate_to != 0:
+            options = MutateInOptions.mutateInOptions().durability(
+                self.getPersistTo(persist_to), self.getReplicateTo(
+                    replicate_to)).expiry(
+                self.getDuration(exp, exp_unit)).timeout(
+                self.getDuration(timeout, time_unit))
+        else:
+            MutateInOptions.mutateInOptions().durabilityLevel(
+                self.getDurabilityLevel(durability)).expiry(
+                self.getDuration(exp, exp_unit)).timeout(
+                self.getDuration(timeout, time_unit))
+
+    def getPersistTo(self, persistTo):
+        try:
+            persistList = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO,
+                           PersistTo.THREE, PersistTo.FOUR]
+            return persistList[persistTo]
+        except Exception as e:
+            pass
+
+        return PersistTo.ACTIVE
+
+    def getReplicateTo(self, replicateTo):
+        try:
+            replicateList = [ReplicateTo.NONE, ReplicateTo.ONE,
+                             ReplicateTo.TWO, ReplicateTo.THREE]
+            return replicateList[replicateTo]
+        except Exception:
+            pass
+
+        return ReplicateTo.NONE
+
+    def getDurabilityLevel(self, durability_level):
+        durability_level = durability_level.upper()
+        if durability_level == "MAJORITY":
+            return DurabilityLevel.MAJORITY
+
+        if durability_level == "MAJORITY_AND_PERSIST_ON_MASTER":
+            return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER
+
+        if durability_level == "PERSIST_TO_MAJORITY":
+            return DurabilityLevel.PERSIST_TO_MAJORITY
+
+        return DurabilityLevel.NONE
+
+    def getDuration(self, time, time_unit):
+        time_unit = time_unit.lower()
+        if time_unit == "milliseconds":
+            temporal_unit = ChronoUnit.MILLIS
+        elif time_unit == "minutes":
+            temporal_unit = ChronoUnit.MINUTES
+        elif time_unit == "hours":
+            temporal_unit = ChronoUnit.HOURS
+        elif time_unit == "days":
+            temporal_unit = ChronoUnit.DAYS
+        elif time_unit == "minutes":
+            temporal_unit = ChronoUnit.MINUTES
+        else:
+            temporal_unit = ChronoUnit.SECONDS
+
+        return Duration.of(time, temporal_unit)
+
+    # Singular CRUD APIs
     def delete(self, key, persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
                durability=""):
@@ -138,15 +349,6 @@ class SDKClient(object):
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         return result
-
-    def delete_multi(self, keys, persist_to=0,
-                     replicate_to=0, timeout=5, time_unit="seconds",
-                     durability=""):
-        result = doc_op().bulkDelete(self.collection, keys,
-                                     persist_to, replicate_to,
-                                     durability, timeout,
-                                     time_unit)
-        return self.__tranlate_delete_multi_results(result)
 
     def insert(self, key, value, exp=0, exp_unit="seconds",
                persist_to=0, replicate_to=0,
@@ -237,6 +439,39 @@ class SDKClient(object):
                            "error": str(ex), "status": False})
         return result
 
+    def crud(self, op_type, key, value=None, exp=0, replicate_to=0,
+             persist_to=0, durability="", timeout=5, time_unit="seconds"):
+        result = None
+        if op_type == "update":
+            result = self.upsert(
+                key, value, exp=exp,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                timeout=timeout, time_unit=time_unit)
+        elif op_type == "create":
+            result = self.insert(
+                key, value, exp=exp,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                timeout=timeout, time_unit=time_unit)
+        elif op_type == "delete":
+            result = self.delete(
+                key, exp=exp,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                timeout=timeout, time_unit=time_unit)
+        return result
+
+    # Bulk CRUD APIs
+    def delete_multi(self, keys, persist_to=0,
+                     replicate_to=0, timeout=5, time_unit="seconds",
+                     durability=""):
+        result = doc_op().bulkDelete(self.collection, keys,
+                                     persist_to, replicate_to,
+                                     durability, timeout,
+                                     time_unit)
+        return self.__tranlate_delete_multi_results(result)
+
     def setMulti(self, keys, exp=0, exp_unit="seconds",
                  persist_to=0, replicate_to=0,
                  timeout=5, time_unit="seconds", retry=5,
@@ -270,33 +505,11 @@ class SDKClient(object):
         result = doc_op().bulkGet(self.collection, keys)
         return self.__translate_get_multi_results(result)
 
-    def crud(self, op_type, key, value=None, exp=0, replicate_to=0,
-             persist_to=0, durability="", timeout=5, time_unit="seconds"):
-        result = None
-        if op_type == "update":
-            result = self.upsert(
-                key, value, exp=exp,
-                persist_to=persist_to, replicate_to=replicate_to,
-                durability=durability,
-                timeout=timeout, time_unit=time_unit)
-        elif op_type == "create":
-            result = self.insert(
-                key, value, exp=exp,
-                persist_to=persist_to, replicate_to=replicate_to,
-                durability=durability,
-                timeout=timeout, time_unit=time_unit)
-        elif op_type == "delete":
-            result = self.delete(
-                key, exp=exp,
-                persist_to=persist_to, replicate_to=replicate_to,
-                durability=durability,
-                timeout=timeout, time_unit=time_unit)
-        return result
-
+    # Bulk CRUDs for sub-doc APIs
     def sub_doc_insert_multi(self, keys, exp=0, exp_unit="seconds",
                              persist_to=0, replicate_to=0,
                              timeout=5, time_unit="seconds",
-                             doc_type="json", durability="",
+                             durability="",
                              create_path=False,
                              xattr=False):
         """
@@ -310,8 +523,6 @@ class SDKClient(object):
         :param replicate_to: Replicate to parameter
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
-        :param retry:
-        :param doc_type: Document type
         :param durability: Durability level parameter
         :return:
         """
@@ -321,12 +532,15 @@ class SDKClient(object):
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
-                _mutate_in_spec = sub_doc_op().getInsertMutateInSpec(
+                _mutate_in_spec = self.sub_doc_op.getInsertMutateInSpec(
                     _path, _val, create_path, xattr)
                 mutate_in_spec.append(_mutate_in_spec)
+            _mutate_in_spec = self.sub_doc_op.getIncrMutateInSpec(
+                "mutated", 1)
+            mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        result = sub_doc_op().bulkInsertSubDocOperation(
+        result = self.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, exp, exp_unit,
             persist_to, replicate_to, durability, timeout, time_unit)
         return self.__translate_upsert_multi_sub_doc_result(result)
@@ -334,7 +548,7 @@ class SDKClient(object):
     def sub_doc_upsert_multi(self, keys, exp=0, exp_unit="seconds",
                              persist_to=0, replicate_to=0,
                              timeout=5, time_unit="seconds",
-                             doc_type="json", durability="",
+                             durability="",
                              create_path=False,
                              xattr=False):
         """
@@ -348,8 +562,6 @@ class SDKClient(object):
         :param replicate_to: Replicate to parameter
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
-        :param retry:
-        :param doc_type: Document type
         :param durability: Durability level parameter
         :return:
         """
@@ -359,217 +571,93 @@ class SDKClient(object):
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
-                _mutate_in_spec = sub_doc_op().getUpsertMutateInSpec(
+                _mutate_in_spec = self.sub_doc_op.getUpsertMutateInSpec(
                     _path, _val, create_path, xattr)
                 mutate_in_spec.append(_mutate_in_spec)
+            _mutate_in_spec = self.sub_doc_op.getIncrMutateInSpec(
+                "mutated", 1)
+            mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        result = sub_doc_op().bulkUpsertSubDocOperation(
+        result = self.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, exp, exp_unit,
             persist_to, replicate_to, durability, timeout, time_unit)
         return self.__translate_upsert_multi_sub_doc_result(result)
 
-    def __translate_to_json_object(self, value, doc_type="json"):
+    def sub_doc_remove_multi(self, keys, exp=0, exp_unit="seconds",
+                             persist_to=0, replicate_to=0,
+                             timeout=5, time_unit="seconds",
+                             durability="",
+                             create_path=False,
+                             xattr=False):
+        """
 
-        if type(value) == JsonObject:
-            return value
+        :param keys: Documents to perform sub_doc operations on.
+        Must be a dictionary with Keys and List of tuples for
+        path and value.
+        :param exp: Expiry of document
+        :param exp_unit: Expiry time unit
+        :param persist_to: Persist to parameter
+        :param replicate_to: Replicate to parameter
+        :param timeout: timeout for the operation
+        :param time_unit: timeout time unit
+        :param durability: Durability level parameter
+        :return:
+        """
+        mutate_in_specs = []
+        for key, value in keys.items():
+            mutate_in_spec = []
+            for _tuple in value:
+                _path = _tuple[0]
+                _val = _tuple[1]
+                _mutate_in_spec = self.sub_doc_op.getRemoveMutateInSpec(
+                    _path, create_path, xattr)
+                mutate_in_spec.append(_mutate_in_spec)
+            _mutate_in_spec = self.sub_doc_op.getIncrMutateInSpec(
+                "mutated", 1)
+            mutate_in_spec.append(_mutate_in_spec)
+            content = Tuples.of(key, mutate_in_spec)
+            mutate_in_specs.append(content)
+        result = self.sub_doc_op.bulkSubDocOperation(
+            self.collection, mutate_in_specs, exp, exp_unit,
+            persist_to, replicate_to, durability, timeout, time_unit)
+        return self.__translate_upsert_multi_sub_doc_result(result)
 
-        json_obj = JsonObject.create()
-        try:
-            if doc_type.find("json") != -1:
-                if type(value) != dict:
-                    value = pyJson.loads(value)
-                for field, val in value.items():
-                    json_obj.put(field, val)
-                return json_obj
-            elif doc_type.find("binary") != -1:
-                pass
-        except Exception:
-            pass
+    def sub_doc_replace_multi(self, keys, exp=0, exp_unit="seconds",
+                              persist_to=0, replicate_to=0,
+                              timeout=5, time_unit="seconds",
+                              durability="",
+                              create_path=False,
+                              xattr=False):
+        """
 
-        return json_obj
-
-    def __translate_upsert_multi_results(self, data):
-        success = dict()
-        fail = dict()
-        if data is None:
-            return success, fail
-        for item in data:
-            result = item['status']
-            key = item['id']
-            json_object = item["document"]
-            if result:
-                success[key] = dict()
-                success[key]['value'] = json_object
-                success[key]['cas'] = item['cas']
-            else:
-                fail[key] = dict()
-                fail[key]['value'] = json_object
-                fail[key]['error'] = item['error']
-        return success, fail
-
-    def __tranlate_delete_multi_results(self, data):
-        success = dict()
-        fail = dict()
-        if data is None:
-            return success, fail
-        for result in data:
-            key = result['id']
-            if result['status']:
-                success[key] = dict()
-                success[key]['cas'] = result['cas']
-            else:
-                fail[key] = dict()
-                fail[key]['cas'] = result['cas']
-                fail[key]['error'] = result['error']
-        return success, fail
-
-    def __translate_get_multi_results(self, data):
-        success = dict()
-        fail = dict()
-        if data is None:
-            return success, fail
-        for result in data:
-            key = result['id']
-            if result['status']:
-                success[key] = dict()
-                success[key]['value'] = result['content']
-                success[key]['cas'] = result['cas']
-            else:
-                fail[key] = dict()
-                fail[key]['error'] = result['error']
-                fail[key]['cas'] = result['cas']
-        return success, fail
-
-    def __translate_upsert_multi_sub_doc_result(self, data):
-        success = dict()
-        fail = dict()
-        if data is None:
-            return success, fail
-        for item in data:
-            result = item['status']
-            key = item['id']
-            json_object = item["result"]
-            if result:
-                success[key] = dict()
-                success[key]['value'] = json_object
-                success[key]['cas'] = item['cas']
-            else:
-                fail[key] = dict()
-                fail[key]['value'] = json_object
-                fail[key]['error'] = item['error']
-        return success, fail
-
-    def getInsertOptions(self, exp=0, exp_unit="seconds",
-                         persist_to=0, replicate_to=0,
-                         timeout=5, time_unit="seconds",
-                         durability=""):
-        if durability:
-            options = InsertOptions.insertOptions()\
-                .timeout(self.getDuration(timeout, time_unit))\
-                .expiry(self.getDuration(exp, exp_unit))\
-                .durabilityLevel(self.getDurabilityLevel(durability))
-        else:
-            options = InsertOptions.insertOptions()\
-                .timeout(self.getDuration(timeout, time_unit))\
-                .expiry(self.getDuration(exp, exp_unit))\
-                .durability(self.getPersistTo(persist_to),
-                                self.getReplicateTo(replicate_to))
-        return options
-
-    def getUpsertOptions(self, exp=0, exp_unit="seconds",
-                         persist_to=0, replicate_to=0,
-                         timeout=5, time_unit="seconds",
-                         durability=""):
-        if durability:
-            options = UpsertOptions.upsertOptions()\
-                .timeout(self.getDuration(timeout, time_unit))\
-                .expiry(self.getDuration(exp, exp_unit))\
-                .durabilityLevel(self.getDurabilityLevel(durability))
-        else:
-            options = UpsertOptions.upsertOptions()\
-                .timeout(self.getDuration(timeout, time_unit))\
-                .expiry(self.getDuration(exp, exp_unit))\
-                .durability(self.getPersistTo(persist_to),
-                                self.getReplicateTo(replicate_to))
-        return options
-
-    def getRemoveOptions(self, persist_to=0, replicate_to=0,
-                         timeout=5, time_unit="seconds",
-                         durability=""):
-        if durability:
-            options = RemoveOptions.removeOptions()\
-                .timeout(self.getDuration(timeout, time_unit))\
-                .durabilityLevel(self.getDurabilityLevel(durability))
-        else:
-            options = RemoveOptions.removeOptions()\
-                .timeout(self.getDuration(timeout, time_unit))\
-                .durability(self.getPersistTo(persist_to),
-                                self.getReplicateTo(replicate_to))
-
-        return options
-
-    def getMutateInOptions(self, exp=0, exp_unit="seconds",
-                           persist_to=0, replicate_to=0, timeout=5,
-                           time_unit="seconds", durability=""):
-        if persist_to != 0 or replicate_to != 0:
-            options = MutateInOptions.mutateInOptions().durability(
-                self.getPersistTo(persist_to), self.getReplicateTo(
-                    replicate_to)).expiry(
-                self.getDuration(exp, exp_unit)).timeout(
-                self.getDuration(timeout, time_unit))
-        else:
-            MutateInOptions.mutateInOptions().durabilityLevel(
-                self.getDurabilityLevel(durability)).expiry(
-                self.getDuration(exp, exp_unit)).timeout(
-                self.getDuration(timeout, time_unit))
-
-    def getPersistTo(self, persistTo):
-        try:
-            persistList = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO,
-                           PersistTo.THREE, PersistTo.FOUR]
-            return persistList[persistTo]
-        except Exception as e:
-            pass
-
-        return PersistTo.ACTIVE
-
-    def getReplicateTo(self, replicateTo):
-        try:
-            replicateList = [ReplicateTo.NONE, ReplicateTo.ONE,
-                             ReplicateTo.TWO, ReplicateTo.THREE]
-            return replicateList[replicateTo]
-        except Exception:
-            pass
-
-        return ReplicateTo.NONE
-
-    def getDurabilityLevel(self, durability_level):
-        durability_level = durability_level.upper()
-        if durability_level == "MAJORITY":
-            return DurabilityLevel.MAJORITY
-
-        if durability_level == "MAJORITY_AND_PERSIST_ON_MASTER":
-            return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER
-
-        if durability_level == "PERSIST_TO_MAJORITY":
-            return DurabilityLevel.PERSIST_TO_MAJORITY
-
-        return DurabilityLevel.NONE
-
-    def getDuration(self, time, time_unit):
-        time_unit = time_unit.lower()
-        if time_unit == "milliseconds":
-            temporal_unit = ChronoUnit.MILLIS
-        elif time_unit == "minutes":
-            temporal_unit = ChronoUnit.MINUTES
-        elif time_unit == "hours":
-            temporal_unit = ChronoUnit.HOURS
-        elif time_unit == "days":
-            temporal_unit = ChronoUnit.DAYS
-        elif time_unit == "minutes":
-            temporal_unit = ChronoUnit.MINUTES
-        else:
-            temporal_unit = ChronoUnit.SECONDS
-
-        return Duration.of(time, temporal_unit)
+        :param keys: Documents to perform sub_doc operations on.
+        Must be a dictionary with Keys and List of tuples for
+        path and value.
+        :param exp: Expiry of document
+        :param exp_unit: Expiry time unit
+        :param persist_to: Persist to parameter
+        :param replicate_to: Replicate to parameter
+        :param timeout: timeout for the operation
+        :param time_unit: timeout time unit
+        :param durability: Durability level parameter
+        :return:
+        """
+        mutate_in_specs = []
+        for key, value in keys.items():
+            mutate_in_spec = []
+            for _tuple in value:
+                _path = _tuple[0]
+                _val = _tuple[1]
+                _mutate_in_spec = self.sub_doc_op.getReplaceMutateInSpec(
+                    _path, _val, create_path, xattr)
+                mutate_in_spec.append(_mutate_in_spec)
+            _mutate_in_spec = self.sub_doc_op.getIncrMutateInSpec(
+                "mutated", 1)
+            mutate_in_spec.append(_mutate_in_spec)
+            content = Tuples.of(key, mutate_in_spec)
+            mutate_in_specs.append(content)
+        result = self.sub_doc_op.bulkSubDocOperation(
+            self.collection, mutate_in_specs, exp, exp_unit,
+            persist_to, replicate_to, durability, timeout, time_unit)
+        return self.__translate_upsert_multi_sub_doc_result(result)

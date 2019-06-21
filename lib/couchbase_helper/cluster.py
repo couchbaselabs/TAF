@@ -172,11 +172,10 @@ class ServerTasks(object):
                                 timeout_secs=5, compression=True,
                                 process_concurrency=8, retries=5,
                                 durability=""):
-        self.log.debug(
-            "Loading sub documents to {}".format(bucket.name))
+        self.log.debug("Loading sub documents to {}".format(bucket.name))
         if not isinstance(generator, SubdocDocumentGenerator):
-            raise Exception("Document generator needs to be of"
-                            " type SubdocDocumentGenerator")
+            raise Exception("Document generator needs to be of "
+                            "type SubdocDocumentGenerator")
         clients = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
@@ -187,27 +186,28 @@ class ServerTasks(object):
                 RestConnection(cluster.master),
                 bucket)
             clients.append(client)
-        _task = jython_tasks.LoadSubDocumentsGeneratorsTask(cluster,
-                                                            self.jython_task_manager,
-                                                            bucket,
-                                                            clients,
-                                                            [generator],
-                                                            op_type,
-                                                            exp,
-                                                            create_paths=path_create,
-                                                            xattr=xattr,
-                                                            exp_unit="second",
-                                                            flag=flag,
-                                                            persist_to=persist_to,
-                                                            replicate_to=replicate_to,
-                                                            only_store_hash=only_store_hash,
-                                                            batch_size=batch_size,
-                                                            pause_secs=pause_secs,
-                                                            timeout_secs=timeout_secs,
-                                                            compression=compression,
-                                                            process_concurrency=process_concurrency,
-                                                            retries=retries,
-                                                            durability=durability)
+        _task = jython_tasks.LoadSubDocumentsGeneratorsTask(
+            cluster,
+            self.jython_task_manager,
+            bucket,
+            clients,
+            [generator],
+            op_type,
+            exp,
+            create_paths=path_create,
+            xattr=xattr,
+            exp_unit="seconds",
+            flag=flag,
+            persist_to=persist_to,
+            replicate_to=replicate_to,
+            only_store_hash=only_store_hash,
+            batch_size=batch_size,
+            pause_secs=pause_secs,
+            timeout_secs=timeout_secs,
+            compression=compression,
+            process_concurrency=process_concurrency,
+            retries=retries,
+            durability=durability)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

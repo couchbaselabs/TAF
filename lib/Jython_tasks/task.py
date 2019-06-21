@@ -1,8 +1,8 @@
-'''
+"""
 Created on Sep 14, 2017
 
 @author: riteshagarwal
-'''
+"""
 import copy
 import json as Json
 import json as pyJson
@@ -609,23 +609,23 @@ class GenericLoadingTask(Task):
     def batch_sub_doc_insert(self, key_value, persist_to=0,
                              replicate_to=0, timeout=5,
                              time_unit="seconds",
-                             doc_type="json", durability="",
+                             durability="",
                              create_path=True, xattr=False):
         success = dict()
         fail = dict()
         try:
             retry_docs = key_value
-            success, fail = self.client.sub_doc_insert_multi(retry_docs,
-                                                             exp=self.exp,
-                                                             exp_unit=self.exp_unit,
-                                                             persist_to=persist_to,
-                                                             replicate_to=replicate_to,
-                                                             timeout=timeout,
-                                                             time_unit=time_unit,
-                                                             doc_type=doc_type,
-                                                             durability=durability,
-                                                             create_path=create_path,
-                                                             xattr=xattr)
+            success, fail = self.client.sub_doc_insert_multi(
+                retry_docs,
+                exp=self.exp,
+                exp_unit=self.exp_unit,
+                persist_to=persist_to,
+                replicate_to=replicate_to,
+                timeout=timeout,
+                time_unit=time_unit,
+                durability=durability,
+                create_path=create_path,
+                xattr=xattr)
             return success, fail
         except Exception as error:
             self.log.error(error)
@@ -634,23 +634,23 @@ class GenericLoadingTask(Task):
     def batch_sub_doc_upsert(self, key_value, persist_to=0,
                              replicate_to=0, timeout=5,
                              time_unit="seconds",
-                             doc_type="json", durability="",
+                             durability="",
                              create_path=True, xattr=False):
         success = dict()
         fail = dict()
         try:
             retry_docs = key_value
-            success, fail = self.client.sub_doc_upsert_multi(retry_docs,
-                                                             exp=self.exp,
-                                                             exp_unit=self.exp_unit,
-                                                             persist_to=persist_to,
-                                                             replicate_to=replicate_to,
-                                                             timeout=timeout,
-                                                             time_unit=time_unit,
-                                                             doc_type=doc_type,
-                                                             durability=durability,
-                                                             create_path=create_path,
-                                                             xattr=xattr)
+            success, fail = self.client.sub_doc_upsert_multi(
+                retry_docs,
+                exp=self.exp,
+                exp_unit=self.exp_unit,
+                persist_to=persist_to,
+                replicate_to=replicate_to,
+                timeout=timeout,
+                time_unit=time_unit,
+                durability=durability,
+                create_path=create_path,
+                xattr=xattr)
             return success, fail
         except Exception as error:
             self.log.error(error)
@@ -782,14 +782,19 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True, throughput_concurrency=4, retries=5,
-                 durability=""):
+                 compression=True, retries=5,
+                 durability="", task_identifier=""):
         super(LoadSubDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
-            throughput_concurrency=throughput_concurrency,
             retries=retries)
+        self.thread_name = "LoadSubDocsTask-{}_{}_{}_{}_{}" \
+            .format(task_identifier,
+                    generator._doc_gen.start,
+                    generator._doc_gen.end,
+                    op_type,
+                    durability)
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
@@ -812,33 +817,33 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch()
         if self.op_type == 'insert':
-            success, fail = self.batch_sub_doc_insert(key_value,
-                                                      persist_to=self.persist_to,
-                                                      replicate_to=self.replicate_to,
-                                                      timeout=self.timeout,
-                                                      time_unit=self.time_unit,
-                                                      doc_type=self.generator.doc_type,
-                                                      durability=self.durability,
-                                                      create_path=self.create_path,
-                                                      xattr=self.xattr)
+            success, fail = self.batch_sub_doc_insert(
+                key_value,
+                persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
+                durability=self.durability,
+                create_path=self.create_path,
+                xattr=self.xattr)
             self.fail.update(fail)
             self.success.update(success)
         elif self.op_type == 'upsert':
-            success, fail = self.batch_sub_doc_upsert(key_value,
-                                                      persist_to=self.persist_to,
-                                                      replicate_to=self.replicate_to,
-                                                      timeout=self.timeout,
-                                                      time_unit=self.time_unit,
-                                                      doc_type=self.generator.doc_type,
-                                                      durability=self.durability,
-                                                      create_path=self.create_path,
-                                                      xattr=self.xattr
-                                                      )
+            success, fail = self.batch_sub_doc_upsert(
+                key_value,
+                persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
+                durability=self.durability,
+                create_path=self.create_path,
+                xattr=self.xattr)
             self.fail.update(fail)
             self.success.update(success)
         else:
-            self.set_exception(
-                Exception("Bad operation type: %s" % self.op_type))
+            self.set_exception(Exception("Bad operation type: %s"
+                                         % self.op_type))
+
 
 class Durability(Task):
 
@@ -1383,8 +1388,8 @@ class LoadSubDocumentsGeneratorsTask(Task):
                     self.log.debug("Failed to load {} sub_docs from {} "
                                    "to {}"
                                    .format(task.fail.__len__(),
-                                     task.generator._doc_gen.start,
-                                     task.generator._doc_gen.end))
+                                           task.generator._doc_gen.start,
+                                           task.generator._doc_gen.end))
         except Exception as e:
             self.log.error(e)
             self.set_exception(e)
@@ -1444,7 +1449,6 @@ class LoadSubDocumentsGeneratorsTask(Task):
                                         pause_secs=self.pause_secs,
                                         timeout_secs=self.timeout_secs,
                                         compression=self.compression,
-                                        throughput_concurrency=self.process_concurrency,
                                         retries=self.retries,
                                         durability=self.durability)
             tasks.append(task)
@@ -3468,24 +3472,24 @@ class Atomicity(Task):
                         exception = Transaction().RunTransaction(self.transaction, self.bucket, doc, [], [], commit, Atomicity.sync, Atomicity.updatecount )
                     if not commit:
                         Atomicity.all_keys = []
-            
+
                 if op_type == "update":
                     list_docs = list(self.__chunks(Atomicity.update_keys, len(Atomicity.update_keys)/20))
                     for doc in list_docs:
                             exception = Transaction().RunTransaction(self.transaction, self.bucket, [], doc, [], self.commit, Atomicity.sync, Atomicity.updatecount )
                     if self.commit:
                         Atomicity.mutate = Atomicity.updatecount
-            
+
                 if op_type == "update_Rollback":
                     exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], False, True, Atomicity.updatecount )
-            
+
                 if op_type == "delete":
                     Atomicity.delete_keys = random.sample(Atomicity.all_keys,random.randint(20,len_keys))
                     self.test_log.info("delete keys count is {}".format(len(Atomicity.delete_keys)))
                     list_docs = list(self.__chunks(Atomicity.delete_keys, len(Atomicity.delete_keys)/20))
                     for doc in list_docs:
                         exception = Transaction().RunTransaction(self.transaction, self.bucket, [], [], doc, self.commit, Atomicity.sync, Atomicity.updatecount )
-                        
+
                 if op_type == "general_update":
                     for self.client in Atomicity.clients:
                         self.batch_update(last_batch, self.client, persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -3544,7 +3548,7 @@ class Atomicity(Task):
             self.test_log.info("Atomicity Load generation thread completed")
             self.transaction.close()
             self.complete_task()
-        
+
         def __chunks(self, l, n):
             """Yield successive n-sized chunks from l."""
             for i in range(0, len(l), n):
@@ -3807,7 +3811,7 @@ class ViewCompactionTask(Task):
         self.with_rebalance = with_rebalance
         self.rest = RestConnection(self.server)
         self.result = False
- 
+
     def call(self):
         try:
             self.compaction_revision, self.precompacted_fragmentation = \
