@@ -3463,28 +3463,29 @@ class Atomicity(Task):
                         commit = self.commit
                         Atomicity.update_keys =[]
                         Atomicity.delete_keys =[]
+                    docs = list(self.__chunks(docs, len(Atomicity.all_keys)/50))
                     for doc in docs:
-                        exception = Transaction().RunTransaction(self.transaction, self.bucket, [doc], [], [], commit, True, Atomicity.updatecount )
+                        exception = Transaction().RunTransaction(self.transaction, self.bucket, doc, [], [], commit, Atomicity.sync, Atomicity.updatecount )
                     if not commit:
                         Atomicity.all_keys = []
-
-
+            
                 if op_type == "update":
-                    #for key in Atomicity.update_keys:
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, True, Atomicity.updatecount )
+                    list_docs = list(self.__chunks(Atomicity.update_keys, len(Atomicity.update_keys)/20))
+                    for doc in list_docs:
+                            exception = Transaction().RunTransaction(self.transaction, self.bucket, [], doc, [], self.commit, Atomicity.sync, Atomicity.updatecount )
                     if self.commit:
                         Atomicity.mutate = Atomicity.updatecount
-
-
-
+            
                 if op_type == "update_Rollback":
                     exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], False, True, Atomicity.updatecount )
-
+            
                 if op_type == "delete":
-                    Atomicity.delete_keys = random.sample(Atomicity.all_keys,random.randint(1,len_keys))
+                    Atomicity.delete_keys = random.sample(Atomicity.all_keys,random.randint(20,len_keys))
                     self.test_log.info("delete keys count is {}".format(len(Atomicity.delete_keys)))
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], [], Atomicity.delete_keys, self.commit, True, Atomicity.updatecount)
-
+                    list_docs = list(self.__chunks(Atomicity.delete_keys, len(Atomicity.delete_keys)/20))
+                    for doc in list_docs:
+                        exception = Transaction().RunTransaction(self.transaction, self.bucket, [], [], doc, self.commit, Atomicity.sync, Atomicity.updatecount )
+                        
                 if op_type == "general_update":
                     for self.client in Atomicity.clients:
                         self.batch_update(last_batch, self.client, persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -3505,17 +3506,6 @@ class Atomicity(Task):
                             self.test_log.info("keys are not deleted {}".format(keys))
                     Atomicity.delete_keys = last_batch.keys()
 
-                if op_type == "create_delete":
-                    Atomicity.update_keys = []
-                    Atomicity.delete_keys = random.sample(Atomicity.all_keys,random.randint(1,len_keys))
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, docs, [], Atomicity.delete_keys, self.commit, True, Atomicity.updatecount)
-
-                if op_type == "update_delete":
-                    Atomicity.delete_keys = random.sample(Atomicity.all_keys,random.randint(1,len_keys))
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [] , Atomicity.update_keys, Atomicity.delete_keys, self.commit, True, Atomicity.updatecount)
-                    if self.commit:
-                        Atomicity.mutate = Atomicity.updatecount
-
                 if op_type == "create_update":
                     exception = Transaction().RunTransaction(self.transaction, self.bucket, docs, Atomicity.update_keys, [], self.commit, True, Atomicity.updatecount)
                     Atomicity.mutate = Atomicity.updatecount
@@ -3529,13 +3519,13 @@ class Atomicity(Task):
 
                 if op_type == "rebalance_only_update":
                     Atomicity.update_keys.extend(Atomicity.all_keys)
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, True, Atomicity.updatecount)
+                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
                     if self.commit:
                         Atomicity.mutate = Atomicity.updatecount
 
                 if op_type == "rebalance_delete":
                     Atomicity.delete_keys.extend(Atomicity.all_keys)
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], [],  Atomicity.delete_keys, self.commit, True, Atomicity.updatecount)
+                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], [],  Atomicity.delete_keys, self.commit, Atomicity.sync, Atomicity.updatecount)
 
                 if op_type == "time_out":
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, [], [], True, True, Atomicity.updatecount )
@@ -3551,10 +3541,14 @@ class Atomicity(Task):
                     self.set_exception(Exception(exception))
                     break
 
-
             self.test_log.info("Atomicity Load generation thread completed")
             self.transaction.close()
             self.complete_task()
+        
+        def __chunks(self, l, n):
+            """Yield successive n-sized chunks from l."""
+            for i in range(0, len(l), n):
+                yield l[i:i + n]
 
         def __translate_to_json_object(self, value, doc_type="json"):
 
