@@ -656,6 +656,45 @@ class GenericLoadingTask(Task):
             self.log.error(error)
         return success, fail
 
+    def batch_sub_doc_remove(self, key_value, persist_to=0,
+                             replicate_to=0, timeout=5,
+                             time_unit="seconds",
+                             durability="",
+                             create_path=True, xattr=False):
+        success = dict()
+        fail = dict()
+        try:
+            retry_docs = key_value
+            success, fail = self.client.sub_doc_remove_multi(
+                retry_docs,
+                exp=self.exp,
+                exp_unit=self.exp_unit,
+                persist_to=persist_to,
+                replicate_to=replicate_to,
+                timeout=timeout,
+                time_unit=time_unit,
+                durability=durability,
+                create_path=create_path,
+                xattr=xattr)
+            return success, fail
+        except Exception as error:
+            self.log.error(error)
+        return success, fail
+
+    def batch_sub_doc_read(self, key_value, timeout=5, time_unit="seconds"):
+        success = dict()
+        fail = dict()
+        try:
+            retry_docs = key_value
+            success, fail = self.client.sub_doc_read_multi(
+                retry_docs,
+                timeout=timeout,
+                time_unit=time_unit)
+            return success, fail
+        except Exception as error:
+            self.log.error(error)
+        return success, fail
+
     def _process_values_for_create(self, key_val):
         for key, value in key_val.items():
             try:
@@ -837,9 +876,28 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 xattr=self.xattr)
             self.fail.update(fail)
             self.success.update(success)
+        elif self.op_type == 'remove':
+            success, fail = self.batch_sub_doc_remove(
+                key_value,
+                persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
+                durability=self.durability,
+                create_path=self.create_path,
+                xattr=self.xattr)
+            self.fail.update(fail)
+            self.success.update(success)
+        elif self.op_type == 'read':
+            success, fail = self.batch_sub_doc_read(key_value,
+                                                    timeout=self.timeout,
+                                                    time_unit=self.time_unit)
+            self.fail.update(fail)
+            self.success.update(success)
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
+
 
 
 class Durability(Task):
@@ -1412,9 +1470,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-        gen_range = max(int((
-                                        generator.end -
-                                        generator.start) /
+        gen_range = max(int((generator.end - generator.start) /
                             self.process_concurrency),
                         1)
         for pos in range(gen_start, gen_end, gen_range):

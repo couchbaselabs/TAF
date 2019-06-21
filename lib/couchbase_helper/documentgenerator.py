@@ -17,7 +17,7 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json",
     first = ['james', 'sharon']
     body = [''.rjust(doc_size - 10, 'a')]
     # Defaults to JSON doc_type
-    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
+    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}" }}'
     if doc_type in ["string", "binary"]:
         template = "Age:{0}, first_name:{1}, body: {2}"
     if target_vbucket:
@@ -27,6 +27,43 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json",
             vbuckets=vbuckets)
     return DocumentGenerator(key, template, age, first, body,
                              start=start, end=end, doc_type=doc_type)
+
+
+def sub_doc_generator(key, start, end, doc_size=256,
+                      target_vbucket=None, vbuckets=1024):
+    first_name = ['james', 'sharon']
+    last_name = [''.rjust(doc_size - 10, 'a')]
+    city = ["Chicago", "Dallas", "Seattle", "Aurora", "Columbia"]
+    state = ["AL", "CA", "IN", "NV", "NY"]
+    pin_code = [135, 246, 396, 837, 007]
+    template = '{{ "name.first": "{0}", "name.last": "{1}", \
+                   "addr.city": "{2}", "addr.state": "{3}", \
+                   "addr.pincode": {4} }}'
+    if target_vbucket:
+        return SubdocGeneratorForTargetVbucket(key, template,
+                                               first_name, last_name,
+                                               city, state, pin_code,
+                                               start=start, end=end,
+                                               target_vbucket=target_vbucket,
+                                               vbuckets=vbuckets)
+    return SubdocDocumentGenerator(key, template,
+                                   first_name, last_name,
+                                   city, state, pin_code,
+                                   start=start, end=end)
+
+
+def sub_doc_generator_for_edit(key, start, end, template_index=0,
+                               target_vbucket=None, vbuckets=1024):
+    template = list()
+    template.append('{{ "name.last": "LastNameUpdate", \
+                        "addr.city": "CityUpdate", \
+                        "addr.pincode": "TypeChange", \
+                        "todo.morning": [\"get\", \"up\"] }}')
+    template.append('{{ "name.first": "FirstNameUpdate", \
+                        "addr.state": "NewState", \
+                        "todo.night": [1, \"nothing\", 3] }}')
+    return SubdocDocumentGenerator(key, template[template_index],
+                                   start=start, end=end)
 
 
 class KVGenerator(object):
@@ -147,6 +184,10 @@ class SubdocDocumentGenerator(KVGenerator):
         """
         self.args = args
         self.template = template
+        self.doc_type = "json"
+        self.doc_keys = list()
+        self.key_counter = 0
+        self.target_vbucket = None
 
         size = 0
         if not len(self.args) == 0:
@@ -173,8 +214,6 @@ class SubdocDocumentGenerator(KVGenerator):
         if self.itr >= self.end:
             raise StopIteration
 
-        seed_hash = self.name + '-' + str(self.itr)
-        self.random.seed(seed_hash)
         doc_args = []
         for arg in self.args:
             value = self.random.choice(arg)
@@ -190,6 +229,8 @@ class SubdocDocumentGenerator(KVGenerator):
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 
             characters """
+            seed_hash = self.name + '-' + str(self.itr)
+            self.random.seed(seed_hash)
             doc_key = ''.join(self.random.choice(
                 ascii_uppercase + ascii_lowercase + digits) for _ in
                               range(12))

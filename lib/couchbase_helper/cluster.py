@@ -139,7 +139,7 @@ class ServerTasks(object):
         if active_resident_threshold == 100:
             _task = jython_tasks.LoadDocumentsGeneratorsTask(
                 cluster, self.jython_task_manager, bucket, clients,
-                [generator], op_type, exp, exp_unit="second", flag=flag,
+                [generator], op_type, exp, exp_unit="seconds", flag=flag,
                 persist_to=persist_to, replicate_to=replicate_to,
                 only_store_hash=only_store_hash,
                 batch_size=batch_size, pause_secs=pause_secs,

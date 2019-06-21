@@ -61,6 +61,7 @@ class BaseTestCase(unittest.TestCase):
         # Doc specific params
         self.key_size = self.input.param("key_size", 0)
         self.doc_size = self.input.param("doc_size", 10)
+        self.sub_doc_size = self.input.param("sub_doc_size", 10)
         self.doc_type = self.input.param("doc_type", "json")
         self.num_items = self.input.param("num_items", 100000)
         self.target_vbucket = self.input.param("target_vbucket", None)

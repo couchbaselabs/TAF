@@ -194,7 +194,6 @@ class SDKClient(object):
                 fail[key] = dict()
                 fail[key]['value'] = json_object
                 fail[key]['error'] = item['error']
-            print('Done')
         return success, fail
 
     # Document operations' getOptions APIs
@@ -568,7 +567,6 @@ class SDKClient(object):
                              create_path=False,
                              xattr=False):
         """
-
         :param keys: Documents to perform sub_doc operations on.
         Must be a dictionary with Keys and List of tuples for
         path and value.
@@ -600,6 +598,30 @@ class SDKClient(object):
             persist_to, replicate_to, durability, timeout, time_unit)
         return self.__translate_upsert_multi_sub_doc_result(result)
 
+    def sub_doc_read_multi(self, keys, timeout=5, time_unit="seconds"):
+        """
+        :param keys: Documents to perform sub_doc operations on.
+                     Must be a dictionary with Keys and List of tuples for
+                     path.
+        :param timeout: timeout for the operation
+        :param time_unit: timeout time unit
+        :return:
+        """
+        mutate_in_specs = []
+        for key, value in keys.items():
+            mutate_in_spec = []
+            for _tuple in value:
+                _path = _tuple[0]
+                _mutate_in_spec = self.sub_doc_op.getLookUpInSpec(_path)
+                mutate_in_spec.append(_mutate_in_spec)
+            mutate_in_spec.append(_mutate_in_spec)
+            content = Tuples.of(key, mutate_in_spec)
+            mutate_in_specs.append(content)
+        result = self.sub_doc_op.bulkGetSubDocOperation(
+            self.collection, mutate_in_specs)
+            # timeout, time_unit)
+        return self.__translate_get_multi_results(result)
+
     def sub_doc_remove_multi(self, keys, exp=0, exp_unit="seconds",
                              persist_to=0, replicate_to=0,
                              timeout=5, time_unit="seconds",
@@ -627,7 +649,7 @@ class SDKClient(object):
                 _path = _tuple[0]
                 _val = _tuple[1]
                 _mutate_in_spec = self.sub_doc_op.getRemoveMutateInSpec(
-                    _path, create_path, xattr)
+                    _path, xattr)
                 mutate_in_spec.append(_mutate_in_spec)
             _mutate_in_spec = self.sub_doc_op.getIncrMutateInSpec(
                 "mutated", 1)
