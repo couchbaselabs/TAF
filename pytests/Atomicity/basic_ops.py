@@ -84,7 +84,7 @@ class basic_ops(BaseTestCase):
                                              replicate_to=self.replicate_to,
                                              persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
                                              retries=self.sdk_retries,update_count=self.update_count, transaction_timeout=self.transaction_timeout, 
-                                             commit=self.transaction_commit,durability=self.durability_level)
+                                             commit=self.transaction_commit,durability=self.durability_level,sync=self.sync)
         self.log.info("going to execute the task")
         self.task.jython_task_manager.get_task_result(task)
         
@@ -97,7 +97,7 @@ class basic_ops(BaseTestCase):
                                              replicate_to=self.replicate_to,
                                              persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
                                              retries=self.sdk_retries,update_count=self.update_count, transaction_timeout=200, 
-                                             commit=self.transaction_commit,durability=self.durability_level)
+                                             commit=self.transaction_commit,durability=self.durability_level,sync=self.sync)
             self.task_manager.get_task_result(task)
 
     def test_large_doc_size_commit(self):
@@ -110,7 +110,7 @@ class basic_ops(BaseTestCase):
                                              replicate_to=self.replicate_to,
                                              persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
                                              retries=self.sdk_retries,transaction_timeout=self.transaction_timeout, 
-                                             commit=self.transaction_commit,durability=self.durability_level)
+                                             commit=self.transaction_commit,durability=self.durability_level,sync=self.sync)
         self.log.info("going to execute the task")
         self.task.jython_task_manager.get_task_result(task)
         
