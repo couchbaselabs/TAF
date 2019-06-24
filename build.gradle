@@ -36,6 +36,36 @@ dependencies {
     compile 'net.sourceforge.argparse4j:argparse4j:0.8.1'
 }
 
+task install(type:Exec) {
+
+    // Want to check if these properties exist so can signal usage errors, but unfortunately gradle seems to run this
+    // task always during initialisation, and barfs on this.
+//    if (!project.hasProperty("jython")) {
+//        throw new Exception("Must specify -P jython '/path/to/jython'")
+//    }
+//
+//    if (!project.hasProperty("args")) {
+//        throw new Exception("Must specify -P args 'all_testrunner_args'")
+//    }
+
+    if (project.hasProperty("args") && project.hasProperty("jython")) {
+        def jythonpath = sourceSets.main.runtimeClasspath.asPath
+
+        def jythonLocation = project.property("jython")
+        def testRunnerArgs = project.property("args").split()
+
+        // Add the build output containing the built Java source.  Should get this from a gradle variable really but it's
+        // very unlikely to ever change.
+        def cmd = [jythonLocation, '-J-cp', jythonpath + ":build/classes/java/main", 'scripts/install.py']
+
+        testRunnerArgs.each { cmd.add(it) }
+
+        println("Running: " + cmd.join(" "))
+
+        commandLine cmd
+    }
+}
+
 // Task that runs "jython testrunner.py" with the correct CLASSPATH
 task testrunner(type:Exec) {
 
@@ -67,4 +97,3 @@ task testrunner(type:Exec) {
     }
 }
 
-testrunner.dependsOn(compileJava)
