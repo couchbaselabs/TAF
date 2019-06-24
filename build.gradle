@@ -96,4 +96,5 @@ task testrunner(type:Exec) {
         commandLine cmd
     }
 }
-
+// This is needed to compile the src folder which will build java doc ops code in TAF
+testrunner.dependsOn(compileJava)
