@@ -2,15 +2,6 @@
 
 package com.couchbase.test.transactions;
 
-import com.couchbase.transactions.config.TransactionConfig;
-import com.couchbase.transactions.config.TransactionConfigBuilder;
-import com.couchbase.transactions.error.TransactionFailed;
-import com.couchbase.transactions.log.LogDefer;
-
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -20,19 +11,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.stream.Collectors;
-import com.couchbase.client.core.cnc.Event;
 
+import com.couchbase.client.core.cnc.Event;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.json.JsonObject;
-import com.couchbase.client.java.kv.InsertOptions;
-import com.couchbase.client.java.kv.RemoveOptions;
 import com.couchbase.transactions.AttemptContextReactive;
 import com.couchbase.transactions.TransactionDurabilityLevel;
 import com.couchbase.transactions.TransactionJsonDocument;
 import com.couchbase.transactions.TransactionResult;
 import com.couchbase.transactions.Transactions;
+import com.couchbase.transactions.config.TransactionConfig;
+import com.couchbase.transactions.config.TransactionConfigBuilder;
+import com.couchbase.transactions.error.TransactionFailed;
+import com.couchbase.transactions.log.LogDefer;
+
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 public class SimpleTransaction {
 
