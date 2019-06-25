@@ -216,7 +216,7 @@ class FailoverTests(FailoverBaseTest):
                                                 durability_will_fail=False):
         """ Method to run rebalance after failover and verify """
         # Need a delay > min because MB-7168
-        _servers_ = self.filter_servers(self.servers, chosen)
+        _servers_ = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
             check_ep_items_remaining=False)
@@ -229,7 +229,7 @@ class FailoverTests(FailoverBaseTest):
             for bucket in self.buckets:
                 self.cluster.compact_bucket(self.master, bucket)
         # Perform View Validation if Supported
-        nodes = self.filter_servers(self.servers, chosen)
+        nodes = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if self.withViewsOps:
             self.query_and_monitor_view_tasks(nodes)
 
