@@ -219,7 +219,7 @@ class FailoverTests(FailoverBaseTest):
         _servers_ = self.filter_servers(self.servers, chosen)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
-            check_ep_items_remaining=True)
+            check_ep_items_remaining=False)
         self.sleep(5, "after failover before invoking rebalance...")
         # Rebalance after Failover operation
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
@@ -254,7 +254,7 @@ class FailoverTests(FailoverBaseTest):
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(self.num_items, self.master,
                                               check_bucket_stats=True,
-                                              check_ep_items_remaining=True)
+                                              check_ep_items_remaining=False)
         # Verify all data set with meta data if failover happens after failover
         if not self.withMutationOps:
             self.sleep(60)
@@ -293,7 +293,7 @@ class FailoverTests(FailoverBaseTest):
         _servers_ = self.filter_servers(self.servers, chosen)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
-            check_ep_items_remaining=True)
+            check_ep_items_remaining=False)
         recoveryTypeMap = self.define_maps_during_failover(self.recoveryType)
         fileMapsForVerification = self.create_file(chosen, self.buckets,
                                                    self.server_map)
@@ -353,7 +353,7 @@ class FailoverTests(FailoverBaseTest):
         # Drain ep_queue & make sure that intra-cluster replication is complete
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
-            check_ep_items_remaining=True)
+            check_ep_items_remaining=False)
 
         self.log.info("Begin VERIFICATION for Add-back and rebalance")
 
@@ -361,7 +361,7 @@ class FailoverTests(FailoverBaseTest):
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(self.servers, self.master,
                                               check_bucket_stats=True,
-                                              check_ep_items_remaining=True)
+                                              check_ep_items_remaining=False)
 
         # Verify recovery Type succeeded if we added-back nodes
         self.verify_for_recovery_type(chosen, self.server_map, self.bucket_util.buckets,
@@ -614,7 +614,7 @@ class FailoverTests(FailoverBaseTest):
             self.task.jython_task_manager.get_task_result(task)
         else:
             self.load_all_buckets(self.gen_initial_create, "create")
-            self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True)
+            self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=False)
         # self.bucket_util._verify_stats_all_buckets(self.servers, timeout=120)
 
     def run_mutation_operations(self):
