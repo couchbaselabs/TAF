@@ -166,7 +166,7 @@ class SDKClient(object):
             insertResult = self.collection.insert(key, content, options)
             result.update({"key": key, "value": content,
                            "error": None, "status": True})
-        except DocumentAlreadyExistsException as ex:
+        except KeyExistsException as ex:
             self.log.error("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
@@ -227,7 +227,7 @@ class SDKClient(object):
             upsertResult = self.collection.upsert(key, content, options)
             result.update({"key": key, "value": content,
                            "error": None, "status": True})
-        except DocumentAlreadyExistsException as ex:
+        except KeyExistsException as ex:
             self.log.error("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
