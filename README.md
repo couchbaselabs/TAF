@@ -65,9 +65,49 @@ automatically (including downloading all dependencies).
 Run like this:
 
 ```gradle --refresh-dependencies testrunner -P jython="/path/to/jython" -P args="-i /tmp/atomicity.ini [other testrunner args]"```
-
 (The `--refresh-dependencies` isn't strictly required every run.  It makes sure that the latest versions of any SNAPSHOT dependencies
 have been loaded - e.g. for transactions.)
+
+Examples:
+  gradle --refresh-dependencies testrunner -P jython="/path/to/jython" -P args="-i tmp/local.ini -t rebalance_new.rebalance_in.RebalanceInTests.test_rebalance_in_with_ops,nodes_in=3,GROUP=IN;P0;default -m rest"
+
+Sample local.ini file:
+
+[global]
+username:root
+password:couchbase
+index_port:9102
+n1ql_port:8093
+
+[membase]
+rest_username:Administrator
+rest_password:password
+
+[servers]
+1:_1
+2:_2
+3:_3
+4:_4
+
+[_1]
+ip:<IP>
+port:8091
+services:kv,index,n1ql
+
+[_2]
+ip:<IP>
+port:8091
+services:kv
+
+[_3]
+ip:<IP>
+port:8091
+services:kv
+
+[_4]
+ip:<IP>
+port:8091
+services:kv
 
 ## Jython Issues
 If Jython reports `Exception in thread "main" java.lang.NoSuchMethodError: java.nio.ByteBuffer.limit(I)Ljava/nio/ByteBuffer;`
