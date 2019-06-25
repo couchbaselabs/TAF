@@ -46,18 +46,10 @@ cd /etc/ssh
 vi sshd-config
 ```
 
-Insert this config:
+Enable root login for the vagrant boxes. To do that, change this setting(It may be different on various linus flavors):
 
 ```bash
-AcceptEnv LANG LC_*
-ChallengeResponseAuthentication no
-GSSAPIAuthentication no
 PermitRootLogin yes
-PrintMotd no
-Subsystem sftp /usr/libexec/openssh/sftp-server
-UseDNS no
-UsePAM yes
-X11Forwarding yes
 ```
 
 Restart sshd:
@@ -110,7 +102,7 @@ rest_password:password <Couchbase server console password>
 [_1]
 ip:<IP>
 port:8091
-services:kv,index,n1ql
+services:kv
 
 [_2]
 ip:<IP>
