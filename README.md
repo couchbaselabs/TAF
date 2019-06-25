@@ -34,10 +34,10 @@ Get the ip addresses of the node as we need to later in ini file.
 
 Change the password of the nodes for root user to password:
 
-	```bash
-	vagrant ssh node1
-	sudo passwd
-	```
+```bash
+vagrant ssh node1
+sudo passwd
+```
 
 Enable root login
 
