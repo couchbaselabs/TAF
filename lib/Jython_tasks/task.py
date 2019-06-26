@@ -754,7 +754,6 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               durability=self.durability)
             self.fail.update(fail)
             self.success.update(success)
-            self.docs_loaded += len(key_value)
         elif self.op_type == 'delete':
             success, fail = self.batch_delete(key_value,
                                               persist_to=self.persist_to,
@@ -764,12 +763,10 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               durability=self.durability)
             self.fail.update(fail)
             self.success.update(success)
-            self.docs_loaded += len(key_value)
         elif self.op_type == 'read':
             success, fail = self.batch_read(key_value.keys())
             self.fail.update(fail)
             self.success.update(success)
-            self.docs_loaded += len(key_value)
         else:
             self.set_exception(Exception("Bad operation type: %s" % self.op_type))
         self.docs_loaded += len(key_value)
@@ -1614,8 +1611,8 @@ class LoadDocumentsForDgmTask(Task):
 
 
 class ValidateDocumentsTask(GenericLoadingTask):
-    missing_keys = {}
-    wrong_values = {}
+    missing_keys = []
+    wrong_values = []
 
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  flag=0, proxy_client=None, batch_size=1, pause_secs=1,
@@ -1651,7 +1648,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
-        result_map = self.batch_read(key_value.keys())
+        result_map, failed_reads = self.batch_read(key_value.keys())
         missing_keys, wrong_values = self.validate_key_val(result_map, key_value)
         if self.op_type == 'delete':
             not_missing = []
@@ -1665,9 +1662,9 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                                  .format(','.join(not_missing))))
         else:
             if missing_keys:
-                self.missing_keys.update(missing_keys)
+                self.missing_keys.extend(missing_keys)
             if wrong_values:
-                self.wrong_values.update(wrong_values)
+                self.wrong_values.extend(wrong_values)
 
     def validate_key_val(self, map, key_value):
         missing_keys = []
