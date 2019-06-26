@@ -146,7 +146,7 @@ public class SimpleTransaction {
 
 
 				});
-				result.log().logs().forEach(System.err::println);
+//				result.log().logs().forEach(System.err::println);
 
 			}
 			catch (TransactionFailed err) {
