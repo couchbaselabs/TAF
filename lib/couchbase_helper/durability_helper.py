@@ -1,5 +1,7 @@
 from math import floor
 from BucketLib.BucketOperations import BucketHelper
+from cb_tools.cbstats import Cbstats
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class DurabilityHelper:
@@ -122,7 +124,7 @@ class DurabilityHelper:
                                        self.durability, timeout))
         return op_failed
 
-    def verify_vbucket_details_stats(self, bucket, cbstat_obj,
+    def verify_vbucket_details_stats(self, bucket, kv_servers,
                                      vbuckets=1024,
                                      expected_val=dict(),
                                      one_less_node=False):
@@ -138,7 +140,7 @@ class DurabilityHelper:
                                      failed or not
         """
         verification_failed = False
-        vb_details_stats = cbstat_obj.vbucket_details(bucket.name)
+        vb_details_stats = dict()
         ops_val = dict()
         ops_val["ops_create"] = 0
         ops_val["ops_delete"] = 0
@@ -149,6 +151,14 @@ class DurabilityHelper:
         ops_val["sync_write_aborted_count"] = 0
         ops_val["sync_write_committed_count"] = 0
         ops_val["pending_writes"] = 0
+
+        # Fetch stats for all available vbuckets into 'vb_details_stats'
+        for server in kv_servers:
+            shell = RemoteMachineShellConnection(server)
+            cbstat_obj = Cbstats(shell)
+            vb_details_stats.update(cbstat_obj.vbucket_details(bucket.name))
+            shell.disconnect()
+
         for vb_num in range(0, vbuckets):
             vb_num = str(vb_num)
             for op_type in ["ops_create", "ops_delete", "ops_update",

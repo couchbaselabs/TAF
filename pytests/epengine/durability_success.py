@@ -326,19 +326,19 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         for index in range(0, 4):
             op_type = doc_ops[index]
-            doc_gen = doc_gen[op_type]
+            curr_doc_gen = doc_gen[op_type]
 
             if index < 2:
                 # Durability doc_loader for first two ops specified in doc_ops
                 tasks.append(self.task.async_load_gen_docs(
-                    self.cluster, self.bucket, doc_gen, op_type, 0,
+                    self.cluster, self.bucket, curr_doc_gen, op_type, 0,
                     batch_size=10, process_concurrency=1,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout))
             else:
                 # Non-SyncWrites for last two ops specified in doc_ops
                 tasks.append(self.task.async_load_gen_docs(
-                    self.cluster, self.bucket, doc_gen, op_type, 0,
+                    self.cluster, self.bucket, curr_doc_gen, op_type, 0,
                     batch_size=10, process_concurrency=1,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     timeout_secs=self.sdk_timeout, retries=self.sdk_retries))

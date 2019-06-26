@@ -4,7 +4,6 @@ from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from couchbase_helper.document import View
-from memcached.helper.data_helper import MemcachedClientHelper
 
 
 class DocumentKeysTests(BaseTestCase):

@@ -296,13 +296,10 @@ class basic_ops(BaseTestCase):
             verification_dict["sync_write_committed_count"] = \
                 ref_val["sync_write_committed_count"]
 
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstat_obj = Cbstats(shell)
         failed = self.durability_helper.verify_vbucket_details_stats(
-            def_bucket, cbstat_obj,
+            def_bucket, self.cluster_util.get_kv_nodes(),
             vbuckets=self.vbuckets, expected_val=verification_dict,
             one_less_node=one_less_node)
-        shell.disconnect()
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -402,13 +399,10 @@ class basic_ops(BaseTestCase):
             verification_dict["sync_write_committed_count"] = \
                 ref_val["sync_write_committed_count"]
 
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstat_obj = Cbstats(shell)
         failed = self.durability_helper.verify_vbucket_details_stats(
-            def_bucket, cbstat_obj,
+            def_bucket, self.cluster_util.get_kv_nodes(),
             vbuckets=self.vbuckets, expected_val=verification_dict,
             one_less_node=one_less_node)
-        shell.disconnect()
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 

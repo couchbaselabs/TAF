@@ -47,9 +47,6 @@ class CrashTest(BaseTestCase):
         verification_dict["pending_writes"] = 0
         if self.durability_level:
             verification_dict["sync_write_committed_count"] = self.num_items
-        # Create Shell connection and cbstats object for verification
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstat_obj = Cbstats(shell)
 
         # Load initial documents into the buckets
         gen_create = doc_generator(self.key, 0, self.num_items)
@@ -64,14 +61,11 @@ class CrashTest(BaseTestCase):
 
             # Verify cbstats vbucket-details
             stats_failed = self.durability_helper.verify_vbucket_details_stats(
-                bucket, cbstat_obj,
+                bucket, self.cluster_util.get_kv_nodes(),
                 vbuckets=self.vbuckets, expected_val=verification_dict)
 
             if stats_failed:
                 self.fail("Cbstats verification failed")
-
-        # Disconnect the Shell connection
-        shell.disconnect()
 
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -205,10 +199,8 @@ class CrashTest(BaseTestCase):
             verification_dict["sync_write_committed_count"] = self.num_items
 
         # Validate doc count
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstat_obj = Cbstats(shell)
         stats_failed = self.durability_helper.verify_vbucket_details_stats(
-            def_bucket, cbstat_obj,
+            def_bucket, self.cluster_util.get_kv_nodes(),
             vbuckets=self.vbuckets, expected_val=verification_dict)
         if stats_failed:
             self.fail("Cbstats verification failed")
