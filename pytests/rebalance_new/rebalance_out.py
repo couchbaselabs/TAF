@@ -98,7 +98,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         else:
             self.start_parallel_cruds(task_verification=True)
         servs_out = [self.cluster.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
-        
+
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
@@ -306,11 +306,16 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced out of the cluster the test finishes."""
 
     def incremental_rebalance_out_with_ops(self):
-        self.gen_delete = self.get_doc_generator(self.num_items/2,
-                                                 self.num_items)
-        self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items * 3 / 2)
+        items = self.num_items
+        delete_from = items/2
+        create_from = items
         for i in reversed(range(1, self.num_servers, 2)):
+            self.gen_delete = self.get_doc_generator(delete_from,
+                                                     delete_from+items/2)
+            self.gen_create = self.get_doc_generator(create_from,
+                                                     create_from+items)
+            delete_from += items
+            create_from += items
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
             if self.atomicity:
                 self.start_parallel_cruds_atomicity()
