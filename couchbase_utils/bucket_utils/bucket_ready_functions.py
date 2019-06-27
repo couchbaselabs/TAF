@@ -428,19 +428,21 @@ class BucketUtils:
 
         # Create connection to master node for verifying cbstats
         stat_cmd = "all"
-        shell_conn_list = list()
+        shell_conn_list1 = list()
+        shell_conn_list2 = list()
         for cluster_node in self.cluster.nodes_in_cluster:
             remote_conn = RemoteMachineShellConnection(cluster_node)
-            shell_conn_list.append(remote_conn)
+            shell_conn_list1.append(remote_conn)
+            shell_conn_list2.append(RemoteMachineShellConnection(cluster_node))
 
         # Create Tasks to verify total items/replica count in the bucket
         stats_tasks.append(self.task.async_wait_for_stats(
-            shell_conn_list, bucket, stat_cmd,
+            shell_conn_list1, bucket, stat_cmd,
             'vb_replica_curr_items', '==', items * available_replicas,
             timeout=timeout))
         self.sleep(5)
         stats_tasks.append(self.task.async_wait_for_stats(
-            shell_conn_list, bucket, stat_cmd,
+            shell_conn_list2, bucket, stat_cmd,
             'curr_items_tot', '==', items * (available_replicas + 1),
             timeout=timeout))
         try:
@@ -453,7 +455,9 @@ class BucketUtils:
             self.log.error("Unable to get expected stats from the "
                            "selected node")
 
-        for remote_conn in shell_conn_list:
+        for remote_conn in shell_conn_list1:
+            remote_conn.disconnect()
+        for remote_conn in shell_conn_list2:
             remote_conn.disconnect()
 
     def update_all_bucket_maxTTL(self, maxttl=0):

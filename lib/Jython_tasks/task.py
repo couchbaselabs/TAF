@@ -126,7 +126,12 @@ class RebalanceTask(Task):
     def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
                  progress=30, use_hostnames=False, services=None,
                  check_vbucket_shuffling=True):
-        super(RebalanceTask, self).__init__("Rebalance_task")
+        super(RebalanceTask, self).__init__("Rebalance_task_IN=[{}]_OUT=[{}]_{}"
+                                            .format(",".join([node.ip for node in to_add]),
+                                                    ",".join([node.ip for node in to_remove]),
+                                                    str(time.time())
+                                                    )
+                                            )
         self.servers = servers
         self.to_add = to_add
         self.to_remove = to_remove
@@ -1853,7 +1858,11 @@ class StatsWaitTask(Task):
 
     def __init__(self, shell_conn_list, bucket, stat_cmd, stat, comparison,
                  value, timeout=300):
-        super(StatsWaitTask, self).__init__("StatsWaitTask")
+        super(StatsWaitTask, self).__init__("StatsWaitTask_{}_{}"
+                                            .format(stat,
+                                                    str(time.time())
+                                                    )
+                                            )
         self.shellConnList = shell_conn_list
         self.bucket = bucket
         self.statCmd = stat_cmd
