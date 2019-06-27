@@ -116,7 +116,7 @@ class DurabilityHelper:
                 op_type, key, value=doc_info["value"], exp=doc_info["exp"],
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability, timeout=timeout)
-            if result["error"] is not None:
+            if result["status"] is False:
                 op_failed = True
                 self.log.error("Exception: '{0}' for '{1}' during '{2}'"
                                "with durability={3}, timeout={4}"

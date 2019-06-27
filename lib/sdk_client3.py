@@ -26,6 +26,7 @@ from com.couchbase.client.java.kv import \
     PersistTo,\
     ReplicateTo, \
     ReplicaMode, \
+    GetOptions, \
     GetFromReplicaOptions, \
     MutateInOptions
 
@@ -135,6 +136,7 @@ class SDKClient(object):
                 success[key]['cas'] = item['cas']
             else:
                 fail[key] = dict()
+                fail[key]['cas'] = item['cas']
                 fail[key]['value'] = json_object
                 fail[key]['error'] = item['error']
         return success, fail
@@ -153,6 +155,7 @@ class SDKClient(object):
                 fail[key] = dict()
                 fail[key]['cas'] = result['cas']
                 fail[key]['error'] = result['error']
+                fail[key]['value'] = dict()
         return success, fail
 
     def __translate_get_multi_results(self, data):
@@ -168,8 +171,9 @@ class SDKClient(object):
                 success[key]['cas'] = result['cas']
             else:
                 fail[key] = dict()
-                fail[key]['error'] = result['error']
                 fail[key]['cas'] = result['cas']
+                fail[key]['error'] = result['error']
+                fail[key]['value'] = dict()
         return success, fail
 
     # Translate APIs for sub-document operations
@@ -210,6 +214,10 @@ class SDKClient(object):
                 .durability(self.getPersistTo(persist_to),
                             self.getReplicateTo(replicate_to))
         return options
+
+    def getReadOptions(self, timeout, time_unit="seconds"):
+        return GetOptions.getOptions() \
+            .timeout(self.getDuration(timeout, time_unit))
 
     def getUpsertOptions(self, exp=0, exp_unit="seconds",
                          persist_to=0, replicate_to=0,
@@ -324,7 +332,7 @@ class SDKClient(object):
             deleteResult = self.collection.remove(key, options)
             result.update({"key": key, "value": None,
                            "error": None, "status": True})
-        except DocumentDoesNotExistException as e:
+        except KeyNotFoundException as e:
             self.log.error("Exception: Document id {0} not found - {1}"
                            .format(key, e))
             result.update({"key": key, "value": None,
@@ -378,20 +386,25 @@ class SDKClient(object):
                            "error": str(ex), "status": False})
         return result
 
-    def read(self, key):
-        result = dict()
-        getResult = self.collection.get(key)
-        if getResult.isPresent():
+    def read(self, key, timeout=5, time_unit="seconds"):
+        result = {
+            "key": key,
+            "value": None,
+            "cas": 0,
+            "status": False,
+            "error": None
+        }
+        read_options = self.getReadOptions(timeout, time_unit)
+        get_result = self.collection.get(key, read_options)
+        if get_result.isPresent():
             self.log.debug("Found document: cas=%s, content=%s"
-                           % (str(getResult.get().cas()),
-                              str(getResult.get().contentAsObject())))
-            result.update({"key": key,
-                           "value": str(getResult.get().contentAsObject()),
-                           "cas": getResult.get().cas(), "status": True})
+                           % (str(get_result.get().cas()),
+                              str(get_result.get().contentAsObject())))
+            result["status"] = True
+            result["value"] = str(get_result.get().contentAsObject())
+            result["cas"] = get_result.get().cas()
         else:
-            self.log.error("Document not found!")
-            result.update({"key": key, "value": None,
-                           "cas": None, "status": False})
+            self.log.error("Document key '%s' not found!" % key)
         return result
 
     def getFromReplica(self, key, replicaMode=ReplicaMode.ALL):
@@ -456,10 +469,13 @@ class SDKClient(object):
                 timeout=timeout, time_unit=time_unit)
         elif op_type == "delete":
             result = self.delete(
-                key, exp=exp,
+                key,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
                 timeout=timeout, time_unit=time_unit)
+        elif op_type == "read":
+            result = self.read(
+                key, timeout=timeout, time_unit=time_unit)
         return result
 
     # Bulk CRUD APIs
@@ -501,8 +517,8 @@ class SDKClient(object):
                                      timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
 
-    def getMulti(self, keys):
-        result = doc_op().bulkGet(self.collection, keys)
+    def getMulti(self, keys, timeout=5, time_unit="seconds"):
+        result = doc_op().bulkGet(self.collection, keys, timeout, time_unit)
         return self.__translate_get_multi_results(result)
 
     # Bulk CRUDs for sub-doc APIs

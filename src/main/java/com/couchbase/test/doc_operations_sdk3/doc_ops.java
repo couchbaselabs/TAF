@@ -16,6 +16,7 @@ import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.client.java.kv.InsertOptions;
+import com.couchbase.client.java.kv.GetOptions;
 import com.couchbase.client.java.kv.MutationResult;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.RemoveOptions;
@@ -101,7 +102,6 @@ public class doc_ops {
 		return returnValue;
 	}
 
-
 	public List<HashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
 			long expiry, final String expiryTimeUnit, final int persistTo, final int replicateTo,
 			final String durabilityLevel, final long timeOut, final String timeUnit) {
@@ -174,8 +174,10 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<HashMap<String, Object>> bulkGet(Collection collection, List<String> keys) {
+	public List<HashMap<String, Object>> bulkGet(Collection collection, List<String> keys,
+			final long timeOut, final String timeUnit) {
 		final ReactiveCollection reactiveCollection = collection.reactive();
+		final GetOptions getOptions = this.getReadOptions(timeOut, timeUnit);
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
 				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(String key) {
@@ -185,16 +187,17 @@ public class doc_ops {
 						retVal.put("content", null);
 						retVal.put("error", null);
 						retVal.put("status", false);
-						return reactiveCollection.get(key).map(new Function<Optional<GetResult>, HashMap<String, Object>>(){
-							public HashMap<String, Object> apply(Optional<GetResult> optionalResult) {
-								if (optionalResult.isPresent()){
-									GetResult result = optionalResult.get();
-									retVal.put("cas", result.cas());
-									retVal.put("content", result.contentAsObject());
-									retVal.put("status", true);
+						return reactiveCollection.get(key, getOptions)
+							.map(new Function<Optional<GetResult>, HashMap<String, Object>>() {
+								public HashMap<String, Object> apply(Optional<GetResult> optionalResult) {
+									if (optionalResult.isPresent()){
+										GetResult result = optionalResult.get();
+										retVal.put("cas", result.cas());
+										retVal.put("content", result.contentAsObject());
+										retVal.put("status", true);
+									}
+									return retVal;
 								}
-								return retVal;
-							}
 						}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
 							public Mono<HashMap<String, Object>> apply(Throwable error) {
 								retVal.put("error", error);
@@ -237,7 +240,6 @@ public class doc_ops {
 
 	}
 
-
 	public List<HashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, final PersistTo persistTo, final ReplicateTo replicateTo,
 			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
 		final RemoveOptions removeOptions = this.getRemoveOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
@@ -268,6 +270,10 @@ public class doc_ops {
 		return returnValue;
 	}
 
+	private GetOptions getReadOptions(long timeOut, String timeUnit) {
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		return GetOptions.getOptions().timeout(timeout);
+	}
 
 	private InsertOptions getInsertOptions(long expiry, String expiryTimeUnit, int persistTo, int replicateTo,
 			long timeOut, String timeUnit, String durabilityLevel) {
