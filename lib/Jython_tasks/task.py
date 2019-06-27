@@ -539,6 +539,9 @@ class GenericLoadingTask(Task):
                             fail.pop(key)
                         else:
                             failed_item_table.add_row([key, value['error']])
+                else:
+                    for key, value in fail.items():
+                        failed_item_table.add_row([key, value['error']])
                 if fail:
                     failed_item_table.display("Failed items:")
             return success, fail
@@ -548,7 +551,7 @@ class GenericLoadingTask(Task):
 
     def batch_update(self, key_val, shared_client=None, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
-                     doc_type="json", durability=""):
+                     doc_type="json", durability="", skip_read_on_error=False):
         success = dict()
         fail = dict()
         try:
@@ -567,15 +570,19 @@ class GenericLoadingTask(Task):
                     Thread.sleep(timeout)
                 except Exception as e:
                     self.test_log.error(e)
-                self.test_log.debug("Trying to read values {0} after failure"
-                                    .format(fail.__str__()))
-                read_map = self.batch_read(fail.keys())
-                for key, value in fail.items():
-                    if key in read_map and read_map[key]["cas"] != 0:
-                        success[key] = value
-                        success[key].pop("error")
-                        fail.pop(key)
-                    else:
+                if not skip_read_on_error:
+                    self.test_log.debug("Reading values {0} after failure"
+                                        .format(fail.__str__()))
+                    read_map = self.batch_read(fail.keys())
+                    for key, value in fail.items():
+                        if key in read_map and read_map[key]["cas"] != 0:
+                            success[key] = value
+                            success[key].pop("error")
+                            fail.pop(key)
+                        else:
+                            failed_item_table.add_row([key, value['error']])
+                else:
+                    for key, value in fail.items():
                         failed_item_table.add_row([key, value['error']])
                 failed_item_table.display("Failed items after reads:")
             return success, fail
@@ -736,7 +743,8 @@ class GenericLoadingTask(Task):
 
 class LoadDocumentsTask(GenericLoadingTask):
 
-    def __init__(self, cluster, bucket, client, generator, op_type, exp, exp_unit="seconds", flag=0,
+    def __init__(self, cluster, bucket, client, generator, op_type, exp,
+                 exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, retries=5,
@@ -789,13 +797,15 @@ class LoadDocumentsTask(GenericLoadingTask):
             self.fail.update(fail)
             self.success.update(success)
         elif self.op_type == 'update':
-            success, fail = self.batch_update(key_value,
-                                              persist_to=self.persist_to,
-                                              replicate_to=self.replicate_to,
-                                              timeout=self.timeout,
-                                              time_unit=self.time_unit,
-                                              doc_type=self.generator.doc_type,
-                                              durability=self.durability)
+            success, fail = self.batch_update(
+                key_value,
+                persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
+                doc_type=self.generator.doc_type,
+                durability=self.durability,
+                skip_read_on_error=self.skip_read_on_error)
             self.fail.update(fail)
             self.success.update(success)
         elif self.op_type == 'delete':

@@ -74,7 +74,7 @@ class TableView:
 
 def plot_graph(logger, bucket_name, ops_trend):
     max_width = 100
-    max_ops = max([ops_list[-1] for ops_list in ops_trend])
+    max_ops = max([ops_list[-1] for ops_list in ops_trend]) if ops_trend else 1
     if max_ops == 0:
         return
 

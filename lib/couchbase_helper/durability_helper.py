@@ -1,4 +1,6 @@
+from json import loads as json_loads
 from math import floor
+
 from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
@@ -7,6 +9,13 @@ from remote.remote_util import RemoteMachineShellConnection
 class DurabilityHelper:
     EQUAL = '=='
     GREATER_THAN_EQ = '>='
+    EXCEPTIONS = dict()
+    EXCEPTIONS["durabilility_impossible"] = \
+        "com.couchbase.client.core.error.DurabilityImpossibleException"
+    EXCEPTIONS["ambiguous"] = \
+        "com.couchbase.client.core.error.DurabilityAmbiguousException"
+    EXCEPTIONS["request_timeout"] = \
+        "com.couchbase.client.core.error.RequestTimeoutException"
 
     def __init__(self, logger, cluster_len, durability="MAJORITY",
                  replicate_to=0, persist_to=0):
@@ -123,6 +132,57 @@ class DurabilityHelper:
                                .format(result["error"], key, op_type,
                                        self.durability, timeout))
         return op_failed
+
+    def retry_for_ambiguous_exception(self, sdk_client, op_type, doc_key,
+                                      doc_info):
+        """
+        Based on the op_type fetch the document and validate the
+        status of the document and retry if the mutation failed in
+        previous attempt.
+
+        :param sdk_client: Sdk_Client object for reading/upsert the doc
+        :param op_type: CRUD type insert/delete/update/read
+        :param doc_key: Document key to validate
+        :param doc_info: Dictionary of the result for the previous
+                         CRUD operation
+        :return retry_success: Saying the retry succeeded or not
+        """
+        retry_success = True
+        retry_op = False
+        read_result = sdk_client.crud("read", doc_key)
+        if op_type == "create":
+            # Previous create failed
+            if read_result["value"] != doc_info["value"]:
+                retry_op = True
+        elif op_type == "delete":
+            # Previous delete failed
+            if read_result["cas"] != 0:
+                retry_op = True
+        elif op_type == "read":
+            retry_success = False
+            self.log.error("Cannot get AMBIGUOUS for %s during READ !"
+                           % doc_key)
+        elif op_type == "update":
+            expected_mutation = json_loads(str(doc_info["value"]))["mutated"]
+            curr_mutation = json_loads(str(read_result["value"]))["mutated"]
+            if expected_mutation != curr_mutation:
+                retry_op = True
+        else:
+            retry_success = False
+            self.log.error("Operation %s not supported!" % op_type)
+
+        if retry_op:
+            result = sdk_client.crud(op_type, doc_key,
+                                     value=doc_info["value"],
+                                     replicate_to=self.replicate_to,
+                                     persist_to=self.persist_to,
+                                     durability=self.durability,
+                                     timeout=10, time_unit="seconds")
+            if result["status"] is False:
+                retry_success = False
+                self.log.error("%s failed during retry for %s (durability=%s)"
+                               % (op_type, doc_key, self.durability))
+        return retry_success
 
     def verify_vbucket_details_stats(self, bucket, kv_servers,
                                      vbuckets=1024,
