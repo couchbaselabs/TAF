@@ -379,14 +379,32 @@ class BucketUtils:
             self._set_time_sync_on_buckets(['standard_bucket' + str(i)
                                             for i in range(num_buckets)])
 
-    def flush_all_buckets(self):
-        flush_tasks = []
-        for bucket in self.buckets:
-            flush_tasks.append(self.task.async_bucket_flush(
-                self.cluster.master, bucket.name))
-
-        for task in flush_tasks:
-            task.result()
+    def flush_bucket(self, serverInfo, bucket):
+        self.log.info('Flushing existing bucket {0} on {1}'.format(bucket, serverInfo))
+        bucket_conn = BucketHelper(serverInfo)
+        if self.bucket_exists(bucket):
+            status = bucket_conn.flush_bucket(bucket)
+            if status:
+                self.log.info('Flushed bucket: {0} from {1}'.format(bucket, serverInfo.ip))
+            return status
+        
+    def flush_all_buckets(self, servers):
+        server_status ={}
+        for serverInfo in servers:
+            try:
+                buckets = self.get_all_buckets(serverInfo)
+            except Exception as e:
+                self.log.error(e)
+                self.log.error('15 secs sleep before get_all_buckets() call')
+                time.sleep(15)
+                buckets = self.get_all_buckets(serverInfo)
+            self.log.debug('Flushing existing buckets {0} on {1}'.format([b.name for b in buckets], serverInfo.ip))
+            status={}
+            for bucket in buckets:
+                self.log.debug("Remove bucket {0} ...".format(bucket.name))
+                status[bucket] = self.flush_buckets(serverInfo, bucket)
+                server_status[serverInfo.ip] = status
+        return server_status
 
     def verify_stats_for_bucket(self, bucket, items, timeout=60):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))

@@ -449,9 +449,8 @@ class BucketHelper(RestConnection):
         api = self.baseUrl + "pools/default/buckets/{0}/controller/doFlush" \
             .format(bucket_name)
         status, _, _ = self._http_request(api, 'POST')
-        if not status:
-            raise BucketFlushFailed(self.ip, bucket_name)
         self.log.info("Flush for bucket '%s' was triggered" % bucket_name)
+        return status
 
     def get_bucket_CCCP(self, bucket):
         self.log.info("Getting CCCP config")
