@@ -62,17 +62,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                                                    self.servers_to_remove)
         self.sleep(5)
         self.failover_actions[self.failover_action](self)
-        try:
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertFalse(rebalance_task.result)
-        except RebalanceFailedException:
-            pass
-        except ServerUnavailableException:
-            pass
-        except Exception:
-            pass
-        else:
-            self.fail("Rebalance should fail since a node went down")
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        self.assertFalse(rebalance_task.result, "Rebalance should fail since a node went down")
         if self.atomicity:
             # Wait for all tasks to complete
             for task in self.loadgen_tasks:
@@ -99,10 +90,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.durability_level:
             self.loadgen_tasks = self._loadgen()
 
-        rebalance_success = self.task.rebalance(self.servers,
-                                                self.servers_to_add,
-                                                self.servers_to_remove)
-        if not rebalance_success:
+        rebalance_task = self.task.async_rebalance(self.servers,
+                                                   self.servers_to_add,
+                                                   self.servers_to_remove)
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        if not rebalance_task.result:
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
         self.failover_actions[self.failover_action](self)

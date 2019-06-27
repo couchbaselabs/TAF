@@ -536,7 +536,7 @@ class ServerTasks(object):
         Returns:
           boolean - Whether or not the rebalance was successful
         """
-        _task = self.async_rebalance(servers, to_add, to_remove, use_hostnames,
+        _task = self.async_rebalance(servers, to_add, to_remove, use_hostnames=use_hostnames,
                                      services=services)
         self.jython_task_manager.get_task_result(_task)
         return _task.result
