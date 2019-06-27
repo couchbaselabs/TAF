@@ -538,8 +538,8 @@ class ServerTasks(object):
         """
         _task = self.async_rebalance(servers, to_add, to_remove, use_hostnames,
                                      services=services)
-        result = self.jython_task_manager.get_task_result(_task)
-        return result
+        self.jython_task_manager.get_task_result(_task)
+        return _task.result()
 
     def load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0,
                       persist_to=0, replicate_to=0, only_store_hash=True,

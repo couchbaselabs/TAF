@@ -214,7 +214,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         False
         """
         status = self.rest.update_autofailover_settings(
-            True, self.timeout, self.can_abort_rebalance,
+            True, self.timeout, canAbortRebalance=self.can_abort_rebalance,
             maxCount=self.max_count,
             enableServerGroup=self.server_group_failover)
         return status

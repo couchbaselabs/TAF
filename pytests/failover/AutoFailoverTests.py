@@ -64,6 +64,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.failover_actions[self.failover_action](self)
         try:
             self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertFalse(rebalance_task.result)
         except RebalanceFailedException:
             pass
         except ServerUnavailableException:

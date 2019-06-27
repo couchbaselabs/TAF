@@ -1929,6 +1929,8 @@ class RestConnection(object):
             params_dict['enabled'] = 'false'
         if canAbortRebalance:
             params_dict['canAbortRebalance'] = 'true'
+        else:
+            params_dict['canAbortRebalance'] = 'false'
         if enable_disk_failure:
             params_dict['failoverOnDataDiskIssues[enabled]'] = 'true'
             params_dict['failoverOnDataDiskIssues[timePeriod]'] = disk_timeout
