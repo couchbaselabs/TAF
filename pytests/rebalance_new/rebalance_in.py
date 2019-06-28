@@ -58,10 +58,14 @@ class RebalanceInTests(RebalanceBaseTest):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def test_rebalance_in_with_ops(self):
-        self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items * 2)
-        self.gen_delete = self.get_doc_generator(int(self.num_items / 2),
-                                                 self.num_items)
+        items = self.num_items
+        delete_from = items/2
+        create_from = items
+
+        self.gen_create = self.get_doc_generator(create_from,
+                                                 create_from + items)
+        self.gen_delete = self.get_doc_generator(delete_from,
+                                                 items/2)
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
@@ -79,6 +83,9 @@ class RebalanceInTests(RebalanceBaseTest):
         else:
             tasks_info = self.start_parallel_cruds(
                 retry_exceptions=retry_exceptions)
+
+        delete_from += items
+        create_from += items
 
         self.sleep(10, "wait for rebalance to start")
 
@@ -106,10 +113,10 @@ class RebalanceInTests(RebalanceBaseTest):
                     self.num_items = current_items
 
         # CRUDs after rebalance operations
-        self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items * 2)
-        self.gen_delete = self.get_doc_generator(int(self.num_items / 2),
-                                                 self.num_items)
+        self.gen_create = self.get_doc_generator(create_from,
+                                                 create_from + items)
+        self.gen_delete = self.get_doc_generator(delete_from,
+                                                 items/2)
         if self.atomicity:
             self.start_parallel_cruds_atomicity()
         else:
