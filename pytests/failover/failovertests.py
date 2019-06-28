@@ -334,15 +334,20 @@ class FailoverTests(FailoverBaseTest):
                                 ejectedNodes=[],
                                 deltaRecoveryBuckets=self.deltaRecoveryBuckets)
 
+        result_nodes = self.servers[:self.nodes_init]
         if rebalance_type == "in":
             rebalance = self.task.rebalance(self.servers[:self.nodes_init], [self.servers[self.nodes_init]], [])
+            result_nodes = list(set(self.servers[:self.nodes_init] + [self.servers[self.nodes_init]]))
         if rebalance_type == "out":
             rebalance = self.task.rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
+            result_nodes = list(set(self.servers[:self.nodes_init] - [self.servers[self.nodes_init-1]]))
         if rebalance_type == "swap":
             self.rest.add_node(self.master.rest_username, self.master.rest_password,
                                self.servers[self.nodes_init].ip, self.servers[self.nodes_init].port,
                                services=["kv"])
             rebalance = self.task.rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
+            result_nodes = list(set(self.servers[:self.nodes_init] + [self.servers[self.nodes_init]]) -
+                                set([self.servers[self.nodes_init - 1]]))
 
         # Check if node has to be killed or restarted during rebalance
         # Monitor Rebalance
@@ -359,7 +364,7 @@ class FailoverTests(FailoverBaseTest):
 
         # Verify Stats of cluster and Data is max_verify > 0
         if not self.atomicity:
-            self.bucket_util.verify_cluster_stats(self.servers, self.master,
+            self.bucket_util.verify_cluster_stats(result_nodes, self.master,
                                               check_bucket_stats=True,
                                               check_ep_items_remaining=False)
 

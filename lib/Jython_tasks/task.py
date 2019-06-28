@@ -3046,6 +3046,7 @@ class AutoFailoverNodesFailureTask(Task):
     def _disable_firewall(self, node):
         shell = RemoteMachineShellConnection(node)
         shell.disable_firewall()
+        shell.disconnect()
 
     def _restart_couchbase_server(self, node):
         node_failure_timer = self.failure_timers[self.itr]

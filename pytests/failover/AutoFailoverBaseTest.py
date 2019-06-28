@@ -119,6 +119,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                 bucket.name, "active")
             self.replica_vb_in_failover_nodes += cbstat.vbucket_list(
                 bucket.name, "replica")
+            shell_conn.disconnect()
 
     def get_doc_generator(self, start, end):
         age = range(5)
@@ -402,7 +403,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             for node in self.server_to_fail:
                 for _ in range(0, 2):
                     try:
-                        _ = RemoteMachineShellConnection(node)
+                        shell = RemoteMachineShellConnection(node)
+                        shell.disconnect()
                         break
                     except Exception:
                         self.log.info("Unable to connect to the host. "
@@ -558,6 +560,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                 if '.com' in node.ip or ':' in node.ip:
                     self.log.info("Updating dist_cfg for IPv6 Machines")
                     shell.update_dist_type()
+                shell.disconnect()
             self.sleep(10)
         except Exception, ex:
             self.log.info(ex)
