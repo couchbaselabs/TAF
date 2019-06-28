@@ -313,6 +313,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.pause_between_failover_action, self.failover_expected,
             self.timeout_buffer, failure_timers=node_down_timer_tasks)
         self.task_manager.add_new_task(task)
+        self.sleep(30, "Waiting for couchbase-server to come up")
         try:
             self.task_manager.get_task_result(task)
         except Exception, e:

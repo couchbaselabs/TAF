@@ -3094,6 +3094,7 @@ class AutoFailoverNodesFailureTask(Task):
         shell = RemoteMachineShellConnection(node)
         command = "/sbin/reboot"
         shell.execute_command(command=command)
+        shell.disconnect()
         self.task_manager.get_task_result(node_failure_timer)
         self.start_time = node_failure_timer.start_time
 
@@ -3104,6 +3105,7 @@ class AutoFailoverNodesFailureTask(Task):
         shell = RemoteMachineShellConnection(node)
         o, r = shell.stop_memcached()
         self.test_log.debug("Killed memcached. {0} {1}".format(o, r))
+        shell.disconnect()
         self.task_manager.get_task_result(node_failure_timer)
         self.start_time = node_failure_timer.start_time
 
@@ -3119,6 +3121,7 @@ class AutoFailoverNodesFailureTask(Task):
                             .format(node1.ip, node2.ip))
         command = "iptables -A INPUT -s {0} -j DROP".format(node2.ip)
         shell.execute_command(command)
+        shell.disconnect()
         self.start_time = time.time()
 
     def _fail_disk(self, node):
@@ -3138,6 +3141,7 @@ class AutoFailoverNodesFailureTask(Task):
                             .format(self.disk_location, node.ip)
             self.test_log.error(exception_str)
             self.set_exception(Exception(exception_str))
+        shell.disconnect()
 
     def _recover_disk(self, node):
         shell = RemoteMachineShellConnection(node)
@@ -3149,6 +3153,7 @@ class AutoFailoverNodesFailureTask(Task):
                 return
         self.set_exception(Exception("Failed mount disk at location {0} on {1}"
                                      .format(self.disk_location, node.ip)))
+        shell.disconnect()
         raise Exception()
 
     def _disk_full_failure(self, node):
@@ -3169,6 +3174,7 @@ class AutoFailoverNodesFailureTask(Task):
                                 .format(self.disk_location, node.ip))
             self.set_exception(Exception("Failed to fill disk at {0} on {1}"
                                          .format(self.disk_location, node.ip)))
+        shell.disconnect()
 
     def _recover_disk_full_failure(self, node):
         shell = RemoteMachineShellConnection(node)
@@ -3177,6 +3183,7 @@ class AutoFailoverNodesFailureTask(Task):
         self.test_log.debug(output)
         if error:
             self.test_log.error(error)
+        shell.disconnect()
 
     def _check_for_autofailover_initiation(self, failed_over_node):
         rest = RestConnection(self.master)
