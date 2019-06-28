@@ -227,3 +227,10 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         return tasks_info
+    
+    def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[], task_verification = False):
+        if self.atomicity:
+            self.start_parallel_cruds_atomicity()
+        else:
+            tasks_info = self.start_parallel_cruds(retry_exceptions, ignore_exceptions, task_verification)
+            return tasks_info

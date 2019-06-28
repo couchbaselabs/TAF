@@ -23,7 +23,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], servs_out)
 
-        tasks_info = self.start_parallel_cruds()
+        tasks_info = self.loadgen_docs()
         for task in tasks_info.keys():
             if task.__class__ == jython_tasks.Durability:
                 for crud_dict in [task.sdk_acked_curd_failed,
@@ -43,10 +43,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks = list()
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], servs_out)
-        if self.atomicity:
-            self.start_parallel_cruds_atomicity()
-        else:
-            tasks_info = self.start_parallel_cruds()
+        tasks_info = self.loadgen_docs()
         self.task.jython_task_manager.get_task_result(rebalance_task)
 
         if not self.atomicity:
@@ -93,10 +90,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                  self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        if self.atomicity:
-            self.start_parallel_cruds_atomicity()
-        else:
-            self.start_parallel_cruds(task_verification=True)
+        self.loadgen_docs(task_verification=True)
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
 
         if not self.atomicity:
@@ -140,7 +134,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                  self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        self.start_parallel_cruds(task_verification=True)
+        self.loadgen_docs(task_verification=True)
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
@@ -183,10 +177,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                  self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        if self.atomicity:
-            self.start_parallel_cruds_atomicity()
-        else:
-            tasks_info = self.start_parallel_cruds()
+        self.loadgen_docs()
         ejectedNode = self.cluster_util.find_node_info(self.cluster.master, self.cluster.servers[self.nodes_init - 1])
         if not self.atomicity:
             self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
@@ -239,7 +230,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             compaction_task.append(self.task.async_compact_bucket(self.cluster.master, bucket))
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        tasks_info = self.start_parallel_cruds()
+        tasks_info = self.loadgen_docs()
         self.task.jython_task_manager.get_task_result(rebalance_task)
 
         self.bucket_util.verify_doc_op_task_exceptions(
@@ -317,10 +308,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             delete_from += items
             create_from += items
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
-            if self.atomicity:
-                self.start_parallel_cruds_atomicity()
-            else:
-                tasks_info = self.start_parallel_cruds()
+            tasks_info = self.loadgen_docs()
             self.task.jython_task_manager.get_task_result(rebalance_task)
 
             if not self.atomicity:

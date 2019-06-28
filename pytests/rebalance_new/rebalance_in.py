@@ -25,7 +25,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.servers[:self.nodes_init], servs_in, [])
         time.sleep(15)
 
-        tasks_info = self.start_parallel_cruds()
+        tasks_info = self.loadgen_docs()
 
         self.task_manager.get_task_result(rebalance_task)
         for task in tasks_info.keys():
@@ -77,12 +77,7 @@ class RebalanceInTests(RebalanceBaseTest):
             ]
 
         # CRUDs while rebalance is running in parallel
-        if self.atomicity:
-            self.start_parallel_cruds_atomicity()
-
-        else:
-            tasks_info = self.start_parallel_cruds(
-                retry_exceptions=retry_exceptions)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
         delete_from += items
         create_from += items
@@ -117,11 +112,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
                                                  delete_from + items/2)
-        if self.atomicity:
-            self.start_parallel_cruds_atomicity()
-        else:
-            self.start_parallel_cruds(retry_exceptions=retry_exceptions,
-                                  task_verification=True)
+        self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
 
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
@@ -221,7 +212,7 @@ class RebalanceInTests(RebalanceBaseTest):
 #                 self.cluster, bucket, self.cluster.master, self.gen_update,
 #                 "update", 0)
 #             tasks_info.update(tem_tasks_info.copy())
-        tasks_info = self.start_parallel_cruds()
+        tasks_info = self.loadgen_docs()
         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                        self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
@@ -371,7 +362,7 @@ class RebalanceInTests(RebalanceBaseTest):
             compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
 
-        tasks_info = self.start_parallel_cruds()
+        tasks_info = self.loadgen_docs()
 
         self.task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
