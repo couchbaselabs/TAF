@@ -161,7 +161,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.task.jython_task_manager.get_task_result(task)
 
 
-    def start_parallel_cruds_atomicity(self):
+    def start_parallel_cruds_atomicity(self, sync=True):
         tasks = []
         if("update" in self.doc_ops):
             tasks.append(self.task.async_load_gen_docs_atomicity(
@@ -170,7 +170,7 @@ class RebalanceBaseTest(BaseTestCase):
                           replicate_to=self.replicate_to,persist_to=self.persist_to,
                           timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout, update_count=self.update_count,
-                          commit=self.transaction_commit,durability=self.durability_level))
+                          commit=self.transaction_commit,durability=self.durability_level,sync=sync))
         if("create" in self.doc_ops):
             tasks.append(self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_update,
@@ -178,7 +178,7 @@ class RebalanceBaseTest(BaseTestCase):
                           replicate_to=self.replicate_to,persist_to=self.persist_to,
                           timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit,durability=self.durability_level))
+                          commit=self.transaction_commit,durability=self.durability_level,sync=sync))
         if("delete" in self.doc_ops):
             tasks.append(self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_update,
@@ -186,7 +186,7 @@ class RebalanceBaseTest(BaseTestCase):
                           replicate_to=self.replicate_to,persist_to=self.persist_to,
                           timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit,durability=self.durability_level))
+                          commit=self.transaction_commit,durability=self.durability_level,sync=sync))
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -231,9 +231,9 @@ class RebalanceBaseTest(BaseTestCase):
 
         return tasks_info
     
-    def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[], task_verification = False):
+    def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[], task_verification = False, sync=True):
         if self.atomicity:
-            self.start_parallel_cruds_atomicity()
+            self.start_parallel_cruds_atomicity(sync=True)
         else:
             tasks_info = self.start_parallel_cruds(retry_exceptions, ignore_exceptions, task_verification)
             return tasks_info

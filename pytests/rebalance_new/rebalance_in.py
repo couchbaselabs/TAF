@@ -25,7 +25,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.servers[:self.nodes_init], servs_in, [])
         time.sleep(15)
 
-        tasks_info = self.loadgen_docs()
+        tasks_info = self.loadgen_docs(sync=self.sync)
 
         self.task_manager.get_task_result(rebalance_task)
         for task in tasks_info.keys():
@@ -77,7 +77,7 @@ class RebalanceInTests(RebalanceBaseTest):
             ]
 
         # CRUDs while rebalance is running in parallel
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, sync=self.sync)
 
         delete_from += items
         create_from += items
@@ -112,7 +112,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
                                                  delete_from + items/2)
-        self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
+        self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True, sync=self.sync)
 
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
@@ -212,7 +212,7 @@ class RebalanceInTests(RebalanceBaseTest):
 #                 self.cluster, bucket, self.cluster.master, self.gen_update,
 #                 "update", 0)
 #             tasks_info.update(tem_tasks_info.copy())
-        tasks_info = self.loadgen_docs()
+        tasks_info = self.loadgen_docs(sync=self.sync)
         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                        self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
@@ -362,7 +362,7 @@ class RebalanceInTests(RebalanceBaseTest):
             compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
 
-        tasks_info = self.loadgen_docs()
+        tasks_info = self.loadgen_docs(self.sync)
 
         self.task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -498,11 +498,11 @@ class RebalanceInTests(RebalanceBaseTest):
                     if self.atomicity:
                         task = self.task.async_load_gen_docs_atomicity(
                                     self.cluster, self.bucket_util.buckets, self.gen_update,
-                                    "rebalance_only_update",0,batch_size=20,timeout_secs=self.sdk_timeout,
+                                    "update",0,batch_size=20,timeout_secs=self.sdk_timeout,
                                     process_concurrency=8, retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
                                     commit=self.transaction_commit,
-                                    durability=self.durability_level)
+                                    durability=self.durability_level,sync=self.sync)
                     else:
                         task = self.task.async_load_gen_docs(
                                     self.cluster, bucket, self.gen_update, "update", 0,
@@ -524,7 +524,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                     batch_size=10,timeout_secs=self.sdk_timeout,process_concurrency=8,
                                     retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
-                                    commit=self.transaction_commit,durability=self.durability_level)
+                                    commit=self.transaction_commit,durability=self.durability_level,sync=self.sync)
                     else:
                         task = self.task.async_load_gen_docs(
                                     self.cluster, bucket, self.gen_create, "create", 0,
@@ -551,7 +551,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                     retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
                                     commit=self.transaction_commit,
-                                    durability=self.durability_level)
+                                    durability=self.durability_level,sync=self.sync)
                     else:
                         task = self.task.async_load_gen_docs(
                                     self.cluster, bucket, self.gen_delete, "delete", 0,
@@ -954,7 +954,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.nodes_in_cluster.extend([self.cluster.servers[i]])
             self.sleep(20)
             if self.atomicity:
-                self._load_all_buckets_atomicty(self.gen_delete, "create")
+                self._load_all_buckets_atomicty(self.gen_delete, "create", sync=self.sync)
                 self.sleep(20)
             else:
                 self._load_all_buckets(self.cluster, self.gen_delete,
