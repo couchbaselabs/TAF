@@ -2,6 +2,7 @@ from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.document import View
+from remote.remote_util import RemoteUtilHelper
 
 
 class FailoverBaseTest(BaseTestCase):
@@ -98,21 +99,10 @@ class FailoverBaseTest(BaseTestCase):
             # supported starting with python2.7
             self.log.warn("CLEANUP WAS SKIPPED")
             self.cluster.shutdown(force=True)
-            self._log_finish()
         else:
-            super(FailoverBaseTest, self).tearDown()
-            # try:
-            #     self.log.info("==============  tearDown was started for test #{0} {1} =============="\
-            #                   .format(self.case_number, self._testMethodName))
-            #     RemoteUtilHelper.common_basic_setup(self.cluster.servers)
-            #     self.bucket_util.delete_all_buckets(self.cluster.servers)
-            #     for node in self.cluster.servers:
-            #         master = node
-            #         try:
-            #             self.cluster_util.cleanup_cluster()
-            #         except:
-            #             continue
-            #     self.log.info("==============  tearDown was finished for test #{0} {1} =============="\
-            #                   .format(self.case_number, self._testMethodName))
-            # finally:
-            #     super(FailoverBaseTest, self).tearDown()
+            try:
+                self.log.info("==============  tearDown was started for test #{0} {1} =============="\
+                              .format(self.case_number, self._testMethodName))
+                RemoteUtilHelper.common_basic_setup(self.cluster.servers)
+            finally:
+                super(FailoverBaseTest, self).tearDown()

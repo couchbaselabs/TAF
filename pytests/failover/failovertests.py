@@ -364,7 +364,7 @@ class FailoverTests(FailoverBaseTest):
 
         # Verify Stats of cluster and Data is max_verify > 0
         if not self.atomicity:
-            self.bucket_util.verify_cluster_stats(result_nodes, self.master,
+            self.bucket_util.verify_cluster_stats(self.num_items, self.master,
                                               check_bucket_stats=True,
                                               check_ep_items_remaining=False)
 
@@ -382,11 +382,10 @@ class FailoverTests(FailoverBaseTest):
 
         # Verify if vbucket sequence numbers and failover logs are as expected
         # We will check only for version > 2.5.* & if the failover is graceful
-        
         new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
-                prev_vbucket_stats, self.servers, self.bucket_util.buckets, perNode=False)
+                prev_vbucket_stats, self.cluster_util.get_kv_nodes(), self.bucket_util.buckets)
         new_failover_stats = self.bucket_util.compare_failovers_logs(
-                prev_failover_stats, self.servers, self.bucket_util.buckets)
+                prev_failover_stats, self.cluster_util.get_kv_nodes(), self.bucket_util.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(
                 new_vbucket_stats, new_failover_stats)
 

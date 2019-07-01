@@ -409,7 +409,7 @@ class BucketUtils:
     def verify_stats_for_bucket(self, bucket, items, timeout=60):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
-        servers = self.cluster.nodes_in_cluster
+        servers = self.cluster_util.get_kv_nodes()
         if bucket.bucketType == Bucket.bucket_type.MEMCACHED:
             items_actual = 0
             for server in servers:
@@ -430,7 +430,7 @@ class BucketUtils:
         stat_cmd = "all"
         shell_conn_list1 = list()
         shell_conn_list2 = list()
-        for cluster_node in self.cluster.nodes_in_cluster:
+        for cluster_node in servers:
             remote_conn = RemoteMachineShellConnection(cluster_node)
             shell_conn_list1.append(remote_conn)
             shell_conn_list2.append(RemoteMachineShellConnection(cluster_node))
