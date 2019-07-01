@@ -333,7 +333,7 @@ class RebalanceTask(Task):
         # before we declare ourselves done
         if progress != -1 and status != 'none':
             if self.retry_get_progress < retry_get_process_num:
-                time.sleep(3)
+                time.sleep(10)
                 self.check()
             else:
                 self.result = False
