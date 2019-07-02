@@ -310,7 +310,7 @@ class basic_ops(BaseTestCase):
         self.log.info("Creating doc_generator for doc_op")
         num_item_start_for_crud = int(self.num_items / 2)
         doc_update = doc_generator(
-            self.key, num_item_start_for_crud, self.num_items,
+            self.key, 0, num_item_start_for_crud,
             doc_size=self.doc_size, doc_type=self.doc_type,
             target_vbucket=self.target_vbucket, vbuckets=self.vbuckets)
 
