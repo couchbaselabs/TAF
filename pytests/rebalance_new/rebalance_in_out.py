@@ -1,7 +1,8 @@
 from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
-
+from rebalance_new.swaprebalancetests import SwapRebalanceBase
+from BucketLib.BucketOperations import BucketHelper
 
 class RebalanceInOutTests(RebalanceBaseTest):
     def setUp(self):
@@ -82,16 +83,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         recovery_type = self.input.param("recoveryType", "full")
         gen = self.get_doc_generator(0, self.num_items)
 
-        # Update replica value before performing rebalance in/out
-        if self.replica_to_update:
-            bucket_helper = BucketHelper(self.cluster.master)
-
-            # Update bucket replica to new value as given in conf file
-            self.log.info("Updating replica count of bucket to {0}"
-                          .format(self.replica_to_update))
-            bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
-
         if self.atomicity:
             self._load_all_buckets_atomicty(gen, "rebalance_only_update")
         else:
@@ -105,6 +96,17 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
             self.bucket_util._wait_for_stats_all_buckets()
+
+        # Update replica value before performing rebalance in/out
+        if self.replica_to_update:
+            bucket_helper = BucketHelper(self.cluster.master)
+
+            # Update bucket replica to new value as given in conf file
+            self.log.info("Updating replica count of bucket to {0}"
+                          .format(self.replica_to_update))
+            bucket_helper.change_bucket_props(
+                self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
         self.sleep(20)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
@@ -147,15 +149,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         fail_over = self.input.param("fail_over", False)
         gen = self.get_doc_generator(0, self.num_items)
-        # Update replica value before performing rebalance in/out
-        if self.replica_to_update:
-            bucket_helper = BucketHelper(self.cluster.master)
-
-            # Update bucket replica to new value as given in conf file
-            self.log.info("Updating replica count of bucket to {0}"
-                          .format(self.replica_to_update))
-            bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
 
         if self.atomicity:
             self._load_all_buckets_atomicty(gen, "rebalance_only_update")
@@ -170,6 +163,16 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
             self.bucket_util._wait_for_stats_all_buckets()
+        # Update replica value before performing rebalance in/out
+        if self.replica_to_update:
+            bucket_helper = BucketHelper(self.cluster.master)
+
+            # Update bucket replica to new value as given in conf file
+            self.log.info("Updating replica count of bucket to {0}"
+                          .format(self.replica_to_update))
+            bucket_helper.change_bucket_props(
+                self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
         self.sleep(20)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
@@ -373,6 +376,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
                 self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
         rest = RestConnection(self.cluster.master)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()

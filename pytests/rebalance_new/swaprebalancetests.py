@@ -256,6 +256,7 @@ class SwapRebalanceBase(BaseTestCase):
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
                 self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
@@ -371,6 +372,7 @@ class SwapRebalanceBase(BaseTestCase):
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
                 self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
@@ -512,6 +514,7 @@ class SwapRebalanceBase(BaseTestCase):
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
                 self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
@@ -641,6 +644,7 @@ class SwapRebalanceBase(BaseTestCase):
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
                 self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
         # Start the swap rebalance
         self.log.info("current nodes : {0}"
