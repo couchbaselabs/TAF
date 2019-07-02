@@ -391,7 +391,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
 
 class RebalanceInOutDurabilityTests(SwapRebalanceBase):
     def setUp(self):
-        super(SwapRebalanceDurabilityTests, self).setUp()
+        super(RebalanceInOutDurabilityTests, self).setUp()
 
         self.do_stop_start = self.input.param("stop_start", False)
 
