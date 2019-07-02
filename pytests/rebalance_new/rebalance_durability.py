@@ -163,7 +163,7 @@ class RebalanceDurability(RebalanceBaseTest):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-    def test_rebalance_in_out_with_durability_check(self):
+    def test_rebalance_out_durabilitybreaks_rebalance_in(self):
         self.assertTrue(self.num_replicas >= 1,
                         "Need at-least one replica to run this test")
 
@@ -330,7 +330,7 @@ class RebalanceDurability(RebalanceBaseTest):
                                 msg="Unexpected durability failures: {0}"
                                 .format(task.fail))
 
-        self.assertTrue(self.new_replica is not None)
+        self.assertTrue(self.replica_to_update is not None)
         def_bucket = self.bucket_util.buckets[0]
         servers_in = [self.cluster.servers[self.nodes_init + i]
                       for i in range(self.nodes_in)]
@@ -357,7 +357,7 @@ class RebalanceDurability(RebalanceBaseTest):
         # Update bucket replica value
         bucket_helper = BucketHelper(self.cluster.servers[1])
         bucket_helper.change_bucket_props(def_bucket.name,
-                                          replicaNumber=self.new_replica)
+                                          replicaNumber=self.replica_to_update)
         # Start and wait till rebalance is complete
         rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
