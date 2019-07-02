@@ -32,8 +32,12 @@ dependencies {
     compile 'com.google.guava:guava:22.0'
     compile 'commons-cli:commons-cli:1.4'
     compileOnly 'org.projectlombok:lombok:1.18.8'
-    compile 'ch.qos.logback:logback-classic:1.1.2'
     compile 'net.sourceforge.argparse4j:argparse4j:0.8.1'
+}
+
+task copyDeps(type: Copy) {
+  from configurations.runtime
+  into 'jars'
 }
 
 task install(type:Exec) {
@@ -87,7 +91,7 @@ task testrunner(type:Exec) {
 
         // Add the build output containing the built Java source.  Should get this from a gradle variable really but it's
         // very unlikely to ever change.
-        def cmd = [jythonLocation, '-J-cp', jythonpath + ":build/classes/java/main", 'testrunner.py']
+        def cmd = [jythonLocation, '-J-cp', jythonpath + ":build/classes/java/main:src/main/resources", 'testrunner.py']
 
         testRunnerArgs.each { cmd.add(it) }
 
