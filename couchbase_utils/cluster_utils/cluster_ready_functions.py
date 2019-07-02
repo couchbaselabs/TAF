@@ -848,3 +848,48 @@ class ClusterUtils:
                 if len(picked) == howmany:
                     break
         return picked
+
+    def check_for_panic_and_mini_dumps(self, servers):
+        panic_str = "panic"
+        panic_count = 0
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            output, error = shell.enable_diag_eval_on_non_local_hosts()
+            if output is not None:
+                if "ok" not in output:
+                    self.log.error(
+                        "Error in enabling diag/eval on non-local hosts on {}: Error: {}".format(server.ip, error))
+                else:
+                    self.log.debug("Enabled diag/eval for non-local hosts from {}".format(server.ip))
+            else:
+                self.log.debug("Running in compatibility mode, not enabled diag/eval for non-local hosts")
+            _, dir_name = RestConnection(server).diag_eval(
+                'filename:absname(element(2, application:get_env(ns_server,error_logger_mf_dir))).')
+            log = str(dir_name) + '/*'
+            count, err = shell.execute_command("zgrep \"{0}\" {1} | wc -l".
+                                               format(panic_str, log))
+            if isinstance(count, list):
+                count = int(count[0])
+            else:
+                count = int(count)
+            if count > panic_count:
+                self.log.info("===== PANIC OBSERVED IN THE LOGS ON SERVER {0}=====".format(server.ip))
+                panic_trace, _ = shell.execute_command("zgrep \"{0}\" {1}".
+                                                       format(panic_str, log))
+                self.log.info("\n {0}".format(panic_trace))
+                panic_count = count
+            os_info = shell.extract_remote_info()
+            if os_info.type.lower() == "windows":
+                # This is a fixed path in all windows systems inside couchbase
+                dir_name_crash = 'c://CrashDumps'
+            else:
+                dir_name_crash = str(dir_name) + '/../crash/'
+            core_dump_count, err = shell.execute_command("ls {0}| wc -l".format(dir_name_crash))
+            if isinstance(core_dump_count, list):
+                core_dump_count = int(core_dump_count[0])
+            else:
+                core_dump_count = int(core_dump_count)
+            if core_dump_count > 0:
+                self.log.info("===== CORE DUMPS SEEN ON SERVER {0} : {1} crashes seen =====".format(
+                    server.ip, core_dump_count))
+            shell.disconnect()

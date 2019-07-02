@@ -104,5 +104,6 @@ class FailoverBaseTest(BaseTestCase):
                 self.log.info("==============  tearDown was started for test #{0} {1} =============="\
                               .format(self.case_number, self._testMethodName))
                 RemoteUtilHelper.common_basic_setup(self.cluster.servers)
+                self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
             finally:
                 super(FailoverBaseTest, self).tearDown()

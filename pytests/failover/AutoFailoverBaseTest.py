@@ -71,6 +71,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.rest = RestConnection(self.orchestrator)
         self.rest.reset_autofailover()
         self.disable_autofailover()
+        self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
         self._cleanup_cluster()
         super(AutoFailoverBaseTest, self).tearDown()
 
