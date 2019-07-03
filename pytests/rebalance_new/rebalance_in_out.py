@@ -346,7 +346,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
-            self._load_all_buckets(gen_delete, "create", 0)
+            self._load_all_buckets(self.cluster, gen_delete, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
 
 

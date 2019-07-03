@@ -1714,7 +1714,7 @@ class BucketUtils:
         try:
             if not _async:
                 self.log.info("BATCH SIZE for documents load: %s" % batch_size)
-                self._load_all_buckets(
+                self.sync_load_all_buckets(
                     self.cluster.master, gen_load, operation, exp,
                     batch_size=batch_size)
                 self._verify_stats_all_buckets(self.input.servers)
