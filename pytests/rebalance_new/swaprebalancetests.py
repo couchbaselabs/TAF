@@ -204,6 +204,7 @@ class SwapRebalanceBase(BaseTestCase):
         self.stop_load(self.loaders, do_stop=False)
         self.log.info("DONE DATA ACCESS PHASE")
 
+        self.cluster.update_master()
         self.log.info("VERIFICATION PHASE")
         rest = RestConnection(self.cluster.master)
         servers_in_cluster = []
