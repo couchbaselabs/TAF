@@ -31,6 +31,7 @@ class SwapRebalanceBase(BaseTestCase):
         self.percentage_progress = self.input.param("percentage_progress", 50)
         self.load_started = False
         self.loaders = []
+        self.replica_to_update = self.input.param("new_replica", None)
         try:
             # Clear the state from Previous invalid run
             if rest._rebalance_progress_status() == 'running':
