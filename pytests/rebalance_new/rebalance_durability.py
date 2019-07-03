@@ -376,3 +376,41 @@ class RebalanceDurability(RebalanceBaseTest):
         # Doc count verification
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+    def test_auto_retry_of_failed_rebalance_with_rebalance_test_conditions(self):
+        sleep_time = self.input.param("sleep_time", 15)
+        afterTimePeriod = self.input.param("afterTimePeriod", 40)
+        rebalance_operation = self.input.param("rebalance_operation")
+        self.change_retry_rebalance_settings(enabled=True, afterTimePeriod=afterTimePeriod,
+                                             maxAttempts=1)
+        self.rest.update_autofailover_settings(False, 120)
+        test_failure_condition = self.input.param("test_failure_condition")
+        # induce the failure before the rebalance starts
+        self.induce_rebalance_test_condition(test_failure_condition)
+        self.gen_update = self.get_doc_generator(0, self.num_items)
+        self.doc_ops = "update"
+        self.sleep(sleep_time)
+        try:
+            # start update of all keys
+            task_update = self.loadgen_docs()
+            rebalance = self.start_rebalance(rebalance_operation)
+            self.task.jython_task_manager.get_task_result(rebalance)
+            if rebalance.result:
+                self.fail("Rebalance succeeded when it should have failed")
+            # Ensure there are no failures
+            self.bucket_util.verify_doc_op_task_exceptions(task_update, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(task_update)
+            # Delete the rebalance test condition so that we recover from the error
+            self.delete_rebalance_test_condition(test_failure_condition)
+            self.sleep(sleep_time)
+            # start update of all keys
+            task_update = self.loadgen_docs()
+            self.check_retry_rebalance_succeeded()
+            # Ensure there are no failures
+            self.bucket_util.verify_doc_op_task_exceptions(task_update, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(task_update)
+        finally:
+            self.delete_rebalance_test_condition(test_failure_condition)
+        # Verify doc load count to match the overall CRUDs
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)

@@ -1,15 +1,18 @@
 import copy
+import json
 
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class RebalanceBaseTest(BaseTestCase):
     def setUp(self):
         super(RebalanceBaseTest, self).setUp()
+        self.rest = RestConnection(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
         self.doc_size = self.input.param("doc_size", 10)
         self.key_size = self.input.param("key_size", 0)
@@ -234,3 +237,96 @@ class RebalanceBaseTest(BaseTestCase):
         else:
             tasks_info = self.start_parallel_cruds(retry_exceptions, ignore_exceptions, task_verification)
             return tasks_info
+
+    def induce_rebalance_test_condition(self, test_failure_condition):
+        if test_failure_condition == "verify_replication":
+            set_command = "testconditions:set(verify_replication, {fail, \"" + "default" + "\"})"
+        elif test_failure_condition == "backfill_done":
+            set_command = "testconditions:set(backfill_done, {for_vb_move, \"" + "default\", 1 , " + "fail})"
+        else:
+            set_command = "testconditions:set({0}, fail)".format(test_failure_condition)
+        for server in self.servers:
+            rest = RestConnection(server)
+            shell = RemoteMachineShellConnection(server)
+            shell.enable_diag_eval_on_non_local_hosts()
+            _, content = rest.diag_eval(set_command)
+            self.log.debug("Set Command : {0} Return : {1}".format(set_command, content))
+            shell.disconnect()
+
+    def start_rebalance(self, rebalance_operation):
+        self.log.debug("Starting rebalance operation of type : {0}".format(rebalance_operation))
+        if rebalance_operation == "rebalance_out":
+            task = self.task.async_rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
+        elif rebalance_operation == "rebalance_in":
+            task = self.task.async_rebalance(self.servers[:self.nodes_init],
+                                             [self.servers[self.nodes_init]], [])
+        elif rebalance_operation == "swap_rebalance":
+            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                               self.servers[self.nodes_init].ip, self.servers[self.nodes_init].port)
+            task = self.task.async_rebalance(self.servers[:self.nodes_init], []
+                                             , [self.servers[self.nodes_init - 1]])
+        elif rebalance_operation == "graceful_failover":
+            task = self.task.async_failover([self.cluster.master], failover_nodes=[self.servers[1]],
+                                            graceful=True, wait_for_pending=120)
+        return task
+
+    def delete_rebalance_test_condition(self, test_failure_condition):
+        delete_command = "testconditions:delete({0})".format(test_failure_condition)
+        for server in self.servers:
+            rest = RestConnection(server)
+            shell = RemoteMachineShellConnection(server)
+            shell.enable_diag_eval_on_non_local_hosts()
+            _, content = rest.diag_eval(delete_command)
+            self.log.debug("Delete Command : {0} Return : {1}".format(delete_command, content))
+            shell.disconnect()
+
+    def check_retry_rebalance_succeeded(self):
+        result = json.loads(self.rest.get_pending_rebalance_info())
+        self.log.debug("Result from get_pending_rebalance_info : {0}".format(result))
+        retry_after_secs = result["retry_after_secs"]
+        attempts_remaining = result["attempts_remaining"]
+        retry_rebalance = result["retry_rebalance"]
+        self.log.debug("Attempts remaining : {0}, Retry rebalance : {1}".format(attempts_remaining, retry_rebalance))
+        while attempts_remaining:
+            # wait for the afterTimePeriod for the failed rebalance to restart
+            self.sleep(retry_after_secs, message="Waiting for the afterTimePeriod to complete")
+            try:
+                result = self.rest.monitorRebalance()
+                msg = "monitoring rebalance {0}"
+                self.log.debug(msg.format(result))
+                self.assertTrue(result, "Retried rebalance did not succeed")
+            except Exception:
+                result = json.loads(self.rest.get_pending_rebalance_info())
+                self.log.debug(result)
+                try:
+                    attempts_remaining = result["attempts_remaining"]
+                    retry_rebalance = result["retry_rebalance"]
+                    retry_after_secs = result["retry_after_secs"]
+                except KeyError:
+                    self.fail("Retrying of rebalance still did not help. All the retries exhausted...")
+                self.log.debug("Attempts remaining : {0}, Retry rebalance : {1}".format(attempts_remaining,
+                                                                                        retry_rebalance))
+            else:
+                self.log.info("Retry rebalanced fixed the rebalance failure")
+                break
+
+    def change_retry_rebalance_settings(self, enabled=True, afterTimePeriod=300, maxAttempts=1):
+        # build the body
+        body = dict()
+        if enabled:
+            body["enabled"] = "true"
+        else:
+            body["enabled"] = "false"
+        body["afterTimePeriod"] = afterTimePeriod
+        body["maxAttempts"] = maxAttempts
+        rest = RestConnection(self.cluster.master)
+        rest.set_retry_rebalance_settings(body)
+        result = rest.get_retry_rebalance_settings()
+        self.log.debug("Retry Rebalance settings changed to : {0}".format(json.loads(result)))
+
+    def reset_retry_rebalance_settings(self):
+        body = dict()
+        body["enabled"] = "false"
+        rest = RestConnection(self.cluster.master)
+        rest.set_retry_rebalance_settings(body)
+        self.log.debug("Retry Rebalance settings reset ....")
