@@ -190,8 +190,8 @@ class SwapRebalanceBase(BaseTestCase):
         for loader in loaders:
             try:
                 self.task.jython_task_manager.get_task_result(loader)
-                for client in loader.clients:
-                    client.close()
+#                 for client in loader.clients:
+#                     client.close()
             except ExecutionException:
                 pass
 
@@ -204,6 +204,8 @@ class SwapRebalanceBase(BaseTestCase):
     def verification_phase(self):
         # Stop loaders
         self.stop_load(self.loaders, do_stop=False)
+        for loader in self.loaders:
+            loader.client.close()
         self.log.info("DONE DATA ACCESS PHASE")
 
         self.log.info("VERIFICATION PHASE")
