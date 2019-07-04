@@ -204,7 +204,6 @@ class SwapRebalanceBase(BaseTestCase):
         self.stop_load(self.loaders, do_stop=False)
         self.log.info("DONE DATA ACCESS PHASE")
 
-        self.cluster.update_master()
         self.log.info("VERIFICATION PHASE")
         rest = RestConnection(self.cluster.master)
         servers_in_cluster = []
@@ -334,6 +333,7 @@ class SwapRebalanceBase(BaseTestCase):
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(optNodesIds))
+        self.cluster.update_master(master)
         self.verification_phase()
 
     def _common_test_body_failed_swap_rebalance(self):
@@ -478,6 +478,7 @@ class SwapRebalanceBase(BaseTestCase):
                             .format(toBeEjectedNodes))
         else:
             self.log.info("rebalance completed successfully")
+        self.cluster.update_master(master)
         self.verification_phase()
 
     def _add_back_failed_node(self, do_node_cleanup=False):
@@ -605,7 +606,7 @@ class SwapRebalanceBase(BaseTestCase):
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(add_back_servers))
-
+        self.cluster.update_master(master)
         self.verification_phase()
 
     def _failover_swap_rebalance(self):
@@ -690,7 +691,7 @@ class SwapRebalanceBase(BaseTestCase):
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(new_swap_servers))
-
+        self.cluster.update_master(master)
         self.verification_phase()
 
 
