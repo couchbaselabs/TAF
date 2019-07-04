@@ -142,7 +142,7 @@ class SwapRebalanceBase(BaseTestCase):
                                              persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
                                              retries=self.sdk_retries, transaction_timeout=self.transaction_timeout, commit=self.transaction_commit)
         return task
-    
+
     def start_access_phase_atomicity(self):
         gen_create = doc_generator('test_docs', 0, self.num_items)
         task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
@@ -161,7 +161,7 @@ class SwapRebalanceBase(BaseTestCase):
             self.task.jython_task_manager.get_task_result(loaders)
         except ExecutionException:
             pass
-        
+
     def start_load_phase(self):
         loaders = []
         gen_create = doc_generator('test_docs', 0, self.num_items)
@@ -189,8 +189,9 @@ class SwapRebalanceBase(BaseTestCase):
                 self.task.jython_task_manager.stop_task(loader)
         for loader in loaders:
             try:
-                self.task.jython_task_manager.get_task_result(
-                        loader)
+                self.task.jython_task_manager.get_task_result(loader)
+                for client in loader.clients:
+                    client.close()
             except ExecutionException:
                 pass
 
