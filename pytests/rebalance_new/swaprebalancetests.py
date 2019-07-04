@@ -75,6 +75,7 @@ class SwapRebalanceBase(BaseTestCase):
         """
         remote = RemoteMachineShellConnection(master)
         output, _ = remote.enable_diag_eval_on_non_local_hosts()
+        remote.disconnect()
         if "ok" not in output:
             self.log.error("Error enabling diag/eval on non-local host {}: {}"
                            .format(master.ip, output))
