@@ -1,6 +1,5 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
-from BucketLib import bucket
 
 
 class MultiBucketTests(BaseTestCase):

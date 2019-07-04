@@ -1406,7 +1406,7 @@ class RestConnection(object):
                                .format(duration))
             self.test_log.info("Sleep for {0} seconds after rebalance"
                                .format(sleep))
-            time.sleep(20)
+            time.sleep(sleep)
             return True
 
     def _rebalance_progress_status(self):

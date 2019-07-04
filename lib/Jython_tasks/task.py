@@ -2636,8 +2636,10 @@ class BucketCreateTask(Task):
         try:
             rest = RestConnection(self.server)
         except ServerUnavailableException as error:
-            self.set_exception(error)
-            return False
+            self.log.error("RestConnection failed for {0}: {1}"
+                           .format(self.server.ip, error))
+            self.result = False
+            return
         info = rest.get_nodes_self()
 
         if self.bucket.ramQuotaMB <= 0:
@@ -2649,7 +2651,8 @@ class BucketCreateTask(Task):
                 BucketHelper(self.server).create_bucket(self.bucket.__dict__)
                 # return_value = self.check()
                 self.complete_task()
-                return True
+                self.result = True
+                return
             except Exception as e:
                 self.test_log.error(str(e))
                 self.set_exception(e)
@@ -2660,12 +2663,14 @@ class BucketCreateTask(Task):
             BucketHelper(self.server).create_bucket(self.bucket.__dict__)
             # return_value = self.check()
             self.complete_task()
-            return True
+            self.result = True
+            return
         except BucketCreationException as e:
             self.test_log.error(str(e))
             self.set_exception(e)
         # catch and set all unexpected exceptions
         except Exception as e:
+            self.result = False
             self.test_log.error(str(e))
             self.set_exception(e)
 

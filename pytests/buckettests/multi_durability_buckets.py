@@ -11,6 +11,7 @@ class MultiDurabilityTests(BaseTestCase):
         replica_list = self.input.param("replica_list", list())
         bucket_type_list = self.input.param("bucket_type_list", list())
         self.bucket_dict = dict()
+        tasks = dict()
         bucket_ram_quota = 100
 
         if type(replica_list) is str:
@@ -34,17 +35,35 @@ class MultiDurabilityTests(BaseTestCase):
                 self.bucket_dict[index]["type"] = bucket_type_list[index]
 
             # create bucket object for creation
-            bucket_obj = Bucket(
+            bucket = Bucket(
                 {Bucket.name: "bucket_{0}".format(index),
                  Bucket.bucketType: self.bucket_dict[index]["type"],
                  Bucket.ramQuotaMB: bucket_ram_quota,
                  Bucket.replicaNumber: self.bucket_dict[index]["replica"],
                  Bucket.compressionMode: "off",
                  Bucket.maxTTL: 0})
-            self.bucket_util.create_bucket(bucket_obj)
+            tasks[bucket] = self.bucket_util.async_create_bucket(bucket)
 
             # Append bucket object into the bucket_info dict
             self.bucket_dict[index]["object"] = self.bucket_util.buckets[-1]
+
+        raise_exception = None
+        for bucket, task in tasks.items():
+            self.task_manager.get_task_result(task)
+            if task.result:
+                self.sleep(2)
+                warmed_up = self.bucket_util._wait_warmup_completed(
+                    self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+                if not warmed_up:
+                    task.result = False
+                    raise_exception = "Bucket %s not warmed up" % bucket.name
+
+            if task.result:
+                self.buckets.append(bucket)
+            self.task_manager.stop_task(task)
+
+        if raise_exception:
+            raise Exception("Create bucket failed: %s" % raise_exception)
         self.log.info("=== MultiDurabilityTests base setup done ===")
 
     def tearDown(self):

@@ -93,23 +93,34 @@ class BucketUtils:
             raise(Exception(msg))
 
     # Fetch/Create/Delete buckets
-    def create_bucket(self, bucket, wait_for_warmup=True):
+    def async_create_bucket(self, bucket):
         if not isinstance(bucket, Bucket):
             raise Exception("Create bucket needs Bucket object as parameter")
         self.log.info("Creating bucket: %s" % bucket.name)
-        _task = BucketCreateTask(self.cluster.master, bucket)
-        self.task_manager.add_new_task(_task)
-        result = self.task_manager.get_task_result(_task)
-        if wait_for_warmup:
+        task = BucketCreateTask(self.cluster.master, bucket)
+        self.task_manager.add_new_task(task)
+        return task
+
+    def create_bucket(self, bucket, wait_for_warmup=True):
+        raise_exception = None
+        task = self.async_create_bucket(bucket)
+        self.task_manager.get_task_result(task)
+        if task.result and wait_for_warmup:
             self.sleep(2)
             warmed_up = self._wait_warmup_completed(
                 self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
             if not warmed_up:
-                raise Exception("Bucket %s not warmed up" % bucket.name)
-        if result:
+                task.result = False
+                raise_exception = "Bucket not warmed up"
+
+        if task.result:
             self.buckets.append(bucket)
-        else:
-            raise Exception("Could not create bucket {}".format(bucket.name))
+
+        self.task_manager.stop_task(task)
+        if raise_exception:
+            raise_exception = "Create bucket %s failed: %s" \
+                              % (bucket.name, raise_exception)
+            raise Exception(raise_exception)
 
     def delete_bucket(self, serverInfo, bucket, wait_for_bucket_deletion=True):
         self.log.info('Deleting existing bucket {0} on {1}'
@@ -220,6 +231,7 @@ class BucketUtils:
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
 
+    # Support functions with bucket object
     def get_bucket_object_from_name(self, bucket="", num_attempt=1, timeout=1):
         bucketInfo = None
         bucket_helper = BucketHelper(self.cluster.master)
@@ -329,6 +341,7 @@ class BucketUtils:
         success = True
         rest = RestConnection(server)
         info = rest.get_nodes_self()
+        tasks = dict()
         if info.memoryQuota < 450.0:
             self.log.error("At least need 450MB memoryQuota")
             success = False
@@ -348,8 +361,29 @@ class BucketUtils:
                                  Bucket.evictionPolicy: eviction_policy,
                                  Bucket.maxTTL: maxttl,
                                  Bucket.compressionMode: compression_mode})
-                self.create_bucket(bucket)
-                time.sleep(10)
+                tasks[bucket] = self.async_create_bucket(bucket)
+
+            # Wait before checking for warmup
+            time.sleep(10)
+
+            raise_exception = None
+            for bucket, task in tasks.items():
+                self.task_manager.get_task_result(task)
+                if task.result:
+                    self.buckets.append(bucket)
+                else:
+                    raise_exception = "Create bucket %s failed" % bucket.name
+                    continue
+
+                # Check for warm_up
+                warmed_up = self._wait_warmup_completed(
+                    self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+                if not warmed_up:
+                    success = False
+                    raise_exception = "Bucket %s not warmed up" % bucket.name
+
+            if raise_exception:
+                raise Exception(raise_exception)
         return success
 
     def create_standard_buckets(self, server, num_buckets, bucket_size=None,
@@ -387,7 +421,7 @@ class BucketUtils:
             if status:
                 self.log.info('Flushed bucket: {0} from {1}'.format(bucket, serverInfo.ip))
             return status
-        
+
     def flush_all_buckets(self, servers):
         server_status ={}
         for serverInfo in servers:
