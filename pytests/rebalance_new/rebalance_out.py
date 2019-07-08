@@ -157,7 +157,9 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.data_analysis_all(record_data_set, self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets, std=1.0, total_vbuckets=self.vbuckets)
+        self.bucket_util.vb_distribution_analysis(
+            servers=nodes, buckets=self.bucket_util.buckets, std=1.0,
+            total_vbuckets=self.vbuckets, num_replicas=self.num_replicas)
 
     """Rebalances nodes out with failover
 
