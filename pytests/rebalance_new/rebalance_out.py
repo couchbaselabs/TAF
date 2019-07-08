@@ -195,7 +195,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         # Mark Node for failover
         success_failed_over = self.rest.fail_over(chosen[0].id, graceful=fail_over)
         self.nodes = self.rest.node_statuses()
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[chosen[0].id, ejectedNode.id])
+        self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[chosen[0].id])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
         self.cluster.nodes_in_cluster = new_server_list
         if not self.atomicity:
