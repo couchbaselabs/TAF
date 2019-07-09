@@ -88,40 +88,49 @@ class RebalanceInOutTests(RebalanceBaseTest):
         else:
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, gen, "update", 0)
+
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
+
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+            self.bucket_util.verify_stats_all_buckets(self.num_items,
+                                                      timeout=120)
             self.bucket_util._wait_for_stats_all_buckets()
 
-        # Update replica value before performing rebalance in/out
+        # Update replica value before performing rebalance in/out as given in conf file
         if self.replica_to_update:
             bucket_helper = BucketHelper(self.cluster.master)
-
-            # Update bucket replica to new value as given in conf file
             self.log.info("Updating replica count of bucket to {0}"
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+                self.bucket_util.buckets[0].name,
+                replicaNumber=self.replica_to_update)
+
             self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
+
         self.sleep(20)
+
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
             self.cluster.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
+
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.rest = RestConnection(self.cluster.master)
         self.nodes = self.cluster.nodes_in_cluster
-        result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
+
+        chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
+
         for node in servs_in:
             self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password, node.ip, node.port)
-        chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
+
         # Mark Node for failover
         self.sleep(30)
         success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
+
         # Mark Node for full recovery
         if success_failed_over:
             self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType=recovery_type)
@@ -414,13 +423,13 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
         else:
             for task in data_load_tasks:
                 self.task.jython_task_manager.get_task_result(task)
-        
+
             # Verify initial doc load count
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def tearDown(self):
-        super(SwapRebalanceDurabilityTests, self).tearDown()
+        super(RebalanceInOutDurabilityTests, self).tearDown()
 
     def test_rebalance_inout_with_durability_check(self):
         """
