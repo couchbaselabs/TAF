@@ -405,12 +405,12 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
         self.do_stop_start = self.input.param("stop_start", False)
 
         # Check to make sure we have replicas to run this tests
-        self.assertTrue(self.num_replicas >= 1,
-                        "Need at-least one replica to run this test")
+#         self.assertTrue(self.num_replicas >= 1,
+#                         "Need at-least one replica to run this test")
 
         # Rebalance-in all available nodes into the cluster
         status, _ = RebalanceHelper.rebalance_in(self.servers,
-                                                 len(self.servers)-1)
+                                                 self.num_initial_servers-1)
         self.assertTrue(status, msg="Rebalance failed")
 
         # Create buckets and load data into it
@@ -442,7 +442,6 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
         Note: This is a Positive case. i.e: Durability should not be broken
         """
         master = self.cluster.master
-        num_initial_servers = self.num_initial_servers
         creds = self.input.membase_settings
         def_bucket = self.bucket_util.buckets[0]
 
@@ -479,7 +478,7 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
             self.log.info("removing node {0} and rebalance afterwards"
                           .format(node))
 
-        new_swap_servers = self.servers[num_initial_servers:num_initial_servers+self.nodes_in]
+        new_swap_servers = self.servers[self.num_initial_servers:self.num_initial_servers+self.nodes_in]
         for server in new_swap_servers:
             otpNode = rest.add_node(creds.rest_username, creds.rest_password,
                                     server.ip, server.port)
@@ -648,7 +647,7 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
 
         # Load doc into all vbuckets to verify durability
         if self.atomicity:
-            gen_create = doc_generator('test_', 0, self.num_items)
+            gen_create = self.get_doc_generator('test_', 0, self.num_items)
             task = self.task.async_load_gen_docs_atomicity(self.cluster, def_bucket,
                                              gen_create, self.op_type , exp=0,
                                              batch_size=10,
@@ -659,7 +658,7 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
             self.task_manager.get_task_result(task)
         else:
             for vb_num in range(self.vbuckets):
-                gen_create = doc_generator(
+                gen_create = self.get_doc_generator(
                     self.key, self.num_items, self.num_items+1000,
                     doc_size=self.doc_size, doc_type=self.doc_type,
                     vbuckets=self.vbuckets, target_vbucket=[vb_num])
