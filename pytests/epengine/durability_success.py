@@ -89,9 +89,6 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         gen_delete = doc_generator(self.key, 0,
                                    int(self.num_items/3),
                                    target_vbucket=target_vbuckets)
-        gen_read = doc_generator(self.key, int(self.num_items/3),
-                                 self.num_items,
-                                 target_vbucket=target_vbuckets)
         gen_update = doc_generator(self.key, int(self.num_items/2),
                                    self.num_items,
                                    target_vbucket=target_vbuckets)
@@ -109,8 +106,17 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
+
+        # Wait for document_loader tasks to complete
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+            # Verify there is not failed docs in the task
+            if len(task.fail.keys()) != 0:
+                self.log_failure("Some CRUD failed during {0}: {1}"
+                                 .format(task.op_type, task.fail))
+
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_read, "read", 0,
+            self.cluster, self.bucket, gen_update, "read", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
@@ -122,15 +128,16 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries))
 
-        # Update num_items value accordingly to the CRUD performed
-        self.num_items += len(gen_create.doc_keys) - len(gen_delete.doc_keys)
-
         # Wait for document_loader tasks to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
             # Verify there is not failed docs in the task
             if len(task.fail.keys()) != 0:
-                self.log_failure("Some CRUD failed for {0}".format(task.fail))
+                self.log_failure("Some CRUD failed during {0}: {1}"
+                                 .format(task.op_type, task.fail))
+
+        # Update num_items value accordingly to the CRUD performed
+        self.num_items += len(gen_create.doc_keys) - len(gen_delete.doc_keys)
 
         if self.simulate_error \
                 not in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:
@@ -141,6 +148,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
                 # Disconnect the shell connection
                 shell_conn[node.ip].disconnect()
+            self.sleep(10, "Wait for node recovery to complete")
 
         # Create a SDK client connection to retry operation
         client = SDKClient(RestConnection(self.cluster.master),
