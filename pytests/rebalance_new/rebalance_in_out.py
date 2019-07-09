@@ -410,7 +410,8 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
 
         # Rebalance-in all available nodes into the cluster
         status, _ = RebalanceHelper.rebalance_in(self.servers,
-                                                 self.num_initial_servers-1)
+                                                 self.num_initial_servers-1,
+                                                 do_shuffle=False)
         self.assertTrue(status, msg="Rebalance failed")
 
         # Create buckets and load data into it
