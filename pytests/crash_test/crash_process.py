@@ -30,11 +30,12 @@ class CrashTest(BaseTestCase):
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.durability_helper = DurabilityHelper(
-            self.log, self.nodes_init,
-            durability=self.durability_level,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to)
+        if not self.atomicity:
+            self.durability_helper = DurabilityHelper(
+                self.log, self.nodes_init,
+                durability=self.durability_level,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to)
         self.bucket_util.create_default_bucket(
             bucket_type=self.bucket_type, ram_quota=self.bucket_size,
             replica=self.num_replicas, compression_mode="off")
@@ -49,26 +50,50 @@ class CrashTest(BaseTestCase):
             verification_dict["sync_write_committed_count"] = self.num_items
 
         # Load initial documents into the buckets
-        gen_create = doc_generator(self.key, 0, self.num_items)
-        for bucket in self.bucket_util.buckets:
-            task = self.task.async_load_gen_docs(
-                self.cluster, bucket, gen_create, "create", self.maxttl,
-                persist_to=self.persist_to,
+        gen_create = doc_generator(
+            self.key, 0, self.num_items,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.vbuckets)
+        if self.atomicity:
+            task = self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets, gen_create, "create",
+                exp=0,
+                batch_size=10,
+                process_concurrency=8,
                 replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
                 durability=self.durability_level,
-                batch_size=10, process_concurrency=8)
+                timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries,
+                update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
+                commit=True,
+                sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
+        else:
+            for bucket in self.bucket_util.buckets:
+                task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, gen_create, "create", self.maxttl,
+                    persist_to=self.persist_to,
+                    replicate_to=self.replicate_to,
+                    durability=self.durability_level,
+                    batch_size=10, process_concurrency=8)
+                self.task.jython_task_manager.get_task_result(task)
 
-            # Verify cbstats vbucket-details
-            stats_failed = self.durability_helper.verify_vbucket_details_stats(
-                bucket, self.cluster_util.get_kv_nodes(),
-                vbuckets=self.vbuckets, expected_val=verification_dict)
+                # Verify cbstats vbucket-details
+                stats_failed = \
+                    self.durability_helper.verify_vbucket_details_stats(
+                        bucket, self.cluster_util.get_kv_nodes(),
+                        vbuckets=self.vbuckets,
+                        expected_val=verification_dict)
 
-            if stats_failed:
-                self.fail("Cbstats verification failed")
+                if stats_failed:
+                    self.fail("Cbstats verification failed")
 
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.log.info("==========Finished CrashTest setup========")
 
     def tearDown(self):
@@ -103,13 +128,31 @@ class CrashTest(BaseTestCase):
 
         # Create doc_generator targeting only the active/replica vbuckets
         # present in the target_node
-        gen_load = doc_generator(self.key, self.num_items,
-                                 self.num_items+self.new_docs_to_add,
-                                 target_vbucket=target_vbuckets)
-        self.num_items += self.new_docs_to_add
-        task = self.task.async_load_gen_docs(
-            self.cluster, def_bucket, gen_load, "create", 0,
-            batch_size=10, timeout_secs=self.sdk_timeout)
+        gen_load = doc_generator(
+            self.key, self.num_items, self.num_items+self.new_docs_to_add,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.vbuckets)
+        if self.atomicity:
+            task = self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets, gen_load, "create",
+                exp=0,
+                batch_size=10,
+                process_concurrency=8,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries,
+                update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
+                commit=True,
+                sync=self.sync)
+        else:
+            task = self.task.async_load_gen_docs(
+                self.cluster, def_bucket, gen_load, "create", 0,
+                batch_size=10, timeout_secs=self.sdk_timeout)
 
         self.log.info("Stopping {0}:{1} on node {2}"
                       .format(self.process_name, self.service_name,
@@ -129,8 +172,9 @@ class CrashTest(BaseTestCase):
         # Validate doc count
         # TODO: Add verification for rollbacks based on active/replica failure
         # self.bucket_util.verify_unacked_bytes_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def test_crash_process(self):
         """
@@ -161,14 +205,32 @@ class CrashTest(BaseTestCase):
 
         # Create doc_generator targeting only the active/replica vbuckets
         # present in the target_node
-        gen_load = doc_generator(self.key, self.num_items,
-                                 self.num_items+self.new_docs_to_add,
-                                 target_vbucket=target_vbuckets)
-        self.num_items += self.new_docs_to_add
-        task = self.task.async_load_gen_docs(
-            self.cluster, def_bucket, gen_load, "create", 0,
-            batch_size=10, durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, skip_read_on_error=True)
+        gen_load = doc_generator(
+            self.key, self.num_items, self.num_items+self.new_docs_to_add,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.vbuckets)
+        if self.atomicity:
+            task = self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets, gen_load, "create",
+                exp=0,
+                batch_size=10,
+                process_concurrency=8,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries,
+                update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
+                commit=True,
+                sync=self.sync)
+        else:
+            task = self.task.async_load_gen_docs(
+                self.cluster, def_bucket, gen_load, "create", 0,
+                batch_size=10, durability=self.durability_level,
+                timeout_secs=self.sdk_timeout, skip_read_on_error=True)
 
         task_info = dict()
         task_info[task] = self.bucket_util.get_doc_op_info_dict(
@@ -186,8 +248,12 @@ class CrashTest(BaseTestCase):
                             signum=signum[self.sig_type])
         remote.disconnect()
         # Wait for tasks completion and validate failures
-        self.bucket_util.verify_doc_op_task_exceptions(task_info, self.cluster)
-        self.bucket_util.log_doc_ops_task_failures(task_info)
+        if self.atomicity:
+            self.task.jython_task_manager.get_task_result(task)
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(task_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(task_info)
 
         # Verification stats
         verification_dict = dict()
@@ -199,10 +265,11 @@ class CrashTest(BaseTestCase):
             verification_dict["sync_write_committed_count"] = self.num_items
 
         # Validate doc count
-        stats_failed = self.durability_helper.verify_vbucket_details_stats(
-            def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
-        if stats_failed:
-            self.fail("Cbstats verification failed")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        if not self.atomicity:
+            stats_failed = self.durability_helper.verify_vbucket_details_stats(
+                def_bucket, self.cluster_util.get_kv_nodes(),
+                vbuckets=self.vbuckets, expected_val=verification_dict)
+            if stats_failed:
+                self.fail("Cbstats verification failed")
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
