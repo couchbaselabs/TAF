@@ -455,6 +455,7 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
                 def_bucket.name, replicaNumber=self.replica_to_update)
+            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
         # Rest connection to add/rebalance/monitor nodes
         rest = RestConnection(master)
