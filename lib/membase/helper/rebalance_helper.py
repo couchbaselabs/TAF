@@ -332,29 +332,6 @@ class RebalanceHelper:
         return False
 
     @staticmethod
-    def wait_till_total_numbers_match(master,
-                                      bucket,
-                                      timeout_in_seconds=120):
-        log = logging.getLogger("infra")
-        log.info('waiting for sum_of_curr_items == total_items....')
-        start = time.time()
-        verified = False
-        while (time.time() - start) <= timeout_in_seconds:
-            try:
-                if RebalanceHelper.verify_items_count(master, bucket):
-                    verified = True
-                    break
-                else:
-                    time.sleep(2)
-            except StatsUnavailableException:
-                log.error("unable to retrieve stats for any node! Print taps for all nodes:")
-                break
-        if not verified:
-            rest = RestConnection(master)
-            RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
-        return verified
-
-    @staticmethod
     def wait_for_persistence(master, bucket, bucket_type='memcache', timeout=120):
         if bucket_type == 'ephemeral':
             return True
