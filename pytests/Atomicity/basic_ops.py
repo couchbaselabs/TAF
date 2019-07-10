@@ -23,7 +23,7 @@ class basic_ops(BaseTestCase):
         
         if self.default_bucket:
             self.bucket_util.create_default_bucket(replica=self.num_replicas,
-                                               compression_mode=self.compression_mode, ram_quota=100)
+                                               compression_mode=self.compression_mode)
             
         if self.num_buckets:
             self.bucket_util.create_multiple_buckets(self.cluster.master, self.num_replicas, bucket_count=self.num_buckets, bucket_type=Bucket.bucket_type.EPHEMERAL, eviction_policy = Bucket.bucket_eviction_policy.NO_EVICTION)
