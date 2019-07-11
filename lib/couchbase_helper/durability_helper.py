@@ -12,6 +12,8 @@ class DurabilityHelper:
     EXCEPTIONS = dict()
     EXCEPTIONS["durabilility_impossible"] = \
         "com.couchbase.client.core.error.DurabilityImpossibleException"
+    EXCEPTIONS["write_in_progress"] = \
+        "com.couchbase.client.core.error.DurableWriteInProgressException"
     EXCEPTIONS["ambiguous"] = \
         "com.couchbase.client.core.error.DurabilityAmbiguousException"
     EXCEPTIONS["request_timeout"] = \

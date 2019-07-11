@@ -50,9 +50,9 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
-            active_vbs = cbstat_obj[node.ip] .vbucket_list(self.bucket.name,
-                                                           "active")
-            active_vbs_in_target_nodes += active_vbs
+            active_vbs_in_target_nodes += cbstat_obj[node.ip].vbucket_list(
+                self.bucket.name,
+                "active")
             vb_info_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             failover_info["init"][node.ip] = \
