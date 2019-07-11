@@ -160,7 +160,6 @@ class RebalanceBaseTest(BaseTestCase):
                     durability=self.durability_level, sync=sync)
         self.task.jython_task_manager.get_task_result(task)
 
-
     def start_parallel_cruds_atomicity(self, sync=True):
         tasks = []
         if("update" in self.doc_ops):
@@ -230,7 +229,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         return tasks_info
-    
+
     def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[], task_verification = False, sync=True):
         if self.atomicity:
             self.start_parallel_cruds_atomicity(sync=True)

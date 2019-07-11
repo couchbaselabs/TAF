@@ -4,6 +4,7 @@ from rebalance_new.rebalance_base import RebalanceBaseTest
 from rebalance_new.swaprebalancetests import SwapRebalanceBase
 from BucketLib.BucketOperations import BucketHelper
 
+
 class RebalanceInOutTests(RebalanceBaseTest):
     def setUp(self):
         super(RebalanceInOutTests, self).setUp()
@@ -278,7 +279,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task in compact_tasks:
                 self.task.jython_task_manager.get_task_result(task)
-                
+
             if self.atomicity:
                 self._load_all_buckets_atomicty(gen, "rebalance_only_update")
             else:
@@ -292,7 +293,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
-
 
     def test_incremental_rebalance_out_in_with_mutation(self):
         """
@@ -358,7 +358,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self._load_all_buckets(self.cluster, gen_delete, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
 
-
     def test_rebalance_in_out_at_once(self):
         """
         PERFORMANCE:Rebalance in/out at once.
@@ -398,36 +397,12 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.verify_cluster_stats(self.num_items)
             self.bucket_util.verify_unacked_bytes_all_buckets()
 
-class RebalanceInOutDurabilityTests(SwapRebalanceBase):
+
+class RebalanceInOutDurabilityTests(RebalanceBaseTest):
     def setUp(self):
         super(RebalanceInOutDurabilityTests, self).setUp()
-
         self.do_stop_start = self.input.param("stop_start", False)
-
-        # Check to make sure we have replicas to run this tests
-#         self.assertTrue(self.num_replicas >= 1,
-#                         "Need at-least one replica to run this test")
-
-        # Rebalance-in all available nodes into the cluster
-        status, _ = RebalanceHelper.rebalance_in(self.servers,
-                                                 self.num_initial_servers-1,
-                                                 do_shuffle=False)
-        self.assertTrue(status, msg="Rebalance failed")
-
-        # Create buckets and load data into it
-        self.create_buckets()
-        data_load_tasks = self.start_load_phase()
-
-        # Wait for data loading tasks to complete
-        if self.atomicity:
-            self.task.jython_task_manager.get_task_result(data_load_tasks)
-        else:
-            for task in data_load_tasks:
-                self.task.jython_task_manager.get_task_result(task)
-
-            # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.swap_orchestrator = self.input.param("swap-orchestrator", False)
 
     def tearDown(self):
         super(RebalanceInOutDurabilityTests, self).tearDown()
@@ -443,8 +418,9 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
         Note: This is a Positive case. i.e: Durability should not be broken
         """
         master = self.cluster.master
-        creds = self.input.membase_settings
         def_bucket = self.bucket_util.buckets[0]
+        items = self.num_items
+        create_from = items
 
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:
@@ -463,42 +439,38 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
-        toBeEjectedNodes = self.cluster_util.pick_nodes(master,
-                                                      howmany=self.nodes_out)
-        optNodesIds = [node.id for node in toBeEjectedNodes]
+
+        toBeEjectedNodes = [self.cluster.servers[self.nodes_init - i - 1]
+                            for i in range(self.nodes_out)]
 
         if self.swap_orchestrator:
             status, content = self.cluster_util.find_orchestrator(master)
             self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
                             .format(status, content))
             if self.nodes_out is len(current_nodes):
-                optNodesIds.append(content)
+                toBeEjectedNodes.append(self.cluster.master)
             else:
-                optNodesIds[0] = content
+                toBeEjectedNodes[0] = self.cluster.master
 
-        for node in optNodesIds:
+        for node in toBeEjectedNodes:
             self.log.info("removing node {0} and rebalance afterwards"
                           .format(node))
 
-        new_swap_servers = self.servers[self.num_initial_servers:self.num_initial_servers+self.nodes_in]
-        for server in new_swap_servers:
-            otpNode = rest.add_node(creds.rest_username, creds.rest_password,
-                                    server.ip, server.port)
-            msg = "unable to add node {0} to the cluster"
-            self.assertTrue(otpNode, msg.format(server.ip))
+        servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
 
         if self.swap_orchestrator:
-            rest = RestConnection(new_swap_servers[0])
-            master = new_swap_servers[0]
+            rest = RestConnection(servs_in[0])
+            master = servs_in[0]
 
-        if self.do_access:
-            self.log.info("DATA ACCESS PHASE")
-            self.loaders = self.start_access_phase()
+        self.log.info("IN/OUT REBALANCE PHASE")
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], servs_in, toBeEjectedNodes)
 
-        self.log.info("SWAP REBALANCE PHASE")
-        rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
-                       ejectedNodes=optNodesIds)
-
+        # CRUDs while rebalance is running in parallel
+        self.gen_create = self.get_doc_generator(create_from,
+                                                 create_from + items)
+        self.sleep(10, "wait for rebalance to start")
+        tasks_info = self.loadgen_docs()
         if self.do_stop_start:
             # Rebalance is stopped at 20%, 40% and 60% completion
             retry = 0
@@ -520,18 +492,28 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
                         stopped = rest.stop_rebalance()
                         self.assertTrue(stopped, msg="unable to stop rebalance")
                         self.sleep(20)
-                        rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
-                                       ejectedNodes=optNodesIds)
+                        rebalance_task = self.task.async_rebalance(
+                            self.cluster.servers[:self.nodes_init] + servs_in, [], toBeEjectedNodes)
+#                         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
+#                                        ejectedNodes=optNodesIds)
                         break
                     elif retry > 100:
                         break
                     else:
                         retry += 1
                         self.sleep(1)
+
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result, "Rebalance Failed")
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
-                        .format(optNodesIds))
-        self.verification_phase()
+                        .format(toBeEjectedNodes))
+
+        self.bucket_util.verify_doc_op_task_exceptions(tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def test_rebalance_inout_with_durability_failure(self):
         """
@@ -547,10 +529,10 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
         Note: This is a Negative case. i.e: Durability will be broken
         """
         master = self.cluster.master
-        num_initial_servers = self.num_initial_servers
         creds = self.input.membase_settings
         def_bucket = self.bucket_util.buckets[0]
-
+        items = self.num_items
+        create_from = items
         # TODO: Enable verification
         """
         vbucket_info_dict = dict()
@@ -570,103 +552,67 @@ class RebalanceInOutDurabilityTests(SwapRebalanceBase):
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
-        toBeEjectedNodes = self.cluster_util.pick_nodes(master,
-                                                      howmany=self.nodes_out)
-        optNodesIds = [node.id for node in toBeEjectedNodes]
+        toBeEjectedNodes = [self.cluster.servers[self.nodes_init - i - 1]
+                            for i in range(self.nodes_out)]
 
         if self.swap_orchestrator:
             status, content = self.cluster_util.find_orchestrator(master)
             self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
                             .format(status, content))
             if self.nodes_out is len(current_nodes):
-                optNodesIds.append(content)
+                toBeEjectedNodes.append(self.cluster.master)
             else:
-                optNodesIds[0] = content
+                toBeEjectedNodes[0] = self.cluster.master
 
-        for node in optNodesIds:
+        for node in toBeEjectedNodes:
             self.log.info("removing node {0} and rebalance afterwards"
                           .format(node))
 
-        new_swap_servers = self.servers[num_initial_servers:num_initial_servers+self.nodes_in]
-        for server in new_swap_servers:
-            otpNode = rest.add_node(creds.rest_username, creds.rest_password,
-                                    server.ip, server.port)
-            msg = "unable to add node {0} to the cluster"
-            self.assertTrue(otpNode, msg.format(server.ip))
+        servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
+
+        for bucket in self.bucket_util.buckets:
+            durability_req = (bucket.replicaNumber + 1)/2 + 1
+            self.assertTrue(durability_req > len(current_nodes) - len(toBeEjectedNodes) + len(servs_in),
+                            "bucket replica is less than the available nodes in the cluster")
 
         if self.swap_orchestrator:
-            rest = RestConnection(new_swap_servers[0])
-            master = new_swap_servers[0]
+            rest = RestConnection(servs_in[0])
+            master = servs_in[0]
 
-        if self.do_access:
-            self.log.info("DATA ACCESS PHASE")
-            self.loaders = self.start_access_phase()
-
-        self.log.info("SWAP REBALANCE PHASE")
-        rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
-                       ejectedNodes=optNodesIds)
-
-        if self.do_stop_start:
-            # Rebalance is stopped at 20%, 40% and 60% completion
-            retry = 0
-            for expected_progress in (20, 40, 60):
-                self.log.info("STOP/START SWAP REBALANCE PHASE WITH PROGRESS {0}%"
-                              .format(expected_progress))
-                while True:
-                    progress = rest._rebalance_progress()
-                    if progress < 0:
-                        self.log.error("rebalance progress code : {0}"
-                                       .format(progress))
-                        break
-                    elif progress == 100:
-                        self.log.warn("Rebalance has already reached 100%")
-                        break
-                    elif progress >= expected_progress:
-                        self.log.info("Rebalance will be stopped with {0}%"
-                                      .format(progress))
-                        stopped = rest.stop_rebalance()
-                        self.assertTrue(stopped, msg="unable to stop rebalance")
-                        self.sleep(20)
-                        rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
-                                       ejectedNodes=optNodesIds)
-                        break
-                    elif retry > 100:
-                        break
-                    else:
-                        retry += 1
-                        self.sleep(1)
+        self.log.info("IN/OUT REBALANCE PHASE")
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], servs_in, toBeEjectedNodes)
+        self.sleep(10, "wait for rebalance to start")
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result, "Rebalance Failed")
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
-                        .format(optNodesIds))
-        # TODO: There will be failure in doc_count verification due to
-        # swap_rebalance. Need to update verification steps accordingly to
-        # satisfy this
-        self.verification_phase()
+                        .format(toBeEjectedNodes))
+
+        # CRUDs while durability is broken
+        ignore_exceptions = ["com.couchbase.client.core.error.DurabilityImpossibleException"]
+        self.gen_create = self.get_doc_generator(create_from,
+                                                 create_from + 1000)
+        tasks_info = self.loadgen_docs(ignore_exceptions=ignore_exceptions)
+        self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         # Add back first ejected node back into the cluster
         self.task.rebalance(self.cluster.nodes_in_cluster,
-                            [toBeEjectedNodes[0]], [])
+                            toBeEjectedNodes, [])
 
-        # Load doc into all vbuckets to verify durability
-        if self.atomicity:
-            gen_create = self.get_doc_generator('test_', 0, self.num_items)
-            task = self.task.async_load_gen_docs_atomicity(self.cluster, def_bucket,
-                                             gen_create, self.op_type , exp=0,
-                                             batch_size=10,
-                                             process_concurrency=8,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries, transaction_timeout=self.transaction_timeout, commit=self.transaction_commit)
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        for vb_num in range(0, self.vbuckets, 128):
+            self.target_vbucket = [vb_num]
+            self.log.info("Targeting vBucket: {}".format(vb_num))
+            gen_create = self.get_doc_generator(self.num_items,
+                                                self.num_items + 1000)
+            task = self.task.async_load_gen_docs(
+                self.cluster, def_bucket, gen_create, "create", 0,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout)
             self.task_manager.get_task_result(task)
-        else:
-            for vb_num in range(self.vbuckets):
-                gen_create = self.get_doc_generator(
-                    self.key, self.num_items, self.num_items+1000,
-                    doc_size=self.doc_size, doc_type=self.doc_type,
-                    vbuckets=self.vbuckets, target_vbucket=[vb_num])
-                task =  self.task.async_load_gen_docs(
-                    self.cluster, def_bucket, gen_create, "create", 0,
-                    replicate_to=self.replicate_to, persist_to=self.persist_to,
-                    durability_level=self.durability_level,
-                    timeout_secs=self.sdk_timeout)
-                self.task_manager.get_task_result(task)
