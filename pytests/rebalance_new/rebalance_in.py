@@ -498,7 +498,7 @@ class RebalanceInTests(RebalanceBaseTest):
                     if self.atomicity:
                         task = self.task.async_load_gen_docs_atomicity(
                                     self.cluster, self.bucket_util.buckets, self.gen_update,
-                                    "update",0,batch_size=20,timeout_secs=self.sdk_timeout,
+                                    "rebalance_only_update",0,batch_size=20,timeout_secs=self.sdk_timeout,
                                     process_concurrency=8, retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
                                     commit=self.transaction_commit,

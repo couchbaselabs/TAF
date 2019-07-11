@@ -151,13 +151,13 @@ class RebalanceBaseTest(BaseTestCase):
         self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
                         "Doc_ops failed in rebalance_base._load_all_buckets")
 
-    def _load_all_buckets_atomicty(self, kv_gen, op_type):
+    def _load_all_buckets_atomicty(self, kv_gen, op_type, sync=True):
         task = self.task.async_load_gen_docs_atomicity(
                     self.cluster,self.bucket_util.buckets, kv_gen, op_type,0,
                     batch_size=10,process_concurrency=8,replicate_to=self.replicate_to,
                     persist_to=self.persist_to,timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
                     transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,
-                    durability=self.durability_level)
+                    durability=self.durability_level, sync=sync)
         self.task.jython_task_manager.get_task_result(task)
 
 
