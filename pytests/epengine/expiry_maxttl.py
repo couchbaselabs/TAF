@@ -60,7 +60,7 @@ class ExpiryMaxTTL(BaseTestCase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            timeout_secs=self.sdk_timeout,
             compression=self.sdk_compression)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
@@ -79,7 +79,7 @@ class ExpiryMaxTTL(BaseTestCase):
             replicate_to=non_ttl_task_property["replicate_to"],
             persist_to=non_ttl_task_property["persist_to"],
             durability=non_ttl_task_property["durability"],
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            timeout_secs=self.sdk_timeout,
             compression=self.sdk_compression)
         ttl_task = self.task.async_load_gen_docs(
             self.cluster, bucket, ttl_gen,
@@ -88,7 +88,7 @@ class ExpiryMaxTTL(BaseTestCase):
             replicate_to=ttl_task_property["replicate_to"],
             persist_to=ttl_task_property["persist_to"],
             durability=ttl_task_property["durability"],
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            timeout_secs=self.sdk_timeout,
             compression=self.sdk_compression, print_ops_rate=False)
         tasks_info[non_ttl_task] = self.bucket_util.get_doc_op_info_dict(
             bucket, non_ttl_task_property["op_type"], 0,
@@ -411,7 +411,7 @@ class ExpiryMaxTTL(BaseTestCase):
         ttl_task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, ttl_gen_create, "read", self.maxttl,
             batch_size=10, process_concurrency=8,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            timeout_secs=self.sdk_timeout,
             compression=self.sdk_compression)
         self.task.jython_task_manager.get_task_result(ttl_task)
 
@@ -450,7 +450,8 @@ class ExpiryMaxTTL(BaseTestCase):
         2. Initiate doc_ops with higher sdk_timeout
         3. Sleep for time within the configured sdk_timeout
         4. Resume Memcached on target_nodes to make sure doc_ops go through
-        5. Make sure maxTTL is calculated only after the mutation is succeeded
+        5. Make sure maxTTL is calculated as soon as the active vbucket
+           receives the mutation
         :return:
         """
         shell_conn = dict()
@@ -478,11 +479,10 @@ class ExpiryMaxTTL(BaseTestCase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            timeout_secs=self.sdk_timeout,
             compression=self.sdk_compression)
 
-        self.sleep(self.sdk_timeout-30,
-                   "3. Sleep for time less than sdk_timeout")
+        self.sleep(self.maxttl, "3. Sleep for max_ttl time")
 
         # Revert Memcached error and close the shell_conn
         self.log.info("4. Resuming Memcached on target_nodes")
@@ -495,38 +495,35 @@ class ExpiryMaxTTL(BaseTestCase):
         self.task.jython_task_manager.get_task_result(doc_op_task)
 
         self.bucket_util._expiry_pager(val=1)
-        self.sleep(5, "6. Waiting for items to be purged (if any)")
+        self.sleep(10, "6. Waiting for items to be purged")
 
         # Read all expired docs to validate all keys present
         doc_op_task = self.task.async_load_gen_docs(
-            self.cluster, def_bucket, gen_create, "read", self.maxttl,
+            self.cluster, def_bucket, gen_create, "read",
             batch_size=10, process_concurrency=8,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-            compression=self.sdk_compression)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(doc_op_task)
 
-        self.log.info("7. Validating docs exists before TTL")
-        if len(doc_op_task.success.keys()) != self.num_items:
-            self.fail("Items deleted before MaxTTL time: %s"
-                      % doc_op_task.fail.keys())
-
-        self.sleep(self.maxttl, "8. Sleep for maxTTL time")
-        self.bucket_util._expiry_pager()
-        self.sleep(20, "9. Waiting for items to be purged")
-
-        # Read all expired docs to validate all keys present
-        doc_op_task = self.task.async_load_gen_docs(
-            self.cluster, def_bucket, gen_create, "read", self.maxttl,
-            batch_size=10, process_concurrency=8,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-            compression=self.sdk_compression)
-        self.task.jython_task_manager.get_task_result(doc_op_task)
-
-        self.log.info("10. Validating docs purged after TTL")
-        if len(doc_op_task.success.keys()) != 0:
-            self.fail("Items exsits after MaxTTL time: %s"
+        self.log.info("7. Validating docs expired after TTL, "
+                      "even before sync_write succeeds")
+        if len(doc_op_task.success.keys()) == self.num_items:
+            self.fail("No docs deleted after MaxTTL time: %s"
                       % doc_op_task.success.keys())
 
+        self.sleep(10, "8. Waiting for all docs to be purged")
+        # Read all expired docs to validate all keys present
+        doc_op_task = self.task.async_load_gen_docs(
+            self.cluster, def_bucket, gen_create, "read",
+            batch_size=10, process_concurrency=8,
+            timeout_secs=self.sdk_timeout)
+        self.task.jython_task_manager.get_task_result(doc_op_task)
+
+        self.log.info("9. Validating docs expired after TTL")
+        if len(doc_op_task.fail.keys()) != self.num_items:
+            self.fail("Items not deleted after MaxTTL time: %s"
+                      % doc_op_task.success.keys())
+
+        # Validate cas for purged items
         keys_with_cas = list()
         for key, result in doc_op_task.fail.items():
             if result['cas'] != 0:
@@ -534,6 +531,19 @@ class ExpiryMaxTTL(BaseTestCase):
         if len(keys_with_cas) != 0:
             self.fail("Following failed keys has CAS: %s" % keys_with_cas)
 
+        # Recreate all docs without any node issues
+        doc_op_task = self.task.async_load_gen_docs(
+            self.cluster, def_bucket, gen_create, "create", self.maxttl,
+            batch_size=10, process_concurrency=8,
+            timeout_secs=self.sdk_timeout,
+            compression=self.sdk_compression)
+        self.task.jython_task_manager.get_task_result(doc_op_task)
+
+        self.log.info("10. Validating docs exists after creation")
+        if len(doc_op_task.success.keys()) != self.num_items:
+            self.fail("Doc recreate failed for keys: %s"
+                      % doc_op_task.fail.keys())
+
         # Final doc_count validation
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(0)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
