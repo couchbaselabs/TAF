@@ -685,14 +685,16 @@ class BucketUtils:
                           flag=0, persist_to=0, replicate_to=0,
                           durability="", sdk_timeout=5,
                           only_store_hash=True, batch_size=10, pause_secs=1,
-                          compression=True, process_concurrency=8, retries=5):
+                          compression=True, process_concurrency=8, retries=5,
+                          ryow=False, check_persistence=False):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
             durability=durability, timeout_secs=sdk_timeout,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, compression=compression,
-            process_concurrency=process_concurrency, retries=retries)
+            process_concurrency=process_concurrency, retries=retries,
+            ryow=ryow, check_persistence=check_persistence)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,
@@ -700,7 +702,8 @@ class BucketUtils:
                                 pause_secs=1, timeout_secs=30,
                                 sdk_compression=True, process_concurrency=8,
                                 retries=5, durability="",
-                                ignore_exceptions=[], retry_exceptions=[]):
+                                ignore_exceptions=[], retry_exceptions=[],
+                                ryow=False, check_persistence=False):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -724,7 +727,8 @@ class BucketUtils:
                     cluster, bucket, gen, op_type, exp, flag, persist_to,
                     replicate_to, durability, timeout_secs,
                     only_store_hash, batch_size, pause_secs,
-                    sdk_compression, process_concurrency, retries)
+                    sdk_compression, process_concurrency, retries,
+                    ryow=ryow, check_persistence=check_persistence)
                 tasks_info[task] = self.get_doc_op_info_dict(
                     bucket, op_type, exp, replicate_to=replicate_to,
                     persist_to=persist_to, durability=durability,
@@ -741,7 +745,8 @@ class BucketUtils:
                               pause_secs=1, timeout_secs=30,
                               sdk_compression=True, process_concurrency=8,
                               retries=5, durability="",
-                              ignore_exceptions=[], retry_exceptions=[]):
+                              ignore_exceptions=[], retry_exceptions=[],
+                              ryow=False, check_persistence=False):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -763,7 +768,8 @@ class BucketUtils:
             persist_to, replicate_to,
             only_store_hash, batch_size, pause_secs, timeout_secs,
             sdk_compression, process_concurrency, retries, durability,
-            ignore_exceptions, retry_exceptions)
+            ignore_exceptions, retry_exceptions, ryow=ryow,
+            check_persistence=check_persistence)
 
         # Wait for all doc_loading tasks to complete and populate failures
         self.verify_doc_op_task_exceptions(tasks_info, cluster)

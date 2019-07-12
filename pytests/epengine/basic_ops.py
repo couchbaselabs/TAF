@@ -138,93 +138,16 @@ class basic_ops(BaseTestCase):
         return json_generator.generate_docs_bigdata(
             start=start, end=docs_per_day, value_size=document_size)
 
-    def test_doc_size_durable(self):
-        """
-        Basic tests for document CRUD operations using JSON docs
-        """
-        nodes_init = self.cluster.servers[1:2]
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-
-        def_bucket = self.bucket_util.buckets[0]
-        def_bucket.vbuckets = self.bucket_util.get_vbuckets(def_bucket.name)
-        if self.target_vbucket and type(self.target_vbucket) is not list:
-            self.target_vbucket = [self.target_vbucket]
-
-        self.log.info("Creating doc_generator..")
-        # Load basic docs into bucket
-        doc_create = doc_generator(
-            self.key, 0, self.num_items, doc_size=self.doc_size,
-            doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
-        self.log.info("doc_generator created")
-        task = self.task.async_load_gen_docs_durable(
-            self.cluster, def_bucket, doc_create, "create", 0,
-            batch_size=10, process_concurrency=4,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-            durability="majority", check_persistence=True)
-
-        self.task.jython_task_manager.get_task_result(task)
-        print(task.sdk_acked_curd_failed)
-        self.assertTrue(
-            len(task.sdk_acked_curd_failed) == 0,
-            "Durability failed for docs: %s" % task.sdk_acked_curd_failed)
-        self.assertTrue(
-            len(task.sdk_acked_pers_failed) == 0,
-            "Durability failed for docs: %s" % task.sdk_acked_pers_failed)
-
-    def test_doc_size_exceptions(self):
-        """
-        Basic tests for document CRUD operations using JSON docs
-        """
-#         self.sleep(10, "Wait for bucket to finish warm-up")
-        def_bucket = self.bucket_util.buckets[0]
-
-        self.cluster_util.add_node(self.servers[1])
-        if self.target_vbucket and type(self.target_vbucket) is not list:
-            self.target_vbucket = [self.target_vbucket]
-
-        self.log.info("Creating doc_generator..")
-        # Load basic docs into bucket
-        doc_create = doc_generator(
-            self.key, 0, 100, doc_size=self.doc_size,
-            doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
-        self.log.info("doc_generator created")
-        unwanted, retried = self.bucket_util.load_bucket_exceptions(
-            self.cluster, def_bucket, doc_create, "create", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-            durability="majority")
-
-        err = CouchbaseError(self.log,
-                             RemoteMachineShellConnection(self.servers[1]))
-        err.create(CouchbaseError.STOP_MEMCACHED)
-
-        doc_create = doc_generator(
-            self.key, 100, 200, doc_size=self.doc_size,
-            doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
-
-        unwanted, retried = self.bucket_util.load_bucket_exceptions(
-            self.cluster, def_bucket, doc_create, "create", 0,
-            batch_size=100, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-            durability="majority", ignore_exceptions=["RequestTimeoutException"])
-
-        err.revert(CouchbaseError.STOP_MEMCACHED)
-
-        unwanted, retried = self.bucket_util.load_bucket_exceptions(
-            self.cluster, def_bucket, doc_create, "create", 0,
-            batch_size=100, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-            durability="majority")
-
     def test_doc_size(self):
+        def check_durability_failures():
+            self.log.error(task.sdk_acked_curd_failed.keys())
+            self.log.error(task.sdk_exception_crud_succeed.keys())
+            self.assertTrue(
+                len(task.sdk_acked_curd_failed) == 0,
+                "Durability failed for docs: %s" % task.sdk_acked_curd_failed.keys())
+            self.assertTrue(
+                len(task.sdk_exception_crud_succeed) == 0,
+                "Durability failed for docs: %s" % task.sdk_acked_curd_failed.keys())
         """
         Basic tests for document CRUD operations using JSON docs
         """
@@ -263,11 +186,15 @@ class basic_ops(BaseTestCase):
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, doc_create, "create", 0,
-            batch_size=10, process_concurrency=8,
+            batch_size=self.batch_size, process_concurrency=self.process_concurrency,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            ryow=self.ryow, check_persistence=self.check_persistence)
         self.task.jython_task_manager.get_task_result(task)
+
+        if self.ryow:
+            check_durability_failures()
 
         # Retry doc_exception code
         self.log.info("Validating failed doc's (if any) exceptions")
@@ -326,21 +253,24 @@ class basic_ops(BaseTestCase):
             self.log.info("Performing 'update' mutation over the docs")
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "update", 0,
-                batch_size=10, process_concurrency=8,
+                batch_size=self.batch_size, process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                ryow=self.ryow, check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
             ref_val["ops_update"] = (doc_update.end - doc_update.start
                                      + len(task.fail.keys()))
             if self.durability_level:
                 ref_val["sync_write_committed_count"] += \
                     (doc_update.end - doc_update.start)
+            if self.ryow:
+                check_durability_failures()
 
             # Read all the values to validate update operation
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "read", 0,
-                batch_size=10, process_concurrency=8,
+                batch_size=self.batch_size, process_concurrency=self.process_concurrency,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
             self.task.jython_task_manager.get_task_result(task)
 
@@ -357,10 +287,11 @@ class basic_ops(BaseTestCase):
             self.log.info("Performing 'delete' mutation over the docs")
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "delete", 0,
-                batch_size=10, process_concurrency=8,
+                batch_size=self.batch_size, process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                ryow=self.ryow, check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
             expected_num_items = self.num_items \
                                  - (self.num_items - num_item_start_for_crud)
@@ -369,6 +300,8 @@ class basic_ops(BaseTestCase):
             if self.durability_level:
                 ref_val["sync_write_committed_count"] += \
                     (doc_update.end - doc_update.start)
+            if self.ryow:
+                check_durability_failures()
 
             # Read all the values to validate update operation
             task = self.task.async_load_gen_docs(

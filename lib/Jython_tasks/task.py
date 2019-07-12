@@ -914,7 +914,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                                          % self.op_type))
 
 
-
 class Durability(Task):
 
     def __init__(self, cluster, task_manager, bucket, clients, generator,
@@ -926,6 +925,8 @@ class Durability(Task):
 
         super(Durability, self).__init__("DurabilityDocumentsMainTask{}".format(time.time()))
         self.majority_value = majority_value
+        self.fail = {}
+        self.success = {}
         self.create_failed = {}
         self.update_failed = {}
         self.delete_failed = {}
@@ -1110,7 +1111,7 @@ class Durability(Task):
                     self.create_failed.update(f_docs)
             elif self.op_type == 'update':
                 self.docs_to_be_updated.update(
-                    self.batch_read(key_value.keys()))
+                    self.batch_read(key_value.keys())[0])
                 _, f_docs = self.batch_update(
                     key_value, persist_to=self.persist_to,
                     replicate_to=self.replicate_to, timeout=self.timeout,
@@ -1120,7 +1121,7 @@ class Durability(Task):
                 self.update_failed.update(f_docs)
             elif self.op_type == 'delete':
                 self.docs_to_be_deleted.update(
-                    self.batch_read(key_value.keys()))
+                    self.batch_read(key_value.keys())[0])
                 success, fail = self.batch_delete(key_value,
                                                   persist_to=self.persist_to,
                                                   replicate_to=self.replicate_to,
@@ -1134,11 +1135,19 @@ class Durability(Task):
             self.write_offset += len(key_value)
 
         def Persistence(self):
-            self.generator_reader = copy.deepcopy(self.generator)
-            self.start = self.generator_reader._doc_gen.start
-            self.generator_reader._doc_gen.itr = self.generator_reader._doc_gen.start
-            self.end = self.generator_reader._doc_gen.end
-            self.persistence_offset = self.generator_reader._doc_gen.start
+            partition_gen = copy.deepcopy(self.generator._doc_gen)
+            partition_gen.start = self.generator._doc_gen.start
+            partition_gen.itr = self.generator._doc_gen.start
+            partition_gen.end = self.generator._doc_gen.end
+
+            self.generator_persist = BatchedDocumentGenerator(
+                                    partition_gen,
+                                    self.batch_size)
+
+            self.start = self.generator._doc_gen.start
+            self.end = self.generator._doc_gen.end
+            self.generator_persist._doc_gen.itr = self.generator_persist._doc_gen.start
+            self.persistence_offset = self.generator_persist._doc_gen.start
             shells = {}
 
             for server in self.cluster.servers:
@@ -1147,12 +1156,12 @@ class Durability(Task):
 
             while True:
                 if self.persistence_offset < self.write_offset or self.persistence_offset == self.end:
-#                     log.info("Persistence: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"%
-#                              (self.persistence_offset,
-#                               self.write_offset,
-#                               self.end))
-                    if self.generator_reader._doc_gen.has_next():
-                        doc = self.generator_reader._doc_gen.next()
+                    self.test_log.debug("Persistence: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"%
+                                       (self.persistence_offset,
+                                        self.write_offset,
+                                        self.end))
+                    if self.generator_persist._doc_gen.has_next():
+                        doc = self.generator_persist._doc_gen.next()
                         key, val = doc[0], doc[1]
                         vBucket = (((zlib.crc32(key)) >> 16) & 0x7fff) & (len(self.bucket.vbuckets)-1)
                         nodes = [self.bucket.vbuckets[vBucket].master] + self.bucket.vbuckets[vBucket].replica
@@ -1164,7 +1173,7 @@ class Durability(Task):
                                     if key_is_dirty in ["true", "True", "TRUE"]:
                                         self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
                                     else:
-                                        self.test_log.debug("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                        self.test_log.info("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
                                         count += 1
                             except:
                                 pass
@@ -1220,17 +1229,23 @@ class Durability(Task):
                 cbstat.shellConn.disconnect()
 
         def Reader(self):
-            self.generator_reader = copy.deepcopy(self.generator)
-            self.start = self.generator_reader._doc_gen.start
-            self.generator_reader._doc_gen.itr = self.generator_reader._doc_gen.start
-            self.end = self.generator_reader._doc_gen.end
-            self.read_offset = self.generator_reader._doc_gen.start
+            partition_gen = copy.deepcopy(self.generator._doc_gen)
+            partition_gen.start = self.generator._doc_gen.start
+            partition_gen.itr = self.generator._doc_gen.start
+            partition_gen.end = self.generator._doc_gen.end
 
+            self.generator_reader = BatchedDocumentGenerator(
+                                    partition_gen,
+                                    self.batch_size)
+
+            self.start = self.generator._doc_gen.start
+            self.end = self.generator._doc_gen.end
+            self.read_offset = self.generator._doc_gen.start
             while True:
                 if self.read_offset < self.write_offset or self.read_offset == self.end:
                     self.test_log.debug(
-                        "Reader: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"
-                        % (self.read_offset, self.write_offset, self.end))
+                        "Reader: ReadOffset=%s, %sOffset=%s, Reader: FinalOffset=%s"
+                        % (self.read_offset, self.op_type, self.write_offset, self.end))
                     if self.generator_reader._doc_gen.has_next():
                         doc = self.generator_reader._doc_gen.next()
                         key, val = doc[0], doc[1]
@@ -1253,7 +1268,7 @@ class Durability(Task):
                                     % (key, result))
                         if self.op_type == 'update':
                             result = self.client.getFromReplica(key, ReplicaMode.ALL)
-                            if key not in self.update_failed[self.instance].keys():
+                            if key not in self.update_failed.keys():
                                 if len(result) < self.majority_value:
                                     self.sdk_acked_curd_failed.update({key: val})
                                     self.test_log.error(
@@ -1262,7 +1277,7 @@ class Durability(Task):
                                 elif len(result) >= self.majority_value:
                                     temp_count = 0
                                     for doc in result:
-                                        if doc["value"] == self.docs_to_be_updated[key][2]:
+                                        if doc["value"] == self.docs_to_be_updated[key]["value"]:
                                             self.sdk_acked_curd_failed.update({key: val})
                                             self.test_log.error(
                                                 "Doc content is not updated although SDK reports Durable, Key = %s getfromReplica = %s"
@@ -1273,18 +1288,18 @@ class Durability(Task):
                                         self.sdk_acked_curd_failed.update({key: val})
                             else:
                                 for doc in result:
-                                    if doc["value"] != self.docs_to_be_updated[key][2]:
+                                    if doc["value"] != self.docs_to_be_updated[key]["value"]:
                                         self.sdk_exception_crud_succeed.update({key: val})
                                         self.test_log.error(
                                             "Doc content is updated although SDK threw exception, Key = %s getfromReplica = %s"
                                             % (key, result))
                         if self.op_type == 'delete':
                             result = self.client.getFromReplica(key, ReplicaMode.ALL)
-                            if key not in self.delete_failed[self.instance].keys():
+                            if key not in self.delete_failed.keys():
                                 if len(result) > (self.bucket.replicaNumber+1 - self.majority_value):
                                     self.sdk_acked_curd_failed.update(result[0])
                                     self.test_log.error(
-                                        "Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"
+                                        "Key isn't durably deleted although SDK reports Durable, Key = %s getfromReplica = %s"
                                         % (key, result))
                             elif len(result) >= self.majority_value:
                                 self.test_log.warn(

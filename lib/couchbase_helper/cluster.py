@@ -125,7 +125,8 @@ class ServerTasks(object):
                             active_resident_threshold=100,
                             durability="", print_ops_rate=True,
                             task_identifier="",
-                            skip_read_on_error=False):
+                            skip_read_on_error=False,
+                            ryow=False, check_persistence=False):
 
         self.log.debug("Loading documents to {}".format(bucket.name))
         clients = []
@@ -137,17 +138,32 @@ class ServerTasks(object):
                                            bucket)
             clients.append(client)
         if active_resident_threshold == 100:
-            _task = jython_tasks.LoadDocumentsGeneratorsTask(
-                cluster, self.jython_task_manager, bucket, clients,
-                [generator], op_type, exp, exp_unit="seconds", flag=flag,
-                persist_to=persist_to, replicate_to=replicate_to,
-                only_store_hash=only_store_hash,
-                batch_size=batch_size, pause_secs=pause_secs,
-                timeout_secs=timeout_secs, compression=compression,
-                process_concurrency=process_concurrency,
-                print_ops_rate=print_ops_rate, retries=retries,
-                durability=durability, task_identifier=task_identifier,
-                skip_read_on_error=skip_read_on_error)
+            if not ryow:
+                _task = jython_tasks.LoadDocumentsGeneratorsTask(
+                    cluster, self.jython_task_manager, bucket, clients,
+                    [generator], op_type, exp, exp_unit="seconds", flag=flag,
+                    persist_to=persist_to, replicate_to=replicate_to,
+                    only_store_hash=only_store_hash,
+                    batch_size=batch_size, pause_secs=pause_secs,
+                    timeout_secs=timeout_secs, compression=compression,
+                    process_concurrency=process_concurrency,
+                    print_ops_rate=print_ops_rate, retries=retries,
+                    durability=durability, task_identifier=task_identifier,
+                    skip_read_on_error=skip_read_on_error)
+            else:
+                if durability.lower() != "none":
+                    majority_value = (bucket.replicaNumber + 1)/2 + 1
+                else:
+                    majority_value = 1
+                _task = jython_tasks.Durability(
+                    cluster, self.jython_task_manager, bucket, clients, generator,
+                    op_type, exp, flag=flag, persist_to=persist_to,
+                    replicate_to=replicate_to, only_store_hash=only_store_hash,
+                    batch_size=batch_size, pause_secs=pause_secs,
+                    timeout_secs=timeout_secs, compression=compression,
+                    process_concurrency=process_concurrency, retries=retries,
+                    durability=durability, majority_value=majority_value,
+                    check_persistence=check_persistence)
         else:
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, client, [generator],
@@ -252,37 +268,6 @@ class ServerTasks(object):
                                                         compression=compression,
                                                         process_concurrency=process_concurrency, retries=retries, update_count=update_count,
                                                         transaction_timeout=transaction_timeout, commit=commit, durability=durability, sync=sync)
-        self.jython_task_manager.add_new_task(_task)
-        return _task
-
-    def async_load_gen_docs_durable(self, cluster, bucket, generator, op_type,
-                                    exp=0, flag=0, persist_to=0,
-                                    replicate_to=0, only_store_hash=True,
-                                    batch_size=1, pause_secs=1,
-                                    timeout_secs=5, compression=True,
-                                    process_concurrency=1, retries=5,
-                                    durability="", check_persistence=False):
-
-        self.log.debug("Loading documents to {}".format(bucket.name))
-        clients = []
-        gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
-        gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
-        for _ in range(gen_start, gen_end, gen_range):
-            client = VBucketAwareMemcached(RestConnection(cluster.master),
-                                           bucket)
-            clients.append(client)
-
-        majority_value = (bucket.replicaNumber + 1)/2 + 1
-        _task = jython_tasks.Durability(
-            cluster, self.jython_task_manager, bucket, clients, generator,
-            op_type, exp, flag=flag, persist_to=persist_to,
-            replicate_to=replicate_to, only_store_hash=only_store_hash,
-            batch_size=batch_size, pause_secs=pause_secs,
-            timeout_secs=timeout_secs, compression=compression,
-            process_concurrency=process_concurrency, retries=retries,
-            durability=durability, majority_value=majority_value,
-            check_persistence=check_persistence)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

@@ -23,9 +23,15 @@ class RebalanceInTests(RebalanceBaseTest):
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, [])
-        time.sleep(15)
+        time.sleep(10)
 
-        tasks_info = self.loadgen_docs(sync=self.sync)
+        tasks_info = self.bucket_util._async_load_all_buckets(
+            self.cluster, self.gen_create, "create", 0,
+            batch_size=self.batch_size, process_concurrency=self.process_concurrency,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            durability=self.durability_level,
+            ryow=self.ryow, check_persistence=self.check_persistence)
 
         self.task_manager.get_task_result(rebalance_task)
         for task in tasks_info.keys():
@@ -33,7 +39,21 @@ class RebalanceInTests(RebalanceBaseTest):
             if task.__class__ == jython_tasks.Durability:
                 self.log.error(task.sdk_acked_curd_failed.keys())
                 self.log.error(task.sdk_exception_crud_succeed.keys())
-
+                self.assertTrue(
+                    len(task.sdk_acked_curd_failed) == 0,
+                    "sdk_acked_curd_failed for docs: %s" % task.sdk_acked_curd_failed.keys())
+                self.assertTrue(
+                    len(task.sdk_exception_crud_succeed) == 0,
+                    "sdk_exception_crud_succeed for docs: %s" % task.sdk_exception_crud_succeed.keys())
+                self.assertTrue(
+                    len(task.sdk_exception_crud_succeed) == 0,
+                    "create failed for docs: %s" % task.create_failed.keys())
+                self.assertTrue(
+                    len(task.sdk_exception_crud_succeed) == 0,
+                    "update failed for docs: %s" % task.update_failed.keys())
+                self.assertTrue(
+                    len(task.sdk_exception_crud_succeed) == 0,
+                    "delete failed for docs: %s" % task.delete_failed.keys())
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
         self.cluster.nodes_in_cluster.extend(servs_in)
@@ -55,7 +75,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         batch_size=10))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
 
     def test_rebalance_in_with_ops(self):
         items = self.num_items

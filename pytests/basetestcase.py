@@ -86,6 +86,12 @@ class BaseTestCase(unittest.TestCase):
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
         self.durability_level = self.input.param("durability", "")
+
+        # Doc Loader Params
+        self.process_concurrency = self.input.param("process_concurrency", 8)
+        self.batch_size = self.input.param("batch_size", 20)
+        self.ryow = self.input.param("ryow", False)
+        self.check_persistence = self.input.param("check_persistence", False)
         # End of client specific parameters
 
         # initial number of items in the cluster
