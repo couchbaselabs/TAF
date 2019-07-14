@@ -134,7 +134,7 @@ class BucketParamTest(BaseTestCase):
             # Verify doc load count after each mutation cycle
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(doc_count)
-        return start_doc_for_insert
+        return doc_count, start_doc_for_insert
 
     def test_replica_update(self):
         if self.nodes_init < 2:
