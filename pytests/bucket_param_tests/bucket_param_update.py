@@ -111,9 +111,15 @@ class BucketParamTest(BaseTestCase):
             self.sleep(5, "Wait for rebalance to start")
 
             # Wait for all tasks to complete
+            doc_ops_failed = False
             self.task.jython_task_manager.get_task_result(rebalance)
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
+                if len(task.fail.keys()) != 0:
+                    doc_ops_failed = True
+
+            if doc_ops_failed:
+                self.assertFalse("Few doc_ops failed")
 
             # Assert if rebalance failed
             self.assertTrue(rebalance.result,
@@ -127,6 +133,9 @@ class BucketParamTest(BaseTestCase):
                 timeout_secs=self.sdk_timeout,
                 batch_size=10, process_concurrency=8)
             self.task_manager.get_task_result(update_task)
+
+            if len(update_task.fail.keys()) != 0:
+                self.fail("Update failed after rebalance for replica update")
 
             # Update the bucket's replica number
             def_bucket.replicaNumber = replica_num
