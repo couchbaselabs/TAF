@@ -43,7 +43,7 @@ Enable root login
 
 ```bash
 cd /etc/ssh
-vi sshd-config
+vi sshd_config
 ```
 
 Enable root login for the vagrant boxes. To do that, change this setting(It may be different on various linus flavors):
