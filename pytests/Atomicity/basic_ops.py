@@ -22,7 +22,7 @@ class basic_ops(BaseTestCase):
         self.bucket_util.add_rbac_user()
         
         if self.default_bucket:
-            self.bucket_util.create_default_bucket(replica=self.num_replicas,
+            self.bucket_util.create_default_bucket(replica=self.num_replicas, ram_quota=self.bucket_size,
                                                compression_mode=self.compression_mode)
             
         if self.num_buckets:
