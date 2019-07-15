@@ -177,22 +177,22 @@ class RebalanceDurability(RebalanceBaseTest):
         num_of_docs_to_insert = 1000
 
         # Connection to run cbstats command
-        master_shell_conn = RemoteMachineShellConnection(self.cluster.master)
-        master_node_cb_stat = Cbstats(master_shell_conn)
-
-        # Dict to store vb_seq_no info
-        vb_info = dict()
-        vb_info["init"] = master_node_cb_stat.vbucket_seqno(def_bucket.name)
+#         master_shell_conn = RemoteMachineShellConnection(self.cluster.master)
+#         master_node_cb_stat = Cbstats(master_shell_conn)
+# 
+#         # Dict to store vb_seq_no info
+#         vb_info = dict()
+#         vb_info["init"] = master_node_cb_stat.vbucket_seqno(def_bucket.name)
 
         # Rebalance all nodes expect master one-by-one
         for _ in range(self.nodes_init-1):
-            rebalance_out_task = self.task.rebalance(
+            rebalance_result = self.task.rebalance(
                 self.cluster.servers[:nodes_in_cluster], [],
                 [self.cluster.servers[nodes_in_cluster-1]])
-            self.task.jython_task_manager.get_task_result(rebalance_out_task)
+            self.assertTrue(rebalance_result)
             nodes_in_cluster -= 1
 
-            if nodes_in_cluster <= nodes_required_for_durability:
+            if nodes_in_cluster <= nodes_required_for_durability and self.durability_level and self.durability_helper.lower() != "none":
                 durability_will_fail = True
 
             tasks = list()
@@ -201,39 +201,43 @@ class RebalanceDurability(RebalanceBaseTest):
             gen_create = doc_generator(self.key, self.num_items,
                                        self.num_items+num_of_docs_to_insert)
             tasks.append(self.task.async_load_gen_docs(
-                self.cluster, def_bucket, gen_create, "create", 0,
-                batch_size=20, persist_to=self.persist_to,
-                replicate_to=self.replicate_to,
-                pause_secs=5, timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries))
+                self.cluster, def_bucket, gen_create, "create", exp=0,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, timeout_secs=self.sdk_timeout,
+                batch_size=20))
+
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_update, "update", 0,
-                batch_size=20, persist_to=self.persist_to,
-                replicate_to=self.replicate_to,
-                pause_secs=5, timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries))
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, timeout_secs=self.sdk_timeout,
+                batch_size=20))
 
             # Wait for all CRUD tasks to complete
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
 
             # Fetch vb_seq_no after the CRUDs
-            vb_info["afterCrud"] = \
-                master_node_cb_stat.vbucket_seqno(def_bucket.name)
+#             vb_info["afterCrud"] = \
+#                 master_node_cb_stat.vbucket_seqno(def_bucket.name)
 
             if durability_will_fail:
                 self.log.info("Durability broken with cluster {0}, replica {1}"
                               .format(self.cluster.servers[:nodes_in_cluster],
                                       self.num_replicas))
-                # Verification of seq_no for each vbucket
-                for vb_num in range(0, self.vbuckets):
+                for task in tasks:
                     self.assertTrue(
-                        vb_info["init"][vb_num]["abs_high_seqno"]
-                        == vb_info["afterCrud"][vb_num]["abs_high_seq_no"],
-                        "Seq_no mismatch for vbucket {0}. {1}->{2}"
-                        .format(vb_num,
-                                vb_info["init"][vb_num]["abs_high_seqno"],
-                                vb_info["afterCrud"][vb_num]["abs_high_seqno"]))
+                        len(task.fail) == num_of_docs_to_insert or
+                        len(task.fail) == self.num_items,
+                        "Items crud succeeded although  majority condition failed.")
+                # Verification of seq_no for each vbucket
+#                 for vb_num in range(0, self.vbuckets):
+#                     self.assertTrue(
+#                         vb_info["init"][vb_num]["abs_high_seqno"]
+#                         == vb_info["afterCrud"][vb_num]["abs_high_seq_no"],
+#                         "Seq_no mismatch for vbucket {0}. {1}->{2}"
+#                         .format(vb_num,
+#                                 vb_info["init"][vb_num]["abs_high_seqno"],
+#                                 vb_info["afterCrud"][vb_num]["abs_high_seqno"]))
                 # Break from loop that is running rebalance_out tasks
                 break
             else:
@@ -254,18 +258,18 @@ class RebalanceDurability(RebalanceBaseTest):
                     self.task.jython_task_manager.get_task_result(task)
 
             # Fetch vb_seq_no after the CRUDs
-            vb_info["afterCrud"] = \
-                master_node_cb_stat.vbucket_seqno(def_bucket.name)
-
-        # Disconnect the remote_shell connection
-        master_shell_conn.disconnect()
+#             vb_info["afterCrud"] = \
+#                 master_node_cb_stat.vbucket_seqno(def_bucket.name)
+# 
+#         # Disconnect the remote_shell connection
+#         master_shell_conn.disconnect()
 
         # Rebalance-in single node back into the cluster
-        rebalance_in_task = self.task.rebalance(
+        rebalance_result = self.task.rebalance(
             self.cluster.servers[:nodes_in_cluster],
-            [self.cluster.servers[:nodes_in_cluster+1]], [])
+            self.cluster.servers[nodes_in_cluster:nodes_in_cluster+1], [])
         # Wait for rebalance-in task to complete
-        self.task.jython_task_manager.get_task_result(rebalance_in_task)
+        self.assertTrue(rebalance_result)
 
         # Reset the tasks list
         tasks = list()
@@ -274,23 +278,24 @@ class RebalanceDurability(RebalanceBaseTest):
         gen_create = doc_generator(self.key, self.num_items,
                                    self.num_items+num_of_docs_to_insert)
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, def_bucket, gen_create, "create", 0,
-            batch_size=20, persist_to=self.persist_to,
-            replicate_to=self.replicate_to,
-            pause_secs=5, timeout_secs=self.sdk_timeout,
-            retries=self.sdk_retries))
+            self.cluster, def_bucket, gen_create, "create", exp=0,
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            batch_size=20))
+
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_update, "update", 0,
-            batch_size=20, persist_to=self.persist_to,
-            replicate_to=self.replicate_to,
-            pause_secs=5, timeout_secs=self.sdk_timeout,
-            retries=self.sdk_retries))
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            batch_size=20))
 
         # Wait for all CRUD tasks to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-
-        # After rebalance-in durability should works fine
+            self.assertTrue(
+                len(task.fail) == 0,
+                "Items crud failed after fulfilling the majority condition.")
+        # After rebalance-in durability should work fine
         # So recalculating the self.num_items to match gen_create loader
         self.num_items += num_of_docs_to_insert
 

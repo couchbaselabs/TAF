@@ -1829,6 +1829,7 @@ class DocumentsValidatorTask(Task):
                                "{}".format(
                 ValidateDocumentsTask.wrong_values.__len__(),
                 ValidateDocumentsTask.wrong_values))
+        self.client.close()
         self.complete_task()
 
     def get_tasks(self, generator):
