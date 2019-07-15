@@ -3543,7 +3543,7 @@ class Atomicity(Task):
             len_keys = len(Atomicity.all_keys)
             if len(Atomicity.update_keys) == 0 and "rebalance" not in self.op_type:
                 #Atomicity.update_keys = random.sample(Atomicity.all_keys,random.randint(1,len_keys))
-                Atomicity.update_keys = random.sample(Atomicity.all_keys,random.randint(1,len_keys))
+                Atomicity.update_keys = random.sample(Atomicity.all_keys,random.randint(20,len_keys))
 
             for op_type in self.op_type:
                 if op_type == "create":
