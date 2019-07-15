@@ -123,7 +123,7 @@ class RebalanceBaseTest(BaseTestCase):
         :param to_add: List of nodes to be added.
         :param to_remove: List of nodes to be removed.
         """
-        serverinfo = self.servers[0]
+        serverinfo = self.cluster.master
         rest = RestConnection(serverinfo)
         for node in to_add:
             rest.add_node(user=serverinfo.rest_username,

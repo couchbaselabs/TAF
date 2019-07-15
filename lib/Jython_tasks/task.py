@@ -1692,6 +1692,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression)
+        self.thread_name = "ValidateDocumentsTask-{}_{}_{}".format(
+            generator._doc_gen.start, generator._doc_gen.end, op_type)
 
         self.generator = generator
         self.op_type = op_type
@@ -1768,7 +1770,7 @@ class DocumentsValidatorTask(Task):
                  op_type, exp, flag=0, only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=60, compression=True,
                  process_concurrency=4):
-        super(DocumentsValidatorTask, self).__init__("ValidateDocumentsTask_{}"
+        super(DocumentsValidatorTask, self).__init__("DocumentsValidatorTask_{}"
                                                      .format(time.time()))
         self.cluster = cluster
         self.exp = exp

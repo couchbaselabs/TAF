@@ -3768,7 +3768,6 @@ class RemoteMachineShellConnection:
 
     def change_env_variables(self, dict):
         prefix = "\\n    "
-        shell = self._ssh_client.invoke_shell()
         _, sv, _ = self.get_cbversion("linux")
         if sv in COUCHBASE_FROM_SPOCK:
             init_file = "couchbase-server"
@@ -3829,10 +3828,8 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
             o, r = self.execute_command("net start couchbaseserver")
             self.log_command_output(o, r)
-        shell.close()
 
     def reset_env_variables(self):
-        shell = self._ssh_client.invoke_shell()
         if getattr(self, "info", None) is None:
             self.info = self.extract_remote_info()
         """
@@ -3866,7 +3863,6 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
             o, r = self.execute_command("net start couchbaseserver")
             self.log_command_output(o, r)
-        shell.close()
 
     def set_node_name(self, name):
         """Edit couchbase-server shell script in place and set custom node name.
