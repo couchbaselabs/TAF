@@ -56,34 +56,38 @@ class DurabilityFailureTests(DurabilityTestsBase):
             # Fetch vbucket seq_no stats from vb_seqno command for verification
             vb_info["init"].update(cbstat_obj[node.ip]
                                    .vbucket_seqno(self.bucket.name))
-        # Perform durable SET operation
-        d_create_task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_load, "create",
-            batch_size=10, process_concurrency=8,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, skip_read_on_error=True)
-        self.task.jython_task_manager.get_task_result(d_create_task)
 
-        # Fetch vbucket seq_no status from vb_seqno command after CREATE task
-        for node in nodes_in_cluster:
-            vb_info["failure_stat"].update(cbstat_obj[node.ip]
-                                           .vbucket_seqno(self.bucket.name))
+        # MB-34064 - Try same CREATE twice to validate doc cleanup in server
+        for _ in range(2):
+            # Perform durable SET operation
+            d_create_task = self.task.async_load_gen_docs(
+                self.cluster, self.bucket, gen_load, "create",
+                batch_size=10, process_concurrency=8,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout, skip_read_on_error=True)
+            self.task.jython_task_manager.get_task_result(d_create_task)
 
-        # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(0)
-        self.assertTrue(len(d_create_task.fail.keys()) == self.num_items,
-                        msg=err_msg)
-        if vb_info["init"] != vb_info["failure_stat"]:
-            self.log_failure("Failover stats mismatch. {0} != {1}"
-                             .format(vb_info["init"], vb_info["failure_stat"]))
+            # Fetch vbucket seq_no status from cbstats after CREATE task
+            for node in nodes_in_cluster:
+                vb_info["failure_stat"].update(
+                    cbstat_obj[node.ip].vbucket_seqno(self.bucket.name))
 
-        validation_passed = \
-            self.durability_helper.validate_durability_exception(
-                d_create_task.fail,
-                DurabilityHelper.EXCEPTIONS["durabilility_impossible"])
-        if not validation_passed:
-            self.log_failure("Unexpected exception type")
+            # Verify initial doc load count
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(0)
+            self.assertTrue(len(d_create_task.fail.keys()) == self.num_items,
+                            msg=err_msg)
+            if vb_info["init"] != vb_info["failure_stat"]:
+                self.log_failure(
+                    "Failover stats mismatch. {0} != {1}"
+                    .format(vb_info["init"], vb_info["failure_stat"]))
+
+            validation_passed = \
+                self.durability_helper.validate_durability_exception(
+                    d_create_task.fail,
+                    DurabilityHelper.EXCEPTIONS["durabilility_impossible"])
+            if not validation_passed:
+                self.log_failure("Unexpected exception type")
 
         # Perform aync_write to create the documents
         async_create_task = self.task.async_load_gen_docs(
