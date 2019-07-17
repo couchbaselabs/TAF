@@ -515,9 +515,8 @@ class GenericLoadingTask(Task):
         try:
             self._process_values_for_create(key_val)
             client = shared_client or self.client
-            retry_docs = key_val
             success, fail = client.setMulti(
-                retry_docs, self.exp, exp_unit=self.exp_unit,
+                key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
@@ -714,11 +713,11 @@ class GenericLoadingTask(Task):
                 value_json['mutated'] = 0
                 value = Json.dumps(value_json)
             except ValueError:
+                value = Json.dumps(value)
+            except TypeError:
                 self.random.seed(key)
                 index = self.random.choice(range(len(value)))
                 value = value[0:index] + self.random.choice(string.ascii_uppercase) + value[index + 1:]
-            except TypeError:
-                value = Json.dumps(value)
             except Exception, e:
                 self.test_log.error(e)
             finally:

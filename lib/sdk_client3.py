@@ -372,7 +372,8 @@ class SDKClient(object):
                                             time_unit=time_unit,
                                             durability=durability)
 
-            insertResult = self.collection.insert(key, content, options)
+            # Returns com.couchbase.client.java.kv.MutationResult object
+            _ = self.collection.insert(key, content, options)
             result.update({"key": key, "value": content,
                            "error": None, "status": True})
         except KeyExistsException as ex:
@@ -494,7 +495,9 @@ class SDKClient(object):
 
         docs = []
         for key, value in keys.items():
-            content = self.__translate_to_json_object(value, doc_type)
+            content = value
+            if doc_type == "json":
+                content = self.__translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
         result = doc_op().bulkInsert(self.collection, docs, exp, exp_unit,

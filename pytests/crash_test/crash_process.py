@@ -1,11 +1,14 @@
 from random import randint
 
+from Rest_Connection import RestConnection
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from crash_test.constants import signum
+from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 
 
 class CrashTest(BaseTestCase):
@@ -66,7 +69,6 @@ class CrashTest(BaseTestCase):
                 persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries,
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
@@ -116,9 +118,11 @@ class CrashTest(BaseTestCase):
         3. Wait for load bucket task to complete
         4. Validate the docs for durability
         """
+        error_to_simulate = self.input.param("simulate_error", None)
         def_bucket = self.bucket_util.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
+        error_sim = CouchbaseError(self.log, remote)
         target_vbuckets = self.getVbucketNumbers(remote, def_bucket.name,
                                                  self.target_node)
         if len(target_vbuckets) == 0:
@@ -132,8 +136,9 @@ class CrashTest(BaseTestCase):
             self.key, self.num_items, self.num_items+self.new_docs_to_add,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
+            target_vbucket=target_vbuckets,
             vbuckets=self.vbuckets)
+
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets, gen_load, "create",
@@ -144,37 +149,69 @@ class CrashTest(BaseTestCase):
                 persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries,
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
                 sync=self.sync)
         else:
             task = self.task.async_load_gen_docs(
-                self.cluster, def_bucket, gen_load, "create", 0,
-                batch_size=10, timeout_secs=self.sdk_timeout)
+                self.cluster, def_bucket, gen_load, "create",
+                exp=0,
+                batch_size=1,
+                process_concurrency=8,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                skip_read_on_error=True)
 
-        self.log.info("Stopping {0}:{1} on node {2}"
-                      .format(self.process_name, self.service_name,
-                              target_node.ip))
-        remote.kill_process(self.process_name, self.service_name,
-                            signum=signum[self.sig_type])
+        # Induce the error condition
+        error_sim.create(error_to_simulate)
 
-        self.sleep(20, "Wait before resuming the process"
-                       .format(self.process_name))
-        remote.kill_process(self.process_name, self.service_name,
-                            signum=signum["SIGCONT"])
+        self.sleep(20, "Wait before reverting the error condition")
+        # Revert the simulated error condition and close the ssh session
+        error_sim.revert(error_to_simulate)
         remote.disconnect()
 
         # Wait for doc loading task to complete
         self.task.jython_task_manager.get_task_result(task)
+        if len(task.fail.keys()) != 0:
+            if self.target_node == "active" or self.num_replicas in [2, 3]:
+                self.log_failure("Unwanted failures for keys: %s"
+                                 % task.fail.keys())
 
-        # Validate doc count
-        # TODO: Add verification for rollbacks based on active/replica failure
-        # self.bucket_util.verify_unacked_bytes_all_buckets()
+        validate_passed = self.durability_helper.validate_durability_exception(
+            task.fail,
+            self.durability_helper.EXCEPTIONS["ambiguous"])
+        if not validate_passed:
+            self.log_failure("Unwanted exception seen during validation")
+
+        # Create SDK connection for CRUD retries
+        sdk_client = SDKClient(RestConnection(self.cluster.master),
+                               def_bucket)
+        for doc_key, crud_result in task.fail.items():
+            result = sdk_client.crud("create",
+                                     doc_key,
+                                     crud_result["value"],
+                                     replicate_to=self.replicate_to,
+                                     persist_to=self.persist_to,
+                                     durability=self.durability_level,
+                                     timeout=self.sdk_timeout)
+            if result["status"] is False:
+                self.log_failure("Retry of doc_key %s failed: %s"
+                                 % (doc_key, result["error"]))
+        # Close the SDK connection
+        sdk_client.close()
+
+        # Update self.num_items
+        self.num_items += self.new_docs_to_add
+
         if not self.atomicity:
+            # Validate doc count
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        self.validate_test_failure()
 
     def test_crash_process(self):
         """
@@ -209,7 +246,7 @@ class CrashTest(BaseTestCase):
             self.key, self.num_items, self.num_items+self.new_docs_to_add,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
+            target_vbucket=target_vbuckets,
             vbuckets=self.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -221,16 +258,21 @@ class CrashTest(BaseTestCase):
                 persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries,
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
                 sync=self.sync)
         else:
             task = self.task.async_load_gen_docs(
-                self.cluster, def_bucket, gen_load, "create", 0,
-                batch_size=10, durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, skip_read_on_error=True)
+                self.cluster, def_bucket, gen_load, "create",
+                exp=0,
+                batch_size=10,
+                process_concurrency=8,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                skip_read_on_error=True)
 
         task_info = dict()
         task_info[task] = self.bucket_util.get_doc_op_info_dict(
