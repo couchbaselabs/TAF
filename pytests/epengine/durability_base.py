@@ -2,6 +2,7 @@ from random import randint
 
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 
 
@@ -23,6 +24,10 @@ class DurabilityTestsBase(BaseTestCase):
 
         if self.doc_ops:
             self.doc_ops = self.doc_ops.split(';')
+
+        self.durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.nodes_in_cluster),
+            self.durability_level)
 
         # Initialize cluster using given nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \

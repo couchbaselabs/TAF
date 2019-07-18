@@ -2,7 +2,6 @@ import time
 import json
 
 from cb_tools.cbstats import Cbstats
-from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
@@ -15,9 +14,6 @@ from table_view import TableView
 class DurabilityFailureTests(DurabilityTestsBase):
     def setUp(self):
         super(DurabilityFailureTests, self).setUp()
-        self.durability_helper = DurabilityHelper(
-            self.log, len(self.cluster.nodes_in_cluster),
-            self.durability_level)
         self.log.info("=== DurabilityFailureTests setup complete ===")
 
     def tearDown(self):
@@ -47,6 +43,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                   "cluster size: {0}, replica: {1}" \
                   .format(len(self.cluster.nodes_in_cluster),
                           self.num_replicas)
+        d_impossible_exception = \
+            self.durability_helper.EXCEPTIONS["durabilility_impossible"]
 
         for node in nodes_in_cluster:
             shell_conn[node.ip] = \
@@ -85,7 +83,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             validation_passed = \
                 self.durability_helper.validate_durability_exception(
                     d_create_task.fail,
-                    DurabilityHelper.EXCEPTIONS["durabilility_impossible"])
+                    d_impossible_exception)
             if not validation_passed:
                 self.log_failure("Unexpected exception type")
 
@@ -130,7 +128,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             validation_passed = \
                 self.durability_helper.validate_durability_exception(
                     task.fail,
-                    DurabilityHelper.EXCEPTIONS["durabilility_impossible"])
+                    d_impossible_exception)
             if not validation_passed:
                 self.log_failure("Unexpected exception type")
 
@@ -254,7 +252,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                    timeout=2, time_unit="seconds")
 
             # Validate the returned error from the SDK
-            if DurabilityHelper.EXCEPTIONS["write_in_progress"] \
+            if self.durability_helper.EXCEPTIONS["write_in_progress"] \
                     not in str(fail["error"]):
                 self.log_failure("Invalid exception: {0}"
                                  .format(fail["error"]))
@@ -695,7 +693,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                              .format(failed_docs))
 
         valid_exception = self.durability_helper.validate_durability_exception(
-            failed_docs, DurabilityHelper.EXCEPTIONS["write_in_progress"])
+            failed_docs,
+            self.durability_helper.EXCEPTIONS["write_in_progress"])
 
         if not valid_exception:
             self.log_failure("Got invalid exception")
@@ -836,9 +835,6 @@ class DurabilityFailureTests(DurabilityTestsBase):
 class TimeoutTests(DurabilityTestsBase):
     def setUp(self):
         super(TimeoutTests, self).setUp()
-        self.durability_helper = DurabilityHelper(
-            self.log, len(self.cluster.nodes_in_cluster),
-            self.durability_level)
         self.log.info("=== DurabilityTimeoutTests setup complete ===")
 
     def tearDown(self):
@@ -1127,10 +1123,12 @@ class TimeoutTests(DurabilityTestsBase):
                                           self.num_items+self.crud_batch_size)
         doc_gen["delete"] = doc_generator(self.key, 0,
                                           self.crud_batch_size)
-        doc_gen["read"] = doc_generator(self.key, int(self.num_items/3),
-                                        int(self.num_items/3) + self.crud_batch_size)
-        doc_gen["update"] = doc_generator(self.key, int(self.num_items/2),
-                                          int(self.num_items/2) + self.crud_batch_size)
+        doc_gen["read"] = doc_generator(
+            self.key, int(self.num_items/3),
+            int(self.num_items/3) + self.crud_batch_size)
+        doc_gen["update"] = doc_generator(
+            self.key, int(self.num_items/2),
+            int(self.num_items/2) + self.crud_batch_size)
 
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
@@ -1268,13 +1266,13 @@ class TimeoutTests(DurabilityTestsBase):
 
                 if vb_for_key in target_nodes_vbuckets["active"]:
                     expected_exception = \
-                        DurabilityHelper.EXCEPTIONS["request_timeout"]
+                        self.durability_helper.EXCEPTIONS["request_timeout"]
                 elif vb_for_key in target_nodes_vbuckets["replica"]:
                     expected_exception = \
-                        DurabilityHelper.EXCEPTIONS["ambiguous"]
+                        self.durability_helper.EXCEPTIONS["ambiguous"]
                 else:
                     expected_exception = \
-                        DurabilityHelper.EXCEPTIONS["ambiguous"]
+                        self.durability_helper.EXCEPTIONS["ambiguous"]
                     ambiguous_table_view.add_row([doc_key, vb_for_key])
                     retry_success = \
                         self.durability_helper.retry_for_ambiguous_exception(

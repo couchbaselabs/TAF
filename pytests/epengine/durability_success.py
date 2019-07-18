@@ -1,6 +1,5 @@
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from error_simulation.disk_error import DiskError
@@ -12,9 +11,6 @@ from remote.remote_util import RemoteMachineShellConnection
 class DurabilitySuccessTests(DurabilityTestsBase):
     def setUp(self):
         super(DurabilitySuccessTests, self).setUp()
-        self.durability_helper = DurabilityHelper(
-            self.log, len(self.cluster.nodes_in_cluster),
-            self.durability_level)
         self.log.info("=== DurabilitySuccessTests setup complete ===")
 
     def tearDown(self):
