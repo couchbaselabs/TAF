@@ -9,6 +9,8 @@ import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
+import com.couchbase.client.core.error.DecodingFailedException;
+import com.couchbase.client.core.error.subdoc.PathNotFoundException;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.json.JsonObject;
@@ -174,12 +176,27 @@ public class SubDocOperations extends doc_ops {
                                         if(optionalResult.isPresent()) {
                                             LookupInResult result = optionalResult.get();
                                             retVal.put("cas", result.cas());
-                                            List<JsonObject> content = new ArrayList<JsonObject>();
+                                            List<Object> content = new ArrayList<Object>();
                                             for (int i=0; i<lookUpInSpecs.size(); i++) {
                                                 try {
-                                                    content.add(result.contentAsObject(i));
-                                                } catch (Exception e) {
-                                                    content.add(null);
+                                                		content.add(result.contentAsObject(i));
+                                                } catch (DecodingFailedException e1) {
+                                                		try {
+                                                			content.add(result.contentAsArray(i));
+                                                		} catch (DecodingFailedException e2) {
+                                                			try {
+                                                				content.add(result.contentAs(i, Integer.class));
+                                                			}
+                                                			catch (DecodingFailedException e3) {
+                                                				try {
+                                                					content.add(result.contentAs(i, String.class));
+                                                				} catch (Exception e4) {
+                                                					content.add(null);
+                                                				}
+                                                			}
+                                                		}
+                                                } catch (PathNotFoundException e1) {
+                                                		content.add("PATH_NOT_FOUND");
                                                 }
                                             }
                                             retVal.put("status", true);

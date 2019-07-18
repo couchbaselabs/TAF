@@ -194,6 +194,7 @@ class SDKClient(object):
                 fail[key] = dict()
                 fail[key]['value'] = json_object
                 fail[key]['error'] = item['error']
+                fail[key]['cas'] = 0
         return success, fail
 
     # Document operations' getOptions APIs
@@ -542,6 +543,8 @@ class SDKClient(object):
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
         :param durability: Durability level parameter
+        :param create_path: Boolean used to create sub_doc path if not exists
+        :param xattr: Boolean. If 'True', perform xattr operation
         :return:
         """
         mutate_in_specs = []
@@ -580,6 +583,7 @@ class SDKClient(object):
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
         :param durability: Durability level parameter
+        :param xattr: Boolean. If 'True', perform xattr operation
         :return:
         """
         mutate_in_specs = []
@@ -611,13 +615,15 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
-        for key, value in keys.items():
+        keys_to_loop = keys.keys()
+        keys_to_loop.sort()
+        for key in keys_to_loop:
+            value = keys[key]
             mutate_in_spec = []
             for _tuple in value:
                 _path = _tuple[0]
                 _mutate_in_spec = self.sub_doc_op.getLookUpInSpec(_path)
                 mutate_in_spec.append(_mutate_in_spec)
-            mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
         result = self.sub_doc_op.bulkGetSubDocOperation(
@@ -629,10 +635,8 @@ class SDKClient(object):
                              persist_to=0, replicate_to=0,
                              timeout=5, time_unit="seconds",
                              durability="",
-                             create_path=False,
                              xattr=False):
         """
-
         :param keys: Documents to perform sub_doc operations on.
         Must be a dictionary with Keys and List of tuples for
         path and value.
@@ -643,6 +647,7 @@ class SDKClient(object):
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
         :param durability: Durability level parameter
+        :param xattr: Boolean. If 'True', perform xattr operation
         :return:
         """
         mutate_in_specs = []

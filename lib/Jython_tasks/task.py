@@ -626,9 +626,8 @@ class GenericLoadingTask(Task):
         success = dict()
         fail = dict()
         try:
-            retry_docs = key_value
             success, fail = self.client.sub_doc_insert_multi(
-                retry_docs,
+                key_value,
                 exp=self.exp,
                 exp_unit=self.exp_unit,
                 persist_to=persist_to,
@@ -638,9 +637,10 @@ class GenericLoadingTask(Task):
                 durability=durability,
                 create_path=create_path,
                 xattr=xattr)
-            return success, fail
         except Exception as error:
             self.log.error(error)
+            self.set_exception("Exception during sub_doc insert: {0}"
+                               .format(error))
         return success, fail
 
     def batch_sub_doc_upsert(self, key_value, persist_to=0,
@@ -651,9 +651,8 @@ class GenericLoadingTask(Task):
         success = dict()
         fail = dict()
         try:
-            retry_docs = key_value
             success, fail = self.client.sub_doc_upsert_multi(
-                retry_docs,
+                key_value,
                 exp=self.exp,
                 exp_unit=self.exp_unit,
                 persist_to=persist_to,
@@ -663,9 +662,10 @@ class GenericLoadingTask(Task):
                 durability=durability,
                 create_path=create_path,
                 xattr=xattr)
-            return success, fail
         except Exception as error:
             self.log.error(error)
+            self.set_exception("Exception during sub_doc upsert: {0}"
+                               .format(error))
         return success, fail
 
     def batch_sub_doc_remove(self, key_value, persist_to=0,
@@ -676,9 +676,8 @@ class GenericLoadingTask(Task):
         success = dict()
         fail = dict()
         try:
-            retry_docs = key_value
             success, fail = self.client.sub_doc_remove_multi(
-                retry_docs,
+                key_value,
                 exp=self.exp,
                 exp_unit=self.exp_unit,
                 persist_to=persist_to,
@@ -686,25 +685,25 @@ class GenericLoadingTask(Task):
                 timeout=timeout,
                 time_unit=time_unit,
                 durability=durability,
-                create_path=create_path,
                 xattr=xattr)
-            return success, fail
         except Exception as error:
             self.log.error(error)
+            self.set_exception("Exception during sub_doc remove: {0}"
+                               .format(error))
         return success, fail
 
     def batch_sub_doc_read(self, key_value, timeout=5, time_unit="seconds"):
         success = dict()
         fail = dict()
         try:
-            retry_docs = key_value
             success, fail = self.client.sub_doc_read_multi(
-                retry_docs,
+                key_value,
                 timeout=timeout,
                 time_unit=time_unit)
-            return success, fail
         except Exception as error:
             self.log.error(error)
+            self.set_exception("Exception during sub_doc read: {0}"
+                               .format(error))
         return success, fail
 
     def _process_values_for_create(self, key_val):
@@ -899,7 +898,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 timeout=self.timeout,
                 time_unit=self.time_unit,
                 durability=self.durability,
-                create_path=self.create_path,
                 xattr=self.xattr)
             self.fail.update(fail)
             self.success.update(success)
@@ -912,7 +910,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
-
 
 class Durability(Task):
 
@@ -1479,9 +1476,15 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  only_store_hash=True, batch_size=1, pause_secs=1,
                  timeout_secs=5, compression=True,
                  process_concurrency=8,
-                 print_ops_rate=True, retries=5, durability=""):
-        super(LoadSubDocumentsGeneratorsTask, self).__init__(
-            "SubDocumentsLoadGenTask_{}".format(time.time()))
+                 print_ops_rate=True, retries=5, durability="",
+                 task_identifier=""):
+        thread_name = "SubDocumentsLoadGenTask_{}_{}_{}_{}_{}" \
+                      .format(task_identifier,
+                              bucket.name,
+                              op_type,
+                              durability,
+                              time.time())
+        super(LoadSubDocumentsGeneratorsTask, self).__init__(thread_name)
         self.cluster = cluster
         self.exp = exp
         self.create_path = create_paths

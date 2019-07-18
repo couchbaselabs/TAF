@@ -39,17 +39,12 @@ def sub_doc_generator(key, start, end, doc_size=256,
     template = '{{ "name.first": "{0}", "name.last": "{1}", \
                    "addr.city": "{2}", "addr.state": "{3}", \
                    "addr.pincode": {4} }}'
-    if target_vbucket:
-        return SubdocGeneratorForTargetVbucket(key, template,
-                                               first_name, last_name,
-                                               city, state, pin_code,
-                                               start=start, end=end,
-                                               target_vbucket=target_vbucket,
-                                               vbuckets=vbuckets)
     return SubdocDocumentGenerator(key, template,
                                    first_name, last_name,
                                    city, state, pin_code,
-                                   start=start, end=end)
+                                   start=start, end=end,
+                                   target_vbucket=target_vbucket,
+                                   vbuckets=vbuckets)
 
 
 def sub_doc_generator_for_edit(key, start, end, template_index=0,
@@ -62,8 +57,13 @@ def sub_doc_generator_for_edit(key, start, end, template_index=0,
     template.append('{{ "name.first": "FirstNameUpdate", \
                         "addr.state": "NewState", \
                         "todo.night": [1, \"nothing\", 3] }}')
+    template.append('{{ "name.first": "", \
+                        "addr": "", \
+                        "name.last": "" }}')
     return SubdocDocumentGenerator(key, template[template_index],
-                                   start=start, end=end)
+                                   start=start, end=end,
+                                   target_vbucket=target_vbucket,
+                                   vbuckets=vbuckets)
 
 
 class KVGenerator(object):
@@ -186,8 +186,10 @@ class SubdocDocumentGenerator(KVGenerator):
         self.template = template
         self.doc_type = "json"
         self.doc_keys = list()
+        self.doc_keys_len = 0
         self.key_counter = 0
         self.target_vbucket = None
+        self.vbuckets = None
 
         size = 0
         if not len(self.args) == 0:
@@ -207,6 +209,26 @@ class SubdocDocumentGenerator(KVGenerator):
         if 'doc_type' in kwargs:
             self.doc_type = kwargs['doc_type']
 
+        if 'target_vbucket' in kwargs:
+            self.target_vbucket = kwargs['target_vbucket']
+
+        if 'vbuckets' in kwargs:
+            self.vbuckets = kwargs['vbuckets']
+
+        if self.target_vbucket is not None:
+            self.key_counter = self.start
+            self.create_key_for_vbucket()
+
+    def create_key_for_vbucket(self):
+        while self.doc_keys_len < self.end:
+            doc_key = "{0}-{1}".format(self.name, str(self.key_counter))
+            tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
+                     (self.vbuckets-1)
+            if tem_vb in self.target_vbucket:
+                self.doc_keys.append(doc_key)
+                self.doc_keys_len += 1
+            self.key_counter += 1
+
     """Creates the next generated document and increments the iterator.
     Returns:
         The document generated"""
@@ -215,6 +237,8 @@ class SubdocDocumentGenerator(KVGenerator):
             raise StopIteration
 
         doc_args = []
+        rand_hash = self.name + '-' + str(self.itr)
+        self.random.seed(rand_hash)
         for arg in self.args:
             value = self.random.choice(arg)
             doc_args.append(value)
@@ -226,7 +250,9 @@ class SubdocDocumentGenerator(KVGenerator):
         return_val = []
         for path, value in json_val.items():
             return_val.append((path, value))
-        if self.name == "random_keys":
+        if self.target_vbucket is not None:
+            doc_key = self.doc_keys[self.itr-1]
+        elif self.name == "random_keys":
             """ This will generate a random ascii key with 12 
             characters """
             seed_hash = self.name + '-' + str(self.itr)

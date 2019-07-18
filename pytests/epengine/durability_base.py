@@ -49,10 +49,17 @@ class DurabilityTestsBase(BaseTestCase):
         self.cluster_util.print_cluster_stats()
         self.bucket = self.bucket_util.buckets[0]
         if not self.skip_init_load:
+            if self.target_vbucket and type(self.target_vbucket) is not list:
+                self.target_vbucket = [self.target_vbucket]
+
             self.log.info("Creating doc_generator..")
             doc_create = doc_generator(
-                self.key, 0, self.num_items, doc_size=self.doc_size,
-                doc_type=self.doc_type, target_vbucket=self.target_vbucket,
+                self.key,
+                0,
+                self.num_items,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
                 vbuckets=self.vbuckets)
             self.log.info("doc_generator created")
 
