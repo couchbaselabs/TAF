@@ -180,11 +180,13 @@ class BucketParamTest(BaseTestCase):
                 self.def_bucket.name, replicaNumber=replica_num)
             self.bucket_util.print_bucket_stats()
 
-            tasks, doc_count , start_doc_for_insert = self.doc_ops_operations(doc_ops,
-                                                                              start_doc_for_insert,
-                                                                              doc_count, doc_update,
-                                                                              doc_create,
-                                                                              doc_delete)
+            tasks, doc_count, start_doc_for_insert = self.doc_ops_operations(
+                doc_ops,
+                start_doc_for_insert,
+                doc_count,
+                doc_update,
+                doc_create,
+                doc_delete)
 
             # Start rebalance task with doc_ops in parallel
             rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
@@ -199,17 +201,18 @@ class BucketParamTest(BaseTestCase):
                     if len(task.fail.keys()) != 0:
                         doc_ops_failed = True
 
-            if doc_ops_failed:
-                self.assertFalse("Few doc_ops failed")
+            self.assertFalse(doc_ops_failed, "Few doc_ops failed")
 
             # Assert if rebalance failed
             self.assertTrue(rebalance.result,
                             "Rebalance failed after replica update")
 
-            self.log.info("Performing doc_ops(update) after rebalance operation")
+            self.log.info("Performing doc_ops(update) after rebalance")
             tasks, _, _ = self.doc_ops_operations("update",
                                                   start_doc_for_insert,
-                                                  doc_count, doc_update, doc_create,
+                                                  doc_count,
+                                                  doc_update,
+                                                  doc_create,
                                                   doc_delete)
 
             doc_ops_failed = False
@@ -219,8 +222,8 @@ class BucketParamTest(BaseTestCase):
                     if len(task.fail.keys()) != 0:
                         doc_ops_failed = True
 
-            if doc_ops_failed:
-                self.fail("Update failed after rebalance for replica update")
+            self.assertFalse(doc_ops_failed,
+                             "CRUD failed after rebalance for replica update")
 
             # Update the bucket's replica number
             self.def_bucket.replicaNumber = replica_num
