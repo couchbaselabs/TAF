@@ -198,7 +198,10 @@ class BucketParamTest(BaseTestCase):
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
                 if not self.atomicity:
-                    if len(task.fail.keys()) != 0:
+                    if self.def_bucket.replicaNumber == 3:
+                        if len(task.success.keys()) != 0:
+                            doc_ops_failed = True
+                    elif len(task.fail.keys()) != 0:
                         doc_ops_failed = True
 
             self.assertFalse(doc_ops_failed, "Few doc_ops failed")
@@ -219,7 +222,10 @@ class BucketParamTest(BaseTestCase):
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
                 if not self.atomicity:
-                    if len(task.fail.keys()) != 0:
+                    if replica_num == 3:
+                        if len(task.success.keys()) != 0:
+                            doc_ops_failed = True
+                    elif len(task.fail.keys()) != 0:
                         doc_ops_failed = True
 
             self.assertFalse(doc_ops_failed,
