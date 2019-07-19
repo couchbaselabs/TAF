@@ -1164,7 +1164,9 @@ class Durability(Task):
                         doc = self.generator_persist._doc_gen.next()
                         key, val = doc[0], doc[1]
                         vBucket = (((zlib.crc32(key)) >> 16) & 0x7fff) & (len(self.bucket.vbuckets)-1)
-                        nodes = [self.bucket.vbuckets[vBucket].master] + self.bucket.vbuckets[vBucket].replica
+                        nodes = [self.bucket.vbuckets[vBucket].master]
+                        if self.durability == "PERSIST_TO_MAJORITY":
+                            nodes += self.bucket.vbuckets[vBucket].replica
                         count = 0
                         if self.op_type == 'create':
                             try:

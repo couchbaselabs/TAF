@@ -151,10 +151,14 @@ class ServerTasks(object):
                     durability=durability, task_identifier=task_identifier,
                     skip_read_on_error=skip_read_on_error)
             else:
-                if durability.lower() != "none":
-                    majority_value = (bucket.replicaNumber + 1)/2 + 1
-                else:
+                majority_value = (bucket.replicaNumber + 1)/2 + 1
+
+                if durability.lower() == "none":
+                    check_persistence = False
                     majority_value = 1
+                elif durability.lower() == "majority":
+                    check_persistence = False
+
                 _task = jython_tasks.Durability(
                     cluster, self.jython_task_manager, bucket, clients, generator,
                     op_type, exp, flag=flag, persist_to=persist_to,
