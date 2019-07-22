@@ -189,8 +189,9 @@ class basic_ops(BaseTestCase):
             batch_size=self.batch_size, process_concurrency=self.process_concurrency,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-            ryow=self.ryow, check_persistence=self.check_persistence)
+            timeout_secs=self.sdk_timeout,
+            ryow=self.ryow,
+            check_persistence=self.check_persistence)
         self.task.jython_task_manager.get_task_result(task)
 
         if self.ryow:
@@ -256,8 +257,9 @@ class basic_ops(BaseTestCase):
                 batch_size=self.batch_size, process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                ryow=self.ryow, check_persistence=self.check_persistence)
+                timeout_secs=self.sdk_timeout,
+                ryow=self.ryow,
+                check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
             ref_val["ops_update"] = (doc_update.end - doc_update.start
                                      + len(task.fail.keys()))
@@ -271,7 +273,7 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "read", 0,
                 batch_size=self.batch_size, process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
             op_failed_tbl = TableView(self.log.error)
@@ -290,7 +292,7 @@ class basic_ops(BaseTestCase):
                 batch_size=self.batch_size, process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                timeout_secs=self.sdk_timeout,
                 ryow=self.ryow, check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
             expected_num_items = self.num_items \
@@ -307,7 +309,7 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "read", 0,
                 batch_size=10, process_concurrency=8,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
             op_failed_tbl = TableView(self.log.error)
@@ -361,7 +363,7 @@ class basic_ops(BaseTestCase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
         # check if all the documents(250) are loaded with default timeout
@@ -380,7 +382,7 @@ class basic_ops(BaseTestCase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
         for bucket in self.bucket_util.buckets:
@@ -393,16 +395,19 @@ class basic_ops(BaseTestCase):
                     docs_per_day=1, document_size=(21 * 1024000))
                 task = self.task.async_load_gen_docs(
                     self.cluster, bucket, gens_update, "create", 0,
-                    batch_size=10, process_concurrency=8,
-                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    batch_size=10,
+                    process_concurrency=8,
+                    replicate_to=self.replicate_to,
+                    persist_to=self.persist_to,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+                    timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(task)
                 self.bucket_util.verify_stats_all_buckets(1)
 
     def test_diag_eval_curl(self):
         # Check if diag/eval can be done only by local host
-        self.disable_diag_eval_on_non_local_host = self.input.param("disable_diag_eval_non_local", False)
+        self.disable_diag_eval_on_non_local_host = \
+            self.input.param("disable_diag_eval_non_local", False)
         port = self.cluster.master.port
 
         # check if local host can work fine
@@ -469,18 +474,21 @@ class basic_ops(BaseTestCase):
         :return:
         """
         # Load some documents with compression mode as active
-        gen_create = BlobGenerator('eviction', 'eviction-', self.value_size,
-                                   end=self.num_items)
-        gen_create2 = BlobGenerator('eviction2_', 'eviction2-',
-                                    self.value_size,
-                                    end=self.num_items)
+        gen_create = doc_generator("eviction1_",
+                                   start=0,
+                                   end=self.num_items,
+                                   doc_size=self.doc_size)
+        gen_create2 = doc_generator("eviction2_",
+                                    start=0,
+                                    end=self.num_items,
+                                    doc_size=self.doc_size)
         def_bucket = self.bucket_util.get_all_buckets()[0]
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -506,7 +514,7 @@ class basic_ops(BaseTestCase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items*2)
