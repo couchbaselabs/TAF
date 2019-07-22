@@ -614,7 +614,10 @@ class AutoFailoverBaseTest(BaseTestCase):
             failed_docs["create"] = self.loadgen_tasks[0].fail
             failed_docs["update"] = self.loadgen_tasks[1].fail
             failed_docs["delete"] = self.loadgen_tasks[2].fail
-            failed_docs["read"] = self.loadgen_tasks[3].fail
+            try:
+                failed_docs["read"] = self.loadgen_tasks[3].fail
+            except:
+                pass
 
             # Detect whether durability is going to succeed or not
             # based on the fail_over type and num_server to fail
