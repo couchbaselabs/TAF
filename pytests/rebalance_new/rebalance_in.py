@@ -5,6 +5,7 @@ from membase.api.exception import RebalanceFailedException
 from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
+from couchbase_helper.durability_helper import DurableExceptions
 
 
 class RebalanceInTests(RebalanceBaseTest):
@@ -91,9 +92,12 @@ class RebalanceInTests(RebalanceBaseTest):
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, [])
 
+        self.sleep(10, "wait for rebalance to start")
+
         retry_exceptions = [
-            "com.couchbase.client.core.error.TemporaryFailureException",
-            "com.couchbase.client.core.error.RequestCanceledException"
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
             ]
 
         # CRUDs while rebalance is running in parallel
@@ -101,8 +105,6 @@ class RebalanceInTests(RebalanceBaseTest):
 
         delete_from += items
         create_from += items
-
-        self.sleep(10, "wait for rebalance to start")
 
         # Waif for rebalance and doc mutation tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -119,7 +121,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
-                    task_info["unwanted"]["success"].keys()+task_info["unwanted"]["fail"].keys()==0,
+                    task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
 
         self.sleep(20, "Wait for cluster to be ready after rebalance")
@@ -393,17 +395,35 @@ class RebalanceInTests(RebalanceBaseTest):
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, [])
 
+        self.sleep(10, "wait for rebalance to start")
+
         for bucket in self.bucket_util.buckets:
             compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
 
-        tasks_info = self.loadgen_docs(self.sync)
+        retry_exceptions = [
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            ]
+
+        # CRUDs while rebalance is running in parallel
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, sync=self.sync)
 
         self.task_manager.get_task_result(rebalance_task)
-        self.assertTrue(rebalance_task.result, "Rebalance Failed")
-        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                       self.cluster)
-        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        if not rebalance_task.result:
+            for task, _ in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            self.fail("Rebalance Failed")
+
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
         self.cluster.nodes_in_cluster.extend(servs_in)
         self.sleep(60)
@@ -517,13 +537,17 @@ class RebalanceInTests(RebalanceBaseTest):
         op_type = None
 
         retry_exceptions = [
-            "com.couchbase.client.core.error.TemporaryFailureException"]
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            ]
 
         for i in range(self.nodes_init, self.num_servers, 2):
             # Start rebalance task
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:i], self.cluster.servers[i:i + 2], [])
 
+            self.sleep(10, "wait for rebalance to start")
             # define which doc_op to perform during rebalance
             # only one type of ops can be passed
             for bucket in self.bucket_util.buckets:
@@ -595,6 +619,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                     durability=self.durability_level,
                                     timeout_secs=self.sdk_timeout,
                                     retries=self.sdk_retries)
+            tasks_info = dict()
             if task:
                 if self.atomicity:
                     self.task.jython_task_manager.get_task_result(task)
@@ -608,12 +633,21 @@ class RebalanceInTests(RebalanceBaseTest):
                                             timeout=self.sdk_timeout,
                                             retry_exceptions=retry_exceptions)
 
-                    self.bucket_util.verify_doc_op_task_exceptions(
-                            tasks_info, self.cluster)
-                    self.bucket_util.log_doc_ops_task_failures(tasks_info)
-
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            if not rebalance_task.result:
+                for task, _ in tasks_info.items():
+                    self.task_manager.get_task_result(task)
+                self.fail("Rebalance Failed")
+
+            if not self.atomicity:
+                self.bucket_util.verify_doc_op_task_exceptions(
+                    tasks_info, self.cluster)
+                self.bucket_util.log_doc_ops_task_failures(tasks_info)
+                for task, task_info in tasks_info.items():
+                    self.assertFalse(
+                        task_info["ops_failed"],
+                        "Doc ops failed for task: {}".format(task.thread_name))
+
             self.cluster.nodes_in_cluster.extend(self.cluster.servers[i:i + 2])
             self.sleep(60, "Wait for cluster to be ready after rebalance")
         if not self.atomicity:

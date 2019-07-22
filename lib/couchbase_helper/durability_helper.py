@@ -12,6 +12,8 @@ class DurableExceptions:
     DurableWriteInProgressException = "com.couchbase.client.core.error.DurableWriteInProgressException"
     DurabilityAmbiguousException = "com.couchbase.client.core.error.DurabilityAmbiguousException"
     RequestTimeoutException = "com.couchbase.client.core.error.RequestTimeoutException"
+    TemporaryFailureException = "com.couchbase.client.core.error.TemporaryFailureException",
+    RequestCanceledException = "com.couchbase.client.core.error.RequestCanceledException",
 
 
 class DurabilityHelper:
