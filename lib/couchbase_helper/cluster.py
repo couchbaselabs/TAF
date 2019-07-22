@@ -308,7 +308,8 @@ class ServerTasks(object):
     def load_bucket_into_dgm(self, cluster, bucket, key, num_items,
                              active_resident_threshold, load_batch_size=20000,
                              batch_size=10, process_concurrency=4,
-                             persist_to=None, replicate_to=None):
+                             persist_to=None, replicate_to=None, durability="",
+                             doc_type="json"):
         rest = BucketHelper(cluster.master)
         bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                      cluster.master)
@@ -316,12 +317,12 @@ class ServerTasks(object):
                 active_resident_threshold:
             gen_load = doc_generator(key, num_items,
                                      num_items+load_batch_size,
-                                     doc_type="binary")
+                                     doc_type=doc_type)
             num_items += load_batch_size
             task = self.async_load_gen_docs(
                 cluster, bucket, gen_load, "create", 0,
                 batch_size=batch_size, process_concurrency=process_concurrency,
-                persist_to=persist_to, replicate_to=replicate_to)
+                persist_to=persist_to, replicate_to=replicate_to, durability=durability)
             self.jython_task_manager.get_task_result(task)
             bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                          cluster.master)

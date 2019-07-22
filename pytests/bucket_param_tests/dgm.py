@@ -42,7 +42,8 @@ class Bucket_DGM_Tests(BaseTestCase):
             self.cluster, bucket, self.key, self.num_items,
             self.active_resident_threshold, batch_size=10,
             process_concurrency=8,
-            persist_to=self.persist_to, replicate_to=self.replicate_to)
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            durability=self.durability_level, doc_type="json")
 
         gen_create = doc_generator(self.key, num_items,
                                    num_items+self.num_items)
@@ -50,18 +51,48 @@ class Bucket_DGM_Tests(BaseTestCase):
         gen_delete = doc_generator(self.key, self.num_items, num_items)
 
         # Perform continuous updates while bucket moves from DGM->non-DGM state
-        tasks = list()
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket, gen_update, "update", 0,
-            persist_to=self.persist_to, replicate_to=self.replicate_to,
-            batch_size=10, process_concurrency=2))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket, gen_delete, "delete", 0,
-            persist_to=self.persist_to, replicate_to=self.replicate_to,
-            batch_size=10, process_concurrency=2))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket, gen_create, "create", 0,
-            persist_to=self.persist_to, replicate_to=self.replicate_to,
-            batch_size=10, process_concurrency=2))
-        for task in tasks:
+        if not self.atomicity:
+            tasks = list()
+            tasks.append(self.task.async_load_gen_docs(
+                self.cluster, bucket, gen_update, "update", 0,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                batch_size=10, process_concurrency=2))
+            tasks.append(self.task.async_load_gen_docs(
+                self.cluster, bucket, gen_delete, "delete", 0,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                batch_size=10, process_concurrency=2))
+            tasks.append(self.task.async_load_gen_docs(
+                self.cluster, bucket, gen_create, "create", 0,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                batch_size=10, process_concurrency=2))
+            for task in tasks:
+                self.task.jython_task_manager.get_task_result(task)
+        else:
+            task = self.task.async_load_gen_docs_atomicity(
+                          self.cluster, self.bucket_util.buckets, gen_create,
+                         "create", 0, batch_size=20, process_concurrency=8,
+                          replicate_to=self.replicate_to, persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                          transaction_timeout=self.transaction_timeout,
+                          commit=self.transaction_commit, durability=self.durability_level,
+                          sync=self.sync)
+            self.task.jython_task_manager.get_task_result(task)
+            task = self.task.async_load_gen_docs_atomicity(
+                          self.cluster, self.bucket_util.buckets, gen_create,
+                         "update", 0, batch_size=20, process_concurrency=8,
+                          replicate_to=self.replicate_to, persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                          transaction_timeout= self.transaction_timeout,
+                          update_count=self.update_count,
+                          commit=self.transaction_commit, durability=self.durability_level,
+                          sync=self.sync)
+            self.task.jython_task_manager.get_task_result(task)
+            task = self.task.async_load_gen_docs_atomicity(
+                          self.cluster, self.bucket_util.buckets, gen_delete,
+                         "rebalance_delete", 0, batch_size=20, process_concurrency=8,
+                          replicate_to=self.replicate_to, persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                          transaction_timeout=self.transaction_timeout,
+                          commit=self.transaction_commit, durability=self.durability_level,
+                          sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
