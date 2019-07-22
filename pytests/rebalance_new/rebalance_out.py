@@ -90,10 +90,20 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks_info = self.loadgen_docs(self.sync)
         self.task.jython_task_manager.get_task_result(rebalance_task)
 
+        if not rebalance_task.result:
+            for task, _ in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            self.fail("Rebalance Failed")
+
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
+
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         self.sleep(20)
         if not self.atomicity:
@@ -223,7 +233,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                  self.num_items * 3 / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
-        self.loadgen_docs(sync=self.sync)
+        self.loadgen_docs(task_verification=True, sync=self.sync)
         ejectedNode = self.cluster_util.find_node_info(self.cluster.master, self.cluster.servers[self.nodes_init - 1])
         if not self.atomicity:
             self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
@@ -278,10 +288,19 @@ class RebalanceOutTests(RebalanceBaseTest):
         # allows multiple of them but one by one
         tasks_info = self.loadgen_docs(sync=self.sync)
         self.task.jython_task_manager.get_task_result(rebalance_task)
+        if not rebalance_task.result:
+            for task, _ in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            self.fail("Rebalance Failed")
 
-        self.bucket_util.verify_doc_op_task_exceptions(
-            tasks_info, self.cluster)
-        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
         for task in compaction_task:
             self.task_manager.get_task_result(task)
@@ -356,11 +375,19 @@ class RebalanceOutTests(RebalanceBaseTest):
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
             tasks_info = self.loadgen_docs(sync=self.sync)
             self.task.jython_task_manager.get_task_result(rebalance_task)
+            if not rebalance_task.result:
+                for task, _ in tasks_info.items():
+                    self.task_manager.get_task_result(task)
+                self.fail("Rebalance Failed")
 
             if not self.atomicity:
-                self.bucket_util.verify_doc_op_task_exceptions(
-                    tasks_info, self.cluster)
+                self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                               self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
+                for task, task_info in tasks_info.items():
+                    self.assertFalse(
+                        task_info["ops_failed"],
+                        "Doc ops failed for task: {}".format(task.thread_name))
 
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(self.cluster.servers[i:i + 2]))
             if not self.atomicity:

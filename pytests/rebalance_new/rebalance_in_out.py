@@ -38,6 +38,11 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
+
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
@@ -97,6 +102,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
             self.bucket_util.verify_stats_all_buckets(self.num_items,
                                                       timeout=120)
             self.bucket_util._wait_for_stats_all_buckets()
@@ -171,6 +180,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
             self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
             self.bucket_util._wait_for_stats_all_buckets()
         # Update replica value before performing rebalance in/out
@@ -234,7 +247,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, gen, "update", 0,
                 batch_size=batch_size, timeout_secs=60)
@@ -277,6 +293,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                                self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
+                for task, task_info in tasks_info.items():
+                    self.assertFalse(
+                        task_info["ops_failed"],
+                        "Doc ops failed for task: {}".format(task.thread_name))
             for task in compact_tasks:
                 self.task.jython_task_manager.get_task_result(task)
 
@@ -319,6 +339,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
             self.bucket_util.verify_cluster_stats(self.num_items)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -354,7 +378,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
             self._load_all_buckets(self.cluster, gen_delete, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
 
@@ -504,14 +531,21 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         self.sleep(1)
 
         self.task.jython_task_manager.get_task_result(rebalance_task)
-        self.assertTrue(rebalance_task.result, "Rebalance Failed")
+        if not rebalance_task.result:
+            for task, _ in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            self.fail("Rebalance Failed")
+
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(toBeEjectedNodes))
 
         self.bucket_util.verify_doc_op_task_exceptions(tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-
+        for task, task_info in tasks_info.items():
+            self.assertFalse(
+                task_info["ops_failed"],
+                "Doc ops failed for task: {}".format(task.thread_name))
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
@@ -597,7 +631,10 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-
+        for task, task_info in tasks_info.items():
+            self.assertFalse(
+                task_info["ops_failed"],
+                "Doc ops failed for task: {}".format(task.thread_name))
         # Add back first ejected node back into the cluster
         self.task.rebalance(self.cluster.nodes_in_cluster,
                             toBeEjectedNodes, [])
