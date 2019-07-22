@@ -443,25 +443,6 @@ def main():
                     params += "," + str(key) + ":" + str(value)
 
         if result.failures or result.errors:
-            # Immediately get the server logs, if
-            # the test has failed or has errors
-            if "get-logs" in TestInputSingleton.input.test_params:
-                get_server_logs(TestInputSingleton.input, logs_folder)
-
-            if "get-logs-cluster-run" in TestInputSingleton.input.test_params:
-                if TestInputSingleton.input.param("get-logs-cluster-run", True):
-                    # Generate path to ns_server directory
-                    ns_server_path = os.path.normpath(abs_path + os.sep + os.pardir + os.sep + "ns_server")
-                    get_logs_cluster_run(TestInputSingleton.input, logs_folder, ns_server_path)
-
-            if "get-cbcollect-info" in TestInputSingleton.input.test_params:
-                if TestInputSingleton.input.param("get-cbcollect-info", True):
-                    get_cbcollect_info(TestInputSingleton.input, logs_folder)
-
-            if "get-couch-dbinfo" in TestInputSingleton.input.test_params and \
-                TestInputSingleton.input.param("get-couch-dbinfo", True):
-                    get_couch_dbinfo(TestInputSingleton.input, logs_folder)
-
             errors = []
             for failure in result.failures:
                 test_case, failure_string = failure
