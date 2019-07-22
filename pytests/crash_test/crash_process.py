@@ -297,6 +297,9 @@ class CrashTest(BaseTestCase):
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(task_info)
 
+        # Update self.num_items
+        self.num_items += self.new_docs_to_add
+
         # Verification stats
         verification_dict = dict()
         verification_dict["ops_create"] = self.num_items
