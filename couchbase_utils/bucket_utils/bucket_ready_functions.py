@@ -44,6 +44,8 @@ from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
                           MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
+from couchbase_helper.durability_helper import DurableExceptions
+
 # from couchbase_helper.stats_tools import StatsCommon
 
 """
@@ -671,8 +673,7 @@ class BucketUtils:
                         dict_key = "retried"
                         found = True
                         break
-
-                if result["status"]:
+                if result["status"] or DurableExceptions.KeyExistsException in result["error"]:
                     tasks_info[task][dict_key]["success"].update(key_value)
                 else:
                     tasks_info[task][dict_key]["fail"].update(key_value)

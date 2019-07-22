@@ -6,7 +6,16 @@ from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
 
 
+class DurableExceptions:
+    KeyExistsException = "com.couchbase.client.core.error.KeyExistsException"
+    DurabilityImpossibleException = "com.couchbase.client.core.error.DurabilityImpossibleException"
+    DurableWriteInProgressException = "com.couchbase.client.core.error.DurableWriteInProgressException"
+    DurabilityAmbiguousException = "com.couchbase.client.core.error.DurabilityAmbiguousException"
+    RequestTimeoutException = "com.couchbase.client.core.error.RequestTimeoutException"
+
+
 class DurabilityHelper:
+
     EQUAL = '=='
     GREATER_THAN_EQ = '>='
     EXCEPTIONS = dict()
@@ -18,7 +27,7 @@ class DurabilityHelper:
         "com.couchbase.client.core.error.DurabilityAmbiguousException"
     EXCEPTIONS["request_timeout"] = \
         "com.couchbase.client.core.error.RequestTimeoutException"
-
+    
     def __init__(self, logger, cluster_len, durability="MAJORITY",
                  replicate_to=0, persist_to=0):
         """

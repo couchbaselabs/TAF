@@ -106,7 +106,10 @@ class RebalanceInTests(RebalanceBaseTest):
 
         # Waif for rebalance and doc mutation tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
-        self.assertTrue(rebalance_task.result, "Rebalance Failed")
+        if not rebalance_task.result:
+            for task, _ in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            self.fail("Rebalance Failed")
 
         self.cluster.nodes_in_cluster.extend(servs_in)
 
@@ -114,6 +117,10 @@ class RebalanceInTests(RebalanceBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["unwanted"]["success"].keys()+task_info["unwanted"]["fail"].keys()==0,
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
         self.sleep(20, "Wait for cluster to be ready after rebalance")
 
@@ -132,7 +139,15 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
                                                  delete_from + items/2)
-        self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True, sync=self.sync)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True, sync=self.sync)
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info['ops_failed'], 
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()

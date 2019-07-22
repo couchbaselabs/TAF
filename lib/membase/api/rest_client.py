@@ -1443,6 +1443,7 @@ class RestConnection(object):
             self.test_log.error(e)
             return None, -100
         json_parsed = json.loads(content)
+        self.log.debug(json_parsed)
         if status:
             if "status" in json_parsed:
                 rebalance_status = json_parsed["status"]
@@ -1467,6 +1468,13 @@ class RestConnection(object):
                     self.test_log.debug("Rebalance percentage: {0:.02f} %"
                                         .format(round(avg_percentage, 2)))
                 else:
+                    time.sleep(5)
+                    status, content, header = self._http_request(api)
+                    json_parsed = json.loads(content)
+                    if "errorMessage" in json_parsed:
+                        msg = '{0} - rebalance failed'.format(json_parsed)
+                        self.print_UI_logs()
+                        raise RebalanceFailedException(msg)
                     avg_percentage = 100
         else:
             avg_percentage = -100
