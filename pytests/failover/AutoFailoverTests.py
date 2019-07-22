@@ -31,11 +31,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.loadgen_tasks = self._loadgen()
 
         self.failover_actions[self.failover_action](self)
-        if self.atomicity:
-            # Wait for all tasks to complete
-            for task in self.loadgen_tasks:
-                self.task_manager.get_task_result(task)
-        elif self.durability_level:
+        for task in self.loadgen_tasks:
+            self.task_manager.get_task_result(task)
+        if self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -64,11 +62,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.failover_actions[self.failover_action](self)
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.assertFalse(rebalance_task.result, "Rebalance should fail since a node went down")
-        if self.atomicity:
-            # Wait for all tasks to complete
-            for task in self.loadgen_tasks:
-                self.task_manager.get_task_result(task)
-        elif self.durability_level:
+        for task in self.loadgen_tasks:
+            self.task_manager.get_task_result(task)
+        if self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -99,6 +95,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
         self.failover_actions[self.failover_action](self)
+        for task in self.loadgen_tasks:
+            self.task_manager.get_task_result(task)
         if self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
@@ -151,11 +149,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
-        if self.atomicity:
-            # Wait for all tasks to complete
-            for task in self.loadgen_tasks:
-                self.task_manager.get_task_result(task)
-        elif self.durability_level:
+        for task in self.loadgen_tasks:
+            self.task_manager.get_task_result(task)
+        if self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -206,11 +202,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
-        if self.atomicity:
-            # Wait for all tasks to complete
-            for task in self.loadgen_tasks:
-                self.task_manager.get_task_result(task)
-        elif self.durability_level:
+        for task in self.loadgen_tasks:
+            self.task_manager.get_task_result(task)
+        if self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
 
@@ -256,6 +250,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                   .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
+        for task in self.loadgen_tasks:
+            self.task_manager.get_task_result(task)
         if self.durability_level:
             self.validate_loadgen_tasks()
         self.disable_autofailover_and_validate()
