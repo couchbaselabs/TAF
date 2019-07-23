@@ -68,3 +68,9 @@ class TaskManager:
         for task_name, future in self.futures.items():
             if not future.isDone():
                 self.log.warning("Task '{0}' not completed".format(task_name))
+
+    def abort_all_tasks(self):
+        for task_name, future in self.futures.items():
+            if not future.isDone():
+                self.log.debug("Stopping task {0}".format(task_name))
+                future.cancel(True)

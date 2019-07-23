@@ -241,6 +241,7 @@ class BaseTestCase(unittest.TestCase):
         self.tearDownEverything()
 
     def tearDownEverything(self):
+        self.task_manager.abort_all_tasks()
         if self.skip_setup_cleanup:
             return
         try:
