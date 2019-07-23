@@ -328,14 +328,13 @@ class RebalanceInOutTests(RebalanceBaseTest):
         We then add and remove back two nodes at a time and so on until we have reached
         the point where we are adding back and removing at least half of the nodes.
         """
-        init_num_nodes = self.input.param("init_num_nodes", 1)
         gen = self.get_doc_generator(0, self.num_items)
         for i in range(self.num_servers):
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, gen, "update", 0, batch_size=10, timeout_secs=60)
-            self.add_remove_servers_and_rebalance(self.cluster.servers[init_num_nodes:init_num_nodes + i + 1], [])
+            self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.nodes_init + i + 1], [])
             self.sleep(10)
-            self.add_remove_servers_and_rebalance([], self.cluster.servers[init_num_nodes:init_num_nodes + i + 1])
+            self.add_remove_servers_and_rebalance([], self.cluster.servers[self.nodes_init:self.nodes_init + i + 1])
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
