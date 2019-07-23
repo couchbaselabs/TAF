@@ -365,7 +365,8 @@ class RebalanceOutTests(RebalanceBaseTest):
         items = self.num_items
         delete_from = items/2
         create_from = items
-        for i in reversed(range(1, self.nodes_init, 2)):
+        majority = (self.num_replicas+1)/2+1
+        for i in reversed(range(majority, self.nodes_init, 2)):
             self.gen_delete = self.get_doc_generator(delete_from,
                                                      delete_from+items/2)
             self.gen_create = self.get_doc_generator(create_from,
