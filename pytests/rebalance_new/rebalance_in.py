@@ -101,7 +101,7 @@ class RebalanceInTests(RebalanceBaseTest):
             ]
 
         # CRUDs while rebalance is running in parallel
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, sync=self.sync)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
         delete_from += items
         create_from += items
@@ -141,14 +141,14 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
                                                  delete_from + items/2)
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True, sync=self.sync)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
-                    task_info['ops_failed'], 
+                    task_info['ops_failed'],
                     "Doc ops failed for task: {}".format(task.thread_name))
 
         if not self.atomicity:
@@ -249,7 +249,7 @@ class RebalanceInTests(RebalanceBaseTest):
 #                 self.cluster, bucket, self.cluster.master, self.gen_update,
 #                 "update", 0)
 #             tasks_info.update(tem_tasks_info.copy())
-        tasks_info = self.loadgen_docs(sync=self.sync)
+        tasks_info = self.loadgen_docs()
         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                        self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
@@ -408,7 +408,7 @@ class RebalanceInTests(RebalanceBaseTest):
             ]
 
         # CRUDs while rebalance is running in parallel
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, sync=self.sync)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
         self.task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:

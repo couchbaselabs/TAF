@@ -10,8 +10,10 @@ from remote.remote_util import RemoteMachineShellConnection
 
 
 class RebalanceBaseTest(BaseTestCase):
-    def setUp(self):
+    def setup_base(self):
         super(RebalanceBaseTest, self).setUp()
+    def setUp(self):
+        self.setup_base()
         self.rest = RestConnection(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
         self.doc_size = self.input.param("doc_size", 10)
@@ -160,38 +162,48 @@ class RebalanceBaseTest(BaseTestCase):
                     durability=self.durability_level, sync=sync)
         self.task.jython_task_manager.get_task_result(task)
 
-    def start_parallel_cruds_atomicity(self, sync=True):
-        tasks = []
+    def start_parallel_cruds_atomicity(self, sync=True, _async=False, op_type="create"):
+        tasks_info = dict()
+        if _async:
+            self.doc_ops = op_type
         if("update" in self.doc_ops):
-            tasks.append(self.task.async_load_gen_docs_atomicity(
+            tasks_info.update({self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_update,
-                         "rebalance_only_update",0,batch_size=20,process_concurrency=8,
-                          replicate_to=self.replicate_to,persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout, update_count=self.update_count,
-                          commit=self.transaction_commit,durability=self.durability_level,sync=sync))
+                         "rebalance_only_update", 0, batch_size=20, process_concurrency=8,
+                          replicate_to=self.replicate_to, persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                          transaction_timeout=self.transaction_timeout,
+                          update_count=self.update_count, commit=self.transaction_commit,
+                          durability=self.durability_level, sync=sync):None})
         if("create" in self.doc_ops):
-            tasks.append(self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, self.gen_update,
-                         "create",0,batch_size=20,process_concurrency=8,
-                          replicate_to=self.replicate_to,persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+            tasks_info.update({self.task.async_load_gen_docs_atomicity(
+                          self.cluster, self.bucket_util.buckets, self.gen_create,
+                         "create", 0, batch_size=20, process_concurrency=8,
+                          replicate_to=self.replicate_to, persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit,durability=self.durability_level,sync=sync))
+                          commit=self.transaction_commit, durability=self.durability_level,
+                          sync=sync):None})
         if("delete" in self.doc_ops):
-            tasks.append(self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, self.gen_update,
-                         "rebalance_delete",0,batch_size=20,process_concurrency=8,
-                          replicate_to=self.replicate_to,persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+            tasks_info.update({self.task.async_load_gen_docs_atomicity(
+                          self.cluster, self.bucket_util.buckets, self.gen_delete,
+                         "rebalance_delete", 0, batch_size=20, process_concurrency=8,
+                          replicate_to=self.replicate_to, persist_to=self.persist_to,
+                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit,durability=self.durability_level,sync=sync))
+                          commit=self.transaction_commit, durability=self.durability_level,
+                          sync=sync):None})
 
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
+        if not _async:
+            for task in tasks_info.keys():
+                self.task.jython_task_manager.get_task_result(task)
+
+        return tasks_info
 
     def start_parallel_cruds(self, retry_exceptions=[], ignore_exceptions=[],
-                             task_verification=False):
+                             task_verification=False, _async=False, op_type="create"):
+        if _async:
+            self.doc_ops = op_type
         tasks_info = dict()
         if "update" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -227,19 +239,27 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            for task, task_info in tasks_info.items():
-                self.assertFalse(
-                    task_info["ops_failed"],
-                    "Doc ops failed for task: {}".format(task.thread_name))
 
         return tasks_info
 
-    def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[], task_verification = False, sync=True):
-        if self.atomicity:
-            self.start_parallel_cruds_atomicity(sync=True)
-        else:
-            tasks_info = self.start_parallel_cruds(retry_exceptions, ignore_exceptions, task_verification)
-            return tasks_info
+    def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[], task_verification = False,
+                    _async=False, op_type="create"):
+        loaders = []
+        if op_type == "create":
+            if self.atomicity:
+                loaders = self.start_parallel_cruds_atomicity(self.sync, _async, op_type=op_type)
+            else:
+                loaders = self.start_parallel_cruds(retry_exceptions, ignore_exceptions,
+                                                    task_verification, _async)
+
+        if op_type == "validate":
+            if not self.atomicity:
+                gen_create = doc_generator('test_docs', 0, self.num_items)
+                for bucket in self.bucket_util.buckets:
+                    loaders.append(self.task.async_validate_docs(
+                        self.cluster, bucket, gen_create, "create", 0,
+                        batch_size=10, process_concurrency=8))
+        return loaders
 
     def induce_rebalance_test_condition(self, test_failure_condition):
         if test_failure_condition == "verify_replication":
