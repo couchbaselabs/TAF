@@ -560,7 +560,7 @@ class BucketUtils:
         info_dict["timeout"] = timeout
         info_dict["time_unit"] = time_unit
         info_dict["ignore_exceptions"] = ignore_exceptions
-        info_dict["retry_exceptions"] = retry_exceptions
+        info_dict["retry_exceptions"] = retry_exceptions + [DurableExceptions.DurabilityImpossibleException]
         info_dict["retried"] = {"success": dict(), "fail": dict()}
         info_dict["unwanted"] = {"success": dict(), "fail": dict()}
         info_dict["ignored"] = dict()
