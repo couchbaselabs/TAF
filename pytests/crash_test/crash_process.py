@@ -175,33 +175,34 @@ class CrashTest(BaseTestCase):
 
         # Wait for doc loading task to complete
         self.task.jython_task_manager.get_task_result(task)
-        if len(task.fail.keys()) != 0:
-            if self.target_node == "active" or self.num_replicas in [2, 3]:
-                self.log_failure("Unwanted failures for keys: %s"
-                                 % task.fail.keys())
+        if not self.atomicity:
+            if len(task.fail.keys()) != 0:
+                if self.target_node == "active" or self.num_replicas in [2, 3]:
+                    self.log_failure("Unwanted failures for keys: %s"
+                                     % task.fail.keys())
 
-        validate_passed = self.durability_helper.validate_durability_exception(
-            task.fail,
-            self.durability_helper.EXCEPTIONS["ambiguous"])
-        if not validate_passed:
-            self.log_failure("Unwanted exception seen during validation")
+            validate_passed = self.durability_helper.validate_durability_exception(
+                task.fail,
+                self.durability_helper.EXCEPTIONS["ambiguous"])
+            if not validate_passed:
+                self.log_failure("Unwanted exception seen during validation")
 
-        # Create SDK connection for CRUD retries
-        sdk_client = SDKClient(RestConnection(self.cluster.master),
-                               def_bucket)
-        for doc_key, crud_result in task.fail.items():
-            result = sdk_client.crud("create",
-                                     doc_key,
-                                     crud_result["value"],
-                                     replicate_to=self.replicate_to,
-                                     persist_to=self.persist_to,
-                                     durability=self.durability_level,
-                                     timeout=self.sdk_timeout)
-            if result["status"] is False:
-                self.log_failure("Retry of doc_key %s failed: %s"
-                                 % (doc_key, result["error"]))
-        # Close the SDK connection
-        sdk_client.close()
+            # Create SDK connection for CRUD retries
+            sdk_client = SDKClient(RestConnection(self.cluster.master),
+                                   def_bucket)
+            for doc_key, crud_result in task.fail.items():
+                result = sdk_client.crud("create",
+                                         doc_key,
+                                         crud_result["value"],
+                                         replicate_to=self.replicate_to,
+                                         persist_to=self.persist_to,
+                                         durability=self.durability_level,
+                                         timeout=self.sdk_timeout)
+                if result["status"] is False:
+                    self.log_failure("Retry of doc_key %s failed: %s"
+                                     % (doc_key, result["error"]))
+            # Close the SDK connection
+            sdk_client.close()
 
         # Update self.num_items
         self.num_items += self.new_docs_to_add
