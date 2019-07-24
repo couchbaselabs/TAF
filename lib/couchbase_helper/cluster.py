@@ -25,6 +25,7 @@ class ServerTasks(object):
     def __init__(self, task_manager):
         self.jython_task_manager = task_manager
         self.log = logging.getLogger("infra")
+        self.test_log = logging.getLogger("test")
         self.log.debug("Initiating ServerTasks")
 
     def async_create_bucket(self, server, bucket):
@@ -233,6 +234,7 @@ class ServerTasks(object):
 
     def async_continuous_update_docs(self, cluster, bucket, generator, exp=0,
                                      flag=0, persist_to=0, replicate_to=0,
+                                     durability="",
                                      only_store_hash=True, batch_size=1,
                                      pause_secs=1, timeout_secs=5,
                                      compression=True,
@@ -242,7 +244,7 @@ class ServerTasks(object):
         _task = jython_tasks.ContinuousDocUpdateTask(
             cluster, self.jython_task_manager, bucket, client, [generator],
             "update", exp, flag=flag, persist_to=persist_to,
-            replicate_to=replicate_to, only_store_hash=only_store_hash,
+            replicate_to=replicate_to, durability=durability,
             batch_size=batch_size, pause_secs=pause_secs,
             timeout_secs=timeout_secs, compression=compression,
             process_concurrency=process_concurrency, retries=retries)
@@ -306,15 +308,20 @@ class ServerTasks(object):
         return _task
 
     def load_bucket_into_dgm(self, cluster, bucket, key, num_items,
-                             active_resident_threshold, load_batch_size=20000,
+                             active_resident_threshold, load_batch_size=100000,
                              batch_size=10, process_concurrency=4,
-                             persist_to=None, replicate_to=None, durability="",
+                             persist_to=None, replicate_to=None,
+                             durability="", sdk_timeout=5,
                              doc_type="json"):
         rest = BucketHelper(cluster.master)
         bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                      cluster.master)
         while bucket_stat["vb_active_resident_items_ratio"] > \
                 active_resident_threshold:
+            self.test_log.info(
+                "Resident_ratio for '%s': %s"
+                % (bucket.name,
+                   bucket_stat["vb_active_resident_items_ratio"]))
             gen_load = doc_generator(key, num_items,
                                      num_items+load_batch_size,
                                      doc_type=doc_type)
@@ -322,7 +329,10 @@ class ServerTasks(object):
             task = self.async_load_gen_docs(
                 cluster, bucket, gen_load, "create", 0,
                 batch_size=batch_size, process_concurrency=process_concurrency,
-                persist_to=persist_to, replicate_to=replicate_to, durability=durability)
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                timeout_secs=sdk_timeout,
+                print_ops_rate=False)
             self.jython_task_manager.get_task_result(task)
             bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                          cluster.master)

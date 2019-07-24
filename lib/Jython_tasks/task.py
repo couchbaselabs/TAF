@@ -1639,7 +1639,8 @@ class LoadSubDocumentsGeneratorsTask(Task):
 class ContinuousDocUpdateTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators,
                  op_type, exp, flag=0, persist_to=0, replicate_to=0,
-                 time_unit="seconds", only_store_hash=True, batch_size=1,
+                 durability="", time_unit="seconds",
+                 only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5,
                  active_resident_threshold=99):
@@ -1650,6 +1651,7 @@ class ContinuousDocUpdateTask(Task):
         self.flag = flag
         self.persist_to = persist_to
         self.replicate_to = replicate_to
+        self.durability = durability
         self.time_unit = time_unit
         self.only_store_hash = only_store_hash
         self.pause_secs = pause_secs
@@ -1685,6 +1687,7 @@ class ContinuousDocUpdateTask(Task):
                 self.cluster, self.task_manager, bucket, self.client,
                 self.generators, self.op_type, self.exp, flag=self.flag,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability,
                 only_store_hash=self.only_store_hash,
                 batch_size=self.batch_size, pause_secs=self.pause_secs,
                 timeout_secs=self.timeout_secs, compression=self.compression,
