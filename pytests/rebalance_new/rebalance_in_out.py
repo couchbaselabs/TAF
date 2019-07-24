@@ -605,7 +605,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         for bucket in self.bucket_util.buckets:
             durability_req = (bucket.replicaNumber + 1)/2 + 1
-            self.assertTrue(durability_req > len(current_nodes) - len(toBeEjectedNodes) + len(servs_in),
+            self.assertTrue(durability_req >= len(current_nodes) - len(toBeEjectedNodes) + len(servs_in),
                             "bucket replica is less than the available nodes in the cluster")
 
         if self.swap_orchestrator:
