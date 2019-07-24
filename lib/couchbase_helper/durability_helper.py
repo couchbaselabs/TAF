@@ -66,8 +66,8 @@ class DurabilityHelper:
             return lhs_val >= rhs_val
         return False
 
-    def durability_succeeds(self, bucket_name,
-                            induced_error=None, failed_nodes=0):
+    def durability_succeeds(self, bucket_name, master,
+                            induced_error=None, failed_nodes=[]):
         """
         Determines whether the durability will fail/work based on
         the type of error_induced during the test and number of nodes the
@@ -81,7 +81,7 @@ class DurabilityHelper:
         :return durability_succeeds: Durability status for the bucket (bool)
         """
         durability_succeeds = True
-        bucket = BucketHelper.get_bucket_json(bucket_name)
+        bucket = BucketHelper(master).get_bucket_json(bucket_name)
         min_nodes_req = bucket["replicaNumber"] + 1
         majority_value = floor(min_nodes_req/2) + 1
 
@@ -92,7 +92,7 @@ class DurabilityHelper:
             if (self.durability == "MAJORITY"
                     and induced_error in self.disk_error_types):
                 durability_succeeds = True
-            elif (self.cluster_len-failed_nodes) < majority_value:
+            elif (self.cluster_len-len(failed_nodes)) < majority_value:
                 durability_succeeds = False
 
         return durability_succeeds

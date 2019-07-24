@@ -622,7 +622,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             # Detect whether durability is going to succeed or not
             # based on the fail_over type and num_server to fail
             durability_success = self.durability_helper.durability_succeeds(
-                bucket.name, induced_error=self.failover_action,
+                bucket.name, self.cluster.master, induced_error=self.failover_action,
                 failed_nodes=self.server_to_fail)
 
             no_error_ops = ["read"]
