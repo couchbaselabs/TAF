@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 import time
 import traceback
 import unittest
@@ -259,15 +260,9 @@ class BaseTestCase(unittest.TestCase):
             else:
                 if test_failed:
                     # collect logs here because we have not shut things down
-                    if TestInputSingleton.input.param("get-cbcollect-info", False):
-                        for server in self.servers:
-                            self.log.critical("Skipping CBCOLLECT !!")
-                            break
-                            self.infra_log.info("Collecting logs @ {0}"
-                                                .format(server.ip))
-                            self.get_cbcollect_info(server)
-                        # collected logs so turn it off so it is not done later
-                        TestInputSingleton.input.test_params["get-cbcollect-info"] = False
+                    if TestInputSingleton.input.param("get-cbcollect-info",
+                                                      False):
+                        self.fetch_cb_collect_logs()
 
                     if TestInputSingleton.input.param('get_trace', None):
                         for server in self.servers:
@@ -361,20 +356,54 @@ class BaseTestCase(unittest.TestCase):
                 rest.set_jre_path(self.jre_path)
         return quota
 
-    def get_cbcollect_info(self, server):
-        """
-        Collect cbcollectinfo logs for all the servers in the cluster.
-        """
-        path = TestInputSingleton.input.param("logs_folder", "/tmp")
-        print("grabbing cbcollect from {0}".format(server.ip))
-        path = path or "."
-        try:
-            cbcollectRunner(server, path).run()
-            TestInputSingleton.input.test_params[
-                "get-cbcollect-info"] = False
-        except Exception as e:
-            self.infra_log.error("IMPOSSIBLE TO GRAB CBCOLLECT FROM {0}: {1}"
-                                 .format(server.ip, e))
+    def fetch_cb_collect_logs(self):
+        log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+        for node in self.servers:
+            params = dict()
+            if len(self.servers) != 1:
+                params['nodes'] = 'ns_1@' + node.ip
+            else:
+                # In case of single node we have to pass ip as below
+                params['nodes'] = 'ns_1@' + '127.0.0.1'
+
+            self.log.info('Running cbcollect on node ' + node.ip)
+            rest = RestConnection(node)
+            status, _, _ = rest.perform_cb_collect(params)
+            # Needed as it takes a few seconds before the collection start
+            time.sleep(10)
+            self.log.info("%s - cbcollect status: %s" % (node.ip, status))
+
+            if status is True:
+                self.log.info("Polling active_tasks to check cbcollect status")
+                cb_collect_response = dict()
+                while True:
+                    content = rest.active_tasks()
+                    for response in content:
+                        if response['type'] == 'clusterLogsCollection':
+                            cb_collect_response = response
+                            break
+                    if cb_collect_response['status'] == 'completed':
+                        self.log.debug(cb_collect_response)
+                        break
+                    else:
+                        # CB collect running, wait and check progress again
+                        time.sleep(10)
+
+                self.log.info("Copying cbcollect ZIP file to Client")
+                remote_client = RemoteMachineShellConnection(node)
+                cb_collect_path = cb_collect_response['perNode'][params['nodes']]['path']
+                zip_file_copied = remote_client.get_file(
+                    os.path.dirname(cb_collect_path),
+                    os.path.basename(cb_collect_path),
+                    log_path)
+                self.log.info("%s node cb collect zip coped on client : %s"
+                              % (node.ip, zip_file_copied))
+
+                if zip_file_copied:
+                    remote_client.execute_command("rm -f %s" % cb_collect_path)
+                    remote_client.disconnect()
+            else:
+                self.log.error("API perform_cb_collect returned False")
 
     def sleep(self, timeout=15, message=""):
         self.log.info("{0}. Sleep for {1} secs ...".format(message, timeout))

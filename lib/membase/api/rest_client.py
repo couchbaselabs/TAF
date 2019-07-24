@@ -380,8 +380,10 @@ class RestConnection(object):
     def active_tasks(self):
         api = 'http://{0}:{1}/pools/default/tasks'.format(self.ip, self.port)
         try:
-            status, content, header = self._http_request(api, 'GET',
-                                                         headers=self._create_capi_headers())
+            status, content, header = self._http_request(
+                api,
+                'GET',
+                headers=self._create_capi_headers())
             json_parsed = json.loads(content)
         except ValueError as e:
             print(e)
@@ -2607,6 +2609,12 @@ class RestConnection(object):
         if status:
             return json_parsed["sendStats"]
         return None
+
+    def perform_cb_collect(self, params):
+        headers = self._create_headers()
+        api = self.baseUrl + "controller/startLogsCollection"
+        return self._http_request(api, 'POST',
+                                  urllib.urlencode(params), headers)
 
     def get_logs(self, last_n=10, contains_text=None):
         api = self.baseUrl + 'logs'
