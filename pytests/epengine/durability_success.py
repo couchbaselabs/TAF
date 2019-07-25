@@ -28,6 +28,12 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         Note: self.sdk_timeout value is considered as 'seconds'
         """
+
+        if self.durability_level.upper() in ["MAJORITY_AND_PERSIST_ON_MASTER",
+                                             "PERSIST_TO_MAJORITY"]:
+            self.log.critical("Test not valid for persistence durability")
+            return
+
         error_sim = dict()
         shell_conn = dict()
         cbstat_obj = dict()

@@ -493,6 +493,11 @@ class BasicOps(DurabilityTestsBase):
         4. Validate all mutations met the durability condition
         """
 
+        if self.durability_level.upper() in ["MAJORITY_AND_PERSIST_ON_MASTER",
+                                             "PERSIST_TO_MAJORITY"]:
+            self.log.critical("Test not valid for persistence durability")
+            return
+
         error_sim = dict()
         shell_conn = dict()
         cbstat_obj = dict()
@@ -685,8 +690,8 @@ class BasicOps(DurabilityTestsBase):
 
         # Load sub_docs for upsert/remove mutation to work
         sub_doc_gen = sub_doc_generator(self.key,
-                                        start=insert_end_index,
-                                        end=self.num_items,
+                                        start=0,
+                                        end=self.num_items/2,
                                         doc_size=self.sub_doc_size)
         task = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, sub_doc_gen, "insert", self.maxttl,
@@ -713,25 +718,25 @@ class BasicOps(DurabilityTestsBase):
         gen = dict()
         gen["insert"] = sub_doc_generator(
             self.key,
-            0,
-            100,
+            self.num_items/2,
+            self.crud_batch_size,
             target_vbucket=target_vbuckets)
         gen["read"] = sub_doc_generator_for_edit(
             self.key,
-            insert_end_index,
-            100,
+            self.num_items/4,
+            50,
             template_index=0,
             target_vbucket=target_vbuckets)
         gen["upsert"] = sub_doc_generator_for_edit(
             self.key,
-            insert_end_index,
-            100,
+            self.num_items/4,
+            50,
             template_index=0,
             target_vbucket=target_vbuckets)
         gen["remove"] = sub_doc_generator_for_edit(
             self.key,
-            upsert_end_index,
-            100,
+            0,
+            50,
             template_index=2,
             target_vbucket=target_vbuckets)
 
@@ -742,10 +747,12 @@ class BasicOps(DurabilityTestsBase):
             batch_size=1, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            print_ops_rate=False,
             timeout_secs=self.sdk_timeout)
         tasks["read"] = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen["read"], "read", 0,
             batch_size=1, process_concurrency=1,
+            print_ops_rate=False,
             timeout_secs=self.sdk_timeout)
         tasks["upsert"] = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen["upsert"], "upsert", 0,
@@ -753,12 +760,14 @@ class BasicOps(DurabilityTestsBase):
             batch_size=1, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            print_ops_rate=False,
             timeout_secs=self.sdk_timeout)
         tasks["remove"] = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen["remove"], "remove", 0,
             batch_size=1, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            print_ops_rate=False,
             timeout_secs=self.sdk_timeout)
 
         # Wait for document_loader tasks to complete
@@ -791,7 +800,7 @@ class BasicOps(DurabilityTestsBase):
                 if crud_result["cas"] == 0:
                     self.log_failure("%s failed for %s: %s"
                                      % (op_type, doc_key, crud_result))
-                if op_type == "create":
+                if op_type == "insert":
                     if reader_task.success[doc_key]["value"][0] != 1:
                         self.log_failure("%s value mismatch for %s: %s"
                                          % (op_type, doc_key, crud_result))
@@ -799,8 +808,6 @@ class BasicOps(DurabilityTestsBase):
                     if reader_task.success[doc_key]["value"][0] != 2:
                         self.log_failure("%s value mismatch for %s: %s"
                                          % (op_type, doc_key, crud_result))
-            self.log.info(op_type)
-            self.log.info(task.success.items())
             # Verify there is not failed docs in the task
 
         # Fetch latest failover stats and validate the values are updated

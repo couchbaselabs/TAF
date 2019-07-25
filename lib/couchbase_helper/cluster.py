@@ -191,7 +191,7 @@ class ServerTasks(object):
                                 only_store_hash=True, batch_size=1,
                                 pause_secs=1,
                                 timeout_secs=5, compression=True,
-                                process_concurrency=8, retries=5,
+                                process_concurrency=8, print_ops_rate=True,
                                 durability=""):
         self.log.debug("Loading sub documents to {}".format(bucket.name))
         if not isinstance(generator, SubdocDocumentGenerator):
@@ -227,7 +227,7 @@ class ServerTasks(object):
             timeout_secs=timeout_secs,
             compression=compression,
             process_concurrency=process_concurrency,
-            retries=retries,
+            print_ops_rate=print_ops_rate,
             durability=durability)
         self.jython_task_manager.add_new_task(_task)
         return _task
