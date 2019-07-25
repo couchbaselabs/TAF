@@ -1,3 +1,4 @@
+import copy
 import time
 import json
 
@@ -167,8 +168,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         error_sim = dict()
         vb_info = dict()
 
-        active_vbs_in_target_nodes = list()
-        target_vbuckets = range(0, self.vbuckets)
+        replica_vbs = dict()
 
         # Variable to hold one of the doc_generator objects
         gen_loader_1 = None
@@ -187,12 +187,19 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
-            active_vbs_in_target_nodes += cbstat_obj[node.ip].vbucket_list(
-                self.bucket.name, vbucket_type="active")
+            replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
+                self.bucket.name, vbucket_type="replica")
 
-        # Remove active vbuckets from doc_loading to avoid errors
-        target_vbuckets = list(set(target_vbuckets)
-                               ^ set(active_vbs_in_target_nodes))
+        target_vbuckets = replica_vbs[target_nodes[0].ip]
+        if len(target_nodes) > 1:
+            index = 1
+            while index < len(target_nodes):
+                target_vbuckets = list(
+                    set(target_vbuckets).intersection(
+                        set(replica_vbs[target_nodes[index].ip])
+                    )
+                )
+                index += 1
 
         # Initialize doc_generators to use for testing
         self.log.info("Creating doc_generators")
@@ -211,6 +218,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for node in target_nodes:
             error_sim[node.ip].create(self.simulate_error,
                                       bucket_name=self.bucket.name)
+        self.sleep(10, "Wait for error simulation to take effect")
 
         # Start CRUD operation based on the given 'doc_op' type
         if self.doc_ops[0] == "create":
@@ -236,26 +244,25 @@ class DurabilityFailureTests(DurabilityTestsBase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout)
 
-        self.sleep(20, message="Wait for task_1 ops to reach the server")
-
         # SDK client for performing individual ops
         client = SDKClient(RestConnection(self.cluster.master),
                            self.bucket)
         # Perform specified CRUD operation on sync_write docs
-        while gen_loader_2.has_next():
-            key, value = gen_loader_2.next()
+        tem_gen = copy.deepcopy(gen_loader_2)
+        while tem_gen.has_next():
+            key, value = tem_gen.next()
             if self.with_non_sync_writes:
                 fail = client.crud(self.doc_ops[1], key, value=value, exp=0)
             else:
                 fail = client.crud(self.doc_ops[1], key, value=value, exp=0,
                                    durability=self.durability_level,
-                                   timeout=2, time_unit="seconds")
+                                   timeout=5, time_unit="seconds")
 
             # Validate the returned error from the SDK
             if self.durability_helper.EXCEPTIONS["write_in_progress"] \
                     not in str(fail["error"]):
-                self.log_failure("Invalid exception: {0}"
-                                 .format(fail["error"]))
+                self.log_failure("Invalid exception for {0}: {1}"
+                                 .format(key, fail["error"]))
 
             # Try reading the value in SyncWrite in-progress state
             fail = client.crud("read", key)
@@ -294,7 +301,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                        durability=self.durability_level,
                                        timeout=self.sdk_timeout,
                                        time_unit="seconds")
-                if "error" in fail:
+                if fail["error"] or fail["status"] is False:
                     self.log_failure("CRUD failed without error condition: {0}"
                                      .format(fail))
 
@@ -590,9 +597,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         cbstat_obj = dict()
         error_sim = dict()
         vb_info = dict()
-
-        active_vbs_in_target_nodes = list()
-        target_vbuckets = range(0, self.vbuckets)
+        replica_vbs = dict()
 
         # Variable to hold the doc_generator objects as per self.doc_ops
         gen_loader = list()
@@ -610,12 +615,19 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
-            active_vbs_in_target_nodes += cbstat_obj[node.ip].vbucket_list(
-                self.bucket.name, vbucket_type="active")
+            replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
+                self.bucket.name, vbucket_type="replica")
 
-        # Remove active vbuckets from doc_loading to avoid errors
-        target_vbuckets = list(set(target_vbuckets)
-                               ^ set(active_vbs_in_target_nodes))
+        target_vbuckets = replica_vbs[target_nodes[0].ip]
+        if len(target_nodes) > 1:
+            index = 1
+            while index < len(target_nodes):
+                target_vbuckets = list(
+                    set(target_vbuckets).intersection(
+                        set(replica_vbs[target_nodes[index].ip])
+                    )
+                )
+                index += 1
 
         # Initialize doc_generators to use for testing
         self.log.info("Creating doc_generators")
@@ -1099,6 +1111,47 @@ class TimeoutTests(DurabilityTestsBase):
         Note: self.sdk_timeout values is considered as 'seconds'
         """
 
+        # Local method to validate vb_seqno
+        def validate_vb_seqno_stats():
+            """
+            :return retry_validation: Boolean denoting to retry validation
+            """
+            retry_validation = False
+            vb_info["post_timeout"][node.ip] = \
+                cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
+            for vb_num in range(self.vbuckets):
+                vb_num = str(vb_num)
+                if vb_num not in affected_vbs:
+                    if vb_info["init"][node.ip][vb_num] \
+                            != vb_info["post_timeout"][node.ip][vb_num]:
+                        self.log_failure(
+                            "Unaffected vb-%s stat updated: %s != %s"
+                            % (vb_num,
+                               vb_info["init"][node.ip][vb_num],
+                               vb_info["post_timeout"][node.ip][vb_num]))
+                elif int(vb_num) in target_nodes_vbuckets["active"]:
+                    if vb_info["init"][node.ip][vb_num] \
+                            != vb_info["post_timeout"][node.ip][vb_num]:
+                        self.log_failure(
+                            err_msg
+                            % (node.ip,
+                               "active",
+                               vb_num,
+                               vb_info["init"][node.ip][vb_num],
+                               vb_info["post_timeout"][node.ip][vb_num]))
+                elif int(vb_num) in target_nodes_vbuckets["replica"]:
+                    if vb_info["init"][node.ip][vb_num] \
+                            == vb_info["post_timeout"][node.ip][vb_num]:
+                        retry_validation = True
+                        self.log.warning(
+                            err_msg
+                            % (node.ip,
+                               "replica",
+                               vb_num,
+                               vb_info["init"][node.ip][vb_num],
+                               vb_info["post_timeout"][node.ip][vb_num]))
+            return retry_validation
+
         shell_conn = dict()
         cbstat_obj = dict()
         error_sim = dict()
@@ -1106,6 +1159,7 @@ class TimeoutTests(DurabilityTestsBase):
         vb_info = dict()
         tasks = dict()
         doc_gen = dict()
+        affected_vbs = list()
 
         target_nodes_vbuckets["active"] = []
         target_nodes_vbuckets["replica"] = []
@@ -1206,15 +1260,33 @@ class TimeoutTests(DurabilityTestsBase):
         if int(time.time()) < expected_timeout:
             self.log_failure("Timed-out before expected time")
 
+        for op_type in doc_gen.keys():
+            if op_type == "read":
+                continue
+            while doc_gen[op_type].has_next():
+                doc_id, _ = doc_gen[op_type].next()
+                affected_vbs.append(
+                    str(self.bucket_util.get_vbucket_num_for_key(
+                        doc_id,
+                        self.vbuckets)))
+
+        affected_vbs = list(set(affected_vbs))
+        err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"
         # Fetch latest stats and validate the seq_nos are not updated
         for node in target_nodes:
-            vb_info["post_timeout"][node.ip] = \
-                cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            if vb_info["init"][node.ip] != vb_info["post_timeout"][node.ip]:
-                self.log_failure("%s - mismatch in vbucket_seqno: %s != %s"
-                                 % (node.ip,
-                                    vb_info["init"][node.ip],
-                                    vb_info["post_timeout"][node.ip]))
+            retry_count = 0
+            max_retry = 3
+            while retry_count < max_retry:
+                self.log.info("Trying to validate vbseq_no stats: %d"
+                              % (retry_count+1))
+                retry_count += 1
+                retry_required = validate_vb_seqno_stats()
+                if not retry_required:
+                    break
+                self.sleep(5, "Sleep for vbseq_no stats to update")
+            else:
+                # This will be exited only if `break` condition is not met
+                self.log_failure("validate_vb_seqno_stats verification failed")
 
         self.validate_test_failure()
 
