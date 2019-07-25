@@ -243,6 +243,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             batch_size=self.crud_batch_size, process_concurrency=8,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout)
+        self.sleep(20, "Wait for task_1 CRUDs to reach server")
 
         # SDK client for performing individual ops
         client = SDKClient(RestConnection(self.cluster.master),
@@ -288,15 +289,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
         # Cannot retry for CREATE/DELETE operation. So doing only for UPDATE
-        if self.doc_ops[1] == "update":
+        if self.doc_ops[0] == "update":
             # Retry doc_op after reverting the induced error
             while gen_loader_2.has_next():
                 key, value = gen_loader_2.next()
                 if self.with_non_sync_writes:
-                    fail = client.crud(self.doc_ops[1], key,
+                    fail = client.crud(self.doc_ops[0], key,
                                        value=value, exp=0)
                 else:
-                    fail = client.crud(self.doc_ops[1], key,
+                    fail = client.crud(self.doc_ops[0], key,
                                        value=value, exp=0,
                                        durability=self.durability_level,
                                        timeout=self.sdk_timeout,
