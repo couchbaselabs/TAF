@@ -279,6 +279,11 @@ class BasicOps(DurabilityTestsBase):
                                             doc_size=self.sub_doc_size,
                                             target_vbucket=self.target_vbucket,
                                             vbuckets=self.vbuckets)
+            template_index_1 = 0
+            template_index_2 = 1
+            if doc_ops == "remove":
+                template_index_1 = 2
+                template_index_2 = 2
             task = self.task.async_load_gen_sub_docs(
                 self.cluster, def_bucket, sub_doc_gen, "insert", self.maxttl,
                 path_create=True,
@@ -292,14 +297,14 @@ class BasicOps(DurabilityTestsBase):
                 self.key,
                 start=0,
                 end=half_of_num_items,
-                template_index=0,
+                template_index=template_index_1,
                 target_vbucket=self.target_vbucket,
                 vbuckets=self.vbuckets)
             doc_gen[1] = sub_doc_generator_for_edit(
                 self.key,
                 start=half_of_num_items,
                 end=self.num_items,
-                template_index=1,
+                template_index=template_index_2,
                 target_vbucket=self.target_vbucket,
                 vbuckets=self.vbuckets)
         else:
