@@ -3,7 +3,7 @@ import time
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_cli import CouchbaseCLI
-from couchbase_helper.documentgenerator import DocumentGenerator
+from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -708,6 +708,20 @@ class AutoFailoverBaseTest(BaseTestCase):
             for b_index, bucket_obj in enumerate(self.bucket_util.buckets):
                 validate_durability_for_bucket(b_index, bucket_obj)
 
+    def data_load_after_autofailover(self):
+        gen_create = doc_generator(self.key, self.num_items,
+                                   self.num_items * 2)
+        self.bucket = self.bucket_util.buckets[0]
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_create, "create", 0,
+            batch_size=10, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout)
+        self.task.jython_task_manager.get_task_result(task)
+        # Verify there is not failed docs in the task
+        if len(task.fail.keys()) != 0:
+            self.log_failure("Some CRUD failed after autofailover")
 
 class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
     def setUp(self):

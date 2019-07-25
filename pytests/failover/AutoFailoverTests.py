@@ -31,10 +31,15 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.loadgen_tasks = self._loadgen()
 
         self.failover_actions[self.failover_action](self)
-        for task in self.loadgen_tasks:
-            self.task_manager.get_task_result(task)
+        if self.durability_level or self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
+        self.sleep(60)
         if self.durability_level:
-            self.validate_loadgen_tasks()
+            self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
 
     def test_autofailover_during_rebalance(self):
@@ -62,10 +67,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.failover_actions[self.failover_action](self)
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.assertFalse(rebalance_task.result, "Rebalance should fail since a node went down")
-        for task in self.loadgen_tasks:
-            self.task_manager.get_task_result(task)
+        if self.durability_level or self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
         if self.durability_level:
-            self.validate_loadgen_tasks()
+            self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
 
     def test_autofailover_after_rebalance(self):
@@ -95,10 +104,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
         self.failover_actions[self.failover_action](self)
-        for task in self.loadgen_tasks:
-            self.task_manager.get_task_result(task)
+        if self.durability_level or self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
         if self.durability_level:
-            self.validate_loadgen_tasks()
+            self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
 
     def test_rebalance_after_autofailover(self):
@@ -149,10 +162,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
-        for task in self.loadgen_tasks:
-            self.task_manager.get_task_result(task)
+        if self.durability_level or self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
         if self.durability_level:
-            self.validate_loadgen_tasks()
+            self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
 
     def test_autofailover_and_addback_of_node(self):
@@ -201,11 +218,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             msg = "rebalance failed while updating replica from {0} -> {1}" \
                 .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
-
-        for task in self.loadgen_tasks:
-            self.task_manager.get_task_result(task)
+        if self.durability_level or self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
         if self.durability_level:
-            self.validate_loadgen_tasks()
+            self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
 
     def test_autofailover_and_remove_failover_node(self):
@@ -250,8 +270,12 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                   .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
-        for task in self.loadgen_tasks:
-            self.task_manager.get_task_result(task)
+        if self.durability_level or self.atomicity:
+            for task in self.loadgen_tasks:
+                self.task_manager.get_task_result(task)
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
         if self.durability_level:
-            self.validate_loadgen_tasks()
+            self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
