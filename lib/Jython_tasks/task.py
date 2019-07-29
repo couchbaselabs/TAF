@@ -1319,7 +1319,7 @@ class LoadDocumentsGeneratorsTask(Task):
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier="", skip_read_on_error=False):
         super(LoadDocumentsGeneratorsTask, self).__init__(
-            "DocumentsLoadGenTask_{}".format(time.time()))
+            "DocumentsLoadGenTask_{}_{}".format(task_identifier, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.exp_unit = exp_unit

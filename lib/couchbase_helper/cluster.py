@@ -273,7 +273,7 @@ class ServerTasks(object):
                                                         pause_secs=pause_secs, timeout_secs=timeout_secs,
                                                         compression=compression,
                                                         process_concurrency=process_concurrency, retries=retries, update_count=update_count,
-                                                        transaction_timeout=transaction_timeout, commit=commit, durability=durability, 
+                                                        transaction_timeout=transaction_timeout, commit=commit, durability=durability,
                                                         sync=sync, task_identifier=task_identifier)
         self.jython_task_manager.add_new_task(_task)
         return _task
@@ -333,6 +333,7 @@ class ServerTasks(object):
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
                 timeout_secs=sdk_timeout,
+                task_identifier=bucket.name,
                 print_ops_rate=False)
             self.jython_task_manager.get_task_result(task)
             bucket_stat = rest.get_bucket_stats_for_node(bucket.name,

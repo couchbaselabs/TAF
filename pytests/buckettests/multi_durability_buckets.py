@@ -1,6 +1,7 @@
 from basetestcase import BaseTestCase
 from bucket_utils.Bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
+from membase.api.rest_client import RestConnection
 
 
 class MultiDurabilityTests(BaseTestCase):
@@ -12,7 +13,24 @@ class MultiDurabilityTests(BaseTestCase):
         bucket_type_list = self.input.param("bucket_type_list", list())
         self.bucket_dict = dict()
         tasks = dict()
-        bucket_ram_quota = 100
+
+        # Create cluster
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
+        self.task.rebalance([self.cluster.master], nodes_init, [])
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+        self.bucket_util.add_rbac_user()
+
+        rest = RestConnection(self.cluster.master)
+        info = rest.get_nodes_self()
+        if info.memoryQuota < 450.0:
+            self.fail("At least 450MB of memory required")
+        else:
+            available_ram = info.memoryQuota * (2.0 / 3.0)
+            if available_ram / self.standard_buckets > 100:
+                bucket_ram_quota = int(available_ram / self.standard_buckets)
+            else:
+                bucket_ram_quota = 100
 
         if type(replica_list) is str:
             replica_list = replica_list.split(";")
@@ -26,7 +44,7 @@ class MultiDurabilityTests(BaseTestCase):
             if len(replica_list)-1 < index:
                 self.bucket_dict[index]["replica"] = 0
             else:
-                self.bucket_dict[index]["replica"] = replica_list[index]
+                self.bucket_dict[index]["replica"] = int(replica_list[index])
 
             # If bucket_type not provided, set replica value to 'MEMBASE'
             if len(bucket_type_list)-1 < index:
@@ -45,7 +63,7 @@ class MultiDurabilityTests(BaseTestCase):
             tasks[bucket] = self.bucket_util.async_create_bucket(bucket)
 
             # Append bucket object into the bucket_info dict
-            self.bucket_dict[index]["object"] = self.bucket_util.buckets[-1]
+            self.bucket_dict[index]["object"] = bucket
 
         raise_exception = None
         for bucket, task in tasks.items():
@@ -59,11 +77,13 @@ class MultiDurabilityTests(BaseTestCase):
                     raise_exception = "Bucket %s not warmed up" % bucket.name
 
             if task.result:
-                self.buckets.append(bucket)
+                self.bucket_util.buckets.append(bucket)
             self.task_manager.stop_task(task)
 
         if raise_exception:
             raise Exception("Create bucket failed: %s" % raise_exception)
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
         self.log.info("=== MultiDurabilityTests base setup done ===")
 
     def tearDown(self):
@@ -82,52 +102,19 @@ class MultiDurabilityTests(BaseTestCase):
 
         # Function to perform CRUDs on all buckets in parallel and verify
         def generic_multi_load_cruds(bucket_info):
-            tasks = []
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket_info[0]["object"],
-                bucket_info[0]["loader"],
-                bucket_info[0]["op_type"], 0, batch_size=10,
-                process_concurrency=1,
-                replicate_to=bucket_info[0]["replicate_to"],
-                persist_to=bucket_info[0]["persist_to"],
-                durability=bucket_info[0]["durability"],
-                sdk_timeout=bucket_info[0]["sdk_timeout"]))
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket_info[1]["object"],
-                bucket_info[1]["loader"],
-                bucket_info[1]["op_type"], 0, batch_size=10,
-                process_concurrency=1,
-                replicate_to=bucket_info[1]["replicate_to"],
-                persist_to=bucket_info[1]["persist_to"],
-                durability=bucket_info[1]["durability"],
-                sdk_timeout=bucket_info[1]["sdk_timeout"]))
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket_info[2]["object"],
-                bucket_info[2]["loader"],
-                bucket_info[2]["op_type"], 0, batch_size=10,
-                process_concurrency=1,
-                replicate_to=bucket_info[2]["replicate_to"],
-                persist_to=bucket_info[2]["persist_to"],
-                durability=bucket_info[2]["durability"],
-                sdk_timeout=bucket_info[2]["sdk_timeout"]))
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket_info[3]["object"],
-                bucket_info[3]["loader"],
-                bucket_info[3]["op_type"], 0, batch_size=10,
-                process_concurrency=1,
-                replicate_to=bucket_info[3]["replicate_to"],
-                persist_to=bucket_info[3]["persist_to"],
-                durability=bucket_info[3]["durability"],
-                sdk_timeout=bucket_info[3]["sdk_timeout"]))
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, bucket_info[4]["object"],
-                bucket_info[4]["loader"],
-                bucket_info[4]["op_type"], 0, batch_size=10,
-                process_concurrency=1,
-                replicate_to=bucket_info[4]["replicate_to"],
-                persist_to=bucket_info[4]["persist_to"],
-                durability=bucket_info[4]["durability"],
-                sdk_timeout=bucket_info[4]["sdk_timeout"]))
+            tasks = list()
+            for index in range(5):
+                tasks.append(self.task.async_load_gen_docs(
+                    self.cluster, bucket_info[index]["object"],
+                    bucket_info[index]["loader"],
+                    bucket_info[index]["op_type"], 0, batch_size=10,
+                    process_concurrency=1,
+                    replicate_to=bucket_info[index]["replicate_to"],
+                    persist_to=bucket_info[index]["persist_to"],
+                    durability=bucket_info[index]["durability"],
+                    timeout_secs=bucket_info[index]["sdk_timeout"],
+                    task_identifier=bucket_info[index]["object"].name,
+                    print_ops_rate=False))
 
             # Wait for all tasks to complete
             for task in tasks:
@@ -144,10 +131,10 @@ class MultiDurabilityTests(BaseTestCase):
         # Function to update the existing bucket dictionary object
         # based on the values passed to it
         def dict_updater(index, bucket_dict, doc_gen, op_type,
-                         persist_to=0, replicate_to=0, durability=None,
+                         persist_to=0, replicate_to=0, durability="",
                          sdk_timeout=0):
             bucket_dict[index]["loader"] = doc_gen
-            bucket_dict[index]["op_type"] = "create"
+            bucket_dict[index]["op_type"] = op_type
             bucket_dict[index]["persist_to"] = persist_to
             bucket_dict[index]["replicate_to"] = replicate_to
             bucket_dict[index]["durability"] = durability
@@ -161,17 +148,20 @@ class MultiDurabilityTests(BaseTestCase):
 
         # Load all buckets without any durability requirements
         gen_create = doc_generator(self.key, 0, self.num_items)
+        doc_loading_tasks = list()
         for bucket in self.bucket_util.buckets:
-            doc_loader = self.task.async_load_gen_docs(
+            doc_loading_tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_create, "create", 0,
-                batch_size=10, process_concurrency=8,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
-            self.task.jython_task_manager.get_task_result(doc_loader)
+                batch_size=10, process_concurrency=1,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                task_identifier=bucket.name))
+        for task in doc_loading_tasks:
+            self.task.jython_task_manager.get_task_result(task)
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
-        return
 
         half_of_num_items = int(self.num_items/2)
 
@@ -185,15 +175,18 @@ class MultiDurabilityTests(BaseTestCase):
         replicate_to = 0 if replica == 0 else int(replica/2) + 1
         # First-set of ops on multi-buckets
         dict_updater(0, self.bucket_dict, gen_create, "create",
-                     durability="MAJORITY", sdk_timeout=5)
+                     durability="MAJORITY", sdk_timeout=30)
         dict_updater(1, self.bucket_dict, gen_update, "update",
                      durability="MAJORITY_AND_PERSIST_ON_MASTER",
-                     sdk_timeout=5)
+                     sdk_timeout=30)
         dict_updater(2, self.bucket_dict, gen_delete, "delete",
-                     durability="PERSIST_TO_MAJORITY", sdk_timeout=5)
+                     durability="PERSIST_TO_MAJORITY", sdk_timeout=60)
         dict_updater(3, self.bucket_dict, gen_update, "update",
-                     persist_to=1, replicate_to=replicate_to)
-        dict_updater(4, self.bucket_dict, gen_create, "create")
+                     persist_to=1, replicate_to=replicate_to,
+                     sdk_timeout=10)
+        dict_updater(4, self.bucket_dict, gen_create, "create",
+                     sdk_timeout=10)
+        dict_updater(5, self.bucket_dict, gen_create, "update")
 
         # Call the generic doc_operation function
         generic_multi_load_cruds(self.bucket_dict)
@@ -204,15 +197,17 @@ class MultiDurabilityTests(BaseTestCase):
         persist_to = 0 if replica == 0 else int(replica/2) + 1
         # Second-set of ops on multi-buckets
         dict_updater(0, self.bucket_dict, gen_update, "update",
-                     persist_to=persist_to, replicate_to=replicate_to)
+                     persist_to=persist_to, replicate_to=replicate_to,
+                     sdk_timeout=30)
         dict_updater(1, self.bucket_dict, gen_delete, "delete",
                      durability="MAJORITY_AND_PERSIST_ON_MASTER",
-                     sdk_timeout=5)
+                     sdk_timeout=30)
         dict_updater(2, self.bucket_dict, gen_create, "create",
-                     durability="PERSIST_TO_MAJORITY", sdk_timeout=5)
-        dict_updater(3, self.bucket_dict, gen_update, "update",
-                     durability="MAJORITY", sdk_timeout=5)
-        dict_updater(4, self.bucket_dict, gen_create, "create")
+                     durability="PERSIST_TO_MAJORITY", sdk_timeout=60)
+        dict_updater(3, self.bucket_dict, gen_delete, "delete",
+                     durability="MAJORITY", sdk_timeout=10)
+        dict_updater(4, self.bucket_dict, gen_update, "update",
+                     sdk_timeout=10)
 
         # Call the generic doc_operation function
         generic_multi_load_cruds(self.bucket_dict)

@@ -32,8 +32,8 @@ class MultiBucketTests(BaseTestCase):
         self.log.info("doc_generator created")
 
         # Load all buckets with initial load of docs
-        tasks = []
-        for bucket in self.bucket_util.buckets:
+        tasks = list()
+        for index, bucket in enumerate(self.bucket_util.buckets):
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, self.load_gen, "create", 0,
                 batch_size=10,
@@ -41,7 +41,8 @@ class MultiBucketTests(BaseTestCase):
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout))
+                timeout_secs=self.sdk_timeout,
+                task_identifier="bucket%d" % int(index+1)))
 
         for task in tasks:
             self.task_manager.get_task_result(task)
@@ -55,7 +56,13 @@ class MultiBucketTests(BaseTestCase):
         super(MultiBucketTests, self).tearDown()
 
     def test_multi_bucket_cruds(self):
+        def update_dict(bucket_obj, op_type, doc_gen):
+            doc_ops_dict[bucket_obj] = dict()
+            doc_ops_dict[bucket_obj]["op_type"] = op_type
+            doc_ops_dict[bucket_obj]["doc_gen"] = doc_gen
+
         tasks = list()
+        doc_ops_dict = dict()
         bucket_1 = self.bucket_util.buckets[0]
         bucket_2 = self.bucket_util.buckets[1]
         bucket_3 = self.bucket_util.buckets[2]
@@ -67,43 +74,25 @@ class MultiBucketTests(BaseTestCase):
             self.key, self.num_items, self.num_items * 2,
             doc_size=self.doc_size, doc_type="json",
             target_vbucket=self.target_vbucket, vbuckets=self.vbuckets)
-        self.log.info("doc_generator created")
 
-        # Load new docs in bucket-1
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket_1, gen_create, "create", 0, batch_size=10,
-            process_concurrency=1,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+        update_dict(bucket_1, "create", gen_create)
+        update_dict(bucket_2, "update", self.load_gen)
+        update_dict(bucket_3, "delete", self.load_gen)
+        update_dict(bucket_4, "read", self.load_gen)
 
-        # Update docs in bucket-2
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket_2, self.load_gen, "update", 0, batch_size=10,
-            process_concurrency=1,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-
-        # Delete docs in bucket-3
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket_3, self.load_gen, "delete", 0, batch_size=10,
-            process_concurrency=1,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-
-        # Read docs in bucket-4
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket_4, self.load_gen, "read", 0, batch_size=10,
-            process_concurrency=1,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+        self.log.info("Starting doc_ops on buckets")
+        for bucket_obj, bucket_op_dict in doc_ops_dict.items():
+            tasks.append(self.task.async_load_gen_docs(
+                self.cluster, bucket_obj,
+                bucket_op_dict["doc_gen"],
+                bucket_op_dict["op_type"],
+                0, batch_size=10,
+                process_concurrency=1,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                task_identifier=bucket_obj.name))
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -116,16 +105,22 @@ class MultiBucketTests(BaseTestCase):
         self.bucket_util.verify_stats_for_bucket(bucket_3, 0)
 
     def test_multi_bucket_in_different_state(self):
-        dgm_for_bucket1 = 80
-        dgm_for_bucket2 = 50
-        dgm_for_bucket3 = 20
+        def update_dict(bucket_obj, op_type, doc_gen, dgm=100, num_items=0):
+            doc_ops_dict[bucket_obj] = dict()
+            doc_ops_dict[bucket_obj]["num_items"] = num_items
+            doc_ops_dict[bucket_obj]["dgm"] = dgm
+            doc_ops_dict[bucket_obj]["op_type"] = op_type
+            doc_ops_dict[bucket_obj]["doc_gen"] = doc_gen
 
+        doc_ops_dict = dict()
         bucket_1 = self.bucket_util.buckets[0]
         bucket_2 = self.bucket_util.buckets[1]
         bucket_3 = self.bucket_util.buckets[2]
         bucket_4 = self.bucket_util.buckets[3]
 
-        tasks = list()
+        update_dict(bucket_1, "create", None, 80, self.num_items)
+        update_dict(bucket_2, "create", None, 50, self.num_items)
+        update_dict(bucket_3, "create", None, 20, self.num_items)
 
         gen_update = doc_generator(self.key, 0, self.num_items)
         update_task = self.task.async_continuous_update_docs(
@@ -137,69 +132,58 @@ class MultiBucketTests(BaseTestCase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout)
 
-        bucket_1_num_items = self.task.load_bucket_into_dgm(
-            self.cluster, bucket_1, self.key, self.num_items,
-            dgm_for_bucket1,
-            batch_size=10,
-            process_concurrency=2,
-            persist_to=self.persist_to,
-            replicate_to=self.replicate_to,
-            durability=self.durability_level,
-            sdk_timeout=self.sdk_timeout)
-        bucket_2_num_items = self.task.load_bucket_into_dgm(
-            self.cluster, bucket_2, self.key, self.num_items,
-            dgm_for_bucket2,
-            batch_size=10,
-            process_concurrency=2,
-            persist_to=self.persist_to,
-            replicate_to=self.replicate_to,
-            durability=self.durability_level,
-            sdk_timeout=self.sdk_timeout)
-        bucket_3_num_items = self.task.load_bucket_into_dgm(
-            self.cluster, bucket_3, self.key, self.num_items,
-            dgm_for_bucket3,
-            batch_size=10,
-            process_concurrency=2,
-            persist_to=self.persist_to,
-            replicate_to=self.replicate_to,
-            sdk_timeout=self.sdk_timeout)
+        for bucket_obj, bucket_op_dict in doc_ops_dict.items():
+            bucket_op_dict["num_items"] = \
+                self.task.load_bucket_into_dgm(
+                    self.cluster, bucket_1, self.key,
+                    bucket_op_dict["num_items"],
+                    bucket_op_dict["dgm"],
+                    batch_size=10,
+                    process_concurrency=2,
+                    persist_to=self.persist_to,
+                    replicate_to=self.replicate_to,
+                    durability=self.durability_level,
+                    sdk_timeout=self.sdk_timeout)
 
-        gen_1 = doc_generator(self.key, bucket_1_num_items,
-                              bucket_1_num_items+self.num_items)
-        gen_2 = doc_generator(self.key, bucket_2_num_items,
-                              bucket_2_num_items+self.num_items)
-        gen_3 = doc_generator(self.key, self.num_items, bucket_3_num_items)
+        gen_1 = doc_generator(
+            self.key,
+            doc_ops_dict[bucket_1]["num_items"],
+            doc_ops_dict[bucket_1]["num_items"] + self.num_items)
+        gen_2 = doc_generator(
+            self.key,
+            doc_ops_dict[bucket_2]["num_items"],
+            doc_ops_dict[bucket_2]["num_items"] + self.num_items)
+        gen_3 = doc_generator(
+            self.key,
+            self.num_items,
+            doc_ops_dict[bucket_3]["num_items"])
+
+        tasks = list()
+        update_dict(bucket_1, "create", gen_1)
+        update_dict(bucket_2, "create", gen_2)
+        update_dict(bucket_3, "delete", gen_3)
 
         # Start ASYNC tasks to bucket ops on multi-buckets
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket_1, gen_1, "create", self.maxttl,
-            batch_size=10,
-            process_concurrency=1,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket_2, gen_2, "create", self.maxttl,
-            batch_size=10,
-            process_concurrency=1,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, bucket_3, gen_3, "delete", self.maxttl,
-            batch_size=10,
-            process_concurrency=1,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+        for bucket_obj, bucket_op_dict in doc_ops_dict.items():
+            tasks.append(self.task.async_load_gen_docs(
+                self.cluster, bucket_obj,
+                bucket_op_dict[bucket_obj]["doc_gen"],
+                bucket_op_dict[bucket_obj]["op_type"],
+                exp=self.maxttl,
+                batch_size=10,
+                process_concurrency=1,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout))
 
         # Wait for tasks to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-
         # Stop the continuous doc update task
         self.task_manager.stop_task(update_task)
-        self.bucket_util.verify_stats_for_bucket(bucket_4, self.num_items)
+
+        # Validate docs in known buckets 3, 4
+        for bucket_obj in [bucket_3, bucket_4]:
+            self.bucket_util.verify_stats_for_bucket(bucket_obj,
+                                                     self.num_items)
