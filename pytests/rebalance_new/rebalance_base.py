@@ -7,6 +7,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from couchbase_helper.durability_helper import DurableExceptions
 
 
 class RebalanceBaseTest(BaseTestCase):
@@ -242,9 +243,17 @@ class RebalanceBaseTest(BaseTestCase):
 
         return tasks_info
 
-    def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[], task_verification = False,
-                    _async=False, op_type="create"):
+    def loadgen_docs(self,
+                     retry_exceptions=[],
+                     ignore_exceptions=[],
+                     task_verification=False,
+                     _async=False, op_type="create"):
         loaders = []
+        retry_exceptions = list(set(retry_exceptions +
+                                    [DurableExceptions.RequestTimeoutException,
+                                     DurableExceptions.RequestCanceledException,
+                                     DurableExceptions.DurabilityAmbiguousException]))
+
         if op_type == "create":
             if self.atomicity:
                 loaders = self.start_parallel_cruds_atomicity(self.sync, _async, op_type=op_type)
