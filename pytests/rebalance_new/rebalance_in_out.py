@@ -3,6 +3,7 @@ from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
 from rebalance_new.swaprebalancetests import SwapRebalanceBase
 from BucketLib.BucketOperations import BucketHelper
+from couchbase_helper.durability_helper import DurableExceptions
 
 
 class RebalanceInOutTests(RebalanceBaseTest):
@@ -236,12 +237,17 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
-        gen = self.get_doc_generator(0, self.num_items)
-        batch_size = 50
+        self.doc_ops = "update"
+        self.gen_update = self.get_doc_generator(0, self.num_items)
+        retry_exceptions = [
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            ]
+
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
-            tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, gen, "update", 0,
-                batch_size=batch_size, timeout_secs=60)
+            # CRUDs while rebalance is running in parallel
+            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
             self.sleep(10)
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
@@ -251,9 +257,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-            tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, gen, "update", 0,
-                batch_size=batch_size, timeout_secs=60)
+            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
@@ -328,13 +333,25 @@ class RebalanceInOutTests(RebalanceBaseTest):
         We then add and remove back two nodes at a time and so on until we have reached
         the point where we are adding back and removing at least half of the nodes.
         """
-        gen = self.get_doc_generator(0, self.num_items)
-        for i in range(self.num_servers):
-            tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, gen, "update", 0, batch_size=10, timeout_secs=60)
-            self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.nodes_init + i + 1], [])
+        self.doc_ops = "update"
+        self.gen_update = self.get_doc_generator(0, self.num_items)
+        retry_exceptions = [
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            ]
+
+        for i in range(self.nodes_init, self.num_servers):
+            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+            self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:i], [])
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+
             self.sleep(10)
-            self.add_remove_servers_and_rebalance([], self.cluster.servers[self.nodes_init:self.nodes_init + i + 1])
+
+            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+            self.add_remove_servers_and_rebalance([], self.cluster.servers[self.nodes_init:i])
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
