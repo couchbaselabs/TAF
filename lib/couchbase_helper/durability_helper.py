@@ -7,13 +7,22 @@ from remote.remote_util import RemoteMachineShellConnection
 
 
 class DurableExceptions:
-    KeyExistsException = "com.couchbase.client.core.error.KeyExistsException"
-    DurabilityImpossibleException = "com.couchbase.client.core.error.DurabilityImpossibleException"
-    DurableWriteInProgressException = "com.couchbase.client.core.error.DurableWriteInProgressException"
-    DurabilityAmbiguousException = "com.couchbase.client.core.error.DurabilityAmbiguousException"
-    RequestTimeoutException = "com.couchbase.client.core.error.RequestTimeoutException"
-    TemporaryFailureException = "com.couchbase.client.core.error.TemporaryFailureException"
-    RequestCanceledException = "com.couchbase.client.core.error.RequestCanceledException"
+    KeyExistsException = \
+        "com.couchbase.client.core.error.KeyExistsException"
+    DurabilityImpossibleException = \
+        "com.couchbase.client.core.error.DurabilityImpossibleException"
+    DurableWriteInProgressException = \
+        "com.couchbase.client.core.error.DurableWriteInProgressException"
+    DurabilityAmbiguousException = \
+        "com.couchbase.client.core.error.DurabilityAmbiguousException"
+    RequestTimeoutException = \
+        "com.couchbase.client.core.error.RequestTimeoutException"
+    TemporaryFailureException = \
+        "com.couchbase.client.core.error.TemporaryFailureException"
+    RequestCanceledException = \
+        "com.couchbase.client.core.error.RequestCanceledException"
+    ValueTooLargeException = \
+        "com.couchbase.client.core.error.ValueTooLargeException"
 
 
 class DurabilityHelper:
@@ -29,7 +38,7 @@ class DurabilityHelper:
         "com.couchbase.client.core.error.DurabilityAmbiguousException"
     EXCEPTIONS["request_timeout"] = \
         "com.couchbase.client.core.error.RequestTimeoutException"
-    
+
     def __init__(self, logger, cluster_len, durability="MAJORITY",
                  replicate_to=0, persist_to=0):
         """

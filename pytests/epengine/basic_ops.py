@@ -2,15 +2,14 @@ import time
 import json
 
 from basetestcase import BaseTestCase
-from cb_tools.cbstats import Cbstats
-from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper
+from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper, \
+                                               DurableExceptions
 from couchbase_helper.tuq_generators import JsonGenerator
 
 from membase.api.rest_client import RestConnection
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
-from error_simulation.cb_error import CouchbaseError
 from table_view import TableView
 
 """
@@ -374,6 +373,7 @@ class basic_ops(BaseTestCase):
         # Load a doc which is greater than 20MB
         # with compression enabled and check if it fails
         # check with compression_mode as active, passive and off
+        val_error = DurableExceptions.ValueTooLargeException
         gens_load = self.generate_docs_bigdata(
             docs_per_day=1, document_size=(self.doc_size * 1024000))
         for bucket in self.bucket_util.buckets:
@@ -384,6 +384,16 @@ class basic_ops(BaseTestCase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
+            if self.doc_size > 20:
+                if len(task.fail.keys()) == 0:
+                    self.log_failure("No failures during large doc insert")
+                for doc_id, doc_result in task.fail.items():
+                    if val_error not in str(doc_result["error"]):
+                        self.log_failure("Invalid exception for key %s: %s"
+                                         % (doc_id, doc_result))
+            else:
+                if len(task.success.keys()) == 0:
+                    self.log_failure("Failures during large doc insert")
 
         for bucket in self.bucket_util.buckets:
             if self.doc_size > 20:
@@ -402,7 +412,17 @@ class basic_ops(BaseTestCase):
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(task)
+                if len(task.success.keys()) != 0:
+                    self.log_failure("Large docs inserted for keys: %s"
+                                     % task.success.keys())
+                if len(task.fail.keys()) == 0:
+                    self.log_failure("No failures during large doc insert")
+                for doc_id, doc_result in task.fail.items():
+                    if val_error not in str(doc_result["error"]):
+                        self.log_failure("Invalid exception for key %s: %s"
+                                         % (doc_id, doc_result))
                 self.bucket_util.verify_stats_all_buckets(1)
+        self.validate_test_failure()
 
     def test_diag_eval_curl(self):
         # Check if diag/eval can be done only by local host
