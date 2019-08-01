@@ -23,6 +23,8 @@ class DurableExceptions:
         "com.couchbase.client.core.error.RequestCanceledException"
     ValueTooLargeException = \
         "com.couchbase.client.core.error.ValueTooLargeException"
+    KeyNotFoundException = \
+        "com.couchbase.client.core.error.KeyNotFoundException"
 
 
 class DurabilityHelper:

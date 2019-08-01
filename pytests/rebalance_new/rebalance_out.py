@@ -88,6 +88,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], servs_out)
         tasks_info = self.loadgen_docs()
+        self.sleep(15, "Wait for rebalance to start")
         self.task.jython_task_manager.get_task_result(rebalance_task)
 
         if not rebalance_task.result:

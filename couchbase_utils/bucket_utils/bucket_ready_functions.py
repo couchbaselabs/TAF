@@ -673,7 +673,9 @@ class BucketUtils:
                         dict_key = "retried"
                         found = True
                         break
-                if result["status"] or DurableExceptions.KeyExistsException in result["error"]:
+                if result["status"] or\
+                (DurableExceptions.KeyExistsException in result["error"] and task_info["op_type"] in ["create","update"]) or\
+                (DurableExceptions.KeyNotFoundException in result["error"] and task_info["op_type"]=="delete"):
                     tasks_info[task][dict_key]["success"].update(key_value)
                 else:
                     tasks_info[task][dict_key]["fail"].update(key_value)

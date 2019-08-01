@@ -7,6 +7,12 @@ from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.durability_helper import DurableExceptions
 
+retry_exceptions = [
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            DurableExceptions.DurabilityImpossibleException
+            ]
 
 class RebalanceInTests(RebalanceBaseTest):
     def setUp(self):
@@ -405,6 +411,7 @@ class RebalanceInTests(RebalanceBaseTest):
             DurableExceptions.RequestTimeoutException,
             DurableExceptions.RequestCanceledException,
             DurableExceptions.DurabilityAmbiguousException,
+            DurableExceptions.DurabilityImpossibleException
             ]
 
         # CRUDs while rebalance is running in parallel
@@ -540,6 +547,7 @@ class RebalanceInTests(RebalanceBaseTest):
             DurableExceptions.RequestTimeoutException,
             DurableExceptions.RequestCanceledException,
             DurableExceptions.DurabilityAmbiguousException,
+            DurableExceptions.DurabilityImpossibleException
             ]
 
         for i in range(self.nodes_init, self.num_servers, 2):
