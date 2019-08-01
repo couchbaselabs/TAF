@@ -3466,7 +3466,8 @@ class Atomicity(Task):
     def __init__(self, cluster, task_manager, bucket, client, clients, generator, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
-                 process_concurrency=4, print_ops_rate=True, retries=5,update_count=1, transaction_timeout=5, commit=True, durability=None, sync=True):
+                 process_concurrency=4, print_ops_rate=True, retries=5,update_count=1, transaction_timeout=5,
+                 task_identifier="", commit=True, durability=None, sync=True):
         super(Atomicity, self).__init__("AtomicityDocumentsLoadGenTask")
 
         self.generators = generator
@@ -3475,6 +3476,7 @@ class Atomicity(Task):
         self.exp = exp
         self.flag = flag
         Atomicity.sync =sync
+        self.task_identifier = task_identifier
         self.persit_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
@@ -3508,6 +3510,8 @@ class Atomicity(Task):
             Atomicity.durability = 4
         else:
             Atomicity.durability = 0
+            
+        
 
     def call(self):
         tasks = []
@@ -3605,7 +3609,8 @@ class Atomicity(Task):
                                                     pause_secs=pause_secs,
                                                     timeout_secs=timeout_secs, compression=compression,
                                                     retries=retries, transaction=transaction, commit=commit)
-
+            
+            self.thread_name = "AtomicityDocumentsLoadGen-{}".format(self.task_identifier)
             self.generator = generator
             self.op_type = []
             self.op_type.extend(op_type.split(';'))
@@ -3728,17 +3733,18 @@ class Atomicity(Task):
                 if op_type == "rebalance_only_update":
                     Atomicity.update_keys.extend(Atomicity.all_keys)
                     exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
-                    if "DurabilityImpossibleException" in str(exception):
-                        self.test_log.info("DurabilityImpossibleException seen so retrying")
-                        n=5
-                        while n > 0:
-                            n -= 1
-                            time.sleep(30)
-                            exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
-                            if "DurabilityImpossibleException" in str(exception):
-                                self.test_log.info("DurabilityImpossibleException seen so retrying")
-                            else:
-                                break
+                    if exception:
+                        if "DurabilityImpossibleException" in str(exception):
+                            self.test_log.info("DurabilityImpossibleException seen so retrying")
+                            n=5
+                            while n > 0:
+                                n -= 1
+                                time.sleep(30)
+                                exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
+                                if "DurabilityImpossibleException" in str(exception):
+                                    self.test_log.info("DurabilityImpossibleException seen so retrying")
+                                else:
+                                    break
                     if self.commit:
                         Atomicity.mutate = Atomicity.updatecount
 
