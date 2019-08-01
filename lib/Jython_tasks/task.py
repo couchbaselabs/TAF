@@ -3476,7 +3476,7 @@ class Atomicity(Task):
         self.exp = exp
         self.flag = flag
         Atomicity.sync =sync
-        self.task_identifier = task_identifier
+        Atomicity.task_identifier = task_identifier
         self.persit_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
@@ -3610,7 +3610,7 @@ class Atomicity(Task):
                                                     timeout_secs=timeout_secs, compression=compression,
                                                     retries=retries, transaction=transaction, commit=commit)
             
-            self.thread_name = "AtomicityDocumentsLoadGen-{}".format(self.task_identifier)
+            self.thread_name = "AtomicityDocumentsLoadGen-{}".format(Atomicity.task_identifier)
             self.generator = generator
             self.op_type = []
             self.op_type.extend(op_type.split(';'))
