@@ -252,6 +252,7 @@ class RebalanceBaseTest(BaseTestCase):
         retry_exceptions = list(set(retry_exceptions +
                                     [DurableExceptions.RequestTimeoutException,
                                      DurableExceptions.RequestCanceledException,
+                                     DurableExceptions.DurabilityImpossibleException,
                                      DurableExceptions.DurabilityAmbiguousException]))
 
         if op_type == "create":
