@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+from java.lang import System
 import base64
 import gzip
 from httplib import BadStatusLine
@@ -478,8 +478,8 @@ def main():
             else:
                 print result["name"], " pass"
         if fail_count > 0:
-            sys.exit(1)
-    sys.exit(0)
+            System.exit(1)
+    System.exit(0)
 
 
 if __name__ == "__main__":
