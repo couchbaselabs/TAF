@@ -153,7 +153,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
-        record_data_set = self.bucket_util.get_data_set_all(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
+#         record_data_set = self.bucket_util.get_data_set_all(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.add_remove_servers_and_rebalance([], servs_out)
         if not self.atomicity:
@@ -165,7 +165,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                         self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets,
                                                         perNode=False)
         self.sleep(60)
-        self.bucket_util.data_analysis_all(record_data_set, self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets)
+#         self.bucket_util.data_analysis_all(record_data_set, self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(new_vbucket_stats, new_failover_stats)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
