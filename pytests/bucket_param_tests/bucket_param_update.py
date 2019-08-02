@@ -1,6 +1,10 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
+from couchbase_helper.durability_helper import DurabilityHelper, \
+    DurableExceptions
+from membase.api.rest_client import RestConnection
+from sdk_client3 import SDKClient
 
 
 class BucketParamTest(BaseTestCase):
@@ -209,20 +213,40 @@ class BucketParamTest(BaseTestCase):
 
             # Start rebalance task with doc_ops in parallel
             rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
-            self.sleep(5, "Wait for rebalance to start")
+            self.sleep(10, "Wait for rebalance to start")
+
+            doc_ops_list = list()
+            doc_ops_failed = False
+            if "create" in doc_ops:
+                doc_ops_list.append("create")
+            if "update" in doc_ops:
+                doc_ops_list.append("update")
+            if "delete" in doc_ops:
+                doc_ops_list.append("delete")
 
             # Wait for all tasks to complete
-            doc_ops_failed = False
             self.task.jython_task_manager.get_task_result(rebalance)
-            for task in tasks:
+            sdk_client = SDKClient(RestConnection(self.cluster.master),
+                                   self.bucket_util.buckets[0])
+            for index, task in enumerate(tasks):
                 self.task.jython_task_manager.get_task_result(task)
                 if not self.atomicity:
                     if self.def_bucket.replicaNumber == 3:
                         if len(task.success.keys()) != 0:
                             doc_ops_failed = True
-                    elif len(task.fail.keys()) != 0:
-                        doc_ops_failed = True
+                    else:
+                        durability_helper = DurabilityHelper(
+                            self.log, len(self.cluster.nodes_in_cluster),
+                            self.durability_level)
+                        durability_helper.validate_durability_exception(
+                            task.fail,
+                            DurableExceptions.DurabilityImpossibleException)
+                        doc_ops_failed = durability_helper.retry_with_no_error(
+                            sdk_client, task.fail, doc_ops_list[index],
+                            timeout=30)
 
+            # Disconnect the SDK client before possible assert
+            sdk_client.close()
             self.assertFalse(doc_ops_failed, "Few doc_ops failed")
 
             # Assert if rebalance failed
