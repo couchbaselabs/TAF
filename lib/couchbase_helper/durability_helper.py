@@ -151,7 +151,7 @@ class DurabilityHelper:
                 durability=self.durability, timeout=timeout)
             if result["status"] is False:
                 op_failed = True
-                self.log.error("Exception: '{0}' for '{1}' during '{2}'"
+                self.log.error("Exception: '{0}' for '{1}' during '{2}' "
                                "with durability={3}, timeout={4}"
                                .format(result["error"], key, op_type,
                                        self.durability, timeout))
