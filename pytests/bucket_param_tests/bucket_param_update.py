@@ -29,13 +29,15 @@ class BucketParamTest(BaseTestCase):
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, doc_create,
-                         "create",0,batch_size=20,process_concurrency=8,
-                          replicate_to=self.replicate_to,persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit,durability=self.durability_level,
-                          sync=self.sync)
+                self.cluster, self.bucket_util.buckets, doc_create,
+                "create", 0, batch_size=20, process_concurrency=8,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                timeout_secs=self.sdk_timeout,
+                transaction_timeout=self.transaction_timeout,
+                commit=self.transaction_commit,
+                durability=self.durability_level,
+                sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
         else:
             for bucket in self.bucket_util.buckets:
@@ -59,46 +61,58 @@ class BucketParamTest(BaseTestCase):
     def tearDown(self):
         super(BucketParamTest, self).tearDown()
 
-    def load_docs_atomicity(self, doc_ops, start_doc_for_insert, doc_count, doc_update,
-                             doc_create, doc_delete):
+    def load_docs_atomicity(self, doc_ops, start_doc_for_insert, doc_count,
+                            doc_update, doc_create, doc_delete):
         tasks = []
-        if("update" in doc_ops):
-            tasks.append(self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, doc_update,
-                         "rebalance_only_update",0,batch_size=20,process_concurrency=8,
-                          replicate_to=self.replicate_to,persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout,
-                          update_count=self.update_count,
-                          commit=self.transaction_commit,durability=self.durability_level,
-                          sync=self.sync))
-            self.sleep(10, "To avoid overlap of multiple tasks in parallel in loop")
-        if("create" in doc_ops):
-            tasks.append(self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, doc_create,
-                         "create",0,batch_size=20,process_concurrency=8,
-                          replicate_to=self.replicate_to,persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit,durability=self.durability_level,
-                          sync=self.sync))
+        if "update" in doc_ops:
+            tasks.append(
+                self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets, doc_update,
+                    "rebalance_only_update", 0, batch_size=20,
+                    process_concurrency=8,
+                    replicate_to=self.replicate_to,
+                    persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout,
+                    transaction_timeout=self.transaction_timeout,
+                    update_count=self.update_count,
+                    commit=self.transaction_commit,
+                    durability=self.durability_level,
+                    sync=self.sync))
+            self.sleep(10, "To avoid overlap of multiple tasks in parallel")
+        if "create" in doc_ops:
+            tasks.append(
+                self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets, doc_create,
+                    "create", 0, batch_size=20,
+                    process_concurrency=8,
+                    replicate_to=self.replicate_to,
+                    persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout,
+                    transaction_timeout=self.transaction_timeout,
+                    commit=self.transaction_commit,
+                    durability=self.durability_level,
+                    sync=self.sync))
             doc_count += (doc_create.end - doc_create.start)
             start_doc_for_insert += self.num_items
-        if("delete" in doc_ops):
-            tasks.append(self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, doc_delete,
-                         "rebalance_delete",0,batch_size=20,process_concurrency=8,
-                          replicate_to=self.replicate_to,persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit,durability=self.durability_level,
-                          sync=self.sync))
+        if "delete" in doc_ops:
+            tasks.append(
+                self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets, doc_delete,
+                    "rebalance_delete", 0, batch_size=20,
+                    process_concurrency=8,
+                    replicate_to=self.replicate_to,
+                    persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout,
+                    transaction_timeout=self.transaction_timeout,
+                    commit=self.transaction_commit,
+                    durability=self.durability_level,
+                    sync=self.sync))
             doc_count -= (doc_delete.end - doc_delete.start)
 
         return tasks, doc_count, start_doc_for_insert
 
     def load_docs(self, doc_ops, start_doc_for_insert, doc_count, doc_update,
-                   doc_create, doc_delete):
+                  doc_create, doc_delete):
         tasks = []
         if "create" in doc_ops:
             # Start doc create task in parallel with replica_update
@@ -130,25 +144,30 @@ class BucketParamTest(BaseTestCase):
 
         return tasks, doc_count, start_doc_for_insert
 
-    def doc_ops_operations(self, doc_ops, start_doc_for_insert, doc_count, doc_update,
-                            doc_create, doc_delete):
+    def doc_ops_operations(self, doc_ops, start_doc_for_insert, doc_count,
+                           doc_update, doc_create, doc_delete):
         if self.atomicity:
-            tasks, doc_count,start_doc_for_insert = self.load_docs_atomicity(doc_ops,
-                                                                             start_doc_for_insert,
-                                                                             doc_count, doc_update,
-                                                                             doc_create, doc_delete)
+            tasks, doc_count, start_doc_for_insert = self.load_docs_atomicity(
+                doc_ops,
+                start_doc_for_insert,
+                doc_count,
+                doc_update,
+                doc_create,
+                doc_delete)
         else:
-            tasks, doc_count,start_doc_for_insert = self.load_docs(doc_ops,
-                                                                   start_doc_for_insert,
-                                                                   doc_count, doc_update,
-                                                                   doc_create, doc_delete)
+            tasks, doc_count, start_doc_for_insert = self.load_docs(
+                doc_ops,
+                start_doc_for_insert,
+                doc_count,
+                doc_update,
+                doc_create,
+                doc_delete)
 
-        return tasks, doc_count,start_doc_for_insert
+        return tasks, doc_count, start_doc_for_insert
 
     def generic_replica_update(self, doc_count, doc_ops, bucket_helper_obj,
-                                replicas_to_update, start_doc_for_insert):
+                               replicas_to_update, start_doc_for_insert):
         for replica_num in replicas_to_update:
-            tasks = list()
             # Creating doc creator to be used by test cases
             doc_create = doc_generator(self.key, start_doc_for_insert,
                                        start_doc_for_insert + self.num_items,
