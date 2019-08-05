@@ -30,6 +30,9 @@ import com.couchbase.transactions.TransactionDurabilityLevel;
 import com.couchbase.transactions.TransactionJsonDocument;
 import com.couchbase.transactions.TransactionResult;
 import com.couchbase.transactions.Transactions;
+import com.couchbase.client.core.cnc.Event;
+import com.couchbase.transactions.log.TransactionEvent;
+import com.couchbase.transactions.util.TransactionMock;
 
 
 
@@ -37,6 +40,21 @@ public class SimpleTransaction {
 
 
 	public Transactions createTansaction(Cluster cluster, TransactionConfig config) {
+		Event.Severity logLevel = Event.Severity.INFO;
+		cluster.environment().eventBus().subscribe(event -> {
+		    if (event instanceof TransactionEvent) {
+		        TransactionEvent te = (TransactionEvent) event;
+		        if (te.severity().ordinal() >= logLevel.ordinal()) {
+		            System.out.println(te.getClass().getSimpleName() + ": " + event.description());
+		            
+		            if (te.hasLogs()) {
+		                te.logs().forEach(log -> {
+		                    System.out.println(te.getClass().getSimpleName() + " log: " + log.toString());
+		                });
+		            }
+		        }
+		    }
+		});
 		return Transactions.create(cluster, config);
 	}
 	Queue<String> queue=new LinkedList<>();
