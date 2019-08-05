@@ -3677,7 +3677,9 @@ class Atomicity(Task):
                         Atomicity.delete_keys =[]
                     docs = list(self.__chunks(docs, len(Atomicity.all_keys)/50))
                     for doc in docs:
-                        exception = Transaction().RunTransaction(self.transaction, self.bucket, doc, [], [], commit, Atomicity.sync, Atomicity.updatecount )
+                        err = Transaction().RunTransaction(self.transaction, self.bucket, doc, [], [], commit, Atomicity.sync, Atomicity.updatecount )
+                        if err:
+                            exception = self.__retryDurabilityImpossibleException(err, doc, commit, op_type="create")
                     if not commit:
                         Atomicity.all_keys = []
 
@@ -3731,26 +3733,18 @@ class Atomicity(Task):
 
                 if op_type == "rebalance_only_update":
                     Atomicity.update_keys.extend(Atomicity.all_keys)
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
-                    if exception:
-                        if "DurabilityImpossibleException" in str(exception):
-                            self.test_log.info("DurabilityImpossibleException seen so retrying")
-                            n=5
-                            while n > 0:
-                                n -= 1
-                                time.sleep(30)
-                                exception = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
-                                if "DurabilityImpossibleException" in str(exception):
-                                    self.test_log.info("DurabilityImpossibleException seen so retrying")
-                                else:
-                                    break
+                    err = Transaction().RunTransaction(self.transaction, self.bucket, [], Atomicity.update_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
+                    if err:
+                        exception = self.__retryDurabilityImpossibleException(err, Atomicity.update_keys, self.commit, op_type="update")
                     if self.commit:
                         Atomicity.mutate = Atomicity.updatecount
 
                 if op_type == "rebalance_delete":
                     Atomicity.delete_keys.extend(Atomicity.all_keys)
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], [],  Atomicity.delete_keys, self.commit, Atomicity.sync, Atomicity.updatecount)
-
+                    err = Transaction().RunTransaction(self.transaction, self.bucket, [], [],  Atomicity.delete_keys, self.commit, Atomicity.sync, Atomicity.updatecount)
+                    if err:
+                        exception = self.__retryDurabilityImpossibleException(err, Atomicity.delete_keys, self.commit, op_type="delete")    
+                    
                 if op_type == "time_out":
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, [], [], True, True, Atomicity.updatecount )
                     if "AttemptExpired" in str(err):
@@ -3793,6 +3787,25 @@ class Atomicity(Task):
                 pass
 
             return json_obj
+        
+        def __retryDurabilityImpossibleException(self, err, docs, commit, op_type="update"):
+            if "DurabilityImpossibleException" in str(err):
+                self.test_log.info("DurabilityImpossibleException seen so retrying")
+                n=5
+                while n > 0:
+                    n -= 1
+                    time.sleep(30)
+                    if op_type == "create":
+                        err = Transaction().RunTransaction(self.transaction, self.bucket, docs, [], [], commit, Atomicity.sync, Atomicity.updatecount)
+                    if "update" in op_type:
+                        err = Transaction().RunTransaction(self.transaction, self.bucket, [], docs, [], commit, Atomicity.sync, Atomicity.updatecount)
+                    if "delete" in op_type:
+                        err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], docs, commit, Atomicity.sync, Atomicity.updatecount)
+                    if "DurabilityImpossibleException" in str(err):
+                        self.test_log.info("DurabilityImpossibleException seen so retrying")
+                    else:
+                        break
+            return err
 
     class Validate(GenericLoadingTask):
 
