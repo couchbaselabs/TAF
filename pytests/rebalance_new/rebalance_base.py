@@ -175,8 +175,7 @@ class RebalanceBaseTest(BaseTestCase):
                           timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
                           update_count=self.update_count, commit=self.transaction_commit,
-                          durability=self.durability_level, sync=sync, 
-                          task_identifier=self.bucket_util.buckets[0]):None})
+                          durability=self.durability_level, sync=sync):None})
         if("create" in self.doc_ops):
             tasks_info.update({self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_create,
@@ -185,7 +184,7 @@ class RebalanceBaseTest(BaseTestCase):
                           timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
                           commit=self.transaction_commit, durability=self.durability_level,
-                          sync=sync, task_identifier=self.bucket_util.buckets[0]):None})
+                          sync=sync):None})
         if("delete" in self.doc_ops):
             tasks_info.update({self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_delete,
@@ -194,7 +193,7 @@ class RebalanceBaseTest(BaseTestCase):
                           timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
                           commit=self.transaction_commit, durability=self.durability_level,
-                          sync=sync, task_identifier=self.bucket_util.buckets[0]):None})
+                          sync=sync):None})
 
         if not _async:
             for task in tasks_info.keys():

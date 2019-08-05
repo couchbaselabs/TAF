@@ -256,7 +256,7 @@ class ServerTasks(object):
                                        only_store_hash=True, batch_size=1, pause_secs=1,
                                         timeout_secs=5, compression=True,
                             process_concurrency=1, retries=5, update_count=1,
-                            transaction_timeout=5, commit=True, durability=0, sync=True, task_identifier=""):
+                            transaction_timeout=5, commit=True, durability=0, sync=True):
 
         self.log.info("Loading documents ")
         bucket_list=[]
@@ -274,7 +274,7 @@ class ServerTasks(object):
                                                         compression=compression,
                                                         process_concurrency=process_concurrency, retries=retries, update_count=update_count,
                                                         transaction_timeout=transaction_timeout, commit=commit, durability=durability,
-                                                        sync=sync, task_identifier=task_identifier)
+                                                        sync=sync)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

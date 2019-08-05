@@ -3467,7 +3467,7 @@ class Atomicity(Task):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=4, print_ops_rate=True, retries=5,update_count=1, transaction_timeout=5,
-                 task_identifier="", commit=True, durability=None, sync=True):
+                 commit=True, durability=None, sync=True):
         super(Atomicity, self).__init__("AtomicityDocumentsLoadGenTask")
 
         self.generators = generator
@@ -3476,7 +3476,6 @@ class Atomicity(Task):
         self.exp = exp
         self.flag = flag
         Atomicity.sync =sync
-        Atomicity.task_identifier = task_identifier
         self.persit_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
@@ -3610,7 +3609,7 @@ class Atomicity(Task):
                                                     timeout_secs=timeout_secs, compression=compression,
                                                     retries=retries, transaction=transaction, commit=commit)
             
-            self.thread_name = "AtomicityDocumentsLoadGen-{}".format(Atomicity.task_identifier)
+            
             self.generator = generator
             self.op_type = []
             self.op_type.extend(op_type.split(';'))
