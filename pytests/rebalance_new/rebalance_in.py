@@ -63,27 +63,6 @@ class RebalanceInTests(RebalanceBaseTest):
                     "delete failed for docs: %s" % task.delete_failed.keys())
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
-        self.cluster.nodes_in_cluster.extend(servs_in)
-        self.sleep(60, "Wait for cluster to be ready after rebalance")
-        tasks = list()
-        for bucket in self.bucket_util.buckets:
-            if self.doc_ops is not None:
-                if "update" in self.doc_ops:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_update, "update", 0,
-                        batch_size=10))
-                if "create" in self.doc_ops:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=10, process_concurrency=8))
-                if "delete" in self.doc_ops:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_delete, "delete", 0,
-                        batch_size=10))
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
-
     def test_rebalance_in_with_ops(self):
         items = self.num_items
         delete_from = items/2

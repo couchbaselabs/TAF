@@ -37,6 +37,7 @@ from com.couchbase.client.java.kv import ReplicaMode
 from Jython_tasks.task_manager import TaskManager
 from table_view import TableView, plot_graph
 from time import sleep
+from couchbase_helper.durability_helper import DurableExceptions
 
 
 class Task(Callable):
@@ -1177,7 +1178,12 @@ class Durability(Task):
                             except:
                                 pass
                             if key not in self.create_failed.keys():
-                                if count < self.majority_value:
+                                '''
+                                this condition make sure that document is
+                                persisted in alleast 1 node
+                                '''
+                                if count == 0:
+                                    # if count < self.majority_value:
                                     self.sdk_acked_pers_failed.update({key: val})
                                     self.test_log.error("Key isn't persisted although SDK reports Durable, Key = %s"%key)
                             elif count > 0:
@@ -1198,7 +1204,8 @@ class Durability(Task):
                                             count += 1
                                 except:
                                     pass
-                                if count < self.majority_value:
+                                if not count > 0:
+                                # if count < self.majority_value:
                                     self.sdk_acked_pers_failed.update({key: val})
                                     self.test_log.error("Key isn't persisted although SDK reports Durable, Key = %s getfromReplica = %s"%key)
                         if self.op_type == 'delete':
@@ -1213,7 +1220,8 @@ class Durability(Task):
                                 except Exception as e:
                                     pass
                             if key not in self.delete_failed[self.instance].keys():
-                                if count > (self.bucket.replicaNumber+1 - self.majority_value):
+                                if count == (self.bucket.replicaNumber+1):
+                                # if count > (self.bucket.replicaNumber+1 - self.majority_value):
                                     self.sdk_acked_pers_failed.update({key: val})
                                     self.test_log.error("Key isn't Persisted-Delete although SDK reports Durable, Key = %s getfromReplica = %s"%key)
                             elif count >= self.majority_value:
@@ -1250,17 +1258,21 @@ class Durability(Task):
                         key, val = doc[0], doc[1]
                         if self.op_type == 'create':
                             result = self.client.getFromReplica(key, ReplicaMode.ALL)
+                            self.test_log.debug("Key = %s getfromReplica = %s" % (key, result))
                             if key not in self.create_failed.keys():
-                                if len(result) < self.majority_value:
+                                if len(result) == 0:
+                                    # if len(result) < self.majority_value:
                                     self.sdk_acked_curd_failed.update({key: val})
                                     self.test_log.error(
                                         "Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"
                                         % (key, result))
                             elif len(result) > 0:
-                                self.test_log.error(
-                                    "SDK threw exception but document is present in the Server -> %s:%s"
-                                    % (key, result))
-                                self.sdk_exception_crud_succeed.update({key: val})
+                                if not (DurableExceptions.DurabilityAmbiguousException in self.create_failed[key]["error"] or
+                                   DurableExceptions.RequestTimeoutException in self.create_failed[key]["error"]):
+                                    self.test_log.error(
+                                        "SDK threw exception but document is present in the Server -> %s:%s"
+                                        % (key, result))
+                                    self.sdk_exception_crud_succeed.update({key: val})
                             else:
                                 self.test_log.debug(
                                     "Document is rolled back to nothing during create -> %s:%s"
@@ -1268,22 +1280,28 @@ class Durability(Task):
                         if self.op_type == 'update':
                             result = self.client.getFromReplica(key, ReplicaMode.ALL)
                             if key not in self.update_failed.keys():
-                                if len(result) < self.majority_value:
+                                if len(result) == 0:
+                                    # if len(result) < self.majority_value:
                                     self.sdk_acked_curd_failed.update({key: val})
                                     self.test_log.error(
                                         "Key isn't durable although SDK reports Durable, Key = %s getfromReplica = %s"
                                         % (key, result))
-                                elif len(result) >= self.majority_value:
+                                else:
+                                    # elif len(result) >= self.majority_value:
                                     temp_count = 0
                                     for doc in result:
                                         if doc["value"] == self.docs_to_be_updated[key]["value"]:
-                                            self.sdk_acked_curd_failed.update({key: val})
                                             self.test_log.error(
-                                                "Doc content is not updated although SDK reports Durable, Key = %s getfromReplica = %s"
+                                                "Doc content is not updated yet on few nodes, Key = %s getfromReplica = %s"
                                                 % (key, result))
                                         else:
                                             temp_count += 1
-                                    if temp_count < self.majority_value:
+                                    '''
+                                    This make sure that value has been updated 
+                                    on at least 1 node
+                                    '''
+                                    if temp_count == 0:
+                                        # if temp_count < self.majority_value:
                                         self.sdk_acked_curd_failed.update({key: val})
                             else:
                                 for doc in result:
@@ -1295,12 +1313,12 @@ class Durability(Task):
                         if self.op_type == 'delete':
                             result = self.client.getFromReplica(key, ReplicaMode.ALL)
                             if key not in self.delete_failed.keys():
-                                if len(result) > (self.bucket.replicaNumber+1 - self.majority_value):
+                                if len(result) > (self.bucket.replicaNumber):
                                     self.sdk_acked_curd_failed.update(result[0])
                                     self.test_log.error(
                                         "Key isn't durably deleted although SDK reports Durable, Key = %s getfromReplica = %s"
                                         % (key, result))
-                            elif len(result) >= self.majority_value:
+                            elif len(result) == self.bucket.replicaNumber + 1:
                                 self.test_log.warn(
                                     "Document is rolled back to original during delete -> %s:%s"
                                     %(key, result))
