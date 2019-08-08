@@ -5,7 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+//import java.util.Optional;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
@@ -188,14 +188,11 @@ public class doc_ops {
 						retVal.put("error", null);
 						retVal.put("status", false);
 						return reactiveCollection.get(key, getOptions)
-							.map(new Function<Optional<GetResult>, HashMap<String, Object>>() {
-								public HashMap<String, Object> apply(Optional<GetResult> optionalResult) {
-									if (optionalResult.isPresent()){
-										GetResult result = optionalResult.get();
-										retVal.put("cas", result.cas());
-										retVal.put("content", result.contentAsObject());
+							.map(new Function<GetResult, HashMap<String, Object>>() {
+								public HashMap<String, Object> apply(GetResult optionalResult) {
+										retVal.put("cas", optionalResult.cas());
+										retVal.put("content", optionalResult.contentAsObject());
 										retVal.put("status", true);
-									}
 									return retVal;
 								}
 						}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {

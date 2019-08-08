@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
@@ -171,25 +170,23 @@ public class SubDocOperations extends doc_ops {
                         retVal.put("error", null);
                         retVal.put("status", false);
                         return reactiveCollection.lookupIn(id, lookUpInSpecs)
-                                .map(new Function<Optional<LookupInResult>, HashMap<String, Object>>() {
-                                    public HashMap<String, Object> apply(Optional<LookupInResult> optionalResult) {
-                                        if(optionalResult.isPresent()) {
-                                            LookupInResult result = optionalResult.get();
-                                            retVal.put("cas", result.cas());
+                                .map(new Function<LookupInResult, HashMap<String, Object>>() {
+                                    public HashMap<String, Object> apply(LookupInResult optionalResult) {
+                                            retVal.put("cas", optionalResult.cas());
                                             List<Object> content = new ArrayList<Object>();
                                             for (int i=0; i<lookUpInSpecs.size(); i++) {
                                                 try {
-                                                		content.add(result.contentAsObject(i));
+                                                		content.add(optionalResult.contentAsObject(i));
                                                 } catch (DecodingFailedException e1) {
                                                 		try {
-                                                			content.add(result.contentAsArray(i));
+                                                			content.add(optionalResult.contentAsArray(i));
                                                 		} catch (DecodingFailedException e2) {
                                                 			try {
-                                                				content.add(result.contentAs(i, Integer.class));
+                                                				content.add(optionalResult.contentAs(i, Integer.class));
                                                 			}
                                                 			catch (DecodingFailedException e3) {
                                                 				try {
-                                                					content.add(result.contentAs(i, String.class));
+                                                					content.add(optionalResult.contentAs(i, String.class));
                                                 				} catch (Exception e4) {
                                                 					content.add(null);
                                                 				}
@@ -201,7 +198,6 @@ public class SubDocOperations extends doc_ops {
                                             }
                                             retVal.put("status", true);
                                             retVal.put("content", content);
-                                        }
                                         return retVal;
                                     }
                                 }).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {

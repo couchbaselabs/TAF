@@ -396,15 +396,15 @@ class SDKClient(object):
             "error": None
         }
         read_options = self.getReadOptions(timeout, time_unit)
-        get_result = self.collection.get(key, read_options)
-        if get_result.isPresent():
+        try:
+            get_result = self.collection.get(key, read_options)
             self.log.debug("Found document: cas=%s, content=%s"
-                           % (str(get_result.get().cas()),
-                              str(get_result.get().contentAsObject())))
+                           % (str(get_result.cas()),
+                              str(get_result.contentAsObject())))
             result["status"] = True
-            result["value"] = str(get_result.get().contentAsObject())
-            result["cas"] = get_result.get().cas()
-        else:
+            result["value"] = str(get_result.contentAsObject())
+            result["cas"] = get_result.cas()
+        except KeyNotFoundException as e:
             self.log.error("Document key '%s' not found!" % key)
         return result
 
