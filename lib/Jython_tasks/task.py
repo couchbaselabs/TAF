@@ -3484,7 +3484,7 @@ class Atomicity(Task):
     def __init__(self, cluster, task_manager, bucket, client, clients, generator, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
-                 process_concurrency=4, print_ops_rate=True, retries=5,update_count=1, transaction_timeout=5,
+                 process_concurrency=8, print_ops_rate=True, retries=5,update_count=1, transaction_timeout=5,
                  commit=True, durability=None, sync=True):
         super(Atomicity, self).__init__("AtomicityDocumentsLoadGenTask")
 
@@ -3565,8 +3565,10 @@ class Atomicity(Task):
 
         self.test_log.info("going to add verification task")
         for task in tasks:
+            Atomicity.task_manager.add_new_task(task)
+            
+        for task in tasks:
             try:
-                Atomicity.task_manager.add_new_task(task)
                 Atomicity.task_manager.get_task_result(task)
             except Exception as e:
                 self.set_exception(e)
@@ -3579,8 +3581,10 @@ class Atomicity(Task):
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-
-        self.process_concurrency = 1
+        
+        if not load:
+            self.process_concurrency = 1
+            
         gen_range = max(int((generator.end - generator.start)/self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
