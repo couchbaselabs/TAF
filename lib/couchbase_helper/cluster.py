@@ -127,7 +127,8 @@ class ServerTasks(object):
                             durability="", print_ops_rate=True,
                             task_identifier="",
                             skip_read_on_error=False,
-                            ryow=False, check_persistence=False):
+                            ryow=False, check_persistence=False,
+                            start_task=True):
 
         self.log.debug("Loading documents to {}".format(bucket.name))
         clients = []
@@ -181,7 +182,8 @@ class ServerTasks(object):
                 durability=durability,
                 active_resident_threshold=active_resident_threshold,
                 task_identifier=task_identifier)
-        self.jython_task_manager.add_new_task(_task)
+        if start_task:
+            self.jython_task_manager.add_new_task(_task)
         return _task
 
     def async_load_gen_sub_docs(self, cluster, bucket, generator,
@@ -192,7 +194,9 @@ class ServerTasks(object):
                                 pause_secs=1,
                                 timeout_secs=5, compression=True,
                                 process_concurrency=8, print_ops_rate=True,
-                                durability=""):
+                                durability="",
+                                start_task=True,
+                                task_identifier=""):
         self.log.debug("Loading sub documents to {}".format(bucket.name))
         if not isinstance(generator, SubdocDocumentGenerator):
             raise Exception("Document generator needs to be of "
@@ -228,8 +232,10 @@ class ServerTasks(object):
             compression=compression,
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
-            durability=durability)
-        self.jython_task_manager.add_new_task(_task)
+            durability=durability,
+            task_identifier=task_identifier)
+        if start_task:
+            self.jython_task_manager.add_new_task(_task)
         return _task
 
     def async_continuous_update_docs(self, cluster, bucket, generator, exp=0,

@@ -908,11 +908,6 @@ class TimeoutTests(DurabilityTestsBase):
                            self.bucket.name)
 
         for op_type in ["create", "update", "read", "delete"]:
-            # Perform specified action
-            for node in target_nodes:
-                error_sim[node.ip].create(self.simulate_error,
-                                          bucket_name=self.bucket.name)
-
             self.log.info("Performing '%s' with timeout=%s"
                           % (op_type, self.sdk_timeout))
             doc_load_task = self.task.async_load_gen_docs(
@@ -921,9 +916,18 @@ class TimeoutTests(DurabilityTestsBase):
                 batch_size=500, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                start_task=False)
 
-            self.sleep(1, "Wait before reverting the error condition")
+            # Perform specified action
+            for node in target_nodes:
+                error_sim[node.ip].create(self.simulate_error,
+                                          bucket_name=self.bucket.name)
+
+            # Start doc_loading task
+            self.task_manager.add_new_task(doc_load_task)
+
+            self.sleep(5, "Wait before reverting the error condition")
 
             # Revert the specified error scenario
             for node in target_nodes:
@@ -1199,11 +1203,6 @@ class TimeoutTests(DurabilityTestsBase):
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
 
-        # Perform specified action
-        for node in target_nodes:
-            error_sim[node.ip].create(self.simulate_error,
-                                      bucket_name=self.bucket.name)
-
         curr_time = int(time.time())
         expected_timeout = curr_time + self.sdk_timeout
 
@@ -1213,7 +1212,20 @@ class TimeoutTests(DurabilityTestsBase):
                 batch_size=1, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, skip_read_on_error=True)
+                timeout_secs=self.sdk_timeout,
+                print_ops_rate=False,
+                skip_read_on_error=True,
+                start_task=False)
+
+        # Perform specified action
+        for node in target_nodes:
+            error_sim[node.ip].create(self.simulate_error,
+                                      bucket_name=self.bucket.name)
+        self.sleep(10, "Wait for error_simulation to take effect")
+
+        # Start the doc_ops tasks
+        for op_type in doc_gen.keys():
+            self.task_manager.add_new_task(tasks[op_type])
 
         # Wait for document_loader tasks to complete
         for op_type in doc_gen.keys():
