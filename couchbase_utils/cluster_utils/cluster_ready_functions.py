@@ -12,8 +12,11 @@ import testconstants
 from couchbase_cli import CouchbaseCLI
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
+from bucket_utils.bucket_ready_functions import BucketUtils
+from couchbase_helper.cluster import ServerTasks
 from table_view import TableView
 from Jython_tasks.task import MonitorActiveTask
+from Jython_tasks.task_manager import TaskManager
 from TestInput import TestInputSingleton
 
 
@@ -35,6 +38,20 @@ class CBCluster:
         self.eventing_nodes = []
         self.nodes_in_cluster = []
         self.master = servers[0]
+        self.task_manager = TaskManager(10)
+        self.task = ServerTasks(self.task_manager)
+        self.cluster_util = ClusterUtils(self, self.task_manager)
+        self.bucket_util = BucketUtils(self, self.cluster_util, self.task)
+        self.nonroot = False
+        #Remote XDCR target clusters
+        self.xdcr_remote_clusters = []
+
+    def __str__(self):
+        return "Couchbase Cluster: %s, Master Ip: %s" % (
+            self.name, self.master.ip)
+
+    def init_cluster(self):
+        self.cluster_util.add_all_nodes_then_rebalance(self.servers)
 
     def update_master(self, node_in_cluster=None):
         """
@@ -56,6 +73,15 @@ class CBCluster:
                        master_ip][0]
 
         return status, content
+
+    def get_name(self):
+        return self.name
+
+    def get_master_node(self):
+        return self.master
+
+    def get_remote_clusters(self):
+        return self.xdcr_remote_clusters
 
 
 class ClusterUtils:
@@ -108,6 +134,9 @@ class ClusterUtils:
         if master is None:
             master = self.cluster.master
         rest = RestConnection(master)
+        rest.remove_all_replications()
+        rest.remove_all_remote_clusters()
+        rest.remove_all_recoveries()
         helper = RestHelper(rest)
         helper.is_ns_server_running(timeout_in_seconds=testconstants.NS_SERVER_TIMEOUT)
         nodes = rest.node_statuses()
@@ -158,8 +187,8 @@ class ClusterUtils:
                 except Exception as ex:
                     self.log.error("Force_eject_node {0}:{1} failed: {2}"
                                    .format(removed.ip, removed.port, ex))
-            if len(set([node for node in nodes if (node.id != master_id)])\
-                    - set(success_cleaned)) != 0:
+            if len(set([node for node in nodes if (node.id != master_id)]) \
+                   - set(success_cleaned)) != 0:
                 raise Exception("Not all ejected nodes were cleaned successfully")
 
             self.log.debug("Removed all the nodes from cluster associated with {0} ? {1}"
@@ -492,8 +521,8 @@ class ClusterUtils:
             compare_string_master = "{0}:{1}".format(self.cluster.master.ip,
                                                      self.cluster.master.port)
             compare_string_index_manager = "{0}:{1}" \
-                                           .format(self.cluster.master.ip,
-                                                   self.cluster.master.port)
+                .format(self.cluster.master.ip,
+                        self.cluster.master.port)
             if service_type in services_map.keys():
                 for node_info in services_map[service_type]:
                     for server in self.cluster.servers:
@@ -556,7 +585,7 @@ class ClusterUtils:
         if servers is None:
             servers = self.cluster.servers
         kv_servers = self.get_nodes_from_services_map(service_type="kv",
-                                                      get_all_nodes=True,servers=servers,
+                                                      get_all_nodes=True, servers=servers,
                                                       master=master)
         new_servers = []
         for server in servers:
@@ -639,7 +668,7 @@ class ClusterUtils:
         else:
             result = started
         return result
-            # self.assertTrue(started, "Rebalance operation started and in progress %s,"%self.cbas_servers)
+        # self.assertTrue(started, "Rebalance operation started and in progress %s,"%self.cbas_servers)
 
     def remove_all_nodes_then_rebalance(self, otpnodes=None, rebalance=True):
         return self.remove_node(otpnodes, rebalance)
@@ -727,13 +756,13 @@ class ClusterUtils:
         info = shell.extract_remote_info().type.lower()
         if info == 'linux':
             cbstat_command = "{0:s}cbstats" \
-                             .format(testconstants.LINUX_COUCHBASE_BIN_PATH)
+                .format(testconstants.LINUX_COUCHBASE_BIN_PATH)
         elif info == 'windows':
             cbstat_command = "{0:s}cbstats" \
-                             .format(testconstants.WIN_COUCHBASE_BIN_PATH)
+                .format(testconstants.WIN_COUCHBASE_BIN_PATH)
         elif info == 'mac':
             cbstat_command = "{0:s}cbstats" \
-                             .format(testconstants.MAC_COUCHBASE_BIN_PATH)
+                .format(testconstants.MAC_COUCHBASE_BIN_PATH)
         else:
             raise Exception("OS not supported.")
         saslpassword = ''
@@ -777,7 +806,7 @@ class ClusterUtils:
                                    .format(node, group))
                 else:
                     exception_str = "Replica of node {0} are on its own zone {1}" \
-                                    .format(node, group)
+                        .format(node, group)
                     self.log.error(exception_str)
                     raise Exception(exception_str)
         shell.disconnect()
