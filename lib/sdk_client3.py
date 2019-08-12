@@ -82,11 +82,13 @@ class SDKClient(object):
             for h in logger.getParent().getHandlers():
                 if isinstance(h, ConsoleHandler):
                     h.setLevel(Level.SEVERE)
-            self.cluster = Cluster.connect(ClusterEnvironment
-                                           .builder(", ".join(self.hosts).replace(" ", ""),
-                                                    self.username, self.password)
-                                           .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
-                                           .build())
+            cluster_env = ClusterEnvironment \
+                          .builder(", ".join(self.hosts).replace(" ", ""),
+                                   self.username, self.password) \
+                          .timeoutConfig(TimeoutConfig.builder()
+                                         .connectTimeout(Duration.ofSeconds(20))
+                                         .kvTimeout(Duration.ofSeconds(10)))
+            self.cluster = Cluster.connect(cluster_env.build())
             self.bucketObj = self.cluster.bucket(self.bucket)
             self.collection = self.bucketObj.defaultCollection()
         except Exception as e:
