@@ -1,24 +1,22 @@
-import copy
-import json
-from membase.api.rest_client import RestConnection, RestHelper
-from membase.helper.rebalance_helper import RebalanceHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from remote.remote_util import RemoteUtilHelper
-from failoverbasetests import FailoverBaseTest
+from failoverbasetest import FailoverBaseTest
 
 class NegativeFailoverTests(FailoverBaseTest):
 
     def setUp(self):
         super(NegativeFailoverTests, self).setUp()
+        self.cluster.master = self.servers[0]
 
     def tearDown(self):
         super(NegativeFailoverTests, self).tearDown()
 
     def graceful_failover_when_rebalance_running(self):
         try:
-            self.rest = RestConnection(self.master)
+            self.rest = RestConnection(self.cluster.master)
             nodes = self.rest.node_statuses()
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             status = self.rest.rebalance(otpNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in nodes[1:]])
             self.assertTrue(status," Rebalance did not run ")
@@ -29,9 +27,9 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def graceful_failover_when_graceful_failover_running(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=True)
             self.assertTrue(success_failed_over," Failover failed ")
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=True)
@@ -41,9 +39,9 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def hard_failover_when_graceful_failover_running(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=True)
             self.assertTrue(success_failed_over," Failover failed ")
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
@@ -53,8 +51,8 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def hard_failover_nonexistant_node(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
             success_failed_over = self.rest.fail_over("non-existant", graceful=False)
             self.assertFalse(success_failed_over," Failover did not fail as expected ")
         except Exception,ex:
@@ -62,8 +60,8 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def graceful_failover_nonexistant_node(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
             success_failed_over = self.rest.fail_over("non-existant", graceful=True)
             self.assertFalse(success_failed_over," Failover did not fail as expected ")
         except Exception,ex:
@@ -71,9 +69,9 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def failover_failed_node(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             self.assertTrue(success_failed_over," Failover did not happen as expected ")
             fail_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
@@ -83,9 +81,9 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def addback_non_existant_node(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             # Mark Node for failover
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             # Mark Node for full recovery
@@ -96,18 +94,18 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def addback_an_unfailed_node(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="delta")
         except Exception, ex:
             self.assertTrue(("invalid node name or node" in str(ex)),"unexpected exception {0}".format(ex))
 
     def addback_with_incorrect_recovery_type(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             # Mark Node for failover
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             # Mark Node for full recovery
@@ -118,39 +116,39 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def failure_recovery_delta_node_with_failover_node(self):
         try:
-            self.rest = RestConnection(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=2)
+            self.rest = RestConnection(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=2)
             # Mark Node(s) for failover
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             success_failed_over = self.rest.fail_over(chosen[1].id, graceful=False)
             # Mark Node for full recovery
             if success_failed_over:
                 self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="delta")
-            servers_out = self.add_remove_servers(self.servers,[],[],[chosen[1]])
-            rebalance = self.cluster.async_rebalance(self.servers[:self.nodes_init], [],servers_out)
-            rebalance.result()
+            servers_out = self.cluster_util.add_remove_servers(self.servers,[],[],[chosen[1]])
+            rebalance = self.task.async_rebalance(self.servers[:self.nodes_init], [],servers_out)
+            self.task_manager.get_task_result(rebalance)
         except Exception, ex:
             self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),"unexpected exception {0}".format(ex))
 
     def failure_recovery_delta_node_before_rebalance_in(self):
         try:
-            self.rest = RestConnection(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            self.rest = RestConnection(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             # Mark Node for failover
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             # Mark Node for full recovery
             if success_failed_over:
                 self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="delta")
-            rebalance = self.cluster.async_rebalance(self.servers[:self.nodes_init], [self.servers[self.nodes_init]], [])
-            rebalance.result()
+            rebalance = self.task.async_rebalance(self.servers[:self.nodes_init], [self.servers[self.nodes_init]], [])
+            self.task_manager.get_task_result(rebalance)
         except Exception, ex:
             self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),"unexpected exception {0}".format(ex))
 
     def failure_recovery_delta_node_after_add_node(self):
         try:
-            self.rest = RestConnection(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
-            self.rest.add_node(self.master.rest_username, self.master.rest_password,self.servers[self.nodes_init].ip,self.servers[self.nodes_init].port)
+            self.rest = RestConnection(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
+            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,self.servers[self.nodes_init].ip,self.servers[self.nodes_init].port)
             # Mark Node for failover
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             # Mark Node for full recovery
@@ -164,10 +162,10 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def failure_recovery_delta_node_after_eject_node(self):
         try:
-            self.rest = RestConnection(self.master)
-            eject_out_node = self.find_node_info(self.master,self.servers[self.nodes_init-1])
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
-            self.rest.eject_node(self.master.rest_username, self.master.rest_password,self.servers[self.nodes_init-1])
+            self.rest = RestConnection(self.cluster.master)
+            eject_out_node = self.find_node_info(self.cluster.master,self.servers[self.nodes_init-1])
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
+            self.rest.eject_node(self.cluster.master.rest_username, self.cluster.master.rest_password,self.servers[self.nodes_init-1])
             # Mark Node for failover
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             # Mark Node for full recovery
@@ -181,17 +179,17 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def failure_recovery_delta_node_before_rebalance_in_out(self):
         try:
-            self.rest = RestConnection(self.master)
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            self.rest = RestConnection(self.cluster.master)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             # Mark Node for failover
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             # Mark Node for full recovery
             if success_failed_over:
                 self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="delta")
             ejectedNodes  = []
-            self.rest.add_node(self.master.rest_username, self.master.rest_password,
+            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                 self.servers[self.nodes_init].ip,self.servers[self.nodes_init].port)
-            self.rest.add_node(self.master.rest_username, self.master.rest_password,
+            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                 self.servers[self.nodes_init+1].ip,self.servers[self.nodes_init+1].port)
             self.nodes = self.rest.node_statuses()
             for server in self.nodes:
@@ -204,11 +202,11 @@ class NegativeFailoverTests(FailoverBaseTest):
 
     def graceful_failover_unhealthy_node_not_allowed(self):
         try:
-            self.rest = RestConnection(self.master)
-            nodes = self.get_nodes(self.master)
+            self.rest = RestConnection(self.cluster.master)
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.stop_server(self.servers[1])
             # Mark Node for failover
-            chosen = RebalanceHelper.pick_nodes(self.master, howmany=1)
+            chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
             success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
             self.assertFalse(success_failed_over," Graceful failover allowed for unhealthy node")
         finally:
