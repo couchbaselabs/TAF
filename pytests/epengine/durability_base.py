@@ -70,7 +70,7 @@ class DurabilityTestsBase(BaseTestCase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
             # Verify initial doc load count
