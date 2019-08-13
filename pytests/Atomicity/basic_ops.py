@@ -106,7 +106,7 @@ class basic_ops(BaseTestCase):
         task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
                                              gen_create, "create" , exp=0,
                                              batch_size=10,
-                                             process_concurrency=8,
+                                             process_concurrency=self.process_concurrency,
                                              replicate_to=self.replicate_to,
                                              persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
                                              retries=self.sdk_retries,transaction_timeout=self.transaction_timeout, 
