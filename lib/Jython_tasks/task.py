@@ -3552,8 +3552,10 @@ class Atomicity(Task):
 
         self.test_log.debug("going to add new task")
         for task in tasks:
+            Atomicity.task_manager.add_new_task(task)
+            
+        for task in tasks:
             try:
-                Atomicity.task_manager.add_new_task(task)
                 Atomicity.task_manager.get_task_result(task)
             except Exception as e:
                 self.set_exception(e)
@@ -3563,12 +3565,10 @@ class Atomicity(Task):
             tasks.extend(self.get_tasks(generator, 0))
             iterator += 1
 
-        self.test_log.info("going to add verification task")
-        for task in tasks:
-            Atomicity.task_manager.add_new_task(task)
-            
+        self.test_log.info("going to add verification task")  
         for task in tasks:
             try:
+                Atomicity.task_manager.add_new_task(task)
                 Atomicity.task_manager.get_task_result(task)
             except Exception as e:
                 self.set_exception(e)
