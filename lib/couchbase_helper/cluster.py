@@ -465,20 +465,6 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def create_default_bucket(self, bucket_params, timeout=600):
-        """
-        Synchronously creates the default bucket
-
-        Parameters:
-            bucket_params - A dictionary containing a list of bucket
-                            creation parameters (dict)
-        Returns:
-            boolean - Whether or not the bucket was created.
-        """
-
-        _task = self.async_create_default_bucket(bucket_params)
-        return _task.get_result(timeout)
-
     def create_sasl_bucket(self, name, password, bucket_params, timeout=None):
         """Synchronously creates a sasl bucket
 
