@@ -192,10 +192,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.log.info("DATA LOAD PHASE")
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(_async=True, op_type="create")
 
-        # Wait till load phase is over
-        self.stop_load(self.loaders.keys(), do_stop=False)
-        self.log.info("DONE LOAD PHASE")
-
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -238,10 +234,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
             rest = RestConnection(new_swap_servers[0])
             master = new_swap_servers[0]
 
-        if self.do_access:
-            self.log.info("DATA ACCESS PHASE")
-            self.loaders = super(SwapRebalanceBase, self).loadgen_docs(op_type="validate")
-
         self.log.info("SWAP REBALANCE PHASE")
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        ejectedNodes=optNodesIds)
@@ -279,6 +271,15 @@ class SwapRebalanceBase(RebalanceBaseTest):
                         msg="rebalance operation failed after adding node {0}"
                         .format(optNodesIds))
         self.cluster.update_master(master)
+
+        # Wait till load phase is over
+        self.stop_load(self.loaders.keys(), do_stop=False)
+        self.log.info("DONE LOAD PHASE")
+
+        if self.do_access:
+            self.log.info("DATA ACCESS PHASE")
+            self.loaders = super(SwapRebalanceBase, self).loadgen_docs(op_type="validate")
+
         self.verification_phase()
 
     def _common_test_body_failed_swap_rebalance(self):
@@ -434,10 +435,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.log.info("DATA LOAD PHASE")
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(_async=True, op_type="create")
 
-        # Wait till load phase is over
-        self.stop_load(self.loaders.keys(), do_stop=False)
-        self.log.info("DONE LOAD PHASE")
-
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -480,9 +477,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
             else:
                 optNodesIds[0] = content
             master = not_failed_over[-1]
-
-        self.log.info("DATA ACCESS PHASE")
-        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(op_type="validate")
 
         # Failover selected nodes
         for node in optNodesIds:
@@ -534,6 +528,14 @@ class SwapRebalanceBase(RebalanceBaseTest):
                         msg="rebalance operation failed after adding node {0}"
                         .format(add_back_servers))
         self.cluster.update_master(master)
+
+        # Wait till load phase is over
+        self.stop_load(self.loaders.keys(), do_stop=False)
+        self.log.info("DONE LOAD PHASE")
+
+        self.log.info("DATA ACCESS PHASE")
+        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(op_type="validate")
+
         self.verification_phase()
 
     def _failover_swap_rebalance(self):
@@ -554,10 +556,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         self.log.info("DATA LOAD PHASE")
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(_async=True, op_type="create")
-
-        # Wait till load phase is over
-        self.stop_load(self.loaders.keys(), do_stop=False)
-        self.log.info("DONE LOAD PHASE")
 
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:
@@ -600,15 +598,19 @@ class SwapRebalanceBase(RebalanceBaseTest):
             rest = RestConnection(new_swap_servers[0])
             master = new_swap_servers[0]
 
-        self.log.info("DATA ACCESS PHASE")
-        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(op_type="validate")
-
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        ejectedNodes=optNodesIds)
 
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(new_swap_servers))
+        # Wait till load phase is over
+        self.stop_load(self.loaders.keys(), do_stop=False)
+        self.log.info("DONE LOAD PHASE")
+
+        self.log.info("DATA ACCESS PHASE")
+        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(op_type="validate")
+
         self.cluster.update_master(master)
         self.verification_phase()
 
