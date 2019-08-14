@@ -3,7 +3,6 @@ from memcached.helper.kvstore import KVStore
 
 class Bucket(object):
     name = "name"
-    replicas = "replicas"
     ramQuotaMB = "ramQuotaMB"
     bucketType = "bucketType"
     replicaNumber = "replicaNumber"

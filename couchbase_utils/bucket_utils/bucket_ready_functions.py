@@ -358,7 +358,7 @@ class BucketUtils:
                 name = "bucket-{0}".format(i)
                 bucket = Bucket({Bucket.name: name,
                                  Bucket.ramQuotaMB: bucket_ram,
-                                 Bucket.replicas: replica,
+                                 Bucket.replicaNumber: replica,
                                  Bucket.bucketType: bucket_type,
                                  Bucket.evictionPolicy: eviction_policy,
                                  Bucket.maxTTL: maxttl,
