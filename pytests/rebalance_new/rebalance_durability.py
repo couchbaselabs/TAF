@@ -192,7 +192,7 @@ class RebalanceDurability(RebalanceBaseTest):
             self.assertTrue(rebalance_result)
             nodes_in_cluster -= 1
 
-            if nodes_in_cluster <= nodes_required_for_durability and self.durability_level and self.durability_helper.lower() != "none":
+            if nodes_in_cluster <= nodes_required_for_durability and self.durability_level and self.durability_level.lower() != "none":
                 durability_will_fail = True
 
             tasks = list()
