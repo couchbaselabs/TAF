@@ -137,6 +137,7 @@ public class SubDocOperations extends doc_ops {
                         returnValue.put("cas", 0);
                         returnValue.put("status", true);
                         returnValue.put("id", id);
+                        returnValue.put("result", null);
                         return reactiveCollection.mutateIn(id, subDocOps, mutateInOptions)
                                 .map(new Function<MutateInResult, HashMap<String, Object>>() {
                                     public HashMap<String, Object> apply(MutateInResult result) {
