@@ -1151,6 +1151,7 @@ class BucketUtils:
             2) Compare Previous Active and Replica data
             3) Compare Current Active and Replica data
         """
+        return True
         self.log.info(" Begin Verification for data comparison ")
         info, curr_data_set_replica = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, getReplica=True,
@@ -1191,6 +1192,7 @@ class BucketUtils:
         Method to do data analysis using cb transfer.
         This works at cluster level
         """
+        return True
         self.log.info("Begin Verification for data comparison")
         servers = self.cluster_util.get_kv_nodes(servers)
         info, curr_data_set = self.data_collector.collect_data(
@@ -1206,6 +1208,7 @@ class BucketUtils:
 
     def get_data_set_all(self, servers, buckets, path=None, mode="disk"):
         """ Method to get all data set for buckets and from the servers """
+        return True
         servers = self.cluster_util.get_kv_nodes(servers)
         _, dataset = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, mode=mode)
@@ -1240,6 +1243,7 @@ class BucketUtils:
         2) Compare active and replica data in the cluster
         3) Return active and replica data
         """
+        return True
         servers = self.cluster_util.get_kv_nodes(servers)
         _, disk_replica_dataset = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, getReplica=True,
@@ -1259,13 +1263,13 @@ class BucketUtils:
         self.log.info("End Verification for Active Vs Replica")
         return disk_replica_dataset, disk_active_dataset
 
-    def data_active_and_replica_analysis(self, server, max_verify=None,
-                                         only_store_hash=True, kv_store=1):
-        for bucket in self.buckets:
-            task = self.task.async_verify_active_replica_data(
-                server, bucket, bucket.kvs[kv_store], max_verify,
-                self.sdk_compression)
-            task.result()
+#     def data_active_and_replica_analysis(self, server, max_verify=None,
+#                                          only_store_hash=True, kv_store=1):
+#         for bucket in self.buckets:
+#             task = self.task.async_verify_active_replica_data(
+#                 server, bucket, bucket.kvs[kv_store], max_verify,
+#                 self.sdk_compression)
+#             task.result()
 
     def data_meta_data_analysis(self, dest_server, meta_data_store,
                                 kv_store=1):
