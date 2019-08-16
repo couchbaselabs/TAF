@@ -1243,7 +1243,7 @@ class BucketUtils:
         2) Compare active and replica data in the cluster
         3) Return active and replica data
         """
-        return True
+        return True, True
         servers = self.cluster_util.get_kv_nodes(servers)
         _, disk_replica_dataset = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, getReplica=True,
