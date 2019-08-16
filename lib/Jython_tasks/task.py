@@ -2005,10 +2005,12 @@ class StatsWaitTask(Task):
 
     def __init__(self, shell_conn_list, bucket, stat_cmd, stat, comparison,
                  value, timeout=300):
-        super(StatsWaitTask, self).__init__("StatsWaitTask_{}_{}"
-                                            .format(stat,
-                                                    str(time.time())
-                                                    )
+        super(StatsWaitTask, self).__init__("StatsWaitTask_{}_{}_{}"
+                                            .format(
+                                                bucket.name,
+                                                stat,
+                                                str(time.time())
+                                                )
                                             )
         self.shellConnList = shell_conn_list
         self.bucket = bucket
