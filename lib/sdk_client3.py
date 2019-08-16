@@ -456,7 +456,8 @@ class SDKClient(object):
         return result
 
     def crud(self, op_type, key, value=None, exp=0, replicate_to=0,
-             persist_to=0, durability="", timeout=5, time_unit="seconds"):
+             persist_to=0, durability="", timeout=5, time_unit="seconds",
+             create_path=True, xattr=False):
         result = None
         if op_type == "update":
             result = self.upsert(
@@ -479,6 +480,68 @@ class SDKClient(object):
         elif op_type == "read":
             result = self.read(
                 key, timeout=timeout, time_unit=time_unit)
+        elif op_type == "subdoc_insert":
+            sub_key, value = value[0], value[1]
+            mutate_in_specs = list()
+            mutate_in_specs.append(self.sub_doc_op.getInsertMutateInSpec(
+                sub_key, value, create_path, xattr))
+            if not xattr:
+                mutate_in_specs.append(self.sub_doc_op.getIncrMutateInSpec(
+                    "mutated", 1))
+            content = Tuples.of(key, mutate_in_specs)
+            result = self.sub_doc_op.bulkSubDocOperation(
+                self.collection, [content], exp, time_unit,
+                persist_to, replicate_to, durability, timeout, time_unit)
+            return self.__translate_upsert_multi_sub_doc_result(result)
+        elif op_type == "subdoc_upsert":
+            sub_key, value = value[0], value[1]
+            mutate_in_specs = list()
+            mutate_in_specs.append(self.sub_doc_op.getUpsertMutateInSpec(
+                sub_key, value, create_path, xattr))
+            if not xattr:
+                mutate_in_specs.append(self.sub_doc_op.getIncrMutateInSpec(
+                    "mutated", 1))
+            content = Tuples.of(key, mutate_in_specs)
+            result = self.sub_doc_op.bulkSubDocOperation(
+                self.collection, [content], exp, time_unit,
+                persist_to, replicate_to, durability, timeout, time_unit)
+            return self.__translate_upsert_multi_sub_doc_result(result)
+        elif op_type == "subdoc_delete":
+            sub_key, value = value[0], value[1]
+            mutate_in_specs = list()
+            mutate_in_specs.append(self.sub_doc_op.getRemoveMutateInSpec(
+                sub_key, value, create_path, xattr))
+            if not xattr:
+                mutate_in_specs.append(self.sub_doc_op.getIncrMutateInSpec(
+                    "mutated", 1))
+            content = Tuples.of(key, mutate_in_specs)
+            result = self.sub_doc_op.bulkSubDocOperation(
+                self.collection, [content], exp, time_unit,
+                persist_to, replicate_to, durability, timeout, time_unit)
+            result = self.__translate_upsert_multi_sub_doc_result(result)
+        elif op_type == "subdoc_replace":
+            sub_key, value = value[0], value[1]
+            mutate_in_specs = list()
+            mutate_in_specs.append(self.sub_doc_op.getReplaceMutateInSpec(
+                sub_key, value, create_path, xattr))
+            if not xattr:
+                mutate_in_specs.append(self.sub_doc_op.getIncrMutateInSpec(
+                    "mutated", 1))
+            content = Tuples.of(key, mutate_in_specs)
+            result = self.sub_doc_op.bulkSubDocOperation(
+                self.collection, [content], exp, time_unit,
+                persist_to, replicate_to, durability, timeout, time_unit)
+            result = self.__translate_upsert_multi_sub_doc_result(result)
+        elif op_type == "subdoc_read":
+            mutate_in_specs = list()
+            mutate_in_specs.append(self.sub_doc_op.getLookUpInSpec(value,
+                                                                   xattr))
+            content = Tuples.of(key, mutate_in_specs)
+            result = self.sub_doc_op.bulkGetSubDocOperation(
+                self.collection, [content])
+            result = self.__translate_get_multi_results(result)
+        else:
+            self.log.error("Unsupported operation %s" % op_type)
         return result
 
     # Bulk CRUD APIs
@@ -607,7 +670,8 @@ class SDKClient(object):
             persist_to, replicate_to, durability, timeout, time_unit)
         return self.__translate_upsert_multi_sub_doc_result(result)
 
-    def sub_doc_read_multi(self, keys, timeout=5, time_unit="seconds"):
+    def sub_doc_read_multi(self, keys, timeout=5, time_unit="seconds",
+                           xattr=False):
         """
         :param keys: Documents to perform sub_doc operations on.
                      Must be a dictionary with Keys and List of tuples for
@@ -624,7 +688,8 @@ class SDKClient(object):
             mutate_in_spec = []
             for _tuple in value:
                 _path = _tuple[0]
-                _mutate_in_spec = self.sub_doc_op.getLookUpInSpec(_path)
+                _mutate_in_spec = self.sub_doc_op.getLookUpInSpec(_path,
+                                                                  xattr)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)

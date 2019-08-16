@@ -107,8 +107,13 @@ public class SubDocOperations extends doc_ops {
         return MutateInSpec.increment(path, delta);
     }
 
-    public LookupInSpec getLookUpInSpec(String path) {
-        return LookupInSpec.get(path);
+    public LookupInSpec getLookUpInSpec(String path, Boolean xattr) {
+        if (xattr) {
+            return LookupInSpec.get(path).xattr();
+        }
+        else {
+            return LookupInSpec.get(path);
+        }
     }
 
     public List<HashMap<String, Object>> bulkSubDocOperation(Collection collection,

@@ -25,6 +25,8 @@ class DurableExceptions:
         "com.couchbase.client.core.error.ValueTooLargeException"
     KeyNotFoundException = \
         "com.couchbase.client.core.error.KeyNotFoundException"
+    PathNotFoundException = \
+        "com.couchbase.client.core.error.subdoc.PathNotFoundException"
 
 
 class DurabilityHelper:
