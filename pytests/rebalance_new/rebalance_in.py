@@ -14,6 +14,7 @@ retry_exceptions = [
             DurableExceptions.DurabilityImpossibleException
             ]
 
+
 class RebalanceInTests(RebalanceBaseTest):
     def setUp(self):
         super(RebalanceInTests, self).setUp()
@@ -108,18 +109,11 @@ class RebalanceInTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
+        else:
+            for task, task_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
 
         self.sleep(20, "Wait for cluster to be ready after rebalance")
-
-        if not self.atomicity:
-            for bucket in self.bucket_util.buckets:
-                current_items = self.bucket_util.get_bucket_current_item_count(
-                    self.cluster, bucket)
-                if current_items != self.num_items:
-                    self.log.warn("%s bucket items:, Actual %d, Expected %d"
-                                  % (bucket.name, current_items, self.num_items))
-                    self.log.warn("Overwritting self.num_items=%d" % current_items)
-                    self.num_items = current_items
 
         # CRUDs after rebalance operations
         self.gen_create = self.get_doc_generator(create_from,
@@ -136,9 +130,11 @@ class RebalanceInTests(RebalanceBaseTest):
                     task_info['ops_failed'],
                     "Doc ops failed for task: {}".format(task.thread_name))
 
-        if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
+        else:
+            for task, task_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
 
     def rebalance_in_after_ops(self):
         """
@@ -408,8 +404,14 @@ class RebalanceInTests(RebalanceBaseTest):
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
-                    task_info["ops_failed"],
+                    task_info['ops_failed'],
                     "Doc ops failed for task: {}".format(task.thread_name))
+
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+        else:
+            for task, task_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
 
         self.cluster.nodes_in_cluster.extend(servs_in)
         self.sleep(60)

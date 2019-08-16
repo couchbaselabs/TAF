@@ -11,10 +11,8 @@ from couchbase_helper.durability_helper import DurableExceptions
 
 
 class RebalanceBaseTest(BaseTestCase):
-    def setup_base(self):
-        super(RebalanceBaseTest, self).setUp()
     def setUp(self):
-        self.setup_base()
+        super(RebalanceBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
         self.doc_size = self.input.param("doc_size", 10)
@@ -27,23 +25,35 @@ class RebalanceBaseTest(BaseTestCase):
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
         self.key = 'test_docs'.rjust(self.key_size, '0')
+
+        node_ram_ratio = self.bucket_util.base_bucket_ratio(self.cluster.servers)
+        info = self.rest.get_nodes_self()
+        self.rest.init_cluster(username=self.cluster.master.rest_username,
+                               password=self.cluster.master.rest_password)
+        self.rest.init_cluster_memoryQuota(memoryQuota=int(info.mcdMemoryReserved*node_ram_ratio))
+
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         if nodes_init:
-            self.task.rebalance([self.cluster.master], nodes_init, [])
+            result = self.task.rebalance([self.cluster.master], nodes_init, [])
+            self.assertTrue(result, "Initial rebalance failed")
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+
         self.bucket_util.add_rbac_user()
-        self.bucket_util.create_default_bucket(replica=self.num_replicas,
-                                               bucket_type=self.bucket_type)
+        if self.standard_buckets > 10:
+            self.bucket_util.change_max_buckets(self.standard_buckets)
+        self.create_buckets()
         self.sleep(20)
         self.gen_create = self.get_doc_generator(0, self.num_items)
+        tasks = []
         if not self.atomicity:
             for bucket in self.bucket_util.buckets:
-                task = self.task.async_load_gen_docs(
+                tasks.append(self.task.async_load_gen_docs(
                     self.cluster, bucket, self.gen_create, "create", 0,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
                     batch_size=10, timeout_secs=self.sdk_timeout,
                     process_concurrency=8, retries=self.sdk_retries,
-                    durability=self.durability_level)
+                    durability=self.durability_level))
+            for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
@@ -55,8 +65,7 @@ class RebalanceBaseTest(BaseTestCase):
                         persist_to=self.persist_to,timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
                         transaction_timeout=self.transaction_timeout, commit=True,
                         durability=self.durability_level)
-        self.task.jython_task_manager.get_task_result(task)
-        self.gen_load = self.get_doc_generator(0, self.num_items)
+            self.task.jython_task_manager.get_task_result(task)
         # Initialize doc_generators
         self.gen_create = None
         self.gen_delete = None
@@ -68,6 +77,34 @@ class RebalanceBaseTest(BaseTestCase):
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished rebalance base setup========")
+
+    def _create_default_bucket(self):
+        master = self.cluster.master
+        node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
+        info = RestConnection(master).get_nodes_self()
+        available_ram = int(info.memoryQuota * node_ram_ratio)
+        if available_ram < 100:
+            available_ram = 100
+        self.bucket_util.create_default_bucket(ram_quota=available_ram,
+                                               bucket_type=self.bucket_type,
+                                               replica=self.num_replicas)
+
+    def _create_multiple_buckets(self):
+        master = self.cluster.master
+        buckets_created = self.bucket_util.create_multiple_buckets(
+            master, self.num_replicas, bucket_count=self.standard_buckets,
+            bucket_type=self.bucket_type)
+        self.assertTrue(buckets_created, "unable to create multiple buckets")
+
+        for bucket in self.bucket_util.buckets:
+            ready = self.bucket_util.wait_for_memcached(master, bucket)
+            self.assertTrue(ready, msg="wait_for_memcached failed")
+
+    def create_buckets(self):
+        if self.standard_buckets == 1:
+            self._create_default_bucket()
+        else:
+            self._create_multiple_buckets()
 
     def tearDown(self):
         self.cluster_util.print_cluster_stats()
@@ -164,10 +201,8 @@ class RebalanceBaseTest(BaseTestCase):
                     durability=self.durability_level, sync=sync)
         self.task.jython_task_manager.get_task_result(task)
 
-    def start_parallel_cruds_atomicity(self, sync=True, _async=False, op_type="create"):
+    def start_parallel_cruds_atomicity(self, sync=True, task_verification=True):
         tasks_info = dict()
-        if _async:
-            self.doc_ops = op_type
         if("update" in self.doc_ops):
             tasks_info.update({self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_update,
@@ -196,16 +231,14 @@ class RebalanceBaseTest(BaseTestCase):
                           commit=self.transaction_commit, durability=self.durability_level,
                           sync=sync):None})
 
-        if not _async:
+        if task_verification:
             for task in tasks_info.keys():
                 self.task.jython_task_manager.get_task_result(task)
 
         return tasks_info
 
     def start_parallel_cruds(self, retry_exceptions=[], ignore_exceptions=[],
-                             task_verification=False, _async=False, op_type="create"):
-        if _async:
-            self.doc_ops = op_type
+                             task_verification=False):
         tasks_info = dict()
         if "update" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -247,8 +280,7 @@ class RebalanceBaseTest(BaseTestCase):
     def loadgen_docs(self,
                      retry_exceptions=[],
                      ignore_exceptions=[],
-                     task_verification=False,
-                     _async=False, op_type="create"):
+                     task_verification=False):
         loaders = []
         retry_exceptions = list(set(retry_exceptions +
                                     [DurableExceptions.RequestTimeoutException,
@@ -256,20 +288,11 @@ class RebalanceBaseTest(BaseTestCase):
                                      DurableExceptions.DurabilityImpossibleException,
                                      DurableExceptions.DurabilityAmbiguousException]))
 
-        if op_type == "create":
-            if self.atomicity:
-                loaders = self.start_parallel_cruds_atomicity(self.sync, _async, op_type=op_type)
-            else:
-                loaders = self.start_parallel_cruds(retry_exceptions, ignore_exceptions,
-                                                    task_verification, _async)
-
-        if op_type == "validate":
-            if not self.atomicity:
-                gen_create = doc_generator('test_docs', 0, self.num_items)
-                for bucket in self.bucket_util.buckets:
-                    loaders.append(self.task.async_validate_docs(
-                        self.cluster, bucket, gen_create, "create", 0,
-                        batch_size=10, process_concurrency=8))
+        if self.atomicity:
+            loaders = self.start_parallel_cruds_atomicity(self.sync, task_verification)
+        else:
+            loaders = self.start_parallel_cruds(retry_exceptions, ignore_exceptions,
+                                                task_verification)
         return loaders
 
     def induce_rebalance_test_condition(self, test_failure_condition):

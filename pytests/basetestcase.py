@@ -52,6 +52,8 @@ class BaseTestCase(unittest.TestCase):
                                             Bucket.bucket_type.MEMBASE)
         self.bucket_size = self.input.param("bucket_size", None)
         self.standard_buckets = self.input.param("standard_buckets", 1)
+        if self.standard_buckets > 10:
+            self.bucket_util.change_max_buckets(self.standard_buckets)
         self.vbuckets = self.input.param("vbuckets", 1024)
         self.num_replicas = self.input.param("replicas", 1)
         self.active_resident_threshold = int(self.input.param("active_resident_threshold", 100))
