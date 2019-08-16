@@ -1826,8 +1826,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression)
-        self.thread_name = "ValidateDocumentsTask-{}_{}_{}".format(
-            generator._doc_gen.start, generator._doc_gen.end, op_type)
+        self.thread_name = "ValidateDocumentsTask-{}_{}_{}_{}".format(
+            bucket.name, generator._doc_gen.start, generator._doc_gen.end, op_type)
 
         self.generator = generator
         self.op_type = op_type
@@ -2734,7 +2734,7 @@ class DropIndexTask(Task):
 
 class PrintOpsRate(Task):
     def __init__(self, cluster, bucket, sleep=1):
-        super(PrintOpsRate, self).__init__("print_ops_rate{}"
+        super(PrintOpsRate, self).__init__("print_ops_rate_{}"
                                            .format(bucket.name))
         self.cluster = cluster
         self.bucket = bucket

@@ -131,6 +131,8 @@ class ServerTasks(object):
                             start_task=True):
 
         self.log.debug("Loading documents to {}".format(bucket.name))
+        if not task_identifier:
+            task_identifier = bucket.name
         clients = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
