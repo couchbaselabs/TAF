@@ -66,6 +66,7 @@ class ClusterUtils:
     def find_orchestrator(self, node=None):
         status, content = self.cluster.update_master(node)
         content = content.replace("'", '')
+        self.rest = RestConnection(self.cluster.master)
 
         return status, content
 

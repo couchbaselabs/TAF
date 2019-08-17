@@ -606,14 +606,16 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         toBeEjectedNodes = [self.cluster.servers[self.nodes_init - i - 1]
                             for i in range(self.nodes_out)]
 
-        if self.swap_orchestrator:
-            status, content = self.cluster_util.find_orchestrator(master)
-            self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
-                            .format(status, content))
-            if self.nodes_out is len(current_nodes):
-                toBeEjectedNodes.append(self.cluster.master)
-            else:
-                toBeEjectedNodes[0] = self.cluster.master
+        if self.nodes_out is len(current_nodes):
+            self.swap_orchestrator = True
+        elif self.swap_orchestrator:
+            try:
+                status, content = self.cluster_util.find_orchestrator(master)
+                self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
+                                .format(status, content))
+            except:
+                pass
+            toBeEjectedNodes[0] = self.cluster.master
 
         for node in toBeEjectedNodes:
             self.log.info("removing node {0} and rebalance afterwards"
@@ -626,16 +628,19 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             self.assertTrue(durability_req >= len(current_nodes) - len(toBeEjectedNodes) + len(servs_in),
                             "bucket replica is less than the available nodes in the cluster")
 
-        if self.swap_orchestrator:
-            rest = RestConnection(servs_in[0])
-            master = servs_in[0]
-
         self.log.info("IN/OUT REBALANCE PHASE")
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, toBeEjectedNodes)
         self.sleep(10, "wait for rebalance to start")
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+        self.cluster.nodes_in_cluster = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(toBeEjectedNodes))
+
+        if self.swap_orchestrator:
+            rest = RestConnection(self.cluster.nodes_in_cluster[0])
+            self.cluster.master = self.cluster.nodes_in_cluster[0]
+
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(toBeEjectedNodes))
@@ -655,18 +660,22 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         # Add back first ejected node back into the cluster
         self.task.rebalance(self.cluster.nodes_in_cluster,
                             toBeEjectedNodes, [])
-
+        self.sleep(10, "wait for rebalance to start")
+        self.assertTrue(rest.monitorRebalance(),
+                        msg="rebalance operation failed after adding node {0}"
+                        .format(toBeEjectedNodes))
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items-1000)
 
         for vb_num in range(0, self.vbuckets, 128):
             self.target_vbucket = [vb_num]
             self.log.info("Targeting vBucket: {}".format(vb_num))
-            gen_create = self.get_doc_generator(self.num_items,
-                                                self.num_items + 1000)
-            task = self.task.async_load_gen_docs(
-                self.cluster, def_bucket, gen_create, "create", 0,
-                replicate_to=self.replicate_to, persist_to=self.persist_to,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
-            self.task_manager.get_task_result(task)
+            self.gen_create = self.get_doc_generator(self.num_items,
+                                                     self.num_items + 1000)
+            tasks_info = self.loadgen_docs(ignore_exceptions=ignore_exceptions)
+            for task, task_info in tasks_info.items():
+                self.assertTrue(len(task_info["ignored"]) == 0,
+                                "Still seeing DurabilityImpossibleException")
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
