@@ -669,6 +669,30 @@ class GenericLoadingTask(Task):
                                .format(error))
         return success, fail
 
+    def batch_sub_doc_replace(self, key_value, persist_to=0,
+                              replicate_to=0, timeout=5,
+                              time_unit="seconds",
+                              durability="",
+                              xattr=False):
+        success = dict()
+        fail = dict()
+        try:
+            success, fail = self.client.sub_doc_replace_multi(
+                key_value,
+                exp=self.exp,
+                exp_unit=self.exp_unit,
+                persist_to=persist_to,
+                replicate_to=replicate_to,
+                timeout=timeout,
+                time_unit=time_unit,
+                durability=durability,
+                xattr=xattr)
+        except Exception as error:
+            self.log.error(error)
+            self.set_exception("Exception during sub_doc upsert: {0}"
+                               .format(error))
+        return success, fail
+
     def batch_sub_doc_remove(self, key_value, persist_to=0,
                              replicate_to=0, timeout=5,
                              time_unit="seconds",
@@ -893,6 +917,17 @@ class LoadSubDocumentsTask(GenericLoadingTask):
             self.success.update(success)
         elif self.op_type == 'remove':
             success, fail = self.batch_sub_doc_remove(
+                key_value,
+                persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
+                durability=self.durability,
+                xattr=self.xattr)
+            self.fail.update(fail)
+            self.success.update(success)
+        elif self.op_type == "replace":
+            success, fail = self.batch_sub_doc_replace(
                 key_value,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
@@ -3528,8 +3563,8 @@ class Atomicity(Task):
             Atomicity.durability = 4
         else:
             Atomicity.durability = 0
-            
-        
+
+
 
     def call(self):
         tasks = []
@@ -3554,7 +3589,7 @@ class Atomicity(Task):
         self.test_log.debug("going to add new task")
         for task in tasks:
             Atomicity.task_manager.add_new_task(task)
-            
+
         for task in tasks:
             Atomicity.task_manager.get_task_result(task)
             
@@ -3566,8 +3601,8 @@ class Atomicity(Task):
         for generator in self.generators:
             tasks.extend(self.get_tasks(generator, 0))
             iterator += 1
- 
-        self.test_log.info("going to add verification task")  
+
+        self.test_log.info("going to add verification task")
         for task in tasks:
             Atomicity.task_manager.add_new_task(task)
             Atomicity.task_manager.get_task_result(task)
@@ -3581,10 +3616,10 @@ class Atomicity(Task):
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-        
+
         if not load:
             self.process_concurrency = 1
-            
+
         gen_range = max(int((generator.end - generator.start)/self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
@@ -3630,8 +3665,8 @@ class Atomicity(Task):
                                                     pause_secs=pause_secs,
                                                     timeout_secs=timeout_secs, compression=compression,
                                                     retries=retries, transaction=transaction, commit=commit)
-            
-            
+
+
             self.generator = generator
             self.op_type = []
             self.op_type.extend(op_type.split(';'))
@@ -3768,8 +3803,8 @@ class Atomicity(Task):
                     self.delete_keys = self.all_keys
                     err = Transaction().RunTransaction(self.transaction, self.bucket, [], [],  self.all_keys, self.commit, Atomicity.sync, Atomicity.updatecount)
                     if err:
-                        exception = self.__retryDurabilityImpossibleException(err, self.all_keys, self.commit, op_type="delete")    
-                    
+                        exception = self.__retryDurabilityImpossibleException(err, Atomicity.delete_keys, self.commit, op_type="delete")
+
                 if op_type == "time_out":
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, [], [], True, True, Atomicity.updatecount )
                     if "AttemptExpired" in str(err):
@@ -3818,8 +3853,8 @@ class Atomicity(Task):
                 pass
 
             return json_obj
-        
-        def __retryDurabilityImpossibleException(self, err, docs, commit, op_type="update", update_keys=[]):
+
+        def __retryDurabilityImpossibleException(self, err, docs, commit, op_type="update"):
             if "DurabilityImpossibleException" in str(err):
                 self.test_log.info("DurabilityImpossibleException seen so retrying")
                 n=5

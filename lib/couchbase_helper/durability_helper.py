@@ -27,12 +27,19 @@ class DurableExceptions:
         "com.couchbase.client.core.error.KeyNotFoundException"
     PathNotFoundException = \
         "com.couchbase.client.core.error.subdoc.PathNotFoundException"
+    DecodingFailedException = \
+        "com.couchbase.client.core.error.DecodingFailedException"
 
 
 class DurabilityHelper:
 
     EQUAL = '=='
     GREATER_THAN_EQ = '>='
+
+    SupportedDurability = ["MAJORITY",
+                           "MAJORITY_AND_PERSIST_ON_MASTER",
+                           "PERSIST_TO_MAJORITY"]
+
     EXCEPTIONS = dict()
     EXCEPTIONS["durabilility_impossible"] = \
         "com.couchbase.client.core.error.DurabilityImpossibleException"

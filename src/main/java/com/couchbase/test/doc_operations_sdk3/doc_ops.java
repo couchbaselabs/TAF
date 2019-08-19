@@ -20,6 +20,7 @@ import com.couchbase.client.java.kv.GetOptions;
 import com.couchbase.client.java.kv.MutationResult;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.RemoveOptions;
+import com.couchbase.client.java.kv.ReplaceOptions;
 import com.couchbase.client.java.kv.ReplicateTo;
 import com.couchbase.client.java.kv.UpsertOptions;
 
@@ -348,6 +349,31 @@ public class doc_ops {
 		}
 		else {
 			return RemoveOptions.removeOptions().durabilityLevel(durabilityLevel).timeout(timeout);
+		}
+	}
+	
+	private ReplaceOptions getReplaceOptions(int persistTo, int replicateTo,
+			long timeOut, String timeUnit, String durabilityLevel) {
+		PersistTo persistto = this.getPersistTo(persistTo);
+		ReplicateTo replicateto = this.getReplicateTo(replicateTo);
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
+		if (persistTo != 0 || replicateTo != 0) {
+			return ReplaceOptions.replaceOptions().durability(persistto, replicateto).timeout(timeout);
+		}
+		else {
+			return ReplaceOptions.replaceOptions().durabilityLevel(durabilitylevel).timeout(timeout);
+		}
+	}
+
+	private ReplaceOptions getReplaceOptions(PersistTo persistTo, ReplicateTo replicateTo,
+			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		if (persistTo == PersistTo.NONE || replicateTo == ReplicateTo.NONE) {
+			return ReplaceOptions.replaceOptions().durability(persistTo, replicateTo).timeout(timeout);
+		}
+		else {
+			return ReplaceOptions.replaceOptions().durabilityLevel(durabilityLevel).timeout(timeout);
 		}
 	}
 

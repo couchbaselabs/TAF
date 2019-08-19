@@ -12,8 +12,6 @@ import com.couchbase.client.core.error.DecodingFailedException;
 import com.couchbase.client.core.error.subdoc.PathNotFoundException;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
-import com.couchbase.client.java.json.JsonObject;
-import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.client.java.kv.LookupInResult;
 import com.couchbase.client.java.kv.LookupInSpec;
 import com.couchbase.client.java.kv.MutateInOptions;
@@ -119,18 +117,25 @@ public class SubDocOperations extends doc_ops {
     public List<HashMap<String, Object>> bulkSubDocOperation(Collection collection,
             List<Tuple2<String, List<MutateInSpec>>> mutateInSpecs, long expiry, final String expiryTimeUnit,
             final int persistTo, final int replicateTo, final String durabilityLevel, final long timeOut,
-            final String timeUnit) {
+            final String timeUnit, long cas) {
         PersistTo persistto = this.getPersistTo(persistTo);
         ReplicateTo replicateto = this.getReplicateTo(replicateTo);
         DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
-        return this.bulkSubDocOperation(collection, mutateInSpecs, expiry, expiryTimeUnit,
-                                       persistto, replicateto, durabilitylevel, timeOut, timeUnit);
+        return this.bulkSubDocOperation(collection, mutateInSpecs,
+        								   expiry, expiryTimeUnit,
+                                        persistto, replicateto, durabilitylevel,
+                                        timeOut, timeUnit,
+                                        cas);
     }
 
     public List<HashMap<String, Object>> bulkSubDocOperation(Collection collection,
             List<Tuple2<String, List<MutateInSpec>>> mutateInSpecs, long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
-            final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
-        final MutateInOptions mutateInOptions = this.getMutateInOptions(expiry, expiryTimeUnit, persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+            final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit, long cas) {
+        MutateInOptions t_mutateInOptions = this.getMutateInOptions(expiry, expiryTimeUnit, persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+        if (cas > 0) {
+           t_mutateInOptions = t_mutateInOptions.cas(cas);
+        }
+        final MutateInOptions mutateInOptions = t_mutateInOptions;
         final ReactiveCollection reactiveCollection = collection.reactive();
         List<HashMap<String, Object>> returnValue = Flux.fromIterable(mutateInSpecs)
                 .flatMap(new Function<Tuple2<String, List<MutateInSpec>>, Publisher<HashMap<String, Object>>>() {
