@@ -3556,25 +3556,22 @@ class Atomicity(Task):
             Atomicity.task_manager.add_new_task(task)
             
         for task in tasks:
-            try:
-                Atomicity.task_manager.get_task_result(task)
-            except Exception as e:
-                self.set_exception(e)
+            Atomicity.task_manager.get_task_result(task)
+            
                 
         self.transaction.close()
 
         tasks = []
+        
         for generator in self.generators:
             tasks.extend(self.get_tasks(generator, 0))
             iterator += 1
  
         self.test_log.info("going to add verification task")  
         for task in tasks:
-            try:
-                Atomicity.task_manager.add_new_task(task)
-                Atomicity.task_manager.get_task_result(task)
-            except Exception as e:
-                self.set_exception(e)
+            Atomicity.task_manager.add_new_task(task)
+            Atomicity.task_manager.get_task_result(task)
+            
 
         for client in Atomicity.clients:
             client.close()
@@ -3638,7 +3635,10 @@ class Atomicity(Task):
             self.generator = generator
             self.op_type = []
             self.op_type.extend(op_type.split(';'))
-
+            self.thread_name = "Atomicity_Loader_Task-{}_{}_{}" \
+            .format(generator._doc_gen.start,
+                    generator._doc_gen.end,
+                    op_type)
             self.commit = commit
             self.exp = exp
             self.flag = flag
