@@ -224,27 +224,10 @@ class RebalanceInTests(RebalanceBaseTest):
         self.gen_create = self.get_doc_generator(self.num_items, self.num_items*2)
         self.gen_delete = self.get_doc_generator(self.num_items/2, self.num_items)
         std = self.std_vbucket_dist or 1.0
-#         tasks_info = dict()
-#         for bucket in self.bucket_util.buckets:
-#             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-#                 self.cluster, bucket, self.cluster.master, self.gen_update,
-#                 "update", 0)
-#             tasks_info.update(tem_tasks_info.copy())
         tasks_info = self.loadgen_docs()
-        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                       self.cluster)
-        self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
-        self.sleep(20)
-        for bucket in self.bucket_util.buckets:
-            current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
-            self.num_items = current_items
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
-        self.bucket_util.verify_cluster_stats(self.num_items)
-        self.sleep(20)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
-        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
             self.cluster.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
         self.rest = RestConnection(self.cluster.master)
@@ -258,12 +241,14 @@ class RebalanceInTests(RebalanceBaseTest):
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
-        self.sleep(60)
+        self.sleep(10)
         self.cluster.nodes_in_cluster.extend(servs_in)
+        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                       self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.servers[:self.nodes_in + self.nodes_init], self.bucket_util.buckets)
-        self.sleep(30)
         self.bucket_util.data_analysis_active_replica_all(
             disk_active_dataset, disk_replica_dataset,
             self.cluster.servers[:self.nodes_in + self.nodes_init],
