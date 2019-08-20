@@ -3693,8 +3693,8 @@ class Atomicity(Task):
             Atomicity.all_keys.extend(self.all_keys)
 
             len_keys = len(self.all_keys)
-            self.update_keys = random.sample(self.all_keys,random.randint(20,len_keys))
-            self.delete_keys = random.sample(self.all_keys,random.randint(20,len_keys))
+            self.update_keys = random.sample(self.all_keys,random.randint(40,len_keys))
+            self.delete_keys = random.sample(self.all_keys,random.randint(40,len_keys))
 
             for op_type in self.op_type:
                 if op_type == "create":
