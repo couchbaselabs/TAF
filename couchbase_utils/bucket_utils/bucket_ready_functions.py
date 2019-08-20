@@ -442,6 +442,46 @@ class BucketUtils:
             status[bucket] = self.flush_bucket(kv_node, bucket)
         return status
 
+    def update_all_bucket_maxTTL(self, maxttl=0):
+        for bucket in self.buckets:
+            self.log.info("Updating maxTTL for bucket {0} to {1}s"
+                          .format(bucket.name, maxttl))
+            BucketHelper(self.cluster.master).change_bucket_props(
+                bucket, maxTTL=maxttl)
+
+    def update_all_bucket_replicas(self, replicas=1):
+        for bucket in self.buckets:
+            self.log.info("Updating replica for bucket {0} to {1}s"
+                          .format(bucket.name, replicas))
+            BucketHelper(self.cluster.master).change_bucket_props(
+                bucket, replicaNumber=replicas)
+
+    def verify_cluster_stats(self, items, master=None,
+                             timeout=None, check_items=True,
+                             check_bucket_stats=True,
+                             check_ep_items_remaining=False,
+                             verify_total_items=True):
+        if master is None:
+            master = self.cluster.master
+        self._wait_for_stats_all_buckets(
+            timeout=(timeout or 120),
+            check_ep_items_remaining=check_ep_items_remaining)
+        if check_items:
+            if check_bucket_stats:
+                self.verify_stats_all_buckets(items=items,
+                                              timeout=(timeout or 120))
+            if verify_total_items:
+                verified = True
+                for bucket in self.buckets:
+                    verified &= self.wait_till_total_numbers_match(
+                        master, bucket, timeout_in_seconds=(timeout or 500))
+                if not verified:
+                    msg = "Lost items!!! Replication was completed " \
+                          "but sum (curr_items) don't match the " \
+                          "curr_items_total"
+                    self.log.error(msg)
+                    raise Exception(msg)
+
     def verify_stats_for_bucket(self, bucket, items, timeout=60):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
@@ -496,49 +536,51 @@ class BucketUtils:
         for remote_conn in shell_conn_list2:
             remote_conn.disconnect()
 
-    def update_all_bucket_maxTTL(self, maxttl=0):
-        for bucket in self.buckets:
-            self.log.info("Updating maxTTL for bucket {0} to {1}s"
-                          .format(bucket.name, maxttl))
-            BucketHelper(self.cluster.master).change_bucket_props(
-                bucket, maxTTL=maxttl)
-
-    def update_all_bucket_replicas(self, replicas=1):
-        for bucket in self.buckets:
-            self.log.info("Updating replica for bucket {0} to {1}s"
-                          .format(bucket.name, replicas))
-            BucketHelper(self.cluster.master).change_bucket_props(
-                bucket, replicaNumber=replicas)
-
-    def verify_cluster_stats(self, items, master=None,
-                             timeout=None, check_items=True,
-                             check_bucket_stats=True,
-                             check_ep_items_remaining=False,
-                             verify_total_items=True):
-        if master is None:
-            master = self.cluster.master
-        self._wait_for_stats_all_buckets(
-            timeout=(timeout or 120),
-            check_ep_items_remaining=check_ep_items_remaining)
-        if check_items:
-            if check_bucket_stats:
-                self.verify_stats_all_buckets(items=items,
-                                              timeout=(timeout or 120))
-            if verify_total_items:
-                verified = True
-                for bucket in self.buckets:
-                    verified &= self.wait_till_total_numbers_match(
-                        master, bucket, timeout_in_seconds=(timeout or 500))
-                if not verified:
-                    msg = "Lost items!!! Replication was completed " \
-                          "but sum (curr_items) don't match the " \
-                          "curr_items_total"
-                    self.log.error(msg)
-                    raise Exception(msg)
-
     def verify_stats_all_buckets(self, items, timeout=60):
         for bucket in self.buckets:
             self.verify_stats_for_bucket(bucket, items, timeout=timeout)
+
+    def _wait_for_stats_all_buckets(self, ep_queue_size=0,
+                                    ep_queue_size_cond='==',
+                                    check_ep_items_remaining=False,
+                                    timeout=60):
+        """
+        Waits for queues to drain on all servers and buckets in a cluster.
+
+        A utility function that waits for all of the items loaded to be
+        persisted and replicated.
+
+        Args:
+          servers - List of all servers in the cluster ([TestInputServer])
+          ep_queue_size - expected ep_queue_size (int)
+          ep_queue_size_cond - condition for comparing (str)
+          check_ep_dcp_items_remaining - to check if replication is complete
+          timeout - Waiting the end of the thread. (str)
+        """
+        tasks = []
+        stat_cmd = "all"
+        for server in self.cluster.nodes_in_cluster:
+            for bucket in self.buckets:
+                if bucket.bucketType == 'memcached':
+                    continue
+                shell_conn = RemoteMachineShellConnection(server)
+                tasks.append(self.task.async_wait_for_stats(
+                    [shell_conn], bucket, stat_cmd,
+                    'ep_queue_size', ep_queue_size_cond, ep_queue_size,
+                    timeout=timeout))
+                if check_ep_items_remaining:
+                    stat_cmd = 'dcp'
+                    ep_items_remaining = 'ep_{0}_items_remaining' \
+                                         .format(stat_cmd)
+                    shell_conn = RemoteMachineShellConnection(server)
+                    tasks.append(self.task.async_wait_for_stats(
+                        [shell_conn], bucket, stat_cmd,
+                        ep_items_remaining, "==", 0,
+                        timeout=timeout))
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+            for shell in task.shellConnList:
+                shell.disconnect()
 
     # Bucket doc_ops support APIs
     @staticmethod
@@ -812,47 +854,6 @@ class BucketUtils:
                     memory_is_full = True
                     self.log.info("Memory is full, %s bytes in use for %s and bucket %s!" %
                                   (memory_used, self.cluster.master.ip, bucket.name))
-
-    def _wait_for_stats_all_buckets(self, ep_queue_size=0,
-                                    ep_queue_size_cond='==',
-                                    check_ep_items_remaining=False,
-                                    timeout=60):
-        """
-        Waits for queues to drain on all servers and buckets in a cluster.
-
-        A utility function that waits for all of the items loaded to be
-        persisted and replicated.
-
-        Args:
-          servers - List of all servers in the cluster ([TestInputServer])
-          ep_queue_size - expected ep_queue_size (int)
-          ep_queue_size_cond - condition for comparing (str)
-          check_ep_dcp_items_remaining - to check if replication is complete
-          timeout - Waiting the end of the thread. (str)
-        """
-        tasks = []
-        stat_cmd = "all"
-        for server in self.cluster.nodes_in_cluster:
-            shell_conn = RemoteMachineShellConnection(server)
-            for bucket in self.buckets:
-                if bucket.bucketType == 'memcached':
-                    continue
-                tasks.append(self.task.async_wait_for_stats(
-                    [shell_conn], bucket, stat_cmd,
-                    'ep_queue_size', ep_queue_size_cond, ep_queue_size,
-                    timeout=timeout))
-                if check_ep_items_remaining:
-                    stat_cmd = 'dcp'
-                    ep_items_remaining = 'ep_{0}_items_remaining' \
-                                         .format(stat_cmd)
-                    tasks.append(self.task.async_wait_for_stats(
-                        [shell_conn], bucket, stat_cmd,
-                        ep_items_remaining, "==", 0,
-                        timeout=timeout))
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
-            for shell in task.shellConnList:
-                shell.disconnect()
 
     def verify_unacked_bytes_all_buckets(self, filter_list=[], sleep_time=5):
         """
