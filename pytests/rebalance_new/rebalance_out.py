@@ -277,10 +277,11 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
+            self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         else:
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
-        self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
+        
         self.sleep(30)
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.bucket_util.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets()
