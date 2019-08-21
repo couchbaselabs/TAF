@@ -27,6 +27,12 @@ class CBCluster:
         self.paths = paths
         self.ram_settings = {}
         self.servers = servers
+        self.kv_nodes = []
+        self.fts_nodes = []
+        self.cbas_nodes = []
+        self.indes_nodes = []
+        self.query_nodes = []
+        self.eventing_nodes = []
         self.nodes_in_cluster = []
         self.master = servers[0]
 
