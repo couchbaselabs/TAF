@@ -355,7 +355,6 @@ class BucketHelper(RestConnection):
             params_dict["maxTTL"] = maxTTL
         if compressionMode:
             params_dict["compressionMode"] = compressionMode
-
         params = urllib.urlencode(params_dict)
 
         self.log.info("%s with param: %s" % (api, params))
@@ -368,6 +367,7 @@ class BucketHelper(RestConnection):
             raise Exception("Unable to set bucket settings %s for bucket"
                             % (params, bucket))
         self.log.info("bucket %s updated" % bucket)
+        bucket.__dict__.update(params_dict)
         return status
 
     def get_auto_compaction_settings(self):
