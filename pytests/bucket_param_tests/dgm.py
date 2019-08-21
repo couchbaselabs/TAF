@@ -16,15 +16,17 @@ class Bucket_DGM_Tests(BaseTestCase):
             maxTTL=self.maxttl, compression_mode=self.compression_mode)
         self.bucket_util.add_rbac_user()
 
+        self.cluster_util.print_cluster_stats()
         doc_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, vbuckets=self.vbuckets)
-        self.cluster_util.print_cluster_stats()
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_create, "create", 0,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
                 batch_size=10,
                 process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
@@ -39,13 +41,19 @@ class Bucket_DGM_Tests(BaseTestCase):
     def test_dgm_to_non_dgm(self):
         # Prepare DGM scenario
         bucket = self.bucket_util.get_all_buckets()[0]
-        num_items = self.task.load_bucket_into_dgm(
-            self.cluster, bucket, self.key, self.num_items,
-            self.active_resident_threshold, batch_size=10,
-            process_concurrency=8,
-            persist_to=self.persist_to, replicate_to=self.replicate_to,
+        dgm_gen = doc_generator(
+            self.key, self.num_items, self.num_items+1)
+        dgm_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, dgm_gen, "create", 0,
+            persist_to=self.persist_to,
+            replicate_to=self.replicate_to,
             durability=self.durability_level,
-            sdk_timeout=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            batch_size=10,
+            process_concurrency=4,
+            active_resident_threshold=self.active_resident_threshold)
+        self.task_manager.get_task_result(dgm_task)
+        num_items = dgm_task.doc_index
 
         gen_create = doc_generator(self.key, num_items,
                                    num_items+self.num_items)

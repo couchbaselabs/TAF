@@ -1759,95 +1759,93 @@ class ContinuousDocUpdateTask(Task):
 
 
 class LoadDocumentsForDgmTask(Task):
-    def __init__(self, cluster, task_manager, bucket, client, generators,
-                 op_type, exp, flag=0, persist_to=0, replicate_to=0,
-                 time_unit="seconds", only_store_hash=True, batch_size=1,
-                 pause_secs=1, timeout_secs=5, compression=True,
-                 process_concurrency=8, print_ops_rate=True, retries=5,
-                 durability="", active_resident_threshold=99,
+    def __init__(self, cluster, task_manager, bucket, clients, key, exp,
+                 doc_index=0, batch_size=50,
+                 persist_to=0, replicate_to=0,
+                 durability="",
+                 timeout_secs=5,
+                 process_concurrency=4, print_ops_rate=True,
+                 active_resident_threshold=99,
                  task_identifier=""):
         super(LoadDocumentsForDgmTask, self).__init__(
-            "LoadDocumentsForDgmTask {}".format(time.time()))
+            "LoadDocumentsForDgmTask_{}_{}".format(bucket.name, time.time()))
         self.cluster = cluster
         self.exp = exp
-        self.flag = flag
         self.persist_to = persist_to
         self.replicate_to = replicate_to
         self.durability = durability
-        self.time_unit = time_unit
-        self.only_store_hash = only_store_hash
-        self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
-        self.compression = compression
         self.process_concurrency = process_concurrency
-        self.client = client
+        self.clients = clients
         self.task_manager = task_manager
         self.batch_size = batch_size
-        self.generators = generators
-        self.input_generators = generators
         self.op_types = None
         self.buckets = None
         self.print_ops_rate = print_ops_rate
-        self.retries = retries
         self.active_resident_threshold = active_resident_threshold
 
-        self.key = self.generators[0].name
-        self.doc_start_num = self.generators[0].start
-        self.doc_batch_size = self.generators[0].end - self.generators[0].start
-        self.doc_type = self.generators[0].doc_type
+        self.key = key
         self.task_identifier = task_identifier
-
-        if isinstance(op_type, list):
-            self.op_types = op_type
-        else:
-            self.op_type = op_type
+        self.op_type = "create"
+        self.rest_client = BucketHelper(self.cluster.master)
+        self.doc_index = doc_index
         if isinstance(bucket, list):
             self.buckets = bucket
         else:
-            self.bucket = bucket
+            self.buckets = [bucket]
 
     def _get_bucket_dgm(self, bucket):
-        rest = BucketHelper(self.cluster.master)
-        bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
-                                                     self.cluster.master)
+        bucket_stat = self.rest_client.get_bucket_stats_for_node(
+            bucket.name,
+            self.cluster.master)
         return bucket_stat["vb_active_resident_items_ratio"]
 
     def _load_next_batch_of_docs(self, bucket):
-        doc_end_num = self.doc_start_num + self.doc_batch_size
-        self.test_log.debug("Doc load from {0} to {1}"
-                            .format(self.doc_start_num, doc_end_num))
-        gen_load = doc_generator(self.key, self.doc_start_num, doc_end_num,
-                                 doc_type=self.doc_type)
-        task = LoadDocumentsGeneratorsTask(
-            self.cluster, self.task_manager, bucket, self.client, [gen_load],
-            self.op_type, self.exp, flag=self.flag,
-            persist_to=self.persist_to, replicate_to=self.replicate_to,
-            only_store_hash=self.only_store_hash, batch_size=self.batch_size,
-            pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-            compression=self.compression,
-            process_concurrency=self.process_concurrency, retries=self.retries,
-            durability=self.durability, task_identifier=self.task_identifier)
-        self.task_manager.add_new_task(task)
-        self.task_manager.get_task_result(task)
+        doc_gens = list()
+        doc_tasks = list()
+        self.test_log.debug("Doc load from index %d" % self.doc_index)
+        for _ in self.clients:
+            doc_gens.append(doc_generator(
+                self.key, self.doc_index, self.doc_index+10000))
+            self.doc_index += 10000
+
+        # Start doc_loading tasks
+        for index, generator in enumerate(doc_gens):
+            batch_gen = BatchedDocumentGenerator(generator, self.batch_size)
+            task = LoadDocumentsTask(
+                self.cluster, bucket, self.clients[index], batch_gen,
+                "create", self.exp,
+                persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                durability=self.durability,
+                timeout_secs=self.timeout_secs,
+                skip_read_on_error=True)
+            self.task_manager.add_new_task(task)
+            doc_tasks.append(task)
+
+        # Wait for doc_loading tasks to complete
+        for task in doc_tasks:
+            self.task_manager.get_task_result(task)
 
     def _load_bucket_into_dgm(self, bucket):
         dgm_value = self._get_bucket_dgm(bucket)
+        self.test_log.info("DGM doc loading for '%s' to atleast %s%%"
+                           % (bucket.name, self.active_resident_threshold))
         while dgm_value > self.active_resident_threshold:
             self.test_log.debug("Active_resident_items_ratio for {0} is {1}"
                                 .format(bucket.name, dgm_value))
             self._load_next_batch_of_docs(bucket)
-            # Update start/end to use it in next call
-            self.doc_start_num += self.doc_batch_size
             dgm_value = self._get_bucket_dgm(bucket)
+        self.test_log.info("DGM %s%% achieved for '%s'"
+                           % (dgm_value, bucket.name))
 
     def call(self):
+        self.test_log.info("Starting DGM doc loading task")
         self.start_task()
-        if self.buckets:
-            for bucket in self.buckets:
-                self._load_bucket_into_dgm(bucket)
-        else:
-            self._load_bucket_into_dgm(self.bucket)
+        for bucket in self.buckets:
+            self._load_bucket_into_dgm(bucket)
         self.complete_task()
+        self.test_log.info("Done loading docs for DGM")
 
 
 class ValidateDocumentsTask(GenericLoadingTask):
@@ -3592,12 +3590,12 @@ class Atomicity(Task):
 
         for task in tasks:
             Atomicity.task_manager.get_task_result(task)
-            
-                
+
+
         self.transaction.close()
 
         tasks = []
-        
+
         for generator in self.generators:
             tasks.extend(self.get_tasks(generator, 0))
             iterator += 1
@@ -3606,7 +3604,7 @@ class Atomicity(Task):
         for task in tasks:
             Atomicity.task_manager.add_new_task(task)
             Atomicity.task_manager.get_task_result(task)
-            
+
 
         for client in Atomicity.clients:
             client.close()
@@ -3724,7 +3722,7 @@ class Atomicity(Task):
                     docs.append(tuple)
 
                 last_batch = self.key_value
-            
+
             Atomicity.all_keys.extend(self.all_keys)
 
             len_keys = len(self.all_keys)
@@ -3738,7 +3736,7 @@ class Atomicity(Task):
                         commit = True
                     else:
                         commit = self.commit
-                        
+
                     docs = list(self.__chunks(docs, len(self.all_keys)/50))
                     for doc in docs:
                         err = Transaction().RunTransaction(self.transaction, self.bucket, doc, [], [], commit, Atomicity.sync, Atomicity.updatecount )
@@ -3753,7 +3751,7 @@ class Atomicity(Task):
                         err = Transaction().RunTransaction(self.transaction, self.bucket, [], doc, [], self.commit, Atomicity.sync, Atomicity.updatecount )
                         if err:
                             exception = self.__retryDurabilityImpossibleException(err, doc, self.commit, op_type="update")
-                        
+
                 if op_type == "update_Rollback":
                     exception = Transaction().RunTransaction(self.transaction, self.bucket, [], self.update_keys, [], False, True, Atomicity.updatecount )
 
@@ -3764,7 +3762,7 @@ class Atomicity(Task):
                         err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], self.delete_keys, self.commit, Atomicity.sync, Atomicity.updatecount )
                         if err:
                             exception = self.__retryDurabilityImpossibleException(err, self.delete_keys, self.commit, op_type="delete")
-                            
+
                 if op_type == "general_update":
                     for self.client in Atomicity.clients:
                         self.batch_update(last_batch, self.client, persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -3791,14 +3789,14 @@ class Atomicity(Task):
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, self.all_keys, [], self.commit, True, Atomicity.updatecount)
                     if err:
                         exception = self.__retryDurabilityImpossibleException(err, docs, self.commit, op_type="create", update_keys=self.all_keys)
-                    
-                        
+
+
                 if op_type == "rebalance_only_update":
                     self.update_keys = self.all_keys
                     err = Transaction().RunTransaction(self.transaction, self.bucket, [], self.all_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
                     if err:
                         exception = self.__retryDurabilityImpossibleException(err, self.all_keys, self.commit, op_type="update")
-                    
+
                 if op_type == "rebalance_delete":
                     self.delete_keys = self.all_keys
                     err = Transaction().RunTransaction(self.transaction, self.bucket, [], [],  self.all_keys, self.commit, Atomicity.sync, Atomicity.updatecount)
@@ -3814,10 +3812,10 @@ class Atomicity(Task):
                         self.test_log.debug("End of First Transaction that is getting timeout")
                     else:
                         exception = err
-                
+
                 if ("update" in op_type) and self.commit:
                     Atomicity.update_keys.extend(self.update_keys)
-            
+
                 if ("delete" in op_type) and self.commit:
                     Atomicity.delete_keys.extend(self.delete_keys)
 

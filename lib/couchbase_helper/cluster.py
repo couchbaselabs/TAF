@@ -130,18 +130,18 @@ class ServerTasks(object):
                             ryow=False, check_persistence=False,
                             start_task=True):
 
-        self.log.debug("Loading documents to {}".format(bucket.name))
-        if not task_identifier:
-            task_identifier = bucket.name
-        clients = []
-        gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
-        gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
-        for _ in range(gen_start, gen_end, gen_range):
-            client = VBucketAwareMemcached(RestConnection(cluster.master),
-                                           bucket)
-            clients.append(client)
+        clients = list()
         if active_resident_threshold == 100:
+            self.log.debug("Loading documents to {}".format(bucket.name))
+            if not task_identifier:
+                task_identifier = bucket.name
+            gen_start = int(generator.start)
+            gen_end = max(int(generator.end), 1)
+            gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
+            for _ in range(gen_start, gen_end, gen_range):
+                client = VBucketAwareMemcached(RestConnection(cluster.master),
+                                               bucket)
+                clients.append(client)
             if not ryow:
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
                     cluster, self.jython_task_manager, bucket, clients,
@@ -164,8 +164,9 @@ class ServerTasks(object):
                     check_persistence = False
 
                 _task = jython_tasks.Durability(
-                    cluster, self.jython_task_manager, bucket, clients, generator,
-                    op_type, exp, flag=flag, persist_to=persist_to,
+                    cluster, self.jython_task_manager, bucket, clients,
+                    generator, op_type, exp,
+                    flag=flag, persist_to=persist_to,
                     replicate_to=replicate_to, only_store_hash=only_store_hash,
                     batch_size=batch_size, pause_secs=pause_secs,
                     timeout_secs=timeout_secs, compression=compression,
@@ -173,17 +174,21 @@ class ServerTasks(object):
                     durability=durability, majority_value=majority_value,
                     check_persistence=check_persistence)
         else:
+            rest_client = RestConnection(cluster.master)
+            for _ in range(process_concurrency):
+                client = VBucketAwareMemcached(rest_client, bucket)
+                clients.append(client)
             _task = jython_tasks.LoadDocumentsForDgmTask(
-                cluster, self.jython_task_manager, bucket, client, [generator],
-                op_type, exp, flag=flag, persist_to=persist_to,
-                replicate_to=replicate_to, only_store_hash=only_store_hash,
-                batch_size=batch_size, pause_secs=pause_secs,
-                timeout_secs=timeout_secs, compression=compression,
-                process_concurrency=process_concurrency,
-                print_ops_rate=print_ops_rate, retries=retries,
+                cluster, self.jython_task_manager, bucket, clients,
+                generator.name, 0,
+                doc_index=generator.start,
+                batch_size=batch_size,
+                persist_to=persist_to,
+                replicate_to=replicate_to,
                 durability=durability,
-                active_resident_threshold=active_resident_threshold,
-                task_identifier=task_identifier)
+                timeout_secs=timeout_secs,
+                process_concurrency=process_concurrency,
+                active_resident_threshold=active_resident_threshold)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task
@@ -259,60 +264,38 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_load_gen_docs_atomicity(self, cluster, buckets, generator, op_type,
-                                       exp=0, flag=0, persist_to=0, replicate_to=0,
-                                       only_store_hash=True, batch_size=1, pause_secs=1,
-                                        timeout_secs=5, compression=True,
-                            process_concurrency=1, retries=5, update_count=1,
-                            transaction_timeout=5, commit=True, durability=0, sync=True):
+    def async_load_gen_docs_atomicity(self, cluster, buckets, generator,
+                                      op_type, exp=0, flag=0,
+                                      persist_to=0, replicate_to=0,
+                                      only_store_hash=True, batch_size=1,
+                                      pause_secs=1, timeout_secs=5,
+                                      compression=True,
+                                      process_concurrency=1, retries=5,
+                                      update_count=1, transaction_timeout=5,
+                                      commit=True, durability=0, sync=True):
 
         self.log.info("Loading documents ")
-        bucket_list=[]
-        client_list=[]
+        bucket_list = list()
+        client_list = list()
         for bucket in buckets:
-            client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+            client = VBucketAwareMemcached(RestConnection(cluster.master),
+                                           bucket)
             client_list.append(client)
             bucket_list.append(client.collection)
 
-        _task = jython_tasks.Atomicity(cluster, self.jython_task_manager, bucket_list, client, client_list, [generator],
-                                                        op_type, exp, flag=flag, persist_to=persist_to,
-                                                        replicate_to=replicate_to, only_store_hash=only_store_hash,
-                                                        batch_size=batch_size,
-                                                        pause_secs=pause_secs, timeout_secs=timeout_secs,
-                                                        compression=compression,
-                                                        process_concurrency=process_concurrency, retries=retries, update_count=update_count,
-                                                        transaction_timeout=transaction_timeout, commit=commit, durability=durability,
-                                                        sync=sync)
-        self.jython_task_manager.add_new_task(_task)
-        return _task
-
-    def async_load_bucket_for_dgm(self, cluster, bucket, generator, opt_type,
-                                  active_resident_threshold,
-                                  exp=0, flag=0, only_store_hash=True,
-                                  batch_size=1, pause_secs=1, timeout_secs=5,
-                                  compression=True, process_concurrency=4):
-        """
-        Loads specified bucket with docs until specified DGM percentage is
-        achieved
-        Parameters:
-            cluster - Cluster object
-            bucket  - Bucket object to which docs needs to be loaded
-            generator - Document generator object
-            opt_type  - Operation type
-            active_resident_threshold - Percentage of DGM needs to be achieved
-        Returns:
-            _task - Async task created for DGM task
-        """
-        self.log.debug("Loading doc into {0} until dgm is {1}%"
-                  .format(bucket.name, active_resident_threshold))
-        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
-        _task = jython_tasks.LoadDocumentsForDgmTask(
-            cluster, self.jython_task_manager, bucket, client, [generator],
-            opt_type, exp, flag=flag, only_store_hash=only_store_hash,
-            batch_size=batch_size, pause_secs=pause_secs,
-            timeout_secs=timeout_secs, compression=compression,
-            process_concurrency=process_concurrency,
-            active_resident_threshold=active_resident_threshold)
+        _task = jython_tasks.Atomicity(
+            cluster, self.jython_task_manager, bucket_list,
+            client, client_list, [generator], op_type, exp,
+            flag=flag, persist_to=persist_to,
+            replicate_to=replicate_to, only_store_hash=only_store_hash,
+            batch_size=batch_size,
+            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            compression=compression,
+            process_concurrency=process_concurrency, retries=retries,
+            update_count=update_count,
+            transaction_timeout=transaction_timeout, commit=commit,
+            durability=durability,
+            sync=sync)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
