@@ -266,7 +266,7 @@ class FailoverTests(FailoverBaseTest):
         # Check Failover logs :: Not sure about this logic,
         # currently not checking, will update code once confirmed
         # Currently, only  for checking case where we  have graceful failover
-        if self.graceful:
+        if self.graceful and not self.atomicity:
             new_failover_stats = self.bucket_util.compare_failovers_logs(
                     prev_failover_stats, self.cluster_util.get_kv_nodes(), self.bucket_util.buckets)
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
@@ -588,7 +588,7 @@ class FailoverTests(FailoverBaseTest):
             task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
                                              gen, op , exp=0,
                                              batch_size=10,
-                                             process_concurrency=8,
+                                             process_concurrency=self.process_concurrency,
                                              replicate_to=self.replicate_to,
                                              persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
                                              retries=self.sdk_retries, transaction_timeout=self.transaction_timeout,
