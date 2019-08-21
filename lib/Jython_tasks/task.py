@@ -65,9 +65,10 @@ class Task(Callable):
         elif self.started:
             return "Thread %s at %s" % \
                    (self.thread_name,
-                    str(time.strftime("%H:%M:%S", time.gmtime(self.start_time))))
+                    str(time.strftime("%H:%M:%S",
+                                      time.gmtime(self.start_time))))
         else:
-            return "[%s] not yet scheduled" % (self.thread_name)
+            return "[%s] not yet scheduled" % self.thread_name
 
     def start_task(self):
         self.started = True
@@ -131,9 +132,7 @@ class RebalanceTask(Task):
         super(RebalanceTask, self).__init__("Rebalance_task_IN=[{}]_OUT=[{}]_{}"
                                             .format(",".join([node.ip for node in to_add]),
                                                     ",".join([node.ip for node in to_remove]),
-                                                    str(time.time())
-                                                    )
-                                            )
+                                                    str(time.time())))
         self.servers = servers
         self.to_add = to_add
         self.to_remove = to_remove
@@ -204,7 +203,8 @@ class RebalanceTask(Task):
                 if self.monitor_vbuckets_shuffling and node_version_check:
                     services_map = self.rest.get_nodes_services()
                     for remove_node in self.to_remove:
-                        key = "{0}:{1}".format(remove_node.ip, remove_node.port)
+                        key = "{0}:{1}".format(remove_node.ip,
+                                               remove_node.port)
                         services = services_map[key]
                         if "kv" not in services:
                             self.monitor_vbuckets_shuffling = False
@@ -697,7 +697,7 @@ class GenericLoadingTask(Task):
                              replicate_to=0, timeout=5,
                              time_unit="seconds",
                              durability="",
-                             create_path=True, xattr=False):
+                             xattr=False):
         success = dict()
         fail = dict()
         try:
@@ -846,7 +846,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             self.fail.update(fail)
             self.success.update(success)
         else:
-            self.set_exception(Exception("Bad operation type: %s" % self.op_type))
+            self.set_exception(Exception("Bad operation: %s" % self.op_type))
         self.docs_loaded += len(key_value)
 
 
@@ -947,16 +947,19 @@ class LoadSubDocumentsTask(GenericLoadingTask):
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
 
+
 class Durability(Task):
 
     def __init__(self, cluster, task_manager, bucket, clients, generator,
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True, process_concurrency=8, print_ops_rate=True,
-                 retries=5, durability="", majority_value=0, check_persistence=False):
+                 only_store_hash=True, batch_size=1, pause_secs=1,
+                 timeout_secs=5, compression=True, process_concurrency=8,
+                 print_ops_rate=True, retries=5, durability="",
+                 majority_value=0, check_persistence=False):
 
-        super(Durability, self).__init__("DurabilityDocumentsMainTask{}".format(time.time()))
+        super(Durability, self).__init__("DurabilityDocumentsMainTask{}"
+                                         .format(time.time()))
         self.majority_value = majority_value
         self.fail = {}
         self.success = {}
@@ -1025,7 +1028,8 @@ class Durability(Task):
                 time_unit=self.time_unit, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression,
-                instance_num=i, durability=self.durability, check_persistence=self.check_persistence)
+                instance_num=i, durability=self.durability,
+                check_persistence=self.check_persistence)
             self.tasks.append(task)
             i += 1
         try:
@@ -1044,9 +1048,9 @@ class Durability(Task):
         except Exception as e:
             self.set_exception(e)
         finally:
-            self.log.debug("===== Tasks in DurabilityDocumentsMainTask pool =====")
+            self.log.debug("=== Tasks in DurabilityDocumentsMainTask pool ===")
             self.task_manager.print_tasks_in_pool()
-            self.log.debug("=====================================================")
+            self.log.debug("=================================================")
             for task in self.tasks:
                 self.task_manager.get_task_result(task)
                 self.task_manager.stop_task(task)
@@ -1061,7 +1065,8 @@ class Durability(Task):
         4. Keep track of non durable documents
         '''
 
-        def __init__(self, cluster, bucket, client, generator, op_type, exp, exp_unit,
+        def __init__(self, cluster, bucket, client, generator, op_type,
+                     exp, exp_unit,
                      flag=0, majority_value=0, persist_to=0, replicate_to=0,
                      time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
@@ -1119,7 +1124,7 @@ class Durability(Task):
                 self.set_exception(Exception(e.message))
             self.log.debug("Load generation thread completed")
 
-            self.log.debug("===== Tasks in DurabilityDocumentLoaderTask pool =====")
+            self.log.debug("== Tasks in DurabilityDocumentLoaderTask pool ==")
             self.task_manager.print_tasks_in_pool()
             if self.check_persistence:
                 persistence.join()
@@ -1155,12 +1160,13 @@ class Durability(Task):
             elif self.op_type == 'delete':
                 self.docs_to_be_deleted.update(
                     self.batch_read(key_value.keys())[0])
-                success, fail = self.batch_delete(key_value,
-                                                  persist_to=self.persist_to,
-                                                  replicate_to=self.replicate_to,
-                                                  timeout=self.timeout,
-                                                  timeunit=self.time_unit,
-                                                  durability=self.durability)
+                success, fail = self.batch_delete(
+                    key_value,
+                    persist_to=self.persist_to,
+                    replicate_to=self.replicate_to,
+                    timeout=self.timeout,
+                    timeunit=self.time_unit,
+                    durability=self.durability)
                 self.delete_failed.update(fail)
             else:
                 self.set_exception(Exception("Bad operation type: %s"
@@ -1174,8 +1180,8 @@ class Durability(Task):
             partition_gen.end = self.generator._doc_gen.end
 
             self.generator_persist = BatchedDocumentGenerator(
-                                    partition_gen,
-                                    self.batch_size)
+                partition_gen,
+                self.batch_size)
 
             self.start = self.generator._doc_gen.start
             self.end = self.generator._doc_gen.end
@@ -1189,10 +1195,10 @@ class Durability(Task):
 
             while True:
                 if self.persistence_offset < self.write_offset or self.persistence_offset == self.end:
-                    self.test_log.debug("Persistence: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"%
-                                       (self.persistence_offset,
-                                        self.write_offset,
-                                        self.end))
+                    self.test_log.debug("Persistence: ReadOffset=%s, WriteOffset=%s, Reader: FinalOffset=%s"
+                                        % (self.persistence_offset,
+                                           self.write_offset,
+                                           self.end))
                     if self.generator_persist._doc_gen.has_next():
                         doc = self.generator_persist._doc_gen.next()
                         key, val = doc[0], doc[1]
@@ -1361,6 +1367,7 @@ class Durability(Task):
                         self.test_log.fatal("BREAKING!!")
                         break
                     self.read_offset += 1
+
 
 class LoadDocumentsGeneratorsTask(Task):
 
@@ -1638,7 +1645,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                         print_ops_rate_task)
             self.log.debug("===========Tasks in loadgen pool=======")
             self.task_manager.print_tasks_in_pool()
-            self.log.debug("============================")
+            self.log.debug("=======================================")
             for task in tasks:
                 self.task_manager.stop_task(task)
             for client in self.clients:
@@ -1860,7 +1867,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression)
         self.thread_name = "ValidateDocumentsTask-{}_{}_{}_{}".format(
-            bucket.name, generator._doc_gen.start, generator._doc_gen.end, op_type)
+            bucket.name, generator._doc_gen.start, generator._doc_gen.end,
+            op_type)
 
         self.generator = generator
         self.op_type = op_type
@@ -1889,7 +1897,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
         result_map, failed_reads = self.batch_read(key_value.keys())
-        missing_keys, wrong_values = self.validate_key_val(result_map, key_value)
+        missing_keys, wrong_values = self.validate_key_val(result_map,
+                                                           key_value)
         if self.op_type == 'delete':
             not_missing = []
             if missing_keys.__len__() == key_value.keys().__len__():
@@ -1937,8 +1946,8 @@ class DocumentsValidatorTask(Task):
                  op_type, exp, flag=0, only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=60, compression=True,
                  process_concurrency=4):
-        super(DocumentsValidatorTask, self).__init__("DocumentsValidatorTask_{}"
-                                                     .format(time.time()))
+        super(DocumentsValidatorTask, self).__init__(
+            "DocumentsValidatorTask_{}".format(time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -2083,7 +2092,9 @@ class StatsWaitTask(Task):
         val_dict = dict()
         try:
             for cb_stat_obj in self.cbstatObjList:
-                tem_stat = cb_stat_obj.all_stats(self.bucket.name, field_to_grep=self.stat, stat_name=self.statCmd)
+                tem_stat = cb_stat_obj.all_stats(self.bucket.name,
+                                                 field_to_grep=self.stat,
+                                                 stat_name=self.statCmd)
                 val_dict[cb_stat_obj.shellConn.ip] = tem_stat
                 if tem_stat and tem_stat != "None":
                     stat_result += int(tem_stat)
@@ -2101,8 +2112,8 @@ class StatsWaitTask(Task):
             return False
         else:
             self.test_log.debug("Ready: %s %s %s %s. Received: %s for bucket '%s'"
-                               % (self.stat, stat_result, self.comparison,
-                                  self.value, val_dict, self.bucket.name))
+                                % (self.stat, stat_result, self.comparison,
+                                   self.value, val_dict, self.bucket.name))
             self.stop = True
             return True
 
@@ -3528,7 +3539,7 @@ class Atomicity(Task):
         self.commit = commit
         self.exp = exp
         self.flag = flag
-        Atomicity.sync =sync
+        Atomicity.sync = sync
         self.persit_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
@@ -3562,8 +3573,6 @@ class Atomicity(Task):
         else:
             Atomicity.durability = 0
 
-
-
     def call(self):
         tasks = []
         self.start_task()
@@ -3591,11 +3600,9 @@ class Atomicity(Task):
         for task in tasks:
             Atomicity.task_manager.get_task_result(task)
 
-
         self.transaction.close()
 
         tasks = []
-
         for generator in self.generators:
             tasks.extend(self.get_tasks(generator, 0))
             iterator += 1
@@ -3604,7 +3611,6 @@ class Atomicity(Task):
         for task in tasks:
             Atomicity.task_manager.add_new_task(task)
             Atomicity.task_manager.get_task_result(task)
-
 
         for client in Atomicity.clients:
             client.close()
@@ -3655,23 +3661,24 @@ class Atomicity(Task):
         3. Start the reader thread
         4. Keep track of non durable documents
         '''
-        def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
-                     persist_to=0, replicate_to=0, time_unit="seconds",
+        def __init__(self, cluster, bucket, client, generator, op_type, exp,
+                     flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
-                     compression=True, throughput_concurrency=4, retries=5, instance_num=0, transaction = None, commit=True):
-            super(Atomicity.Loader, self).__init__(cluster, bucket, client, batch_size=batch_size,
-                                                    pause_secs=pause_secs,
-                                                    timeout_secs=timeout_secs, compression=compression,
-                                                    retries=retries, transaction=transaction, commit=commit)
-
+                     compression=True, throughput_concurrency=4, retries=5,
+                     instance_num=0, transaction=None, commit=True):
+            super(Atomicity.Loader, self).__init__(
+                cluster, bucket, client, batch_size=batch_size,
+                pause_secs=pause_secs,
+                timeout_secs=timeout_secs, compression=compression,
+                retries=retries, transaction=transaction, commit=commit)
 
             self.generator = generator
             self.op_type = []
             self.op_type.extend(op_type.split(';'))
             self.thread_name = "Atomicity_Loader_Task-{}_{}_{}" \
-            .format(generator._doc_gen.start,
-                    generator._doc_gen.end,
-                    op_type)
+                               .format(generator._doc_gen.start,
+                                       generator._doc_gen.end,
+                                       op_type)
             self.commit = commit
             self.exp = exp
             self.flag = flag
@@ -3703,7 +3710,6 @@ class Atomicity(Task):
 
             doc_gen = self.generator
             while self.has_next():
-
                 self.key_value = doc_gen.next_batch()
                 self._process_values_for_create(self.key_value)
                 self.all_keys.extend(self.key_value.keys())
@@ -3712,9 +3718,12 @@ class Atomicity(Task):
 
                     if op_type == 'general_create':
                         for self.client in Atomicity.clients:
-                            self.batch_create(self.key_value, self.client, persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                  timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
-
+                            self.batch_create(
+                                self.key_value, self.client,
+                                persist_to=self.persist_to,
+                                replicate_to=self.replicate_to,
+                                timeout=self.timeout, time_unit=self.time_unit,
+                                doc_type=self.generator.doc_type)
 
                 for key, value in self.key_value.items():
                     content = self.__translate_to_json_object(value)
@@ -3726,10 +3735,11 @@ class Atomicity(Task):
             Atomicity.all_keys.extend(self.all_keys)
 
             len_keys = len(self.all_keys)
-            self.update_keys = random.sample(self.all_keys,random.randint(20,len_keys))
-            self.delete_keys = random.sample(self.all_keys,random.randint(20,len_keys))
-            
-                
+            self.update_keys = random.sample(self.all_keys,
+                                             random.randint(20, len_keys))
+            self.delete_keys = random.sample(self.all_keys,
+                                             random.randint(20, len_keys))
+
             for op_type in self.op_type:
                 if op_type == "create":
                     if len(self.op_type) != 1:
@@ -3789,7 +3799,6 @@ class Atomicity(Task):
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, self.all_keys, [], self.commit, True, Atomicity.updatecount)
                     if err:
                         exception = self.__retryDurabilityImpossibleException(err, docs, self.commit, op_type="create", update_keys=self.all_keys)
-
 
                 if op_type == "rebalance_only_update":
                     self.update_keys = self.all_keys
@@ -3873,12 +3882,14 @@ class Atomicity(Task):
 
     class Validate(GenericLoadingTask):
 
-        def __init__(self, cluster, bucket, client, generator, op_type, exp, flag=0,
-                     proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=30,
-                     compression=True):
-            super(Atomicity.Validate, self).__init__(cluster, bucket, client, batch_size=batch_size,
-                                                        pause_secs=pause_secs,
-                                                        timeout_secs=timeout_secs, compression=compression)
+        def __init__(self, cluster, bucket, client, generator, op_type, exp,
+                     flag=0, proxy_client=None, batch_size=1, pause_secs=1,
+                     timeout_secs=30, compression=True):
+            super(Atomicity.Validate, self).__init__(cluster, bucket, client,
+                                                     batch_size=batch_size,
+                                                     pause_secs=pause_secs,
+                                                     timeout_secs=timeout_secs,
+                                                     compression=compression)
 
             self.generator = generator
             self.op_type = op_type
@@ -3891,21 +3902,20 @@ class Atomicity(Task):
             for client in Atomicity.clients:
                 self.all_keys[client] = []
                 self.all_keys[client].extend(Atomicity.all_keys)
-                self.test_log.info("the length of the keys {}".format(len(self.all_keys[client])))
-
+                self.test_log.info("the length of the keys {}"
+                                   .format(len(self.all_keys[client])))
 
             if proxy_client:
-                self.test_log.info("Changing client to proxy %s:%s..." % (proxy_client.host,
-                                                                proxy_client.port))
+                self.test_log.info("Changing client to proxy %s:%s..."
+                                   % (proxy_client.host, proxy_client.port))
                 self.client = proxy_client
-
 
         def has_next(self):
             return self.generator.has_next()
 
         def call(self):
             self.start_task()
-            self.test_log.info("Starting Atomicity Verification generation thread")
+            self.test_log.info("Starting Atomicity Verification thread")
             if len(Atomicity.all_keys) > 0 :
                 doc_gen = self.generator
                 while self.has_next():
@@ -3917,7 +3927,8 @@ class Atomicity(Task):
 
                         if wrong_values:
                             self.set_exception("Wrong key value. "
-                                       "Wrong key value: {}".format(','.join(wrong_values)))
+                                               "Wrong key value: {}"
+                                               .format(','.join(wrong_values)))
 
                 for key in self.delete_keys:
                     for client in Atomicity.clients:
@@ -3927,9 +3938,10 @@ class Atomicity(Task):
                 for client in Atomicity.clients:
                     if self.all_keys[client] and "time_out" not in self.op_type:
                         self.set_exception("Keys were missing. "
-                                           "Keys missing: {}".format(','.join(self.all_keys[client])))
+                                           "Keys missing: {}"
+                                           .format(','.join(self.all_keys[client])))
 
-            self.test_log.info("Completed Atomicity Verification generation thread")
+            self.test_log.info("Completed Atomicity Verification thread")
             self.complete_task()
 
         def validate_key_val(self, map, key_value, client):
@@ -3969,8 +3981,8 @@ class Atomicity(Task):
                     finally:
                         key_val[key] = value
 
-class MonitorViewFragmentationTask(Task):
 
+class MonitorViewFragmentationTask(Task):
     """
         Attempt to monitor fragmentation that is occurring for a given design_doc.
         execute stage is just for preliminary sanity checking of values and environment.
@@ -4017,7 +4029,7 @@ class MonitorViewFragmentationTask(Task):
         rest = BucketHelper(self.server)
 
         content = rest.get_bucket_json(self.bucket)
-        if content["autoCompactionSettings"] == False:
+        if content["autoCompactionSettings"] is False:
             # try to read cluster level compaction settings
             content = rest.cluster_status()
 
@@ -4043,7 +4055,8 @@ class MonitorViewFragmentationTask(Task):
             sleep(1)
 
     @staticmethod
-    def aggregate_ddoc_info(rest, design_doc_name, bucket="default", with_rebalance=False):
+    def aggregate_ddoc_info(rest, design_doc_name, bucket="default",
+                            with_rebalance=False):
 
         nodes = rest.node_statuses()
         info = []
