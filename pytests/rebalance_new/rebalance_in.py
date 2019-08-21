@@ -978,7 +978,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.gen_delete = self.get_doc_generator(self.num_items / 2,
                                                  self.num_items)
 
-        for i in range(self.num_servers)[1:]:
+        for i in range(self.num_servers)[self.nodes_init:]:
             rebalance = self.task.async_rebalance(self.cluster.servers[:i],
                                                   [self.cluster.servers[i]],
                                                   [])
