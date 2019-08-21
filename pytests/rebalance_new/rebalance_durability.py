@@ -6,6 +6,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.helper.cluster_helper import ClusterOperationHelper
 from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
+from couchbase_helper.durability_helper import DurableExceptions
 
 
 class RebalanceDurability(RebalanceBaseTest):
@@ -27,137 +28,136 @@ class RebalanceDurability(RebalanceBaseTest):
         tasks = list()
         self.gen_create = self.get_doc_generator(self.start_from, self.start_from + self.add_items)
         self.gen_delete = self.get_doc_generator(self.delete_from, self.delete_from + self.delete_items)
-        for bucket in self.bucket_util.buckets:
-            if self.doc_ops is not None:
-                if "update" in self.doc_ops:
-                    tasks.append(self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.gen_update, "update", 0,
-                        batch_size=20, persist_to=self.persist_to,
-                        replicate_to=self.replicate_to, pause_secs=5,
-                        durability=self.durability_level,
-                        timeout_secs=self.sdk_timeout,
-                        retries=self.sdk_retries))
-                if "create" in self.doc_ops:
-                    tasks.append(self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=20, persist_to=self.persist_to,
-                        replicate_to=self.replicate_to, pause_secs=5,
-                        durability=self.durability_level,
-                        timeout_secs=self.sdk_timeout,
-                        retries=self.sdk_retries))
-                    # Update self.num_items as per the gen_create value
-                    self.start_from += self.items
-                    self.num_items += self.add_items
-                if "delete" in self.doc_ops:
-                    tasks.append(self.task.async_load_gen_docs(
-                        self.cluster, bucket, self.gen_delete, "delete", 0,
-                        batch_size=20, persist_to=self.persist_to,
-                        replicate_to=self.replicate_to,
-                        durability=self.durability_level,
-                        pause_secs=5, timeout_secs=self.sdk_timeout,
-                        retries=self.sdk_retries))
-                    # Update self.num_items as per the gen_delete value
-                    self.delete_from += self.items
-                    self.num_items -= self.delete_items
-        return tasks
 
-    def __wait_for_load_gen_tasks_complete(self, tasks):
-        """
-        Function to wait for all doc loading tasks to complete
-        and also verify no failures are seen during the operation.
+        retry_exceptions = [
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            ]
 
-        Returns:
-        :result - Boolean value saying the CRUDs operation is succeeded or not
-        """
-        result = True
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
-            if len(task.fail) != 0:
-                result = False
-                self.log.error("Failures seen during doc_ops: {0}"
-                               .format(task.fail))
-        return result
+        # CRUDs while rebalance is running in parallel
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+
+        if self.doc_ops is not None:
+            if "create" in self.doc_ops:
+                self.start_from += self.items
+            if "delete" in self.doc_ops:
+                self.delete_from += self.items
+        return tasks_info
 
     def test_replica_update_with_durability_without_adding_removing_nodes(self):
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
-        tasks = self.__load_docs_in_all_buckets()
+        tasks_info = self.__load_docs_in_all_buckets()
         rebalance = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, [])
         self.task.jython_task_manager.get_task_result(rebalance)
-        result = self.__wait_for_load_gen_tasks_complete(tasks)
-        self.cluster.nodes_in_cluster.extend(servs_in)
-        self.assertTrue(result, "CRUD failed during initial rebalance")
+        self.bucket_util.verify_doc_op_task_exceptions(
+            tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        for task, task_info in tasks_info.items():
+            self.assertFalse(
+                task_info["ops_failed"],
+                "Doc ops failed for task: {}".format(task.thread_name))
+#             self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
 
-        self.sleep(60, "Wait for cluster to be ready after rebalance")
-        for replicas in range(2, 4):
+        self.sleep(10, "Wait for cluster to be ready after rebalance")
+        for replicas in [1, 2]:
             self.log.info("Updating the bucket replicas to {0}"
                           .format(replicas))
             tasks_info = self.__load_docs_in_all_buckets()
             self.bucket_util.update_all_bucket_replicas(replicas=replicas)
-            rebalance = self.task.rebalance(
+            rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
-            self.task.jython_task_manager.get_task_result(rebalance)
-            result = self.__wait_for_load_gen_tasks_complete(tasks)
-            self.assertTrue(result, "CRUD failed during replica increment")
+            self.assertTrue(rebalance_result)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
+#                 self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
-        for replicas in range(3, 0):
+        for replicas in [1, 0]:
             self.log.info("Updating the bucket replicas to {0}"
                           .format(replicas))
             tasks = self.__load_docs_in_all_buckets()
             self.bucket_util.update_all_bucket_replicas(replicas=replicas)
-            rebalance = self.task.rebalance(
+            rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
-            self.task.jython_task_manager.get_task_result(rebalance)
-            result = self.__wait_for_load_gen_tasks_complete(tasks)
-            self.assertTrue(result, "CRUD failed during replica decrement")
+            self.assertTrue(rebalance_result)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
+#                 self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
         # Verify doc load count to match the overall CRUDs
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def test_replica_update_with_durability_with_adding_removing_nodes(self):
-        tasks = self.__load_docs_in_all_buckets()
-        result = self.__wait_for_load_gen_tasks_complete(tasks)
-        self.assertTrue(result, "CRUD failed during initial doc_load")
+        tasks_info = self.__load_docs_in_all_buckets()
+        self.bucket_util.verify_doc_op_task_exceptions(
+            tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        for task, task_info in tasks_info.items():
+            self.assertFalse(
+                task_info["ops_failed"],
+                "Doc ops failed for task: {}".format(task.thread_name))
+            self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
 
-        self.sleep(60, "Wait for cluster to be ready after rebalance")
+        self.sleep(10, "Wait for cluster to be ready after rebalance")
         self.log.info("Increasing the replicas and rebalancing in the nodes")
-        for replicas in range(2, 4):
+        for replicas in [1, 2]:
             # Start document CRUDs
-            tasks = self.__load_docs_in_all_buckets()
+            tasks_info = self.__load_docs_in_all_buckets()
             self.log.info("Increasing the bucket replicas to {0}"
                           .format(replicas))
             self.bucket_util.update_all_bucket_replicas(replicas=replicas)
-            rebalance = self.task.rebalance(self.cluster.nodes_in_cluster,
+            rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
                                             [self.cluster.servers[replicas]],
                                             [])
-            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance_result)
             self.cluster.nodes_in_cluster.extend([self.cluster.servers[replicas]])
             # Wait for all doc_load tasks to complete and validate
-            result = self.__wait_for_load_gen_tasks_complete(tasks)
-            self.assertTrue(result, "CRUD failed during initial doc_load")
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
         self.log.info("Decreasing the replicas and rebalancing out the nodes")
-        for replicas in range(3, 0):
+        for replicas in [1, 0]:
             self.log.info("Reducing the bucket replicas to {0}"
-                          .format((replicas - 1)))
+                          .format((replicas)))
             # Start document CRUDs
-            tasks = self.__load_docs_in_all_buckets()
-            self.bucket_util.update_all_bucket_replicas(replicas=replicas - 1)
-            rebalance = self.task.rebalance(
+            tasks_info = self.__load_docs_in_all_buckets()
+            self.bucket_util.update_all_bucket_replicas(replicas=replicas)
+            rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [],
-                [self.cluster.servers[replicas - 1]])
-            self.task.jython_task_manager.get_task_result(rebalance)
+                [self.cluster.servers[replicas+1]])
+            self.assertTrue(rebalance_result)
             # Wait for all doc_load tasks to complete and validate
-            result = self.__wait_for_load_gen_tasks_complete(tasks)
-            self.assertTrue(result, "CRUD failed during initial doc_load")
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
         # Verify doc load count to match the overall CRUDs
         self.bucket_util._wait_for_stats_all_buckets()
