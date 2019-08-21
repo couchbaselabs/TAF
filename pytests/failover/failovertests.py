@@ -383,7 +383,7 @@ class FailoverTests(FailoverBaseTest):
 
         # Verify if vbucket sequence numbers and failover logs are as expected
         # We will check only for version > 2.5.* & if the failover is graceful
-        if self.graceful:
+        if self.graceful and not self.atomicity:
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
                     prev_vbucket_stats, self.cluster_util.get_kv_nodes(), self.bucket_util.buckets)
             new_failover_stats = self.bucket_util.compare_failovers_logs(
@@ -588,7 +588,7 @@ class FailoverTests(FailoverBaseTest):
             task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
                                              gen, op , exp=0,
                                              batch_size=10,
-                                             process_concurrency=self.process_concurrency,
+                                             process_concurrency=1,
                                              replicate_to=self.replicate_to,
                                              persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
                                              retries=self.sdk_retries, transaction_timeout=self.transaction_timeout,
