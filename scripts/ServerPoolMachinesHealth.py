@@ -511,10 +511,9 @@ for index, server in enumerate(servers):
         except:
             print "{}: Not a linux machine".format(server)
         i += 1
-#         print output
         _ssh_client.disconnect()
-    #                 session.disconnect()
+        session.disconnect()
     except JSchException as e:
         print("JSch exception on %s: %s" % (ip, str(e)))
-    
-print failed
+if failed:
+    print "ssh failed for: {}".format(failed)
