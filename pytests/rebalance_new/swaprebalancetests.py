@@ -320,6 +320,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             ejectedNodes = list(set(optNodesIds) & set([node.id for node in knownNodes]))
             self.rest.rebalance(otpNodes=[node.id for node in knownNodes],
                                 ejectedNodes=ejectedNodes)
+            self.sleep(10, "Wait for rebalance to start")
             self.assertTrue(self.rest.monitorRebalance(),
                             msg="Rebalance failed after adding node {0}"
                             .format(toBeEjectedNodes))
