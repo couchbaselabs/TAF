@@ -85,7 +85,7 @@ class RebalanceDurability(RebalanceBaseTest):
         for replicas in [1, 0]:
             self.log.info("Updating the bucket replicas to {0}"
                           .format(replicas))
-            task_info = self.__load_docs_in_all_buckets()
+            tasks_info = self.__load_docs_in_all_buckets()
             self.bucket_util.update_all_bucket_replicas(replicas=replicas)
             rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
@@ -305,12 +305,14 @@ class RebalanceDurability(RebalanceBaseTest):
         5. Do Plain CRUDs at the end of all this to verify the cluster status
         """
         # Local function to wait for all crud task to complete
-        def wait_for_crud_task_and_verify_for_no_errors(tasks):
-            for task in tasks:
-                self.task.jython_task_manager.get_task_result(task)
-                self.assertTrue(len(task.fail.keys()) == 0,
-                                msg="Unexpected durability failures: {0}"
-                                .format(task.fail))
+        def wait_for_crud_task_and_verify_for_no_errors(tasks_info):
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
         self.assertTrue(self.replica_to_update is not None)
         def_bucket = self.bucket_util.buckets[0]
@@ -328,9 +330,9 @@ class RebalanceDurability(RebalanceBaseTest):
             [], [self.cluster.servers[0]])
         self.assertTrue(rebalance_result, "Rebalance out orchestrator node failed")
         # Wait for all CRUD tasks to complete and verify no failures are seen
+        self.cluster.master = self.servers[1]
         wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
 
-        self.cluster.master = self.servers[1]
         self.cluster.nodes_in_cluster = self.servers[1:self.nodes_init]
         # Start CRUD operations
         crud_tasks = self.__load_docs_in_all_buckets()
@@ -342,9 +344,8 @@ class RebalanceDurability(RebalanceBaseTest):
         crud_tasks = self.__load_docs_in_all_buckets()
         # Update bucket replica value
         bucket_helper = BucketHelper(self.cluster.servers[1])
-        bucket_helper.change_bucket_props(def_bucket.name,
+        bucket_helper.change_bucket_props(def_bucket,
                                           replicaNumber=self.replica_to_update)
-        def_bucket.replicaNumber = self.replica_to_update
         # Start and wait till rebalance is complete
         rebalance = self.task.async_rebalance(self.cluster.nodes_in_cluster, [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
