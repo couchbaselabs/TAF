@@ -200,7 +200,7 @@ class BucketParamTest(BaseTestCase):
                           .format(replica_num))
 
             bucket_helper_obj.change_bucket_props(
-                self.def_bucket.name, replicaNumber=replica_num)
+                self.def_bucket, replicaNumber=replica_num)
             self.bucket_util.print_bucket_stats()
 
             tasks, doc_count, start_doc_for_insert = self.doc_ops_operations(

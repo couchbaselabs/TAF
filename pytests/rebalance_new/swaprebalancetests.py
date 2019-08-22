@@ -65,7 +65,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.log.info("Updating replica count of bucket to {0}"
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
+                self.bucket_util.buckets[0], replicaNumber=self.replica_to_update)
             self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
     def tearDown(self):

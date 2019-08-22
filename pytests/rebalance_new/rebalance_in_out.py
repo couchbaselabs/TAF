@@ -118,10 +118,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.log.info("Updating replica count of bucket to {0}"
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[0].name,
+                self.bucket_util.buckets[0],
                 replicaNumber=self.replica_to_update)
 
-            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
+#             self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
         self.sleep(20)
 
@@ -196,8 +196,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.log.info("Updating replica count of bucket to {0}"
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
-            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
+                self.bucket_util.buckets[0], replicaNumber=self.replica_to_update)
+#             self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
         self.sleep(20)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
@@ -427,8 +427,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.log.info("Updating replica count of bucket to {0}"
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[0].name, replicaNumber=self.replica_to_update)
-            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
+                self.bucket_util.buckets[0], replicaNumber=self.replica_to_update)
+#             self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
         rest = RestConnection(self.cluster.master)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
@@ -474,7 +474,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             self.log.info("Updating replica count of bucket to {0}"
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
-                def_bucket.name, replicaNumber=self.replica_to_update)
+                def_bucket, replicaNumber=self.replica_to_update)
             self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
         # Rest connection to add/rebalance/monitor nodes

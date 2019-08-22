@@ -125,7 +125,7 @@ class FailoverTests(FailoverBaseTest):
             self.num_replicas = self.new_replica
             bucket_helper = BucketHelper(self.master)
             bucket_helper.change_bucket_props(
-                target_bucket.name, replicaNumber=self.num_replicas)
+                target_bucket, replicaNumber=self.num_replicas)
 
         # Decide whether the durability is going to fail or not
         if self.num_failed_nodes >= 1 and self.num_replicas > 1:
