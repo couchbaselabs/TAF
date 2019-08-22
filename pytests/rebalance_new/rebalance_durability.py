@@ -85,7 +85,7 @@ class RebalanceDurability(RebalanceBaseTest):
         for replicas in [1, 0]:
             self.log.info("Updating the bucket replicas to {0}"
                           .format(replicas))
-            tasks = self.__load_docs_in_all_buckets()
+            task_info = self.__load_docs_in_all_buckets()
             self.bucket_util.update_all_bucket_replicas(replicas=replicas)
             rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
