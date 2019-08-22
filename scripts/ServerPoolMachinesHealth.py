@@ -509,7 +509,7 @@ for index, server in enumerate(servers):
         try:
             print "{}) {}:{}".format(i, server, output[1].split()[1])
         except:
-            print output
+            print "{}: Not a linux machine".format(server)
         i += 1
 #         print output
         _ssh_client.disconnect()
