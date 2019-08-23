@@ -401,6 +401,51 @@ class RebalanceInOutTests(RebalanceBaseTest):
                     "Doc ops failed for task: {}".format(task.thread_name))
             self._load_all_buckets(self.cluster, gen_delete, "create", 0)
             self.bucket_util.verify_cluster_stats(self.num_items)
+        self.bucket_util.verify_unacked_bytes_all_buckets()
+
+    def test_incremental_rebalance_in_out_with_mutation_and_expiration(self):
+        """
+        Rebalances nodes into and out of the cluster while doing mutations and
+        expirations. Use 'zone' param to have nodes divided into server groups
+        by having zone > 1.
+
+        This test begins by loading a given number of items into the cluster.
+        It then adds one node, rebalances that node into the cluster, and then
+        rebalances it back out. During the rebalancing we update half of the
+        items in the cluster and expire the other half. Once the node has been
+        removed and added back we recreate the expired items, wait for the
+        disk queues to drain, and then verify that there has been no data loss,
+        sum(curr_items) match the curr_items_total.We then remove and
+        add back two nodes at a time and so on until we have reached the point
+        where we are adding back and removing at least half of the nodes.
+        """
+        self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
+        gen_delete = self.get_doc_generator(self.num_items / 2 + 2000, self.num_items)
+        self.bucket_util._expiry_pager(5)
+        for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
+            tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_update, "update", 0,
+                pause_secs=5, batch_size=1, timeout_secs=60)
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, gen_delete, "update", 10,
+                pause_secs=5, batch_size=1, timeout_secs=60)
+            tasks_info.update(tem_tasks_info.copy())
+
+            self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
+            self.sleep(10)
+            self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
+            self.sleep(12, "wait till the expiry time 10s")
+            self.bucket_util.verify_cluster_stats(self.num_items - (gen_delete.end - gen_delete.start))
+            self._load_all_buckets(self.cluster, gen_delete, "create", 0)
+            self.bucket_util.verify_cluster_stats(self.num_items)
+        self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def test_rebalance_in_out_at_once(self):
         """
