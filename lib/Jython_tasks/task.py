@@ -573,7 +573,7 @@ class GenericLoadingTask(Task):
                     self.test_log.error(e)
                 if not skip_read_on_error:
                     self.test_log.debug("Reading values {0} after failure"
-                                        .format(fail.__str__()))
+                                        .format(fail.keys()))
                     read_map = self.batch_read(fail.keys())
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0:
