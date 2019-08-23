@@ -56,7 +56,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.gen_create = self.get_doc_generator(self.num_items, self.num_items*2)
         self.gen_update = self.get_doc_generator(self.num_items, self.num_items*2)
 
-        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(retry_exceptions=retry_exceptions)
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -66,7 +65,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
                 self.bucket_util.buckets[0], replicaNumber=self.replica_to_update)
-            self.bucket_util.buckets[0].replicaNumber = self.replica_to_update
 
     def tearDown(self):
         super(SwapRebalanceBase, self).tearDown()
@@ -138,7 +136,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def _common_test_body_swap_rebalance(self, do_stop_start=False):
-
+        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(retry_exceptions=retry_exceptions)
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(self.master)
         self.log.info("current nodes : {0}".format(current_nodes))
@@ -228,6 +226,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
     def _common_test_body_failed_swap_rebalance(self):
         # Start the swap rebalance
+        retry_exceptions.append("com.couchbase.client.core.error.TemporaryFailureException")
+        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(retry_exceptions=retry_exceptions)
         current_nodes = RebalanceHelper.getOtpNodeIds(self.master)
         self.log.info("current nodes : {0}".format(current_nodes))
         toBeEjectedNodes = self.cluster_util.pick_nodes(self.master,
@@ -347,6 +347,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.validate_docs()
 
     def _add_back_failed_node(self, do_node_cleanup=False):
+        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(retry_exceptions=retry_exceptions)
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(self.master)
         self.log.info("current nodes : {0}".format(current_nodes))
@@ -449,6 +450,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.validate_docs()
 
     def _failover_swap_rebalance(self):
+        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(retry_exceptions=retry_exceptions)
         # Start the swap rebalance
         self.log.info("current nodes : {0}"
                       .format(RebalanceHelper.getOtpNodeIds(self.master)))
