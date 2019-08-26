@@ -6,6 +6,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator,\
     sub_doc_generator_for_edit
+from couchbase_helper.durability_helper import DurableExceptions
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
@@ -737,10 +738,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         gen_update_delete = doc_generator(
             self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
             target_vbucket=target_vbuckets)
-        gen_insert = sub_doc_generator(
-            self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
-        gen_upsert_remove = sub_doc_generator(
+        gen_subdoc = sub_doc_generator(
             self.key, 0, self.crud_batch_size,
             vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
@@ -754,57 +752,56 @@ class DurabilityFailureTests(DurabilityTestsBase):
         elif self.doc_ops[0] == "delete":
             gen_loader[0] = gen_update_delete
             self.num_items -= self.crud_batch_size
-        elif self.doc_ops[0] == "insert":
-            gen_loader[0] = gen_insert
-        elif self.doc_ops[0] in ["upsert", "remove"]:
-            gen_loader[0] = gen_upsert_remove
+        elif self.doc_ops[0] in ["insert", "upsert", "remove"]:
+            gen_loader[0] = gen_subdoc
 
-            # Load task for further upsert / remove operations
+        if self.doc_ops[1] == "create":
+            gen_loader[1] = gen_create
+        elif self.doc_ops[1] in ["update", "delete"]:
+            gen_loader[1] = gen_update_delete
+        elif self.doc_ops[1] in ["insert", "upsert", "remove"]:
+            if self.doc_ops[1] == "insert" and self.doc_ops[0] == "create":
+                gen_subdoc = sub_doc_generator(
+                    self.key, self.num_items, self.crud_batch_size,
+                    vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+                gen_loader[1] = gen_subdoc
+            gen_loader[1] = gen_subdoc
+
+        # Load task for further upsert / remove operations
+        if (self.doc_ops[0] in ["upsert", "remove"]) or (
+                self.doc_ops[1] in ["upsert", "remove"]):
             subdoc_load_task = self.task.async_load_gen_sub_docs(
-                self.cluster, self.bucket, gen_insert, "insert",
+                self.cluster, self.bucket, gen_subdoc, "insert",
                 path_create=True,
                 batch_size=self.crud_batch_size, process_concurrency=8,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout)
             self.task_manager.get_task_result(subdoc_load_task)
 
-        if self.doc_ops[1] == "create":
-            gen_loader[1] = gen_create
-        elif self.doc_ops[1] in ["update", "delete"]:
-            gen_loader[1] = gen_update_delete
-        elif self.doc_ops[1] == "insert":
-            gen_loader[1] = gen_insert
-        elif self.doc_ops[1] in ["upsert", "remove"]:
-            gen_loader[1] = gen_upsert_remove
-
-        self.log.info(gen_create.doc_keys)
-        self.log.info(gen_insert.doc_keys)
-
-        # Perform specified action
-        for node in target_nodes:
-            error_sim[node.ip].create(self.simulate_error,
-                                      bucket_name=self.bucket.name)
-        self.sleep(10, "Wait for error simulation to take effect")
+        tem_durability = self.durability_level
+        if self.with_non_sync_writes:
+            tem_durability = "NONE"
 
         # Initialize tasks and store the task objects
         if self.doc_ops[0] in ["create", "update", "delete"]:
             doc_loader_task_1 = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_loader[0], self.doc_ops[0], 0,
-                batch_size=self.crud_batch_size, process_concurrency=8,
+                batch_size=1,
+                process_concurrency=self.crud_batch_size,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
-        elif self.doc_ops[1] in ["insert", "upsert", "remove"]:
+                timeout_secs=self.sdk_timeout,
+                print_ops_rate=False,
+                start_task=False)
+        elif self.doc_ops[0] in ["insert", "upsert", "remove"]:
             doc_loader_task_1 = self.task.async_load_gen_sub_docs(
                 self.cluster, self.bucket, gen_loader[0], self.doc_ops[0], 0,
                 path_create=True,
-                batch_size=self.crud_batch_size, process_concurrency=8,
+                batch_size=1,
+                process_concurrency=self.crud_batch_size,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
-        self.sleep(20, "Wait for task_1 CRUDs to reach server")
-
-        tem_durability = self.durability_level
-        if self.with_non_sync_writes:
-            tem_durability = "NONE"
+                timeout_secs=self.sdk_timeout,
+                print_ops_rate=False,
+                start_task=False)
 
         # This will support both sync-write and non-sync-writes
         if self.doc_ops[1] in ["create", "update", "delete"]:
@@ -813,7 +810,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 batch_size=self.crud_batch_size, process_concurrency=1,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=tem_durability, timeout_secs=self.sdk_timeout,
-                task_identifier="parallel_task2")
+                task_identifier="parallel_task2",
+                print_ops_rate=False,
+                start_task=False)
         elif self.doc_ops[1] in ["insert", "upsert", "remove"]:
             doc_loader_task_2 = self.task.async_load_gen_sub_docs(
                 self.cluster, self.bucket, gen_loader[1], self.doc_ops[1], 0,
@@ -821,8 +820,22 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 batch_size=self.crud_batch_size, process_concurrency=1,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=tem_durability, timeout_secs=self.sdk_timeout,
-                task_identifier="parallel_task2")
+                task_identifier="parallel_task2",
+                print_ops_rate=False,
+                start_task=False)
 
+        # Perform specified action
+        for node in target_nodes:
+            error_sim[node.ip].create(self.simulate_error,
+                                      bucket_name=self.bucket.name)
+        self.sleep(5, "Wait for error simulation to take effect")
+
+        # Start the loader_task_1
+        self.task_manager.add_new_task(doc_loader_task_1)
+        self.sleep(10, "Wait for task_1 CRUDs to reach server")
+
+        # Start the loader_task_2
+        self.task_manager.add_new_task(doc_loader_task_2)
         # This task should be done will all sync_write_in_progress errors
         self.task.jython_task_manager.get_task_result(doc_loader_task_2)
 
@@ -837,12 +850,17 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Validation to verify the sync_in_write_errors in doc_loader_task_2
         failed_docs = doc_loader_task_2.fail
         if len(failed_docs.keys()) != expected_failed_doc_num:
-            self.log_failure("Exception not seen for some docs: {0}"
+            self.log_failure("Exception not seen for few docs: {0}"
                              .format(failed_docs))
 
+        expected_exception = \
+            DurableExceptions.DurableWriteInProgressException
+        if self.doc_ops[0] in "create":
+            expected_exception = \
+                DurableExceptions.KeyNotFoundException
         valid_exception = self.durability_helper.validate_durability_exception(
             failed_docs,
-            self.durability_helper.EXCEPTIONS["write_in_progress"])
+            expected_exception)
 
         if not valid_exception:
             self.log_failure("Got invalid exception")
