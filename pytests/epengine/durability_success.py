@@ -256,6 +256,42 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         gen_update = doc_generator(self.key, self.num_items/2, 50,
                                    target_vbucket=target_vbuckets)
 
+        # Perform CRUDs with induced error scenario is active
+        self.log.info("Starting parallel doc_ops - Create/Read/Update/Delete")
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_create, "create", 0,
+            batch_size=10, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            start_task=False))
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_update, "update", 0,
+            batch_size=10, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            start_task=False))
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_update, "read", 0,
+            batch_size=10, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            start_task=False))
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_delete, "delete", 0,
+            batch_size=10, process_concurrency=1,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            start_task=False))
+
+        for task in tasks:
+            self.task_manager.add_new_task(task)
+
+        self.sleep(10, "Wait for doc loaders to start loading data")
+
         for node in target_nodes:
             # Create shell_connections
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
@@ -266,33 +302,6 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             error_sim[node.ip].create(self.simulate_error,
                                       bucket_name=self.bucket.name)
 
-        # Perform CRUDs with induced error scenario is active
-        self.log.info("Starting parallel doc_ops - Create/Read/Update/Delete")
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_create, "create", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "update", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "read", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_delete, "delete", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-
         # Wait for document_loader tasks to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -302,7 +311,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                                  .format(task.op_type, task.fail))
 
         # Update num_items value accordingly to the CRUD performed
-        self.num_items += self.crud_batch_size - len(gen_delete.doc_keys)
+        self.num_items += (self.num_items+self.crud_batch_size) \
+                          - len(gen_delete.doc_keys)
 
         if self.simulate_error \
                 not in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:

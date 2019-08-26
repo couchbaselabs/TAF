@@ -204,7 +204,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Initialize doc_generators to use for testing
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
-            self.key, self.num_items, self.num_items+self.crud_batch_size,
+            self.key, self.num_items, self.crud_batch_size,
             vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
@@ -213,12 +213,6 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
-
-        # Perform specified action
-        for node in target_nodes:
-            error_sim[node.ip].create(self.simulate_error,
-                                      bucket_name=self.bucket.name)
-        self.sleep(10, "Wait for error simulation to take effect")
 
         # Start CRUD operation based on the given 'doc_op' type
         if self.doc_ops[0] == "create":
@@ -242,12 +236,23 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_loader_1, self.doc_ops[0], 0,
             batch_size=self.crud_batch_size, process_concurrency=8,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
-        self.sleep(20, "Wait for task_1 CRUDs to reach server")
+            timeout_secs=self.sdk_timeout,
+            print_ops_rate=False,
+            start_task=False)
 
         # SDK client for performing individual ops
         client = SDKClient(RestConnection(self.cluster.master),
                            self.bucket)
+
+        # Perform specified action
+        for node in target_nodes:
+            error_sim[node.ip].create(self.simulate_error,
+                                      bucket_name=self.bucket.name)
+        self.sleep(10, "Wait for error simulation to take effect")
+
+        self.task_manager.add_new_task(doc_loader_task_1)
+        self.sleep(10, "Wait for task_1 CRUDs to reach server")
+
         # Perform specified CRUD operation on sync_write docs
         tem_gen = copy.deepcopy(gen_loader_2)
         while tem_gen.has_next():
@@ -633,7 +638,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Initialize doc_generators to use for testing
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
-            self.key, self.num_items, self.num_items+self.crud_batch_size,
+            self.key, self.num_items, self.crud_batch_size,
             vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
@@ -642,11 +647,6 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
-
-        # Perform specified action
-        for node in target_nodes:
-            error_sim[node.ip].create(self.simulate_error,
-                                      bucket_name=self.bucket.name)
 
         # Start CRUD operation based on the given 'doc_op' type
         if self.doc_ops[0] == "create":
@@ -667,18 +667,18 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         expected_failed_doc_num = self.crud_batch_size
 
-        # Initialize tasks and store the task objects
-        doc_loader_task_1 = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_loader[0], self.doc_ops[0], 0,
-            batch_size=10, process_concurrency=8,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
-
-        self.sleep(20, message="Wait for task_1 ops to reach the server")
-
         tem_durability = self.durability_level
         if self.with_non_sync_writes:
             tem_durability = "NONE"
+
+        # Initialize tasks and store the task objects
+        doc_loader_task_1 = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_loader[0], self.doc_ops[0], 0,
+            batch_size=self.crud_batch_size, process_concurrency=8,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            print_ops_rate=False,
+            start_task=False)
 
         # This will support both sync-write and non-sync-writes
         doc_loader_task_2 = self.task.async_load_gen_docs(
@@ -686,9 +686,20 @@ class DurabilityFailureTests(DurabilityTestsBase):
             batch_size=self.crud_batch_size, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=tem_durability, timeout_secs=self.sdk_timeout,
-            task_identifier="parallel_task2")
+            print_ops_rate=False,
+            task_identifier="parallel_task2",
+            start_task=False)
 
-        # This task should be done will all sync_write_in_progress errors
+        # Perform specified action
+        for node in target_nodes:
+            error_sim[node.ip].create(self.simulate_error,
+                                      bucket_name=self.bucket.name)
+
+        self.task_manager.add_new_task(doc_loader_task_1)
+        self.sleep(10, message="Wait for task_1 ops to reach the server")
+
+        # This task should be done with all sync_write_in_progress errors
+        self.task_manager.add_new_task(doc_loader_task_2)
         self.task.jython_task_manager.get_task_result(doc_loader_task_2)
 
         # Revert the introduced error condition

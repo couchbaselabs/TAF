@@ -228,6 +228,20 @@ class SubdocDocumentGenerator(KVGenerator):
                 self.doc_keys.append(doc_key)
                 self.doc_keys_len += 1
             self.key_counter += 1
+        self.end = self.key_counter
+
+    def has_next(self):
+        if self.target_vbucket is None:
+            return self.itr < self.end
+        else:
+            for doc_key in self.doc_keys:
+                doc_index = int(doc_key.split("-")[-1])
+                if doc_index >= self.end:
+                    break
+                if self.start <= doc_index:
+                    return True
+            self.start = self.end
+            return False
 
     """Creates the next generated document and increments the iterator.
     Returns:
@@ -236,7 +250,9 @@ class SubdocDocumentGenerator(KVGenerator):
         if self.itr >= self.end:
             raise StopIteration
 
-        doc_args = []
+        doc_key = None
+        doc_index = None
+        doc_args = list()
         rand_hash = self.name + '-' + str(self.itr)
         self.random.seed(rand_hash)
         for arg in self.args:
@@ -250,19 +266,33 @@ class SubdocDocumentGenerator(KVGenerator):
         return_val = []
         for path, value in json_val.items():
             return_val.append((path, value))
+
         if self.target_vbucket is not None:
-            doc_key = self.doc_keys[self.itr-1]
+            doc_found = False
+            for doc_key in self.doc_keys:
+                doc_index = int(doc_key.split("-")[-1])
+                if doc_index >= self.end:
+                    break
+                if self.start <= doc_index:
+                    doc_found = True
+                    self.doc_keys.remove(doc_key)
+                    break
+
+            if not doc_found:
+                raise StopIteration
+
+            self.itr = doc_index
         elif self.name == "random_keys":
-            """ This will generate a random ascii key with 12 
-            characters """
+            """ This will generate a random ascii key with 12 characters """
             seed_hash = self.name + '-' + str(self.itr)
             self.random.seed(seed_hash)
             doc_key = ''.join(self.random.choice(
                 ascii_uppercase + ascii_lowercase + digits) for _ in
                               range(12))
+            self.itr += 1
         else:
             doc_key = self.name + '-' + str(self.itr)
-        self.itr += 1
+            self.itr += 1
         return doc_key, return_val
 
 
@@ -327,6 +357,17 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                 self.doc_keys.append(doc_key)
                 self.doc_keys_len += 1
             self.key_counter += 1
+        self.end = self.key_counter
+
+    def has_next(self):
+        for doc_key in self.doc_keys:
+            doc_index = int(doc_key.split("-")[-1])
+            if doc_index >= self.end:
+                break
+            if self.start <= doc_index:
+                return True
+        self.start = self.end
+        return False
 
     """
     Creates the next generated document and increments the iterator.
@@ -334,8 +375,21 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
        The document generated
     """
     def next(self):
-        if self.itr >= self.end:
+        if self.itr > self.end:
             raise StopIteration
+        doc_found = False
+        for doc_key in self.doc_keys:
+            doc_index = int(doc_key.split("-")[-1])
+            if doc_index >= self.end:
+                break
+            if self.start <= doc_index:
+                doc_found = True
+                self.doc_keys.remove(doc_key)
+                break
+
+        if not doc_found:
+            raise StopIteration
+
         rand_hash = self.name + '-' + str(self.itr)
         self.random.seed(rand_hash)
         doc_args = []
@@ -346,8 +400,8 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                                              .replace('True', 'true') \
                                              .replace('False', 'false') \
                                              .replace('\\', '\\\\')
-        self.itr += 1
-        return self.doc_keys[self.itr-1], doc
+        self.itr = doc_index
+        return doc_key, doc
 
 
 class BlobGenerator(KVGenerator):
