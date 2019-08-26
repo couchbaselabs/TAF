@@ -46,26 +46,13 @@ class RebalanceBaseTest(BaseTestCase):
         self.gen_create = self.get_doc_generator(0, self.num_items)
         tasks = []
         if not self.atomicity:
-            for bucket in self.bucket_util.buckets:
-                tasks.append(self.task.async_load_gen_docs(
-                    self.cluster, bucket, self.gen_create, "create", 0,
-                    persist_to=self.persist_to, replicate_to=self.replicate_to,
-                    batch_size=10, timeout_secs=self.sdk_timeout,
-                    process_concurrency=8, retries=self.sdk_retries,
-                    durability=self.durability_level))
-            for task in tasks:
-                self.task.jython_task_manager.get_task_result(task)
+            self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
         else:
-            task = self.task.async_load_gen_docs_atomicity(
-                        self.cluster,self.bucket_util.buckets, self.gen_create, "create",0,
-                        batch_size=20,process_concurrency=8,replicate_to=self.replicate_to,
-                        persist_to=self.persist_to,timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
-                        transaction_timeout=self.transaction_timeout, commit=True,
-                        durability=self.durability_level)
-            self.task.jython_task_manager.get_task_result(task)
+            self._load_all_buckets_atomicty(self.gen_create, "create")
+
         # Initialize doc_generators
         self.gen_create = None
         self.gen_delete = None
@@ -194,9 +181,9 @@ class RebalanceBaseTest(BaseTestCase):
 
     def _load_all_buckets_atomicty(self, kv_gen, op_type, sync=True):
         task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster,self.bucket_util.buckets, kv_gen, op_type,0,
-                    batch_size=10,process_concurrency=8,replicate_to=self.replicate_to,
-                    persist_to=self.persist_to,timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+                    self.cluster, self.bucket_util.buckets, kv_gen, op_type, 0,
+                    batch_size=10, process_concurrency=8, replicate_to=self.replicate_to,
+                    persist_to=self.persist_to, timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                     transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,
                     durability=self.durability_level, sync=sync)
         self.task.jython_task_manager.get_task_result(task)
