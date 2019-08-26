@@ -767,22 +767,18 @@ class BucketUtils:
         self.buckets = self.get_all_buckets(cluster.master)
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
-            if bucket.bucketType != 'memcached':
-                self.log.info("BATCH SIZE for documents load: %s" % batch_size)
-                task = self.async_load_bucket(
-                    cluster, bucket, gen, op_type, exp, flag, persist_to,
-                    replicate_to, durability, timeout_secs,
-                    only_store_hash, batch_size, pause_secs,
-                    sdk_compression, process_concurrency, retries,
-                    ryow=ryow, check_persistence=check_persistence)
-                tasks_info[task] = self.get_doc_op_info_dict(
-                    bucket, op_type, exp, replicate_to=replicate_to,
-                    persist_to=persist_to, durability=durability,
-                    timeout=timeout_secs, time_unit="seconds",
-                    ignore_exceptions=ignore_exceptions,
-                    retry_exceptions=retry_exceptions)
-            else:
-                self._load_memcached_bucket(cluster.master, gen, bucket.name)
+            task = self.async_load_bucket(
+                cluster, bucket, gen, op_type, exp, flag, persist_to,
+                replicate_to, durability, timeout_secs,
+                only_store_hash, batch_size, pause_secs,
+                sdk_compression, process_concurrency, retries,
+                ryow=ryow, check_persistence=check_persistence)
+            tasks_info[task] = self.get_doc_op_info_dict(
+                bucket, op_type, exp, replicate_to=replicate_to,
+                persist_to=persist_to, durability=durability,
+                timeout=timeout_secs, time_unit="seconds",
+                ignore_exceptions=ignore_exceptions,
+                retry_exceptions=retry_exceptions)
         return tasks_info
 
     def sync_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
@@ -1509,31 +1505,6 @@ class BucketUtils:
             return None
         else:
             return priority
-
-    def _load_memcached_bucket(self, server, gen_load, bucket_name):
-        num_tries = 0
-        while num_tries < 6:
-            try:
-                num_tries += 1
-                client = MemcachedClientHelper.direct_client(server,
-                                                             bucket_name)
-                break
-            except Exception as ex:
-                if num_tries < 5:
-                    self.log.info("Retry..Unable to create memcached client: {0}"
-                                  .format(ex))
-                else:
-                    self.log.error("Unable to create memcached client: {0}"
-                                   .format(ex))
-        while gen_load.has_next():
-            key, value = gen_load.next()
-            for v in xrange(1024):
-                try:
-                    client.set(key, 0, 0, value, v)
-                    break
-                except Exception:
-                    pass
-        client.close()
 
     def load_sample_buckets(self, servers=None, bucketName=None,
                             total_items=None):
