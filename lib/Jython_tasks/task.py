@@ -2793,18 +2793,22 @@ class PrintOpsRate(Task):
         t_ops_rate = list()
         self.start_task()
         while not self.stop_task:
-            bucket_stats = self.bucket_helper.fetch_bucket_stats(self.bucket)
-            if 'op' in bucket_stats and \
-                    'samples' in bucket_stats['op'] and \
-                    'ops' in bucket_stats['op']['samples']:
-                ops = bucket_stats['op']['samples']['ops'][-1]
-                self.test_log.debug("Ops rate for '%s': %f"
-                                    % (self.bucket.name, ops))
-                if t_ops_rate and t_ops_rate[-1] > ops:
-                    ops_rate_trend.append(t_ops_rate)
-                    t_ops_rate = list()
-                t_ops_rate.append(ops)
-                time.sleep(self.sleep)
+            try:
+                bucket_stats = self.bucket_helper.fetch_bucket_stats(self.bucket)
+                if 'op' in bucket_stats and \
+                        'samples' in bucket_stats['op'] and \
+                        'ops' in bucket_stats['op']['samples']:
+                    ops = bucket_stats['op']['samples']['ops'][-1]
+                    self.test_log.debug("Ops rate for '%s': %f"
+                                        % (self.bucket.name, ops))
+                    if t_ops_rate and t_ops_rate[-1] > ops:
+                        ops_rate_trend.append(t_ops_rate)
+                        t_ops_rate = list()
+                    t_ops_rate.append(ops)
+                    time.sleep(self.sleep)
+            except:
+                #Case when cluster.master is rebalance out of the cluster
+                self.bucket_helper = BucketHelper(self.cluster.master)
         if t_ops_rate:
             ops_rate_trend.append(t_ops_rate)
         plot_graph(self.test_log, self.bucket.name, ops_rate_trend)
