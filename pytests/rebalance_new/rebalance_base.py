@@ -78,9 +78,12 @@ class RebalanceBaseTest(BaseTestCase):
 
     def _create_multiple_buckets(self):
         master = self.cluster.master
+        eviction_policy = "valueOnly"
+        if self.bucket_type.lower() == "ephemeral":
+            eviction_policy = 'noEviction'
         buckets_created = self.bucket_util.create_multiple_buckets(
             master, self.num_replicas, bucket_count=self.standard_buckets,
-            bucket_type=self.bucket_type)
+            bucket_type=self.bucket_type, eviction_policy=eviction_policy)
         self.assertTrue(buckets_created, "unable to create multiple buckets")
 
         for bucket in self.bucket_util.buckets:
