@@ -2809,6 +2809,7 @@ class PrintOpsRate(Task):
             except:
                 #Case when cluster.master is rebalance out of the cluster
                 self.bucket_helper = BucketHelper(self.cluster.master)
+                time.sleep(20)
         if t_ops_rate:
             ops_rate_trend.append(t_ops_rate)
         plot_graph(self.test_log, self.bucket.name, ops_rate_trend)
