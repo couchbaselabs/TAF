@@ -415,7 +415,7 @@ public class SimpleTransaction {
 
 
 				});
-//				result.log().logs().forEach(System.err::println);
+				result.log().logs().forEach(System.err::println);
 
 			}
 			catch (TransactionFailed err) {
@@ -452,19 +452,28 @@ public class SimpleTransaction {
 			if (commit)
 			{
 				// The first mutation must be done in serial
-				return ctx.insert(rc, firstDoc.getT1(), firstDoc.getT2())
-						.flatMapMany(v -> Flux.fromIterable(remainingDocs)
-										.flatMap(doc -> ctx.insert(rc, doc.getT1(), doc.getT2()),
-												// Do all these inserts in parallel
-												remainingDocs.size()
-										)
-
-								// There's an implicit commit so no need to call ctx.commit().  The .then()
-								// converts to the
-								// expected type
+				if (remainingDocs.size() == 1) {
+					return ctx.insert(rc, firstDoc.getT1(), firstDoc.getT2()).then();
+				}
+				else {
+					return ctx.insert(rc, firstDoc.getT1(), firstDoc.getT2())
+							.flatMapMany(v -> Flux.fromIterable(remainingDocs)
+											.flatMap(doc -> ctx.insert(rc, doc.getT1(), doc.getT2()),
+													// Do all these inserts in parallel
+													remainingDocs.size()
+											)
+	
+									// There's an implicit commit so no need to call ctx.commit().  The .then()
+									// converts to the
+									// expected type
 						).then();}
+			}
 			else
 			{
+				if (remainingDocs.size() == 1) {
+					return ctx.insert(rc, firstDoc.getT1(), firstDoc.getT2()).then(ctx.rollback());
+				}
+				else {
 				// The first mutation must be done in serial
 				return ctx.insert(rc, firstDoc.getT1(), firstDoc.getT2())
 						.flatMapMany(v -> Flux.fromIterable(remainingDocs)
@@ -477,6 +486,7 @@ public class SimpleTransaction {
 								// converts to the
 								// expected type
 						).then(ctx.rollback());}
+			}
 
 		}).doOnError(err -> {
 
@@ -489,20 +499,23 @@ public class SimpleTransaction {
 	}
 
 
-	public void multiUpdateSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
+	public ArrayList<LogDefer> multiUpdateSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
+		ArrayList<LogDefer> res = null;
 		try {
 			TransactionResult result = transaction.reactive((ctx) -> {
-				return updateMulti(ctx, transaction, collection, ids, commit);
+				updateMulti(ctx, transaction, collection, ids, commit);
 			}).block();
 			//System.out.println("result: "+result.log().logs());
 		} catch (TransactionFailed e) {
 			System.out.println("Transaction " + e.result().transactionId() + " failed:");
 			System.out.println("Error: " + e.result());
 			for (LogDefer err : e.result().log().logs()) {
+				res.add(err);
 				if (err != null)
 					System.out.println(err.toString());
 			}
 		}
+		return res;
 	}
 
 	public Mono<Void> updateMulti(AttemptContextReactive acr, Transactions transaction, Collection collection, List<String> ids, Boolean commit){
@@ -512,13 +525,24 @@ public class SimpleTransaction {
 		List<String> remainingDocs = docToUpdate.stream().skip(1).collect(Collectors.toList());
 		//System.out.println("docs to be updated"+docToUpdate);
 		if (commit) {
-			return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
+			if (remainingDocs.size() == 1) {
+				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then();
+			}
+			else {
+				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
 					v-> Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
 							remainingDocs.size())).then();}
+			}
 		else {
-			return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
-					v-> Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
-							remainingDocs.size())).then(acr.rollback());
+			if (remainingDocs.size() == 1) {
+				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then(acr.rollback());
+			}
+			else {
+				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
+						v-> Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
+								remainingDocs.size())).then(acr.rollback());
+			}
+			
 		}
 	}
 
@@ -550,13 +574,24 @@ public class SimpleTransaction {
 		List<String> remainingDocs = docToDelete.stream().skip(1).collect(Collectors.toList());
 		//System.out.println("docs to be deleted"+docToDelete);
 		if (commit) {
-			return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).thenMany(
+			if (remainingDocs.size() == 1) {
+				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).then();
+			}
+			else {
+				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).thenMany(
 					Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.remove(d1)),
 							remainingDocs.size())).then();}
+		}
 		else {
-			return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).thenMany(
-					Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.remove(d1)),
-							remainingDocs.size())).then(acr.rollback());
+			if (remainingDocs.size() == 1) {
+				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).then(acr.rollback());
+			}
+			else {
+				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).thenMany(
+						Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.remove(d1)),
+								remainingDocs.size())).then(acr.rollback());
+			}
+			
 		}
 	}
 
