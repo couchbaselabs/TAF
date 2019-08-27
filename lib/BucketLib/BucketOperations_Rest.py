@@ -207,7 +207,9 @@ class BucketHelper(RestConnection):
         """
         api = self.baseUrl + 'pools/default/buckets/{0}/stats?zoom={1}' \
                              .format(bucket, zoom)
-        _, content, _ = self._http_request(api)
+        status, content, _ = self._http_request(api)
+        if not status:
+            raise Exception(content)
         return json.loads(content)
 
     def fetch_bucket_xdcr_stats(self, bucket='default', zoom='minute'):

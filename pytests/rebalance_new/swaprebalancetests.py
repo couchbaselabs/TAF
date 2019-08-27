@@ -351,13 +351,15 @@ class SwapRebalanceBase(RebalanceBaseTest):
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(self.master)
         self.log.info("current nodes : {0}".format(current_nodes))
+
         toBeEjectedNodes = self.cluster_util.pick_nodes(
             self.master, howmany=self.failover_factor)
         optNodesIds = [node.id for node in toBeEjectedNodes]
+        self.log.info("To be removed nodes: {}".format(toBeEjectedNodes))
 
         # List of servers that will not be failed over
         not_failed_over = []
-        for server in self.servers:
+        for server in self.cluster.nodes_in_cluster:
             if self.cluster_run:
                 if server.port not in [node.port for node in toBeEjectedNodes]:
                     not_failed_over.append(server)
@@ -378,58 +380,43 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 optNodesIds.append(content)
             else:
                 optNodesIds[0] = content
-            self.master = not_failed_over[-1]
+                toBeEjectedNodes[0] = self.cluster.master
 
+        self.log.info("To be removed nodes: {}".format(optNodesIds))
         # Failover selected nodes
         for node in optNodesIds:
             self.log.info("failover node {0} and rebalance afterwards"
                           .format(node))
             self.rest.fail_over(node)
 
-        self.rest.rebalance(otpNodes=[node.id for node in self.rest.node_statuses()],
-                       ejectedNodes=optNodesIds)
+        self.rest.rebalance(
+            otpNodes=[node.id for node in self.rest.node_statuses()],
+            ejectedNodes=optNodesIds)
 
         self.assertTrue(self.rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(optNodesIds))
 
-        # Add back the same failed over nodes
-
-        # Cleanup the node, somehow
-        # TODO: cluster_run?
-        if do_node_cleanup:
-            pass
+        self.cluster.nodes_in_cluster = [node for node in self.cluster.nodes_in_cluster if node not in toBeEjectedNodes]
 
         # Make rest connection with node part of cluster
-        self.rest = RestConnection(self.master)
+        self.rest = RestConnection(self.cluster.nodes_in_cluster[0])
+        self.cluster.master = self.cluster.nodes_in_cluster[0]
 
-        # Given the optNode, find ip
-        add_back_servers = []
-        nodes = self.rest.get_nodes()
-        for server in nodes:
-            if isinstance(server.ip, unicode):
-                add_back_servers.append(server)
-        final_add_back_servers = []
-        for server in self.servers:
-            if self.cluster_run:
-                if server.port not in [serv.port for serv in add_back_servers]:
-                    final_add_back_servers.append(server)
-            else:
-                if server.ip not in [serv.ip for serv in add_back_servers]:
-                    final_add_back_servers.append(server)
-        for server in final_add_back_servers:
-            otpNode = self.rest.add_node(self.creds.rest_username, self.creds.rest_password,
-                                    server.ip, server.port)
+        for server in toBeEjectedNodes:
+            otpNode = self.rest.add_node(self.creds.rest_username,
+                                         self.creds.rest_password,
+                                         server.ip, server.port)
             msg = "unable to add node {0} to the cluster"
             self.assertTrue(otpNode, msg.format(server.ip))
 
-        self.rest.rebalance(otpNodes=[node.id for node in self.rest.node_statuses()],
-                       ejectedNodes=[])
+        self.rest.rebalance(
+            otpNodes=[node.id for node in self.rest.node_statuses()],
+            ejectedNodes=[])
 
         self.assertTrue(self.rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"
-                        .format(add_back_servers))
-        self.cluster.update_master(self.master)
+                        .format(toBeEjectedNodes))
 
         # Wait till load phase is over
         if not self.atomicity:
