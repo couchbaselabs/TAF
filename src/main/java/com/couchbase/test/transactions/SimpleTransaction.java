@@ -503,7 +503,7 @@ public class SimpleTransaction {
 		ArrayList<LogDefer> res = null;
 		try {
 			TransactionResult result = transaction.reactive((ctx) -> {
-				updateMulti(ctx, transaction, collection, ids, commit);
+				return updateMulti(ctx, transaction, collection, ids, commit);
 			}).block();
 			//System.out.println("result: "+result.log().logs());
 		} catch (TransactionFailed e) {
