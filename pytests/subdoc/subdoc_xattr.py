@@ -1,4 +1,5 @@
 import copy
+import json
 import sys
 
 # import crc32
@@ -221,7 +222,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         super(SubdocXattrSdkTest, self).tearDown()
 
     def __upsert_document_and_validate(self, op_type, value):
-        result = self.client.crud(op_type, self.doc_id, value)
+        result = self.client.crud(op_type, self.doc_id, value=value)
         if result["status"] is False:
             self.fail("Initial doc create failed")
 
@@ -298,17 +299,27 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
     def test_xattr_big_value(self):
         sub_doc_key = "my.attr"
-        value = "v" * 500000
+        value = {"v": "v" * 500000}
         self.__upsert_document_and_validate("update", value)
 
         self.__insert_sub_doc_and_validate("subdoc_insert",
                                            sub_doc_key, value)
 
         # Read full doc and validate
-        self.__read_doc_and_validate(value)
+        result = self.client.crud("read", self.doc_id)
+        result = json.loads(result["value"])
+        self.assertEqual(result, value,
+                         "Document value mismatch: %s != %s" % (result, value))
 
         # Read sub_doc for validating the value
-        self.__read_doc_and_validate(value, sub_doc_key)
+        success, failed_items = self.client.crud("subdoc_read",
+                                                 self.doc_id,
+                                                 sub_doc_key,
+                                                 xattr=self.xattr)
+        self.assertFalse(failed_items, "Xattr read failed")
+        result = json.loads(str(success[self.doc_id]["value"][0]))
+        self.assertEqual(result, value,
+                         "Sub_doc value mismatch: %s != %s" % (result, value))
 
     def test_add_to_parent(self):
         self.__upsert_document_and_validate("update", {})
@@ -676,7 +687,6 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             create_path=True,
             xattr=self.xattr,
             cas=initial_cas)
-        self.log.info(failed_items)
         self.assertTrue(failed_items, "Subdoc Xattr insert failed")
 
         success, failed_items = self.client.crud(
@@ -689,8 +699,6 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             create_path=True,
             xattr=self.xattr,
             cas=updated_cas_1)
-        self.log.info(success)
-        self.log.info(failed_items)
         self.assertFalse(failed_items, "Subdoc Xattr insert failed")
 
         # Read and record CAS
@@ -1689,7 +1697,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                                      % (curr_cas, doc_cas))
             error_sim.revert(CouchbaseError.STOP_MEMCACHED)
             self.task_manager.get_task_result(sync_write_task)
-            if op_type == "create":
+            if op_type != "delete":
                 self.client.crud("subdoc_insert",
                                  doc_key, ["exists_path", 1],
                                  durability=self.durability_level,
