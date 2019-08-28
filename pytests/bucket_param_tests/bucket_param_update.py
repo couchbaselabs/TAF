@@ -171,6 +171,9 @@ class BucketParamTest(BaseTestCase):
 
     def generic_replica_update(self, doc_count, doc_ops, bucket_helper_obj,
                                replicas_to_update, start_doc_for_insert):
+        durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.nodes_in_cluster),
+            self.durability_level)
         for replica_num in replicas_to_update:
             # Creating doc creator to be used by test cases
             doc_create = doc_generator(self.key, start_doc_for_insert,
@@ -225,6 +228,7 @@ class BucketParamTest(BaseTestCase):
                 doc_ops_list.append("delete")
 
             # Wait for all tasks to complete
+            assert_msg = ""
             self.task.jython_task_manager.get_task_result(rebalance)
             sdk_client = SDKClient(RestConnection(self.cluster.master),
                                    self.bucket_util.buckets[0])
@@ -233,21 +237,28 @@ class BucketParamTest(BaseTestCase):
                 if not self.atomicity:
                     if self.def_bucket.replicaNumber == 3:
                         if len(task.success.keys()) != 0:
-                            doc_ops_failed = True
+                            valid = \
+                                durability_helper.validate_durability_exception(
+                                    task.fail,
+                                    DurableExceptions.DurabilityImpossibleException)
+                            if not valid:
+                                doc_ops_failed = True
+                                assert_msg = "Invalid exception for replica=3"
                     else:
-                        durability_helper = DurabilityHelper(
-                            self.log, len(self.cluster.nodes_in_cluster),
-                            self.durability_level)
                         durability_helper.validate_durability_exception(
                             task.fail,
                             DurableExceptions.DurabilityImpossibleException)
                         doc_ops_failed = durability_helper.retry_with_no_error(
                             sdk_client, task.fail, doc_ops_list[index],
                             timeout=30)
+                        if doc_ops_failed:
+                            doc_ops_failed = True
+                            assert_msg = "Retry of d_impossible exception " \
+                                         "failed"
 
             # Disconnect the SDK client before possible assert
             sdk_client.close()
-            self.assertFalse(doc_ops_failed, "Few doc_ops failed")
+            self.assertFalse(doc_ops_failed, assert_msg)
 
             # Assert if rebalance failed
             self.assertTrue(rebalance.result,
@@ -261,6 +272,7 @@ class BucketParamTest(BaseTestCase):
                                                   doc_create,
                                                   doc_delete)
 
+            assert_msg = "CRUD failed after rebalance for replica update"
             doc_ops_failed = False
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
@@ -268,11 +280,17 @@ class BucketParamTest(BaseTestCase):
                     if replica_num == 3:
                         if len(task.success.keys()) != 0:
                             doc_ops_failed = True
+                            passed = \
+                                durability_helper.validate_durability_exception(
+                                    task.fail,
+                                    DurableExceptions.DurabilityImpossibleException)
+                            if not passed:
+                                assert_msg = "Exception validation failed"
+                                doc_ops_failed = True
                     elif len(task.fail.keys()) != 0:
                         doc_ops_failed = True
 
-            self.assertFalse(doc_ops_failed,
-                             "CRUD failed after rebalance for replica update")
+            self.assertFalse(doc_ops_failed, assert_msg)
 
             # Update the bucket's replica number
             self.def_bucket.replicaNumber = replica_num
