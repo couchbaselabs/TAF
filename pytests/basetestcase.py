@@ -377,8 +377,10 @@ class BaseTestCase(unittest.TestCase):
             if status is True:
                 self.log.info("Polling active_tasks to check cbcollect status")
                 cb_collect_response = dict()
-                while True:
+                retry = 0
+                while retry < 30:
                     content = rest.active_tasks()
+                    self.log.info("{}: CBCollectInfo Iteration {} - {}".format(node.ip, retry, content))
                     for response in content:
                         if response['type'] == 'clusterLogsCollection':
                             cb_collect_response = response
@@ -388,6 +390,7 @@ class BaseTestCase(unittest.TestCase):
                         break
                     else:
                         # CB collect running, wait and check progress again
+                        retry += 1
                         time.sleep(10)
 
                 self.log.info("Copying cbcollect ZIP file to Client")
