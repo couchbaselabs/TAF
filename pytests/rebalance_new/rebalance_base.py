@@ -172,13 +172,19 @@ class RebalanceBaseTest(BaseTestCase):
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
+
+        retry_exceptions = list([DurableExceptions.RequestTimeoutException,
+                                 DurableExceptions.RequestCanceledException,
+                                 DurableExceptions.DurabilityImpossibleException,
+                                 DurableExceptions.DurabilityAmbiguousException])
+
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
             durability=self.durability_level, timeout_secs=timeout_secs,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, sdk_compression=compression,
-            process_concurrency=8)
+            process_concurrency=8, retry_exceptions=retry_exceptions)
         self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
                         "Doc_ops failed in rebalance_base._load_all_buckets")
 
