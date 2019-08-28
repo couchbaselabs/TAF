@@ -415,7 +415,7 @@ public class SimpleTransaction {
 
 
 				});
-				result.log().logs().forEach(System.err::println);
+//				result.log().logs().forEach(System.err::println);
 
 			}
 			catch (TransactionFailed err) {
@@ -489,11 +489,12 @@ public class SimpleTransaction {
 			}
 
 		}).doOnError(err -> {
-
-			for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-				// Optionally, log the result to your own logger
-				res.add(e);
+			if (err instanceof TransactionFailed) {
+		        for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+		        	res.add(e);
+		        }
 			}
+
 		}).block();
 		return res;
 	}
@@ -501,98 +502,85 @@ public class SimpleTransaction {
 
 	public ArrayList<LogDefer> multiUpdateSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
 		ArrayList<LogDefer> res = null;
-		try {
-			TransactionResult result = transaction.reactive((ctx) -> {
-				return updateMulti(ctx, transaction, collection, ids, commit);
-			}).block();
-			//System.out.println("result: "+result.log().logs());
-		} catch (TransactionFailed e) {
-			System.out.println("Transaction " + e.result().transactionId() + " failed:");
-			System.out.println("Error: " + e.result());
-			for (LogDefer err : e.result().log().logs()) {
-				res.add(err);
-				if (err != null)
-					System.out.println(err.toString());
-			}
-		}
-		return res;
-	}
-
-	public Mono<Void> updateMulti(AttemptContextReactive acr, Transactions transaction, Collection collection, List<String> ids, Boolean commit){
 		ReactiveCollection reactiveCollection=collection.reactive();
 		List<String> docToUpdate=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToUpdate.get(0);
 		List<String> remainingDocs = docToUpdate.stream().skip(1).collect(Collectors.toList());
-		//System.out.println("docs to be updated"+docToUpdate);
-		if (commit) {
-			if (remainingDocs.size() == 1) {
-				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then();
+		
+		TransactionResult result = transaction.reactive((ctx) -> {
+			if (commit)
+			{
+				// The first mutation must be done in serial
+				if (remainingDocs.size() == 1) {
+					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then();
+				}
+				else {
+					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
+							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.getOrError(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
+									remainingDocs.size())).then();}
 			}
-			else {
-				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
-					v-> Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
-							remainingDocs.size())).then();}
+			else
+			{
+				if (remainingDocs.size() == 1) {
+					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then(ctx.rollback());
+				}
+				else {
+				// The first mutation must be done in serial
+					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
+							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.getOrError(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
+									remainingDocs.size())).then(ctx.rollback());}
 			}
-		else {
-			if (remainingDocs.size() == 1) {
-				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then(acr.rollback());
-			}
-			else {
-				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
-						v-> Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
-								remainingDocs.size())).then(acr.rollback());
-			}
-			
-		}
-	}
-
-
-	public void multiDeleteSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
-		try {
-			TransactionResult result = transaction.reactive((ctx) -> {
-				return deleteMulti(ctx, transaction, collection, ids, commit);
+	
+			}).doOnError(err -> {
+				if (err instanceof TransactionFailed) {
+			        for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+			        	res.add(e);
+			        }
+				}
 			}).block();
-//	            System.out.println("result: ");
-//	            for (LogDefer err : result.log().logs()) {
-//	                if (err != null)
-//	                    System.out.println(err.toString());
-//	            }
-		} catch (TransactionFailed e) {
-			System.out.println("Transaction " + e.result().transactionId() + " failed:");
-			System.out.println("Error: " + e.result());
-			for (LogDefer err : e.result().log().logs()) {
-				if (err != null)
-					System.out.println(err.toString());
-			}
-		}
+		return res;
 	}
 
-	public Mono<Void> deleteMulti(AttemptContextReactive acr, Transactions transaction, Collection collection, List<String> ids, Boolean commit){
+
+	public ArrayList<LogDefer> multiDeleteSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
+		ArrayList<LogDefer> res = null;
 		ReactiveCollection reactiveCollection=collection.reactive();
 		List<String> docToDelete=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToDelete.get(0);
 		List<String> remainingDocs = docToDelete.stream().skip(1).collect(Collectors.toList());
-		//System.out.println("docs to be deleted"+docToDelete);
-		if (commit) {
-			if (remainingDocs.size() == 1) {
-				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).then();
+		
+		TransactionResult result = transaction.reactive((ctx) -> {
+			if (commit)
+			{
+				// The first mutation must be done in serial
+				if (remainingDocs.size() == 1) {
+					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).then();
+				}
+				else {
+					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).thenMany(
+							Flux.fromIterable(remainingDocs).flatMap(d -> ctx.getOrError(reactiveCollection,d).flatMap(d1-> ctx.remove(d1)),
+									remainingDocs.size())).then();}
 			}
-			else {
-				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).thenMany(
-					Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.remove(d1)),
-							remainingDocs.size())).then();}
-		}
-		else {
-			if (remainingDocs.size() == 1) {
-				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).then(acr.rollback());
+			else
+			{
+				if (remainingDocs.size() == 1) {
+					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).then(ctx.rollback());
+				}
+				else {
+				// The first mutation must be done in serial
+					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).thenMany(
+							Flux.fromIterable(remainingDocs).flatMap(d -> ctx.getOrError(reactiveCollection,d).flatMap(d1-> ctx.remove(d1)),
+									remainingDocs.size())).then(ctx.rollback());}
 			}
-			else {
-				return acr.getOrError(reactiveCollection, id1).flatMap(doc-> acr.remove(doc)).thenMany(
-						Flux.fromIterable(remainingDocs).flatMap(d -> acr.getOrError(reactiveCollection,d).flatMap(d1-> acr.remove(d1)),
-								remainingDocs.size())).then(acr.rollback());
-			}
-			
-		}
+	
+			}).doOnError(err -> {
+				if (err instanceof TransactionFailed) {
+			        for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+			        	res.add(e);
+			        }
+				}
+			}).block();
+		return res;
 	}
 
 
