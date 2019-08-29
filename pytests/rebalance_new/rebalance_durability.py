@@ -386,8 +386,12 @@ class RebalanceDurability(RebalanceBaseTest):
             if rebalance.result:
                 self.fail("Rebalance succeeded when it should have failed")
             # Ensure there are no failures
-            self.bucket_util.verify_doc_op_task_exceptions(task_update, self.cluster)
-            self.bucket_util.log_doc_ops_task_failures(task_update)
+            if self.atomicity:
+                for task, task_info in task_update.items():
+                    self.task_manager.get_task_result(task)
+            else:
+                self.bucket_util.verify_doc_op_task_exceptions(task_update, self.cluster)
+                self.bucket_util.log_doc_ops_task_failures(task_update)
             # Delete the rebalance test condition so that we recover from the error
             self.delete_rebalance_test_condition(test_failure_condition)
             self.sleep(sleep_time)
@@ -395,10 +399,16 @@ class RebalanceDurability(RebalanceBaseTest):
             task_update = self.loadgen_docs()
             self.check_retry_rebalance_succeeded()
             # Ensure there are no failures
-            self.bucket_util.verify_doc_op_task_exceptions(task_update, self.cluster)
-            self.bucket_util.log_doc_ops_task_failures(task_update)
+            if self.atomicity:
+                for task, task_info in task_update.items():
+                    self.task_manager.get_task_result(task)
+            else:
+                self.bucket_util.verify_doc_op_task_exceptions(task_update, self.cluster)
+                self.bucket_util.log_doc_ops_task_failures(task_update)
         finally:
             self.delete_rebalance_test_condition(test_failure_condition)
         # Verify doc load count to match the overall CRUDs
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+        
