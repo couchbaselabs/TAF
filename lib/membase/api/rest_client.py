@@ -694,6 +694,10 @@ class RestConnection(object):
         while True:
             try:
                 response, content = httplib2.Http(timeout=timeout).request(api, method, params, headers)
+                if params.startswith("nodes=ns_1"):
+                    self.test_log.info(response)
+                    self.test_log.info(content)
+
                 if response['status'] in ['200', '201', '202']:
                     return True, content, response
                 else:
