@@ -1763,8 +1763,6 @@ class LoadDocumentsForDgmTask(Task):
 
 
 class ValidateDocumentsTask(GenericLoadingTask):
-    missing_keys = []
-    wrong_values = []
 
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  flag=0, proxy_client=None, batch_size=1, pause_secs=1,
@@ -1781,7 +1779,10 @@ class ValidateDocumentsTask(GenericLoadingTask):
         self.op_type = op_type
         self.exp = exp
         self.flag = flag
-
+        self.failed_item_table = TableView(self.test_log.info)
+        self.failed_item_table.set_headers(["READ doc_Id", "Exception"])
+        self.missing_keys = []
+        self.wrong_values = []
         if proxy_client:
             self.log.debug("Changing client to proxy %s:%s..."
                            % (proxy_client.host, proxy_client.port))
@@ -1804,6 +1805,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
         result_map, failed_reads = self.batch_read(key_value.keys())
+        for key, value in failed_reads.items():
+            self.failed_item_table.add_row([key, value['error']])
         missing_keys, wrong_values = self.validate_key_val(result_map,
                                                            key_value)
         if self.op_type == 'delete':
@@ -1904,16 +1907,15 @@ class DocumentsValidatorTask(Task):
             self.task_manager.add_new_task(task)
         for task in tasks:
             self.task_manager.get_task_result(task)
-        if ValidateDocumentsTask.missing_keys:
-            self.set_exception("{} keys were missing. Missing keys: "
-                               "{}".format(
-                ValidateDocumentsTask.missing_keys.__len__(),
-                ValidateDocumentsTask.missing_keys))
-        if ValidateDocumentsTask.wrong_values:
-            self.set_exception("{} values were wrong. Wrong key-value: "
-                               "{}".format(
-                ValidateDocumentsTask.wrong_values.__len__(),
-                ValidateDocumentsTask.wrong_values))
+            if task.missing_keys:
+                self.set_exception("{} keys were missing. Missing keys: "
+                                   "{}".format(task.missing_keys.__len__(),
+                                               task.missing_keys))
+                task.failed_item_table.display("Failed items:")
+            if task.wrong_values:
+                self.set_exception("{} values were wrong. Wrong key-value: "
+                                   "{}".format(task.wrong_values.__len__(),
+                                               task.wrong_values))
         self.client.close()
         self.complete_task()
 
