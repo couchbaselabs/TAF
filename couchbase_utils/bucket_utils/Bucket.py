@@ -71,7 +71,7 @@ class Bucket(object):
         self.threadsNumber = new_params.get(Bucket.threadsNumber, 3)
         self.uuid = None
         self.lww = new_params.get(Bucket.lww, False)
-        self.maxTTL = new_params.get(Bucket.maxTTL, None)
+        self.maxTTL = new_params.get(Bucket.maxTTL, 0)
         self.flushEnabled = new_params.get(Bucket.flushEnabled, 1)
         self.compressionMode = new_params.get(
             Bucket.compressionMode,
