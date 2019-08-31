@@ -46,6 +46,7 @@ from testconstants import MAX_COMPACTION_THRESHOLD, \
 from sdk_client3 import SDKClient
 from couchbase_helper.durability_helper import DurableExceptions
 
+# from couchbase_helper.stats_tools import StatsCommon
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
