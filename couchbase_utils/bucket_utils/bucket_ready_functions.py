@@ -45,6 +45,7 @@ from testconstants import MAX_COMPACTION_THRESHOLD, \
                           MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
 from couchbase_helper.durability_helper import DurableExceptions
+from mc_bin_client import MemcachedClient
 
 # from couchbase_helper.stats_tools import StatsCommon
 
@@ -546,8 +547,14 @@ class BucketUtils:
             remote_conn.disconnect()
 
     def verify_stats_all_buckets(self, items, timeout=60):
+        vbucket_stats = self.get_vbucket_seqnos(
+            self.cluster_util.get_kv_nodes(), self.buckets, skip_consistency=True)
         for bucket in self.buckets:
             self.verify_stats_for_bucket(bucket, items, timeout=timeout)
+            # Validate seq_no snap_start/stop values with initial load
+            result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
+            self.assertTrue(result,
+                            "snap_start and snap_end corruption found!!!")
 
     def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
@@ -590,6 +597,33 @@ class BucketUtils:
             self.task.jython_task_manager.get_task_result(task)
             for shell in task.shellConnList:
                 shell.disconnect()
+
+    def validate_seq_no_stats(self, vb_seqno_stats):
+        """
+        :param vb_seqno_stats: stat_dictionary returned from
+                               Cbstats.vbucket_seqno
+        :return validation_passed: Boolean saying validation passed or not
+        """
+        validation_passed = True
+        error_msg = "Node: %s, VB %s - %s > %s: %s > %s"
+        comparion_key_pairs = [
+            ("high_completed_seqno", "high_seqno"),
+            ("last_persisted_snap_start", "last_persisted_seqno"),
+            ("last_persisted_snap_start", "last_persisted_snap_end")
+        ]
+        for node, vBucket in vb_seqno_stats.items():
+            for vb_num, stat in vBucket.items():
+                for key_pair in comparion_key_pairs:
+                    if int(stat[key_pair[0]]) > int(stat[key_pair[1]]):
+                        validation_passed = False
+                        self.log.error(error_msg % (node,
+                                                    vb_num,
+                                                    key_pair[0],
+                                                    key_pair[1],
+                                                    stat[key_pair[0]],
+                                                    stat[key_pair[1]]))
+
+        return validation_passed
 
     # Bucket doc_ops support APIs
     @staticmethod
