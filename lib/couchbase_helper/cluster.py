@@ -444,7 +444,8 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_monitor_db_fragmentation(self, server, bucket, fragmentation,
+    def async_monitor_db_fragmentation(self, server, bucket_name,
+                                       fragmentation,
                                        get_view_frag=False):
         """
         Asyncronously monitor db fragmentation
@@ -459,8 +460,10 @@ class ServerTasks(object):
             MonitorDBFragmentationTask - A task future that is a handle to the
                                          scheduled task
         """
-        _task = jython_tasks.MonitorDBFragmentationTask(server, fragmentation,
-                                                        bucket, get_view_frag)
+        _task = jython_tasks.MonitorDBFragmentationTask(server,
+                                                        fragmentation,
+                                                        bucket_name,
+                                                        get_view_frag)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -857,6 +860,16 @@ class ServerTasks(object):
         _task = self.async_compact_bucket(server, bucket)
         status = _task.get_result()
         return status
+
+    def async_monitor_compaction(self, cluster, bucket):
+        """
+        :param cluster: Couchbase cluster object
+        :param bucket: Bucket object to monitor compaction
+        :return task: MonitorBucketCompaction object
+        """
+        task = jython_tasks.MonitorBucketCompaction(cluster, bucket)
+        self.jython_task_manager.add_new_task(task)
+        return task
 
     def async_cbas_query_execute(self, master, cbas_server, cbas_endpoint,
                                  statement, bucket='default', mode=None,

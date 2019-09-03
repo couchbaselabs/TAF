@@ -94,6 +94,14 @@ class BucketUtils:
         if not expr:
             raise(Exception(msg))
 
+    def assertFalse(self, expr, msg=None):
+        if msg:
+            msg = "{0} is not false: {1}".format(expr, msg)
+        else:
+            msg = "{0} is false".format(expr)
+        if expr:
+            raise(Exception(msg))
+
     # Fetch/Create/Delete buckets
     def async_create_bucket(self, bucket):
         if not isinstance(bucket, Bucket):
@@ -894,7 +902,6 @@ class BucketUtils:
             task.get_result(timeout)
 
     def disable_compaction(self, server=None, bucket="default"):
-        server = server or self.cluster.servers[0]
         new_config = {"viewFragmntThresholdPercentage": None,
                       "dbFragmentThresholdPercentage": None,
                       "dbFragmentThreshold": None,
@@ -1467,14 +1474,19 @@ class BucketUtils:
                                                     val, bucket)
         self.sleep(val, "wait for expiry pager to run on all these nodes")
 
-    def set_auto_compaction(
-            self, rest, parallelDBAndVC="false", dbFragmentThreshold=None,
-            viewFragmntThreshold=None, dbFragmentThresholdPercentage=None,
-            viewFragmntThresholdPercentage=None,
-            allowedTimePeriodFromHour=None, allowedTimePeriodFromMin=None,
-            allowedTimePeriodToHour=None, allowedTimePeriodToMin=None,
-            allowedTimePeriodAbort=None, bucket=None):
-        output, rq_content, _ = rest.set_auto_compaction(
+    def set_auto_compaction(self, bucket_helper,
+                            parallelDBAndVC="false",
+                            dbFragmentThreshold=None,
+                            viewFragmntThreshold=None,
+                            dbFragmentThresholdPercentage=None,
+                            viewFragmntThresholdPercentage=None,
+                            allowedTimePeriodFromHour=None,
+                            allowedTimePeriodFromMin=None,
+                            allowedTimePeriodToHour=None,
+                            allowedTimePeriodToMin=None,
+                            allowedTimePeriodAbort=None,
+                            bucket=None):
+        output, rq_content, _ = bucket_helper.set_auto_compaction(
             parallelDBAndVC, dbFragmentThreshold, viewFragmntThreshold,
             dbFragmentThresholdPercentage, viewFragmntThresholdPercentage,
             allowedTimePeriodFromHour, allowedTimePeriodFromMin,
@@ -1497,6 +1509,7 @@ class BucketUtils:
                             .format(str(json.loads(rq_content)["errors"])))
             self.log.info("Response contains error = '%(errors)s' as expected"
                           % json.loads(rq_content))
+        return output, rq_content
 
     def get_bucket_priority(self, priority):
         if priority is None:
