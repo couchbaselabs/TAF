@@ -5,7 +5,7 @@ import Jython_tasks.task as jython_tasks
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
 from membase.api.rest_client import RestConnection
-from sdk_client3 import SDKClient as VBucketAwareMemcached
+from sdk_client3 import SDKClient
 from BucketLib.BucketOperations import BucketHelper
 
 
@@ -139,8 +139,7 @@ class ServerTasks(object):
             gen_end = max(int(generator.end), 1)
             gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
             for _ in range(gen_start, gen_end, gen_range):
-                client = VBucketAwareMemcached(RestConnection(cluster.master),
-                                               bucket)
+                client = SDKClient(RestConnection(cluster.master), bucket)
                 clients.append(client)
             if not ryow:
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
@@ -176,7 +175,7 @@ class ServerTasks(object):
         else:
             rest_client = RestConnection(cluster.master)
             for _ in range(process_concurrency):
-                client = VBucketAwareMemcached(rest_client, bucket)
+                client = SDKClient(rest_client, bucket)
                 clients.append(client)
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, clients,
@@ -214,9 +213,7 @@ class ServerTasks(object):
         gen_range = max(int(
             (generator.end - generator.start) / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
-            client = VBucketAwareMemcached(
-                RestConnection(cluster.master),
-                bucket)
+            client = SDKClient(RestConnection(cluster.master), bucket)
             clients.append(client)
         _task = jython_tasks.LoadSubDocumentsGeneratorsTask(
             cluster,
@@ -246,21 +243,23 @@ class ServerTasks(object):
         return _task
 
     def async_continuous_update_docs(self, cluster, bucket, generator, exp=0,
-                                     flag=0, persist_to=0, replicate_to=0,
+                                     persist_to=0, replicate_to=0,
                                      durability="",
-                                     only_store_hash=True, batch_size=1,
-                                     pause_secs=1, timeout_secs=5,
-                                     compression=True,
-                                     process_concurrency=8, retries=5):
-        self.log.debug("Mutating documents to {}".format(bucket.name))
-        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+                                     batch_size=10,
+                                     timeout_secs=5,
+                                     process_concurrency=4):
+        clients = list()
+        rest = RestConnection(cluster.master)
+        for _ in range(process_concurrency):
+            clients.append(SDKClient(rest, bucket))
         _task = jython_tasks.ContinuousDocUpdateTask(
-            cluster, self.jython_task_manager, bucket, client, [generator],
-            "update", exp, flag=flag, persist_to=persist_to,
-            replicate_to=replicate_to, durability=durability,
-            batch_size=batch_size, pause_secs=pause_secs,
-            timeout_secs=timeout_secs, compression=compression,
-            process_concurrency=process_concurrency, retries=retries)
+            cluster, self.jython_task_manager, bucket, clients, generator,
+            exp, persist_to=persist_to,
+            replicate_to=replicate_to,
+            durability=durability,
+            batch_size=batch_size,
+            timeout_secs=timeout_secs,
+            process_concurrency=process_concurrency)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -284,8 +283,7 @@ class ServerTasks(object):
             temp_bucket_list = []
             temp_client_list = []
             for bucket in buckets:
-                client = VBucketAwareMemcached(RestConnection(cluster.master),
-                                               bucket)
+                client = SDKClient(RestConnection(cluster.master), bucket)
                 temp_client_list.append(client)
                 temp_bucket_list.append(client.collection)
             bucket_list.append(temp_bucket_list)
@@ -344,7 +342,7 @@ class ServerTasks(object):
                             pause_secs=1, timeout_secs=5, compression=True,
                             process_concurrency=4):
         self.log.debug("Validating documents")
-        client = VBucketAwareMemcached(RestConnection(cluster.master), bucket)
+        client = SDKClient(RestConnection(cluster.master), bucket)
         _task = jython_tasks.DocumentsValidatorTask(
             cluster, self.jython_task_manager, bucket, client, [generator],
             opt_type, exp, flag=flag, only_store_hash=only_store_hash,

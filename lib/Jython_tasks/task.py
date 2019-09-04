@@ -1604,15 +1604,14 @@ class LoadSubDocumentsGeneratorsTask(Task):
 
 
 class ContinuousDocUpdateTask(Task):
-    def __init__(self, cluster, task_manager, bucket, client, generators,
-                 op_type, exp, flag=0, persist_to=0, replicate_to=0,
+    def __init__(self, cluster, task_manager, bucket, clients, generator,
+                 exp, flag=0, persist_to=0, replicate_to=0,
                  durability="", time_unit="seconds",
                  only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=5, compression=True,
-                 process_concurrency=8, print_ops_rate=True, retries=5,
-                 active_resident_threshold=99):
+                 process_concurrency=4, print_ops_rate=True):
         super(ContinuousDocUpdateTask, self).__init__(
-            "ContinuousDocUpdateTask {}".format(time.time()))
+            "ContinuousDocUpdateTask_{}_{}".format(bucket.name, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -1625,42 +1624,55 @@ class ContinuousDocUpdateTask(Task):
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
-        self.client = client
+        self.clients = clients
         self.task_manager = task_manager
         self.batch_size = batch_size
-        self.generators = generators
-        self.input_generators = generators
-        self.op_types = None
+        self.generator = generator
         self.buckets = None
-        self.print_ops_rate = print_ops_rate
-        self.retries = retries
-        self.active_resident_threshold = active_resident_threshold
 
-        self.key = self.generators[0].name
-        self.doc_start_num = self.generators[0].start
-        self.doc_end_num = self.generators[0].end
-        self.doc_type = self.generators[0].doc_type
+        self.key = self.generator.name
+        self.doc_start_num = self.generator.start
+        self.doc_end_num = self.generator.end
+        self.doc_type = self.generator.doc_type
         self.op_type = "update"
+        self.__stop_updates = False
 
         if isinstance(bucket, list):
             self.buckets = bucket
         else:
             self.bucket = bucket
 
+    def end_task(self):
+        self.__stop_updates = True
+
     def _start_doc_updates(self, bucket):
-        while True:
-            self.test_log.debug("Updating docs in {0}".format(bucket.name))
-            task = LoadDocumentsGeneratorsTask(
-                self.cluster, self.task_manager, bucket, self.client,
-                self.generators, self.op_type, self.exp, flag=self.flag,
-                persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability,
-                only_store_hash=self.only_store_hash,
-                batch_size=self.batch_size, pause_secs=self.pause_secs,
-                timeout_secs=self.timeout_secs, compression=self.compression,
-                retries=self.retries)
-            self.task_manager.add_new_task(task)
-            self.task_manager.get_task_result(task)
+        count = 1
+
+        while not self.__stop_updates:
+            self.test_log.info("Updating docs in %s - %d"
+                               % (bucket.name, count))
+            doc_gens = list()
+            doc_tasks = list()
+            for _ in self.clients:
+                doc_gens.append(copy.deepcopy(self.generator))
+
+            for index, generator in enumerate(doc_gens):
+                batch_gen = BatchedDocumentGenerator(generator,
+                                                     self.batch_size)
+                task = LoadDocumentsTask(
+                    self.cluster, bucket, self.clients[index],
+                    batch_gen, "update", self.exp,
+                    persist_to=self.persist_to,
+                    replicate_to=self.replicate_to,
+                    durability=self.durability,
+                    batch_size=self.batch_size,
+                    timeout_secs=self.timeout_secs)
+                self.task_manager.add_new_task(task)
+                doc_tasks.append(task)
+
+            for task in doc_tasks:
+                self.task_manager.get_task_result(task)
+            count += 1
 
     def call(self):
         self.start_task()
