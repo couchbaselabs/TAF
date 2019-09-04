@@ -119,7 +119,7 @@ class RebalanceDurability(RebalanceBaseTest):
 
         self.sleep(10, "Wait for cluster to be ready after rebalance")
         self.log.info("Increasing the replicas and rebalancing in the nodes")
-        for replicas in [1, 2]:
+        for replicas in range(self.num_replicas+1, 3):
             # Start document CRUDs
             tasks_info = self.__load_docs_in_all_buckets()
             self.log.info("Increasing the bucket replicas to {0}"
