@@ -1,13 +1,9 @@
-import json
-
-
+import time, os, json
 import random
-from rebalance.rebalance_base import RebalanceBaseTest
+from rebalance_base import RebalanceBaseTest
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
-# from membase.helper.bucket_helper import BucketOperationHelper
-
 
 class AutoRetryFailedRebalance(RebalanceBaseTest):
 
@@ -57,8 +53,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.start_server(self.servers[1])
-            self.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.servers[1])
 
     def test_auto_retry_of_failed_rebalance_where_failure_happens_during_rebalance(self):
         during_rebalance_failure = self.input.param("during_rebalance_failure", "stop_server")
@@ -84,8 +80,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.start_server(self.servers[1])
-            self.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.servers[1])
 
     def test_auto_retry_of_failed_rebalance_does_not_get_triggered_when_rebalance_is_stopped(self):
         operation = self._rebalance_operation(self.rebalance_operation)
@@ -142,8 +138,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.start_server(self.servers[1])
-            self.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.servers[1])
 
     def test_negative_auto_retry_of_failed_rebalance_where_rebalance_will_not_be_cancelled(self):
         during_rebalance_failure = self.input.param("during_rebalance_failure", "stop_server")
@@ -207,8 +203,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                     self.log.info("Errors in deleting zone")
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.start_server(self.servers[1])
-            self.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.servers[1])
 
     def test_auto_retry_of_failed_rebalance_with_rebalance_test_conditions(self):
         test_failure_condition = self.input.param("test_failure_condition")
@@ -259,8 +255,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.start_server(self.servers[1])
-            self.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.servers[1])
 
     def _rebalance_operation(self, rebalance_operation):
         self.log.info("Starting rebalance operation of type : {0}".format(rebalance_operation))
@@ -282,14 +278,14 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
     def _induce_error(self, error_condition):
         if error_condition == "stop_server":
-            self.stop_server(self.servers[1])
+            self.cluster_util.stop_server(self.servers[1])
         elif error_condition == "enable_firewall":
-            self.start_firewall_on_node(self.servers[1])
+            self.cluster_util.start_firewall_on_node(self.servers[1])
         elif error_condition == "kill_memcached":
-            self.kill_server_memcached(self.servers[1])
+            self.cluster_util.kill_server_memcached(self.servers[1])
         elif error_condition == "reboot_server":
             shell = RemoteMachineShellConnection(self.servers[1])
-            shell.reboot_node()
+            self.cluster_util.reboot_node()
         elif error_condition == "kill_erlang":
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.kill_erlang()
@@ -299,13 +295,13 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
     def _recover_from_error(self, error_condition):
         if error_condition == "stop_server" or error_condition == "kill_erlang":
-            self.start_server(self.servers[1])
+            self.cluster_util.start_server(self.servers[1])
         elif error_condition == "enable_firewall":
-            self.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.servers[1])
         elif error_condition == "reboot_server":
             self.sleep(self.sleep_time * 4)
             # wait till node is ready after warmup
-            ClusterOperationHelper.wait_for_ns_servers_or_assert([self.servers[1]], self, wait_if_warmup=True)
+            # ClusterOperationHelper.wait_for_ns_servers_or_assert([self.servers[1]], self, wait_if_warmup=True)
 
     def _induce_rebalance_test_condition(self, test_failure_condition):
         if test_failure_condition == "verify_replication":
