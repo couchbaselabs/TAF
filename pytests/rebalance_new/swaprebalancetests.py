@@ -53,8 +53,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.creds = self.input.membase_settings
         self.master = self.cluster.master
 
-        self.gen_create = self.get_doc_generator(self.num_items, self.num_items*2)
-        self.gen_update = self.get_doc_generator(self.num_items, self.num_items*2)
+        self.gen_create = self.get_doc_generator(self.num_items, self.num_items + self.items)
+        self.gen_update = self.get_doc_generator(self.num_items, self.num_items + self.items)
 
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:

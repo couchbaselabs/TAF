@@ -774,6 +774,7 @@ class BucketUtils:
                           durability="", sdk_timeout=5,
                           only_store_hash=True, batch_size=10, pause_secs=1,
                           compression=True, process_concurrency=8, retries=5,
+                          active_resident_threshold=100,
                           ryow=False, check_persistence=False):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
@@ -782,6 +783,7 @@ class BucketUtils:
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, compression=compression,
             process_concurrency=process_concurrency, retries=retries,
+            active_resident_threshold=active_resident_threshold,
             ryow=ryow, check_persistence=check_persistence)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
@@ -791,6 +793,7 @@ class BucketUtils:
                                 sdk_compression=True, process_concurrency=8,
                                 retries=5, durability="",
                                 ignore_exceptions=[], retry_exceptions=[],
+                                active_resident_threshold=100,
                                 ryow=False, check_persistence=False):
 
         """
@@ -814,6 +817,7 @@ class BucketUtils:
                 replicate_to, durability, timeout_secs,
                 only_store_hash, batch_size, pause_secs,
                 sdk_compression, process_concurrency, retries,
+                active_resident_threshold=active_resident_threshold,
                 ryow=ryow, check_persistence=check_persistence)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp, replicate_to=replicate_to,
@@ -830,6 +834,7 @@ class BucketUtils:
                               sdk_compression=True, process_concurrency=8,
                               retries=5, durability="",
                               ignore_exceptions=[], retry_exceptions=[],
+                              active_resident_threshold=100,
                               ryow=False, check_persistence=False):
 
         """
@@ -853,6 +858,7 @@ class BucketUtils:
             only_store_hash, batch_size, pause_secs, timeout_secs,
             sdk_compression, process_concurrency, retries, durability,
             ignore_exceptions, retry_exceptions, ryow=ryow,
+            active_resident_threshold=active_resident_threshold,
             check_persistence=check_persistence)
 
         # Wait for all doc_loading tasks to complete and populate failures

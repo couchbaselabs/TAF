@@ -17,9 +17,9 @@ class RebalanceOutTests(RebalanceBaseTest):
 
     def test_rebalance_out_with_ops_durable(self):
         self.gen_create = doc_generator(self.key, self.num_items,
-                                        self.num_items * 2)
-        self.gen_delete = doc_generator(self.key, self.num_items / 2,
-                                   self.num_items)
+                                        self.num_items + self.items)
+        self.gen_delete = doc_generator(self.key, self.items / 2,
+                                        self.items)
         servs_out = [self.cluster.servers[len(self.cluster.nodes_in_cluster) - i - 1] for i in range(self.nodes_out)]
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], servs_out)
@@ -79,9 +79,9 @@ class RebalanceOutTests(RebalanceBaseTest):
 
     def rebalance_out_with_ops(self):
         self.gen_create = doc_generator(self.key, self.num_items,
-                                        self.num_items * 2)
-        self.gen_delete = doc_generator(self.key, self.num_items / 2,
-                                   self.num_items)
+                                        self.num_items + self.items)
+        self.gen_delete = doc_generator(self.key, self.items / 2,
+                                        self.items)
         servs_out = [self.cluster.servers[self.nodes_init - i - 1]
                      for i in range(self.nodes_out)]
         tasks = list()
@@ -142,10 +142,10 @@ class RebalanceOutTests(RebalanceBaseTest):
         curr_items_total. We also check for data and its meta-data, vbucket sequene numbers"""
 
     def rebalance_out_after_ops(self):
-        self.gen_delete = self.get_doc_generator(self.num_items / 2,
-                                                 self.num_items)
+        self.gen_delete = self.get_doc_generator(self.items / 2,
+                                                 self.items)
         self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items * 3 / 2)
+                                                 self.num_items + self.items / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         self.loadgen_docs(task_verification=True)
@@ -186,10 +186,10 @@ class RebalanceOutTests(RebalanceBaseTest):
     curr_items_total. We also check for data and its meta-data, vbucket sequene numbers"""
 
     def rebalance_out_with_failover_full_addback_recovery(self):
-        self.gen_delete = self.get_doc_generator(self.num_items / 2,
-                                                 self.num_items)
-        self.gen_create = self.get_doc_generator(self.num_items + 1,
-                                                 self.num_items * 3 / 2)
+        self.gen_delete = self.get_doc_generator(self.items / 2,
+                                                 self.items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items + self.items / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         tasks_info = self.loadgen_docs()
@@ -242,10 +242,10 @@ class RebalanceOutTests(RebalanceBaseTest):
     def rebalance_out_with_failover(self):
         fail_over = self.input.param("fail_over", False)
         self.rest = RestConnection(self.cluster.master)
-        self.gen_delete = self.get_doc_generator(self.num_items / 2,
-                                                 self.num_items)
+        self.gen_delete = self.get_doc_generator(self.items / 2,
+                                                 self.items)
         self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items * 3 / 2)
+                                                 self.num_items + self.items / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         tasks_info = self.loadgen_docs()
@@ -300,10 +300,10 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced the test is finished."""
 
     def rebalance_out_with_compaction_and_ops(self):
-        self.gen_delete = self.get_doc_generator(self.num_items / 2,
-                                                 self.num_items)
-        self.gen_create = self.get_doc_generator(self.num_items + 1,
-                                                 self.num_items * 3 / 2)
+        self.gen_delete = self.get_doc_generator(self.items / 2,
+                                                 self.items)
+        self.gen_create = self.get_doc_generator(self.num_items,
+                                                 self.num_items + self.items / 2)
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:1], [], servs_out)

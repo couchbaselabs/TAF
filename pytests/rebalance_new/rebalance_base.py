@@ -61,7 +61,7 @@ class RebalanceBaseTest(BaseTestCase):
         # Initialize doc_generators
         self.gen_create = None
         self.gen_delete = None
-        self.gen_update = self.get_doc_generator(0, (self.num_items / 2))
+        self.gen_update = self.get_doc_generator(0, (self.items / 2))
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.nodes_in_cluster),
             durability=self.durability_level,
@@ -75,7 +75,7 @@ class RebalanceBaseTest(BaseTestCase):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
         info = RestConnection(master).get_nodes_self()
         available_ram = int(info.memoryQuota * node_ram_ratio)
-        if available_ram < 100:
+        if available_ram < 100 or self.active_resident_threshold < 100:
             available_ram = 100
         self.bucket_util.create_default_bucket(ram_quota=available_ram,
                                                bucket_type=self.bucket_type,
@@ -182,16 +182,21 @@ class RebalanceBaseTest(BaseTestCase):
                                  DurableExceptions.RequestCanceledException,
                                  DurableExceptions.DurabilityImpossibleException,
                                  DurableExceptions.DurabilityAmbiguousException])
-
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
             durability=self.durability_level, timeout_secs=timeout_secs,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, sdk_compression=compression,
-            process_concurrency=8, retry_exceptions=retry_exceptions)
+            process_concurrency=8, retry_exceptions=retry_exceptions,
+            active_resident_threshold=self.active_resident_threshold)
+        if self.active_resident_threshold < 100:
+            for task, _ in tasks_info.items():
+                self.num_items = task.doc_index
+        self.active_resident_threshold = 100
         self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
                         "Doc_ops failed in rebalance_base._load_all_buckets")
+        return tasks_info
 
     def _load_all_buckets_atomicty(self, kv_gen, op_type, sync=True):
         task = self.task.async_load_gen_docs_atomicity(

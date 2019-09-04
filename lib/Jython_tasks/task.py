@@ -1684,7 +1684,7 @@ class ContinuousDocUpdateTask(Task):
         self.complete_task()
 
 
-class LoadDocumentsForDgmTask(Task):
+class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
     def __init__(self, cluster, task_manager, bucket, clients, key, exp,
                  doc_index=0, batch_size=50,
                  persist_to=0, replicate_to=0,
@@ -1693,8 +1693,13 @@ class LoadDocumentsForDgmTask(Task):
                  process_concurrency=4, print_ops_rate=True,
                  active_resident_threshold=99,
                  task_identifier=""):
+#         super(LoadDocumentsForDgmTask, self).__init__(
+#             "LoadDocumentsForDgmTask_{}_{}".format(bucket.name, time.time()))
+
         super(LoadDocumentsForDgmTask, self).__init__(
-            "LoadDocumentsForDgmTask_{}_{}".format(bucket.name, time.time()))
+            self, cluster, task_manager, bucket, clients, None,
+            "create", exp, task_identifier="DGM_%s"%bucket.name)
+
         self.cluster = cluster
         self.exp = exp
         self.persist_to = persist_to
