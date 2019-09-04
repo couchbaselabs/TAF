@@ -443,9 +443,9 @@ public class SimpleTransaction {
 				if (Createkeys.size() > 0) {
 					res = multiInsertSingelTransaction(transaction, collection, Createkeys, commit); }
 				if (Updatekeys.size() > 0) {
-					multiUpdateSingelTransaction(transaction, collection, Updatekeys, commit);}
+					res = multiUpdateSingelTransaction(transaction, collection, Updatekeys, commit);}
 				if (Deletekeys.size() > 0) {
-					multiDeleteSingelTransaction(transaction, collection, Deletekeys, commit);}
+					res = multiDeleteSingelTransaction(transaction, collection, Deletekeys, commit);}
 			}
 
 		}
