@@ -112,14 +112,14 @@ class RebalanceDurability(RebalanceBaseTest):
             self.assertFalse(
                 task_info["ops_failed"],
                 "Doc ops failed for task: {}".format(task.thread_name))
-            self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
+#             self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
 
         self.sleep(10, "Wait for cluster to be ready after rebalance")
         self.log.info("Increasing the replicas and rebalancing in the nodes")
-        for replicas in [1, 2]:
+        for replicas in range(self.num_replicas+1, 3):
             # Start document CRUDs
             tasks_info = self.__load_docs_in_all_buckets()
             self.log.info("Increasing the bucket replicas to {0}"

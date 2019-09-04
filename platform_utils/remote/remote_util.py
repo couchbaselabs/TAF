@@ -2331,14 +2331,14 @@ class RemoteMachineShellConnection:
         while time.time() < end_time:
             status, progress = rest.check_compaction_status(bucket)
             if status:
-                self.log.info("compaction progress is %s" % progress)
+                self.log.info("Compaction progress is %s" % progress)
                 time.sleep(1)
             else:
                 # the compaction task has completed
                 return True
 
-        self.log.error("auto compaction has not ended in {0} sec."
-                  .format(str(timeout_in_seconds)))
+        self.log.error("Auto compaction has not ended in {0} sec."
+                       .format(str(timeout_in_seconds)))
         return False
 
     def wait_till_process_ended(self, process_name, timeout_in_seconds=600):

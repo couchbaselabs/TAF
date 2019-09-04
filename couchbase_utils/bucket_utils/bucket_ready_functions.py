@@ -45,6 +45,7 @@ from testconstants import MAX_COMPACTION_THRESHOLD, \
                           MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
 from couchbase_helper.durability_helper import DurableExceptions
+from mc_bin_client import MemcachedClient
 
 
 """
@@ -91,6 +92,14 @@ class BucketUtils:
         else:
             msg = "{0} is not true".format(expr)
         if not expr:
+            raise(Exception(msg))
+
+    def assertFalse(self, expr, msg=None):
+        if msg:
+            msg = "{0} is not false: {1}".format(expr, msg)
+        else:
+            msg = "{0} is false".format(expr)
+        if expr:
             raise(Exception(msg))
 
     # Fetch/Create/Delete buckets
@@ -537,8 +546,14 @@ class BucketUtils:
             remote_conn.disconnect()
 
     def verify_stats_all_buckets(self, items, timeout=60):
+        vbucket_stats = self.get_vbucket_seqnos(
+            self.cluster_util.get_kv_nodes(), self.buckets, skip_consistency=True)
         for bucket in self.buckets:
             self.verify_stats_for_bucket(bucket, items, timeout=timeout)
+            # Validate seq_no snap_start/stop values with initial load
+            result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
+            self.assertTrue(result,
+                            "snap_start and snap_end corruption found!!!")
 
     def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
@@ -581,6 +596,33 @@ class BucketUtils:
             self.task.jython_task_manager.get_task_result(task)
             for shell in task.shellConnList:
                 shell.disconnect()
+
+    def validate_seq_no_stats(self, vb_seqno_stats):
+        """
+        :param vb_seqno_stats: stat_dictionary returned from
+                               Cbstats.vbucket_seqno
+        :return validation_passed: Boolean saying validation passed or not
+        """
+        validation_passed = True
+        error_msg = "Node: %s, VB %s - %s > %s: %s > %s"
+        comparion_key_pairs = [
+            ("high_completed_seqno", "high_seqno"),
+            ("last_persisted_snap_start", "last_persisted_seqno"),
+            ("last_persisted_snap_start", "last_persisted_snap_end")
+        ]
+        for node, vBucket in vb_seqno_stats.items():
+            for vb_num, stat in vBucket.items():
+                for key_pair in comparion_key_pairs:
+                    if int(stat[key_pair[0]]) > int(stat[key_pair[1]]):
+                        validation_passed = False
+                        self.log.error(error_msg % (node,
+                                                    vb_num,
+                                                    key_pair[0],
+                                                    key_pair[1],
+                                                    stat[key_pair[0]],
+                                                    stat[key_pair[1]]))
+
+        return validation_passed
 
     # Bucket doc_ops support APIs
     @staticmethod
@@ -893,7 +935,6 @@ class BucketUtils:
             task.get_result(timeout)
 
     def disable_compaction(self, server=None, bucket="default"):
-        server = server or self.cluster.servers[0]
         new_config = {"viewFragmntThresholdPercentage": None,
                       "dbFragmentThresholdPercentage": None,
                       "dbFragmentThreshold": None,
@@ -1388,13 +1429,6 @@ class BucketUtils:
                                          batch_size=batch_size)
         return tasks
 
-    def async_monitor_db_fragmentation(self, server, fragmentation, bucket,
-                                       get_view_frag=False):
-        _task = MonitorDBFragmentationTask(server, fragmentation, bucket.name,
-                                           get_view_frag)
-        self.task_manager.add_new_task(_task)
-        return _task
-
     def _expiry_pager(self, val=10):
         for node in self.cluster_util.get_kv_nodes():
             shell_conn = RemoteMachineShellConnection(node)
@@ -1466,14 +1500,19 @@ class BucketUtils:
                                                     val, bucket)
         self.sleep(val, "wait for expiry pager to run on all these nodes")
 
-    def set_auto_compaction(
-            self, rest, parallelDBAndVC="false", dbFragmentThreshold=None,
-            viewFragmntThreshold=None, dbFragmentThresholdPercentage=None,
-            viewFragmntThresholdPercentage=None,
-            allowedTimePeriodFromHour=None, allowedTimePeriodFromMin=None,
-            allowedTimePeriodToHour=None, allowedTimePeriodToMin=None,
-            allowedTimePeriodAbort=None, bucket=None):
-        output, rq_content, _ = rest.set_auto_compaction(
+    def set_auto_compaction(self, bucket_helper,
+                            parallelDBAndVC="false",
+                            dbFragmentThreshold=None,
+                            viewFragmntThreshold=None,
+                            dbFragmentThresholdPercentage=None,
+                            viewFragmntThresholdPercentage=None,
+                            allowedTimePeriodFromHour=None,
+                            allowedTimePeriodFromMin=None,
+                            allowedTimePeriodToHour=None,
+                            allowedTimePeriodToMin=None,
+                            allowedTimePeriodAbort=None,
+                            bucket=None):
+        output, rq_content, _ = bucket_helper.set_auto_compaction(
             parallelDBAndVC, dbFragmentThreshold, viewFragmntThreshold,
             dbFragmentThresholdPercentage, viewFragmntThresholdPercentage,
             allowedTimePeriodFromHour, allowedTimePeriodFromMin,
@@ -1496,6 +1535,7 @@ class BucketUtils:
                             .format(str(json.loads(rq_content)["errors"])))
             self.log.info("Response contains error = '%(errors)s' as expected"
                           % json.loads(rq_content))
+        return output, rq_content
 
     def get_bucket_priority(self, priority):
         if priority is None:

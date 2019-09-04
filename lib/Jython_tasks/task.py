@@ -2936,11 +2936,11 @@ class MonitorDBFragmentationTask(Task):
         as this can lead to infinite monitoring.
     """
 
-    def __init__(self, server, fragmentation_value=10, bucket="default",
+    def __init__(self, server, fragmentation_value=10, bucket_name="default",
                  get_view_frag=False):
         Task.__init__(self, "monitor_frag_db_task")
         self.server = server
-        self.bucket = bucket
+        self.bucket_name = bucket_name
         self.fragmentation_value = fragmentation_value
         self.get_view_frag = get_view_frag
 
@@ -2952,24 +2952,33 @@ class MonitorDBFragmentationTask(Task):
             self.set_exception(Exception(err_msg))
 
     def call(self):
-        self.start_task()
-        try:
-            rest = RestConnection(self.server)
-            stats = rest.fetch_bucket_stats(bucket=self.bucket)
-            if self.get_view_frag:
-                new_frag_value = stats["op"]["samples"]["couch_views_fragmentation"][-1]
-                self.test_log.debug("Current amount of views fragmentation %d"
-                                    % new_frag_value)
-            else:
-                new_frag_value = stats["op"]["samples"]["couch_docs_fragmentation"][-1]
-                self.test_log.debug("current amount of docs fragmentation %d"
-                                    % new_frag_value)
-            if new_frag_value >= self.fragmentation_value:
-                self.set_result(True)
-        except Exception, ex:
-            self.set_result(False)
-            self.set_exception(ex)
         self.check()
+        self.start_task()
+        bucket_helper = BucketHelper(self.server)
+        while True:
+            try:
+                stats = bucket_helper.fetch_bucket_stats(self.bucket_name)
+                if self.get_view_frag:
+                    new_frag_value = \
+                        stats["op"]["samples"]["couch_views_fragmentation"][-1]
+                    self.test_log.debug(
+                        "Current amount of views fragmentation %d"
+                        % new_frag_value)
+                else:
+                    new_frag_value = \
+                        stats["op"]["samples"]["couch_docs_fragmentation"][-1]
+                    self.test_log.debug(
+                        "Current amount of docs fragmentation %d"
+                        % new_frag_value)
+                if new_frag_value >= self.fragmentation_value:
+                    self.test_log.info("Fragmentation level: %d%%"
+                                       % new_frag_value)
+                    self.set_result(True)
+                    break
+            except Exception, ex:
+                self.set_result(False)
+                self.set_exception(ex)
+            time.sleep(2)
         self.complete_task()
 
 
@@ -3528,7 +3537,7 @@ class Atomicity(Task):
         for task in tasks:
             Atomicity.task_manager.add_new_task(task)
             Atomicity.task_manager.get_task_result(task)
-        
+
         for con in self.clients:
             for client in con:
                 client.close()
@@ -3751,7 +3760,7 @@ class Atomicity(Task):
                     break
 
             self.test_log.info("Atomicity Load generation thread completed")
-            
+
             self.complete_task()
 
         def __chunks(self, l, n):
@@ -4145,3 +4154,66 @@ class ViewCompactionTask(Task):
     def _is_compacting(self):
         status, content = self.rest.set_view_info(self.bucket, self.design_doc_name)
         return content["compact_running"] == True
+
+
+class MonitorBucketCompaction(Task):
+    """
+    Monitors bucket compaction status from start to complete
+    """
+    def __init__(self, cluster, bucket, timeout=300):
+        """
+        :param cluster: Couchbase cluster object
+        :param bucket: Bucket object
+        :param timeout: Timeout value in seconds
+        """
+        super(MonitorBucketCompaction, self).__init__("CompactionTask_%s"
+                                                      % bucket.name)
+        self.bucket = bucket
+        self.cluster = cluster
+        self.status = "NOT_STARTED"
+        self.progress = 0
+        self.timeout = timeout
+        self.rest = RestConnection(self.cluster.master)
+
+    def call(self):
+        self.start_task()
+        start_time = time.time()
+        stop_time = start_time + self.timeout
+
+        # Wait for compaction to start
+        while self.status != "RUNNING":
+            now = time.time()
+            if self.timeout > 0 and now > stop_time:
+                self.set_exception("Compaction start timed out")
+                break
+
+            status, self.progress = \
+                self.rest.check_compaction_status(self.bucket.name)
+            if status is True:
+                self.status = "RUNNING"
+                self.test_log.info("Compaction started for %s"
+                                   % self.bucket.name)
+                self.test_log.debug("%s compaction done: %s%%"
+                                    % (self.bucket.name, self.progress))
+
+        start_time = time.time()
+        stop_time = start_time + self.timeout
+        # Wait for compaction to complete
+        while self.status == "RUNNING" and self.status != "COMPLETED":
+            now = time.time()
+            if self.timeout > 0 and now > stop_time:
+                self.set_exception("Compaction timed out to complete with "
+                                   "%s seconds" % self.timeout)
+                break
+
+            status, self.progress = \
+                self.rest.check_compaction_status(self.bucket.name)
+            if status is False:
+                self.progress = 100
+                self.status = "COMPLETED"
+                self.test_log.info("Compaction completed for %s"
+                                   % self.bucket.name)
+            self.test_log.debug("%s compaction done: %s%%"
+                                % (self.bucket.name, self.progress))
+
+        self.complete_task()
