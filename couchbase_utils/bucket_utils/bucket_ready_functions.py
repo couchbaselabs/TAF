@@ -2481,3 +2481,35 @@ class BucketUtils:
         else:
             ratio = 2.0 / 3.0
         return ratio
+
+    def set_flusher_batch_split_trigger(self, node=None,
+                                        flusher_batch_split_trigger=3,
+                                        buckets=None):
+        self.log.info("Changing the bucket properties by changing flusher_batch_split_trigger to {0}".
+                      format(flusher_batch_split_trigger))
+        if node is None:
+            node = self.cluster.master
+        rest = RestConnection(node)
+
+        for bucket in buckets:
+            code = "ns_bucket:update_bucket_props(\"" + bucket.name \
+               + "\", [{extra_config_string, " \
+               + "\"flusher_batch_split_trigger=" \
+               + str(flusher_batch_split_trigger) + "\"}])."
+            rest.diag_eval(code)
+
+        # Restart Memcached in all cluster nodes to reflect the settings
+        for server in self.cluster_util.get_kv_nodes(master=node):
+            shell = RemoteMachineShellConnection(server)
+            shell.kill_memcached()
+            shell.disconnect()
+
+        # Add warmup check instead of a blind sleep.
+        # TODO: See _warmup_check in WarmUpTests class
+        self.sleep(60)
+
+        for server in self.cluster_util.get_kv_nodes(master=node):
+            for bucket in buckets:
+                mc = MemcachedClientHelper.direct_client(server, bucket)
+                stats = mc.stats()
+                self.assertTrue(int(stats['ep_flusher_batch_split_trigger']) == flusher_batch_split_trigger)

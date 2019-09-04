@@ -15,7 +15,6 @@ class RebalanceBaseTest(BaseTestCase):
         super(RebalanceBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
-        self.doc_size = self.input.param("doc_size", 10)
         self.key_size = self.input.param("key_size", 0)
         self.zone = self.input.param("zone", 1)
         self.replica_to_update = self.input.param("new_replica", None)
@@ -25,7 +24,8 @@ class RebalanceBaseTest(BaseTestCase):
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
         self.key = 'test_docs'.rjust(self.key_size, '0')
-
+        self.flusher_batch_split_trigger = self.input.param("flusher_batch_split_trigger", None)
+        self.items = self.num_items
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.cluster.servers)
         info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
@@ -43,10 +43,15 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.change_max_buckets(self.standard_buckets)
         self.create_buckets()
         self.sleep(20)
+
+        if self.flusher_batch_split_trigger:
+            self.bucket_util.set_flusher_batch_split_trigger(self.cluster.master,
+                                                             self.flusher_batch_split_trigger,
+                                                             self.bucket_util.buckets)
+
         self.gen_create = self.get_doc_generator(0, self.num_items)
-        tasks = []
         if not self.atomicity:
-            self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
+            tasks_info = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
