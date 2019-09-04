@@ -1,17 +1,12 @@
-import time, os, json
+import json
 
-from threading import Thread
-import threading
+
 import random
-from basetestcase import BaseTestCase
 from rebalance.rebalance_base import RebalanceBaseTest
-from membase.api.exception import RebalanceFailedException
 from membase.api.rest_client import RestConnection, RestHelper
-from couchbase_helper.documentgenerator import BlobGenerator
-from membase.helper.rebalance_helper import RebalanceHelper
 from remote.remote_util import RemoteMachineShellConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
-from membase.helper.bucket_helper import BucketOperationHelper
+# from membase.helper.bucket_helper import BucketOperationHelper
 
 
 class AutoRetryFailedRebalance(RebalanceBaseTest):
@@ -173,11 +168,11 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             retry_rebalance = result["retry_rebalance"]
             if retry_rebalance != "pending":
                 self.fail("Auto-retry of failed rebalance is not triggered")
-            if post_failure_operation == "create_delete_buckets":
-                # delete buckets and create new one
-                BucketOperationHelper.delete_all_buckets_or_assert(servers=self.servers, test_case=self)
-                self.sleep(self.sleep_time)
-                BucketOperationHelper.create_bucket(self.master, test_case=self)
+            # if post_failure_operation == "create_delete_buckets":
+            #     # delete buckets and create new one
+            #     BucketOperationHelper.delete_all_buckets_or_assert(servers=self.servers, test_case=self)
+            #     self.sleep(self.sleep_time)
+            #     BucketOperationHelper.create_bucket(self.master, test_case=self)
             elif post_failure_operation == "change_replica_count":
                 # change replica count
                 self.log.info("Changing replica count of buckets")
