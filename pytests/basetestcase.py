@@ -39,18 +39,21 @@ class BaseTestCase(unittest.TestCase):
         self.__cb_clusters = []
         self.servers = self.input.servers
         self.use_hostnames = self.input.param("use_hostnames", False)
-        if str(self.__class__).find('xdcr') != -1:
-            # Multi cluster setup needed for XDCR
-            self.__chain_length = self.input.param("chain_length", 2)
+        if len(self.input.clusters) > 1:
+            # Multi cluster setup
             counter = 1
             for _, nodes in self.input.clusters.iteritems():
-                if len(self.__cb_clusters) == int(self.__chain_length):
-                    break
                 self.__cb_clusters.append(CBCluster(name="C%s" % counter, servers=nodes))
                 counter += 1
         else:
             # Single cluster
-            self.cluster = CBCluster(servers=self.servers)
+            '''
+            Only adding one node to cluster as a temporary workaround. 
+            Tests need to define individually how many free nodes need to be available 
+            for rebalance in, etc via ini file or during setup
+            '''
+            num_nodes_in_cluster = self.input.param("nodes_in_cluster", 1)
+            self.cluster = CBCluster(servers=self.servers[num_nodes_in_cluster:])
             self.num_servers = self.input.param("servers", len(self.cluster.servers))
             self.__cb_clusters.append(self.cluster)
             self.task_manager = TaskManager(self.thread_to_use)
@@ -194,7 +197,6 @@ class BaseTestCase(unittest.TestCase):
                     self.skip_buckets_handle:
                 self.log.warning("any cluster operation in setup will be skipped")
                 self.primary_index_created = True
-                self.__log_setup_status("finished")
                 return
             # avoid clean up if the previous test has been tear down
             if self.case_number == 1 or self.case_number > 1000:
@@ -250,14 +252,15 @@ class BaseTestCase(unittest.TestCase):
                 if self.port:
                     cluster.port = str(self.port)
 
-                self.__log_setup_status("finished")
+            self.__log_setup_status("finished")
 
             if not self.skip_init_check_cbserver:
                 self.__log("started")
                 self.sleep(5)
         except Exception, e:
             traceback.print_exc()
-            self.task.shutdown(force=True)
+            for cluster in self.__cb_clusters:
+                cluster.task.shutdown(force=True)
             self.fail(e)
 
     def tearDown(self):
@@ -265,41 +268,41 @@ class BaseTestCase(unittest.TestCase):
 
 
     def tearDownEverything(self):
-        self.task_manager.abort_all_tasks()
-        if self.skip_setup_cleanup:
-            return
-        try:
-            if hasattr(self, 'skip_buckets_handle') and self.skip_buckets_handle:
+        for cluster in self.__cb_clusters:
+            cluster.task_manager.abort_all_tasks()
+            if self.skip_setup_cleanup:
                 return
-            test_failed = (hasattr(self, '_resultForDoCleanups') and
-                           len(self._resultForDoCleanups.failures or
-                               self._resultForDoCleanups.errors)) or \
-                          (hasattr(self, '_exc_info') and \
-                           self._exc_info()[1] is not None)
+            try:
+                if hasattr(self, 'skip_buckets_handle') and self.skip_buckets_handle:
+                    return
+                test_failed = (hasattr(self, '_resultForDoCleanups') and
+                               len(self._resultForDoCleanups.failures or
+                                   self._resultForDoCleanups.errors)) or \
+                              (hasattr(self, '_exc_info') and \
+                               self._exc_info()[1] is not None)
 
-            if test_failed and TestInputSingleton.input.param("stop-on-failure", False) \
-                    or self.input.param("skip_cleanup", False):
-                self.log.warn("CLEANUP WAS SKIPPED")
-            else:
-                if test_failed:
-                    # collect logs here because we have not shut things down
-                    if TestInputSingleton.input.param("get-cbcollect-info",False):
-                        self.fetch_cb_collect_logs()
+                if test_failed and TestInputSingleton.input.param("stop-on-failure", False) \
+                        or self.input.param("skip_cleanup", False):
+                    self.log.warn("CLEANUP WAS SKIPPED")
+                else:
+                    if test_failed:
+                        # collect logs here because we have not shut things down
+                        if TestInputSingleton.input.param("get-cbcollect-info",False):
+                            self.fetch_cb_collect_logs()
 
-                    if TestInputSingleton.input.param('get_trace', None):
-                        for server in self.servers:
-                            self.log.critical("Skipping get_trace !!")
-                            try:
-                                shell = RemoteMachineShellConnection(server)
-                                output, _ = shell.execute_command("ps -aef|grep %s" %
-                                                                  TestInputSingleton.input.param('get_trace', None))
-                                output = shell.execute_command("pstack %s" % output[0].split()[1].strip())
-                                self.infra_log.debug(output[0])
-                                shell.disconnect()
-                            except:
-                                pass
-                self.__log_setup_status("started")
-                for cluster in self.__cb_clusters:
+                        if TestInputSingleton.input.param('get_trace', None):
+                            for server in self.servers:
+                                self.log.critical("Skipping get_trace !!")
+                                try:
+                                    shell = RemoteMachineShellConnection(server)
+                                    output, _ = shell.execute_command("ps -aef|grep %s" %
+                                                                      TestInputSingleton.input.param('get_trace', None))
+                                    output = shell.execute_command("pstack %s" % output[0].split()[1].strip())
+                                    self.infra_log.debug(output[0])
+                                    shell.disconnect()
+                                except:
+                                    pass
+                    self.__log_setup_status("started")
                     rest = RestConnection(cluster.master)
                     alerts = rest.get_alerts()
                     if alerts is not None and len(alerts) != 0:
@@ -307,30 +310,28 @@ class BaseTestCase(unittest.TestCase):
                     self.log.debug("Cleaning up cluster %s" % cluster)
                     cluster.cluster_util.cluster_cleanup(cluster.bucket_util)
                 self.__log_setup_status("finished")
-        except BaseException as e:
-            # kill memcached
-            traceback.print_exc()
-            self.log.warning("Killing memcached due to {0}".format(e))
-            self.cluster_util.kill_memcached()
-            # increase case_number to retry tearDown in setup for the next test
-            self.case_number += 1000
-        finally:
-            if not self.input.param("skip_cleanup", False):
-                for cluster in self.__cb_clusters:
+            except BaseException as e:
+                # kill memcached
+                traceback.print_exc()
+                self.log.warning("Killing memcached due to {0}".format(e))
+                cluster.cluster_util.kill_memcached()
+                # increase case_number to retry tearDown in setup for the next test
+                self.case_number += 1000
+            finally:
+                if not self.input.param("skip_cleanup", False):
                     cluster.cluster_util.reset_cluster()
-            # stop all existing task manager threads
-            if self.cleanup:
-                self.cleanup = False
-            else:
-                for cluster in self.__cb_clusters:
+                # stop all existing task manager threads
+                if self.cleanup:
+                    self.cleanup = False
+                else:
                     cluster.cluster_util.reset_env_variables()
-            self.infra_log.info("========== tasks in thread pool ==========")
-            self.task_manager.print_tasks_in_pool()
-            self.infra_log.info("==========================================")
-            if not self.tear_down_while_setup:
-                self.task_manager.shutdown_task_manager()
-                self.task.shutdown(force=True)
-            self.__log("finished")
+                self.infra_log.info("========== tasks in thread pool ==========")
+                cluster.task_manager.print_tasks_in_pool()
+                self.infra_log.info("==========================================")
+                if not self.tear_down_while_setup:
+                    cluster.task_manager.shutdown_task_manager()
+                    cluster.task.shutdown(force=True)
+                self.__log("finished")
 
     def __log(self, status):
         try:

@@ -88,18 +88,18 @@ class XDCRTransactions(XDCRNewBaseTest):
     def load_all_buckets(self, gen, op, commit):
         tasks = []
         if self.atomicity:
-            tasks.append(self.task.async_load_gen_docs_atomicity(self.src_cluster,
+            tasks.append(self.src_cluster.task.async_load_gen_docs_atomicity(self.src_cluster,
                                                                  self.src_cluster.bucket_util.buckets,
                                                                  gen, op, exp=0, commit=commit,
                                                                  batch_size=10,
                                                                  process_concurrency=8))
         else:
             for bucket in self.src_cluster.bucket_util.buckets:
-                tasks.append(self.task.async_load_gen_docs(
+                tasks.append(self.src_cluster.task.async_load_gen_docs(
                     self.src_cluster, bucket, gen, op, 0, batch_size=20,
                     process_concurrency=1))
         for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
+            self.src_cluster.task.jython_task_manager.get_task_result(task)
 
     def test_replication_with_ops(self):
         tasks = []
@@ -145,7 +145,8 @@ class XDCRTransactions(XDCRNewBaseTest):
         self.mutate(["delete", "update", "create"])
         for task in tasks:
             try:
-                self.task.jython_task_manager.get_task_result(task)
+                for cluster in self.get_clusters():
+                    cluster.task.jython_task_manager.get_task_result(task)
             except ExecutionException:
                 pass
         # Wait for replication to catch up
