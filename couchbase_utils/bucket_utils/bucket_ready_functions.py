@@ -1430,13 +1430,6 @@ class BucketUtils:
                                          batch_size=batch_size)
         return tasks
 
-    def async_monitor_db_fragmentation(self, server, fragmentation, bucket,
-                                       get_view_frag=False):
-        _task = MonitorDBFragmentationTask(server, fragmentation, bucket.name,
-                                           get_view_frag)
-        self.task_manager.add_new_task(_task)
-        return _task
-
     def _expiry_pager(self, val=10):
         for node in self.cluster_util.get_kv_nodes():
             shell_conn = RemoteMachineShellConnection(node)
