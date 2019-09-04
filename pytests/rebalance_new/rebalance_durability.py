@@ -112,7 +112,7 @@ class RebalanceDurability(RebalanceBaseTest):
             self.assertFalse(
                 task_info["ops_failed"],
                 "Doc ops failed for task: {}".format(task.thread_name))
-            self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
+#             self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
