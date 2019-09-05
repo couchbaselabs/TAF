@@ -131,15 +131,16 @@ class BucketHelper(RestConnection):
                 if tem_server.ip == server:
                     target_server.append(tem_server)
 
+        target_server_len = len(target_server)
         for vb_num, vb_map in enumerate(bucket_to_check["vBucketServerMap"]["vBucketMap"]):
-            for vb_index in vb_map:
-                vb_index = int(vb_index)
-                if vb_index not in target_server:
+            for index, vb_index in enumerate(vb_map):
+                if index >= target_server_len:
                     continue
+                vb_index = int(vb_index)
                 if vb_index == 0:
-                    vbuckets_servers[target_server[vb_index]]["active_vb"].append(vb_num)
-                elif vb_index != 0:
-                    vbuckets_servers[target_server[vb_index]]["replica_vb"].append(vb_num)
+                    vbuckets_servers[target_server[index]]["active_vb"].append(vb_num)
+                elif vb_index > 0:
+                    vbuckets_servers[target_server[index]]["replica_vb"].append(vb_num)
         return vbuckets_servers
 
     def fetch_vbucket_map(self, bucket="default"):

@@ -210,7 +210,8 @@ class RebalanceTask(Task):
                         if "kv" not in services:
                             self.monitor_vbuckets_shuffling = False
                 if self.monitor_vbuckets_shuffling:
-                    self.test_log.debug("This is swap rebalance and we will monitor vbuckets shuffling")
+                    self.test_log.info("Will monitor vbucket shuffling for "
+                                       "swap rebalance")
             self.add_nodes()
             self.start_rebalance()
             self.table.display("Rebalance Overview")
@@ -288,25 +289,19 @@ class RebalanceTask(Task):
         self.start_time = time.time()
 
     def check(self):
-        status = None
-        progress = -100
         try:
             if self.monitor_vbuckets_shuffling:
-                self.test_log.debug("This is swap rebalance and we will monitor vbuckets shuffling")
                 non_swap_servers = set(self.servers) - set(self.to_remove) - set(self.to_add)
                 new_vbuckets = BucketHelper(self.servers[0])._get_vbuckets(non_swap_servers, None)
                 for vb_type in ["active_vb", "replica_vb"]:
                     for srv in non_swap_servers:
-                        if not (len(self.old_vbuckets[srv][vb_type]) + 1 >= len(new_vbuckets[srv][vb_type]) and \
-                                len(self.old_vbuckets[srv][vb_type]) - 1 <= len(new_vbuckets[srv][vb_type])):
-                            msg = "Vbuckets were suffled! Expected %s for %s" % (vb_type, srv.ip) + \
-                                  " are %s. And now are %s" % (
-                                      len(self.old_vbuckets[srv][vb_type]),
-                                      len(new_vbuckets[srv][vb_type]))
+                        if set(self.old_vbuckets[srv][vb_type]) != set(new_vbuckets[srv][vb_type]):
+                            msg = "%s vBuckets were shuffled on %s! " \
+                                  "Expected: %s, Got: %s" \
+                                  % (vb_type, srv.ip,
+                                     self.old_vbuckets[srv][vb_type],
+                                     new_vbuckets[srv][vb_type])
                             self.test_log.error(msg)
-                            self.test_log.error("Vbuckets - Old: %s, New: %s"
-                                                % (self.old_vbuckets,
-                                                   new_vbuckets))
                             raise Exception(msg)
             (status, progress) = self.rest._rebalance_status_and_progress()
             self.test_log.info("Rebalance - status: %s, progress: %s", status,
