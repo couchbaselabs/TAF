@@ -3622,6 +3622,16 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command("killall -9 epmd")
             self.log_command_output(o, r)
 
+    def reboot_node(self):
+        self.extract_remote_info()
+        if self.extract_remote_info().type.lower() == 'windows':
+            o, r = self.execute_command("shutdown -r -f -t 0")
+            self.log_command_output(o, r)
+        elif self.extract_remote_info().type.lower() == 'linux':
+            o, r = self.execute_command("reboot")
+            self.log_command_output(o, r)
+        return o, r
+
     def start_couchbase(self):
         self.extract_remote_info()
         if self.info.type.lower() == 'windows':

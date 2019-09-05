@@ -291,7 +291,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.cluster_util.kill_server_memcached(self.servers[1])
         elif error_condition == "reboot_server":
             shell = RemoteMachineShellConnection(self.servers[1])
-            self.cluster_util.reboot_node()
+            shell.reboot_node()
         elif error_condition == "kill_erlang":
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.kill_erlang()
