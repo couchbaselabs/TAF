@@ -1665,6 +1665,9 @@ class ContinuousDocUpdateTask(Task):
 
             for task in doc_tasks:
                 self.task_manager.get_task_result(task)
+        self.test_log.info("Closing SDK clients..")
+        for client in self.clients:
+            client.close()
         self.test_log.info("Done updating docs in %s" % bucket.name)
 
     def call(self):

@@ -543,9 +543,6 @@ class AutoCompactionTests(BaseTestCase):
         self._cancel_bucket_compaction(rest, self.bucket)
 
         self.task_manager.get_task_result(doc_update_task)
-        for client in doc_update_task.clients:
-            client.close()
-
         self.task_manager.get_task_result(compaction_monitor_task)
 
         doc_update_task = self.task.async_load_gen_docs(
@@ -633,25 +630,8 @@ class AutoCompactionTests(BaseTestCase):
                 failure_msg = "Fragmentation level is not reached in %s sec" \
                               % self.wait_timeout * 30
                 break
-            # try:
-            #     for bucket in self.bucket_util.buckets:
-            #         task = self.task.async_load_gen_docs(
-            #             self.cluster, bucket, self.gen_update, "update", 0,
-            #             durability=self.durability_level,
-            #             timeout_secs=self.sdk_timeout,
-            #             batch_size=10,
-            #             process_concurrency=8,
-            #             print_ops_rate=False,
-            #             skip_read_on_error=True)
-            #         self.task.jython_task_manager.get_task_result(task)
-            # except Exception, ex:
-            #     self.is_crashed.set()
-            #     self.log.error("Load cannot be performed: %s" % str(ex))
-            #     failure_msg = ex
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
-        for client in doc_update_task.clients:
-            client.close()
         if failure_msg is not None:
             self.task_manager.stop_task(monitor_fragm)
             self.fail(failure_msg)
