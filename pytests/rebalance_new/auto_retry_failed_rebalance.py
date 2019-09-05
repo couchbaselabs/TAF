@@ -267,18 +267,18 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
     def _rebalance_operation(self, rebalance_operation):
         self.log.info("Starting rebalance operation of type : {0}".format(rebalance_operation))
         if rebalance_operation == "rebalance_out":
-            operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], self.servers[1:])
+            operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], self.cluster.servers[1:])
         elif rebalance_operation == "rebalance_in":
             operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init],
-                                                     [self.servers[self.nodes_init]], [])
+                                                     [self.cluster.servers[self.nodes_init]], [])
         elif rebalance_operation == "swap_rebalance":
             self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                               self.servers[self.nodes_init].ip, self.servers[self.nodes_init].port)
+                               self.cluster.servers[self.nodes_init].ip, self.cluster.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], []
-                                                     , [self.servers[self.nodes_init - 1]])
+                                                     , [self.cluster.servers[self.nodes_init - 1]])
         elif rebalance_operation == "graceful_failover":
             # TODO : retry for graceful failover is not yet implemented
-            operation = self.task.async_failover([self.cluster.master], failover_nodes=[self.servers[1]],
+            operation = self.task.async_failover([self.cluster.master], failover_nodes=[self.cluster.servers[1]],
                                                   graceful=True, wait_for_pending=120)
         return operation
 
