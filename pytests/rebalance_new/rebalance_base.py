@@ -31,7 +31,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
         self.rest.init_cluster_memoryQuota(memoryQuota=int(info.mcdMemoryReserved*node_ram_ratio))
-
+        self.check_temporary_failure_exception = False
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         if nodes_init:
             result = self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -50,6 +50,8 @@ class RebalanceBaseTest(BaseTestCase):
                                                              self.bucket_util.buckets)
 
         self.gen_create = self.get_doc_generator(0, self.num_items)
+        if self.active_resident_threshold < 100:
+            self.check_temporary_failure_exception = True
         if not self.atomicity:
             tasks_info = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
             self.log.info("Verifying num_items counts after doc_ops")
@@ -59,6 +61,7 @@ class RebalanceBaseTest(BaseTestCase):
             self._load_all_buckets_atomicty(self.gen_create, "create")
 
         # Initialize doc_generators
+        self.active_resident_threshold = 100
         self.gen_create = None
         self.gen_delete = None
         self.gen_update = self.get_doc_generator(0, (self.items / 2))
@@ -182,6 +185,7 @@ class RebalanceBaseTest(BaseTestCase):
                                  DurableExceptions.RequestCanceledException,
                                  DurableExceptions.DurabilityImpossibleException,
                                  DurableExceptions.DurabilityAmbiguousException])
+
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -193,7 +197,6 @@ class RebalanceBaseTest(BaseTestCase):
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
                 self.num_items = task.doc_index
-        self.active_resident_threshold = 100
         self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
                         "Doc_ops failed in rebalance_base._load_all_buckets")
         return tasks_info
@@ -293,7 +296,8 @@ class RebalanceBaseTest(BaseTestCase):
                                      DurableExceptions.RequestCanceledException,
                                      DurableExceptions.DurabilityImpossibleException,
                                      DurableExceptions.DurabilityAmbiguousException]))
-
+        if self.check_temporary_failure_exception:
+            retry_exceptions.append(DurableExceptions.TemporaryFailureException)
         if self.atomicity:
             loaders = self.start_parallel_cruds_atomicity(self.sync, task_verification)
         else:

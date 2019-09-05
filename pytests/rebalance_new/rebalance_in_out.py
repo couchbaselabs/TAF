@@ -692,6 +692,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         # CRUDs while durability is broken
         ignore_exceptions = ["com.couchbase.client.core.error.DurabilityImpossibleException"]
+        self.check_temporary_failure_exception = False
         self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + 1000)
         tasks_info = self.loadgen_docs(ignore_exceptions=ignore_exceptions)
@@ -717,6 +718,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             self.log.info("Targeting vBucket: {}".format(vb_num))
             self.gen_create = self.get_doc_generator(self.num_items,
                                                      self.num_items + 1000)
+            self.check_temporary_failure_exception = False
             tasks_info = self.loadgen_docs(ignore_exceptions=ignore_exceptions,
                                            task_verification=True)
             for task, task_info in tasks_info.items():

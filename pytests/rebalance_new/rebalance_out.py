@@ -148,6 +148,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                  self.num_items + self.items / 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
+        self.check_temporary_failure_exception = False
         self.loadgen_docs(task_verification=True)
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
 
