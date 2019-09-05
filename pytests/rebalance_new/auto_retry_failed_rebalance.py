@@ -9,7 +9,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
     def setUp(self):
         super(AutoRetryFailedRebalance, self).setUp()
-        self.rest = RestConnection(self.servers[0])
+        self.rest = RestConnection(self.cluster.master)
         self.sleep_time = self.input.param("sleep_time", 15)
         self.enabled = self.input.param("enabled", True)
         self.afterTimePeriod = self.input.param("afterTimePeriod", 300)
@@ -41,8 +41,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         self._induce_error(before_rebalance_failure)
         self.sleep(self.sleep_time)
         try:
-            operation = self._rebalance_operation(self.rebalance_operation)
-            operation.result()
+            rebalance = self._rebalance_operation(self.rebalance_operation)
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed as expected")
         except Exception as e:
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Recover from the error
@@ -59,11 +60,12 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
     def test_auto_retry_of_failed_rebalance_where_failure_happens_during_rebalance(self):
         during_rebalance_failure = self.input.param("during_rebalance_failure", "stop_server")
         try:
-            operation = self._rebalance_operation(self.rebalance_operation)
+            rebalance = self._rebalance_operation(self.rebalance_operation)
             self.sleep(self.sleep_time)
             # induce the failure during the rebalance
             self._induce_error(during_rebalance_failure)
-            operation.result()
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed as expected")
         except Exception as e:
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Recover from the error
@@ -98,11 +100,12 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         during_rebalance_failure = self.input.param("during_rebalance_failure", "stop_server")
         post_failure_operation = self.input.param("post_failure_operation", "cancel_pending_rebalance")
         try:
-            operation = self._rebalance_operation(self.rebalance_operation)
+            rebalance = self._rebalance_operation(self.rebalance_operation)
             self.sleep(self.sleep_time)
             # induce the failure during the rebalance
             self._induce_error(during_rebalance_failure)
-            operation.result()
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed as expected")
         except Exception as e:
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Recover from the error
@@ -150,11 +153,12 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         moved_node = []
         moved_node.append(self.servers[1].ip)
         try:
-            operation = self._rebalance_operation(self.rebalance_operation)
+            rebalance = self._rebalance_operation(self.rebalance_operation)
             self.sleep(self.sleep_time)
             # induce the failure during the rebalance
             self._induce_error(during_rebalance_failure)
-            operation.result()
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed as expected")
         except Exception as e:
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Recover from the error
@@ -212,8 +216,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         self._induce_rebalance_test_condition(test_failure_condition)
         self.sleep(self.sleep_time)
         try:
-            operation = self._rebalance_operation(self.rebalance_operation)
-            operation.result()
+            rebalance = self._rebalance_operation(self.rebalance_operation)
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed as expected")
         except Exception as e:
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Delete the rebalance test condition so that we recover from the error
@@ -231,8 +236,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         # induce the failure before the rebalance starts
         self._induce_error(before_rebalance_failure)
         try:
-            operation = self._rebalance_operation(self.rebalance_operation)
-            operation.result()
+            rebalance = self._rebalance_operation(self.rebalance_operation)
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed as expected")
         except Exception as e:
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             if self.auto_failover_timeout < self.afterTimePeriod:
@@ -266,14 +272,14 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init],
                                                      [self.servers[self.nodes_init]], [])
         elif rebalance_operation == "swap_rebalance":
-            self.rest.add_node(self.master.rest_username, self.master.rest_password,
+            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                self.servers[self.nodes_init].ip, self.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], []
                                                      , [self.servers[self.nodes_init - 1]])
         elif rebalance_operation == "graceful_failover":
             # TODO : retry for graceful failover is not yet implemented
-            operation = self.task.failover([self.master], failover_nodes=[self.servers[1]],
-                                                    graceful=True, wait_for_pending=120)
+            operation = self.task.async_failover([self.cluster.master], failover_nodes=[self.servers[1]],
+                                                  graceful=True, wait_for_pending=120)
         return operation
 
     def _induce_error(self, error_condition):
