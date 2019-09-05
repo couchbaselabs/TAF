@@ -11,7 +11,7 @@ import urllib
 from bucket import Bucket
 from membase.api.exception import \
     BucketCreationException, GetBucketInfoFailed, \
-    BucketFlushFailed, BucketCompactionException
+    BucketCompactionException
 from Rest_Connection import RestConnection
 
 
@@ -21,14 +21,13 @@ class BucketHelper(RestConnection):
 
     def bucket_exists(self, bucket):
         try:
-            buckets = self.get_buckets()
+            buckets = self.get_buckets_json()
             names = [item.name for item in buckets]
-            self.log.info("Node {1} existing buckets : {0}"
-                     .format(names, self.ip))
+            self.log.info("Node %s existing buckets: %s" % (self.ip, names))
             for item in buckets:
                 if item.name == bucket:
-                    self.log.info("Node {1} found bucket {0}"
-                             .format(bucket, self.ip))
+                    self.log.info("Node %s found bucket %s"
+                                  % (bucket, self.ip))
                     return True
             return False
         except Exception:
@@ -114,25 +113,33 @@ class BucketHelper(RestConnection):
         return None if not bucket.vbuckets else bucket.vbuckets
 
     def _get_vbuckets(self, servers, bucket_name='default'):
-        vbuckets_servers = {}
+        target_server = list()
+        if bucket_name is None:
+            bucket_name = self.get_buckets_json()[0]["name"]
+        bucket_to_check = self.get_bucket_json(bucket_name)
+        bucket_servers = bucket_to_check["vBucketServerMap"]["serverList"]
+        bucket_servers = [ip.split(":")[0] for ip in bucket_servers]
+
+        vbuckets_servers = dict()
         for server in servers:
-            buckets = self.get_buckets()
-            if not buckets:
-                return vbuckets_servers
-            if bucket_name:
-                bucket_to_check = [bucket for bucket in buckets
-                                   if bucket.name == bucket_name][0]
-            else:
-                bucket_to_check = [bucket for bucket in buckets][0]
-            vbuckets_servers[server] = {}
-            vbs_active = [vb.id for vb in bucket_to_check.vbuckets
-                          if vb.master.startswith(str(server.ip))]
-            vbs_replica = []
-            for replica_num in xrange(0, bucket_to_check.replicaNumber):
-                vbs_replica.extend([vb.id for vb in bucket_to_check.vbuckets
-                                    if vb.replica[replica_num].startswith(str(server.ip))])
-            vbuckets_servers[server]['active_vb'] = vbs_active
-            vbuckets_servers[server]['replica_vb'] = vbs_replica
+            vbuckets_servers[server] = dict()
+            vbuckets_servers[server]['active_vb'] = list()
+            vbuckets_servers[server]['replica_vb'] = list()
+
+        for server in bucket_servers:
+            for tem_server in servers:
+                if tem_server.ip == server:
+                    target_server.append(tem_server)
+
+        for vb_num, vb_map in enumerate(bucket_to_check["vBucketServerMap"]["vBucketMap"]):
+            for vb_index in vb_map:
+                vb_index = int(vb_index)
+                if vb_index not in target_server:
+                    continue
+                if vb_index == 0:
+                    vbuckets_servers[target_server[vb_index]]["active_vb"].append(vb_num)
+                elif vb_index != 0:
+                    vbuckets_servers[target_server[vb_index]]["replica_vb"].append(vb_num)
         return vbuckets_servers
 
     def fetch_vbucket_map(self, bucket="default"):

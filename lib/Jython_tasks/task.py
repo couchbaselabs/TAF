@@ -16,6 +16,7 @@ import time
 from httplib import IncompleteRead
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
+from TestInput import TestInputServer
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
@@ -1646,11 +1647,8 @@ class ContinuousDocUpdateTask(Task):
         self.__stop_updates = True
 
     def _start_doc_updates(self, bucket):
-        count = 1
-
+        self.test_log.info("Updating docs in %s" % bucket.name)
         while not self.__stop_updates:
-            self.test_log.info("Updating docs in %s - %d"
-                               % (bucket.name, count))
             doc_gens = list()
             doc_tasks = list()
             for _ in self.clients:
@@ -1672,7 +1670,7 @@ class ContinuousDocUpdateTask(Task):
 
             for task in doc_tasks:
                 self.task_manager.get_task_result(task)
-            count += 1
+        self.test_log.info("Done updating docs in %s" % bucket.name)
 
     def call(self):
         self.start_task()
@@ -4171,6 +4169,64 @@ class ViewCompactionTask(Task):
     def _is_compacting(self):
         status, content = self.rest.set_view_info(self.bucket, self.design_doc_name)
         return content["compact_running"] == True
+
+
+class CompactBucketTask(Task):
+    def __init__(self, server, bucket):
+        Task.__init__(self, "CompactionTask_%s" % bucket.name)
+        self.server = server
+        self.bucket = bucket
+        self.rest = RestConnection(server)
+        self.retries = 20
+        self.statuses = dict()
+
+        # get the current count of compactions
+        nodes = self.rest.get_nodes()
+        self.compaction_count = dict()
+        for node in nodes:
+            self.compaction_count[node.ip] = 0
+
+    def call(self):
+        self.start_task()
+
+        status = BucketHelper(self.server).compact_bucket(self.bucket.name)
+        if status is False:
+            self.set_result(False)
+            self.log.error("Compact bucket rest call failed")
+        else:
+            while self.retries != 0:
+                self.check()
+                if self.result is True:
+                    break
+                self.retries -= 1
+                time.sleep(30)
+
+            if self.result is False:
+                self.log.error("Compaction failed to complete within "
+                               "%s retries" % self.retries)
+
+        self.complete_task()
+
+    def check(self):
+        # check bucket compaction status across all nodes
+        nodes = self.rest.get_nodes()
+        current_compaction_count = dict()
+
+        for node in nodes:
+            current_compaction_count[node.ip] = 0
+            s = TestInputServer()
+            s.ip = node.ip
+            s.ssh_username = self.server.ssh_username
+            s.ssh_password = self.server.ssh_password
+            shell = RemoteMachineShellConnection(s)
+            res = Cbstats(shell).get_kvtimings()
+            shell.disconnect()
+            for i in res[0]:
+                if 'compact' in i:
+                    current_compaction_count[node.ip] += int(i.split(':')[2])
+
+        if cmp(current_compaction_count, self.compaction_count) == 1:
+            self.set_result(True)
 
 
 class MonitorBucketCompaction(Task):

@@ -2331,7 +2331,7 @@ class RemoteMachineShellConnection:
         while time.time() < end_time:
             status, progress = rest.check_compaction_status(bucket)
             if status:
-                self.log.info("Compaction progress is %s" % progress)
+                self.log.info("Compaction progress: %s%%" % progress)
                 time.sleep(1)
             else:
                 # the compaction task has completed
