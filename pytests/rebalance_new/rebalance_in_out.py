@@ -508,7 +508,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         """
         master = self.cluster.master
         def_bucket = self.bucket_util.buckets[0]
-        items = self.num_items
+        items = self.items
         create_from = items
 
         # Update replica value before performing rebalance in/out
