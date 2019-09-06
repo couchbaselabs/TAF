@@ -282,7 +282,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         else:
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
-        
+
         self.sleep(30)
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.bucket_util.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -392,7 +392,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced out of the cluster the test finishes."""
 
     def incremental_rebalance_out_with_ops(self):
-        items = self.num_items
+        items = self.items
         delete_from = items/2
         create_from = items
         majority = (self.num_replicas+1)/2+1
