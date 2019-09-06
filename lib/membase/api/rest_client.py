@@ -377,26 +377,22 @@ class RestConnection(object):
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
 
-    def active_tasks(self):
-        api = 'http://{0}:{1}/pools/default/tasks'.format(self.ip, self.port)
+    def ns_server_tasks(self, task_type=None):
+        api = self.baseUrl + 'pools/default/tasks'
+        json_parsed = ""
         try:
             status, content, header = self._http_request(
                 api,
                 'GET',
-                headers=self._create_capi_headers())
+                headers=self._create_headers())
             json_parsed = json.loads(content)
-        except ValueError as e:
-            print(e)
-            return ""
-        return json_parsed
-
-    def ns_server_tasks(self):
-        api = self.baseUrl + 'pools/default/tasks'
-        try:
-            status, content, header = self._http_request(api, 'GET', headers=self._create_headers())
-            return json.loads(content)
+            if task_type is not None:
+                for t_content in json_parsed:
+                    if t_content["type"] == task_type:
+                        json_parsed = t_content
         except ValueError:
-            return ""
+            pass
+        return json_parsed
 
     # DEPRECATED: use create_ddoc() instead.
     def create_view(self, design_doc_name, bucket_name, views, options=None):
@@ -429,7 +425,7 @@ class RestConnection(object):
             return False
 
     def _get_indexer_task_pid(self, ddoc_name, index_type='main'):
-        active_tasks = self.active_tasks()
+        active_tasks = self.ns_server_tasks()
         if u'error' in active_tasks:
             return None
         if active_tasks:
@@ -2139,7 +2135,7 @@ class RestConnection(object):
                             % design_doc_id)
 
     def check_compaction_status(self, bucket_name):
-        tasks = self.active_tasks()
+        tasks = self.ns_server_tasks()
         if "error" in tasks:
             raise Exception(tasks)
         for task in tasks:

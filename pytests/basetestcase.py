@@ -378,12 +378,12 @@ class BaseTestCase(unittest.TestCase):
                 cb_collect_response = dict()
                 retry = 0
                 while retry < 30:
-                    content = rest.active_tasks()
-                    self.log.info("{}: CBCollectInfo Iteration {} - {}".format(node.ip, retry, content["status"]))
-                    for response in content:
-                        if response['type'] == 'clusterLogsCollection':
-                            cb_collect_response = response
-                            break
+                    cb_collect_response = rest.ns_server_tasks(
+                        "clusterLogsCollection")
+                    self.log.debug("{}: CBCollectInfo Iteration {} - {}"
+                                   .format(node.ip,
+                                           retry,
+                                           cb_collect_response["status"]))
                     if cb_collect_response['status'] == 'completed':
                         self.log.debug(cb_collect_response)
                         break

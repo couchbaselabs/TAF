@@ -1970,12 +1970,9 @@ class StatsWaitTask(Task):
     def __init__(self, shell_conn_list, bucket, stat_cmd, stat, comparison,
                  value, timeout=300):
         super(StatsWaitTask, self).__init__("StatsWaitTask_{}_{}_{}"
-                                            .format(
-                                                bucket.name,
-                                                stat,
-                                                str(time.time())
-                                                )
-                                            )
+                                            .format(bucket.name,
+                                                    stat,
+                                                    str(time.time())))
         self.shellConnList = shell_conn_list
         self.bucket = bucket
         self.statCmd = stat_cmd
@@ -2869,7 +2866,7 @@ class MonitorActiveTask(Task):
         self.task = None
 
     def call(self):
-        tasks = self.rest.active_tasks()
+        tasks = self.rest.ns_server_tasks()
         for task in tasks:
             if task["type"] == self.type \
                     and ((self.target_key == "designDocument"
@@ -2898,7 +2895,7 @@ class MonitorActiveTask(Task):
             self.result = True
 
     def check(self):
-        tasks = self.rest.active_tasks()
+        tasks = self.rest.ns_server_tasks()
         self.test_log.info("tasks running on the server: %s" % tasks)
         if self.task in tasks and self.task is not None:
             for task in tasks:
