@@ -3549,13 +3549,14 @@ class Atomicity(Task):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5,update_count=1, transaction_timeout=5,
-                 commit=True, durability=None, sync=True, num_threads=50):
+                 commit=True, durability=None, sync=True, num_threads=5, record_fail=False):
         super(Atomicity, self).__init__("AtomicityDocumentsLoadGenTask")
 
         self.generators = generator
         self.cluster = cluster
         self.commit = commit
-        Atomicity.create_threads = num_threads
+        Atomicity.record_fail = record_fail
+        Atomicity.num_docs = num_threads
         self.exp = exp
         self.flag = flag
         Atomicity.sync = sync
@@ -3632,7 +3633,7 @@ class Atomicity(Task):
         for task in tasks:
             Atomicity.task_manager.add_new_task(task)
             Atomicity.task_manager.get_task_result(task)
-
+        
         for con in self.clients:
             for client in con:
                 client.close()
@@ -3769,7 +3770,7 @@ class Atomicity(Task):
                     else:
                         commit = self.commit
 
-                    docs = list(self.__chunks(docs, len(self.all_keys)/Atomicity.create_threads))
+                    docs = list(self.__chunks(docs, Atomicity.num_docs))
                     for doc in docs:
                         err = Transaction().RunTransaction(self.transaction, self.bucket, doc, [], [], commit, Atomicity.sync, Atomicity.updatecount )
                         if err:
@@ -3778,7 +3779,7 @@ class Atomicity(Task):
                         Atomicity.all_keys = []
 
                 if op_type == "update":
-                    list_docs = list(self.__chunks(self.update_keys, len(self.update_keys)/10))
+                    list_docs = list(self.__chunks(self.update_keys, Atomicity.num_docs))
                     for doc in list_docs:
                         err = Transaction().RunTransaction(self.transaction, self.bucket, [], doc, [], self.commit, Atomicity.sync, Atomicity.updatecount )
                         if err:
@@ -3789,7 +3790,7 @@ class Atomicity(Task):
 
                 if op_type == "delete":
                     self.test_log.info("delete keys count is {}".format(len(self.delete_keys)))
-                    list_docs = list(self.__chunks(self.delete_keys, len(self.delete_keys)/10))
+                    list_docs = list(self.__chunks(self.delete_keys, Atomicity.num_docs))
                     for doc in list_docs:
                         err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], doc, self.commit, Atomicity.sync, Atomicity.updatecount )
                         if err:
@@ -3819,14 +3820,18 @@ class Atomicity(Task):
                 if op_type == "rebalance_update":
                     self.update_keys = self.all_keys
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, self.all_keys, [], self.commit, True, Atomicity.updatecount)
-                    if err:
+                    if err and not Atomicity.record_fail:
                         exception = self.__retryDurabilityImpossibleException(err, docs, self.commit, op_type="create", update_keys=self.all_keys)
-
+                    elif err:
+                        Atomicity.all_keys = []
+                        
                 if op_type == "rebalance_only_update":
                     self.update_keys = self.all_keys
                     err = Transaction().RunTransaction(self.transaction, self.bucket, [], self.all_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
-                    if err:
+                    if err and not Atomicity.record_fail:
                         exception = self.__retryDurabilityImpossibleException(err, self.all_keys, self.commit, op_type="update")
+                    elif err:
+                        Atomicity.all_keys = []
 
                 if op_type == "rebalance_delete":
                     self.delete_keys = self.all_keys
@@ -3850,18 +3855,13 @@ class Atomicity(Task):
                 if ("delete" in op_type) and self.commit:
                     Atomicity.delete_keys.extend(self.delete_keys)
 
-                if exception:
+                if exception and not Atomicity.record_fail:
                     self.set_exception(Exception(exception))
                     break
 
             self.test_log.info("Atomicity Load generation thread completed")
-
+            
             self.complete_task()
-
-        def __chunks(self, l, n):
-            """Yield successive n-sized chunks from l."""
-            for i in range(0, len(l), n):
-                yield l[i:i + n]
 
         def __translate_to_json_object(self, value, doc_type="json"):
 
@@ -3882,6 +3882,11 @@ class Atomicity(Task):
                 pass
 
             return json_obj
+        
+        def __chunks(self, l, n):
+            """Yield successive n-sized chunks from l."""
+            for i in range(0, len(l), n):
+                yield l[i:i + n]
 
         def __retryDurabilityImpossibleException(self, err, docs, commit, op_type="update", update_keys=[]):
             if "DurabilityImpossibleException" in str(err):
