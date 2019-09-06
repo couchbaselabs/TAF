@@ -319,11 +319,16 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         get_command = "testconditions:get({0})".format(test_failure_condition)
         for server in self.servers:
             rest = RestConnection(server)
+            shell = RemoteMachineShellConnection(server)
+            shell.enable_diag_eval_on_non_local_hosts()
             _, content = rest.diag_eval(set_command)
-            self.log.info("Command : {0} Return : {1}".format(set_command, content))
+            self.log.debug("Set Command : {0} Return : {1}".format(set_command, content))
+            shell.disconnect()
 
         for server in self.servers:
             rest = RestConnection(server)
+            shell = RemoteMachineShellConnection(server)
+            shell.enable_diag_eval_on_non_local_hosts()
             _, content = rest.diag_eval(get_command)
             self.log.info("Command : {0} Return : {1}".format(get_command, content))
 
@@ -332,10 +337,14 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         get_command = "testconditions:get({0})".format(test_failure_condition)
         for server in self.servers:
             rest = RestConnection(server)
+            shell = RemoteMachineShellConnection(server)
+            shell.enable_diag_eval_on_non_local_hosts()
             _, content = rest.diag_eval(delete_command)
             self.log.info("Command : {0} Return : {1}".format(delete_command, content))
 
         for server in self.servers:
             rest = RestConnection(server)
+            shell = RemoteMachineShellConnection(server)
+            shell.enable_diag_eval_on_non_local_hosts()
             _, content = rest.diag_eval(get_command)
             self.log.info("Command : {0} Return : {1}".format(get_command, content))
