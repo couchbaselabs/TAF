@@ -51,6 +51,7 @@ class BaseTestCase(unittest.TestCase):
         self.bucket_type = self.input.param("bucket_type",
                                             Bucket.bucket_type.MEMBASE)
         self.bucket_size = self.input.param("bucket_size", None)
+        self.bucket_lww = self.input.param("lww", True)
         self.standard_buckets = self.input.param("standard_buckets", 1)
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)

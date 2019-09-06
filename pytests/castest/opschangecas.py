@@ -1,50 +1,40 @@
 import json
 import time
+
+from cb_tools.cbstats import Cbstats
+from couchbase_helper.durability_helper import DurableExceptions
 from memcacheConstants import ERR_NOT_FOUND
 from castest.cas_base import CasBaseTest
-from couchbase_helper.documentgenerator import BlobGenerator
+from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
 from mc_bin_client import MemcachedError
 
 from membase.api.rest_client import RestConnection
-from memcached.helper.data_helper import VBucketAwareMemcached,\
-                                         MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
+
+from com.couchbase.client.java.kv import ReplicaMode
 
 
 class OpsChangeCasTests(CasBaseTest):
-
     def setUp(self):
         super(OpsChangeCasTests, self).setUp()
         self.key = 'test_cas_docs'.rjust(self.key_size, '0')
-
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket(bucket_type=self.bucket_type,
-                                               ram_quota=self.bucket_size,
-                                               maxTTL=self.maxttl,
-                                               replica=self.num_replicas,
-                                               compression_mode=self.compression_mode)
-        self.bucket_util.add_rbac_user()
-        self.bucket_util.get_all_buckets()
         self.log.info("=========Finished OpsChangeCasTests base setup=======")
 
     def tearDown(self):
         super(OpsChangeCasTests, self).tearDown()
 
-    def _load_all_buckets(self, generator, op_type, pause_secs=1):
+    def _load_all_buckets(self, generator, op_type):
         for bucket in self.bucket_util.buckets:
-            task = self.task.async_load_gen_docs(self.cluster, bucket,
-                                                 generator, op_type, 0,
-                                                 flag=self.item_flag,
-                                                 batch_size=10,
-                                                 process_concurrency=8,
-                                                 replicate_to=self.replicate_to,
-                                                 persist_to=self.persist_to,
-                                                 timeout_secs=self.sdk_timeout,
-                                                 retries=self.sdk_retries,
-                                                 compression=self.sdk_compression,
-                                                 pause_secs=pause_secs)
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, generator, op_type, 0,
+                flag=self.item_flag,
+                batch_size=10,
+                process_concurrency=8,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                timeout_secs=self.sdk_timeout,
+                compression=self.sdk_compression)
             self.task.jython_task_manager.get_task_result(task)
 
     def verify_cas(self, ops, generator):
@@ -55,108 +45,127 @@ class OpsChangeCasTests(CasBaseTest):
         to do the mutation again to see if there is any exceptions.
         We should be able to mutate that item with the latest CAS value.
         For delete(), after it is called, we try to mutate that item with the
-        cas vavlue returned by delete(). We should see Memcached Error.
+        cas value returned by delete(). We should see SDK Error.
         Otherwise the test should fail.
         For expire, We want to verify using the latest CAS value of that item
         can not mutate it because it is expired already.
         """
 
-        for bucket in self.buckets:
-            client = VBucketAwareMemcached(RestConnection(self.cluster.master),
-                                           bucket.name)
+        for bucket in self.bucket_util.buckets:
+            client = SDKClient(RestConnection(self.cluster.master),
+                               bucket)
             gen = generator
-            cas_error_collection = []
-            data_error_collection = []
             while gen.has_next():
                 key, value = gen.next()
-
+                vb_of_key = self.bucket_util.get_vbucket_num_for_key(key)
+                active_node_ip = None
+                for node_ip in self.shell_conn.keys():
+                    if vb_of_key in self.vb_details[node_ip]["active"]:
+                        active_node_ip = node_ip
+                        break
                 if ops in ["update", "touch"]:
+                    self.log.info("Running %s over key %s" % (ops, key))
                     for x in range(self.mutate_times):
-                        o_old, cas_old, d_old = client.get(key)
+                        old_cas = client.crud("read", key, timeout=10)["cas"]
+                        # value = {"val": "mysql-new-value-%s" % x}
                         if ops == 'update':
-                            client.memcached(key).cas(key, 0, 0, cas_old, "{0}-{1}"
-                                                      .format("mysql-new-value", x))
+                            result = client.crud(
+                                "replace", key, value,
+                                durability=self.durability_level,
+                                cas=old_cas)
                         else:
-                            client.memcached(key).touch(key, 10)
+                            result = client.touch(
+                                key, 0,
+                                durability=self.durability_level,
+                                timeout=self.sdk_timeout)
 
-                        o_new, cas_new, d_new = client.memcached(key).get(key)
-                        if cas_old == cas_new:
-                            print 'cas did not change'
-                            cas_error_collection.append(cas_old)
+                        if result["status"] is False:
+                            client.close()
+                            self.log_failure("Touch / replace with cas failed")
+                            return
+
+                        new_cas = result["cas"]
+                        if old_cas == new_cas:
+                            self.log_failure("CAS old (%s) == new (%s)"
+                                             % (old_cas, new_cas))
 
                         if ops == 'update':
-                            if d_new != "{0}-{1}".format("mysql-new-value", x):
-                                data_error_collection.append((d_new,"{0}-{1}"
-                                                              .format("mysql-new-value", x)))
-                            if cas_old != cas_new and d_new == "{0}-{1}".format("mysql-new-value", x):
-                                self.log.info("Use item cas {0} to mutate the same item with key {1} successfully! Now item cas is {2} "
-                                              .format(cas_old, key, cas_new))
+                            if json.loads(str(result["value"])) \
+                                    != json.loads(value):
+                                self.log_failure("Value mismatch. "
+                                                 "%s != %s"
+                                                 % (result["value"], value))
+                            else:
+                                self.log.debug(
+                                    "Mutate %s with CAS %s successfully! "
+                                    "Current CAS: %s"
+                                    % (old_cas, key, new_cas))
 
-                        mc_active = client.memcached(key)
-                        mc_replica = client.memcached(key, replica_index=0)
-
-                        active_cas = int(mc_active.stats('vbucket-details')['vb_' + str(client._get_vBucket_id(key)) + ':max_cas'] )
-                        self.assertTrue(active_cas == cas_new,
-                                        'cbstats cas mismatch. Expected {0}, actual {1}'
-                                        .format( cas_new, active_cas))
-
-                        replica_cas = int(mc_replica.stats('vbucket-details')['vb_' + str(client._get_vBucket_id(key)) + ':max_cas'] )
+                        active_read = client.crud("read", key,
+                                                  timeout=self.sdk_timeout)
+                        active_cas = active_read["cas"]
+                        replica_cas = -1
+                        cas_in_active_node = \
+                            self.cb_stat[active_node_ip].vbucket_details(
+                                bucket.name)[str(vb_of_key)]["max_cas"]
+                        if str(cas_in_active_node) != str(new_cas):
+                            self.log_failure("CbStats CAS mismatch. %s != %s"
+                                             % (cas_in_active_node, new_cas))
 
                         poll_count = 0
-                        while replica_cas != active_cas and poll_count < 5:
-                            time.sleep(1)
-                            replica_cas = int(mc_replica.stats('vbucket-details')['vb_' + str(client._get_vBucket_id(key)) + ':max_cas'] )
+                        max_retry = 5
+                        while poll_count < max_retry:
+                            replica_read = client.getFromReplica(
+                                key, ReplicaMode.FIRST)[0]
+                            replica_cas = replica_read["cas"]
+                            if active_cas == replica_cas \
+                                    or self.durability_level:
+                                break
                             poll_count = poll_count + 1
+                            self.sleep(1, "Retry read CAS from replica..")
 
-                        if poll_count > 0:
-                            self.log.info('Getting the desired CAS was delayed {0} seconds'
-                                          .format( poll_count) )
-
-                        self.assertTrue(active_cas == replica_cas,
-                                        'replica cas mismatch. Expected {0}, actual {1}'
-                                        .format( cas_new, replica_cas))
-
+                        if active_cas != replica_cas:
+                            self.log_failure("Replica cas mismatch. %s != %s"
+                                             % (new_cas, replica_cas))
                 elif ops == "delete":
-                    o, cas, d = client.memcached(key).delete(key)
-                    time.sleep(10)
-                    self.log.info("Delete operation set item cas with key {0} to {1}"
-                                  .format(key, cas))
-                    try:
-                        client.memcached(key).cas(key, 0, self.item_flag, cas, value)
-                        raise Exception("The item should already be deleted. We can't mutate it anymore")
-                    except MemcachedError as error:
-                        # It is expected to raise MemcachedError because the key is deleted.
-                        if error.status == ERR_NOT_FOUND:
-                            self.log.info("<MemcachedError #%d ``%s''>"
-                                          % (error.status, error.msg))
-                            pass
-                        else:
-                            raise Exception(error)
+                    old_cas = client.crud("read", key, timeout=10)["cas"]
+                    result = client.crud("delete", key,
+                                         durability=self.durability_level,
+                                         timeout=self.sdk_timeout)
+                    self.log.info("CAS after delete of key %s: %s"
+                                  % (key, result["cas"]))
+                    result = client.crud("replace", key, "test",
+                                         durability=self.durability_level,
+                                         timeout=self.sdk_timeout,
+                                         cas=old_cas)
+                    if result["status"] is True:
+                        self.log_failure("The item should already be deleted")
+                    if DurableExceptions.KeyNotFoundException \
+                            not in result["error"]:
+                        self.log_failure("Invalid Excepetion: %s" % result)
+                    if result["cas"] != 0:
+                        self.log_failure("Delete returned invalid cas: %s, "
+                                         "Expected 0" % result["cas"])
+                    if result["cas"] == old_cas:
+                        self.log_failure("Deleted doc returned old cas: %s "
+                                         % old_cas)
                 elif ops == "expire":
-                    o, cas, d = client.memcached(key).set(key, self.expire_time, 0, value)
-                    time.sleep(self.expire_time+1)
-                    self.log.info("Try to mutate an expired item with its previous cas {0}".format(cas))
-                    try:
-                        client.memcached(key).cas(key, 0, self.item_flag, cas, value)
-                        raise Exception("The item should already be expired. We can't mutate it anymore")
-                    except MemcachedError as error:
-                        # It is expected to raise MemcachedError becasue the key is expired.
-                        if error.status == ERR_NOT_FOUND:
-                            self.log.info("<MemcachedError #%d ``%s''>" % (error.status, error.msg))
-                            pass
-                        else:
-                            raise Exception(error)
+                    old_cas = client.crud("read", key, timeout=10)["cas"]
+                    result = client.crud("touch", key, exp=self.expire_time)
+                    if result["status"] is True:
+                        if result["cas"] == old_cas:
+                            self.log_failure("Touch failed to update CAS")
+                    else:
+                        self.log_failure("Touch operation failed")
 
-            if len(cas_error_collection) > 0:
-                for cas_value in cas_error_collection:
-                    self.log.error("Set operation fails to modify the CAS {0}"
-                                   .format(cas_value))
-                raise Exception("Set operation fails to modify the CAS value")
-            if len(data_error_collection) > 0:
-                for data_value in data_error_collection:
-                    self.log.error("Set operation fails. item-value is {0}, expected is {1}"
-                                   .format(data_value[0], data_value[1]))
-                raise Exception("Set operation fails to change item value")
+                    self.sleep(self.expire_time+1, "Wait for item to expire")
+                    result = client.crud("replace", key, "test",
+                                         durability=self.durability_level,
+                                         timeout=self.sdk_timeout,
+                                         cas=old_cas)
+                    if result["status"] is True:
+                        self.log_failure("Able to mutate %s with old cas: %s"
+                                         % (key, old_cas))
 
     def ops_change_cas(self):
         """
@@ -169,19 +178,37 @@ class OpsChangeCasTests(CasBaseTest):
         We also use MemcachedClient delete() to delete a quarter of the items
         """
 
-        gen_load = BlobGenerator('nosql', 'nosql-', self.value_size,
-                                 end=self.num_items)
-        gen_update = BlobGenerator('nosql', 'nosql-', self.value_size,
-                                   end=(self.num_items / 2 - 1))
-        gen_delete = BlobGenerator('nosql', 'nosql-', self.value_size,
-                                   start=self.num_items / 2,
-                                   end=(3*self.num_items / 4 - 1))
-        gen_expire = BlobGenerator('nosql', 'nosql-', self.value_size,
-                                   start=3*self.num_items / 4,
-                                   end=self.num_items)
+        gen_load = doc_generator('nosql', 0, self.num_items,
+                                 doc_size=self.doc_size)
+        gen_update = doc_generator('nosql', 0, self.num_items/2,
+                                   doc_size=self.doc_size)
+        gen_delete = doc_generator('nosql',
+                                   self.num_items/2,
+                                   (self.num_items * 3 / 4),
+                                   doc_size=self.doc_size)
+        gen_expire = doc_generator('nosql',
+                                   (self.num_items * 3 / 4),
+                                   self.num_items,
+                                   doc_size=self.doc_size)
         self._load_all_buckets(gen_load, "create")
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.bucket_util._wait_for_stats_all_buckets()
+
+        # Create cbstat objects
+        self.shell_conn = dict()
+        self.cb_stat = dict()
+        self.vb_details = dict()
+        for node in self.cluster_util.get_kv_nodes():
+            self.vb_details[node.ip] = dict()
+            self.vb_details[node.ip]["active"] = list()
+            self.vb_details[node.ip]["replica"] = list()
+
+            self.shell_conn[node.ip] = RemoteMachineShellConnection(node)
+            self.cb_stat[node.ip] = Cbstats(self.shell_conn[node.ip])
+            self.vb_details[node.ip]["active"] = \
+                self.cb_stat[node.ip].vbucket_list(self.bucket.name, "active")
+            self.vb_details[node.ip]["replica"] = \
+                self.cb_stat[node.ip].vbucket_list(self.bucket.name, "replica")
 
         if self.doc_ops is not None:
             if "update" in self.doc_ops:
@@ -194,53 +221,43 @@ class OpsChangeCasTests(CasBaseTest):
                 self.verify_cas("expire", gen_expire)
 
         self.bucket_util._wait_for_stats_all_buckets()
+        self.validate_test_failure()
 
     def touch_test(self):
-        timeout = 900  # 15 minutes
-        bucket = self.bucket_util.buckets[0]
-        payload = MemcachedClientHelper.create_value('*', self.value_size)
-        mc = MemcachedClientHelper.proxy_client(self.cluster.servers[0],
-                                                bucket)
-        prefix = "test_"
-        self.num_items = self.input.param("items", 10000)
-        k = 0
-        while k < 100:
-            key = "{0}{1}".format(prefix, k)
-            mc.set(key, 0, 0, payload)
-            k += 1
-        active_resident_threshold = 30
-        threshold_reached = False
-        end_time = time.time() + float(timeout)
-        while not threshold_reached and time.time() < end_time:
-            if int(mc.stats()["vb_active_perc_mem_resident"]) >= active_resident_threshold:
-                self.log.info("vb_active_perc_mem_resident_ratio reached at %s"
-                              % (mc.stats()["vb_active_perc_mem_resident"]))
-                self.num_items += self.input.param("num_items", 40000)
-                random_key = "random_keys"
-                generate_load = BlobGenerator(random_key, '%s-' % random_key,
-                                              self.value_size,
-                                              end=self.num_items)
-                self._load_all_buckets(generate_load, "create", pause_secs=3)
-            else:
-                threshold_reached = True
-                self.log.info("DGM {0} state achieved!!!!"
-                              .format(active_resident_threshold))
-        if time.time() > end_time and \
-           int(mc.stats()["vb_active_perc_mem_resident"]) >= active_resident_threshold:
-            raise Exception("failed to load items into bucket")
-        """
-        at active resident ratio above, the first 100 keys insert into
-        bucket will be non resident. Then do touch command to test it
-        """
-        self.log.info("Run touch command to test items which are in non resident")
-        k = 0
-        while k < 100:
-            key = "{0}{1}".format(prefix, k)
-            try:
-                mc.touch(key, 0)
-                k += 1
-            except Exception as ex:
-                raise Exception(ex)
+        self.log.info("1. Loading initial set of documents")
+        load_gen = doc_generator(self.key, 0, self.num_items,
+                                 doc_size=self.doc_size)
+        self._load_all_buckets(load_gen, "create")
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets()
+
+        self.log.info("2. Loading bucket into DGM")
+        dgm_gen = doc_generator(
+            self.key, self.num_items, self.num_items+1)
+        dgm_task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket_util.buckets[0], dgm_gen, "create", 0,
+            persist_to=self.persist_to,
+            replicate_to=self.replicate_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            batch_size=10,
+            process_concurrency=4,
+            active_resident_threshold=self.active_resident_threshold)
+        self.task_manager.get_task_result(dgm_task)
+
+        self.log.info("3. Touch intial self.num_items docs which are "
+                      "residing on disk due to DGM")
+        client = SDKClient(RestConnection(self.cluster.master),
+                           self.bucket_util.buckets[0])
+        while load_gen.has_next():
+            key, _ = load_gen.next()
+            result = client.crud("touch", key,
+                                 durability=self.durability_level,
+                                 timeout=self.sdk_timeout)
+            if result["status"] is not True:
+                self.log_failure("Touch on %s failed: %s" % (key, result))
+        client.close()
+        self.validate_test_failure()
 
     def _corrupt_max_cas(self, mcd, key):
         # set the CAS to -2 and then mutate to increment to -1 and
@@ -261,7 +278,7 @@ class OpsChangeCasTests(CasBaseTest):
         KEY_NAME = 'key1'
 
         rest = RestConnection(self.master)
-        client = VBucketAwareMemcached(rest, 'default')
+        client = SDKClient(rest, 'default')
 
         # set a key
         client.memcached(KEY_NAME).set(KEY_NAME, 0, 0,
@@ -295,7 +312,7 @@ class OpsChangeCasTests(CasBaseTest):
         rebalance.result()
 
         # verify the CAS is good
-        client = VBucketAwareMemcached(rest, 'default')
+        client = SDKClient(rest, 'default')
         mc_active = client.memcached(KEY_NAME)
         active_CAS = mc_active.getMeta(KEY_NAME)[4]
 
@@ -310,7 +327,7 @@ class OpsChangeCasTests(CasBaseTest):
         KEY_NAME = 'key1'
 
         rest = RestConnection(self.master)
-        client = VBucketAwareMemcached(rest, 'default')
+        client = SDKClient(rest, 'default')
 
         # set a key
         client.memcached(KEY_NAME).set(KEY_NAME, 0, 0,
@@ -335,7 +352,7 @@ class OpsChangeCasTests(CasBaseTest):
         time.sleep(30)
 
         rest = RestConnection(self.master)
-        client = VBucketAwareMemcached(rest, 'default')
+        client = SDKClient(rest, 'default')
         mc_active = client.memcached(KEY_NAME)
 
         maxCas = mc_active.getMeta(KEY_NAME)[4]
@@ -349,35 +366,47 @@ class OpsChangeCasTests(CasBaseTest):
     key not exists error, this test only requires one node
     """
     def key_not_exists_test(self):
-        self.assertTrue(len(self.bucket_util.buckets) > 0,
-                        'at least 1 bucket required')
-        bucket = self.bucket_util.buckets[0]
-        client = VBucketAwareMemcached(RestConnection(self.cluster.master), bucket)
-        KEY_NAME = 'key'
+        client = SDKClient(self.rest, self.bucket)
+        load_gen = doc_generator(self.key, 0, 1,
+                                 doc_size=256)
+        key, val = load_gen.next()
 
         for _ in range(1500):
-            client.set(KEY_NAME, 0, 0, "x")
-            # delete and verify get fails
-            client.delete(KEY_NAME)
-            err = None
-            try:
-                _ = client.get(KEY_NAME)
-            except MemcachedError as error:
-                # Expected to raise MemcachedError because the key is deleted.
-                err = error.status
-            self.assertTrue(err == ERR_NOT_FOUND,
-                            'Expected key to be deleted {0}'.format(KEY_NAME))
+            result = client.crud("create", key, val,
+                                 durability=self.durability_level,
+                                 timeout=self.sdk_timeout)
+            if result["status"] is False:
+                self.log_failure("Create failed: %s" % result)
+            create_cas = result["cas"]
+
+            # Delete and verify get fails
+            result = client.crud("delete", key,
+                                 durability=self.durability_level,
+                                 timeout=self.sdk_timeout)
+            if result["status"] is False:
+                self.log_failure("Delete failed: %s" % result)
+            if result["cas"] != 0:
+                self.log_failure("Delete returned non-zero cas: %s" % result)
+
+            result = client.crud("read", key,
+                                 timeout=self.sdk_timeout)
+            if result["status"] is True:
+                self.log_failure("Read succeeded after delete: %s" % result)
+            if DurableExceptions.KeyNotFoundException \
+                    not in str(result["error"]):
+                self.log_failure("Invalid exception during read "
+                                 "for non-exists key: %s" % result)
 
             # cas errors do not sleep the test for 10 seconds,
             # plus we need to check that the correct error is being thrown
-            err = None
-            try:
-                # For some reason replace instead of cas
-                # would not reproduce the bug
-                mc_active = client.memcached(KEY_NAME)
-                mc_active.replace(KEY_NAME, 0, 10, "value")
-            except MemcachedError as error:
-                err = error.status
-            self.assertTrue(err == ERR_NOT_FOUND,
-                            'was able to replace cas on removed key {0}'
-                            .format(KEY_NAME))
+            result = client.crud("replace", key, val, exp=60,
+                                 timeout=self.sdk_timeout,
+                                 cas=create_cas)
+            if result["status"] is True:
+                self.log_failure("Replace succeeded after delete: %s" % result)
+            if DurableExceptions.KeyNotFoundException \
+                    not in str(result["error"]):
+                self.log_failure("Invalid exception during read "
+                                 "for non-exists key: %s" % result)
+
+            self.validate_test_failure()

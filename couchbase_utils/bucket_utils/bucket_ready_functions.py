@@ -222,7 +222,8 @@ class BucketUtils:
 
     def create_default_bucket(self, bucket_type=Bucket.bucket_type.MEMBASE,
                               ram_quota=None, replica=1, maxTTL=0,
-                              compression_mode="off", wait_for_warmup=True):
+                              compression_mode="off", wait_for_warmup=True,
+                              lww=False):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ramQuotaMB = ram_quota
@@ -237,7 +238,8 @@ class BucketUtils:
                                  Bucket.ramQuotaMB: ramQuotaMB,
                                  Bucket.replicaNumber: replica,
                                  Bucket.compressionMode: compression_mode,
-                                 Bucket.maxTTL: maxTTL})
+                                 Bucket.maxTTL: maxTTL,
+                                 Bucket.lww: lww})
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
