@@ -122,7 +122,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
     def validate_docs(self):
         if self.atomicity:
             return
-        self.gen_create = self.get_doc_generator(0, self.num_items)
+#         self.gen_create = self.get_doc_generator(0, self.num_items)
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_validate_docs(
