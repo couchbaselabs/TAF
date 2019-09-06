@@ -33,7 +33,7 @@ public class SubDocOperations extends doc_ops {
         if (persistTo != PersistTo.NONE || replicateTo != ReplicateTo.NONE) {
             return MutateInOptions.mutateInOptions().durability(persistTo, replicateTo).expiry(exp).timeout(timeout);
         } else {
-            return MutateInOptions.mutateInOptions().durabilityLevel(durabilityLevel).expiry(exp).timeout(timeout);
+            return MutateInOptions.mutateInOptions().durability(durabilityLevel).expiry(exp).timeout(timeout);
         }
     }
 

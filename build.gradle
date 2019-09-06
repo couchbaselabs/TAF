@@ -23,8 +23,8 @@ repositories {
 
 dependencies {
     // This will transitively pull in all dependencies of transactions, including Couchbase java-client
-    compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.0.0-beta.1'
-    compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.0-alpha.6'
+    compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.0.0-beta.2-SNAPSHOT'
+    compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.0-alpha.7'
     
     compile group: 'com.jcraft', name: 'jsch', version: '0.1.54'
 

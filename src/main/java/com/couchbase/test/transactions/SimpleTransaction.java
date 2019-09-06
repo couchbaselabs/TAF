@@ -30,7 +30,7 @@ import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.transactions.AttemptContextReactive;
 import com.couchbase.transactions.TransactionDurabilityLevel;
-import com.couchbase.transactions.TransactionJsonDocument;
+import com.couchbase.transactions.TransactionGetResult;
 import com.couchbase.transactions.TransactionResult;
 import com.couchbase.transactions.Transactions;
 import com.couchbase.client.core.cnc.Event;
@@ -91,11 +91,14 @@ public class SimpleTransaction {
 			TransactionResult result = transaction.run(ctx -> {
 				for (String key: Readkeys) {
 					for (Collection bucket:collections) {
-						if (ctx.get(bucket, key).isPresent()) {
-							TransactionJsonDocument doc1=ctx.get(bucket, key).get();
+						try {
+							TransactionGetResult doc1=ctx.getOptional(bucket, key).get();
 							JsonObject content = doc1.contentAs(JsonObject.class);
 							Tuple2<String, JsonObject>mp = Tuples.of(key, content);
 							res.add(mp);
+						}
+						catch (TransactionFailed err) {
+							System.out.println("Document not present");
 						}
 					}
 				}
@@ -193,7 +196,7 @@ public class SimpleTransaction {
 		        attempt.set(attempt.get() + 1);
 
 		        for (Tuple2<String, JsonObject> document : Createkeys) {
-					TransactionJsonDocument doc=ctx1.insert(collection, document.getT1(), document.getT2());
+					TransactionGetResult doc=ctx1.insert(collection, document.getT1(), document.getT2());
 					}
 
 		        if (commit) ctx1.commit();
@@ -327,24 +330,29 @@ public class SimpleTransaction {
 			    TransactionResult result = transactions.run((ctx1) -> {
 
 			        for (Tuple2<String, JsonObject> document : Createkeys) {
-						TransactionJsonDocument doc=ctx1.insert(collection, document.getT1(), document.getT2());
+						TransactionGetResult doc=ctx1.insert(collection, document.getT1(), document.getT2());
 						 }
 
 			        for (String key: Updatekeys) {
-				        if (ctx1.get(collection, key).isPresent()) {
-							TransactionJsonDocument doc2=ctx1.get(collection, key).get();
+				        try {
+							TransactionGetResult doc2=ctx1.getOptional(collection, key).get();
 							JsonObject content = doc2.contentAs(JsonObject.class);
 							content.put("mutated", 1 );
 							ctx1.replace(doc2, content);
 							}
+				        catch (TransactionFailed err) {
+							System.out.println("Document not present");
+						}
 						}
 
 			        for (String key: Deletekeys) {
-						if (ctx1.get(collection, key).isPresent()) {
-							TransactionJsonDocument doc1=ctx1.get(collection, key).get();
+						try {
+							TransactionGetResult doc1=ctx1.getOptional(collection, key).get();
 							ctx1.remove(doc1);
 						}
-
+						catch (TransactionFailed err) {
+							System.out.println("Document not present");
+						}
 					}
 
 			    });
@@ -372,8 +380,8 @@ public class SimpleTransaction {
 
 					for (Collection bucket:collections) {
 						for (Tuple2<String, JsonObject> document : Createkeys) {
-							TransactionJsonDocument doc=ctx.insert(bucket, document.getT1(), document.getT2());
-							TransactionJsonDocument doc1=ctx.get(bucket, document.getT1()).get();
+							TransactionGetResult doc=ctx.insert(bucket, document.getT1(), document.getT2());
+							TransactionGetResult doc1=ctx.getOptional(bucket, document.getT1()).get();
 //							JsonObject content = doc1.contentAs(JsonObject.class);
 //							if (areEqual(content,document.getT2()));
 //							if (content.equals(document.getT2()));
@@ -384,26 +392,30 @@ public class SimpleTransaction {
 					//				update of docs
 					for (String key: Updatekeys) {
 						for (Collection bucket:collections) {
-							if (ctx.get(bucket, key).isPresent()) {
-								TransactionJsonDocument doc2=ctx.get(bucket, key).get();
+							try {
+								TransactionGetResult doc2=ctx.getOptional(bucket, key).get();
 								for (int i=1; i<=updatecount; i++) {
 									JsonObject content = doc2.contentAs(JsonObject.class);
 									content.put("mutated", i );
 									ctx.replace(doc2, content);
-//										TransactionJsonDocument doc1=ctx.get(bucket, key).get();
+//										TransactionGetResult doc1=ctx.get(bucket, key).get();
 //										JsonObject read_content = doc1.contentAs(JsonObject.class);
-
+									}
 								}
+							catch (TransactionFailed err) {
+								System.out.println("Document not present");
 							}
-
 						}
 					}
 					//			   delete the docs
 					for (String key: Deletekeys) {
 						for (Collection bucket:collections) {
-							if (ctx.get(bucket, key).isPresent()) {
-								TransactionJsonDocument doc1=ctx.get(bucket, key).get();
+							try {
+								TransactionGetResult doc1=ctx.getOptional(bucket, key).get();
 								ctx.remove(doc1);
+							}
+							catch (TransactionFailed err) {
+								System.out.println("Document not present");
 							}
 						}
 					}
@@ -512,22 +524,22 @@ public class SimpleTransaction {
 			{
 				// The first mutation must be done in serial
 				if (remainingDocs.size() == 1) {
-					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then();
+					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then();
 				}
 				else {
-					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
-							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.getOrError(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
+					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
+							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
 									remainingDocs.size())).then();}
 			}
 			else
 			{
 				if (remainingDocs.size() == 1) {
-					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then(ctx.rollback());
+					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then(ctx.rollback());
 				}
 				else {
 				// The first mutation must be done in serial
-					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
-							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.getOrError(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
+					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
+							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
 									remainingDocs.size())).then(ctx.rollback());}
 			}
 	
@@ -554,22 +566,22 @@ public class SimpleTransaction {
 			{
 				// The first mutation must be done in serial
 				if (remainingDocs.size() == 1) {
-					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).then();
+					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).then();
 				}
 				else {
-					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).thenMany(
-							Flux.fromIterable(remainingDocs).flatMap(d -> ctx.getOrError(reactiveCollection,d).flatMap(d1-> ctx.remove(d1)),
+					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).thenMany(
+							Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.remove(d1)),
 									remainingDocs.size())).then();}
 			}
 			else
 			{
 				if (remainingDocs.size() == 1) {
-					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).then(ctx.rollback());
+					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).then(ctx.rollback());
 				}
 				else {
 				// The first mutation must be done in serial
-					return ctx.getOrError(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).thenMany(
-							Flux.fromIterable(remainingDocs).flatMap(d -> ctx.getOrError(reactiveCollection,d).flatMap(d1-> ctx.remove(d1)),
+					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).thenMany(
+							Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.remove(d1)),
 									remainingDocs.size())).then(ctx.rollback());}
 			}
 	
@@ -587,7 +599,6 @@ public class SimpleTransaction {
 	public List<String> getQueue(int n){
 		return this.queue.stream().skip(queue.size() - n).collect(Collectors.toList());
 	}
-
 
 }
 

@@ -284,7 +284,7 @@ public class doc_ops {
 			return InsertOptions.insertOptions().expiry(exp).durability(persistto, replicateto).timeout(timeout);
 		}
 		else {
-			return InsertOptions.insertOptions().expiry(exp).timeout(timeout).durabilityLevel(durabilitylevel);
+			return InsertOptions.insertOptions().expiry(exp).timeout(timeout).durability(durabilitylevel);
 		}
 	}
 
@@ -296,7 +296,7 @@ public class doc_ops {
 			return InsertOptions.insertOptions().expiry(exp).durability(persistTo, replicateTo).timeout(timeout);
 		}
 		else {
-			return InsertOptions.insertOptions().expiry(exp).durabilityLevel(durabilityLevel).timeout(timeout);
+			return InsertOptions.insertOptions().expiry(exp).durability(durabilityLevel).timeout(timeout);
 		}
 	}
 
@@ -311,7 +311,7 @@ public class doc_ops {
 			return UpsertOptions.upsertOptions().expiry(exp).durability(persistto, replicateto).timeout(timeout);
 		}
 		else {
-			return UpsertOptions.upsertOptions().expiry(exp).durabilityLevel(durabilitylevel).timeout(timeout);
+			return UpsertOptions.upsertOptions().expiry(exp).durability(durabilitylevel).timeout(timeout);
 		}
 	}
 
@@ -323,7 +323,7 @@ public class doc_ops {
 			return UpsertOptions.upsertOptions().expiry(exp).durability(persistTo, replicateTo).timeout(timeout);
 		}
 		else {
-			return UpsertOptions.upsertOptions().expiry(exp).durabilityLevel(durabilityLevel).timeout(timeout);
+			return UpsertOptions.upsertOptions().expiry(exp).durability(durabilityLevel).timeout(timeout);
 		}
 	}
 
@@ -337,7 +337,7 @@ public class doc_ops {
 			return RemoveOptions.removeOptions().durability(persistto, replicateto).timeout(timeout);
 		}
 		else {
-			return RemoveOptions.removeOptions().durabilityLevel(durabilitylevel).timeout(timeout);
+			return RemoveOptions.removeOptions().durability(durabilitylevel).timeout(timeout);
 		}
 	}
 
@@ -348,7 +348,7 @@ public class doc_ops {
 			return RemoveOptions.removeOptions().durability(persistTo, replicateTo).timeout(timeout);
 		}
 		else {
-			return RemoveOptions.removeOptions().durabilityLevel(durabilityLevel).timeout(timeout);
+			return RemoveOptions.removeOptions().durability(durabilityLevel).timeout(timeout);
 		}
 	}
 	
@@ -362,7 +362,7 @@ public class doc_ops {
 			return ReplaceOptions.replaceOptions().durability(persistto, replicateto).timeout(timeout);
 		}
 		else {
-			return ReplaceOptions.replaceOptions().durabilityLevel(durabilitylevel).timeout(timeout);
+			return ReplaceOptions.replaceOptions().durability(durabilitylevel).timeout(timeout);
 		}
 	}
 
@@ -373,7 +373,7 @@ public class doc_ops {
 			return ReplaceOptions.replaceOptions().durability(persistTo, replicateTo).timeout(timeout);
 		}
 		else {
-			return ReplaceOptions.replaceOptions().durabilityLevel(durabilityLevel).timeout(timeout);
+			return ReplaceOptions.replaceOptions().durability(durabilityLevel).timeout(timeout);
 		}
 	}
 

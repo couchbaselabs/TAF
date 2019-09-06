@@ -209,7 +209,7 @@ class SDKClient(object):
             options = InsertOptions.insertOptions() \
                 .timeout(self.getDuration(timeout, time_unit)) \
                 .expiry(self.getDuration(exp, exp_unit)) \
-                .durabilityLevel(self.getDurabilityLevel(durability))
+                .durability(self.getDurabilityLevel(durability))
         else:
             options = InsertOptions.insertOptions() \
                 .timeout(self.getDuration(timeout, time_unit)) \
@@ -230,7 +230,7 @@ class SDKClient(object):
             options = UpsertOptions.upsertOptions() \
                 .timeout(self.getDuration(timeout, time_unit)) \
                 .expiry(self.getDuration(exp, exp_unit)) \
-                .durabilityLevel(self.getDurabilityLevel(durability))
+                .durability(self.getDurabilityLevel(durability))
         else:
             options = UpsertOptions.upsertOptions() \
                 .timeout(self.getDuration(timeout, time_unit)) \
@@ -250,7 +250,7 @@ class SDKClient(object):
 
         if durability:
             options = options \
-                .durabilityLevel(self.getDurabilityLevel(durability))
+                .durability(self.getDurabilityLevel(durability))
         else:
             options = options \
                 .durability(self.getPersistTo(persist_to),
@@ -269,7 +269,7 @@ class SDKClient(object):
 
         if durability:
             options = options \
-                .durabilityLevel(self.getDurabilityLevel(durability))
+                .durability(self.getDurabilityLevel(durability))
         else:
             options = options \
                 .durability(self.getPersistTo(persist_to),
@@ -287,7 +287,7 @@ class SDKClient(object):
                 self.getDuration(exp, exp_unit)).timeout(
                 self.getDuration(timeout, time_unit))
         else:
-            MutateInOptions.mutateInOptions().durabilityLevel(
+            MutateInOptions.mutateInOptions().durability(
                 self.getDurabilityLevel(durability)).expiry(
                 self.getDuration(exp, exp_unit)).timeout(
                 self.getDuration(timeout, time_unit))
