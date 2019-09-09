@@ -302,8 +302,6 @@ class BucketHelper(RestConnection):
             init_params.pop('replicaIndex', None)
 
         if bucket_params.get('lww'):
-            init_params['maxTTL'] = bucket_params.get('lww')
-        if bucket_params.get('maxTTL'):
             init_params['conflictResolutionType'] = 'lww'
 
         params = urllib.urlencode(init_params)
