@@ -636,3 +636,5 @@ class AutoCompactionTests(BaseTestCase):
             self.task_manager.stop_task(monitor_fragm)
             self.fail(failure_msg)
         self.task_manager.get_task_result(monitor_fragm)
+        if doc_update_task.fail:
+            self.fail("Failures during doc updates")

@@ -1625,6 +1625,8 @@ class ContinuousDocUpdateTask(Task):
         self.batch_size = batch_size
         self.generator = generator
         self.buckets = None
+        self.success = dict()
+        self.fail = dict()
 
         self.key = self.generator.name
         self.doc_start_num = self.generator.start
@@ -1662,6 +1664,7 @@ class ContinuousDocUpdateTask(Task):
                     timeout_secs=self.timeout_secs)
                 self.task_manager.add_new_task(task)
                 doc_tasks.append(task)
+                self.fail.update(task.fail)
 
             for task in doc_tasks:
                 self.task_manager.get_task_result(task)
