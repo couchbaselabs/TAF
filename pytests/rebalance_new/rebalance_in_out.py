@@ -717,7 +717,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             self.target_vbucket = [vb_num]
             self.log.info("Targeting vBucket: {}".format(vb_num))
             self.gen_create = self.get_doc_generator(self.num_items,
-                                                     self.num_items + 1000)
+                                                     100)
             self.check_temporary_failure_exception = False
             tasks_info = self.loadgen_docs(ignore_exceptions=ignore_exceptions,
                                            task_verification=True)
