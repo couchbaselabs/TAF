@@ -24,6 +24,7 @@ from com.couchbase.client.java.kv import \
     UpsertOptions, \
     RemoveOptions, \
     ReplaceOptions, \
+    TouchOptions, \
     PersistTo,\
     ReplicateTo, \
     ReplicaMode, \
@@ -277,6 +278,19 @@ class SDKClient(object):
 
         return options
 
+    def getTouchOptions(self, persist_to=0, replicate_to=0,
+                        durability="", timeout=5, time_unit="seconds"):
+        if persist_to != 0 or replicate_to != 0:
+            options = TouchOptions.touchOptions() \
+                .durability(self.getPersistTo(persist_to),
+                            self.getReplicateTo(replicate_to)) \
+                .timeout(self.getDuration(timeout, time_unit));
+        else:
+            options = TouchOptions.touchOptions() \
+                .durability(self.getDurabilityLevel(durability)) \
+                .timeout(self.getDuration(timeout, time_unit));
+        return options
+
     def getMutateInOptions(self, exp=0, exp_unit="seconds",
                            persist_to=0, replicate_to=0, timeout=5,
                            time_unit="seconds", durability=""):
@@ -348,6 +362,7 @@ class SDKClient(object):
                durability="", cas=0):
 
         result = dict()
+        result["cas"] = -1
         try:
             options = self.getRemoveOptions(persist_to=persist_to,
                                             replicate_to=replicate_to,
@@ -357,7 +372,8 @@ class SDKClient(object):
                                             cas=cas)
             deleteResult = self.collection.remove(key, options)
             result.update({"key": key, "value": None,
-                           "error": None, "status": True})
+                           "error": None, "status": True,
+                           "cas": deleteResult.cas()})
         except KeyNotFoundException as e:
             self.log.error("Exception: Document id {0} not found - {1}"
                            .format(key, e))
@@ -390,6 +406,7 @@ class SDKClient(object):
                durability=""):
 
         result = dict()
+        result["cas"] = 0
         content = self.__translate_to_json_object(value)
         try:
             options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
@@ -400,9 +417,10 @@ class SDKClient(object):
                                             durability=durability)
 
             # Returns com.couchbase.client.java.kv.MutationResult object
-            _ = self.collection.insert(key, content, options)
+            insert_result = self.collection.insert(key, content, options)
             result.update({"key": key, "value": content,
-                           "error": None, "status": True})
+                           "error": None, "status": True,
+                           "cas": insert_result.cas()})
         except KeyExistsException as ex:
             self.log.error("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
@@ -418,6 +436,7 @@ class SDKClient(object):
                 timeout=5, time_unit="seconds",
                 durability="", cas=0):
         result = dict()
+        result["cas"] = 0
         content = self.__translate_to_json_object(value)
         try:
             options = self.getReplaceOptions(persist_to=persist_to,
@@ -428,9 +447,10 @@ class SDKClient(object):
                                              cas=cas)
 
             # Returns com.couchbase.client.java.kv.MutationResult object
-            _ = self.collection.replace(key, content, options)
+            replace_result = self.collection.replace(key, content, options)
             result.update({"key": key, "value": content,
-                           "error": None, "status": True})
+                           "error": None, "status": True,
+                           "cas": replace_result.cas()})
         except KeyExistsException as ex:
             self.log.error("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
@@ -444,6 +464,29 @@ class SDKClient(object):
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
+        return result
+
+    def touch(self, key, exp=0, exp_unit="seconds",
+              persist_to=0, replicate_to=0,
+              durability="", timeout=5, time_unit="seconds"):
+        result = {
+            "key": key,
+            "value": None,
+            "cas": 0,
+            "status": False,
+            "error": None
+        }
+        touch_options = self.getTouchOptions(persist_to, replicate_to,
+                                             durability, timeout, time_unit)
+        try:
+            touch_result = self.collection.touch(
+                key,
+                self.getDuration(exp, exp_unit),
+                touch_options)
+            result.update({"status": True, "cas": touch_result.cas()})
+        except KeyNotFoundException:
+            self.log.error("Document key '%s' not found!" % key)
+            result["error"] = str(e)
         return result
 
     def read(self, key, timeout=5, time_unit="seconds"):
@@ -488,9 +531,9 @@ class SDKClient(object):
                persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
                durability=""):
-
-        result = dict()
         content = self.__translate_to_json_object(value)
+        result = dict()
+        result["cas"] = 0
         try:
             options = self.getUpsertOptions(exp=exp, exp_unit=exp_unit,
                                             persist_to=persist_to,
@@ -501,7 +544,8 @@ class SDKClient(object):
 
             upsertResult = self.collection.upsert(key, content, options)
             result.update({"key": key, "value": content,
-                           "error": None, "status": True})
+                           "error": None, "status": True,
+                           "cas": upsertResult.cas()})
         except KeyExistsException as ex:
             self.log.error("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
@@ -541,6 +585,12 @@ class SDKClient(object):
                 durability=durability,
                 timeout=timeout, time_unit=time_unit,
                 cas=cas)
+        elif op_type == "touch":
+            result = self.touch(
+                key, exp=exp,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                timeout=timeout, time_unit=time_unit)
         elif op_type == "read":
             result = self.read(
                 key, timeout=timeout, time_unit=time_unit)
@@ -621,6 +671,15 @@ class SDKClient(object):
                                      time_unit)
         return self.__tranlate_delete_multi_results(result)
 
+    def touch_multi(self, keys, exp=0,
+                    persist_to=0, replicate_to=0, durability="",
+                    timeout=5, time_unit="seconds"):
+        result = doc_op().bulkTouch(self.collection, keys, exp,
+                                    persist_to, replicate_to,
+                                    durability, timeout,
+                                    time_unit)
+        return self.__tranlate_delete_multi_results(result)
+
     def setMulti(self, keys, exp=0, exp_unit="seconds",
                  persist_to=0, replicate_to=0,
                  timeout=5, time_unit="seconds", retry=5,
@@ -650,6 +709,20 @@ class SDKClient(object):
         result = doc_op().bulkUpsert(self.collection, docs, exp, exp_unit,
                                      persist_to, replicate_to, durability,
                                      timeout, time_unit)
+        return self.__translate_upsert_multi_results(result)
+
+    def replaceMulti(self, keys, exp=0, exp_unit="seconds",
+                     persist_to=0, replicate_to=0,
+                     timeout=5, time_unit="seconds",
+                     doc_type="json", durability=""):
+        docs = []
+        for key, value in keys.items():
+            content = self.__translate_to_json_object(value, doc_type)
+            tuple = Tuples.of(key, content)
+            docs.append(tuple)
+        result = doc_op().bulkReplace(self.collection, docs, exp, exp_unit,
+                                      persist_to, replicate_to, durability,
+                                      timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
 
     def getMulti(self, keys, timeout=5, time_unit="seconds"):

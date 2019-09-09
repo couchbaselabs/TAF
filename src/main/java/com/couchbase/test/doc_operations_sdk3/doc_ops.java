@@ -17,6 +17,7 @@ import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.client.java.kv.InsertOptions;
 import com.couchbase.client.java.kv.GetOptions;
+import com.couchbase.client.java.kv.TouchOptions;
 import com.couchbase.client.java.kv.MutationResult;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.RemoveOptions;
@@ -175,6 +176,139 @@ public class doc_ops {
 		return returnValue;
 	}
 
+	public List<HashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, JsonObject>> documents,
+			long expiry, final String expiryTimeUnit, final int persistTo, final int replicateTo,
+			final String durabilityLevel, final long timeOut, final String timeUnit) {
+		final ReplaceOptions replaceOptions = this.getReplaceOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+				timeOut, timeUnit, durabilityLevel);
+		final ReactiveCollection reactiveCollection = collection.reactive();
+		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
+				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
+					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+						final String id = documentToInsert.getT1();
+						final JsonObject content = documentToInsert.getT2();
+						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
+						returnValue.put("document", content);
+						returnValue.put("error", null);
+						returnValue.put("cas", 0);
+						returnValue.put("status", true);
+						returnValue.put("id", id);
+						return reactiveCollection.replace(id, content, replaceOptions)
+								.map(new Function<MutationResult, HashMap<String, Object>>() {
+									public HashMap<String, Object> apply(MutationResult result) {
+										returnValue.put("result", result);
+										returnValue.put("cas", result.cas());
+										return returnValue;
+									}
+								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
+									public Mono<HashMap<String, Object>> apply(Throwable error) {
+										returnValue.put("error", error);
+										returnValue.put("status", false);
+										return Mono.just(returnValue);
+									}
+								});
+					}
+				}).subscribeOn(Schedulers.parallel()).collectList().block();
+		return returnValue;
+	}
+
+	public List<HashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, JsonObject>> documents,
+			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
+			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
+		final ReplaceOptions replaceOptions = this.getReplaceOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+				timeOut, timeUnit, durabilityLevel);
+		final ReactiveCollection reactiveCollection = collection.reactive();
+		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
+				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
+					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+						final String id = documentToInsert.getT1();
+						final JsonObject content = documentToInsert.getT2();
+						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
+						returnValue.put("document", content);
+						returnValue.put("error", null);
+						returnValue.put("cas", 0);
+						returnValue.put("status", true);
+						returnValue.put("id", id);
+						return reactiveCollection.replace(id, content, replaceOptions)
+								.map(new Function<MutationResult, HashMap<String, Object>>() {
+									public HashMap<String, Object> apply(MutationResult result) {
+										returnValue.put("result", result);
+										returnValue.put("cas", result.cas());
+										return returnValue;
+									}
+								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
+									public Mono<HashMap<String, Object>> apply(Throwable error) {
+										returnValue.put("error", error);
+										returnValue.put("status", false);
+										return Mono.just(returnValue);
+									}
+								});
+					}
+				}).subscribeOn(Schedulers.parallel()).collectList().block();
+		return returnValue;
+	}
+
+	public List<HashMap<String, Object>> bulkTouch(Collection collection, List<String> keys, final int exp, final int persistTo, final int replicateTo,
+			final String durabilityLevel, final long timeOut, final String timeUnit) {
+		final TouchOptions touchOptions = this.getTouchOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		final ReactiveCollection reactiveCollection = collection.reactive();
+		final Duration exp_duration = this.getDuration(exp, "seconds");
+		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
+				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
+					public Publisher<HashMap<String, Object>> apply(String key){
+						final HashMap<String, Object> retVal = new HashMap<String, Object>();
+						retVal.put("id", key);
+						retVal.put("cas", 0);
+						retVal.put("error", null);
+						retVal.put("status", false);
+						return reactiveCollection.touch(key, exp_duration, touchOptions)
+								.map(new Function<MutationResult, HashMap<String, Object>>() {
+									public HashMap<String, Object> apply(MutationResult result){
+										retVal.put("cas", result.cas());
+										retVal.put("status", true);
+										return retVal;
+									}
+								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
+									public Mono<HashMap<String, Object>> apply(Throwable error) {
+										retVal.put("error", error);
+										return Mono.just(retVal);
+							}
+								}).defaultIfEmpty(retVal);
+					}
+				}).subscribeOn(Schedulers.parallel()).collectList().block();
+		return returnValue;
+	}
+
+	public List<HashMap<String, Object>> bulkTouch(Collection collection, List<String> keys, final Duration exp, final PersistTo persistTo, final ReplicateTo replicateTo,
+			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
+		final TouchOptions touchOptions = this.getTouchOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		final ReactiveCollection reactiveCollection = collection.reactive();
+		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
+				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
+					public Publisher<HashMap<String, Object>> apply(String key){
+						final HashMap<String, Object> retVal = new HashMap<String, Object>();
+						retVal.put("id", key);
+						retVal.put("cas", 0);
+						retVal.put("error", null);
+						retVal.put("status", false);
+						return reactiveCollection.touch(key, exp, touchOptions)
+								.map(new Function<MutationResult, HashMap<String, Object>>() {
+									public HashMap<String, Object> apply(MutationResult result){
+										retVal.put("cas", result.cas());
+										retVal.put("status", true);
+										return retVal;
+									}
+								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
+									public Mono<HashMap<String, Object>> apply(Throwable error) {
+										retVal.put("error", error);
+										return Mono.just(retVal);
+							}
+								}).defaultIfEmpty(retVal);
+					}
+				}).subscribeOn(Schedulers.parallel()).collectList().block();
+		return returnValue;
+	}
+
 	public List<HashMap<String, Object>> bulkGet(Collection collection, List<String> keys,
 			final long timeOut, final String timeUnit) {
 		final ReactiveCollection reactiveCollection = collection.reactive();
@@ -235,7 +369,6 @@ public class doc_ops {
 					}
 				}).subscribeOn(Schedulers.parallel()).collectList().block();
 		return returnValue;
-
 	}
 
 	public List<HashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, final PersistTo persistTo, final ReplicateTo replicateTo,
@@ -327,6 +460,33 @@ public class doc_ops {
 		}
 	}
 
+	private ReplaceOptions getReplaceOptions(long expiry, String expiryTimeUnit, int persistTo, int replicateTo,
+			long timeOut, String timeUnit, String durabilityLevel) {
+		PersistTo persistto = this.getPersistTo(persistTo);
+		ReplicateTo replicateto = this.getReplicateTo(replicateTo);
+		Duration exp = this.getDuration(expiry, expiryTimeUnit);
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
+		if (persistTo != 0 || replicateTo !=0) {
+			return ReplaceOptions.replaceOptions().expiry(exp).durability(persistto, replicateto).timeout(timeout);
+		}
+		else {
+			return ReplaceOptions.replaceOptions().expiry(exp).durability(durabilitylevel).timeout(timeout);
+		}
+	}
+
+	private ReplaceOptions getReplaceOptions(long expiry, String expiryTimeUnit, PersistTo persistTo, ReplicateTo replicateTo,
+			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
+		Duration exp = this.getDuration(expiry, expiryTimeUnit);
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		if (persistTo == PersistTo.NONE|| replicateTo == ReplicateTo.NONE) {
+			return ReplaceOptions.replaceOptions().expiry(exp).durability(persistTo, replicateTo).timeout(timeout);
+		}
+		else {
+			return ReplaceOptions.replaceOptions().expiry(exp).durability(durabilityLevel).timeout(timeout);
+		}
+	}
+
 	private RemoveOptions getRemoveOptions(int persistTo, int replicateTo,
 			long timeOut, String timeUnit, String durabilityLevel) {
 		PersistTo persistto = this.getPersistTo(persistTo);
@@ -351,7 +511,7 @@ public class doc_ops {
 			return RemoveOptions.removeOptions().durability(durabilityLevel).timeout(timeout);
 		}
 	}
-	
+
 	private ReplaceOptions getReplaceOptions(int persistTo, int replicateTo,
 			long timeOut, String timeUnit, String durabilityLevel) {
 		PersistTo persistto = this.getPersistTo(persistTo);
@@ -377,6 +537,31 @@ public class doc_ops {
 		}
 	}
 
+	private TouchOptions getTouchOptions(int persistTo, int replicateTo,
+			long timeOut, String timeUnit, String durabilityLevel) {
+		PersistTo persistto = this.getPersistTo(persistTo);
+		ReplicateTo replicateto = this.getReplicateTo(replicateTo);
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
+		if (persistTo != 0 || replicateTo !=0) {
+			return TouchOptions.touchOptions().durability(persistto, replicateto).timeout(timeout);
+		}
+		else {
+			return TouchOptions.touchOptions().durability(durabilitylevel).timeout(timeout);
+		}
+	}
+
+	private TouchOptions getTouchOptions(PersistTo persistTo, ReplicateTo replicateTo,
+			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
+		Duration timeout = this.getDuration(timeOut, timeUnit);
+		if (persistTo == PersistTo.NONE || replicateTo == ReplicateTo.NONE) {
+			return TouchOptions.touchOptions().durability(persistTo, replicateTo).timeout(timeout);
+		}
+		else {
+			return TouchOptions.touchOptions().durability(durabilityLevel).timeout(timeout);
+		}
+	}
+	
 	protected PersistTo getPersistTo(int persistTo) {
 		switch (persistTo) {
 		case 0:

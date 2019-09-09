@@ -26,7 +26,6 @@ from scripts.getcoredumps import Getcoredumps, Clearcoredumps
 from xunit import XUnitTestResult
 
 
-
 if sys.hexversion < 0x02060000:
     print "Testrunner requires version 2.6+ of python"
     sys.exit()

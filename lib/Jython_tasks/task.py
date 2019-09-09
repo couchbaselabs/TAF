@@ -466,10 +466,51 @@ class GenericLoadingTask(Task):
                 retry_docs, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
-                retry=self.retries, doc_type=doc_type, durability=durability)
+                doc_type=doc_type, durability=durability)
             if fail:
                 failed_item_table = TableView(self.test_log.info)
                 failed_item_table.set_headers(["Update doc_Id", "Exception"])
+                try:
+                    Thread.sleep(timeout)
+                except Exception as e:
+                    self.test_log.error(e)
+                if not skip_read_on_error:
+                    self.test_log.debug("Reading values {0} after failure"
+                                        .format(fail.keys()))
+                    read_map = self.batch_read(fail.keys())
+                    for key, value in fail.items():
+                        if key in read_map and read_map[key]["cas"] != 0:
+                            success[key] = value
+                            success[key].pop("error")
+                            fail.pop(key)
+                        else:
+                            failed_item_table.add_row([key, value['error']])
+                else:
+                    for key, value in fail.items():
+                        failed_item_table.add_row([key, value['error']])
+                failed_item_table.display("Failed items after reads:")
+            return success, fail
+        except Exception as error:
+            self.test_log.error(error)
+        return success, fail
+
+    def batch_replace(self, key_val, shared_client=None, persist_to=0,
+                      replicate_to=0, timeout=5, time_unit="seconds",
+                      doc_type="json", durability="", skip_read_on_error=False):
+        success = dict()
+        fail = dict()
+        try:
+            self._process_values_for_update(key_val)
+            client = self.client or shared_client
+            retry_docs = key_val
+            success, fail = client.replaceMulti(
+                retry_docs, self.exp, exp_unit=self.exp_unit,
+                persist_to=persist_to, replicate_to=replicate_to,
+                timeout=timeout, time_unit=time_unit,
+                doc_type=doc_type, durability=durability)
+            if fail:
+                failed_item_table = TableView(self.test_log.info)
+                failed_item_table.set_headers(["Replace doc_Id", "Exception"])
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
@@ -510,6 +551,25 @@ class GenericLoadingTask(Task):
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
             failed_item_view.display("Delete failed details")
+        return success, fail
+
+    def batch_touch(self, key_val, exp=0, shared_client=None,
+                    persist_to=None, replicate_to=None, durability="",
+                    timeout=None, timeunit=None):
+        self.client = self.client or shared_client
+        success, fail = self.client.touch_multi(key_val.keys(),
+                                                exp=exp,
+                                                persist_to=persist_to,
+                                                replicate_to=replicate_to,
+                                                timeout=timeout,
+                                                time_unit=timeunit,
+                                                durability=durability)
+        if fail:
+            failed_item_view = TableView(self.test_log.info)
+            failed_item_view.set_headers(["Touch doc_Id", "Exception"])
+            for key, exception in fail.items():
+                failed_item_view.add_row([key, exception])
+            failed_item_view.display("Touch failed details")
         return success, fail
 
     def batch_read(self, keys, shared_client=None):
@@ -735,6 +795,18 @@ class LoadDocumentsTask(GenericLoadingTask):
                 skip_read_on_error=self.skip_read_on_error)
             self.fail.update(fail)
             self.success.update(success)
+        elif self.op_type == 'replace':
+            success, fail = self.batch_replace(
+                key_value,
+                persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
+                doc_type=self.generator.doc_type,
+                durability=self.durability,
+                skip_read_on_error=self.skip_read_on_error)
+            self.fail.update(fail)
+            self.success.update(success)
         elif self.op_type == 'delete':
             success, fail = self.batch_delete(key_value,
                                               persist_to=self.persist_to,
@@ -742,6 +814,16 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               timeout=self.timeout,
                                               timeunit=self.time_unit,
                                               durability=self.durability)
+            self.fail.update(fail)
+            self.success.update(success)
+        elif self.op_type == 'touch':
+            success, fail = self.batch_touch(key_value,
+                                             exp=self.exp,
+                                             persist_to=self.persist_to,
+                                             replicate_to=self.replicate_to,
+                                             timeout=self.timeout,
+                                             timeunit=self.time_unit,
+                                             durability=self.durability)
             self.fail.update(fail)
             self.success.update(success)
         elif self.op_type == 'read':
