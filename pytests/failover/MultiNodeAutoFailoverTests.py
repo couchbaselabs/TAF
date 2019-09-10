@@ -1,6 +1,7 @@
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.exception import RebalanceFailedException, \
     ServerUnavailableException
+from membase.api.rest_client import RestConnection
 
 
 class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
@@ -54,11 +55,16 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
     def test_autofailover_for_server_group(self):
         self.enable_autofailover_and_validate()
         self.shuffle_nodes_between_zones_and_rebalance()
-        servers_to_fail = self._get_server_group_nodes("Group 2")
-        for server in servers_to_fail:
-            self.server_to_fail = [server]
-            self.failover_expected = True
+        self.sleep(30,"waiting")
+        self.server_to_fail = self._get_server_group_nodes("Group 2")
+        self.failover_expected = True
+        try:
             self.failover_actions[self.failover_action](self)
+        except:
+            result = self._check_for_autofailover_initiation_for_server_group_failover(self.server_to_fail)
+            self.assertTrue(result, "Server group failover message was not seen in logs")
+        finally:
+            self.start_couchbase_server()
 
     def test_autofailover_during_rebalance(self):
         """
@@ -204,3 +210,16 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
                         msg)
+
+    def _check_for_autofailover_initiation_for_server_group_failover(self, failed_over_nodes):
+        rest = RestConnection(self.master)
+        ui_logs = rest.get_logs(10)
+        ui_logs_text = [t["text"] for t in ui_logs]
+        ui_logs_time = [t["serverTime"] for t in ui_logs]
+        expected_log = "Starting failing over ['ns_1@{}','ns_1@{}']".format(
+            failed_over_nodes[0].ip,failed_over_nodes[1].ip)
+        self.log.info("ui_logs_text: {0}".format(ui_logs_text))
+        if expected_log in ui_logs_text:
+            failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
+            return True, failed_over_time
+        return False, None
