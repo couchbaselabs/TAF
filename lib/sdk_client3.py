@@ -105,7 +105,7 @@ class SDKClient(object):
             SDKClient.sdk_disconnections += 1
 
     # Translate APIs for document operations
-    def __translate_to_json_object(self, value, doc_type="json"):
+    def translate_to_json_object(self, value, doc_type="json"):
 
         if type(value) == JsonObject:
             return value
@@ -407,7 +407,7 @@ class SDKClient(object):
 
         result = dict()
         result["cas"] = 0
-        content = self.__translate_to_json_object(value)
+        content = self.translate_to_json_object(value)
         try:
             options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
                                             persist_to=persist_to,
@@ -437,7 +437,7 @@ class SDKClient(object):
                 durability="", cas=0):
         result = dict()
         result["cas"] = 0
-        content = self.__translate_to_json_object(value)
+        content = self.translate_to_json_object(value)
         try:
             options = self.getReplaceOptions(persist_to=persist_to,
                                              replicate_to=replicate_to,
@@ -531,7 +531,7 @@ class SDKClient(object):
                persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
                durability=""):
-        content = self.__translate_to_json_object(value)
+        content = self.translate_to_json_object(value)
         result = dict()
         result["cas"] = 0
         try:
@@ -689,7 +689,7 @@ class SDKClient(object):
         for key, value in keys.items():
             content = value
             if doc_type == "json":
-                content = self.__translate_to_json_object(value, doc_type)
+                content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
         result = doc_op().bulkInsert(self.collection, docs, exp, exp_unit,
@@ -703,7 +703,7 @@ class SDKClient(object):
                     doc_type="json", durability=""):
         docs = []
         for key, value in keys.items():
-            content = self.__translate_to_json_object(value, doc_type)
+            content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
         result = doc_op().bulkUpsert(self.collection, docs, exp, exp_unit,
@@ -717,7 +717,7 @@ class SDKClient(object):
                      doc_type="json", durability=""):
         docs = []
         for key, value in keys.items():
-            content = self.__translate_to_json_object(value, doc_type)
+            content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
         result = doc_op().bulkReplace(self.collection, docs, exp, exp_unit,

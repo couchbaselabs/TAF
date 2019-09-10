@@ -3749,7 +3749,7 @@ class Atomicity(Task):
                                 doc_type=self.generator.doc_type)
 
                 for key, value in self.key_value.items():
-                    content = self.__translate_to_json_object(value)
+                    content = self.client.translate_to_json_object(value)
                     tuple = Tuples.of(key, content)
                     docs.append(tuple)
 
@@ -3862,26 +3862,6 @@ class Atomicity(Task):
             self.test_log.info("Atomicity Load generation thread completed")
             
             self.complete_task()
-
-        def __translate_to_json_object(self, value, doc_type="json"):
-
-            if type(value) == JsonObject:
-                return value
-
-            json_obj = JsonObject.create()
-            try:
-                if doc_type.find("json") != -1:
-                    if type(value) != dict:
-                        value = pyJson.loads(value)
-                    for field, val in value.items():
-                        json_obj.put(field, val)
-                    return json_obj
-                elif doc_type.find("binary") != -1:
-                    pass
-            except Exception:
-                pass
-
-            return json_obj
         
         def __chunks(self, l, n):
             """Yield successive n-sized chunks from l."""

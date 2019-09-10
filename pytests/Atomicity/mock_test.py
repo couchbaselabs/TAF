@@ -47,7 +47,7 @@ class basic_ops(BaseTestCase):
         self.operation = self.input.param("operation", "afterAtrPending")
         # create load
         self.value = {'value':'value1'}
-        self.content = self.__translate_to_json_object(self.value)
+        self.content = self.client.translate_to_json_object(self.value)
 
         self.docs = []
         self.keys = []
@@ -92,7 +92,7 @@ class basic_ops(BaseTestCase):
                 exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config, 
                                 self.client.collection, self.docs, self.keys, [], self.transaction_commit, self.operation, self.keys[-1]) 
                 self.value = {'mutated':1, 'value':'value1'}
-                self.content = self.__translate_to_json_object(self.value)
+                self.content = self.client.translate_to_json_object(self.value)
             else:
                 exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config, 
                                 self.client.collection, self.docs, [], [], self.transaction_commit, self.operation, self.keys[-1]) 
@@ -109,7 +109,7 @@ class basic_ops(BaseTestCase):
                     msg = "Key should be deleted but present in the cluster {}".format(key)
                     self.set_exception(msg)
             else:
-                actual_val = self.__translate_to_json_object(result['value'])
+                actual_val = self.client.translate_to_json_object(result['value'])
                 if self.content != actual_val:
                     self.test_log.info("actual value for key {} is {}".format(key,actual_val))
                     self.test_log.info("expected value for key {} is {}".format(key,self.content))
@@ -118,23 +118,4 @@ class basic_ops(BaseTestCase):
         if exception:
             self.set_exception(exception)
 
-    def __translate_to_json_object(self, value, doc_type="json"):
-
-            if type(value) == JsonObject:
-                return value
-
-            json_obj = JsonObject.create()
-            try:
-                if doc_type.find("json") != -1:
-                    if type(value) != dict:
-                        value = pyJson.loads(value)
-                    for field, val in value.items():
-                        json_obj.put(field, val)
-                    return json_obj
-                elif doc_type.find("binary") != -1:
-                    pass
-            except Exception:
-                pass
-
-            return json_obj
 
