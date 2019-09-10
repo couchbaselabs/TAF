@@ -35,6 +35,11 @@ class CBCluster:
         self.eventing_nodes = []
         self.nodes_in_cluster = []
         self.master = servers[0]
+        self.xdcr_remote_clusters = []
+
+    def __str__(self):
+        return "Couchbase Cluster: %s, Nodes: %s" % (
+            self.name, ', '.join([s.ip for s in self.servers]))
 
     def update_master(self, node_in_cluster=None):
         """
@@ -108,6 +113,9 @@ class ClusterUtils:
         if master is None:
             master = self.cluster.master
         rest = RestConnection(master)
+        rest.remove_all_replications()
+        rest.remove_all_remote_clusters()
+        rest.remove_all_recoveries()
         helper = RestHelper(rest)
         helper.is_ns_server_running(timeout_in_seconds=testconstants.NS_SERVER_TIMEOUT)
         nodes = rest.node_statuses()

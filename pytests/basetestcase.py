@@ -35,11 +35,9 @@ class BaseTestCase(unittest.TestCase):
         self.stat_info = self.input.param("stat_info", None)
         self.port = self.input.param("port", None)
         self.port_info = self.input.param("port_info", None)
-
         self.servers = self.input.servers
-        self.cluster = CBCluster(servers=self.servers)
-        self.num_servers = self.input.param("servers", len(self.cluster.servers))
-
+        self.__cb_clusters = []
+        self.num_servers = self.input.param("servers", len(self.servers))
         self.primary_index_created = False
         self.index_quota_percent = self.input.param("index_quota_percent", None)
         self.gsi_type = self.input.param("gsi_type", 'plasma')
@@ -126,22 +124,37 @@ class BaseTestCase(unittest.TestCase):
 
         # Support lib objects for testcase execution
         self.task_manager = TaskManager(self.thread_to_use)
-        self.cluster_util = ClusterUtils(self.cluster, self.task_manager)
         self.task = ServerTasks(self.task_manager)
-        self.bucket_util = BucketUtils(self.cluster, self.cluster_util,
-                                       self.task)
         # End of library object creation
 
         self.cleanup = False
         self.nonroot = False
         self.test_failure = None
 
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        self.os_info = shell.extract_remote_info().type.lower()
-        if self.os_info != 'windows':
-            if self.cluster.master.ssh_username != "root":
-                self.nonroot = True
-        shell.disconnect()
+        self.__log_setup_status("started")
+        if len(self.input.clusters) > 1:
+            # Multi cluster setup
+            counter = 1
+            for _, nodes in self.input.clusters.iteritems():
+                self.__cb_clusters.append(CBCluster(name="C%s" % counter, servers=nodes))
+                counter += 1
+        else:
+            # Single cluster
+            self.cluster = CBCluster(servers=self.servers)
+            self.__cb_clusters.append(self.cluster)
+            self.cluster_util = ClusterUtils(self.cluster, self.task_manager)
+
+            self.bucket_util = BucketUtils(self.cluster, self.cluster_util,
+                                           self.task)
+
+        for cluster in self.__cb_clusters:
+            shell = RemoteMachineShellConnection(cluster.master)
+            self.os_info = shell.extract_remote_info().type.lower()
+            if self.os_info != 'windows':
+                if cluster.master.ssh_username != "root":
+                    self.nonroot = True
+                    shell.disconnect()
+                    break
 
         """ some tests need to bypass checking cb server at set up
             to run installation """
@@ -152,25 +165,30 @@ class BaseTestCase(unittest.TestCase):
                 self.buckets = self.bucket_util.get_all_buckets()
                 return
             if not self.skip_init_check_cbserver:
-                self.cb_version = None
-                if RestHelper(RestConnection(self.cluster.master)).is_ns_server_running():
-                    """
-                    Since every new couchbase version, there will be new
-                    features that test code won't work on previous release.
-                    So we need to get couchbase version to filter out
-                    those tests.
-                    """
-                    self.cb_version = RestConnection(self.cluster.master).get_nodes_version()
-                else:
-                    self.log.debug("couchbase server does not run yet")
-                # We stopped supporting TAP protocol since 3.x and 3.x support also has stopped
-                self.protocol = "dcp"
+                for cluster in self.__cb_clusters:
+                    self.cb_version = None
+                    if RestHelper(RestConnection(cluster.master)).is_ns_server_running():
+                        """
+                        Since every new couchbase version, there will be new
+                        features that test code won't work on previous release.
+                        So we need to get couchbase version to filter out
+                        those tests.
+                        """
+                        self.cb_version = RestConnection(cluster.master).get_nodes_version()
+                    else:
+                        self.log.debug("couchbase server does not run yet")
+                    # We stopped supporting TAP protocol since 3.x and 3.x support also has stopped
+                    self.protocol = "dcp"
             self.services_map = None
 
             self.__log_setup_status("started")
-            if not self.skip_buckets_handle and not self.skip_init_check_cbserver:
-                self.log.debug("Cleaning up cluster")
-                self.cluster_util.cluster_cleanup(self.bucket_util)
+            for cluster in self.__cb_clusters:
+                if not self.skip_buckets_handle and not self.skip_init_check_cbserver:
+                    self.log.debug("Cleaning up cluster")
+                    cluster_util = ClusterUtils(cluster, self.task_manager)
+                    bucket_util = BucketUtils(cluster, cluster_util,
+                                              self.task)
+                    cluster_util.cluster_cleanup(bucket_util)
 
             # avoid any cluster operations in setup for new upgrade
             #  & upgradeXDCR tests
@@ -193,41 +211,45 @@ class BaseTestCase(unittest.TestCase):
                     self.tearDownEverything()
                     self.tear_down_while_setup = False
             if not self.skip_init_check_cbserver:
-                self.log.info("Initializing cluster")
-                # self.cluster_util.reset_cluster()
-                master_services = self.cluster_util.get_services(
-                    self.servers[:1], self.services_init, start_node=0)
-                if master_services is not None:
-                    master_services = master_services[0].split(",")
+                for cluster in self.__cb_clusters:
+                    self.log.info("Initializing cluster")
+                    cluster_util = ClusterUtils(cluster, self.task_manager)
+                    # self.cluster_util.reset_cluster()
+                    master_services = cluster_util.get_services(
+                        cluster.servers[:1], self.services_init, start_node=0)
+                    if master_services is not None:
+                        master_services = master_services[0].split(",")
 
-                self.quota = self._initialize_nodes(
-                    self.task,
-                    self.cluster.servers,
-                    self.disabled_consistent_view,
-                    self.rebalanceIndexWaitingDisabled,
-                    self.rebalanceIndexPausingDisabled,
-                    self.maxParallelIndexers,
-                    self.maxParallelReplicaIndexers,
-                    self.port,
-                    self.quota_percent,
-                    services=master_services)
+                    self.quota = self._initialize_nodes(
+                        self.task,
+                        cluster,
+                        self.disabled_consistent_view,
+                        self.rebalanceIndexWaitingDisabled,
+                        self.rebalanceIndexPausingDisabled,
+                        self.maxParallelIndexers,
+                        self.maxParallelReplicaIndexers,
+                        self.port,
+                        self.quota_percent,
+                        services=master_services)
 
-                self.cluster_util.change_env_variables()
-                self.cluster_util.change_checkpoint_params()
-                self.log.info("Cluster initialized")
+                    cluster_util.change_env_variables()
+                    cluster_util.change_checkpoint_params()
+                    self.log.info("{0} initialized".format(cluster))
             else:
                 self.quota = ""
 
-            if self.log_info:
-                self.cluster_util.change_log_info()
-            if self.log_location:
-                self.cluster_util.change_log_location()
-            if self.stat_info:
-                self.cluster_util.change_stat_info()
-            if self.port_info:
-                self.cluster_util.change_port_info()
-            if self.port:
-                self.port = str(self.port)
+            for cluster in self.__cb_clusters:
+                cluster_util = ClusterUtils(cluster, self.task_manager)
+                if self.log_info:
+                    cluster_util.change_log_info()
+                if self.log_location:
+                    cluster_util.change_log_location()
+                if self.stat_info:
+                    cluster_util.change_stat_info()
+                if self.port_info:
+                    cluster_util.change_port_info()
+                if self.port:
+                    self.port = str(self.port)
 
             self.__log_setup_status("finished")
 
@@ -248,66 +270,70 @@ class BaseTestCase(unittest.TestCase):
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
             return
-        try:
-            if hasattr(self, 'skip_buckets_handle') and self.skip_buckets_handle:
-                return
-            test_failed = (hasattr(self, '_resultForDoCleanups') and
-                           len(self._resultForDoCleanups.failures or
-                               self._resultForDoCleanups.errors)) or \
-                          (hasattr(self, '_exc_info') and \
-                           self._exc_info()[1] is not None)
+        for cluster in self.__cb_clusters:
+            cluster_util = ClusterUtils(cluster, self.task_manager)
+            bucket_util = BucketUtils(cluster, cluster_util,
+                                      self.task)
+            try:
+                if hasattr(self, 'skip_buckets_handle') and self.skip_buckets_handle:
+                    return
+                test_failed = (hasattr(self, '_resultForDoCleanups') and
+                               len(self._resultForDoCleanups.failures or
+                                   self._resultForDoCleanups.errors)) or \
+                              (hasattr(self, '_exc_info') and \
+                               self._exc_info()[1] is not None)
 
-            if test_failed and TestInputSingleton.input.param("stop-on-failure", False) \
-                   or self.input.param("skip_cleanup", False):
-                self.log.warn("CLEANUP WAS SKIPPED")
-            else:
-                if test_failed:
-                    # collect logs here because we have not shut things down
-                    if TestInputSingleton.input.param("get-cbcollect-info",
-                                                      False):
-                        self.fetch_cb_collect_logs()
+                if test_failed and TestInputSingleton.input.param("stop-on-failure", False) \
+                        or self.input.param("skip_cleanup", False):
+                    self.log.warn("CLEANUP WAS SKIPPED")
+                else:
+                    if test_failed:
+                        # collect logs here because we have not shut things down
+                        if TestInputSingleton.input.param("get-cbcollect-info",
+                                                          False):
+                            self.fetch_cb_collect_logs()
 
-                    if TestInputSingleton.input.param('get_trace', None):
-                        for server in self.servers:
+                        if TestInputSingleton.input.param('get_trace', None):
+                            for server in cluster.servers:
+                                try:
+                                    shell = RemoteMachineShellConnection(server)
+                                    output, _ = shell.execute_command("ps -aef|grep %s" %
+                                                                      TestInputSingleton.input.param('get_trace', None))
+                                    output = shell.execute_command("pstack %s" % output[0].split()[1].strip())
+                                    self.infra_log.debug(output[0])
+                                    shell.disconnect()
+                                except:
+                                    pass
+                        else:
                             self.log.critical("Skipping get_trace !!")
-                            break
-                            try:
-                                shell = RemoteMachineShellConnection(server)
-                                output, _ = shell.execute_command("ps -aef|grep %s" %
-                                                                  TestInputSingleton.input.param('get_trace', None))
-                                output = shell.execute_command("pstack %s" % output[0].split()[1].strip())
-                                self.infra_log.debug(output[0])
-                                shell.disconnect()
-                            except:
-                                pass
 
-                self.__log_setup_status("started")
-                rest = RestConnection(self.cluster.master)
-                alerts = rest.get_alerts()
-                if alerts is not None and len(alerts) != 0:
-                    self.infra_log.warn("Alerts found: {0}".format(alerts))
-                self.log.debug("Cleaning up cluster")
-                self.cluster_util.cluster_cleanup(self.bucket_util)
-                self.__log_setup_status("finished")
-        except BaseException as e:
-            # kill memcached
-            traceback.print_exc()
-            self.log.warning("Killing memcached due to {0}".format(e))
-            self.cluster_util.kill_memcached()
-            # increase case_number to retry tearDown in setup for the next test
-            self.case_number += 1000
-        finally:
-            if not self.input.param("skip_cleanup", False):
-                self.cluster_util.reset_cluster()
-            # stop all existing task manager threads
-            if self.cleanup:
-                self.cleanup = False
-            else:
-                self.cluster_util.reset_env_variables()
-            self.infra_log.info("========== tasks in thread pool ==========")
-            self.task_manager.print_tasks_in_pool()
-            self.infra_log.info("==========================================")
-            self.__log("finished")
+                    rest = RestConnection(cluster.master)
+                    alerts = rest.get_alerts()
+                    if alerts is not None and len(alerts) != 0:
+                        self.infra_log.warn("Alerts found: {0}".format(alerts))
+                    self.log.debug("Cleaning up cluster")
+                    cluster_util.cluster_cleanup(bucket_util)
+            except BaseException as e:
+                # kill memcached
+                traceback.print_exc()
+                self.log.warning("Killing memcached due to {0}".format(e))
+                cluster_util.kill_memcached()
+                # increase case_number to retry tearDown in setup for the next test
+                self.case_number += 1000
+            finally:
+                if not self.input.param("skip_cleanup", False):
+                    cluster_util.reset_cluster()
+                # stop all existing task manager threads
+                if self.cleanup:
+                    self.cleanup = False
+                else:
+                    cluster_util.reset_env_variables()
+        self.infra_log.info("========== tasks in thread pool ==========")
+        self.task_manager.print_tasks_in_pool()
+        self.infra_log.info("==========================================")
+        if not self.tear_down_while_setup:
+            self.task_manager.shutdown_task_manager()
+            self.task.shutdown(force=True)
 
     def __log(self, status):
         try:
@@ -319,39 +345,43 @@ class BaseTestCase(unittest.TestCase):
 
     def __log_setup_status(self, status):
         msg = "========= basetestcase setup {0} for test #{1} {2} =========" \
-              .format(status, self.case_number, self._testMethodName)
+            .format(status, self.case_number, self._testMethodName)
         self.log.info(msg)
 
-    def _initialize_nodes(self, cluster, servers, disabled_consistent_view=None, rebalanceIndexWaitingDisabled=None,
-                          rebalanceIndexPausingDisabled=None, maxParallelIndexers=None, maxParallelReplicaIndexers=None,
+    def _initialize_nodes(self, task, cluster, disabled_consistent_view=None,
+                          rebalanceIndexWaitingDisabled=None,
+                          rebalanceIndexPausingDisabled=None, maxParallelIndexers=None,
+                          maxParallelReplicaIndexers=None,
                           port=None, quota_percent=None, services=None):
         quota = 0
         init_tasks = []
-        for server in servers:
+        for server in cluster.servers:
             init_port = port or server.port or '8091'
             assigned_services = services
-            if self.cluster.master != server:
+            if cluster.master != server:
                 assigned_services = None
-            init_tasks.append(cluster.async_init_node(server, disabled_consistent_view, rebalanceIndexWaitingDisabled,
-                                                      rebalanceIndexPausingDisabled, maxParallelIndexers,
-                                                      maxParallelReplicaIndexers, init_port,
-                                                      quota_percent, services=assigned_services,
-                                                      index_quota_percent=self.index_quota_percent,
-                                                      gsi_type=self.gsi_type))
-        for task in init_tasks:
-            node_quota = cluster.jython_task_manager.get_task_result(task)
+            init_tasks.append(task.async_init_node(server, disabled_consistent_view,
+                                                   rebalanceIndexWaitingDisabled,
+                                                   rebalanceIndexPausingDisabled,
+                                                   maxParallelIndexers,
+                                                   maxParallelReplicaIndexers, init_port,
+                                                   quota_percent, services=assigned_services,
+                                                   index_quota_percent=self.index_quota_percent,
+                                                   gsi_type=self.gsi_type))
+        for _task in init_tasks:
+            node_quota = self.task_manager.get_task_result(_task)
             if node_quota < quota or quota == 0:
                 quota = node_quota
-        if quota < 100 and len(set([server.ip for server in self.servers])) != 1:
+        if quota < 100 and not len(set([server.ip for server in self.servers])) == 1:
             self.log.warn("RAM quota was defined less than 100 MB:")
-            for server in servers:
+            for server in cluster.servers:
                 remote_client = RemoteMachineShellConnection(server)
                 ram = remote_client.extract_remote_info().ram
-                self.log.debug("{0}: {1} MB".format(server.ip, ram))
+                self.log.info("{0}: {1} MB".format(server.ip, ram))
                 remote_client.disconnect()
 
         if self.jre_path:
-            for server in servers:
+            for server in cluster.servers:
                 rest = RestConnection(server)
                 rest.set_jre_path(self.jre_path)
         return quota
@@ -420,3 +450,12 @@ class BaseTestCase(unittest.TestCase):
     def validate_test_failure(self):
         if self.test_failure is not None:
             self.fail(self.test_failure)
+
+    def get_clusters(self):
+        return self.__cb_clusters
+
+    def get_task(self):
+        return self.task
+
+    def get_task_mgr(self):
+        return self.task_manager
