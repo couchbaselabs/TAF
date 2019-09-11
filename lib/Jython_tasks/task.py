@@ -1905,7 +1905,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                          % self.op_type))
         result_map, self.failed_reads = self.batch_read(key_value.keys())
         for key, value in self.failed_reads.items():
-            if self.failed_reads[key]["error"] != DurableExceptions.KeyNotFoundException:
+            if DurableExceptions.KeyNotFoundException not in self.failed_reads[key]["error"]:
                 self.failed_item_table.add_row([key, value['error']])
         missing_keys, wrong_values = self.validate_key_val(result_map,
                                                            key_value)
@@ -1946,7 +1946,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     wrong_value = "Key: {} Expected: {} Actual: {}" \
                         .format(key, expected_val, actual_val)
                     wrong_values.append(wrong_value)
-            elif self.failed_reads[key]["error"] is DurableExceptions.KeyNotFoundException:
+            elif DurableExceptions.KeyNotFoundException in self.failed_reads[key]["error"]:
                 missing_keys.append(key)
         return missing_keys, wrong_values
 
