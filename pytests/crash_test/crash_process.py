@@ -133,7 +133,7 @@ class CrashTest(BaseTestCase):
         # Create doc_generator targeting only the active/replica vbuckets
         # present in the target_node
         gen_load = doc_generator(
-            self.key, self.num_items, self.num_items+self.new_docs_to_add,
+            self.key, self.num_items, self.new_docs_to_add,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
@@ -244,7 +244,7 @@ class CrashTest(BaseTestCase):
         # Create doc_generator targeting only the active/replica vbuckets
         # present in the target_node
         gen_load = doc_generator(
-            self.key, self.num_items, self.num_items+self.new_docs_to_add,
+            self.key, self.num_items, self.new_docs_to_add,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
