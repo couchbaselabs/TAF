@@ -1881,6 +1881,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
         self.failed_item_table.set_headers(["READ doc_Id", "Exception"])
         self.missing_keys = []
         self.wrong_values = []
+        self.failed_reads = dict()
         if proxy_client:
             self.log.debug("Changing client to proxy %s:%s..."
                            % (proxy_client.host, proxy_client.port))
@@ -1902,9 +1903,10 @@ class ValidateDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
-        result_map, failed_reads = self.batch_read(key_value.keys())
-        for key, value in failed_reads.items():
-            self.failed_item_table.add_row([key, value['error']])
+        result_map, self.failed_reads = self.batch_read(key_value.keys())
+        for key, value in self.failed_reads.items():
+            if self.failed_reads[key]["error"] != DurableExceptions.KeyNotFoundException:
+                self.failed_item_table.add_row([key, value['error']])
         missing_keys, wrong_values = self.validate_key_val(result_map,
                                                            key_value)
         if self.op_type == 'delete':
@@ -1944,7 +1946,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     wrong_value = "Key: {} Expected: {} Actual: {}" \
                         .format(key, expected_val, actual_val)
                     wrong_values.append(wrong_value)
-            else:
+            elif self.failed_reads[key]["error"] is DurableExceptions.KeyNotFoundException:
                 missing_keys.append(key)
         return missing_keys, wrong_values
 
@@ -2005,11 +2007,11 @@ class DocumentsValidatorTask(Task):
             self.task_manager.add_new_task(task)
         for task in tasks:
             self.task_manager.get_task_result(task)
+            task.failed_item_table.display("During DocumentsValidatorTask read failed for items:")
             if task.missing_keys:
                 self.set_exception("{} keys were missing. Missing keys: "
                                    "{}".format(task.missing_keys.__len__(),
                                                task.missing_keys))
-                task.failed_item_table.display("Failed items:")
             if task.wrong_values:
                 self.set_exception("{} values were wrong. Wrong key-value: "
                                    "{}".format(task.wrong_values.__len__(),
