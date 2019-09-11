@@ -32,7 +32,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.shuffle_nodes_between_zones_and_rebalance()
         gen = self.get_doc_generator(0, self.num_items)
         if self.atomicity:
-            self._load_all_buckets_atomicty(gen, "rebalance_only_update")
+            self._load_all_buckets_atomicty(gen, "rebalance_only_update",
+                                            commit=self.transaction_commit, sync=self.sync)
         else:
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, gen, "update", 0)
@@ -92,7 +93,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
         gen = self.get_doc_generator(0, self.num_items)
 
         if self.atomicity:
-            self._load_all_buckets_atomicty(gen, "rebalance_only_update")
+            self._load_all_buckets_atomicty(gen, "rebalance_only_update",
+                                            commit=self.transaction_commit, sync=self.sync)
         else:
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, gen, "update", 0)
@@ -172,7 +174,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
         gen = self.get_doc_generator(0, self.num_items)
 
         if self.atomicity:
-            self._load_all_buckets_atomicty(gen, "rebalance_only_update")
+            self._load_all_buckets_atomicty(gen, "rebalance_only_update",
+                                            commit=self.transaction_commit, sync=self.sync)
         else:
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, gen, "update", 0)
@@ -285,7 +288,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
         batch_size = 50
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             if self.atomicity:
-                self._load_all_buckets_atomicty(gen, "rebalance_only_update")
+                self._load_all_buckets_atomicty(gen, "rebalance_only_update",
+                                            commit=self.transaction_commit, sync=self.sync)
             else:
                 tasks_info = self.bucket_util._async_load_all_buckets(
                     self.cluster, gen, "update", 0,
@@ -307,7 +311,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.task.jython_task_manager.get_task_result(task)
 
             if self.atomicity:
-                self._load_all_buckets_atomicty(gen, "rebalance_only_update")
+                self._load_all_buckets_atomicty(gen, "rebalance_only_update",
+                                            commit=self.transaction_commit, sync=self.sync)
             else:
                 tasks_info = self.bucket_util._async_load_all_buckets(
                     self.cluster, gen, "update", 0,

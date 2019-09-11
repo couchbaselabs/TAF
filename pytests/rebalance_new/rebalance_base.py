@@ -58,7 +58,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
         else:
-            self._load_all_buckets_atomicty(self.gen_create, "create")
+            self._load_all_buckets_atomicty(self.gen_create, "create", commit=True)
 
         # Initialize doc_generators
         self.active_resident_threshold = 100
@@ -201,12 +201,12 @@ class RebalanceBaseTest(BaseTestCase):
                         "Doc_ops failed in rebalance_base._load_all_buckets")
         return tasks_info
 
-    def _load_all_buckets_atomicty(self, kv_gen, op_type, sync=True):
+    def _load_all_buckets_atomicty(self, kv_gen, op_type, sync=True, commit=True):
         task = self.task.async_load_gen_docs_atomicity(
                     self.cluster, self.bucket_util.buckets, kv_gen, op_type, 0,
                     batch_size=10, process_concurrency=8, replicate_to=self.replicate_to,
                     persist_to=self.persist_to, timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                    transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,
+                    transaction_timeout=self.transaction_timeout, commit=commit,
                     durability=self.durability_level, sync=sync)
         self.task.jython_task_manager.get_task_result(task)
 
