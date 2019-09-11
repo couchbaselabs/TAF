@@ -119,7 +119,7 @@ public class SimpleTransaction {
 	{
 		AtomicInteger attempt = new AtomicInteger(0);
 		AtomicBoolean first = new AtomicBoolean(true);
-		ArrayList<LogDefer> res = null;
+		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
 
 		try (Transactions transactions = Transactions.create(cluster, config)) {
 
@@ -209,8 +209,10 @@ public class SimpleTransaction {
 			catch (TransactionFailed err) {
 				// This per-txn log allows the app to only log failures
 				System.out.println("Transaction failed from runTransaction");
-				err.result().log().logs().forEach(System.err::println);
-				res = err.result().log().logs();
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					System.out.println(e);
+		        	res.add(e);
+		        }
 				return res ;
 			}
 
@@ -220,7 +222,7 @@ public class SimpleTransaction {
 	public ArrayList<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String, 
 			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys, Boolean commit, String operation, String docId) 
 		{
-		ArrayList<LogDefer> res = null;
+		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
 			try (Transactions transactions = Transactions.create(cluster, config)) {
 
 				AtomicBoolean first = new AtomicBoolean(true);
@@ -357,20 +359,22 @@ public class SimpleTransaction {
 
 			    });
 			    result.log().logs().forEach(System.err::println);
-			    return res;		}
+			    	}
 			catch (TransactionFailed err) {
 				// This per-txn log allows the app to only log failures
 				System.out.println("Transaction failed from runTransaction");
-				err.result().log().logs().forEach(System.err::println);
-				res = err.result().log().logs();
-				return res ;
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					System.out.println(e);
+		        	res.add(e);
+		        }
 			}
+			return res;	
 		}
 
 
 	public ArrayList<LogDefer> RunTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
 											  List<String> Deletekeys, Boolean commit, boolean sync, int updatecount) {
-		ArrayList<LogDefer> res = null;
+		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
 //		synchronous API - transactions
 		if (sync) {
 			try {
@@ -433,8 +437,10 @@ public class SimpleTransaction {
 			catch (TransactionFailed err) {
 				// This per-txn log allows the app to only log failures
 				System.out.println("Transaction failed from runTransaction");
-				err.result().log().logs().forEach(System.err::println);
-				res = err.result().log().logs();
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					System.out.println(e);
+		        	res.add(e);
+		        }
 			}
 
 		}
@@ -445,7 +451,8 @@ public class SimpleTransaction {
 				if (Updatekeys.size() > 0) {
 					res = multiUpdateSingelTransaction(transaction, collection, Updatekeys, commit);}
 				if (Deletekeys.size() > 0) {
-					res = multiDeleteSingelTransaction(transaction, collection, Deletekeys, commit);}
+					res = multiDeleteSingelTransaction(transaction, collection, Deletekeys, commit);
+					}
 			}
 
 		}
@@ -454,7 +461,7 @@ public class SimpleTransaction {
 
 	public ArrayList<LogDefer>  multiInsertSingelTransaction(Transactions transaction, Collection collection, List<Tuple2<String, JsonObject>> createkeys, Boolean commit)
 	{
-		ArrayList<LogDefer> res = null;
+		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
 		Tuple2<String, JsonObject> firstDoc = createkeys.get(0);
 		List<Tuple2<String, JsonObject>> remainingDocs = createkeys.stream().skip(1).collect(Collectors.toList());
 		ReactiveCollection rc = collection.reactive();
@@ -464,7 +471,7 @@ public class SimpleTransaction {
 			if (commit)
 			{
 				// The first mutation must be done in serial
-				if (remainingDocs.size() == 1) {
+				if (remainingDocs.size() == 0) {
 					return ctx.insert(rc, firstDoc.getT1(), firstDoc.getT2()).then();
 				}
 				else {
@@ -482,7 +489,7 @@ public class SimpleTransaction {
 			}
 			else
 			{
-				if (remainingDocs.size() == 1) {
+				if (remainingDocs.size() == 0) {
 					return ctx.insert(rc, firstDoc.getT1(), firstDoc.getT2()).then(ctx.rollback());
 				}
 				else {
@@ -513,7 +520,7 @@ public class SimpleTransaction {
 
 
 	public ArrayList<LogDefer> multiUpdateSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
-		ArrayList<LogDefer> res = null;
+		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
 		ReactiveCollection reactiveCollection=collection.reactive();
 		List<String> docToUpdate=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToUpdate.get(0);
@@ -523,17 +530,18 @@ public class SimpleTransaction {
 			if (commit)
 			{
 				// The first mutation must be done in serial
-				if (remainingDocs.size() == 1) {
+				if (remainingDocs.size() == 0) {
 					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then();
 				}
 				else {
 					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).flatMapMany(
 							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
-									remainingDocs.size())).then();}
+									remainingDocs.size())).then();
+					}
 			}
 			else
 			{
-				if (remainingDocs.size() == 1) {
+				if (remainingDocs.size() == 0) {
 					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then(ctx.rollback());
 				}
 				else {
@@ -545,8 +553,10 @@ public class SimpleTransaction {
 	
 			}).doOnError(err -> {
 				if (err instanceof TransactionFailed) {
+					System.out.println("Transaction failed");
 			        for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
 			        	res.add(e);
+			        	System.out.println(e);
 			        }
 				}
 			}).block();
@@ -555,7 +565,7 @@ public class SimpleTransaction {
 
 
 	public ArrayList<LogDefer> multiDeleteSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
-		ArrayList<LogDefer> res = null;
+		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
 		ReactiveCollection reactiveCollection=collection.reactive();
 		List<String> docToDelete=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToDelete.get(0);
@@ -565,7 +575,7 @@ public class SimpleTransaction {
 			if (commit)
 			{
 				// The first mutation must be done in serial
-				if (remainingDocs.size() == 1) {
+				if (remainingDocs.size() == 0) {
 					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).then();
 				}
 				else {
@@ -575,7 +585,7 @@ public class SimpleTransaction {
 			}
 			else
 			{
-				if (remainingDocs.size() == 1) {
+				if (remainingDocs.size() == 0) {
 					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.remove(doc)).then(ctx.rollback());
 				}
 				else {
