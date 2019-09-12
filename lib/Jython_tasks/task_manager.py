@@ -74,3 +74,4 @@ class TaskManager:
             if not future.isDone():
                 self.log.debug("Stopping task {0}".format(task_name))
                 future.cancel(True)
+                self.log.debug("Stopped task {0}".format(task_name))
