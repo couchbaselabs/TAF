@@ -712,16 +712,27 @@ class AutoFailoverBaseTest(BaseTestCase):
         gen_create = doc_generator(self.key, self.num_items,
                                    self.num_items * 2)
         self.bucket = self.bucket_util.buckets[0]
-        task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_create, "create", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
-        self.task.jython_task_manager.get_task_result(task)
-        # Verify there is not failed docs in the task
-        if len(task.fail.keys()) != 0:
-            self.log_failure("Some CRUD failed after autofailover")
+        if self.atomicity:
+            gen_create = doc_generator(self.key, self.num_items*2,
+                                   self.num_items * 3)
+            task = self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets, gen_create, "create", 0,
+                    batch_size=10, process_concurrency=8, replicate_to=self.replicate_to,
+                    persist_to=self.persist_to, timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                    transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,
+                    durability=self.durability_level, sync=self.sync)
+            self.task.jython_task_manager.get_task_result(task)
+        else:
+            task = self.task.async_load_gen_docs(
+                self.cluster, self.bucket, gen_create, "create", 0,
+                batch_size=10, process_concurrency=1,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout)
+            self.task.jython_task_manager.get_task_result(task)
+            # Verify there is not failed docs in the task
+            if len(task.fail.keys()) != 0:
+                self.log_failure("Some CRUD failed after autofailover")
 
 class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
     def setUp(self):
