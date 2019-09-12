@@ -116,7 +116,7 @@ class BucketParamTest(BaseTestCase):
         return tasks, doc_count, start_doc_for_insert
 
     def load_docs(self, doc_ops, start_doc_for_insert, doc_count, doc_update,
-                  doc_create, doc_delete):
+                  doc_create, doc_delete, suppress_error_table=False):
         tasks = []
         if "create" in doc_ops:
             # Start doc create task in parallel with replica_update
@@ -125,7 +125,8 @@ class BucketParamTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=10, process_concurrency=8))
+                batch_size=10, process_concurrency=8,
+                suppress_error_table=suppress_error_table))
             doc_count += (doc_create.end - doc_create.start)
             start_doc_for_insert += self.num_items
         if "update" in doc_ops:
@@ -135,7 +136,8 @@ class BucketParamTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=10, process_concurrency=8))
+                batch_size=10, process_concurrency=8,
+                suppress_error_table=suppress_error_table))
         if "delete" in doc_ops:
             # Start doc update task in parallel with replica_update
             tasks.append(self.task.async_load_gen_docs(
@@ -143,13 +145,15 @@ class BucketParamTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=10, process_concurrency=8))
+                batch_size=10, process_concurrency=8,
+                suppress_error_table=suppress_error_table))
             doc_count -= (doc_delete.end - doc_delete.start)
 
         return tasks, doc_count, start_doc_for_insert
 
     def doc_ops_operations(self, doc_ops, start_doc_for_insert, doc_count,
-                           doc_update, doc_create, doc_delete):
+                           doc_update, doc_create, doc_delete,
+                           suppress_error_table=False):
         if self.atomicity:
             tasks, doc_count, start_doc_for_insert = self.load_docs_atomicity(
                 doc_ops,
@@ -165,7 +169,8 @@ class BucketParamTest(BaseTestCase):
                 doc_count,
                 doc_update,
                 doc_create,
-                doc_delete)
+                doc_delete,
+                suppress_error_table=suppress_error_table)
 
         return tasks, doc_count, start_doc_for_insert
 
@@ -227,6 +232,10 @@ class BucketParamTest(BaseTestCase):
             if "delete" in doc_ops:
                 doc_ops_list.append("delete")
 
+            suppress_error_table = False
+            if self.def_bucket.replicaNumber == 3:
+                suppress_error_table = True
+
             # Wait for all tasks to complete
             assert_msg = ""
             self.task.jython_task_manager.get_task_result(rebalance)
@@ -264,13 +273,19 @@ class BucketParamTest(BaseTestCase):
             self.assertTrue(rebalance.result,
                             "Rebalance failed after replica update")
 
+            suppress_error_table = False
+            if replica_num == 3:
+                suppress_error_table = True
+
             self.log.info("Performing doc_ops(update) after rebalance")
-            tasks, _, _ = self.doc_ops_operations("update",
-                                                  start_doc_for_insert,
-                                                  doc_count,
-                                                  doc_update,
-                                                  doc_create,
-                                                  doc_delete)
+            tasks, _, _ = self.doc_ops_operations(
+                "update",
+                start_doc_for_insert,
+                doc_count,
+                doc_update,
+                doc_create,
+                doc_delete,
+                suppress_error_table=suppress_error_table)
 
             assert_msg = "CRUD failed after rebalance for replica update"
             doc_ops_failed = False

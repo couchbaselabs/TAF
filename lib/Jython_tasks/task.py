@@ -373,7 +373,8 @@ class RebalanceTask(Task):
 class GenericLoadingTask(Task):
     def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1,
                  timeout_secs=60, compression=True,
-                 retries=5,transaction=False, commit=False):
+                 retries=5, transaction=False, commit=False,
+                 suppress_error_table=False):
         super(GenericLoadingTask, self).__init__("Loadgen_task_{}"
                                                  .format(time.time()))
         self.batch_size = batch_size
@@ -384,6 +385,7 @@ class GenericLoadingTask(Task):
         self.client = client
         self.random = random.Random()
         self.retries = retries
+        self.suppress_error_table = suppress_error_table
 
     def call(self):
         self.start_task()
@@ -426,8 +428,10 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
             if fail:
-                failed_item_table = TableView(self.test_log.info)
-                failed_item_table.set_headers(["Create doc_Id", "Exception"])
+                if not self.suppress_error_table:
+                    failed_item_table = TableView(self.test_log.info)
+                    failed_item_table.set_headers(["Create doc_Id",
+                                                   "Exception"])
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
@@ -441,12 +445,12 @@ class GenericLoadingTask(Task):
                             success[key] = value
                             success[key].pop("error")
                             fail.pop(key)
-                        else:
+                        elif not self.suppress_error_table:
                             failed_item_table.add_row([key, value['error']])
-                else:
+                elif not self.suppress_error_table:
                     for key, value in fail.items():
                         failed_item_table.add_row([key, value['error']])
-                if fail:
+                if not self.suppress_error_table:
                     failed_item_table.display("Failed items:")
             return success, fail
         except Exception as error:
@@ -468,8 +472,10 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit,
                 doc_type=doc_type, durability=durability)
             if fail:
-                failed_item_table = TableView(self.test_log.info)
-                failed_item_table.set_headers(["Update doc_Id", "Exception"])
+                if not self.suppress_error_table:
+                    failed_item_table = TableView(self.test_log.info)
+                    failed_item_table.set_headers(["Update doc_Id",
+                                                   "Exception"])
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
@@ -483,12 +489,13 @@ class GenericLoadingTask(Task):
                             success[key] = value
                             success[key].pop("error")
                             fail.pop(key)
-                        else:
+                        elif self.suppress_error_table:
                             failed_item_table.add_row([key, value['error']])
-                else:
+                elif not self.suppress_error_table:
                     for key, value in fail.items():
                         failed_item_table.add_row([key, value['error']])
-                failed_item_table.display("Failed items after reads:")
+                if not self.suppress_error_table:
+                    failed_item_table.display("Failed items after reads:")
             return success, fail
         except Exception as error:
             self.test_log.error(error)
@@ -509,8 +516,10 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit,
                 doc_type=doc_type, durability=durability)
             if fail:
-                failed_item_table = TableView(self.test_log.info)
-                failed_item_table.set_headers(["Replace doc_Id", "Exception"])
+                if not self.suppress_error_table:
+                    failed_item_table = TableView(self.test_log.info)
+                    failed_item_table.set_headers(["Replace doc_Id",
+                                                   "Exception"])
                 try:
                     Thread.sleep(timeout)
                 except Exception as e:
@@ -524,12 +533,13 @@ class GenericLoadingTask(Task):
                             success[key] = value
                             success[key].pop("error")
                             fail.pop(key)
-                        else:
+                        elif not self.suppress_error_table:
                             failed_item_table.add_row([key, value['error']])
-                else:
+                elif not self.suppress_error_table:
                     for key, value in fail.items():
                         failed_item_table.add_row([key, value['error']])
-                failed_item_table.display("Failed items after reads:")
+                if not self.suppress_error_table:
+                    failed_item_table.display("Failed items after reads:")
             return success, fail
         except Exception as error:
             self.test_log.error(error)
@@ -545,7 +555,7 @@ class GenericLoadingTask(Task):
                                                  timeout=timeout,
                                                  time_unit=timeunit,
                                                  durability=durability)
-        if fail:
+        if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Delete doc_Id", "Exception"])
             for key, exception in fail.items():
@@ -564,7 +574,7 @@ class GenericLoadingTask(Task):
                                                 timeout=timeout,
                                                 time_unit=timeunit,
                                                 durability=durability)
-        if fail:
+        if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Touch doc_Id", "Exception"])
             for key, exception in fail.items():
@@ -735,13 +745,14 @@ class LoadDocumentsTask(GenericLoadingTask):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, retries=5,
-                 durability="", task_identifier="", skip_read_on_error=False):
+                 durability="", task_identifier="", skip_read_on_error=False,
+                 suppress_error_table=False):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
-            retries=retries)
+            retries=retries, suppress_error_table=suppress_error_table)
         self.thread_name = "LoadDocumentsTask-{}_{}_{}_{}_{}" \
             .format(task_identifier,
                     generator._doc_gen.start,
@@ -1362,7 +1373,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  only_store_hash=True, batch_size=1, pause_secs=1,
                  timeout_secs=5, compression=True, process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
-                 task_identifier="", skip_read_on_error=False):
+                 task_identifier="", skip_read_on_error=False,
+                 suppress_error_table=False):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "DocumentsLoadGenTask_{}_{}".format(task_identifier, time.time()))
         self.cluster = cluster
@@ -1389,6 +1401,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.durability = durability
         self.task_identifier = task_identifier
         self.skip_read_on_error = skip_read_on_error
+        self.suppress_error_table = suppress_error_table
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -3635,7 +3648,7 @@ class Atomicity(Task):
         for task in tasks:
             Atomicity.task_manager.add_new_task(task)
             Atomicity.task_manager.get_task_result(task)
-        
+
         for con in self.clients:
             for client in con:
                 client.close()
@@ -3826,7 +3839,7 @@ class Atomicity(Task):
                         exception = self.__retryDurabilityImpossibleException(err, docs, self.commit, op_type="create", update_keys=self.all_keys)
                     elif err:
                         Atomicity.all_keys = []
-                        
+
                 if op_type == "rebalance_only_update":
                     self.update_keys = self.all_keys
                     err = Transaction().RunTransaction(self.transaction, self.bucket, [], self.all_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
@@ -3862,9 +3875,9 @@ class Atomicity(Task):
                     break
 
             self.test_log.info("Atomicity Load generation thread completed")
-            
+
             self.complete_task()
-        
+
         def __chunks(self, l, n):
             """Yield successive n-sized chunks from l."""
             for i in range(0, len(l), n):

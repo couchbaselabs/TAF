@@ -128,7 +128,8 @@ class ServerTasks(object):
                             task_identifier="",
                             skip_read_on_error=False,
                             ryow=False, check_persistence=False,
-                            start_task=True):
+                            start_task=True,
+                            suppress_error_table=False):
 
         clients = list()
         if active_resident_threshold == 100:
@@ -152,7 +153,8 @@ class ServerTasks(object):
                     process_concurrency=process_concurrency,
                     print_ops_rate=print_ops_rate, retries=retries,
                     durability=durability, task_identifier=task_identifier,
-                    skip_read_on_error=skip_read_on_error)
+                    skip_read_on_error=skip_read_on_error,
+                    suppress_error_table=suppress_error_table)
             else:
                 majority_value = (bucket.replicaNumber + 1)/2 + 1
 
@@ -271,7 +273,7 @@ class ServerTasks(object):
                                       compression=True,
                                       process_concurrency=8, retries=5,
                                       update_count=1, transaction_timeout=5,
-                                      commit=True, durability=0, sync=True, 
+                                      commit=True, durability=0, sync=True,
                                       num_threads=5, record_fail=False):
 
         self.log.info("Loading documents ")
@@ -302,7 +304,7 @@ class ServerTasks(object):
             process_concurrency=process_concurrency, retries=retries,
             update_count=update_count,
             transaction_timeout=transaction_timeout, commit=commit,
-            durability=durability, sync=sync, num_threads=num_threads, 
+            durability=durability, sync=sync, num_threads=num_threads,
             record_fail=record_fail)
         self.jython_task_manager.add_new_task(_task)
         return _task
