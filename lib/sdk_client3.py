@@ -14,8 +14,10 @@ from com.couchbase.client.core.error import KeyExistsException, \
                                             RequestTimeoutException, \
                                             KeyNotFoundException, \
                                             CASMismatchException, \
-                                            TemporaryFailureException
+                                            TemporaryFailureException, \
+                                            RequestCanceledException
 from com.couchbase.client.core.msg.kv import DurabilityLevel
+from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.java.json import JsonObject
@@ -359,8 +361,7 @@ class SDKClient(object):
     # Singular CRUD APIs
     def delete(self, key, persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
-               durability="", cas=0):
-
+               durability="", cas=0, fail_fast=False):
         result = dict()
         result["cas"] = -1
         try:
@@ -370,6 +371,8 @@ class SDKClient(object):
                                             time_unit=time_unit,
                                             durability=durability,
                                             cas=cas)
+            if fail_fast:
+                options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
             deleteResult = self.collection.remove(key, options)
             result.update({"key": key, "value": None,
                            "error": None, "status": True,
@@ -394,6 +397,10 @@ class SDKClient(object):
                            .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
+        except (RequestCanceledException, RequestTimeoutException) as ex:
+            self.log.error("Request cancelled/timed-out: " + str(ex))
+            result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
         except Exception as e:
             self.log.error("Error during remove of {0} - {1}".format(key, e))
             result.update({"key": key, "value": None,
@@ -403,7 +410,7 @@ class SDKClient(object):
     def insert(self, key, value, exp=0, exp_unit="seconds",
                persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
-               durability=""):
+               durability="", fail_fast=False):
 
         result = dict()
         result["cas"] = 0
@@ -415,6 +422,8 @@ class SDKClient(object):
                                             timeout=timeout,
                                             time_unit=time_unit,
                                             durability=durability)
+            if fail_fast:
+                options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
             # Returns com.couchbase.client.java.kv.MutationResult object
             insert_result = self.collection.insert(key, content, options)
@@ -434,7 +443,7 @@ class SDKClient(object):
     def replace(self, key, value, exp=0, exp_unit="seconds",
                 persist_to=0, replicate_to=0,
                 timeout=5, time_unit="seconds",
-                durability="", cas=0):
+                durability="", cas=0, fail_fast=False):
         result = dict()
         result["cas"] = 0
         content = self.translate_to_json_object(value)
@@ -445,6 +454,8 @@ class SDKClient(object):
                                              time_unit=time_unit,
                                              durability=durability,
                                              cas=cas)
+            if fail_fast:
+                options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
             # Returns com.couchbase.client.java.kv.MutationResult object
             replace_result = self.collection.replace(key, content, options)
@@ -460,7 +471,11 @@ class SDKClient(object):
                            .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
-        except (CouchbaseException, Exception, RequestTimeoutException) as ex:
+        except (RequestCanceledException, RequestTimeoutException) as ex:
+            self.log.error("Request cancelled/timed-out: " + str(ex))
+            result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
+        except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
@@ -468,7 +483,7 @@ class SDKClient(object):
 
     def touch(self, key, exp=0, exp_unit="seconds",
               persist_to=0, replicate_to=0,
-              durability="", timeout=5, time_unit="seconds"):
+              durability="", timeout=5, time_unit="seconds", fail_fast=False):
         result = {
             "key": key,
             "value": None,
@@ -478,6 +493,9 @@ class SDKClient(object):
         }
         touch_options = self.getTouchOptions(persist_to, replicate_to,
                                              durability, timeout, time_unit)
+        if fail_fast:
+            touch_options = touch_options.retryStrategy(
+                FailFastRetryStrategy.INSTANCE)
         try:
             touch_result = self.collection.touch(
                 key,
@@ -487,9 +505,17 @@ class SDKClient(object):
         except KeyNotFoundException as e:
             self.log.error("Document key '%s' not found!" % key)
             result["error"] = str(e)
+        except (RequestCanceledException, RequestTimeoutException) as ex:
+            self.log.error("Request cancelled/timed-out: " + str(ex))
+            result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
+        except Exception as ex:
+            self.log.error("Something else happened: " + str(ex))
+            result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
         return result
 
-    def read(self, key, timeout=5, time_unit="seconds"):
+    def read(self, key, timeout=5, time_unit="seconds", fail_fast=False):
         result = {
             "key": key,
             "value": None,
@@ -498,6 +524,9 @@ class SDKClient(object):
             "error": None
         }
         read_options = self.getReadOptions(timeout, time_unit)
+        if fail_fast:
+            read_options = read_options.retryStrategy(
+                FailFastRetryStrategy.INSTANCE)
         try:
             get_result = self.collection.get(key, read_options)
             self.log.debug("Found document: cas=%s, content=%s"
@@ -508,7 +537,14 @@ class SDKClient(object):
             result["cas"] = get_result.cas()
         except KeyNotFoundException as e:
             self.log.error("Document key '%s' not found!" % key)
-            result["error"] = str(e)
+        except (RequestCanceledException, RequestTimeoutException) as ex:
+            self.log.error("Request cancelled/timed-out: " + str(ex))
+            result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
+        except Exception as ex:
+            self.log.error("Something else happened: " + str(ex))
+            result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
         return result
 
     def getFromReplica(self, key, replicaMode=ReplicaMode.ALL):
@@ -531,7 +567,7 @@ class SDKClient(object):
     def upsert(self, key, value, exp=0, exp_unit="seconds",
                persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
-               durability=""):
+               durability="", fail_fast=False):
         content = self.translate_to_json_object(value)
         result = dict()
         result["cas"] = 0
@@ -542,6 +578,8 @@ class SDKClient(object):
                                             timeout=timeout,
                                             time_unit=time_unit,
                                             durability=durability)
+            if fail_fast:
+                options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
             upsertResult = self.collection.upsert(key, content, options)
             result.update({"key": key, "value": content,
@@ -551,50 +589,60 @@ class SDKClient(object):
             self.log.error("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except (CouchbaseException, Exception, RequestTimeoutException) as ex:
-            self.log.error("Upsert: Something else happened: " + str(ex))
-            result.update({"key": key, "value": content,
+        except (RequestCanceledException, RequestTimeoutException) as ex:
+            self.log.error("Request cancelled/timed-out: " + str(ex))
+            result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
+        except Exception as ex:
+            self.log.error("Something else happened: " + str(ex))
+            result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         return result
 
     def crud(self, op_type, key, value=None, exp=0, replicate_to=0,
              persist_to=0, durability="", timeout=5, time_unit="seconds",
-             create_path=True, xattr=False, cas=0):
+             create_path=True, xattr=False, cas=0, fail_fast=False):
         result = None
         if op_type == "update":
             result = self.upsert(
                 key, value, exp=exp,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
-                timeout=timeout, time_unit=time_unit)
+                timeout=timeout, time_unit=time_unit,
+                fail_fast=fail_fast)
         elif op_type == "create":
             result = self.insert(
                 key, value, exp=exp,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
-                timeout=timeout, time_unit=time_unit)
+                timeout=timeout, time_unit=time_unit,
+                fail_fast=fail_fast)
         elif op_type == "delete":
             result = self.delete(
                 key,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
-                timeout=timeout, time_unit=time_unit)
+                timeout=timeout, time_unit=time_unit,
+                fail_fast=fail_fast)
         elif op_type == "replace":
             result = self.replace(
                 key, value, exp=exp,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
                 timeout=timeout, time_unit=time_unit,
-                cas=cas)
+                cas=cas,
+                fail_fast=fail_fast)
         elif op_type == "touch":
             result = self.touch(
                 key, exp=exp,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
-                timeout=timeout, time_unit=time_unit)
+                timeout=timeout, time_unit=time_unit,
+                fail_fast=fail_fast)
         elif op_type == "read":
             result = self.read(
-                key, timeout=timeout, time_unit=time_unit)
+                key, timeout=timeout, time_unit=time_unit,
+                fail_fast=fail_fast)
         elif op_type == "subdoc_insert":
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()

@@ -9,6 +9,7 @@ from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_exceptions import ClientException
 from table_view import TableView
 
 
@@ -218,7 +219,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         if self.doc_ops[0] == "create":
             self.num_items += self.crud_batch_size
             gen_loader_1 = gen_create
-        elif self.doc_ops[0] == "update":
+        elif self.doc_ops[0] in ["update", "replace", "touch"]:
             gen_loader_1 = gen_update
         elif self.doc_ops[0] == "delete":
             gen_loader_1 = gen_delete
@@ -226,7 +227,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         if self.doc_ops[1] == "create":
             gen_loader_2 = gen_create
-        elif self.doc_ops[1] == "update":
+        elif self.doc_ops[1] in ["update", "replace", "touch"]:
             gen_loader_2 = gen_update
         elif self.doc_ops[1] == "delete":
             gen_loader_2 = gen_delete
@@ -257,33 +258,48 @@ class DurabilityFailureTests(DurabilityTestsBase):
         tem_gen = copy.deepcopy(gen_loader_2)
         while tem_gen.has_next():
             key, value = tem_gen.next()
-            if self.with_non_sync_writes:
-                fail = client.crud(self.doc_ops[1], key, value=value, exp=0)
-            else:
-                fail = client.crud(self.doc_ops[1], key, value=value, exp=0,
-                                   durability=self.durability_level,
-                                   timeout=5, time_unit="seconds")
+            for fail_fast in [True, False]:
+                if self.with_non_sync_writes:
+                    fail = client.crud(self.doc_ops[1], key, value=value,
+                                       exp=0, timeout=3, time_unit="seconds",
+                                       fail_fast=fail_fast)
+                else:
+                    fail = client.crud(self.doc_ops[1], key, value=value,
+                                       exp=0, durability=self.durability_level,
+                                       timeout=3, time_unit="seconds",
+                                       fail_fast=fail_fast)
 
-            # Validate the returned error from the SDK
-            if self.durability_helper.EXCEPTIONS["write_in_progress"] \
-                    not in str(fail["error"]):
-                self.log_failure("Invalid exception for {0}: {1}"
-                                 .format(key, fail["error"]))
+                expected_exception = ClientException.RequestTimeoutException
+                retry_reason = \
+                    ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+                if fail_fast:
+                    expected_exception = \
+                        ClientException.RequestCanceledException
+                    retry_reason = \
+                        ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
 
-            # Try reading the value in SyncWrite in-progress state
-            fail = client.crud("read", key)
-            if self.doc_ops[0] == "create":
-                # Expected to return KeyNotFound in case of CREATE operation
-                if fail["status"] is True:
-                    self.log_failure(
-                        "Key %s returned value during SyncWrite in progress %s"
-                        % (key, fail))
-            else:
-                # Expected to return prev value in case of other operations
-                if fail["status"] is False:
-                    self.log_failure(
-                        "Key %s read failed for previous value: %s"
-                        % (key, fail))
+                # Validate the returned error from the SDK
+                if expected_exception not in str(fail["error"]):
+                    self.log_failure("Invalid exception for {0}: {1}"
+                                     .format(key, fail["error"]))
+                if retry_reason not in str(fail["error"]):
+                    self.log_failure("Invalid retry reason for {0}: {1}"
+                                     .format(key, fail["error"]))
+
+                # Try reading the value in SyncWrite in-progress state
+                fail = client.crud("read", key)
+                if self.doc_ops[0] == "create":
+                    # Expected KeyNotFound in case of CREATE operation
+                    if fail["status"] is True:
+                        self.log_failure(
+                            "%s returned value during SyncWrite in progress %s"
+                            % (key, fail))
+                else:
+                    # Expects prev value in case of other operations
+                    if fail["status"] is False:
+                        self.log_failure(
+                            "Key %s read failed for previous value: %s"
+                            % (key, fail))
 
         # Revert the introduced error condition
         for node in target_nodes:
@@ -685,7 +701,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_loader[1], self.doc_ops[1], 0,
             batch_size=self.crud_batch_size, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=tem_durability, timeout_secs=self.sdk_timeout,
+            durability=tem_durability, timeout_secs=10,
             print_ops_rate=False,
             task_identifier="parallel_task2",
             start_task=False)
@@ -718,7 +734,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         valid_exception = self.durability_helper.validate_durability_exception(
             failed_docs,
-            self.durability_helper.EXCEPTIONS["write_in_progress"])
+            ClientException.RequestTimeoutException,
+            retry_reason=ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS)
 
         if not valid_exception:
             self.log_failure("Got invalid exception")

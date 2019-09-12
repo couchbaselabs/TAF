@@ -117,7 +117,8 @@ class DurabilityHelper:
 
         return durability_succeeds
 
-    def validate_durability_exception(self, failed_docs, expected_exception):
+    def validate_durability_exception(self, failed_docs, expected_exception,
+                                      retry_reason=None):
         """
         Iterates all failed docs and validates the type of exception
         falls within the list of expected_exceptions passed by the testcase.
@@ -132,6 +133,10 @@ class DurabilityHelper:
             if expected_exception not in str(failed_doc["error"]):
                 validation_passed = False
                 self.log.error("Unexpected exception '{0}' for key '{1}'"
+                               .format(failed_doc["error"], key))
+            if retry_reason and retry_reason not in str(failed_doc["error"]):
+                validation_passed = False
+                self.log.error("Retry reason missing in '{0}' for key '{1}'"
                                .format(failed_doc["error"], key))
         return validation_passed
 
