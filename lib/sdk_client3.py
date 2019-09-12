@@ -484,7 +484,7 @@ class SDKClient(object):
                 self.getDuration(exp, exp_unit),
                 touch_options)
             result.update({"status": True, "cas": touch_result.cas()})
-        except KeyNotFoundException:
+        except KeyNotFoundException as e:
             self.log.error("Document key '%s' not found!" % key)
             result["error"] = str(e)
         return result
@@ -508,6 +508,7 @@ class SDKClient(object):
             result["cas"] = get_result.cas()
         except KeyNotFoundException as e:
             self.log.error("Document key '%s' not found!" % key)
+            result["error"] = str(e)
         return result
 
     def getFromReplica(self, key, replicaMode=ReplicaMode.ALL):
