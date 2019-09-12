@@ -434,7 +434,11 @@ class SDKClient(object):
             self.log.error("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except (CouchbaseException, Exception, RequestTimeoutException) as ex:
+        except (RequestCanceledException, RequestTimeoutException) as ex:
+            self.log.error("Request cancelled/timed-out: " + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
+        except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
