@@ -2033,8 +2033,8 @@ class RestConnection(object):
     def set_cas_drift_threshold(self, bucket, ahead_threshold_in_millisecond, behind_threshold_in_millisecond):
 
         api = self.baseUrl + 'pools/default/buckets/{0}'. format( bucket )
-        params_dict ={'driftAheadThresholdMs': ahead_threshold_in_millisecond,
-                      'driftBehindThresholdMs': behind_threshold_in_millisecond}
+        params_dict = {'driftAheadThresholdMs': ahead_threshold_in_millisecond,
+                       'driftBehindThresholdMs': behind_threshold_in_millisecond}
         params = urllib.urlencode(params_dict)
         self.test_log.debug("%s with param: %s" % (api, params))
         status, content, header = self._http_request(api, 'POST', params)

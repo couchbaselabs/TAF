@@ -397,7 +397,8 @@ class ServerTasks(object):
         return _task
 
     def async_rebalance(self, servers, to_add, to_remove, use_hostnames=False,
-                        services=None, check_vbucket_shuffling=True):
+                        services=None, check_vbucket_shuffling=True,
+                        sleep_before_rebalance=0):
         """
         Asynchronously rebalances a cluster
 
@@ -412,7 +413,8 @@ class ServerTasks(object):
         """
         _task = jython_tasks.RebalanceTask(
             servers, to_add, to_remove, use_hostnames=use_hostnames,
-            services=services, check_vbucket_shuffling=check_vbucket_shuffling)
+            services=services, check_vbucket_shuffling=check_vbucket_shuffling,
+            sleep_before_rebalance=sleep_before_rebalance)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

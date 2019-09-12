@@ -129,7 +129,7 @@ class RebalanceTask(Task):
 
     def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
                  progress=30, use_hostnames=False, services=None,
-                 check_vbucket_shuffling=True):
+                 check_vbucket_shuffling=True, sleep_before_rebalance=0):
         super(RebalanceTask, self).__init__("Rebalance_task_IN=[{}]_OUT=[{}]_{}"
                                             .format(",".join([node.ip for node in to_add]),
                                                     ",".join([node.ip for node in to_remove]),

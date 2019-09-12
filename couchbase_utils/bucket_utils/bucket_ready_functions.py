@@ -869,39 +869,6 @@ class BucketUtils:
 
         return tasks_info
 
-    def _load_all_ephemeral_buckets_until_no_more_memory(
-            self, server, kv_gen, op_type, exp, increment, kv_store=1, flag=0,
-            only_store_hash=True, batch_size=1000, pause_secs=1,
-            timeout_secs=30, proxy_client=None, percentage=0.90):
-
-        stats_all_buckets = dict()
-        for bucket in self.buckets:
-            stats_all_buckets[bucket.name] = StatsCommon()
-
-        for bucket in self.buckets:
-            memory_is_full = False
-            while not memory_is_full:
-                memory_used = \
-                    stats_all_buckets[bucket.name].get_stats(
-                        [self.cluster.master], bucket, '', 'mem_used')[server]
-                # memory is considered full if mem_used is at say 90% of the available memory
-                if int(memory_used) < percentage * self.bucket_size * 1000000:
-                    self.log.info(
-                        "Still have memory. %s used is less than %s MB quota for %s in bucket %s. Continue loading to the cluster" %
-                        (memory_used, self.bucket_size, self.cluster.master.ip, bucket.name))
-
-                    self._load_bucket(
-                        bucket, self.cluster.master, kv_gen, "create", exp=0,
-                        kv_store=1, flag=0, only_store_hash=True,
-                        batch_size=batch_size, pause_secs=5, timeout_secs=60)
-                    kv_gen.start = kv_gen.start + increment
-                    kv_gen.end = kv_gen.end + increment
-                    kv_gen = BlobGenerator('key-root', 'param2', self.value_size, start=kv_gen.start, end=kv_gen.end)
-                else:
-                    memory_is_full = True
-                    self.log.info("Memory is full, %s bytes in use for %s and bucket %s!" %
-                                  (memory_used, self.cluster.master.ip, bucket.name))
-
     def verify_unacked_bytes_all_buckets(self, filter_list=[], sleep_time=5):
         """
         Waits for max_unacked_bytes = 0 on all servers and buckets in a cluster
@@ -934,14 +901,14 @@ class BucketUtils:
         if len(self.buckets) > 1:
             batch_size = 1
         for bucket in self.buckets:
-            if bucket.params.type == 'memcached':
+            if bucket.bucketType == 'memcached':
                 continue
             tasks.append(self.task.async_verify_data(
                 server, bucket, bucket.kvs[kv_store], max_verify,
                 only_store_hash, batch_size, replica_to_read,
                 compression=self.sdk_compression))
         for task in tasks:
-            task.get_result(timeout)
+            self.task.jython_task_manager.get_task_result(task)
 
     def disable_compaction(self, server=None, bucket="default"):
         new_config = {"viewFragmntThresholdPercentage": None,
@@ -1005,11 +972,10 @@ class BucketUtils:
         return new_vbucket_stats
 
     def compare_vbucket_seqnos(self, prev_vbucket_stats, servers, buckets,
-                               perNode=False):
+                               perNode=False, compare="=="):
         """
             Method to compare vbucket information to a previously stored value
         """
-        compare = "=="
         # if self.withMutationOps:
         #     compare = "<="
         comp_map = dict()
