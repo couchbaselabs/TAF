@@ -983,11 +983,9 @@ class RebalanceInTests(RebalanceBaseTest):
                                                   [self.cluster.servers[i]],
                                                   [])
             if self.atomicity:
-                self._load_all_buckets_atomicty(self.gen_update, "rebalance_only_update",
-                         commit=self.transaction_commit, sync=self.sync)
+                self._load_all_buckets_atomicty(self.gen_update, "rebalance_only_update")
                 self.sleep(20)
-                self._load_all_buckets_atomicty(self.gen_delete, "rebalance_delete",
-                         commit=self.transaction_commit, sync=self.sync)
+                self._load_all_buckets_atomicty(self.gen_delete, "rebalance_delete")
                 self.sleep(20)
             else:
                 self._load_all_buckets(self.cluster, self.gen_update,
@@ -999,8 +997,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.nodes_in_cluster.extend([self.cluster.servers[i]])
             self.sleep(20)
             if self.atomicity:
-                self._load_all_buckets_atomicty(self.gen_delete, "create", sync=self.sync, 
-                                                commit=self.transaction_commit)
+                self._load_all_buckets_atomicty(self.gen_delete, "create", sync=self.sync)
                 self.sleep(20)
             else:
                 self._load_all_buckets(self.cluster, self.gen_delete,
