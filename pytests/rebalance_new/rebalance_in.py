@@ -997,7 +997,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.nodes_in_cluster.extend([self.cluster.servers[i]])
             self.sleep(20)
             if self.atomicity:
-                self._load_all_buckets_atomicty(self.gen_delete, "create", sync=self.sync)
+                self._load_all_buckets_atomicty(self.gen_delete, "create")
                 self.sleep(20)
             else:
                 self._load_all_buckets(self.cluster, self.gen_delete,
