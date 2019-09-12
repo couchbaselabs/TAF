@@ -19,6 +19,7 @@ from membase.api.rest_client import RestConnection
 # from newupgradebasetest import NewUpgradeBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from sdk_exceptions import ClientException
 
 
 class SubdocBaseTest(BaseTestCase):
@@ -1676,19 +1677,31 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                                           durability=self.durability_level,
                                           timeout=3, time_unit="seconds",
                                           create_path=True,
-                                          xattr=self.xattr)
+                                          xattr=self.xattr,
+                                          fail_fast=True)
                 if sw_test_op not in doc_tasks:
                     result = result[1][doc_key]
 
                 sdk_exception = str(result["error"])
                 expected_exception = \
-                    DurableExceptions.DurableWriteInProgressException
+                    ClientException.RequestCanceledException
+                retry_reason = \
+                    ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
                 if op_type == "create":
                     if sw_test_op == "delete" or sw_test_op not in doc_tasks:
                         expected_exception = \
-                            DurableExceptions.KeyNotFoundException
+                            ClientException.KeyNotFoundException
+                        retry_reason = None
+                elif sw_test_op not in doc_tasks:
+                    expected_exception = \
+                        ClientException.RequestTimeoutException
+                    retry_reason = \
+                        ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
                 if expected_exception not in sdk_exception:
                     self.log_failure("Invalid exception: %s" % result)
+                elif retry_reason is not None \
+                        and retry_reason not in sdk_exception:
+                    self.log_failure("Retry reason missing: %s" % result)
 
                 # Validate CAS doesn't change after sync_write failure
                 curr_cas = self.client.crud("read", doc_key)["cas"]
@@ -1781,9 +1794,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                                               create_path=True,
                                               xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
-            if DurableExceptions.DurableWriteInProgressException \
-                    not in sdk_exception:
+            if ClientException.RequestTimeoutException not in sdk_exception:
                 self.log_failure("Invalid exception: %s" % failed_item)
+            elif ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
+                    not in sdk_exception:
+                self.log_failure("Retry reason missing: %s" % failed_item)
 
             # Validate CAS doesn't change after sync_write failure
             curr_cas = self.client.crud("read", doc_key)["cas"]
