@@ -67,6 +67,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.server_to_fail = self._servers_to_fail()
         self.start_couchbase_server()
         self.sleep(10)
+        self.server_to_fail = self.cluster.servers[:self.nodes_init]
         self.disable_firewall()
         self.rest = RestConnection(self.orchestrator)
         self.rest.reset_autofailover()
