@@ -354,7 +354,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items)
         sdk_exception = str(failed_items[self.doc_id]["error"])
         self.assertTrue(
-            DurableExceptions.PathNotFoundException in sdk_exception,
+            ClientException.PathNotFoundException in sdk_exception,
             "Invalid SDK exception %s" % sdk_exception)
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
@@ -381,7 +381,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             xattr=True)
         self.assertTrue(failed_items, "Subdoc Xattr insert with 16 chars")
 
-        self.assertTrue(DurableExceptions.DecodingFailedException
+        self.assertTrue(ClientException.DecodingFailedException
                         in failed_items[self.doc_id]["error"],
                         "Invalid exception: %s" % failed_items[self.doc_id])
 
@@ -501,7 +501,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                xattr=is_xattr)
             self.assertEqual(failed_items[self.doc_id]["cas"], 0,
                              "CAS is non-zero")
-            self.assertTrue(DurableExceptions.KeyNotFoundException
+            self.assertTrue(ClientException.KeyNotFoundException
                             in str(failed_items[self.doc_id]["error"]),
                             "Invalid exception")
 
@@ -573,7 +573,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items)
         sdk_exception = str(failed_items[self.doc_id]["error"])
         self.assertTrue(
-            DurableExceptions.PathNotFoundException in sdk_exception,
+            ClientException.PathNotFoundException in sdk_exception,
             "Invalid SDK exception %s" % sdk_exception)
 
         # Try to upsert a single xattr
@@ -612,7 +612,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                            xattr=True)
         self.assertTrue(failed_items, "Able to read deleted xattr")
         sdk_exception = str(failed_items[self.doc_id]["error"])
-        self.assertTrue(DurableExceptions.PathNotFoundException
+        self.assertTrue(ClientException.PathNotFoundException
                         in sdk_exception, "Invalid exception: %s"
                                           % sdk_exception)
 
@@ -652,7 +652,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items)
         sdk_exception = str(failed_items[self.doc_id]["error"])
         self.assertTrue(
-            DurableExceptions.PathNotFoundException in sdk_exception,
+            ClientException.PathNotFoundException in sdk_exception,
             "Invalid SDK exception %s" % sdk_exception)
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
@@ -743,7 +743,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             self.assertFalse(success, "Subdoc read succees: %s" % success)
             self.assertTrue(failed_item, "Subdoc still exists")
             sdk_error = str(failed_item[self.doc_id]["error"])
-            self.assertTrue(DurableExceptions.PathNotFoundException
+            self.assertTrue(ClientException.PathNotFoundException
                             in sdk_error, "Invalid exception %s" % sdk_error)
 
     def test_update_xattr(self):
@@ -1618,7 +1618,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             durability=self.durability_level)
         sdk_error = str(failed_items[self.doc_id]["error"])
         self.assertTrue(failed_items, "Subdoc CRUD succeeded: %s" % success)
-        self.assertTrue(DurableExceptions.DurabilityImpossibleException
+        self.assertTrue(ClientException.DurabilityImpossibleException
                         in sdk_error, "Invalid exception: %s" % sdk_error)
 
     def test_doc_sync_write_in_progress(self):

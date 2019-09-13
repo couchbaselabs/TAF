@@ -1,4 +1,3 @@
-import copy
 import json
 import time
 
@@ -6,12 +5,12 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator,\
     sub_doc_generator_for_edit
-from couchbase_helper.durability_helper import DurableExceptions
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from sdk_exceptions import ClientException
 from table_view import TableView
 
 
@@ -853,14 +852,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure("Exception not seen for few docs: {0}"
                              .format(failed_docs))
 
-        expected_exception = \
-            DurableExceptions.DurableWriteInProgressException
+        expected_exception = ClientException.RequestTimeoutException
+        retry_reason = ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
         if self.doc_ops[0] in "create":
-            expected_exception = \
-                DurableExceptions.KeyNotFoundException
+            expected_exception = ClientException.KeyNotFoundException
+            retry_reason = None
         valid_exception = self.durability_helper.validate_durability_exception(
             failed_docs,
-            expected_exception)
+            expected_exception,
+            retry_reason=retry_reason)
 
         if not valid_exception:
             self.log_failure("Got invalid exception")
