@@ -13,7 +13,6 @@ import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
-
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -114,12 +113,12 @@ public class SimpleTransaction {
 		return res;
 	}
 
-	public ArrayList<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String, 
+	public List<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String, 
 		JsonObject>> Createkeys, Boolean commit, String operation)
 	{
 		AtomicInteger attempt = new AtomicInteger(0);
 		AtomicBoolean first = new AtomicBoolean(true);
-		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
+		List<LogDefer> res = new ArrayList<LogDefer>();
 
 		try (Transactions transactions = Transactions.create(cluster, config)) {
 
@@ -219,10 +218,10 @@ public class SimpleTransaction {
 
 	}
 
-	public ArrayList<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String, 
+	public List<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String, 
 			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys, Boolean commit, String operation, String docId) 
 		{
-		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
+		List<LogDefer> res = new ArrayList<LogDefer>();
 			try (Transactions transactions = Transactions.create(cluster, config)) {
 
 				AtomicBoolean first = new AtomicBoolean(true);
@@ -372,9 +371,9 @@ public class SimpleTransaction {
 		}
 
 
-	public ArrayList<LogDefer> RunTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
+	public List<LogDefer> RunTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
 											  List<String> Deletekeys, Boolean commit, boolean sync, int updatecount) {
-		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
+		List<LogDefer> res = new ArrayList<LogDefer>();
 //		synchronous API - transactions
 		if (sync) {
 			try {
@@ -459,14 +458,14 @@ public class SimpleTransaction {
 		return res;
 	}
 
-	public ArrayList<LogDefer>  multiInsertSingelTransaction(Transactions transaction, Collection collection, List<Tuple2<String, JsonObject>> createkeys, Boolean commit)
+	public List<LogDefer>  multiInsertSingelTransaction(Transactions transaction, Collection collection, List<Tuple2<String, JsonObject>> createkeys, Boolean commit)
 	{
-		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
+		List<LogDefer> res = new ArrayList<LogDefer>();
 		Tuple2<String, JsonObject> firstDoc = createkeys.get(0);
 		List<Tuple2<String, JsonObject>> remainingDocs = createkeys.stream().skip(1).collect(Collectors.toList());
 		ReactiveCollection rc = collection.reactive();
 
-		TransactionResult result = transaction.reactive((ctx) -> {
+		List<LogDefer> result = transaction.reactive((ctx) -> {
 
 			if (commit)
 			{
@@ -507,26 +506,28 @@ public class SimpleTransaction {
 						).then(ctx.rollback());}
 			}
 
-		}).doOnError(err -> {
-			if (err instanceof TransactionFailed) {
-		        for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-		        	res.add(e);
-		        }
-			}
-
-		}).block();
+		}).map(r -> r.log().logs())
+                .onErrorResume(err -> {
+                    for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+                        res.add(e);
+                        System.out.println(e);
+                        
+                    }
+                    return Mono.just(res);
+                }).block();
 		return res;
 	}
 
 
-	public ArrayList<LogDefer> multiUpdateSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
-		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
+	public List<LogDefer> multiUpdateSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
+		List<LogDefer> res = new ArrayList<LogDefer>();
 		ReactiveCollection reactiveCollection=collection.reactive();
 		List<String> docToUpdate=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToUpdate.get(0);
 		List<String> remainingDocs = docToUpdate.stream().skip(1).collect(Collectors.toList());
 		
-		TransactionResult result = transaction.reactive((ctx) -> {
+		List<LogDefer> result = transaction.reactive((ctx) -> {
+			
 			if (commit)
 			{
 				// The first mutation must be done in serial
@@ -550,28 +551,27 @@ public class SimpleTransaction {
 							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
 									remainingDocs.size())).then(ctx.rollback());}
 			}
-	
-			}).doOnError(err -> {
-				if (err instanceof TransactionFailed) {
-					System.out.println("Transaction failed");
-			        for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-			        	res.add(e);
-			        	System.out.println(e);
-			        }
-				}
-			}).block();
-		return res;
+			}).map(r -> r.log().logs())
+                .onErrorResume(err -> {
+                    for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+                        res.add(e);
+                        System.out.println(e);
+                        
+                    }
+                    return Mono.just(res);
+                }).block();
+        return res;
 	}
 
 
-	public ArrayList<LogDefer> multiDeleteSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
-		ArrayList<LogDefer> res = new ArrayList<LogDefer>();
+	public List<LogDefer> multiDeleteSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
+		List<LogDefer> res = new ArrayList<LogDefer>();
 		ReactiveCollection reactiveCollection=collection.reactive();
 		List<String> docToDelete=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToDelete.get(0);
 		List<String> remainingDocs = docToDelete.stream().skip(1).collect(Collectors.toList());
 		
-		TransactionResult result = transaction.reactive((ctx) -> {
+		List<LogDefer> result = transaction.reactive((ctx) -> {
 			if (commit)
 			{
 				// The first mutation must be done in serial
@@ -595,13 +595,15 @@ public class SimpleTransaction {
 									remainingDocs.size())).then(ctx.rollback());}
 			}
 	
-			}).doOnError(err -> {
-				if (err instanceof TransactionFailed) {
-			        for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-			        	res.add(e);
-			        }
-				}
-			}).block();
+			}).map(r -> r.log().logs())
+                .onErrorResume(err -> {
+                    for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+                        res.add(e);
+                        System.out.println(e);
+                        
+                    }
+                    return Mono.just(res);
+                }).block();
 		return res;
 	}
 
