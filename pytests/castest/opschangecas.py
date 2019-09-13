@@ -14,6 +14,8 @@ from sdk_client3 import SDKClient
 
 from com.couchbase.client.java.kv import ReplicaMode
 
+from sdk_exceptions import ClientException
+
 
 class OpsChangeCasTests(CasBaseTest):
     def setUp(self):
@@ -63,8 +65,8 @@ class OpsChangeCasTests(CasBaseTest):
                     if vb_of_key in self.vb_details[node_ip]["active"]:
                         active_node_ip = node_ip
                         break
+                self.log.info("Performing %s on key %s" % (ops, key))
                 if ops in ["update", "touch"]:
-                    self.log.info("Running %s over key %s" % (ops, key))
                     for x in range(self.mutate_times):
                         old_cas = client.crud("read", key, timeout=10)["cas"]
                         # value = {"val": "mysql-new-value-%s" % x}
@@ -166,6 +168,10 @@ class OpsChangeCasTests(CasBaseTest):
                     if result["status"] is True:
                         self.log_failure("Able to mutate %s with old cas: %s"
                                          % (key, old_cas))
+                    if ClientException.KeyNotFoundException \
+                            not in result["error"]:
+                        self.log_failure("Invalid error after expiry: %s"
+                                         % result)
 
     def ops_change_cas(self):
         """
@@ -385,14 +391,14 @@ class OpsChangeCasTests(CasBaseTest):
                                  timeout=self.sdk_timeout)
             if result["status"] is False:
                 self.log_failure("Delete failed: %s" % result)
-            if result["cas"] != 0:
-                self.log_failure("Delete returned non-zero cas: %s" % result)
+            elif result["cas"] <= create_cas:
+                self.log_failure("Delete returned invalid cas: %s" % result)
 
             result = client.crud("read", key,
                                  timeout=self.sdk_timeout)
             if result["status"] is True:
                 self.log_failure("Read succeeded after delete: %s" % result)
-            if DurableExceptions.KeyNotFoundException \
+            elif DurableExceptions.KeyNotFoundException \
                     not in str(result["error"]):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)

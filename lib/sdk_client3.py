@@ -475,6 +475,10 @@ class SDKClient(object):
                            .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
+        except KeyNotFoundException as e:
+            self.log.error("Key '%s' not found!" % key)
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
         except (RequestCanceledException, RequestTimeoutException) as ex:
             self.log.error("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
@@ -541,6 +545,8 @@ class SDKClient(object):
             result["cas"] = get_result.cas()
         except KeyNotFoundException as e:
             self.log.error("Document key '%s' not found!" % key)
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
         except (RequestCanceledException, RequestTimeoutException) as ex:
             self.log.error("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
