@@ -808,7 +808,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.cluster, self.bucket, gen_loader[1], self.doc_ops[1], 0,
                 batch_size=self.crud_batch_size, process_concurrency=1,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
-                durability=tem_durability, timeout_secs=self.sdk_timeout,
+                durability=tem_durability, timeout_secs=5,
                 task_identifier="parallel_task2",
                 print_ops_rate=False,
                 start_task=False)
@@ -818,7 +818,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 path_create=True,
                 batch_size=self.crud_batch_size, process_concurrency=1,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
-                durability=tem_durability, timeout_secs=self.sdk_timeout,
+                durability=tem_durability, timeout_secs=5,
                 task_identifier="parallel_task2",
                 print_ops_rate=False,
                 start_task=False)
