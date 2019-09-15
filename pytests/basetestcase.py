@@ -243,6 +243,9 @@ class BaseTestCase(unittest.TestCase):
         self.tearDownEverything()
 
     def tearDownEverything(self):
+        if not self.tear_down_while_setup:
+            self.task_manager.shutdown_task_manager()
+            self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         if self.skip_setup_cleanup:
             return
@@ -305,9 +308,6 @@ class BaseTestCase(unittest.TestCase):
             self.infra_log.info("========== tasks in thread pool ==========")
             self.task_manager.print_tasks_in_pool()
             self.infra_log.info("==========================================")
-            if not self.tear_down_while_setup:
-                self.task_manager.shutdown_task_manager()
-                self.task.shutdown(force=True)
             self.__log("finished")
 
     def __log(self, status):
