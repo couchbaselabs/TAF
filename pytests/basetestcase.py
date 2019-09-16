@@ -240,13 +240,12 @@ class BaseTestCase(unittest.TestCase):
             self.fail(e)
 
     def tearDown(self):
+        self.task_manager.shutdown_task_manager()
+        self.task.shutdown(force=True)
+        self.task_manager.abort_all_tasks()
         self.tearDownEverything()
 
     def tearDownEverything(self):
-        if not self.tear_down_while_setup:
-            self.task_manager.shutdown_task_manager()
-            self.task.shutdown(force=True)
-        self.task_manager.abort_all_tasks()
         if self.skip_setup_cleanup:
             return
         try:
