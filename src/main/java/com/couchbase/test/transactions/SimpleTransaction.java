@@ -434,14 +434,15 @@ public class SimpleTransaction {
 
 			}
 			catch (TransactionFailed err) {
-				// This per-txn log allows the app to only log failures
-				System.out.println("Transaction failed from runTransaction");
-				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-					System.out.println(e);
-		        	res.add(e);
-		        }
-			}
-
+				res = err.result().log().logs();
+				if (res.toString().contains("DurabilityImpossibleException")) {
+					System.out.println("DurabilityImpossibleException seen"); }
+				else {
+					for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+						System.out.println(e);
+			        }
+				}
+			}	
 		}
 		else {
 			for (Collection collection:collections) {
@@ -508,11 +509,16 @@ public class SimpleTransaction {
 
 		}).map(r -> r.log().logs())
                 .onErrorResume(err -> {
+                	if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
+                		System.out.println("DurabilityImpossibleException seen");
+                		for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+                            res.add(e); }
+                	}
+                	else {
                     for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
                         res.add(e);
-                        System.out.println(e);
-                        
-                    }
+                        System.out.println(e);   
+                    }}
                     return Mono.just(res);
                 }).block();
 		return res;
@@ -553,11 +559,16 @@ public class SimpleTransaction {
 			}
 			}).map(r -> r.log().logs())
                 .onErrorResume(err -> {
+                	if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
+                		System.out.println("DurabilityImpossibleException seen");
+                		for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+                            res.add(e); }
+                	}
+                	else {
                     for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
                         res.add(e);
-                        System.out.println(e);
-                        
-                    }
+                        System.out.println(e);   
+                    }}
                     return Mono.just(res);
                 }).block();
         return res;
@@ -597,11 +608,16 @@ public class SimpleTransaction {
 	
 			}).map(r -> r.log().logs())
                 .onErrorResume(err -> {
+                	if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
+                		System.out.println("DurabilityImpossibleException seen");
+                		for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+                            res.add(e); }
+                	}
+                	else {
                     for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
                         res.add(e);
-                        System.out.println(e);
-                        
-                    }
+                        System.out.println(e);   
+                    }}
                     return Mono.just(res);
                 }).block();
 		return res;
