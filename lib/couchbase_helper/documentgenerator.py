@@ -12,23 +12,24 @@ from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 
 def doc_generator(key, start, end, doc_size=256, doc_type="json",
-                  target_vbucket=None, vbuckets=1024, mutation_type="ADD"):
+                  target_vbucket=None, vbuckets=1024, mutation_type="ADD", mutate = 0, key_size=8):
     age = range(5)
     first = ['james', 'sharon']
     body = [''.rjust(doc_size - 10, 'a')]
+    mutate = [mutate]
     # Defaults to JSON doc_type
-    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}", ' \
+    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}", "mutated":"{3}" ' \
                + ' "mutation_type": "%s" }}' % mutation_type
     if doc_type in ["string", "binary"]:
-        template = "age:{0}, first_name:{1}, body: {2}, mutation_type: %s" \
+        template = "age:{0}, first_name:{1}, body: {2}, mutated:{3}, mutation_type: %s" \
                    % mutation_type
     if target_vbucket:
         return DocumentGeneratorForTargetVbucket(
-            key, template, age, first, body, start=start, end=end,
+            key, template, age, first, body, mutate, start=start, end=end,
             doc_type=doc_type, target_vbucket=target_vbucket,
             vbuckets=vbuckets)
-    return DocumentGenerator(key, template, age, first, body,
-                             start=start, end=end, doc_type=doc_type)
+    return DocumentGenerator(key, template, age, first, body, mutate,
+                             start=start, end=end, doc_type=doc_type, key_size=key_size)
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
@@ -136,6 +137,9 @@ class DocumentGenerator(KVGenerator):
         if 'doc_type' in kwargs:
             self.doc_type = kwargs['doc_type']
 
+        if 'key_size' in kwargs:
+            self.key_size = kwargs['key_size']
+
     """Creates the next generated document and increments the iterator.
 
     Returns:
@@ -160,7 +164,7 @@ class DocumentGenerator(KVGenerator):
             doc_key = ''.join(self.random.choice(
                 ascii_uppercase+ascii_lowercase+digits) for _ in range(12))
         else:
-            doc_key = self.name + '-' + str(self.itr)
+            doc_key = self.name + '-' + str(self.itr).zfill(self.key_size)
         self.itr += 1
         return doc_key, doc
 

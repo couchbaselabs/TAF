@@ -717,7 +717,7 @@ class GenericLoadingTask(Task):
         for key, value in key_val.items():
             try:
                 value_json = Json.loads(value)
-                value_json['mutated'] = 0
+                # value_json['mutated'] = 0
                 value = Json.dumps(value_json)
             except ValueError:
                 value = Json.dumps(value)
@@ -737,7 +737,7 @@ class GenericLoadingTask(Task):
                 # new updated value, however it is not their in orginal "LoadDocumentsTask"
                 value = key_val[key]
                 value_json = Json.loads(value)
-                value_json['mutated'] += 1
+                # value_json['mutated'] += 1
                 value = Json.dumps(value_json)
             except ValueError:
                 self.random.seed(key)
@@ -1997,6 +1997,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 else:
                     missing_keys.append(key)
                     continue
+                actual_val["mutated"] = int(actual_val["mutated"])
+                expected_val["mutated"] = int(expected_val["mutated"])
                 if expected_val == actual_val:
                     continue
                 else:
@@ -2591,7 +2593,7 @@ class N1QLQueryTask(Task):
         try:
             # Query and get results
             self.test_log.debug(" <<<<< START Executing Query {0} >>>>>>"
-                      .format(self.query))
+                                .format(self.query))
             if not self.is_explain_query:
                 self.msg, self.isSuccess = self.n1ql_helper.run_query_and_verify_result(
                     query=self.query, server=self.server,
