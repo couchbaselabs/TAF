@@ -41,7 +41,10 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
+        tasks = self.subsequent_load_gen()
         self._multi_node_failover()
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
         self.disable_autofailover_and_validate()
 
     def _get_server_group_nodes(self, server_group):
@@ -58,6 +61,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(30,"waiting")
         self.server_to_fail = self._get_server_group_nodes("Group 2")
         self.failover_expected = True
+        tasks = self.subsequent_load_gen()
         try:
             self.failover_actions[self.failover_action](self)
         except:
@@ -65,6 +69,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             self.assertTrue(result, "Server group failover message was not seen in logs")
         finally:
             self.start_couchbase_server()
+            for task in tasks:
+                self.task.jython_task_manager.get_task_result(task)
 
     def test_autofailover_during_rebalance(self):
         """
@@ -223,3 +229,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
             return True, failed_over_time
         return False, None
+
+    def subsequent_load_gen(self):
+        subsequent_load_gen = self.get_doc_generator(self.num_items, self.num_items*2)
+        tasks = self.async_load_all_buckets(subsequent_load_gen, "create", 0)
+        return tasks
