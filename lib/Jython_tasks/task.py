@@ -3585,8 +3585,6 @@ class Atomicity(Task):
         self.compression = compression
         self.process_concurrency = process_concurrency
         self.client = client
-        Atomicity.update_keys = []
-        Atomicity.delete_keys = []
         Atomicity.task_manager = task_manager
         self.batch_size = batch_size
         self.print_ops_rate = print_ops_rate
@@ -3596,7 +3594,6 @@ class Atomicity(Task):
         self.clients = clients
         Atomicity.clients = clients[0]
         Atomicity.generator = generator
-        Atomicity.all_keys = []
         Atomicity.updatecount = update_count
         if durability == "MAJORITY":
             Atomicity.durability = 1
@@ -3626,7 +3623,7 @@ class Atomicity(Task):
             self.set_exception(e)
 
         for generator in self.generators:
-            tasks.extend(self.get_tasks(generator, 1))
+            tasks.extend(self.get_tasks(generator))
             iterator += 1
 
         self.test_log.debug("going to add new task")
@@ -3635,32 +3632,18 @@ class Atomicity(Task):
 
         for task in tasks:
             Atomicity.task_manager.get_task_result(task)
-
-        time.sleep(60)
+            
         self.transaction.close()
-
-        tasks = []
-        for generator in self.generators:
-            tasks.extend(self.get_tasks(generator, 0))
-            iterator += 1
-
-        self.test_log.info("going to add verification task")
-        for task in tasks:
-            Atomicity.task_manager.add_new_task(task)
-            Atomicity.task_manager.get_task_result(task)
 
         for con in self.clients:
             for client in con:
                 client.close()
 
-    def get_tasks(self, generator, load):
+    def get_tasks(self, generator):
         generators = []
         tasks = []
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-
-        if not load:
-            self.process_concurrency = 1
 
         gen_range = max(int((generator.end - generator.start)/self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
@@ -3674,22 +3657,15 @@ class Atomicity(Task):
                 partition_gen,
                 self.batch_size)
             generators.append(batch_gen)
-        if load:
-            for i in range(0, len(generators)):
-                task = self.Loader(self.cluster, self.bucket[i], self.client, generators[i], self.op_type,
-                                             self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
-                                             time_unit=self.time_unit, batch_size=self.batch_size,
-                                             pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                             compression=self.compression,
-                                             instance_num = 1,transaction=self.transaction, commit=self.commit)
-                tasks.append(task)
-        else:
-            for generator in generators:
-                task = Atomicity.Validate(self.cluster, self.bucket, self.client, generator, self.op_type,
-                                            self.exp, self.flag,  batch_size=self.batch_size,
-                                            pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                            compression=self.compression)
-                tasks.append(task)
+
+        for i in range(0, len(generators)):
+            task = self.Loader(self.cluster, self.bucket[i], self.client, generators[i], self.op_type,
+                                         self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
+                                         time_unit=self.time_unit, batch_size=self.batch_size,
+                                         pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                                         compression=self.compression,
+                                         instance_num = 1,transaction=self.transaction, commit=self.commit)
+            tasks.append(task)
         return tasks
 
     class Loader(GenericLoadingTask):
@@ -3745,19 +3721,21 @@ class Atomicity(Task):
             self.update_keys = []
             self.delete_keys = []
             docs = []
+            self.keys_values = {}
 
             doc_gen = self.generator
             while self.has_next():
                 self.key_value = doc_gen.next_batch()
                 self._process_values_for_create(self.key_value)
                 self.all_keys.extend(self.key_value.keys())
-
+                self.keys_values.update(self.key_value)
+                
                 for op_type in self.op_type:
 
                     if op_type == 'general_create':
-                        for self.client in Atomicity.clients:
+                        for client in Atomicity.clients:
                             self.batch_create(
-                                self.key_value, self.client,
+                                self.key_value, client,
                                 persist_to=self.persist_to,
                                 replicate_to=self.replicate_to,
                                 timeout=self.timeout, time_unit=self.time_unit,
@@ -3769,90 +3747,70 @@ class Atomicity(Task):
                     docs.append(tuple)
 
                 last_batch = self.key_value
-
-            Atomicity.all_keys.extend(self.all_keys)
-
-            len_keys = len(self.all_keys)
-            self.update_keys = random.sample(self.all_keys,
-                                             random.randint(20, len_keys))
-            self.delete_keys = random.sample(self.all_keys,
-                                             random.randint(20, len_keys))
-
+                
+            self.list_docs = list(self.__chunks(self.all_keys, Atomicity.num_docs))
             for op_type in self.op_type:
                 if op_type == "create":
                     if len(self.op_type) != 1:
                         commit = True
                     else:
                         commit = self.commit
-
                     docs = list(self.__chunks(docs, Atomicity.num_docs))
                     for doc in docs:
                         err = Transaction().RunTransaction(self.transaction, self.bucket, doc, [], [], commit, Atomicity.sync, Atomicity.updatecount )
                         if err:
                             exception = self.__retryDurabilityImpossibleException(err, doc, commit, op_type="create")
+                            if exception:
+                                break
                     if not commit:
-                        Atomicity.all_keys = []
+                        self.all_keys = []
 
-                if op_type == "update":
-                    list_docs = list(self.__chunks(self.update_keys, Atomicity.num_docs))
-                    for doc in list_docs:
+                if op_type == "update" or op_type == "rebalance_only_update":
+                    for doc in self.list_docs:
                         err = Transaction().RunTransaction(self.transaction, self.bucket, [], doc, [], self.commit, Atomicity.sync, Atomicity.updatecount )
-                        if err:
+                        if err and not Atomicity.record_fail:
                             exception = self.__retryDurabilityImpossibleException(err, doc, self.commit, op_type="update")
+                            if exception:
+                                break
+                    if self.commit:
+                        self.update_keys = self.all_keys
 
                 if op_type == "update_Rollback":
                     exception = Transaction().RunTransaction(self.transaction, self.bucket, [], self.update_keys, [], False, True, Atomicity.updatecount )
 
-                if op_type == "delete":
-                    self.test_log.info("delete keys count is {}".format(len(self.delete_keys)))
-                    list_docs = list(self.__chunks(self.delete_keys, Atomicity.num_docs))
-                    for doc in list_docs:
+                if op_type == "delete" or op_type == "rebalance_delete":
+                    for doc in self.list_docs:
                         err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], doc, self.commit, Atomicity.sync, Atomicity.updatecount )
                         if err:
                             exception = self.__retryDurabilityImpossibleException(err, doc, self.commit, op_type="delete")
+                            if exception:
+                                    break
+                    if self.commit:
+                        self.delete_keys = self.all_keys
 
                 if op_type == "general_update":
-                    for self.client in Atomicity.clients:
-                        self.batch_update(last_batch, self.client, persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    for client in Atomicity.clients:
+                        self.batch_update(last_batch, client, persist_to=self.persist_to, replicate_to=self.replicate_to,
                                   timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
                     self.update_keys = last_batch.keys()
-                    self.commit = True
 
                 if op_type == "general_delete":
                     self.test_log.debug("performing delete for keys {}".format(last_batch.keys()))
-                    for self.client in Atomicity.clients:
-                        keys = self.batch_delete(last_batch, self.client, persist_to=self.persist_to,
+                    for client in Atomicity.clients:
+                        keys = self.batch_delete(last_batch, client, persist_to=self.persist_to,
                                               replicate_to=self.replicate_to,
                                               timeout=self.timeout,
                                               timeunit=self.time_unit,
                                               durability="")
                     self.delete_keys = last_batch.keys()
-                    self.commit = True
 
-                if op_type == "create_update":
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, docs, self.update_keys, [], self.commit, True, Atomicity.updatecount)
-
-                if op_type == "rebalance_update":
+                if op_type == "rebalance_update" or op_type == "create_update":
                     self.update_keys = self.all_keys
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, self.all_keys, [], self.commit, True, Atomicity.updatecount)
                     if err and not Atomicity.record_fail:
                         exception = self.__retryDurabilityImpossibleException(err, docs, self.commit, op_type="create", update_keys=self.all_keys)
                     elif err:
-                        Atomicity.all_keys = []
-
-                if op_type == "rebalance_only_update":
-                    self.update_keys = self.all_keys
-                    err = Transaction().RunTransaction(self.transaction, self.bucket, [], self.all_keys, [], self.commit, Atomicity.sync, Atomicity.updatecount)
-                    if err and not Atomicity.record_fail:
-                        exception = self.__retryDurabilityImpossibleException(err, self.all_keys, self.commit, op_type="update")
-                    elif err:
-                        Atomicity.all_keys = []
-
-                if op_type == "rebalance_delete":
-                    self.delete_keys = self.all_keys
-                    err = Transaction().RunTransaction(self.transaction, self.bucket, [], [],  self.all_keys, self.commit, Atomicity.sync, Atomicity.updatecount)
-                    if err:
-                        exception = self.__retryDurabilityImpossibleException(err, Atomicity.delete_keys, self.commit, op_type="delete")
+                        self.all_keys = []
 
                 if op_type == "time_out":
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, [], [], True, True, Atomicity.updatecount )
@@ -3863,19 +3821,42 @@ class Atomicity(Task):
                         self.test_log.debug("End of First Transaction that is getting timeout")
                     else:
                         exception = err
-
-                if ("update" in op_type) and self.commit:
-                    Atomicity.update_keys.extend(self.update_keys)
-
-                if ("delete" in op_type) and self.commit:
-                    Atomicity.delete_keys.extend(self.delete_keys)
-
+                        
+                time.sleep(60)
                 if exception and not Atomicity.record_fail:
                     self.set_exception(Exception(exception))
                     break
 
             self.test_log.info("Atomicity Load generation thread completed")
+            
+            
+            self.inserted_keys = {}
+            for client in Atomicity.clients:
+                self.inserted_keys[client] = []
+                self.inserted_keys[client].extend(self.all_keys)
+            
+            self.test_log.info("Starting Atomicity Verification thread")
+            self.process_values_for_verification(self.keys_values)
+            for client in Atomicity.clients:
+                result_map = self.batch_read(self.keys_values.keys(), client)
+                wrong_values = self.validate_key_val(result_map[0], self.keys_values, client)
 
+                if wrong_values:
+                    self.set_exception("Wrong key value. "
+                                       "Wrong key value: {}"
+                                       .format(','.join(wrong_values)))
+
+                for key in self.delete_keys:
+                    if key in self.inserted_keys[client]:
+                        self.inserted_keys[client].remove(key)
+
+                if self.inserted_keys[client] and "time_out" not in self.op_type:
+                    self.set_exception("Keys were missing. "
+                                       "Keys missing: {}"
+                                       .format(','.join(self.inserted_keys[client])))
+
+            self.test_log.info("Completed Atomicity Verification thread")
+  
             self.complete_task()
 
         def __chunks(self, l, n):
@@ -3902,70 +3883,6 @@ class Atomicity(Task):
                         break
             return err
 
-    class Validate(GenericLoadingTask):
-
-        def __init__(self, cluster, bucket, client, generator, op_type, exp,
-                     flag=0, proxy_client=None, batch_size=1, pause_secs=1,
-                     timeout_secs=30, compression=True):
-            super(Atomicity.Validate, self).__init__(cluster, bucket, client,
-                                                     batch_size=batch_size,
-                                                     pause_secs=pause_secs,
-                                                     timeout_secs=timeout_secs,
-                                                     compression=compression)
-
-            self.generator = generator
-            self.op_type = op_type
-            self.exp = exp
-            self.flag = flag
-            self.updated_keys = Atomicity.update_keys
-            self.delete_keys = Atomicity.delete_keys
-            self.mutate_value = Atomicity.updatecount
-            self.all_keys = {}
-            for client in Atomicity.clients:
-                self.all_keys[client] = []
-                self.all_keys[client].extend(Atomicity.all_keys)
-                self.test_log.info("the length of the keys {}"
-                                   .format(len(self.all_keys[client])))
-
-            if proxy_client:
-                self.test_log.info("Changing client to proxy %s:%s..."
-                                   % (proxy_client.host, proxy_client.port))
-                self.client = proxy_client
-
-        def has_next(self):
-            return self.generator.has_next()
-
-        def call(self):
-            self.start_task()
-            self.test_log.info("Starting Atomicity Verification thread")
-            if len(Atomicity.all_keys) > 0 :
-                doc_gen = self.generator
-                while self.has_next():
-                    key_value = doc_gen.next_batch()
-                    self.process_values_for_verification(key_value)
-                    for client in Atomicity.clients:
-                        result_map = self.batch_read(key_value.keys(), client)
-                        wrong_values = self.validate_key_val(result_map[0], key_value, client)
-
-                        if wrong_values:
-                            self.set_exception("Wrong key value. "
-                                               "Wrong key value: {}"
-                                               .format(','.join(wrong_values)))
-
-                for key in self.delete_keys:
-                    for client in Atomicity.clients:
-                        if key in self.all_keys[client]:
-                            self.all_keys[client].remove(key)
-
-                for client in Atomicity.clients:
-                    if self.all_keys[client] and "time_out" not in self.op_type:
-                        self.set_exception("Keys were missing. "
-                                           "Keys missing: {}"
-                                           .format(','.join(self.all_keys[client])))
-
-            self.test_log.info("Completed Atomicity Verification thread")
-            self.complete_task()
-
         def validate_key_val(self, map, key_value, client):
             wrong_values = []
             for key, value in key_value.items():
@@ -3980,7 +3897,7 @@ class Atomicity(Task):
                     elif map[key]['error'] is not None:
                         actual_val = map[key]['error'].toString()
                     if expected_val == actual_val or map[key]['cas'] == 0:
-                        self.all_keys[client].remove(key)
+                        self.inserted_keys[client].remove(key)
                     else:
                         wrong_values.append(key)
                         self.test_log.info("actual value for key {} is {}".format(key,actual_val))
@@ -3988,13 +3905,12 @@ class Atomicity(Task):
             return wrong_values
 
         def process_values_for_verification(self, key_val):
-            self._process_values_for_create(key_val)
             for key, value in key_val.items():
-                if key in self.updated_keys or self.op_type =="verify":
+                if key in self.update_keys or self.op_type =="verify":
                     try:
                         value = key_val[key]  # new updated value, however it is not their in orginal code "LoadDocumentsTask"
                         value_json = Json.loads(value)
-                        value_json['mutated'] += self.mutate_value
+                        value_json['mutated'] += Atomicity.updatecount
                         value = Json.dumps(value_json)
                     except ValueError:
                         self.random.seed(key)
