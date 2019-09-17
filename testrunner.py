@@ -364,7 +364,7 @@ def main():
                     print("Test '{0}' skipped, GROUP not satisfied"
                           .format(name))
                     continue
-        elif "EXCLUDE_GROUP" in runtime_test_params:
+        if "EXCLUDE_GROUP" in runtime_test_params:
             if 'GROUP' in params and \
                     len(set(runtime_test_params["EXCLUDE_GROUP"].split(";")) & set(params["GROUP"].split(";"))) > 0:
                 print("Test '{0}' skipped, is in an excluded group"
