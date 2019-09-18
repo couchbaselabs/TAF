@@ -78,7 +78,7 @@ class BucketParamTest(BaseTestCase):
                     update_count=self.update_count,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync))
+                    sync=self.sync,record_fail=True))
             self.sleep(10, "To avoid overlap of multiple tasks in parallel")
         if "create" in doc_ops:
             tasks.append(
@@ -92,7 +92,7 @@ class BucketParamTest(BaseTestCase):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync))
+                    sync=self.sync,record_fail=True))
             doc_count += (doc_create.end - doc_create.start)
             start_doc_for_insert += self.num_items
         if "delete" in doc_ops:
@@ -107,7 +107,7 @@ class BucketParamTest(BaseTestCase):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync))
+                    sync=self.sync,record_fail=True))
             doc_count -= (doc_delete.end - doc_delete.start)
 
         return tasks, doc_count, start_doc_for_insert
