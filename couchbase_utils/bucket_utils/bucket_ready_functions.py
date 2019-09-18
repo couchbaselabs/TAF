@@ -777,7 +777,8 @@ class BucketUtils:
                           only_store_hash=True, batch_size=10, pause_secs=1,
                           compression=True, process_concurrency=8, retries=5,
                           active_resident_threshold=100,
-                          ryow=False, check_persistence=False):
+                          ryow=False, check_persistence=False,
+                          suppress_error_table=False):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
@@ -786,7 +787,8 @@ class BucketUtils:
             pause_secs=pause_secs, compression=compression,
             process_concurrency=process_concurrency, retries=retries,
             active_resident_threshold=active_resident_threshold,
-            ryow=ryow, check_persistence=check_persistence)
+            ryow=ryow, check_persistence=check_persistence,
+            suppress_error_table=suppress_error_table)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,
@@ -796,7 +798,8 @@ class BucketUtils:
                                 retries=5, durability="",
                                 ignore_exceptions=[], retry_exceptions=[],
                                 active_resident_threshold=100,
-                                ryow=False, check_persistence=False):
+                                ryow=False, check_persistence=False,
+                                suppress_error_table=False):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -820,7 +823,8 @@ class BucketUtils:
                 only_store_hash, batch_size, pause_secs,
                 sdk_compression, process_concurrency, retries,
                 active_resident_threshold=active_resident_threshold,
-                ryow=ryow, check_persistence=check_persistence)
+                ryow=ryow, check_persistence=check_persistence,
+                suppress_error_table=suppress_error_table)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp, replicate_to=replicate_to,
                 persist_to=persist_to, durability=durability,

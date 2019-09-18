@@ -1165,7 +1165,7 @@ class TimeoutTests(DurabilityTestsBase):
                 elif int(vb_num) in target_nodes_vbuckets["active"]:
                     if vb_info["init"][node.ip][vb_num] \
                             != vb_info["post_timeout"][node.ip][vb_num]:
-                        self.log_failure(
+                        self.log.warning(
                             err_msg
                             % (node.ip,
                                "active",
@@ -1330,26 +1330,6 @@ class TimeoutTests(DurabilityTestsBase):
                 self.log_failure("validate_vb_seqno_stats verification failed")
 
         self.validate_test_failure()
-
-        # If replicas+1 == total nodes, verify no mutation should have
-        # succeeded with durability
-        if self.nodes_init == self.num_replicas+1:
-            read_gen = doc_generator(self.key, 0, self.num_items)
-            read_task = self.task.async_load_gen_docs(
-                self.cluster, self.bucket, read_gen, "read", 0,
-                batch_size=500, process_concurrency=1,
-                timeout_secs=self.sdk_timeout)
-            self.task_manager.get_task_result(read_task)
-
-            failed_keys = TableView(self.log.error)
-            failed_keys.set_headers(["Key", "Error"])
-            for doc_key, doc_info in read_task.success.items():
-                mutated = json.loads(str(doc_info["value"]))["mutated"]
-                if mutated != 0:
-                    failed_keys.add_row([doc_key, doc_info])
-
-            failed_keys.display("Affected mutations:")
-            self.log.error(read_task.fail)
 
         # SDK client for retrying AMBIGUOUS for unexpected keys
         sdk_client = SDKClient(RestConnection(self.cluster.master),

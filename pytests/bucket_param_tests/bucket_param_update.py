@@ -1,10 +1,8 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
-from couchbase_helper.durability_helper import DurabilityHelper, \
-    DurableExceptions
-from membase.api.rest_client import RestConnection
-from sdk_client3 import SDKClient
+from couchbase_helper.durability_helper import DurabilityHelper
+from sdk_exceptions import ClientException
 
 
 class BucketParamTest(BaseTestCase):
@@ -116,44 +114,52 @@ class BucketParamTest(BaseTestCase):
         return tasks, doc_count, start_doc_for_insert
 
     def load_docs(self, doc_ops, start_doc_for_insert, doc_count, doc_update,
-                  doc_create, doc_delete, suppress_error_table=False):
-        tasks = []
+                  doc_create, doc_delete, suppress_error_table=False,
+                  ignore_exceptions=[], retry_exceptions=[]):
+        tasks_info = dict()
         if "create" in doc_ops:
             # Start doc create task in parallel with replica_update
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, self.def_bucket, doc_create, "create", 0,
+            tasks_info.update(self.bucket_util._async_load_all_buckets(
+                self.cluster, doc_create, "create", exp=0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
                 batch_size=10, process_concurrency=8,
+                ignore_exceptions=ignore_exceptions,
+                retry_exceptions=retry_exceptions,
                 suppress_error_table=suppress_error_table))
             doc_count += (doc_create.end - doc_create.start)
             start_doc_for_insert += self.num_items
         if "update" in doc_ops:
             # Start doc update task in parallel with replica_update
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, self.def_bucket, doc_update, "update", 0,
+            tasks_info.update(self.bucket_util._async_load_all_buckets(
+                self.cluster, doc_update, "update", exp=0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
                 batch_size=10, process_concurrency=8,
+                ignore_exceptions=ignore_exceptions,
+                retry_exceptions=retry_exceptions,
                 suppress_error_table=suppress_error_table))
         if "delete" in doc_ops:
             # Start doc update task in parallel with replica_update
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, self.def_bucket, doc_delete, "delete", 0,
+            tasks_info.update(self.bucket_util._async_load_all_buckets(
+                self.cluster, doc_delete, "delete", exp=0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
                 batch_size=10, process_concurrency=8,
+                ignore_exceptions=ignore_exceptions,
+                retry_exceptions=retry_exceptions,
                 suppress_error_table=suppress_error_table))
             doc_count -= (doc_delete.end - doc_delete.start)
 
-        return tasks, doc_count, start_doc_for_insert
+        return tasks_info, doc_count, start_doc_for_insert
 
     def doc_ops_operations(self, doc_ops, start_doc_for_insert, doc_count,
                            doc_update, doc_create, doc_delete,
-                           suppress_error_table=False):
+                           suppress_error_table=False,
+                           ignore_exceptions=[], retry_exceptions=[]):
         if self.atomicity:
             tasks, doc_count, start_doc_for_insert = self.load_docs_atomicity(
                 doc_ops,
@@ -170,7 +176,9 @@ class BucketParamTest(BaseTestCase):
                 doc_update,
                 doc_create,
                 doc_delete,
-                suppress_error_table=suppress_error_table)
+                suppress_error_table=suppress_error_table,
+                ignore_exceptions=ignore_exceptions,
+                retry_exceptions=retry_exceptions)
 
         return tasks, doc_count, start_doc_for_insert
 
@@ -211,63 +219,42 @@ class BucketParamTest(BaseTestCase):
                 self.def_bucket, replicaNumber=replica_num)
             self.bucket_util.print_bucket_stats()
 
+            suppress_error_table = False
+            if self.def_bucket.replicaNumber == 3:
+                suppress_error_table = True
+
+            retry_exceptions = [ClientException.DurabilityAmbiguousException,
+                                ClientException.DurabilityImpossibleException,
+                                ClientException.RequestTimeoutException]
             tasks, doc_count, start_doc_for_insert = self.doc_ops_operations(
                 doc_ops,
                 start_doc_for_insert,
                 doc_count,
                 doc_update,
                 doc_create,
-                doc_delete)
+                doc_delete,
+                suppress_error_table=suppress_error_table,
+                retry_exceptions=retry_exceptions)
 
             # Start rebalance task with doc_ops in parallel
             rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
             self.sleep(10, "Wait for rebalance to start")
 
-            doc_ops_list = list()
-            doc_ops_failed = False
-            if "create" in doc_ops:
-                doc_ops_list.append("create")
-            if "update" in doc_ops:
-                doc_ops_list.append("update")
-            if "delete" in doc_ops:
-                doc_ops_list.append("delete")
-
-            suppress_error_table = False
-            if self.def_bucket.replicaNumber == 3:
-                suppress_error_table = True
-
             # Wait for all tasks to complete
-            assert_msg = ""
             self.task.jython_task_manager.get_task_result(rebalance)
-            sdk_client = SDKClient(RestConnection(self.cluster.master),
-                                   self.bucket_util.buckets[0])
-            for index, task in enumerate(tasks):
-                self.task.jython_task_manager.get_task_result(task)
-                if not self.atomicity:
-                    if self.def_bucket.replicaNumber == 3:
-                        if len(task.success.keys()) != 0:
-                            valid = \
-                                durability_helper.validate_durability_exception(
-                                    task.fail,
-                                    DurableExceptions.DurabilityImpossibleException)
-                            if not valid:
-                                doc_ops_failed = True
-                                assert_msg = "Invalid exception for replica=3"
-                    else:
-                        durability_helper.validate_durability_exception(
-                            task.fail,
-                            DurableExceptions.DurabilityImpossibleException)
-                        doc_ops_failed = durability_helper.retry_with_no_error(
-                            sdk_client, task.fail, doc_ops_list[index],
-                            timeout=30)
-                        if doc_ops_failed:
-                            doc_ops_failed = True
-                            assert_msg = "Retry of d_impossible exception " \
-                                         "failed"
+            if self.atomicity:
+                for task in tasks:
+                    self.task.jython_task_manager.get_task_result(task)
+            else:
+                # Wait for doc_ops to complete and retry & validate failures
+                self.bucket_util.verify_doc_op_task_exceptions(tasks,
+                                                               self.cluster)
+                self.bucket_util.log_doc_ops_task_failures(tasks)
 
-            # Disconnect the SDK client before possible assert
-            sdk_client.close()
-            self.assertFalse(doc_ops_failed, assert_msg)
+                for _, task_info in tasks.items():
+                    self.assertFalse(
+                        task_info["ops_failed"],
+                        "Doc ops failure during %s" % task_info["op_type"])
 
             # Assert if rebalance failed
             self.assertTrue(rebalance.result,
@@ -277,6 +264,11 @@ class BucketParamTest(BaseTestCase):
             if replica_num == 3:
                 suppress_error_table = True
 
+            ignore_exceptions = list()
+            if replica_num == 3:
+                ignore_exceptions.append(
+                    ClientException.DurabilityImpossibleException)
+
             self.log.info("Performing doc_ops(update) after rebalance")
             tasks, _, _ = self.doc_ops_operations(
                 "update",
@@ -285,27 +277,22 @@ class BucketParamTest(BaseTestCase):
                 doc_update,
                 doc_create,
                 doc_delete,
-                suppress_error_table=suppress_error_table)
+                suppress_error_table=suppress_error_table,
+                ignore_exceptions=ignore_exceptions)
 
-            assert_msg = "CRUD failed after rebalance for replica update"
-            doc_ops_failed = False
-            for task in tasks:
-                self.task.jython_task_manager.get_task_result(task)
-                if not self.atomicity:
-                    if replica_num == 3:
-                        if len(task.success.keys()) != 0:
-                            doc_ops_failed = True
-                            passed = \
-                                durability_helper.validate_durability_exception(
-                                    task.fail,
-                                    DurableExceptions.DurabilityImpossibleException)
-                            if not passed:
-                                assert_msg = "Exception validation failed"
-                                doc_ops_failed = True
-                    elif len(task.fail.keys()) != 0:
-                        doc_ops_failed = True
+            if self.atomicity:
+                for task in tasks:
+                    self.task.jython_task_manager.get_task_result(task)
+            else:
+                # Wait for doc_ops to complete and retry & validate failures
+                self.bucket_util.verify_doc_op_task_exceptions(tasks,
+                                                               self.cluster)
+                self.bucket_util.log_doc_ops_task_failures(tasks)
 
-            self.assertFalse(doc_ops_failed, assert_msg)
+                for _, task_info in tasks.items():
+                    self.assertFalse(
+                        task_info["ops_failed"],
+                        "Doc update failed after replica update rebalance")
 
             # Update the bucket's replica number
             self.def_bucket.replicaNumber = replica_num
