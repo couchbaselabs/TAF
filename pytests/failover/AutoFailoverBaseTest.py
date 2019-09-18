@@ -83,14 +83,9 @@ class AutoFailoverBaseTest(BaseTestCase):
                                                  "create", 0))
 
         else:
-            tasks.extend(self.async_load_all_buckets(self.run_time_create_load_gen,
-                                                     "create", 0))
-            tasks.extend(self.async_load_all_buckets(self.update_load_gen,
-                                                     "update", 0))
-            tasks.extend(self.async_load_all_buckets(self.delete_load_gen,
-                                                 "delete", 0))
+            subsequent_load_gen = self.get_doc_generator(self.num_items, self.num_items * 2)
+            tasks = self.async_load_all_buckets(subsequent_load_gen, "create", 0)
         return tasks
-
 
     def set_up_cluster(self):
         nodes_init = self.cluster.servers[1:self.nodes_init] \
