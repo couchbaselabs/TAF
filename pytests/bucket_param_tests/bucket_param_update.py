@@ -219,13 +219,19 @@ class BucketParamTest(BaseTestCase):
                 self.def_bucket, replicaNumber=replica_num)
             self.bucket_util.print_bucket_stats()
 
+            d_impossible_exception = \
+                ClientException.DurabilityImpossibleException
+            ignore_exceptions = list()
+            retry_exceptions = [ClientException.DurabilityAmbiguousException,
+                                ClientException.RequestTimeoutException]
+
             suppress_error_table = False
             if self.def_bucket.replicaNumber == 3:
                 suppress_error_table = True
+                ignore_exceptions = [d_impossible_exception]
+            else:
+                retry_exceptions.append(d_impossible_exception)
 
-            retry_exceptions = [ClientException.DurabilityAmbiguousException,
-                                ClientException.DurabilityImpossibleException,
-                                ClientException.RequestTimeoutException]
             tasks, doc_count, start_doc_for_insert = self.doc_ops_operations(
                 doc_ops,
                 start_doc_for_insert,
@@ -234,7 +240,8 @@ class BucketParamTest(BaseTestCase):
                 doc_create,
                 doc_delete,
                 suppress_error_table=suppress_error_table,
-                retry_exceptions=retry_exceptions)
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
 
             # Start rebalance task with doc_ops in parallel
             rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
@@ -289,7 +296,11 @@ class BucketParamTest(BaseTestCase):
                                                                self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(tasks)
 
-                for _, task_info in tasks.items():
+                for task, task_info in tasks.items():
+                    if replica_num == 3:
+                        self.assertTrue(
+                            len(task.fail.keys()) == (self.num_items/2),
+                            "Few doc_ops succeeded")
                     self.assertFalse(
                         task_info["ops_failed"],
                         "Doc update failed after replica update rebalance")
