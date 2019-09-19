@@ -657,13 +657,13 @@ class SDKClient(object):
         elif op_type == "subdoc_insert":
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()
-            mutate_in_specs.append(sub_doc_op.getInsertMutateInSpec(
+            mutate_in_specs.append(SDKClient.sub_doc_op.getInsertMutateInSpec(
                 sub_key, value, create_path, xattr))
             if not xattr:
-                mutate_in_specs.append(sub_doc_op.getIncrMutateInSpec(
+                mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            result = sub_doc_op.bulkSubDocOperation(
+            result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], exp, time_unit,
                 persist_to, replicate_to, durability, timeout, time_unit,
                 cas)
@@ -671,26 +671,26 @@ class SDKClient(object):
         elif op_type == "subdoc_upsert":
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()
-            mutate_in_specs.append(sub_doc_op.getUpsertMutateInSpec(
+            mutate_in_specs.append(SDKClient.sub_doc_op.getUpsertMutateInSpec(
                 sub_key, value, create_path, xattr))
             if not xattr:
-                mutate_in_specs.append(sub_doc_op.getIncrMutateInSpec(
+                mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            result = sub_doc_op.bulkSubDocOperation(
+            result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], exp, time_unit,
                 persist_to, replicate_to, durability, timeout, time_unit,
                 cas)
             return self.__translate_upsert_multi_sub_doc_result(result)
         elif op_type == "subdoc_delete":
             mutate_in_specs = list()
-            mutate_in_specs.append(sub_doc_op.getRemoveMutateInSpec(
+            mutate_in_specs.append(SDKClient.sub_doc_op.getRemoveMutateInSpec(
                 value, xattr))
             if not xattr:
-                mutate_in_specs.append(sub_doc_op.getIncrMutateInSpec(
+                mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            result = sub_doc_op.bulkSubDocOperation(
+            result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], exp, time_unit,
                 persist_to, replicate_to, durability, timeout, time_unit,
                 cas)
@@ -698,23 +698,23 @@ class SDKClient(object):
         elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()
-            mutate_in_specs.append(sub_doc_op.getReplaceMutateInSpec(
+            mutate_in_specs.append(SDKClient.sub_doc_op.getReplaceMutateInSpec(
                 sub_key, value, xattr))
             if not xattr:
-                mutate_in_specs.append(sub_doc_op.getIncrMutateInSpec(
+                mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            result = sub_doc_op.bulkSubDocOperation(
+            result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], exp, time_unit,
                 persist_to, replicate_to, durability, timeout, time_unit,
                 cas)
             result = self.__translate_upsert_multi_sub_doc_result(result)
         elif op_type == "subdoc_read":
             mutate_in_specs = list()
-            mutate_in_specs.append(sub_doc_op.getLookUpInSpec(value,
+            mutate_in_specs.append(SDKClient.sub_doc_op.getLookUpInSpec(value,
                                                                    xattr))
             content = Tuples.of(key, mutate_in_specs)
-            result = sub_doc_op.bulkGetSubDocOperation(
+            result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
                 self.collection, [content])
             result = self.__translate_get_multi_results(result)
         else:
@@ -725,7 +725,7 @@ class SDKClient(object):
     def delete_multi(self, keys, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
                      durability=""):
-        result = doc_op.bulkDelete(self.collection, keys,
+        result = SDKClient.doc_op.bulkDelete(self.collection, keys,
                                      persist_to, replicate_to,
                                      durability, timeout,
                                      time_unit)
@@ -734,7 +734,7 @@ class SDKClient(object):
     def touch_multi(self, keys, exp=0,
                     persist_to=0, replicate_to=0, durability="",
                     timeout=5, time_unit="seconds"):
-        result = doc_op.bulkTouch(self.collection, keys, exp,
+        result = SDKClient.doc_op.bulkTouch(self.collection, keys, exp,
                                     persist_to, replicate_to,
                                     durability, timeout,
                                     time_unit)
@@ -752,7 +752,7 @@ class SDKClient(object):
                 content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = doc_op.bulkInsert(self.collection, docs, exp, exp_unit,
+        result = SDKClient.doc_op.bulkInsert(self.collection, docs, exp, exp_unit,
                                      persist_to, replicate_to, durability,
                                      timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
@@ -766,7 +766,7 @@ class SDKClient(object):
             content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = doc_op.bulkUpsert(self.collection, docs, exp, exp_unit,
+        result = SDKClient.doc_op.bulkUpsert(self.collection, docs, exp, exp_unit,
                                      persist_to, replicate_to, durability,
                                      timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
@@ -780,13 +780,13 @@ class SDKClient(object):
             content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = doc_op.bulkReplace(self.collection, docs, exp, exp_unit,
+        result = SDKClient.doc_op.bulkReplace(self.collection, docs, exp, exp_unit,
                                       persist_to, replicate_to, durability,
                                       timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
 
     def getMulti(self, keys, timeout=5, time_unit="seconds"):
-        result = doc_op.bulkGet(self.collection, keys, timeout, time_unit)
+        result = SDKClient.doc_op.bulkGet(self.collection, keys, timeout, time_unit)
         return self.__translate_get_multi_results(result)
 
     # Bulk CRUDs for sub-doc APIs
@@ -819,16 +819,16 @@ class SDKClient(object):
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
-                _mutate_in_spec = sub_doc_op.getInsertMutateInSpec(
+                _mutate_in_spec = SDKClient.sub_doc_op.getInsertMutateInSpec(
                     _path, _val, create_path, xattr)
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
-                _mutate_in_spec = sub_doc_op.getIncrMutateInSpec(
+                _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        result = sub_doc_op.bulkSubDocOperation(
+        result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, exp, exp_unit,
             persist_to, replicate_to, durability, timeout, time_unit,
             cas)
@@ -861,16 +861,16 @@ class SDKClient(object):
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
-                _mutate_in_spec = sub_doc_op.getUpsertMutateInSpec(
+                _mutate_in_spec = SDKClient.sub_doc_op.getUpsertMutateInSpec(
                     _path, _val, create_path, xattr)
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
-                _mutate_in_spec = sub_doc_op.getIncrMutateInSpec(
+                _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        result = sub_doc_op.bulkSubDocOperation(
+        result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, exp, exp_unit,
             persist_to, replicate_to, durability, timeout, time_unit,
             cas)
@@ -894,12 +894,12 @@ class SDKClient(object):
             mutate_in_spec = []
             for _tuple in value:
                 _path = _tuple[0]
-                _mutate_in_spec = sub_doc_op.getLookUpInSpec(_path,
+                _mutate_in_spec = SDKClient.sub_doc_op.getLookUpInSpec(_path,
                                                                   xattr)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        result = sub_doc_op.bulkGetSubDocOperation(
+        result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
             self.collection, mutate_in_specs)
             # timeout, time_unit)
         return self.__translate_get_multi_results(result)
@@ -930,16 +930,16 @@ class SDKClient(object):
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
-                _mutate_in_spec = sub_doc_op.getRemoveMutateInSpec(
+                _mutate_in_spec = SDKClient.sub_doc_op.getRemoveMutateInSpec(
                     _path, xattr)
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
-                _mutate_in_spec = sub_doc_op.getIncrMutateInSpec(
+                _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        result = sub_doc_op.bulkSubDocOperation(
+        result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, exp, exp_unit,
             persist_to, replicate_to, durability, timeout, time_unit,
             cas)
@@ -971,16 +971,16 @@ class SDKClient(object):
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
-                _mutate_in_spec = sub_doc_op.getReplaceMutateInSpec(
+                _mutate_in_spec = SDKClient.sub_doc_op.getReplaceMutateInSpec(
                     _path, _val, xattr)
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
-                _mutate_in_spec = sub_doc_op.getIncrMutateInSpec(
+                _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        result = sub_doc_op.bulkSubDocOperation(
+        result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, exp, exp_unit,
             persist_to, replicate_to, durability, timeout, time_unit,
             cas)
