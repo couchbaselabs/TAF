@@ -22,8 +22,7 @@ import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
-    BucketCreateTask, StatsWaitTask, PrintOpsRate, \
-    MonitorDBFragmentationTask
+    BucketCreateTask, PrintOpsRate
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from bucket_utils.Bucket import Bucket
@@ -32,7 +31,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
+from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.exception import StatsUnavailableException
 from membase.api.rest_client import Node, RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
@@ -40,12 +39,11 @@ from membase.helper.rebalance_helper import RebalanceHelper
 from memcached.helper.data_helper import MemcachedClientHelper, \
                                          VBucketAwareMemcached
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_exceptions import ClientException
 from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
                           MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
-from couchbase_helper.durability_helper import DurableExceptions
-from mc_bin_client import MemcachedClient
 
 # from couchbase_helper.stats_tools import StatsCommon
 
@@ -745,6 +743,13 @@ class BucketUtils:
                 if found:
                     continue
 
+                ambiguous_state = False
+                if ClientException.DurabilityAmbiguousException \
+                        in str(exception) \
+                        or ClientException.RequestTimeoutException \
+                        in str(exception):
+                    ambiguous_state = True
+
                 result = client.crud(
                     task_info["op_type"], key, failed_doc["value"],
                     exp=task_info["exp"],
@@ -758,11 +763,14 @@ class BucketUtils:
                 for ex in task_info["retry_exceptions"]:
                     if str(exception).find(ex) != -1:
                         dict_key = "retried"
-                        found = True
                         break
-                if result["status"] or\
-                (DurableExceptions.KeyExistsException in result["error"] and task_info["op_type"] in ["create","update"]) or\
-                (DurableExceptions.KeyNotFoundException in result["error"] and task_info["op_type"]=="delete"):
+                if result["status"] \
+                        or (ambiguous_state
+                            and ClientException.KeyExistsException in result["error"]
+                            and task_info["op_type"] in ["create", "update"]) \
+                        or (ambiguous_state
+                            and ClientException.KeyNotFoundException in result["error"]
+                            and task_info["op_type"] == "delete"):
                     tasks_info[task][dict_key]["success"].update(key_value)
                 else:
                     tasks_info[task][dict_key]["fail"].update(key_value)
