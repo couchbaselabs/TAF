@@ -3,8 +3,14 @@ package com.couchbase.test.doc_operations_sdk3;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 //import java.util.Optional;
 import java.util.function.Function;
 
@@ -33,34 +39,34 @@ import reactor.util.function.Tuple2;
 public class doc_ops {
 
 	public List<HashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
-			long expiry, final String expiryTimeUnit, final int persistTo, final int replicateTo,
-			final String durabilityLevel, final long timeOut, final String timeOutTimeUnit) {
-		final InsertOptions insertOptions = this.getInsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+			long expiry, String expiryTimeUnit, int persistTo, int replicateTo,
+			String durabilityLevel, long timeOut, String timeOutTimeUnit) {
+		InsertOptions insertOptions = this.getInsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeOutTimeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+		ReactiveCollection reactiveCollection = collection.reactive();
+		HashMap<String, Object> retValue = new HashMap<String, Object>();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
 				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
-						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
-						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
-						returnValue.put("document", content);
-						returnValue.put("error", null);
-						returnValue.put("cas", 0);
-						returnValue.put("status", true);
-						returnValue.put("id", id);
+						String id = documentToInsert.getT1();
+						JsonObject content = documentToInsert.getT2();
+						retValue.put("document", content);
+						retValue.put("error", null);
+						retValue.put("cas", 0);
+						retValue.put("status", true);
+						retValue.put("id", id);
 						return reactiveCollection.insert(id, content, insertOptions)
 								.map(new Function<MutationResult, HashMap<String, Object>>() {
 									public HashMap<String, Object> apply(MutationResult result) {
-										returnValue.put("result", result);
-										returnValue.put("cas", result.cas());
-										return returnValue;
+										retValue.put("result", result);
+										retValue.put("cas", result.cas());
+										return retValue;
 									}
 								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
 									public Mono<HashMap<String, Object>> apply(Throwable error) {
-										returnValue.put("error", error);
-										returnValue.put("status", false);
-										return Mono.just(returnValue);
+										retValue.put("error", error);
+										retValue.put("status", false);
+										return Mono.just(retValue);
 									}
 								});
 					}
@@ -69,34 +75,34 @@ public class doc_ops {
 	}
 
 	public List<HashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
-			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
-			final DurabilityLevel durabilityLevel, final long timeOut, final String timeOutTimeUnit) {
-		final InsertOptions insertOptions = this.getInsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+			long expiry, String expiryTimeUnit, PersistTo persistTo, ReplicateTo replicateTo,
+			DurabilityLevel durabilityLevel, long timeOut, String timeOutTimeUnit) {
+		HashMap<String, Object> retValue = new HashMap<String, Object>();
+		InsertOptions insertOptions = this.getInsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeOutTimeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+		ReactiveCollection reactiveCollection = collection.reactive();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
 				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
-						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
-						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
-						returnValue.put("document", content);
-						returnValue.put("error", null);
-						returnValue.put("cas", 0);
-						returnValue.put("status", true);
-						returnValue.put("id", id);
+						String id = documentToInsert.getT1();
+						JsonObject content = documentToInsert.getT2();
+						retValue.put("document", content);
+						retValue.put("error", null);
+						retValue.put("cas", 0);
+						retValue.put("status", true);
+						retValue.put("id", id);
 						return reactiveCollection.insert(id, content, insertOptions)
 								.map(new Function<MutationResult, HashMap<String, Object>>() {
 									public HashMap<String, Object> apply(MutationResult result) {
-										returnValue.put("result", result);
-										returnValue.put("cas", result.cas());
-										return returnValue;
+										retValue.put("result", result);
+										retValue.put("cas", result.cas());
+										return retValue;
 									}
 								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
 									public Mono<HashMap<String, Object>> apply(Throwable error) {
-										returnValue.put("error", error);
-										returnValue.put("status", false);
-										return Mono.just(returnValue);
+										retValue.put("error", error);
+										retValue.put("status", false);
+										return Mono.just(retValue);
 									}
 								});
 					}
@@ -105,34 +111,34 @@ public class doc_ops {
 	}
 
 	public List<HashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
-			long expiry, final String expiryTimeUnit, final int persistTo, final int replicateTo,
-			final String durabilityLevel, final long timeOut, final String timeUnit) {
-		final UpsertOptions upsertOptions = this.getUpsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+			long expiry, String expiryTimeUnit, int persistTo, int replicateTo,
+			String durabilityLevel, long timeOut, String timeUnit) {
+		HashMap<String, Object> retValue = new HashMap<String, Object>();
+		UpsertOptions upsertOptions = this.getUpsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+		ReactiveCollection reactiveCollection = collection.reactive();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
 				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
-						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
-						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
-						returnValue.put("document", content);
-						returnValue.put("error", null);
-						returnValue.put("cas", 0);
-						returnValue.put("status", true);
-						returnValue.put("id", id);
+						String id = documentToInsert.getT1();
+						JsonObject content = documentToInsert.getT2();
+						retValue.put("document", content);
+						retValue.put("error", null);
+						retValue.put("cas", 0);
+						retValue.put("status", true);
+						retValue.put("id", id);
 						return reactiveCollection.upsert(id, content, upsertOptions)
 								.map(new Function<MutationResult, HashMap<String, Object>>() {
 									public HashMap<String, Object> apply(MutationResult result) {
-										returnValue.put("result", result);
-										returnValue.put("cas", result.cas());
-										return returnValue;
+										retValue.put("result", result);
+										retValue.put("cas", result.cas());
+										return retValue;
 									}
 								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
 									public Mono<HashMap<String, Object>> apply(Throwable error) {
-										returnValue.put("error", error);
-										returnValue.put("status", false);
-										return Mono.just(returnValue);
+										retValue.put("error", error);
+										retValue.put("status", false);
+										return Mono.just(retValue);
 									}
 								});
 					}
@@ -141,34 +147,34 @@ public class doc_ops {
 	}
 
 	public List<HashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
-			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
-			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
-		final UpsertOptions upsertOptions = this.getUpsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+			long expiry, String expiryTimeUnit, PersistTo persistTo, ReplicateTo replicateTo,
+			DurabilityLevel durabilityLevel, long timeOut, String timeUnit) {
+		HashMap<String, Object> retValue = new HashMap<String, Object>();
+		UpsertOptions upsertOptions = this.getUpsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+		ReactiveCollection reactiveCollection = collection.reactive();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
 				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
-						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
-						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
-						returnValue.put("document", content);
-						returnValue.put("error", null);
-						returnValue.put("cas", 0);
-						returnValue.put("status", true);
-						returnValue.put("id", id);
+						String id = documentToInsert.getT1();
+						JsonObject content = documentToInsert.getT2();
+						retValue.put("document", content);
+						retValue.put("error", null);
+						retValue.put("cas", 0);
+						retValue.put("status", true);
+						retValue.put("id", id);
 						return reactiveCollection.upsert(id, content, upsertOptions)
 								.map(new Function<MutationResult, HashMap<String, Object>>() {
 									public HashMap<String, Object> apply(MutationResult result) {
-										returnValue.put("result", result);
-										returnValue.put("cas", result.cas());
-										return returnValue;
+										retValue.put("result", result);
+										retValue.put("cas", result.cas());
+										return retValue;
 									}
 								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
 									public Mono<HashMap<String, Object>> apply(Throwable error) {
-										returnValue.put("error", error);
-										returnValue.put("status", false);
-										return Mono.just(returnValue);
+										retValue.put("error", error);
+										retValue.put("status", false);
+										return Mono.just(retValue);
 									}
 								});
 					}
@@ -177,34 +183,34 @@ public class doc_ops {
 	}
 
 	public List<HashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, JsonObject>> documents,
-			long expiry, final String expiryTimeUnit, final int persistTo, final int replicateTo,
-			final String durabilityLevel, final long timeOut, final String timeUnit) {
-		final ReplaceOptions replaceOptions = this.getReplaceOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+			long expiry, String expiryTimeUnit, int persistTo, int replicateTo,
+			String durabilityLevel, long timeOut, String timeUnit) {
+		HashMap<String, Object> retValue = new HashMap<String, Object>();
+		ReplaceOptions replaceOptions = this.getReplaceOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+		ReactiveCollection reactiveCollection = collection.reactive();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
 				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
-						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
-						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
-						returnValue.put("document", content);
-						returnValue.put("error", null);
-						returnValue.put("cas", 0);
-						returnValue.put("status", true);
-						returnValue.put("id", id);
+						String id = documentToInsert.getT1();
+						JsonObject content = documentToInsert.getT2();
+						retValue.put("document", content);
+						retValue.put("error", null);
+						retValue.put("cas", 0);
+						retValue.put("status", true);
+						retValue.put("id", id);
 						return reactiveCollection.replace(id, content, replaceOptions)
 								.map(new Function<MutationResult, HashMap<String, Object>>() {
 									public HashMap<String, Object> apply(MutationResult result) {
-										returnValue.put("result", result);
-										returnValue.put("cas", result.cas());
-										return returnValue;
+										retValue.put("result", result);
+										retValue.put("cas", result.cas());
+										return retValue;
 									}
 								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
 									public Mono<HashMap<String, Object>> apply(Throwable error) {
-										returnValue.put("error", error);
-										returnValue.put("status", false);
-										return Mono.just(returnValue);
+										retValue.put("error", error);
+										retValue.put("status", false);
+										return Mono.just(retValue);
 									}
 								});
 					}
@@ -213,34 +219,34 @@ public class doc_ops {
 	}
 
 	public List<HashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, JsonObject>> documents,
-			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
-			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
-		final ReplaceOptions replaceOptions = this.getReplaceOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
+			long expiry, String expiryTimeUnit, PersistTo persistTo, ReplicateTo replicateTo,
+			DurabilityLevel durabilityLevel, long timeOut, String timeUnit) {
+		HashMap<String, Object> retValue = new HashMap<String, Object>();
+		ReplaceOptions replaceOptions = this.getReplaceOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+		ReactiveCollection reactiveCollection = collection.reactive();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(documents)
 				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
-						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
-						final HashMap<String, Object> returnValue = new HashMap<String, Object>();
-						returnValue.put("document", content);
-						returnValue.put("error", null);
-						returnValue.put("cas", 0);
-						returnValue.put("status", true);
-						returnValue.put("id", id);
+						String id = documentToInsert.getT1();
+						JsonObject content = documentToInsert.getT2();
+						retValue.put("document", content);
+						retValue.put("error", null);
+						retValue.put("cas", 0);
+						retValue.put("status", true);
+						retValue.put("id", id);
 						return reactiveCollection.replace(id, content, replaceOptions)
 								.map(new Function<MutationResult, HashMap<String, Object>>() {
 									public HashMap<String, Object> apply(MutationResult result) {
-										returnValue.put("result", result);
-										returnValue.put("cas", result.cas());
-										return returnValue;
+										retValue.put("result", result);
+										retValue.put("cas", result.cas());
+										return retValue;
 									}
 								}).onErrorResume(new Function<Throwable, Mono<HashMap<String, Object>>>() {
 									public Mono<HashMap<String, Object>> apply(Throwable error) {
-										returnValue.put("error", error);
-										returnValue.put("status", false);
-										return Mono.just(returnValue);
+										retValue.put("error", error);
+										retValue.put("status", false);
+										return Mono.just(retValue);
 									}
 								});
 					}
@@ -248,15 +254,15 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<HashMap<String, Object>> bulkTouch(Collection collection, List<String> keys, final int exp, final int persistTo, final int replicateTo,
-			final String durabilityLevel, final long timeOut, final String timeUnit) {
-		final TouchOptions touchOptions = this.getTouchOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
-		final Duration exp_duration = this.getDuration(exp, "seconds");
+	public List<HashMap<String, Object>> bulkTouch(Collection collection, List<String> keys, int exp, int persistTo, int replicateTo,
+			String durabilityLevel, long timeOut, String timeUnit) {
+		TouchOptions touchOptions = this.getTouchOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		ReactiveCollection reactiveCollection = collection.reactive();
+		Duration exp_duration = this.getDuration(exp, "seconds");
+		HashMap<String, Object> retVal = new HashMap<String, Object>();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
 				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(String key){
-						final HashMap<String, Object> retVal = new HashMap<String, Object>();
 						retVal.put("id", key);
 						retVal.put("cas", 0);
 						retVal.put("error", null);
@@ -279,14 +285,14 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<HashMap<String, Object>> bulkTouch(Collection collection, List<String> keys, final Duration exp, final PersistTo persistTo, final ReplicateTo replicateTo,
-			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
-		final TouchOptions touchOptions = this.getTouchOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+	public List<HashMap<String, Object>> bulkTouch(Collection collection, List<String> keys, Duration exp, PersistTo persistTo, ReplicateTo replicateTo,
+			DurabilityLevel durabilityLevel, long timeOut, String timeUnit) {
+		HashMap<String, Object> retVal = new HashMap<String, Object>();
+		TouchOptions touchOptions = this.getTouchOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		ReactiveCollection reactiveCollection = collection.reactive();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
 				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(String key){
-						final HashMap<String, Object> retVal = new HashMap<String, Object>();
 						retVal.put("id", key);
 						retVal.put("cas", 0);
 						retVal.put("error", null);
@@ -310,13 +316,14 @@ public class doc_ops {
 	}
 
 	public List<HashMap<String, Object>> bulkGet(Collection collection, List<String> keys,
-			final long timeOut, final String timeUnit) {
-		final ReactiveCollection reactiveCollection = collection.reactive();
-		final GetOptions getOptions = this.getReadOptions(timeOut, timeUnit);
+			long timeOut, String timeUnit) {
+		ReactiveCollection reactiveCollection = collection.reactive();
+		GetOptions getOptions = this.getReadOptions(timeOut, timeUnit);
+		HashMap<String, Object> retVal = new HashMap<String, Object>();
+
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
 				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(String key) {
-						final HashMap<String, Object> retVal = new HashMap<String, Object>();
 						retVal.put("id", key);
 						retVal.put("cas", 0);
 						retVal.put("content", null);
@@ -341,14 +348,14 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<HashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, final int persistTo, final int replicateTo,
-			final String durabilityLevel, final long timeOut, final String timeUnit) {
-		final RemoveOptions removeOptions = this.getRemoveOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+	public List<HashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, int persistTo, int replicateTo,
+			String durabilityLevel, long timeOut, String timeUnit) {
+		HashMap<String, Object> retVal = new HashMap<String, Object>();
+		RemoveOptions removeOptions = this.getRemoveOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		ReactiveCollection reactiveCollection = collection.reactive();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
 				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(String key){
-						final HashMap<String, Object> retVal = new HashMap<String, Object>();
 						retVal.put("id", key);
 						retVal.put("cas", 0);
 						retVal.put("error", null);
@@ -371,14 +378,14 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<HashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, final PersistTo persistTo, final ReplicateTo replicateTo,
-			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
-		final RemoveOptions removeOptions = this.getRemoveOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
-		final ReactiveCollection reactiveCollection = collection.reactive();
+	public List<HashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, PersistTo persistTo, ReplicateTo replicateTo,
+			DurabilityLevel durabilityLevel, long timeOut, String timeUnit) {
+		HashMap<String, Object> retVal = new HashMap<String, Object>();
+		RemoveOptions removeOptions = this.getRemoveOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		ReactiveCollection reactiveCollection = collection.reactive();
 		List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
 				.flatMap(new Function<String, Publisher<HashMap<String, Object>>>() {
 					public Publisher<HashMap<String, Object>> apply(String key){
-						final HashMap<String, Object> retVal = new HashMap<String, Object>();
 						retVal.put("id", key);
 						retVal.put("cas", 0);
 						retVal.put("error", null);
