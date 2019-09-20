@@ -229,6 +229,7 @@ class BucketParamTest(BaseTestCase):
             if self.def_bucket.replicaNumber == 3 or replica_num == 3:
                 suppress_error_table = True
                 ignore_exceptions = [d_impossible_exception]
+                retry_exceptions = list()
             else:
                 retry_exceptions.append(d_impossible_exception)
 
