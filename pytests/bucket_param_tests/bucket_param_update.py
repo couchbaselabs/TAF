@@ -226,7 +226,7 @@ class BucketParamTest(BaseTestCase):
                                 ClientException.RequestTimeoutException]
 
             suppress_error_table = False
-            if self.def_bucket.replicaNumber == 3:
+            if self.def_bucket.replicaNumber == 3 or replica_num == 3:
                 suppress_error_table = True
                 ignore_exceptions = [d_impossible_exception]
             else:
