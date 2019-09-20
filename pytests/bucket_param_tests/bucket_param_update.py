@@ -1,7 +1,6 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
-from couchbase_helper.durability_helper import DurabilityHelper
 from sdk_exceptions import ClientException
 
 
@@ -184,9 +183,6 @@ class BucketParamTest(BaseTestCase):
 
     def generic_replica_update(self, doc_count, doc_ops, bucket_helper_obj,
                                replicas_to_update, start_doc_for_insert):
-        durability_helper = DurabilityHelper(
-            self.log, len(self.cluster.nodes_in_cluster),
-            self.durability_level)
         for replica_num in replicas_to_update:
             # Creating doc creator to be used by test cases
             doc_create = doc_generator(self.key, start_doc_for_insert,
@@ -227,9 +223,9 @@ class BucketParamTest(BaseTestCase):
 
             suppress_error_table = False
             if self.def_bucket.replicaNumber == 3 or replica_num == 3:
+                doc_ops = "update"
                 suppress_error_table = True
-                ignore_exceptions = [d_impossible_exception] \
-                                    + retry_exceptions
+                ignore_exceptions = [d_impossible_exception]+retry_exceptions
                 retry_exceptions = list()
             else:
                 retry_exceptions.append(d_impossible_exception)
