@@ -849,20 +849,18 @@ class RebalanceInTests(RebalanceBaseTest):
         self.sleep(20)
         shell.start_couchbase()
         shell.disconnect()
-        try:
-            rebalance = self.task.async_rebalance(servs_init, servs_in, [])
-            self.task.jython_task_manager.get_task_result(rebalance)
-            self.assertTrue(rebalance.result, "Rebalance Failed")
-            self.cluster.nodes_in_cluster.extend(servs_in)
-        except RebalanceFailedException:
+        rebalance = self.task.async_rebalance(servs_init, servs_in, [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.cluster.nodes_in_cluster.extend(servs_in)
+        if not rebalance.result:
             self.log.info("rebalance was failed as expected")
-            self.assertTrue(self.cluster_util._wait_warmup_completed(
-                self, [warmup_node], 'default',
-                wait_time=self.wait_timeout * 10))
+            for bucket in self.bucket_util.buckets:
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    [warmup_node], bucket,
+                    wait_time=self.wait_timeout * 10))
 
             self.log.info("second attempt to rebalance")
             rebalance = self.task.async_rebalance(servs_init + servs_in, [], [])
-            self.cluster.nodes_in_cluster.extend(servs_in)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
