@@ -3,34 +3,24 @@ Created on Sep 14, 2017
 
 @author: riteshagarwal
 """
+import zlib
 import copy
-from httplib import IncompleteRead
-import logging
+import json as Json
+import json as pyJson
 import os
+import logging
 import random
 import socket
 import string
-from time import sleep
 import time
-import zlib
-
+from httplib import IncompleteRead
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
-from Jython_tasks.task_manager import TaskManager
 from TestInput import TestInputServer
 from cb_tools.cbstats import Cbstats
-import com.couchbase.client.java.json.JsonObject as JsonObject
-from com.couchbase.client.java.kv import ReplicaMode
-import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     doc_generator, SubdocDocumentGenerator
-from couchbase_helper.durability_helper import DurableExceptions
-from java.lang import System
-from java.lang import Thread
-from java.util.concurrent import Callable
-import json as Json
-import json as pyJson
 from membase.api.exception import \
     N1QLQueryException, DropIndexException, CreateIndexException, \
     DesignDocCreationException, QueryViewException, ReadDocumentException, \
@@ -38,9 +28,17 @@ from membase.api.exception import \
     BucketCreationException, AutoFailoverException, GetBucketInfoFailed,\
     CompactViewFailed, SetViewInfoNotFound
 from membase.api.rest_client import RestConnection
-from reactor.util.function import Tuples
+from java.util.concurrent import Callable
+from java.lang import Thread
 from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
+from reactor.util.function import Tuples
+import com.couchbase.test.transactions.SimpleTransaction as Transaction
+import com.couchbase.client.java.json.JsonObject as JsonObject
+from com.couchbase.client.java.kv import ReplicaMode
+from Jython_tasks.task_manager import TaskManager
 from table_view import TableView, plot_graph
+from time import sleep
+from couchbase_helper.durability_helper import DurableExceptions
 
 
 class Task(Callable):
