@@ -770,7 +770,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.num_loaded = 0
         self.durability = durability
         self.fail = {}
-        self.success = {}
+#         self.success = {}
         self.docs_loaded = 0
         self.skip_read_on_error = skip_read_on_error
 
@@ -793,7 +793,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                 doc_type=self.generator.doc_type, durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == 'update':
             success, fail = self.batch_update(
                 key_value,
@@ -805,7 +805,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                 durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == 'replace':
             success, fail = self.batch_replace(
                 key_value,
@@ -817,7 +817,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                 durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == 'delete':
             success, fail = self.batch_delete(key_value,
                                               persist_to=self.persist_to,
@@ -826,7 +826,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               timeunit=self.time_unit,
                                               durability=self.durability)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == 'touch':
             success, fail = self.batch_touch(key_value,
                                              exp=self.exp,
@@ -836,11 +836,11 @@ class LoadDocumentsTask(GenericLoadingTask):
                                              timeunit=self.time_unit,
                                              durability=self.durability)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == 'read':
             success, fail = self.batch_read(key_value.keys())
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         else:
             self.set_exception(Exception("Bad operation: %s" % self.op_type))
         self.docs_loaded += len(key_value)
@@ -879,7 +879,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         self.num_loaded = 0
         self.durability = durability
         self.fail = {}
-        self.success = {}
+#         self.success = {}
 
     def has_next(self):
         return self.generator.has_next()
@@ -898,7 +898,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 create_path=self.create_path,
                 xattr=self.xattr)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == 'upsert':
             success, fail = self.batch_sub_doc_upsert(
                 key_value,
@@ -910,7 +910,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 create_path=self.create_path,
                 xattr=self.xattr)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == 'remove':
             success, fail = self.batch_sub_doc_remove(
                 key_value,
@@ -921,7 +921,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 durability=self.durability,
                 xattr=self.xattr)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == "replace":
             success, fail = self.batch_sub_doc_replace(
                 key_value,
@@ -932,13 +932,13 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 durability=self.durability,
                 xattr=self.xattr)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         elif self.op_type == 'read':
             success, fail = self.batch_sub_doc_read(key_value,
                                                     timeout=self.timeout,
                                                     time_unit=self.time_unit)
             self.fail.update(fail)
-            self.success.update(success)
+#             self.success.update(success)
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
@@ -958,7 +958,7 @@ class Durability(Task):
                                          .format(time.time()))
         self.majority_value = majority_value
         self.fail = {}
-        self.success = {}
+#         self.success = {}
         self.create_failed = {}
         self.update_failed = {}
         self.delete_failed = {}
@@ -1412,7 +1412,7 @@ class LoadDocumentsGeneratorsTask(Task):
             self.bucket = bucket
         self.num_loaded = 0
         self.fail = {}
-        self.success = {}
+#         self.success = {}
 
     def call(self):
         self.start_task()
@@ -1463,7 +1463,7 @@ class LoadDocumentsGeneratorsTask(Task):
                     self.test_log.error(e)
                 finally:
                     self.fail.update(task.fail)
-                    self.success.update(task.success)
+#                     self.success.update(task.success)
                     if task.fail.__len__() != 0:
                         target_log = self.test_log.error
                     else:
@@ -1577,7 +1577,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
             self.bucket = bucket
         self.num_loaded = 0
         self.fail = {}
-        self.success = {}
+#         self.success = {}
 
     def call(self):
         self.start_task()
@@ -1625,7 +1625,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                     self.log.error(e)
                 finally:
                     self.fail.update(task.fail)
-                    self.success.update(task.success)
+#                     self.success.update(task.success)
                     self.log.debug("Failed to load {} sub_docs from {} "
                                    "to {}"
                                    .format(task.fail.__len__(),
@@ -1720,7 +1720,7 @@ class ContinuousDocUpdateTask(Task):
         self.batch_size = batch_size
         self.generator = generator
         self.buckets = None
-        self.success = dict()
+#         self.success = dict()
         self.fail = dict()
 
         self.key = self.generator.name
