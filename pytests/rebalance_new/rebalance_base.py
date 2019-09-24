@@ -217,30 +217,30 @@ class RebalanceBaseTest(BaseTestCase):
         if("update" in self.doc_ops):
             tasks_info.update({self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_update,
-                         "rebalance_only_update", 0, batch_size=20, process_concurrency=8,
+                         "rebalance_only_update", 0, batch_size=20, process_concurrency=self.process_concurrency,
                           replicate_to=self.replicate_to, persist_to=self.persist_to,
                           timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
                           update_count=self.update_count, commit=self.transaction_commit,
-                          durability=self.durability_level, sync=sync):None})
+                          durability=self.durability_level, sync=sync, defer=self.defer):None})
         if("create" in self.doc_ops):
             tasks_info.update({self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_create,
-                         "create", 0, batch_size=20, process_concurrency=8,
+                         "create", 0, batch_size=20, process_concurrency=self.process_concurrency,
                           replicate_to=self.replicate_to, persist_to=self.persist_to,
                           timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
                           commit=self.transaction_commit, durability=self.durability_level,
-                          sync=sync):None})
+                          sync=sync, defer=self.defer):None})
         if("delete" in self.doc_ops):
             tasks_info.update({self.task.async_load_gen_docs_atomicity(
                           self.cluster, self.bucket_util.buckets, self.gen_delete,
-                         "rebalance_delete", 0, batch_size=20, process_concurrency=8,
+                         "rebalance_delete", 0, batch_size=20, process_concurrency=self.process_concurrency,
                           replicate_to=self.replicate_to, persist_to=self.persist_to,
                           timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                           transaction_timeout=self.transaction_timeout,
                           commit=self.transaction_commit, durability=self.durability_level,
-                          sync=sync):None})
+                          sync=sync, defer=self.defer):None})
 
         if task_verification:
             for task in tasks_info.keys():

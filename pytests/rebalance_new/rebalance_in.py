@@ -535,7 +535,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                     process_concurrency=8, retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
                                     commit=self.transaction_commit,
-                                    durability=self.durability_level,sync=self.sync)
+                                    durability=self.durability_level, sync=self.sync, defer=self.defer)
                     else:
                         task = self.task.async_load_gen_docs(
                                     self.cluster, bucket, self.gen_update, "update", 0,
@@ -557,7 +557,8 @@ class RebalanceInTests(RebalanceBaseTest):
                                     batch_size=10,timeout_secs=self.sdk_timeout,process_concurrency=8,
                                     retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
-                                    commit=self.transaction_commit,durability=self.durability_level,sync=self.sync)
+                                    commit=self.transaction_commit,durability=self.durability_level, 
+                                    sync=self.sync, defer=self.defer)
                     else:
                         task = self.task.async_load_gen_docs(
                                     self.cluster, bucket, self.gen_create, "create", 0,
@@ -584,7 +585,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                     retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
                                     commit=self.transaction_commit,
-                                    durability=self.durability_level,sync=self.sync)
+                                    durability=self.durability_level, sync=self.sync, defer=self.defer)
                     else:
                         task = self.task.async_load_gen_docs(
                                     self.cluster, bucket, self.gen_delete, "delete", 0,

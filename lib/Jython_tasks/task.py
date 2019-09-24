@@ -3564,13 +3564,14 @@ class Atomicity(Task):
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=8, print_ops_rate=True, retries=5,update_count=1, transaction_timeout=5,
-                 commit=True, durability=None, sync=True, num_threads=5, record_fail=False):
+                 commit=True, durability=None, sync=True, num_threads=5, record_fail=False, defer=False):
         super(Atomicity, self).__init__("AtomicityDocumentsLoadGenTask")
 
         self.generators = generator
         self.cluster = cluster
         self.commit = commit
         Atomicity.record_fail = record_fail
+        Atomicity.defer = defer
         Atomicity.num_docs = num_threads
         self.exp = exp
         self.flag = flag
@@ -3588,7 +3589,6 @@ class Atomicity(Task):
         Atomicity.task_manager = task_manager
         self.batch_size = batch_size
         self.print_ops_rate = print_ops_rate
-        self.retries = retries
         self.op_type = op_type
         self.bucket = bucket
         self.clients = clients
@@ -3707,6 +3707,8 @@ class Atomicity(Task):
             self.client = client
             self.bucket = bucket
             self.exp_unit = "seconds"
+            self.retries = retries
+            
 
         def has_next(self):
             return self.generator.has_next()
@@ -3749,29 +3751,23 @@ class Atomicity(Task):
                 last_batch = self.key_value
                 
             self.list_docs = list(self.__chunks(self.all_keys, Atomicity.num_docs))
+            self.docs = list(self.__chunks(docs, Atomicity.num_docs))
+            
             for op_type in self.op_type:
+                self.encoding=[]
                 if op_type == "create":
                     if len(self.op_type) != 1:
                         commit = True
                     else:
                         commit = self.commit
-                    docs = list(self.__chunks(docs, Atomicity.num_docs))
-                    for doc in docs:
-                        err = Transaction().RunTransaction(self.transaction, self.bucket, doc, [], [], commit, Atomicity.sync, Atomicity.updatecount )
-                        if err:
-                            exception = self.__retryDurabilityImpossibleException(err, doc, commit, op_type="create")
-                            if exception:
-                                break
+                    for self.doc in self.docs:
+                        self.transaction_load(self.doc, commit, op_type="create")
                     if not commit:
                         self.all_keys = []
 
                 if op_type == "update" or op_type == "rebalance_only_update":
                     for doc in self.list_docs:
-                        err = Transaction().RunTransaction(self.transaction, self.bucket, [], doc, [], self.commit, Atomicity.sync, Atomicity.updatecount )
-                        if err and not Atomicity.record_fail:
-                            exception = self.__retryDurabilityImpossibleException(err, doc, self.commit, op_type="update")
-                            if exception:
-                                break
+                        self.transaction_load(doc, self.commit, op_type="update")
                     if self.commit:
                         self.update_keys = self.all_keys
 
@@ -3780,11 +3776,7 @@ class Atomicity(Task):
 
                 if op_type == "delete" or op_type == "rebalance_delete":
                     for doc in self.list_docs:
-                        err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], doc, self.commit, Atomicity.sync, Atomicity.updatecount )
-                        if err:
-                            exception = self.__retryDurabilityImpossibleException(err, doc, self.commit, op_type="delete")
-                            if exception:
-                                    break
+                        self.transaction_load(doc, self.commit, op_type="delete")
                     if self.commit:
                         self.delete_keys = self.all_keys
 
@@ -3805,12 +3797,10 @@ class Atomicity(Task):
                     self.delete_keys = last_batch.keys()
 
                 if op_type == "rebalance_update" or op_type == "create_update":
-                    self.update_keys = self.all_keys
-                    err = Transaction().RunTransaction(self.transaction, self.bucket, docs, self.all_keys, [], self.commit, True, Atomicity.updatecount)
-                    if err and not Atomicity.record_fail:
-                        exception = self.__retryDurabilityImpossibleException(err, docs, self.commit, op_type="create", update_keys=self.all_keys)
-                    elif err:
-                        self.all_keys = []
+                    for i in range(len(self.docs)):
+                        self.transaction_load(self.docs[i], self.commit, self.list_docs[i], op_type="create")
+                    if self.commit:
+                       self.update_keys = self.all_keys 
 
                 if op_type == "time_out":
                     err = Transaction().RunTransaction(self.transaction, self.bucket, docs, [], [], True, True, Atomicity.updatecount )
@@ -3821,11 +3811,39 @@ class Atomicity(Task):
                         self.test_log.debug("End of First Transaction that is getting timeout")
                     else:
                         exception = err
+                        self.test_log.info("Sleep for 60 seconds so that the txn gets cleaned up")    
+                        time.sleep(60)
                         
-                time.sleep(60)
-                if exception and not Atomicity.record_fail:
-                    self.set_exception(Exception(exception))
-                    break
+                if Atomicity.defer:
+                    self.test_log.info("going to commit/rollback the deffered transaction")
+                    self.retries = 5
+                    if op_type != "create":
+                       commit = self.commit 
+                    for encoded in self.encoding:
+                        err = Transaction().DefferedTransaction(self.transaction, commit, encoded)        
+                        if err:
+                            while self.retries > 0:
+                                if "DurabilityImpossibleException" in str(err):
+                                    self.retries -=1
+                                    self.test_log.info("DurabilityImpossibleException seen while transaction defer")
+                                    time.sleep(60)
+                                    err = Transaction().DefferedTransaction(self.transaction, self.commit, encoded)
+                                    if err:
+                                        continue
+                                    else:
+                                        break
+                                else:
+                                    exception=err
+                                    self.test_log.info("Sleep for 60 seconds so that the txn gets cleaned up")    
+                                    time.sleep(60)
+                                    break
+
+                if exception:
+                    if Atomicity.record_fail:
+                        self.all_keys=[]
+                    else:
+                        self.set_exception(Exception(exception))
+                        break
 
             self.test_log.info("Atomicity Load generation thread completed")
             
@@ -3858,30 +3876,44 @@ class Atomicity(Task):
             self.test_log.info("Completed Atomicity Verification thread")
   
             self.complete_task()
+            
+        def transaction_load(self, doc, commit=True, update_keys=[], op_type="create"):
+            if Atomicity.defer:
+                if op_type == "create":
+                    ret = Transaction().DeferTransaction(self.transaction, self.bucket, doc, update_keys, [])
+                if op_type == "update":
+                    ret = Transaction().DeferTransaction(self.transaction, self.bucket, [], doc, [])
+                if op_type == "delete":
+                    ret = Transaction().DeferTransaction(self.transaction, self.bucket, [], [], doc)
+                err = ret.getT2() 
+            else:
+                if op_type == "create":
+                    err = Transaction().RunTransaction(self.transaction, self.bucket, doc, update_keys, [], commit, Atomicity.sync, Atomicity.updatecount)                
+                if op_type == "update":
+                    err = Transaction().RunTransaction(self.transaction, self.bucket, [], doc, [], commit, Atomicity.sync, Atomicity.updatecount)                
+                if op_type == "delete":
+                    err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], doc, commit, Atomicity.sync, Atomicity.updatecount) 
+            if err:
+                print "the value of retry is {}".format(self.retries)
+                if Atomicity.record_fail:
+                    self.all_keys=[]
+                elif "DurabilityImpossibleException" in str(err) and self.retries > 0:
+                    self.test_log.info("DurabilityImpossibleException seen so retrying...")
+                    time.sleep(60)
+                    self.transaction_load( doc, commit, update_keys, op_type)
+                    self.retries -=1
+                else:
+                    exception = err
+                    self.test_log.info("Sleep for 60 seconds so that the txn gets cleaned up") 
+                    time.sleep(60)
+            elif Atomicity.defer:
+                self.encoding.append(ret.getT1())   
+                     
 
         def __chunks(self, l, n):
             """Yield successive n-sized chunks from l."""
             for i in range(0, len(l), n):
                 yield l[i:i + n]
-
-        def __retryDurabilityImpossibleException(self, err, docs, commit, op_type="update", update_keys=[]):
-            if "DurabilityImpossibleException" in str(err):
-                self.test_log.info("DurabilityImpossibleException seen so retrying")
-                n=5
-                while n > 0:
-                    n -= 1
-                    time.sleep(30)
-                    if op_type == "create":
-                        err = Transaction().RunTransaction(self.transaction, self.bucket, docs, update_keys, [], commit, Atomicity.sync, Atomicity.updatecount)
-                    if "update" in op_type:
-                        err = Transaction().RunTransaction(self.transaction, self.bucket, [], docs, [], commit, Atomicity.sync, Atomicity.updatecount)
-                    if "delete" in op_type:
-                        err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], docs, commit, Atomicity.sync, Atomicity.updatecount)
-                    if "DurabilityImpossibleException" in str(err):
-                        self.test_log.info("DurabilityImpossibleException seen so retrying")
-                    else:
-                        break
-            return err
 
         def validate_key_val(self, map, key_value, client):
             wrong_values = []
@@ -3897,7 +3929,10 @@ class Atomicity(Task):
                     elif map[key]['error'] is not None:
                         actual_val = map[key]['error'].toString()
                     if expected_val == actual_val or map[key]['cas'] == 0:
-                        self.inserted_keys[client].remove(key)
+                        try:
+                            self.inserted_keys[client].remove(key)
+                        except:
+                            pass
                     else:
                         wrong_values.append(key)
                         self.test_log.info("actual value for key {} is {}".format(key,actual_val))

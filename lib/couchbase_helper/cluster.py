@@ -274,7 +274,7 @@ class ServerTasks(object):
                                       process_concurrency=8, retries=5,
                                       update_count=1, transaction_timeout=5,
                                       commit=True, durability=0, sync=True,
-                                      num_threads=5, record_fail=False):
+                                      num_threads=5, record_fail=False, defer=False):
 
         self.log.info("Loading documents ")
         bucket_list = list()
@@ -305,7 +305,7 @@ class ServerTasks(object):
             update_count=update_count,
             transaction_timeout=transaction_timeout, commit=commit,
             durability=durability, sync=sync, num_threads=num_threads,
-            record_fail=record_fail)
+            record_fail=record_fail, defer=defer)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

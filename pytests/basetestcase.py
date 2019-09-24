@@ -77,6 +77,7 @@ class BaseTestCase(unittest.TestCase):
         self.default_bucket = self.input.param("default_bucket", True)
         self.num_buckets = self.input.param("num_buckets", 0)
         self.atomicity = self.input.param("atomicity", False)
+        self.defer = self.input.param("defer", False)
         # end of transaction parameters
 
         # Client specific params

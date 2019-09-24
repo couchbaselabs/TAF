@@ -4,6 +4,7 @@ package com.couchbase.test.transactions;
 
 import com.couchbase.transactions.config.TransactionConfig;
 import com.couchbase.transactions.config.TransactionConfigBuilder;
+import com.couchbase.transactions.deferred.TransactionSerializedContext;
 import com.couchbase.transactions.error.TransactionFailed;
 import com.couchbase.client.core.error.TemporaryFailureException;
 import com.couchbase.transactions.log.LogDefer;
@@ -627,6 +628,97 @@ public class SimpleTransaction {
 	public List<String> getQueue(int n){
 		return this.queue.stream().skip(queue.size() - n).collect(Collectors.toList());
 	}
+	
+	public Tuple2<byte[], List<LogDefer>> DeferTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String, 
+			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys) {
+		byte[] encoded = new byte[0];
+		List<LogDefer> res = new ArrayList<LogDefer>();
+		int updatecount = 1;
+
+		try {
+			TransactionResult result = transaction.run(ctx -> {
+				for (Collection bucket:collections) {
+					for (Tuple2<String, JsonObject> document : Createkeys) {
+						TransactionGetResult doc=ctx.insert(bucket, document.getT1(), document.getT2());
+						TransactionGetResult doc1=ctx.getOptional(bucket, document.getT1()).get();
+					}
+				}
+				
+//				update of docs
+				for (String key: Updatekeys) {
+					for (Collection bucket:collections) {
+						try {
+							TransactionGetResult doc2=ctx.getOptional(bucket, key).get();
+							for (int i=1; i<=updatecount; i++) {
+								JsonObject content = doc2.contentAs(JsonObject.class);
+								content.put("mutated", i);
+								ctx.replace(doc2, content);
+//										TransactionGetResult doc1=ctx.get(bucket, key).get();
+//										JsonObject read_content = doc1.contentAs(JsonObject.class);
+								}
+							}
+						catch (TransactionFailed err) {
+							System.out.println("Document not present");
+							}
+					}
+				}
+				//			   delete the docs
+				for (String key: Deletekeys) {
+					for (Collection bucket:collections) {
+						try {
+							TransactionGetResult doc1=ctx.getOptional(bucket, key).get();
+							ctx.remove(doc1);
+						}
+						catch (TransactionFailed err) {
+							System.out.println("Document not present");
+						}
+					}
+				}
+				
+				ctx.defer();
+			});
+			if(result.serialized().isPresent()) {
+				 
+			    TransactionSerializedContext serialized = result.serialized().get();
+			    encoded = serialized.encodeAsBytes();}
+		}
+		catch (TransactionFailed err) {
+			res = err.result().log().logs();
+			if (res.toString().contains("DurabilityImpossibleException")) {
+				System.out.println("DurabilityImpossibleException seen"); }
+			else {
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					System.out.println(e);
+		        }
+			}
+		}
+		Tuple2<byte[], List<LogDefer>>mp = Tuples.of(encoded, res);
+		return mp;
+//		return encoded;
+	}
+	
+	public List<LogDefer> DefferedTransaction(Transactions transaction, Boolean commit, byte[] encoded) {
+		List<LogDefer> res = new ArrayList<LogDefer>();
+		TransactionSerializedContext serialized = TransactionSerializedContext.createFrom(encoded);
+
+		try {
+			if (commit) { TransactionResult result = transaction.commit(serialized);}
+			else { TransactionResult result = transaction.rollback(serialized); }
+
+		} 
+		catch (TransactionFailed err) {
+			res = err.result().log().logs();
+			if (res.toString().contains("DurabilityImpossibleException")) {
+				System.out.println("DurabilityImpossibleException seen"); }
+			else {
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					System.out.println(e);
+		        }
+			}
+		}
+		return res;
+	}
+	
 
 }
 
