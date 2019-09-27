@@ -73,6 +73,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
                                                  delete_from + items/2)
+
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
@@ -80,18 +81,11 @@ class RebalanceInTests(RebalanceBaseTest):
 
         self.sleep(10, "wait for rebalance to start")
 
-        retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
-            ]
-
         # CRUDs while rebalance is running in parallel
         tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
         delete_from += items
         create_from += items
-
         # Waif for rebalance and doc mutation tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
@@ -136,6 +130,84 @@ class RebalanceInTests(RebalanceBaseTest):
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
 
+    def test_rebalance_in_with_ops_sync_async(self):
+        items = self.num_items
+        delete_from = items/2
+        create_from = items
+
+        self.gen_create = self.get_doc_generator(create_from,
+                                                 create_from + items)
+        self.gen_delete = self.get_doc_generator(delete_from,
+                                                 delete_from + items/2)
+
+        servs_in = [self.cluster.servers[i + self.nodes_init]
+                    for i in range(self.nodes_in)]
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], servs_in, [])
+
+        self.sleep(10, "wait for rebalance to start")
+
+        # CRUDs while rebalance is running in parallel
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+
+        delete_from += items
+        create_from += items
+        # CRUDs after rebalance operations
+        self.gen_create = self.get_doc_generator(create_from,
+                                                 create_from + items)
+        self.gen_delete = self.get_doc_generator(delete_from,
+                                                 delete_from + items/2)
+        temp = self.durability_level
+        self.durability_level = "NONE"
+        tasks_info.update(self.loadgen_docs())
+        self.durability_level = temp
+
+        delete_from += items
+        create_from += items
+        # Waif for rebalance and doc mutation tasks to complete
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        if not rebalance_task.result:
+            for task, _ in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            self.fail("Rebalance Failed")
+
+        self.cluster.nodes_in_cluster.extend(servs_in)
+
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
+        else:
+            for task, task_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
+
+        self.sleep(20, "Wait for cluster to be ready after rebalance")
+
+        # CRUDs after rebalance operations
+        self.gen_create = self.get_doc_generator(create_from,
+                                                 create_from + items)
+        self.gen_delete = self.get_doc_generator(delete_from,
+                                                 delete_from + items/2)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info['ops_failed'],
+                    "Doc ops failed for task: {}".format(task.thread_name))
+
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+        else:
+            for task, task_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
+                
     def rebalance_in_after_ops(self):
         """
         Rebalances nodes into cluster while doing docs ops:create/delete/update
