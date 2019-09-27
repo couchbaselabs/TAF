@@ -1411,8 +1411,8 @@ class LoadDocumentsGeneratorsTask(Task):
         else:
             self.bucket = bucket
         self.num_loaded = 0
-        self.fail = {}
-#         self.success = {}
+        self.fail = dict()
+        self.success = dict()
 
     def call(self):
         self.start_task()
@@ -1463,7 +1463,7 @@ class LoadDocumentsGeneratorsTask(Task):
                     self.test_log.error(e)
                 finally:
                     self.fail.update(task.fail)
-#                     self.success.update(task.success)
+                    self.success.update(task.success)
                     if task.fail.__len__() != 0:
                         target_log = self.test_log.error
                     else:
