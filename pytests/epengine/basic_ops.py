@@ -392,7 +392,7 @@ class basic_ops(BaseTestCase):
                         self.log_failure("Invalid exception for key %s: %s"
                                          % (doc_id, doc_result))
             else:
-                if len(task.success.keys()) == 0:
+                if len(task.fail.keys()) != 0:
                     self.log_failure("Failures during large doc insert")
 
         for bucket in self.bucket_util.buckets:
@@ -412,9 +412,9 @@ class basic_ops(BaseTestCase):
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(task)
-                if len(task.success.keys()) != 0:
+                if len(task.fail.keys()) != 1:
                     self.log_failure("Large docs inserted for keys: %s"
-                                     % task.success.keys())
+                                     % task.fail.keys())
                 if len(task.fail.keys()) == 0:
                     self.log_failure("No failures during large doc insert")
                 for doc_id, doc_result in task.fail.items():
