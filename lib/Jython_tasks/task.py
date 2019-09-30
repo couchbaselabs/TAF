@@ -3113,7 +3113,7 @@ class AutoFailoverNodesFailureTask(Task):
         self.timeout_buffer = timeout_buffer
         self.current_failure_node = self.servers_to_fail[0]
         self.max_time_to_wait_for_failover = self.timeout + \
-                                             self.timeout_buffer + 60
+                                             self.timeout_buffer + 180
         self.disk_timeout = disk_timeout
         self.disk_location = disk_location
         self.disk_size = disk_size
