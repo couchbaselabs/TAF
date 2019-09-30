@@ -1155,7 +1155,8 @@ class TimeoutTests(DurabilityTestsBase):
             for vb_num in range(self.vbuckets):
                 vb_num = str(vb_num)
                 if vb_num not in affected_vbs:
-                    if vb_info["init"][node.ip][vb_num] \
+                    if vb_num in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][vb_num] \
                             != vb_info["post_timeout"][node.ip][vb_num]:
                         self.log_failure(
                             "Unaffected vb-%s stat updated: %s != %s"
@@ -1163,7 +1164,8 @@ class TimeoutTests(DurabilityTestsBase):
                                vb_info["init"][node.ip][vb_num],
                                vb_info["post_timeout"][node.ip][vb_num]))
                 elif int(vb_num) in target_nodes_vbuckets["active"]:
-                    if vb_info["init"][node.ip][vb_num] \
+                    if vb_num in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][vb_num] \
                             != vb_info["post_timeout"][node.ip][vb_num]:
                         self.log.warning(
                             err_msg
@@ -1173,7 +1175,8 @@ class TimeoutTests(DurabilityTestsBase):
                                vb_info["init"][node.ip][vb_num],
                                vb_info["post_timeout"][node.ip][vb_num]))
                 elif int(vb_num) in target_nodes_vbuckets["replica"]:
-                    if vb_info["init"][node.ip][vb_num] \
+                    if vb_num in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][vb_num] \
                             == vb_info["post_timeout"][node.ip][vb_num]:
                         retry_validation = True
                         self.log.warning(
@@ -1202,8 +1205,6 @@ class TimeoutTests(DurabilityTestsBase):
 
         # Override crud_batch_size to minimum value for testing
         self.crud_batch_size = 5
-        timeout_err_str = self.durability_helper.EXCEPTIONS["request_timeout"]
-        ambiguous_err_str = self.durability_helper.EXCEPTIONS["ambiguous"]
 
         # Create required doc_generators
         doc_gen["create"] = doc_generator(self.key, self.num_items,
@@ -1262,35 +1263,19 @@ class TimeoutTests(DurabilityTestsBase):
             # Validate task failures
             if op_type == "read":
                 # Validation for read task
-                for doc_id, crud_result in tasks[op_type].success.items():
-                    vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.vbuckets)
-                    if vb_num in target_nodes_vbuckets["active"]:
-                        self.log_failure("Read succeeded for %s present in "
-                                         "stopped active vbucket: %s"
-                                         % (doc_id, vb_num))
-                self.durability_helper.validate_durability_exception(
-                    tasks[op_type].fail,
-                    self.durability_helper.EXCEPTIONS["request_timeout"])
+                if len(tasks[op_type].fail.keys()) != 0:
+                    self.log_failure("Read failed for few docs: %s"
+                                     % tasks[op_type].fail.keys())
             else:
                 # Validation of CRUDs - Update / Create / Delete
-                if len(tasks[op_type].success.keys()) != 0:
-                    self.log_failure("Few keys succeeded for %s: %s"
-                                     % (op_type,
-                                        tasks[op_type].success.keys()))
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
                         doc_id, self.vbuckets)
-                    if vb_num in target_nodes_vbuckets["active"]:
-                        if timeout_err_str not in str(crud_result["error"]):
-                            self.log_failure(
-                                "Invalid exception for doc %s, vb %s: %s"
-                                % (doc_id, vb_num, crud_result))
-                    else:
-                        if ambiguous_err_str not in str(crud_result["error"]):
-                            self.log_failure(
-                                "Invalid exception for doc %s, vb %s: %s"
-                                % (doc_id, vb_num, crud_result))
+                    if ClientException.DurabilityAmbiguousException \
+                            not in str(crud_result["error"]):
+                        self.log_failure(
+                            "Invalid exception for doc %s, vb %s: %s"
+                            % (doc_id, vb_num, crud_result))
 
         # Revert the specified error scenario
         for node in target_nodes:
@@ -1340,6 +1325,7 @@ class TimeoutTests(DurabilityTestsBase):
             task = tasks[op_type]
 
             if self.nodes_init == 1 \
+                    and op_type != "read" \
                     and len(task.fail.keys()) != (doc_gen[op_type].end
                                                   - doc_gen[op_type].start):
                 self.log_failure("Failed keys %d are less than expected %d"
@@ -1357,24 +1343,16 @@ class TimeoutTests(DurabilityTestsBase):
             for doc_key, doc_info in task.fail.items():
                 vb_for_key = self.bucket_util.get_vbucket_num_for_key(doc_key)
 
-                if vb_for_key in target_nodes_vbuckets["active"]:
-                    expected_exception = \
-                        self.durability_helper.EXCEPTIONS["request_timeout"]
-                elif vb_for_key in target_nodes_vbuckets["replica"]:
-                    expected_exception = \
-                        self.durability_helper.EXCEPTIONS["ambiguous"]
-                else:
-                    expected_exception = \
-                        self.durability_helper.EXCEPTIONS["ambiguous"]
-                    ambiguous_table_view.add_row([doc_key, vb_for_key])
-                    retry_success = \
-                        self.durability_helper.retry_for_ambiguous_exception(
-                            sdk_client, op_type, doc_key, doc_info)
-                    if not retry_success:
-                        self.log_failure("%s failed in retry for %s"
-                                         % (op_type, doc_key))
+                ambiguous_table_view.add_row([doc_key, str(vb_for_key)])
+                retry_success = \
+                    self.durability_helper.retry_for_ambiguous_exception(
+                        sdk_client, op_type, doc_key, doc_info)
+                if not retry_success:
+                    self.log_failure("%s failed in retry for %s"
+                                     % (op_type, doc_key))
 
-                if expected_exception not in str(doc_info["error"]):
+                if ClientException.DurabilityAmbiguousException \
+                        not in str(doc_info["error"]):
                     table_view.add_row([doc_key, doc_info["error"]])
 
             # Display the tables (if any errors)
@@ -1386,27 +1364,6 @@ class TimeoutTests(DurabilityTestsBase):
         sdk_client.close()
 
         # Verify doc count after expected CRUD failure
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
-
-        # Retry the same CRUDs after reverting the failure environment
-        tasks = list()
-        for op_type in doc_gen.keys():
-            tasks.append(self.task.async_load_gen_docs(
-                self.cluster, self.bucket, doc_gen[op_type], op_type, 0,
-                batch_size=10, process_concurrency=1,
-                replicate_to=self.replicate_to, persist_to=self.persist_to,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout))
-
-        # Wait for document_loader tasks to complete
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
-            if len(task.fail.keys()) != 0:
-                self.log_failure("Failures with no error condition: {0}, {1}"
-                                 .format(task.fail, task.fail.keys()))
-
-        # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
@@ -1422,174 +1379,3 @@ class TimeoutTests(DurabilityTestsBase):
             shell_conn[node.ip].disconnect()
 
         self.validate_test_failure()
-
-    def test_timeout_with_crud_failures_for_persist_active(self):
-        """
-        Test to validate timeouts during CRUDs with
-        durability=MAJORITY_AND_PERSIST_ON_MASTER
-
-        1. Select a random node from cluster
-        2. Get active & replica vbucket numbers from the target_node
-        3. Simulate specified error on the target_node
-        4. Perform CRUDs such that it affects the target_node as well
-        5. Validate the CRUDs failed on the target_node
-        6. Revert the simulated error_condition from the target_node
-        7. Retry failed CRUDs to make sure the durability is met
-        """
-
-        target_node = self.get_random_node()
-        shell_conn = RemoteMachineShellConnection(target_node)
-        cbstat_obj = Cbstats(shell_conn)
-        error_sim = CouchbaseError(self.log, shell_conn)
-        vb_info = dict()
-
-        self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
-
-        # Get active/replica vbucket list from the target_node
-        active_vb_numbers = cbstat_obj.vbucket_list(self.bucket.name,
-                                                    vbucket_type="active")
-        replica_vb_numbers = cbstat_obj.vbucket_list(self.bucket.name,
-                                                     vbucket_type="replica")
-
-        vb_info["init"] = cbstat_obj.vbucket_seqno(self.bucket.name)
-        curr_time = int(time.time())
-        expected_timeout = curr_time + self.sdk_timeout
-
-        # Perform specified action
-        error_sim.create(self.simulate_error, bucket_name=self.bucket.name)
-
-        # Perform CRUDs with induced error scenario is active
-        tasks = list()
-        gen_create = doc_generator(self.key, self.num_items,
-                                   self.num_items+self.crud_batch_size)
-        gen_delete = doc_generator(self.key, 0,
-                                   int(self.num_items/3))
-        gen_read = doc_generator(self.key, int(self.num_items/3),
-                                 int(self.num_items/2))
-        gen_update = doc_generator(self.key, int(self.num_items/2),
-                                   self.num_items)
-
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_create, "create", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "update", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_read, "read", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_delete, "delete", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout))
-
-        # Wait for document_loader tasks to complete
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
-            # TODO: Verify timeout exceptions for each doc_op
-
-        # Check whether the timeout triggered properly
-        timed_out_ok = int(time.time()) == expected_timeout \
-            or int(time.time()) == expected_timeout + 1
-        self.assertTrue(timed_out_ok, msg="Timed-out before expected time")
-
-        # Revert the specified error scenario
-        error_sim.create(self.simulate_error, bucket_name=self.bucket.name)
-
-        # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
-
-        # Fetch latest stats and validate the values are not changed
-        vb_info["post_timeout"] = cbstat_obj.vbucket_seqno(self.bucket.name)
-        val = vb_info["init"] == vb_info["post_timeout"]
-        self.assertTrue(val, msg="Mismatch in vbucket_seqno with timeout")
-
-        # Update num_items value accordingly to the CRUD performed
-        self.num_items += self.crud_batch_size - int(self.num_items/3)
-
-        # Retry the same CRUDs after reverting the failure environment
-        tasks = list()
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_create, "create", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "update", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_read, "read", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-        tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_delete, "delete", 0,
-            batch_size=10, process_concurrency=1,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
-
-        # Wait for document_loader tasks to complete
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
-
-            for key, doc_info in task.fail.items():
-                fail = doc_info[0]
-                doc_error = str(fail["error"])
-                # Validate the returned error from the SDK
-                vb_num = self.bucket_util.get_vbucket_num_for_key(
-                    key, self.vbuckets)
-                if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
-                    self.assertTrue("error" in fail, msg="No failure detected")
-                    self.assertTrue(
-                        "DurableWriteInProgressException" in doc_error,
-                        msg="Invalid exception: %s" % doc_error)
-                else:
-                    self.assertTrue(fail["success"] is None,
-                                    msg="CRUD failed for vbucket {0}"
-                                    .format(vb_num))
-
-        # Fetch latest stats and validate the values are updated
-        vb_info["afterCrud"] = cbstat_obj.vbucket_seqno(self.bucket.name)
-        val = vb_info["init"] != vb_info["afterCrud"]
-        self.assertTrue(val, msg="Vbucket seq_no stats not updated")
-
-        # Revert the specified error scenario
-        error_sim.revert(self.simulate_error, bucket_name=self.bucket.name)
-        # Disconnect the shell connection
-        shell_conn.disconnect()
-
-        # Create SDK client for retry operation
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
-
-        # Retry failed docs to succeed
-        op_type = None
-        for index, task in enumerate(tasks):
-            if index == 0:
-                op_type = "create"
-            elif index == 1:
-                op_type = "update"
-            elif index == 1:
-                op_type = "read"
-            elif index == 1:
-                op_type = "delete"
-            self.durability_helper.retry_with_no_error(
-                client, task.fail, op_type)
-
-        # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)

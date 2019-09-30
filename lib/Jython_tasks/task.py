@@ -1575,9 +1575,10 @@ class LoadSubDocumentsGeneratorsTask(Task):
             self.buckets = bucket
         else:
             self.bucket = bucket
+        self.print_ops_rate_tasks = list()
         self.num_loaded = 0
-        self.fail = {}
-#         self.success = {}
+        self.fail = dict()
+        self.success = dict()
 
     def call(self):
         self.start_task()
@@ -1602,7 +1603,6 @@ class LoadSubDocumentsGeneratorsTask(Task):
             tasks.extend(self.get_tasks(generator))
             iterator += 1
         if self.print_ops_rate:
-            self.print_ops_rate_tasks = []
             if self.buckets:
                 for bucket in self.buckets:
                     print_ops_rate_task = PrintOpsRate(self.cluster,
@@ -1625,7 +1625,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                     self.log.error(e)
                 finally:
                     self.fail.update(task.fail)
-#                     self.success.update(task.success)
+                    self.success.update(task.success)
                     self.log.debug("Failed to load {} sub_docs from {} "
                                    "to {}"
                                    .format(task.fail.__len__(),
