@@ -15,7 +15,8 @@ from com.couchbase.client.core.error import KeyExistsException, \
                                             KeyNotFoundException, \
                                             CASMismatchException, \
                                             TemporaryFailureException, \
-                                            RequestCanceledException
+                                            RequestCanceledException,\
+                                            ConfigException
 from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster
@@ -93,7 +94,15 @@ class SDKClient(object):
                           .timeoutConfig(TimeoutConfig.builder()
                                          .connectTimeout(Duration.ofSeconds(20))
                                          .kvTimeout(Duration.ofSeconds(10)))
-            self.cluster = Cluster.connect(cluster_env.build())
+            i = 1
+            while i <= 5:
+                try:
+                    self.cluster = Cluster.connect(cluster_env.build())
+                    break
+                except ConfigException as e:
+                    self.log.error("%s: Exception occurred while creating cluster connection: %s" % (i, str(e)))
+                    i += 1
+
             self.bucketObj = self.cluster.bucket(self.bucket)
             self.collection = self.bucketObj.defaultCollection()
         except Exception as e:
