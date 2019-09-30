@@ -3893,7 +3893,6 @@ class Atomicity(Task):
                 if op_type == "delete":
                     err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], doc, commit, Atomicity.sync, Atomicity.updatecount)
             if err:
-                print "the value of retry is {}".format(self.retries)
                 if Atomicity.record_fail:
                     self.all_keys=[]
                 elif "DurabilityImpossibleException" in str(err) and self.retries > 0:

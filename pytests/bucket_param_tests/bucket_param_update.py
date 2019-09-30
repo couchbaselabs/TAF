@@ -78,7 +78,7 @@ class BucketParamTest(BaseTestCase):
                     update_count=self.update_count,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync,record_fail=True))
+                    sync=self.sync))
             self.sleep(10, "To avoid overlap of multiple tasks in parallel")
         if "create" in doc_ops:
             tasks.append(
@@ -92,7 +92,7 @@ class BucketParamTest(BaseTestCase):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync,record_fail=True))
+                    sync=self.sync))
             doc_count += (doc_create.end - doc_create.start)
             start_doc_for_insert += self.num_items
         if "delete" in doc_ops:
@@ -107,7 +107,7 @@ class BucketParamTest(BaseTestCase):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync,record_fail=True))
+                    sync=self.sync))
             doc_count -= (doc_delete.end - doc_delete.start)
 
         return tasks, doc_count, start_doc_for_insert
@@ -313,6 +313,10 @@ class BucketParamTest(BaseTestCase):
         return doc_count, start_doc_for_insert
 
     def test_replica_update(self):
+        if self.atomicity:
+            replica_count = 3
+        else:
+            replica_count = 4
         if self.nodes_init < 2:
             self.log.error("Test not supported for < 2 node cluster")
             return
@@ -328,7 +332,7 @@ class BucketParamTest(BaseTestCase):
             doc_count,
             doc_ops,
             bucket_helper,
-            range(1, min(4, self.nodes_init)),
+            range(1, min(replica_count, self.nodes_init)),
             start_doc_for_insert)
 
         # Replica decrement tests
@@ -336,5 +340,5 @@ class BucketParamTest(BaseTestCase):
             doc_count,
             doc_ops,
             bucket_helper,
-            range(min(4, self.nodes_init)-2, -1, -1),
+            range(min(replica_count, self.nodes_init)-2, -1, -1),
             start_doc_for_insert)
