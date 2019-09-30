@@ -52,9 +52,16 @@ class CBCluster:
         """
         if node_in_cluster is None:
             node_in_cluster = self.master
+
+        # Enable diag_eval outside localhost
+        shell = RemoteMachineShellConnection(node_in_cluster)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
         rest = RestConnection(node_in_cluster)
         command = "mb_master:master_node()."
         status, content = rest.diag_eval(command)
+
         master_ip = content.split("@")[1].replace("\\", '').replace(
             "'", "")
         self.master = [server for server in self.servers if server.ip ==

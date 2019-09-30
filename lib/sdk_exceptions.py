@@ -21,6 +21,8 @@ class ClientException:
         "com.couchbase.client.core.error.subdoc.PathNotFoundException"
     DecodingFailedException = \
         "com.couchbase.client.core.error.DecodingFailedException"
+    FeatureNotAvailableException = \
+        "com.couchbase.client.core.error.FeatureNotAvailableException"
 
     class RetryReason:
         KV_SYNC_WRITE_IN_PROGRESS = \

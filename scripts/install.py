@@ -39,9 +39,6 @@ from testconstants import WIN_COUCHBASE_PORT_CONFIG_PATH, \
     WIN_COUCHBASE_OLD_CONFIG_PATH
 import TestInput
 
-logging.config.fileConfig("scripts.logging.conf")
-log = logging.getLogger()
-
 
 def usage(err=None):
     print """\
@@ -96,16 +93,6 @@ Examples:
 
 """
     sys.exit(err)
-
-
-product = "membase-server(ms),couchbase-single-server(css)," \
-          "couchbase-server(cs),zynga(z)"
-
-errors = {"UNREACHABLE": "",
-          "UNINSTALL-FAILED": "unable to uninstall the product",
-          "INSTALL-FAILED": "unable to install",
-          "BUILD-NOT-FOUND": "unable to find build",
-          "INVALID-PARAMS": "invalid params given"}
 
 
 def installer_factory(params):
@@ -208,8 +195,8 @@ class Installer(object):
                     and isinstance(params["url"], str):
                 direct_build_url = params["url"]
         if ok:
-            if "linux_repo" in params and params[
-                "linux_repo"].lower() == "true":
+            if "linux_repo" in params \
+                    and params["linux_repo"].lower() == "true":
                 linux_repo = True
             else:
                 linux_repo = False
@@ -255,7 +242,7 @@ class Installer(object):
                 _errors.append(errors["INVALID-PARAMS"])
             if "1" in openssl:
                 names = ['couchbase-server-enterprise_centos6',
-                         'couchbase-server-community_centos6', \
+                         'couchbase-server-community_centos6',
                          'couchbase-server-enterprise_ubuntu_1204',
                          'couchbase-server-community_ubuntu_1204']
             if "toy" in params:
@@ -263,12 +250,12 @@ class Installer(object):
 
         remote_client = RemoteMachineShellConnection(server)
         info = remote_client.extract_remote_info()
-        print "\n*** OS version of this server %s is %s ***" % (
+        print "*** OS version of this server %s is %s ***" % (
             remote_client.ip,
             info.distribution_version)
         if info.distribution_version.lower() == "suse 12":
             if version[:5] not in COUCHBASE_FROM_SPOCK:
-                mesg = "%s does not support cb version %s \n" % \
+                mesg = "%s does not support cb version %s" % \
                        (info.distribution_version, version[:5])
                 remote_client.stop_current_python_running(mesg)
         remote_client.disconnect()
@@ -321,7 +308,7 @@ class Installer(object):
                                              "server-analytics") + \
                              CB_VERSION_NAME[version[:3]] + "/"
             elif "moxi-server" in names and version[:5] != "2.5.2":
-                print "version   ", version
+                print "Version: ", version
                 """
                 moxi repo:
                    http://172.23.120.24/builds/latestbuilds/moxi/4.6
@@ -396,8 +383,8 @@ class Installer(object):
                             cb_version = version[:5]
                             build.url = build.url.replace(
                                 "http://builds.hq.northscale.net/latestbuilds",
-                                "http://packages.northscale.com/latestbuilds/{0}".format(
-                                    cb_version))
+                                "http://packages.northscale.com/latestbuilds/{0}"
+                                .format(cb_version))
                             """ test enterprise version """
                             # build.url = build.url.replace(
                             # "enterprise", "community")
@@ -465,8 +452,7 @@ class MembaseServerInstaller(Installer):
                     remote_client = RemoteMachineShellConnection(server)
                     remote_client.execute_command(
                         'rm -rf {0}/*'.format(server.data_path))
-                    # Make sure that data_path is writable by membase
-                    #  user
+                    # Make sure that data_path is writable by membase user
                     remote_client.execute_command(
                         "chown -R membase.membase {0}".format(
                             server.data_path))
@@ -525,13 +511,12 @@ class MembaseServerInstaller(Installer):
         else:
             downloaded = remote_client.download_build(build)
             if not downloaded:
-                log.error('server {1} unable to download binaries : {'
-                          '0}' \
+                log.error('Server {1} unable to download binaries: {0}'
                           .format(build.url, params["server"].ip))
                 return False
 
             success &= remote_client.install_server(build,
-                                                    vbuckets=vbuckets, \
+                                                    vbuckets=vbuckets,
                                                     swappiness=swappiness,
                                                     openssl=openssl)
             ready = RestHelper(
@@ -561,7 +546,7 @@ class CouchbaseServerInstaller(Installer):
         success = True
         success &= remote_client.is_couchbase_installed()
         if not success:
-            mesg = "\n\nServer {0} failed to install".format(
+            mesg = "\nServer {0} failed to install".format(
                 params["server"].ip)
             sys.exit(mesg)
         while time.time() < start_time + 5 * 60:
@@ -602,8 +587,7 @@ class CouchbaseServerInstaller(Installer):
                     time.sleep(3)
 
                     for cmd in ("rm -rf {0}/*".format(path),
-                                "chown -R couchbase:couchbase {"
-                                "0}".format(
+                                "chown -R couchbase:couchbase {0}".format(
                                     path)):
                         remote_client.execute_command(cmd)
                 rest.set_data_path(data_path=server.data_path,
@@ -683,8 +667,8 @@ class CouchbaseServerInstaller(Installer):
                     kv_quota -= 1
                     log.info("quota for kv: %s MB" % kv_quota)
                     rest.init_cluster_memoryQuota(
-                        server.rest_username, \
-                        server.rest_password, \
+                        server.rest_username,
+                        server.rest_password,
                         kv_quota)
                     if params["version"][
                        :5] in COUCHBASE_FROM_VERSION_4:
@@ -768,7 +752,6 @@ class CouchbaseServerInstaller(Installer):
             sys.exit("unable to initialize couchbase node")
 
     def install(self, params, queue=None):
-
         log.info('********CouchbaseServerInstaller:install')
 
         self.msi = 'msi' in params and params['msi'].lower() == 'true'
@@ -784,6 +767,7 @@ class CouchbaseServerInstaller(Installer):
         info = remote_client.extract_remote_info()
         type = info.type.lower()
         server = params["server"]
+        force_upgrade = False
         self.nonroot = False
         if info.deliverable_type in ["rpm", "deb"]:
             if server.ssh_username != "root":
@@ -830,6 +814,9 @@ class CouchbaseServerInstaller(Installer):
         else:
             linux_repo = False
 
+        if "force_upgrade" in params:
+            force_upgrade = params["force_upgrade"]
+
         if not linux_repo:
             if type == "windows":
                 log.info('***** Download Windows binary*****')
@@ -859,25 +846,25 @@ class CouchbaseServerInstaller(Installer):
                 downloaded = remote_client.download_build(build)
 
                 if not downloaded:
-                    sys.exit(
-                        'server {1} unable to download binaries : {0}' \
-                            .format(build.url, params["server"].ip))
+                    sys.exit('server {1} unable to download binaries : {0}'
+                             .format(build.url, params["server"].ip))
                 # TODO: need separate methods in remote_util for
                 # couchbase and membase install
                 path = server.data_path or '/tmp'
                 try:
-                    success = remote_client.install_server(build,
-                                                           path=path,
-                                                           startserver=start_server, \
-                                                           vbuckets=vbuckets,
-                                                           swappiness=swappiness, \
-                                                           openssl=openssl,
-                                                           upr=upr,
-                                                           xdcr_upr=xdcr_upr,
-                                                           fts_query_limit=fts_query_limit,
-                                                           enable_ipv6=enable_ipv6)
-                    log.info(
-                        'wait 5 seconds for Couchbase server to start')
+                    success = remote_client.install_server(
+                        build,
+                        path=path,
+                        startserver=start_server,
+                        vbuckets=vbuckets,
+                        swappiness=swappiness,
+                        openssl=openssl,
+                        upr=upr,
+                        xdcr_upr=xdcr_upr,
+                        fts_query_limit=fts_query_limit,
+                        enable_ipv6=enable_ipv6,
+                        force=force_upgrade)
+                    log.info('Wait 5 seconds for Couchbase server to start')
                     time.sleep(5)
                     if "rest_vbuckets" in params:
                         rest_vbuckets = int(params["rest_vbuckets"])
@@ -1403,10 +1390,6 @@ def check_build(input):
         exit(1)
 
 
-params = {"ini": "resources/jenkins/fusion.ini",
-          "product": "ms", "version": "1.7.1r-31", "amazon": "false"}
-
-
 def change_couchbase_indexer_ports(input):
     params = {"indexer_admin_port": 9110,
               "indexer_scan_port": 9111,
@@ -1551,5 +1534,23 @@ def main():
         change_couchbase_indexer_ports(input)
 
 
+log = logging.getLogger()
+
+product = "membase-server(ms),couchbase-single-server(css)," \
+          "couchbase-server(cs),zynga(z)"
+
+errors = {"UNREACHABLE": "",
+          "UNINSTALL-FAILED": "unable to uninstall the product",
+          "INSTALL-FAILED": "unable to install",
+          "BUILD-NOT-FOUND": "unable to find build",
+          "INVALID-PARAMS": "invalid params given"}
+
+params = {"ini": "resources/jenkins/fusion.ini",
+          "product": "ms", "version": "1.7.1r-31", "amazon": "false"}
+
+
 if __name__ == "__main__":
+    logging.config.fileConfig("scripts.logging.conf")
+    log = logging.getLogger()
+
     main()

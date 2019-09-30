@@ -112,8 +112,7 @@ class BaseTestCase(unittest.TestCase):
         self.maxParallelIndexers = self.input.param("maxParallelIndexers", None)
         self.maxParallelReplicaIndexers = self.input.param("maxParallelReplicaIndexers", None)
         self.quota_percent = self.input.param("quota_percent", None)
-        if not hasattr(self, 'skip_buckets_handle'):
-            self.skip_buckets_handle = self.input.param("skip_buckets_handle", False)
+        self.skip_buckets_handle = self.input.param("skip_buckets_handle", False)
 
         # Initiate logging variables
         self.log = logging.getLogger("test")
@@ -196,7 +195,6 @@ class BaseTestCase(unittest.TestCase):
             if str(self.__class__).find('newupgradetests') != -1 or \
                     str(self.__class__).find('upgradeXDCR') != -1 or \
                     str(self.__class__).find('Upgrade_EpTests') != -1 or \
-                    hasattr(self, 'skip_buckets_handle') and \
                     self.skip_buckets_handle:
                 self.log.warning("any cluster operation in setup will be skipped")
                 self.primary_index_created = True
@@ -276,7 +274,7 @@ class BaseTestCase(unittest.TestCase):
             bucket_util = BucketUtils(cluster, cluster_util,
                                       self.task)
             try:
-                if hasattr(self, 'skip_buckets_handle') and self.skip_buckets_handle:
+                if self.skip_buckets_handle:
                     return
                 test_failed = (hasattr(self, '_resultForDoCleanups') and
                                len(self._resultForDoCleanups.failures or
