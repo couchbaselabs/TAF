@@ -1786,6 +1786,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  timeout_secs=5,
                  process_concurrency=4, print_ops_rate=True,
                  active_resident_threshold=99,
+                 dgm_batch=5000,
                  task_identifier=""):
 #         super(LoadDocumentsForDgmTask, self).__init__(
 #             "LoadDocumentsForDgmTask_{}_{}".format(bucket.name, time.time()))
@@ -1808,7 +1809,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.buckets = None
         self.print_ops_rate = print_ops_rate
         self.active_resident_threshold = active_resident_threshold
-
+        self.dgm_batch = dgm_batch
         self.key = key
         self.task_identifier = task_identifier
         self.op_type = "create"
@@ -1820,10 +1821,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
             self.buckets = [bucket]
 
     def _get_bucket_dgm(self, bucket):
-        bucket_stat = self.rest_client.get_bucket_stats_for_node(
-            bucket.name,
-            self.cluster.master)
-        return bucket_stat["vb_active_resident_items_ratio"]
+        return self.rest_client.fetch_bucket_stats(
+            bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
 
     def _load_next_batch_of_docs(self, bucket):
         doc_gens = list()
@@ -1831,8 +1830,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.test_log.debug("Doc load from index %d" % self.doc_index)
         for _ in self.clients:
             doc_gens.append(doc_generator(
-                self.key, self.doc_index, self.doc_index+10000))
-            self.doc_index += 10000
+                self.key, self.doc_index, self.doc_index+self.dgm_batch))
+            self.doc_index += self.dgm_batch
 
         # Start doc_loading tasks
         for index, generator in enumerate(doc_gens):
@@ -1857,7 +1856,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.test_log.info("DGM doc loading for '%s' to atleast %s%%"
                            % (bucket.name, self.active_resident_threshold))
         while dgm_value > self.active_resident_threshold:
-            self.test_log.debug("Active_resident_items_ratio for {0} is {1}"
+            self.test_log.info("Active_resident_items_ratio for {0} is {1}"
                                 .format(bucket.name, dgm_value))
             self._load_next_batch_of_docs(bucket)
             dgm_value = self._get_bucket_dgm(bucket)
