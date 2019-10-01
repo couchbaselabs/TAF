@@ -3418,7 +3418,7 @@ class AutoFailoverNodesFailureTask(Task):
 
     def _check_for_autofailover_initiation(self, failed_over_node):
         rest = RestConnection(self.master)
-        ui_logs = rest.get_logs(10)
+        ui_logs = rest.get_logs(20)
         ui_logs_text = [t["text"] for t in ui_logs]
         ui_logs_time = [t["serverTime"] for t in ui_logs]
         expected_log = "Starting failing over ['ns_1@{}']".format(
