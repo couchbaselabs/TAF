@@ -336,6 +336,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager.get_task_result(task)
         except Exception as e:
             self.fail("Exception: {}".format(e))
+        finally:
+            self.start_couchbase_server()
 
     def start_couchbase_server(self):
         """
