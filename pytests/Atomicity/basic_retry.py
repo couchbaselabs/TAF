@@ -214,18 +214,7 @@ class basic_ops(BaseTestCase):
         for thread in threads:
             thread.join()
         
-        self.sleep(10)    
-            
-        task = self.task.async_load_gen_docs_atomicity(self.cluster, self.def_bucket,
-                                             self.gen_create, "verify" , exp=0,
-                                             batch_size=10,
-                                             process_concurrency=8,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries,update_count=self.update_count, transaction_timeout=self.transaction_timeout, 
-                                             commit=True,durability=self.durability_level)
-    
-        self.task.jython_task_manager.get_task_result(task)
+
         
     def test_basic_retry_async(self):
         self.test_log.info("going to create and execute the task")
@@ -243,7 +232,7 @@ class basic_ops(BaseTestCase):
         
         
         self.test_log.info("get all the keys in the cluster")
-        keys = ["test_docs-0"]*20
+        keys = ["test_docs-0"]*2
         
         exception = Transaction().RunTransaction(self.transaction, [self.client.collection], [], keys, [], self.transaction_commit, False, 0)
         if exception:
