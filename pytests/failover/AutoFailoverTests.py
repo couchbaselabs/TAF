@@ -10,7 +10,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 2)
         else:
             self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 10)
-        
 
     def tearDown(self):
         super(AutoFailoverTests, self).tearDown()
@@ -34,6 +33,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.durability_level or self.atomicity:
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
+        self.sleep(300)
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
@@ -70,6 +70,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.durability_level or self.atomicity:
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
+        self.sleep(300)
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
@@ -107,6 +108,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.durability_level or self.atomicity:
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
+        self.sleep(300)
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
@@ -192,6 +194,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.loadgen_tasks = self._loadgen()
 
         self.failover_actions[self.failover_action](self)
+        self.sleep(300)
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
@@ -252,6 +255,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.failover_actions[self.failover_action](self)
         self.nodes = self.rest.node_statuses()
         self.remove_after_failover = True
+        self.sleep(300)
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
