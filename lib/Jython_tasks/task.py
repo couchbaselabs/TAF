@@ -3428,7 +3428,7 @@ class AutoFailoverNodesFailureTask(Task):
         return False, None
 
     def get_failover_count(self):
-        rest = RestConnection(self.cluster.master)
+        rest = RestConnection(self.master)
         cluster_status = rest.cluster_status()
         failover_count = 0
         # check for inactiveFailed
