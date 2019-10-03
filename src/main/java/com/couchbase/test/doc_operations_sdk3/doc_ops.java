@@ -250,7 +250,7 @@ public class doc_ops {
 
 	public List<ConcurrentHashMap<String, Object>> bulkTouch(Collection collection, List<String> keys, final int exp, final int persistTo, final int replicateTo,
 			final String durabilityLevel, final long timeOut, final String timeUnit) {
-		final TouchOptions touchOptions = this.getTouchOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		final TouchOptions touchOptions = this.getTouchOptions(timeOut, timeUnit);
 		final ReactiveCollection reactiveCollection = collection.reactive();
 		final Duration exp_duration = this.getDuration(exp, "seconds");
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(keys)
@@ -281,7 +281,7 @@ public class doc_ops {
 
 	public List<ConcurrentHashMap<String, Object>> bulkTouch(Collection collection, List<String> keys, final Duration exp, final PersistTo persistTo, final ReplicateTo replicateTo,
 			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
-		final TouchOptions touchOptions = this.getTouchOptions(persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
+		final TouchOptions touchOptions = this.getTouchOptions(timeOut, timeUnit);
 		final ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(keys)
 				.flatMap(new Function<String, Publisher<ConcurrentHashMap<String, Object>>>() {
@@ -537,31 +537,11 @@ public class doc_ops {
 		}
 	}
 
-	private TouchOptions getTouchOptions(int persistTo, int replicateTo,
-			long timeOut, String timeUnit, String durabilityLevel) {
-		PersistTo persistto = this.getPersistTo(persistTo);
-		ReplicateTo replicateto = this.getReplicateTo(replicateTo);
+	private TouchOptions getTouchOptions(long timeOut, String timeUnit) {
 		Duration timeout = this.getDuration(timeOut, timeUnit);
-		DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
-		if (persistTo != 0 || replicateTo !=0) {
-			return TouchOptions.touchOptions().durability(persistto, replicateto).timeout(timeout);
-		}
-		else {
-			return TouchOptions.touchOptions().durability(durabilitylevel).timeout(timeout);
-		}
+		return TouchOptions.touchOptions().timeout(timeout);
 	}
 
-	private TouchOptions getTouchOptions(PersistTo persistTo, ReplicateTo replicateTo,
-			long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
-		Duration timeout = this.getDuration(timeOut, timeUnit);
-		if (persistTo == PersistTo.NONE || replicateTo == ReplicateTo.NONE) {
-			return TouchOptions.touchOptions().durability(persistTo, replicateTo).timeout(timeout);
-		}
-		else {
-			return TouchOptions.touchOptions().durability(durabilityLevel).timeout(timeout);
-		}
-	}
-	
 	protected PersistTo getPersistTo(int persistTo) {
 		switch (persistTo) {
 		case 0:

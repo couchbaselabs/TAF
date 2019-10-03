@@ -19,7 +19,7 @@ from com.couchbase.client.core.error import KeyExistsException, \
                                             ConfigException
 from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.retry import FailFastRetryStrategy
-from com.couchbase.client.java import Cluster
+from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.java.kv import \
@@ -30,9 +30,8 @@ from com.couchbase.client.java.kv import \
     TouchOptions, \
     PersistTo,\
     ReplicateTo, \
-    ReplicaMode, \
+    GetAllReplicasOptions, \
     GetOptions, \
-    GetFromReplicaOptions, \
     MutateInOptions
 
 from java.time import Duration
@@ -89,15 +88,18 @@ class SDKClient(object):
                 if isinstance(h, ConsoleHandler):
                     h.setLevel(Level.SEVERE)
             cluster_env = ClusterEnvironment \
-                          .builder(", ".join(self.hosts).replace(" ", ""),
-                                   self.username, self.password) \
+                          .builder() \
                           .timeoutConfig(TimeoutConfig.builder()
                                          .connectTimeout(Duration.ofSeconds(20))
                                          .kvTimeout(Duration.ofSeconds(10)))
+            clusterOptions = ClusterOptions.clusterOptions(
+                "Administrator", "password").environment(cluster_env.build());
             i = 1
             while i <= 5:
                 try:
-                    self.cluster = Cluster.connect(cluster_env.build())
+                    self.cluster = Cluster.connect(
+                        ", ".join(self.hosts).replace(" ", ""),
+                        clusterOptions)
                     break
                 except ConfigException as e:
                     self.log.error("%s: Exception occurred while creating cluster connection: %s" % (i, str(e)))
@@ -111,7 +113,7 @@ class SDKClient(object):
     def close(self):
         self.log.debug("Closing down the cluster")
         if self.cluster:
-            self.cluster.shutdown()
+            self.cluster.disconnect()
             self.cluster.environment().shutdown()
             self.log.debug("Closed down Cluster Connection")
             SDKClient.sdk_disconnections += 1
@@ -567,12 +569,9 @@ class SDKClient(object):
                            "error": str(ex), "status": False})
         return result
 
-    def getFromReplica(self, key, replicaMode=ReplicaMode.ALL):
+    def getFromAllReplica(self, key):
         result = []
-        getResult = self.collection.getFromReplica(
-                        key,
-                        GetFromReplicaOptions.getFromReplicaOptions()
-                        .replicaMode(replicaMode))
+        getResult = self.collection.getAllReplicas(key, GetAllReplicasOptions.getAllReplicasOptions());
         for item in getResult.toArray():
             """
             self.log.info("Found document: key=%s, cas=%s, content=%s"
