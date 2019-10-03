@@ -3422,7 +3422,7 @@ class AutoFailoverNodesFailureTask(Task):
         ui_logs_time = [t["serverTime"] for t in ui_logs]
         expected_log = "Starting failing over ['ns_1@{}']".format(
             failed_over_node.ip)
-        if expected_log in ui_logs_text:
+        if expected_log in ui_logs_text or self.get_failover_count() == 1:
             failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
             return True, failed_over_time
         return False, None

@@ -15,6 +15,7 @@ GRACEFUL = "graceful"
 class FailoverTests(FailoverBaseTest):
     def setUp(self):
         super(FailoverTests, self).setUp()
+        self.run_time_create_load_gen = self.gen_create = self.get_doc_generator(self.num_items, self.num_items * 2)
         self.server_map = self.get_server_map()
 
     def tearDown(self):
@@ -117,15 +118,6 @@ class FailoverTests(FailoverBaseTest):
             self.run_failover_operations_with_ops(self.chosen, failover_reason)
         else:
             self.run_failover_operations(self.chosen, failover_reason)
-
-        target_bucket = self.bucket_util.buckets[0]
-
-        # Update new_replica value, if provided in the conf
-        if self.new_replica:
-            self.num_replicas = self.new_replica
-            bucket_helper = BucketHelper(self.master)
-            bucket_helper.change_bucket_props(
-                target_bucket, replicaNumber=self.num_replicas)
 
         # Decide whether the durability is going to fail or not
         if self.num_failed_nodes >= 1 and self.num_replicas > 1:
@@ -245,6 +237,20 @@ class FailoverTests(FailoverBaseTest):
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[node.id for node in chosen])
 
+        from couchbase_helper.durability_helper import DurableExceptions
+
+        retry_exceptions = [
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            DurableExceptions.DurabilityImpossibleException
+        ]
+
+        # CRUDs while rebalance is running in parallel
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+        for task, task_info in tasks_info.items():
+            self.task_manager.get_task_result(task)
+
         # Rebalance Monitoring
         msg = "rebalance failed while removing failover nodes {0}" \
               .format([node.id for node in chosen])
@@ -252,7 +258,7 @@ class FailoverTests(FailoverBaseTest):
         #  Drain Queue and make sure intra-cluster replication is complete
         self.log.info("Begin VERIFICATION for Rebalance after Failover Only")
         if not self.atomicity:
-            self.bucket_util.verify_cluster_stats(self.num_items, self.master,
+            self.bucket_util.verify_cluster_stats(self.num_items * 2, self.master,
                                               check_bucket_stats=True,
                                               check_ep_items_remaining=False)
         # Verify all data set with meta data if failover happens after failover
@@ -300,7 +306,6 @@ class FailoverTests(FailoverBaseTest):
                                                    self.server_map)
         index = 0
         for node in chosen:
-            self.rest.add_back_node(node.id)
             self.sleep(5)
             if self.recoveryType:
                 # define precondition for recovery type
@@ -308,9 +313,13 @@ class FailoverTests(FailoverBaseTest):
                     otpNode=node.id, recoveryType=self.recoveryType[index])
                 index += 1
         self.sleep(20, "After failover before invoking rebalance...")
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                            ejectedNodes=[],
-                            deltaRecoveryBuckets=self.deltaRecoveryBuckets)
+        tasks = self.subsequent_load_gen()
+        task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(task)
+        self.sleep(300, "After failover before invoking rebalance...")
+        self.assertTrue(task.result)
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
 
         # Perform Compaction
         if self.compact:
@@ -335,20 +344,31 @@ class FailoverTests(FailoverBaseTest):
                                 ejectedNodes=[],
                                 deltaRecoveryBuckets=self.deltaRecoveryBuckets)
 
+        from couchbase_helper.durability_helper import DurableExceptions
+
+        retry_exceptions = [
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            DurableExceptions.DurabilityImpossibleException
+        ]
+
+        # CRUDs while rebalance is running in parallel
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+
         result_nodes = self.servers[:self.nodes_init]
         if rebalance_type == "in":
             rebalance = self.task.rebalance(self.servers[:self.nodes_init], [self.servers[self.nodes_init]], [])
-            result_nodes = list(set(self.servers[:self.nodes_init] + [self.servers[self.nodes_init]]))
         if rebalance_type == "out":
             rebalance = self.task.rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
-            result_nodes = list(set(self.servers[:self.nodes_init] - [self.servers[self.nodes_init-1]]))
         if rebalance_type == "swap":
             self.rest.add_node(self.master.rest_username, self.master.rest_password,
                                self.servers[self.nodes_init].ip, self.servers[self.nodes_init].port,
                                services=["kv"])
             rebalance = self.task.rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
-            result_nodes = list(set(self.servers[:self.nodes_init] + [self.servers[self.nodes_init]]) -
-                                set([self.servers[self.nodes_init - 1]]))
+
+        for task, task_info in tasks_info.items():
+            self.task_manager.get_task_result(task)
 
         # Check if node has to be killed or restarted during rebalance
         # Monitor Rebalance
@@ -365,7 +385,7 @@ class FailoverTests(FailoverBaseTest):
 
         # Verify Stats of cluster and Data is max_verify > 0
         if not self.atomicity:
-            self.bucket_util.verify_cluster_stats(self.num_items, self.master,
+            self.bucket_util.verify_cluster_stats(self.num_items * 2, self.master,
                                               check_bucket_stats=True,
                                               check_ep_items_remaining=False)
 
@@ -383,7 +403,7 @@ class FailoverTests(FailoverBaseTest):
 
         # Verify if vbucket sequence numbers and failover logs are as expected
         # We will check only for version > 2.5.* & if the failover is graceful
-        if self.graceful and not self.atomicity:
+        if self.graceful and not self.atomicity and not self.durability_level:
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
                     prev_vbucket_stats, self.cluster_util.get_kv_nodes(), self.bucket_util.buckets)
             new_failover_stats = self.bucket_util.compare_failovers_logs(

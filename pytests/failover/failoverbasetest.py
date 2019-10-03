@@ -1,9 +1,16 @@
 from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
-from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.document import View
 from remote.remote_util import RemoteUtilHelper
+from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
+from couchbase_helper.durability_helper import DurableExceptions
 
+retry_exceptions = [
+            DurableExceptions.RequestTimeoutException,
+            DurableExceptions.RequestCanceledException,
+            DurableExceptions.DurabilityAmbiguousException,
+            DurableExceptions.DurabilityImpossibleException
+            ]
 
 class FailoverBaseTest(BaseTestCase):
 
@@ -107,3 +114,84 @@ class FailoverBaseTest(BaseTestCase):
                 self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
             finally:
                 super(FailoverBaseTest, self).tearDown()
+
+    def get_doc_generator(self, start, end):
+        age = range(5)
+        first = ['james', 'sharon']
+        body = [''.rjust(self.doc_size - 10, 'a')]
+        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
+        generator = DocumentGenerator(self.key, template, age, first, body,
+                                      start=start, end=end)
+        return generator
+
+    def subsequent_load_gen(self):
+        subsequent_load_gen = self.get_doc_generator(self.num_items, self.num_items*2)
+        tasks = self.async_load_all_buckets(subsequent_load_gen, "create", 0)
+        return tasks
+
+    def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
+        tasks = []
+        for bucket in self.bucket_util.buckets:
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, kv_gen, op_type, exp,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                batch_size=batch_size, timeout_secs=self.sdk_timeout,
+                process_concurrency=8, retries=self.sdk_retries,
+                durability=self.durability_level)
+            tasks.append(task)
+        return tasks
+
+    def start_parallel_cruds(self, retry_exceptions=[], ignore_exceptions=[],
+                             task_verification=False):
+        tasks_info = dict()
+        if "update" in self.doc_ops:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_update, "update", 0, batch_size=20,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, pause_secs=5,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+        if "create" in self.doc_ops:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_create, "create", 0, batch_size=20,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, pause_secs=5,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+            self.num_items += (self.gen_create.end - self.gen_create.start)
+        if "delete" in self.doc_ops:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_delete, "delete", 0, batch_size=20,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, pause_secs=5,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
+            self.num_items -= (self.gen_delete.end - self.gen_delete.start)
+
+        if task_verification:
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+
+        return tasks_info
+
+    def loadgen_docs(self,
+                     retry_exceptions=[],
+                     ignore_exceptions=[],
+                     task_verification=False):
+        loaders = []
+        retry_exceptions = list(set(retry_exceptions +
+                                    [DurableExceptions.RequestTimeoutException,
+                                     DurableExceptions.RequestCanceledException,
+                                     DurableExceptions.DurabilityImpossibleException,
+                                     DurableExceptions.DurabilityAmbiguousException]))
+
+        loaders = self.start_parallel_cruds(retry_exceptions, ignore_exceptions,
+                                            task_verification)
+        return loaders
