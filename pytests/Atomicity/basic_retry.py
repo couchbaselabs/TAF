@@ -250,7 +250,7 @@ class basic_ops(BaseTestCase):
         self.sleep(1)
         
         if self.crash:
-            self.client.cluster.shutdown() 
+            self.client.cluster.disconnect() 
             self.transaction.close()
             print "going to create a new transaction"
             self.client1 = VBucketAwareMemcached(RestConnection(self.cluster.master), self.def_bucket[0])
@@ -294,7 +294,7 @@ class basic_ops(BaseTestCase):
         for thread in threads:
             thread.start()
         
-        self.client.cluster.shutdown()       
+        self.client.cluster.disconnect()       
         self.transaction.close()
           
         self.client1 = VBucketAwareMemcached(RestConnection(self.cluster.master), self.def_bucket[0])
