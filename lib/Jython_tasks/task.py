@@ -3203,6 +3203,8 @@ class AutoFailoverNodesFailureTask(Task):
                     self.current_failure_node.ip)
                 rest.print_UI_logs(10)
                 self.test_log.error(message)
+                if self.get_failover_count() == 1:
+                    return True
                 self.set_exception(AutoFailoverException(message))
                 return False
             else:

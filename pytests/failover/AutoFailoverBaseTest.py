@@ -438,6 +438,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                 check_for_failover=False)
             self.task_manager.add_new_task(task)
             self.task_manager.get_task_result(task)
+            self.sleep(60)
 
     def split_network(self):
         """
@@ -723,8 +724,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         else:
             task = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_create, "create", 0,
-                batch_size=10, process_concurrency=1,
-                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                batch_size=10, replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
