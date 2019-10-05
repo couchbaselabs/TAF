@@ -316,7 +316,7 @@ class FailoverTests(FailoverBaseTest):
         tasks = self.subsequent_load_gen()
         task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(task)
-        self.sleep(300, "After failover before invoking rebalance...")
+        self.sleep(30, "After rebalance completes")
         self.assertTrue(task.result)
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
