@@ -93,7 +93,7 @@ class SDKClient(object):
                                          .connectTimeout(Duration.ofSeconds(20))
                                          .kvTimeout(Duration.ofSeconds(10)))
             clusterOptions = ClusterOptions.clusterOptions(
-                "Administrator", "password").environment(cluster_env.build());
+                "Administrator", "password").environment(cluster_env.build())
             i = 1
             while i <= 5:
                 try:
@@ -573,8 +573,10 @@ class SDKClient(object):
 
     def getFromAllReplica(self, key):
         result = []
-        getResult = self.collection.getAllReplicas(key, GetAllReplicasOptions.getAllReplicasOptions());
-        for item in getResult.toArray():
+        get_result = self.collection.getAllReplicas(
+            key,
+            GetAllReplicasOptions.getAllReplicasOptions())
+        for item in get_result.toArray():
             """
             self.log.info("Found document: key=%s, cas=%s, content=%s"
                      % (key, str(item.cas()),

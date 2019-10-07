@@ -2,18 +2,11 @@ import json
 import time
 
 from cb_tools.cbstats import Cbstats
-from couchbase_helper.durability_helper import DurableExceptions
-from memcacheConstants import ERR_NOT_FOUND
 from castest.cas_base import CasBaseTest
-from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
-from mc_bin_client import MemcachedError
-
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-
-from com.couchbase.client.java.kv import ReplicaMode
-
 from sdk_exceptions import ClientException
 
 
@@ -35,6 +28,7 @@ class OpsChangeCasTests(CasBaseTest):
                 process_concurrency=8,
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
                 compression=self.sdk_compression)
             self.task.jython_task_manager.get_task_result(task)
@@ -117,8 +111,7 @@ class OpsChangeCasTests(CasBaseTest):
                         poll_count = 0
                         max_retry = 5
                         while poll_count < max_retry:
-                            replica_read = client.getFromReplica(
-                                key, ReplicaMode.FIRST)[0]
+                            replica_read = client.getFromAllReplica(key)[0]
                             replica_cas = replica_read["cas"]
                             if active_cas == replica_cas \
                                     or self.durability_level:
@@ -142,7 +135,7 @@ class OpsChangeCasTests(CasBaseTest):
                                          cas=old_cas)
                     if result["status"] is True:
                         self.log_failure("The item should already be deleted")
-                    if DurableExceptions.KeyNotFoundException \
+                    if ClientException.KeyNotFoundException \
                             not in result["error"]:
                         self.log_failure("Invalid Excepetion: %s" % result)
                     if result["cas"] != 0:
@@ -398,7 +391,7 @@ class OpsChangeCasTests(CasBaseTest):
                                  timeout=self.sdk_timeout)
             if result["status"] is True:
                 self.log_failure("Read succeeded after delete: %s" % result)
-            elif DurableExceptions.KeyNotFoundException \
+            elif ClientException.KeyNotFoundException \
                     not in str(result["error"]):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)
@@ -410,7 +403,7 @@ class OpsChangeCasTests(CasBaseTest):
                                  cas=create_cas)
             if result["status"] is True:
                 self.log_failure("Replace succeeded after delete: %s" % result)
-            if DurableExceptions.KeyNotFoundException \
+            if ClientException.KeyNotFoundException \
                     not in str(result["error"]):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)
