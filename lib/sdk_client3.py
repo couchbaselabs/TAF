@@ -294,16 +294,18 @@ class SDKClient(object):
 
     def getTouchOptions(self, persist_to=0, replicate_to=0,
                         durability="", timeout=5, time_unit="seconds"):
-        if persist_to != 0 or replicate_to != 0:
-            options = TouchOptions.touchOptions() \
-                .durability(self.getPersistTo(persist_to),
-                            self.getReplicateTo(replicate_to)) \
-                .timeout(self.getDuration(timeout, time_unit));
-        else:
-            options = TouchOptions.touchOptions() \
-                .durability(self.getDurabilityLevel(durability)) \
-                .timeout(self.getDuration(timeout, time_unit));
-        return options
+        return TouchOptions.touchOptions() \
+            .timeout(self.getDuration(timeout, time_unit))
+        # if persist_to != 0 or replicate_to != 0:
+        #     options = TouchOptions.touchOptions() \
+        #         .durability(self.getPersistTo(persist_to),
+        #                     self.getReplicateTo(replicate_to)) \
+        #         .timeout(self.getDuration(timeout, time_unit))
+        # else:
+        #     options = TouchOptions.touchOptions() \
+        #         .durability(self.getDurabilityLevel(durability)) \
+        #         .timeout(self.getDuration(timeout, time_unit))
+        # return options
 
     def getMutateInOptions(self, exp=0, exp_unit="seconds",
                            persist_to=0, replicate_to=0, timeout=5,
