@@ -3424,9 +3424,13 @@ class AutoFailoverNodesFailureTask(Task):
         ui_logs_time = [t["serverTime"] for t in ui_logs]
         expected_log = "Starting failing over ['ns_1@{}']".format(
             failed_over_node.ip)
-        if expected_log in ui_logs_text or self.get_failover_count() == 1:
+        if expected_log in ui_logs_text:
             failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
             return True, failed_over_time
+        if self.get_failover_count() == 1:
+            # This is for sync write cases where we care about wether auto-failover happened
+            # rather than how long it took
+            return True, 30
         return False, None
 
     def get_failover_count(self):
