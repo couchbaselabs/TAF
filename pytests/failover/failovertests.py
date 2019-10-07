@@ -246,15 +246,25 @@ class FailoverTests(FailoverBaseTest):
             DurableExceptions.DurabilityImpossibleException
         ]
 
-        # CRUDs while rebalance is running in parallel
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
-        for task, task_info in tasks_info.items():
-            self.task_manager.get_task_result(task)
-
         # Rebalance Monitoring
         msg = "rebalance failed while removing failover nodes {0}" \
               .format([node.id for node in chosen])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
+
+        self.sleep(30)
+        if not self.atomicity:
+            # Retry of failed keys after rebalance
+            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
+            for task, task_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info['ops_failed'],
+                    "Doc ops failed for task: {}".format(task.thread_name))
+
         #  Drain Queue and make sure intra-cluster replication is complete
         self.log.info("Begin VERIFICATION for Rebalance after Failover Only")
         if not self.atomicity:
@@ -295,7 +305,7 @@ class FailoverTests(FailoverBaseTest):
         """
         Method to run add-back operation with recovery type = (delta/full).
         It also verifies if the operations are correct with data
-        verificaiton steps
+        verification steps
         """
         _servers_ = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if not self.atomicity:
@@ -312,14 +322,16 @@ class FailoverTests(FailoverBaseTest):
                 self.rest.set_recovery_type(
                     otpNode=node.id, recoveryType=self.recoveryType[index])
                 index += 1
-        self.sleep(20, "After failover before invoking rebalance...")
-        tasks = self.subsequent_load_gen()
-        task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
-        self.task.jython_task_manager.get_task_result(task)
+        self.sleep(5, "After failover before invoking rebalance...")
+        tasks_info = self.subsequent_load_gen()
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
         self.sleep(30, "After rebalance completes")
-        self.assertTrue(task.result)
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
+        self.assertTrue(rebalance.result)
+
+        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                       self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         # Perform Compaction
         if self.compact:
@@ -353,8 +365,9 @@ class FailoverTests(FailoverBaseTest):
             DurableExceptions.DurabilityImpossibleException
         ]
 
-        # CRUDs while rebalance is running in parallel
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+        if not self.atomicity:
+            # CRUDs while rebalance is running in parallel
+            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
         result_nodes = self.servers[:self.nodes_init]
         if rebalance_type == "in":
@@ -367,14 +380,30 @@ class FailoverTests(FailoverBaseTest):
                                services=["kv"])
             rebalance = self.task.rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
 
-        for task, task_info in tasks_info.items():
-            self.task_manager.get_task_result(task)
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         # Check if node has to be killed or restarted during rebalance
         # Monitor Rebalance
         msg = "rebalance failed while removing failover nodes {0}" \
               .format(chosen)
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
+
+        self.sleep(30)
+        if not self.atomicity:
+            # Retry of failed keys after rebalance
+            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
+            for task, tasks_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info['ops_failed'],
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
         # Drain ep_queue & make sure that intra-cluster replication is complete
         if not self.atomicity:
@@ -386,8 +415,8 @@ class FailoverTests(FailoverBaseTest):
         # Verify Stats of cluster and Data is max_verify > 0
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(self.num_items * 2, self.master,
-                                              check_bucket_stats=True,
-                                              check_ep_items_remaining=False)
+                                                  check_bucket_stats=True,
+                                                  check_ep_items_remaining=False)
 
         # Verify recovery Type succeeded if we added-back nodes
         self.verify_for_recovery_type(chosen, self.server_map, self.bucket_util.buckets,
