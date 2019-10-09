@@ -196,7 +196,7 @@ class UpgradeBase(BaseTestCase):
 
         return RestConnection(self.__getTestServerObj(target_node))
 
-    def __get_build(self, server, version, remote, is_amazon=False, info=None):
+    def __get_build(self, version, remote, is_amazon=False, info=None):
         if info is None:
             info = remote.extract_remote_info()
         build_repo = CB_REPO
@@ -213,7 +213,6 @@ class UpgradeBase(BaseTestCase):
             edition_type="couchbase-server-enterprise",
             repo=build_repo,
             distribution_version=info.distribution_version.lower())
-        self.log.info("finding build %s for machine %s" % (version, server))
 
         if re.match(r'[1-9].[0-9].[0-9]-[0-9]+$', version):
             version = version + "-rel"
@@ -237,8 +236,7 @@ class UpgradeBase(BaseTestCase):
         if appropriate_build is None:
             self.log.info("Builds are: %s \n. Remote is %s, %s. Result is: %s"
                           % (builds, remote.ip, remote.username, version))
-            raise Exception("Build %s for machine %s is not found"
-                            % (version, server))
+            raise Exception("Build %s not found" % version)
         return appropriate_build
 
     def _upgrade(self, upgrade_version, server, queue=None, skip_init=False,
@@ -292,10 +290,10 @@ class UpgradeBase(BaseTestCase):
         if queue is not None:
             queue.put(True)
 
-
     def failover_recovery(self, node_to_upgrade, version, recovery_type):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
+        self.log.info("Failing over the node %s" % otp_node.id)
         success = rest.fail_over(otp_node.id, graceful=True)
         if not success:
             self.log_failure("Failover unsuccessful")
@@ -308,8 +306,22 @@ class UpgradeBase(BaseTestCase):
             return
 
         shell = RemoteMachineShellConnection(node_to_upgrade)
-        shell.couchbase_upgrade()
-        self.install_version_on_node([node_to_upgrade], version)
+        appropriate_build = self.__get_build(self.upgrade_version,
+                                             shell)
+        self.assertTrue(appropriate_build.url,
+                        msg="Unable to find build %s" % self.upgrade_version)
+        self.assertTrue(shell.download_build(appropriate_build),
+                        "Failed while downloading the build!")
+
+        self.log.info("Starting node upgrade")
+        upgrade_success = shell.couchbase_upgrade(appropriate_build,
+                                                  save_upgrade_config=False,
+                                                  forcefully=self.is_downgrade)
+        shell.disconnect()
+        if not upgrade_success:
+            self.log_failure("Upgrade failed")
+            return
+
         rest.add_back_node("ns_1@" + otp_node.ip)
         self.sleep(5, "Wait after add_back_node")
         rest.set_recovery_type(otp_node.id, recoveryType=recovery_type)

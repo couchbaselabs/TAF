@@ -245,6 +245,17 @@ class RemoteMachineShellConnection:
                       .format(self.ip, timeout, message))
         time.sleep(timeout)
 
+    def __check_output(self, word_check, output):
+        found = False
+        if len(output) >= 1:
+            for x in output:
+                if word_check.lower() in x.lower():
+                    self.test_log.info("Found '{0}' in output"
+                                       .format(word_check))
+                    found = True
+                    break
+        return found
+
     def get_running_processes(self):
         # if its linux ,then parse each line
         # 26989 ?        00:00:51 pdflush
@@ -1713,26 +1724,47 @@ class RemoteMachineShellConnection:
         finally:
             sftp.close()
 
-    def couchbase_upgrade(self, build, save_upgrade_config=False, forcefully=False):
-        # upgrade couchbase server
+    def couchbase_upgrade(self, build, save_upgrade_config=False,
+                          forcefully=False, fts_query_limit=None,
+                          debug_logs=False):
+        success_upgrade = False
+        server_type = None
+        success = True
+        if fts_query_limit is None:
+            fts_query_limit = 10000000
+        start_server_after_install = True
+        track_words = ("warning", "error", "fail")
+        if build.name.lower().find("membase") != -1:
+            server_type = 'membase'
+            abbr_product = "mb"
+        elif build.name.lower().find("couchbase") != -1:
+            server_type = 'couchbase'
+            abbr_product = "cb"
+        else:
+            self.test_log.error("Its not a membase or couchbase?")
+            return success_upgrade
+
+        # Upgrade couchbase server
+        nonroot_path_start = "/"
         self.extract_remote_info()
-        self.log.info('deliverable_type : {0}'.format(self.info.deliverable_type))
-        self.og.info('/tmp/{0} or /tmp/{1}'.format(build.name, build.product))
+        self.test_log.info('Deliverable_type: %s' % self.info.deliverable_type)
+        self.test_log.info('/tmp/%s or /tmp/%s' % (build.name, build.product))
         command = ''
         if self.info.type.lower() == 'windows':
-                print "build name in couchbase upgrade    ", build.product_version
-                self.couchbase_upgrade_win(self.info.architecture_type,
-                                           self.info.windows_name,
-                                           build.product_version)
-                self.log.info('********* continue upgrade process **********')
+            print "build name in couchbase upgrade    ", build.product_version
+            self.couchbase_upgrade_win(self.info.architecture_type,
+                                       self.info.windows_name,
+                                       build.product_version)
+            log.info('********* continue upgrade process **********')
 
         elif self.info.deliverable_type == 'rpm':
             # run rpm -i to install
             if save_upgrade_config:
                 self.couchbase_uninstall()
                 install_command = 'rpm -i /tmp/{0}'.format(build.name)
-                command = 'INSTALL_UPGRADE_CONFIG_DIR=/opt/couchbase/var/lib/membase/config {0}' \
-                          .format(install_command)
+                command = \
+                    'INSTALL_UPGRADE_CONFIG_DIR=/opt/couchbase/var/lib/membase/config {0}' \
+                    .format(install_command)
             else:
                 command = 'rpm -U /tmp/{0}'.format(build.name)
                 if forcefully:
@@ -1741,15 +1773,39 @@ class RemoteMachineShellConnection:
             if save_upgrade_config:
                 self.couchbase_uninstall()
                 install_command = 'dpkg -i /tmp/{0}'.format(build.name)
-                command = 'INSTALL_UPGRADE_CONFIG_DIR=/opt/couchbase/var/lib/membase/config {0}' \
-                          .format(install_command)
+                command = \
+                    'INSTALL_UPGRADE_CONFIG_DIR=/opt/couchbase/var/lib/membase/config {0}' \
+                    .format(install_command)
             else:
                 command = 'dpkg -i /tmp/{0}'.format(build.name)
                 if forcefully:
                     command = 'dpkg -i --force /tmp/{0}'.format(build.name)
-        output, error = self.execute_command(command, use_channel=True)
-        self.log_command_output(output, error)
-        return output, error
+        output, error = self.execute_command(command)
+        if debug_logs:
+            self.log_command_output(output, error)
+        else:
+            msg = "You have successfully installed Couchbase Server."
+            success_upgrade = self.__check_output(msg, output)
+            if success_upgrade:
+                output = list()
+                output.append("Successfully installed Couchbase Server")
+        linux = ["deb", "rpm"]
+        if float(build.product_version[:3]) >= 5.1:
+            if self.info.deliverable_type in linux:
+                o, e = \
+                    self.execute_command(
+                        "sed -i 's/export PATH/export PATH\\n"
+                        "export CBFT_ENV_OPTIONS=bleveMaxResultWindow={1}/'\
+                        {2}opt/{0}/bin/{0}-server"
+                        .format(server_type,
+                                int(fts_query_limit),
+                                nonroot_path_start))
+                success &= self.log_command_output(o, e, track_words)
+                self.sleep(5, "Wait for server up before stop it")
+                self.stop_couchbase()
+                self.start_couchbase()
+                self.sleep(10, "Wait for server to become online")
+        return success_upgrade
 
     def couchbase_upgrade_win(self, architecture, windows_name, version):
         task = "upgrade"
@@ -1817,7 +1873,7 @@ class RemoteMachineShellConnection:
     def install_server(self, build, startserver=True, path='/tmp',
                        vbuckets=None, swappiness=10, force=False, openssl='',
                        upr=None, xdcr_upr=None, fts_query_limit=None,
-                       enable_ipv6=None):
+                       enable_ipv6=None, rpm_upgrade=False):
 
         self.log.info('*****install server ***')
         server_type = None
@@ -1912,7 +1968,11 @@ class RemoteMachineShellConnection:
                                                                 LINUX_COUCHBASE_BIN_PATH))
                 else:
                     self.check_pkgconfig(self.info.deliverable_type, openssl)
-                    if force:
+                    if rpm_upgrade:
+                        output, error = self.execute_command('{0}rpm -U /tmp/{1}' \
+                                                             .format(environment, build.name),
+                                                             debug=False)
+                    elif force:
                         output, error = self.execute_command('{0}rpm -Uvh --force /tmp/{1}'\
                                                              .format(environment, build.name),
                                                              debug=False)

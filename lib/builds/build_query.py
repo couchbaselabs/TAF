@@ -77,9 +77,9 @@ class BuildQuery(object):
         # parse build page and create build object
         pass
 
-    def find_build(self, builds, product, type, arch, version, toy='', openssl='', \
-                   direct_build_url=None, distribution_version=None, \
-                   distribution_type=""):
+    def find_build(self, builds, product, type, arch, version, toy='',
+                   openssl='', direct_build_url=None,
+                   distribution_version=None, distribution_type=""):
         if direct_build_url is None:
             if not isinstance(builds, list) and builds.url is not None:
                 return builds
