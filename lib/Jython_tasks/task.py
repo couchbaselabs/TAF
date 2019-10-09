@@ -3427,10 +3427,6 @@ class AutoFailoverNodesFailureTask(Task):
         if expected_log in ui_logs_text:
             failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
             return True, failed_over_time
-        if self.get_failover_count() == 1:
-            # This is for sync write cases where we care about wether auto-failover happened
-            # rather than how long it took
-            return True, 30
         return False, None
 
     def get_failover_count(self):
