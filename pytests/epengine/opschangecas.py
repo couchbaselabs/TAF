@@ -244,6 +244,7 @@ class OpsChangeCasTests(CasBaseTest):
         self._load_ops(self.load_gen, 'expiry')
         self._check_cas(self.load_gen, check_conflict_resolution=False)
         self._check_expiry(self.load_gen)
+        self.validate_test_failure()
 
     def test_cas_touch(self):
         """
@@ -253,6 +254,7 @@ class OpsChangeCasTests(CasBaseTest):
         self._load_ops(self.load_gen, 'update', mutations=20)
         self._load_ops(self.load_gen, 'touch')
         self._check_cas(self.load_gen, check_conflict_resolution=False)
+        self.validate_test_failure()
 
     def test_cas_getMeta(self):
         """
