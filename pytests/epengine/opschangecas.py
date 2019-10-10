@@ -249,16 +249,16 @@ class OpsChangeCasTests(CasBaseTest):
         """
         Test touch on cas and max cas values for keys
         """
-        self.log.info(' Starting test-touch')
+        self.log.info('Starting test-touch')
         self._load_ops(self.load_gen, 'update', mutations=20)
         self._load_ops(self.load_gen, 'touch')
-        self._check_cas(check_conflict_resolution=False)
+        self._check_cas(self.load_gen, check_conflict_resolution=False)
 
     def test_cas_getMeta(self):
         """
         Test getMeta on cas and max cas values for keys
         """
-        self.log.info(' Starting test-getMeta')
+        self.log.info('Starting test-getMeta')
         self._load_ops(ops='set', mutations=20)
         self._check_cas(check_conflict_resolution=False)
         #self._load_ops(ops='add')
