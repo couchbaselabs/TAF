@@ -213,9 +213,15 @@ class FailoverTests(FailoverBaseTest):
             self.bucket_util._wait_for_stats_all_buckets(
             check_ep_items_remaining=False)
         self.sleep(5, "after failover before invoking rebalance...")
+        if not self.atomicity:
+            tasks_info = self.subsequent_load_gen()
         # Rebalance after Failover operation
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                             ejectedNodes=[node.id for node in chosen])
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
         # Perform Compaction
         if self.compact:
             for bucket in self.buckets:
@@ -323,15 +329,17 @@ class FailoverTests(FailoverBaseTest):
                     otpNode=node.id, recoveryType=self.recoveryType[index])
                 index += 1
         self.sleep(5, "After failover before invoking rebalance...")
-        tasks_info = self.subsequent_load_gen()
+        if not self.atomicity:
+            tasks_info = self.subsequent_load_gen()
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.sleep(30, "After rebalance completes")
         self.assertTrue(rebalance.result)
 
-        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                       self.cluster)
-        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         # Perform Compaction
         if self.compact:
