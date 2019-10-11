@@ -70,10 +70,21 @@ class OpsChangeCasTests(CasBaseTest):
                                 durability=self.durability_level,
                                 cas=old_cas)
                         else:
-                            result = client.touch(
-                                key, 0,
-                                durability=self.durability_level,
-                                timeout=self.sdk_timeout)
+                            for exp in [0, 60, 0]:
+                                result = client.touch(
+                                    key, exp,
+                                    durability=self.durability_level,
+                                    timeout=self.sdk_timeout)
+                                if exp == 0 and result["cas"] != old_cas:
+                                    self.log_failure("CAS updated for touch "
+                                                     "with exp=0: %s" % result)
+                                else:
+                                    if result["cas"] == old_cas:
+                                        self.log_failure("CAS not updated "
+                                                         "%s == %s"
+                                                         % (old_cas,
+                                                            result["cas"]))
+                                    old_cas = result["cas"]
 
                         if result["status"] is False:
                             client.close()
@@ -95,7 +106,7 @@ class OpsChangeCasTests(CasBaseTest):
                                 self.log.debug(
                                     "Mutate %s with CAS %s successfully! "
                                     "Current CAS: %s"
-                                    % (old_cas, key, new_cas))
+                                    % (key, old_cas, new_cas))
 
                         active_read = client.crud("read", key,
                                                   timeout=self.sdk_timeout)
