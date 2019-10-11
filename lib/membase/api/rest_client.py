@@ -708,7 +708,7 @@ class RestConnection(object):
                     message = '{0} {1} body: {2} headers: {3} error: {4} reason: {5} {6} {7}'.\
                               format(method, api, params, headers, response['status'], reason,
                                      content.rstrip('\n'), self._get_auth(headers))
-                    self.test_log.error(message)
+                    self.test_log.error(message.decode("utf8"))
                     self.test_log.debug(''.join(traceback.format_stack()))
                     return False, content, response
             except socket.error as e:
