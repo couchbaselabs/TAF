@@ -95,7 +95,8 @@ class DurabilityHelper:
 
         :param bucket_name:   Name of the bucket used for fetching
                               the replica value (str)
-        :param induced_error: Error type induced during the test execution (str)
+        :param master:        Master node from the cluster
+        :param induced_error: Error induced during the test execution (str)
         :param failed_nodes:  No of nodes failed due to the induced_error (int)
 
         :return durability_succeeds: Durability status for the bucket (bool)
@@ -125,8 +126,9 @@ class DurabilityHelper:
 
         :param failed_docs:         All failed docs (dict)
         :param expected_exception:  Expected exceptions (list of str)
+        :param retry_reason: Exception str to enable retry of failed docs
 
-        :return validation_passed:  Validation result of doc's exceptions (bool)
+        :return validation_passed: Validation result of doc's exceptions (bool)
         """
         validation_passed = True
         for key, failed_doc in failed_docs.items():
@@ -229,7 +231,7 @@ class DurabilityHelper:
         """
 
         :param bucket: Bucket object
-        :param cbstat_obj: Cbstats class object
+        :param kv_servers: List of kv_nodes currently present in the cluster
         :param vbuckets: Total vbucket count for the bucket. Default 1024
         :param expected_val: dict() containing expected key,value pairs
         :param one_less_node: Bool value denoting,
@@ -304,5 +306,4 @@ class DurabilityHelper:
                                % (op_type,
                                   ops_val[op_type],
                                   expected_val[op_type]))
-        # return verification_failed
-        return False
+        return verification_failed
