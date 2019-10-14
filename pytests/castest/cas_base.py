@@ -111,36 +111,14 @@ class CasBaseTest(BaseTestCase):
             self.shell.execute_cluster_backup(self.couchbase_login_info, self.backup_location, self.command_options)
 
             time.sleep(5)
-            self._create_bucket(lww=False,name="new_bucket")
+            self.bucket_util.create_bucket(name="new_bucket")
             self.buckets = RestConnection(self.master).get_buckets()
-            shell.restore_backupFile(self.couchbase_login_info, self.backup_location, ["new_bucket"])
+            shell.restore_backupFile(self.couchbase_login_info,
+                                     self.backup_location,
+                                     ["new_bucket"])
 
         finally:
             self._check_config()
-
-    ''' Helper functions for above testcases
-    '''
-    #create a bucket if it doesn't exist. The drift parameter is currently unused
-    def _create_bucket(self, lww=True, drift=False, name=None):
-
-        if lww:
-            self.lww=lww
-
-        if  name:
-            self.bucket=name
-
-        helper = RestHelper(self.rest)
-        if not helper.bucket_exists(self.bucket):
-            node_ram_ratio = BucketOperationHelper.base_bucket_ratio(
-                self.servers)
-            info = self.rest.get_nodes_self()
-            self.rest.create_bucket(bucket=self.bucket,
-                                    ramQuotaMB=512,authType='sasl',lww=self.lww)
-            try:
-                ready = BucketOperationHelper.wait_for_memcached(self.master,
-                                                                 self.bucket)
-            except Exception, e:
-                self.fail('unable to create bucket')
 
     # KETAKI tochange this
     def _modify_bucket(self):
