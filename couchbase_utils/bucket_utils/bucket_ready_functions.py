@@ -1539,22 +1539,6 @@ class BucketUtils:
 
         return True
 
-    def create_default_buckets(self, servers, number_of_replicas=1,
-                               assert_on_test=None):
-        for serverInfo in servers:
-            ip_rest = BucketHelper(serverInfo)
-            ip_rest.create_bucket(bucket='default', ramQuotaMB=256,
-                                  replicaNumber=number_of_replicas,
-                                  proxyPort=11220, maxTTL=self.maxttl,
-                                  compressionMode=self.compression_mode)
-            msg = 'create_bucket succeeded but bucket "default" does not exist'
-            removed_all_buckets = self.wait_for_bucket_creation('default',
-                                                                ip_rest)
-            if not removed_all_buckets:
-                self.log.error(msg)
-                if assert_on_test:
-                    assert_on_test.fail(msg=msg)
-
     def wait_for_vbuckets_ready_state(self, node, bucket,
                                       timeout_in_seconds=300, log_msg='',
                                       admin_user='cbadminbucket',
