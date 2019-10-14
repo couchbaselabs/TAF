@@ -397,33 +397,6 @@ class BucketUtils:
                 raise Exception(raise_exception)
         return success
 
-    def create_standard_buckets(self, server, num_buckets, bucket_size=None,
-                                bucket_priorities=None, maxttl=0,
-                                compression_mode="active"):
-        if bucket_priorities is None:
-            bucket_priorities = []
-        if not num_buckets:
-            return
-        if bucket_size is None:
-            bucket_size = 100
-        for i in range(num_buckets):
-            name = 'standard_bucket' + str(i)
-            bucket_priority = None
-            if len(bucket_priorities) != 0:
-                tem_prioroty = bucket_priorities[i]
-                bucket_priority = self.get_bucket_priority(tem_prioroty)
-
-            bucket = Bucket({Bucket.name: name,
-                             Bucket.ramQuotaMB: bucket_size,
-                             Bucket.priority: bucket_priority,
-                             Bucket.maxTTL: maxttl,
-                             Bucket.compressionMode: compression_mode})
-            self.create_bucket(bucket)
-
-        if self.enable_time_sync:
-            self._set_time_sync_on_buckets(['standard_bucket' + str(i)
-                                            for i in range(num_buckets)])
-
     def flush_bucket(self, kv_node, bucket):
         self.log.info('Flushing existing bucket {0} on {1}'
                       .format(bucket, kv_node))
