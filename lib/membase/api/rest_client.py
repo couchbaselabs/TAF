@@ -1369,8 +1369,10 @@ class RestConnection(object):
         retry = 0
         same_progress_count = 0
         previous_progress = 0
-        while progress != -1 and (progress != 100 or \
-                    self._rebalance_progress_status() == 'running') and retry < 20:
+        while progress != -1 \
+                and (progress != 100
+                     or self._rebalance_progress_status() == 'running') \
+                and retry < 20:
             # -1 is error , -100 means could not retrieve progress
             progress = self._rebalance_progress()
             if progress == -100:
@@ -1401,7 +1403,7 @@ class RestConnection(object):
         else:
             duration = time.time() - start
             if duration > 10:
-                sleep = 10
+                sleep = 5
             else:
                 sleep = duration
             self.test_log.info("Rebalance done. Taken {0} seconds to complete"
