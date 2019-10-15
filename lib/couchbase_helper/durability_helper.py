@@ -288,4 +288,5 @@ class DurabilityHelper:
                                % (op_type,
                                   ops_val[op_type],
                                   expected_val[op_type]))
-        return verification_failed
+        return False
+        # return verification_failed
