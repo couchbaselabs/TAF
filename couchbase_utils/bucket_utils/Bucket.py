@@ -84,3 +84,27 @@ class Bucket(object):
 
     def __str__(self):
         return self.name
+
+
+class TravelSample(Bucket):
+    def __init__(self):
+        bucket_param = dict()
+        bucket_param["name"] = "travel-sample"
+        super(TravelSample, self).__init__(bucket_param)
+        self.BucketStats.itemCount = 31591
+
+
+class BeerSample(Bucket):
+    def __init__(self):
+        bucket_param = dict()
+        bucket_param["name"] = "beer-sample"
+        super(BeerSample, self).__init__(bucket_param)
+        self.BucketStats.itemCount = 7303
+
+
+class GamesimSample(Bucket):
+    def __init__(self):
+        bucket_param = dict()
+        bucket_param["name"] = "gamesim-sample"
+        super(GamesimSample, self).__init__(bucket_param)
+        self.BucketStats.itemCount = 586

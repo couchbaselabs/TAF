@@ -25,17 +25,17 @@ class CBCluster:
         self.username = username
         self.password = password
         self.paths = paths
-        self.ram_settings = {}
-        self.servers = servers
-        self.kv_nodes = []
-        self.fts_nodes = []
-        self.cbas_nodes = []
-        self.indes_nodes = []
-        self.query_nodes = []
-        self.eventing_nodes = []
-        self.nodes_in_cluster = []
         self.master = servers[0]
-        self.xdcr_remote_clusters = []
+        self.ram_settings = dict()
+        self.servers = servers
+        self.kv_nodes = list()
+        self.fts_nodes = list()
+        self.cbas_nodes = list()
+        self.indes_nodes = list()
+        self.query_nodes = list()
+        self.eventing_nodes = list()
+        self.nodes_in_cluster = list()
+        self.xdcr_remote_clusters = list()
 
     def __str__(self):
         return "Couchbase Cluster: %s, Nodes: %s" % (

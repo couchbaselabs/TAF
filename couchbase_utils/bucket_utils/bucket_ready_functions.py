@@ -102,6 +102,39 @@ class BucketUtils:
             raise(Exception(msg))
 
     # Fetch/Create/Delete buckets
+    def load_sample_bucket(self, sample_bucket):
+        bucket = None
+        rest = RestConnection(self.cluster.master)
+        api = '%s%s' % (rest.baseUrl, "sampleBuckets/install")
+        data = '["%s"]' % sample_bucket.name
+        status, _, _ = rest._http_request(api, "POST", data)
+        self.sleep(5, "Wait before fetching buckets from cluster")
+        buckets = self.get_all_buckets()
+        for bucket in buckets:
+            if bucket.name == sample_bucket.name:
+                break
+        if status is True:
+            warmed_up = self._wait_warmup_completed(
+                self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+            if not warmed_up:
+                status = False
+        if status is True:
+            status = False
+            retry_count = 120
+            sleep_time = 5
+            while retry_count > 0:
+                item_count = rest.get_buckets_itemCount()
+                if item_count[sample_bucket.name] == \
+                        sample_bucket.BucketStats.itemCount:
+                    status = True
+                    break
+                self.sleep(sleep_time, "Sample bucket still loading")
+                retry_count -= sleep_time
+        if status is False:
+            self.log.error("Sample bucket failed to load the target items")
+
+        return status
+
     def async_create_bucket(self, bucket):
         if not isinstance(bucket, Bucket):
             raise Exception("Create bucket needs Bucket object as parameter")

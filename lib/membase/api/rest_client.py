@@ -3669,6 +3669,7 @@ class NodePort(object):
         self.proxy = 0
         self.direct = 0
 
+
 class RestParser(object):
     def parse_index_status_response(self, parsed):
         index_map = {}

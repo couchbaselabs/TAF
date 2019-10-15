@@ -16,12 +16,6 @@ class CBASHelper(RestConnection):
         super(CBASHelper, self).__init__(cbas_node)
         self.cbas_base_url = "http://{0}:{1}".format(self.ip, 8095)
 
-    def createConn(self, bucket, username, password):
-        pass
-
-    def closeConn(self):
-        pass
-
     def execute_statement_on_cbas(self, statement, mode, pretty=True,
                                   timeout=70, client_context_id=None,
                                   username=None, password=None,
