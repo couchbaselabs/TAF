@@ -275,26 +275,8 @@ class DurabilityHelper:
                                              ops_val[op_type]))
 
         # Verification block
-        comparison_op = DurabilityHelper.EQUAL
-        if bucket.replicaNumber > 1:
-            comparison_op = DurabilityHelper.GREATER_THAN_EQ
-
-        for op_type in ["ops_create", "ops_delete", "ops_update"]:
-            if op_type in expected_val:
-                rhs_val = expected_val[op_type] * (bucket.replicaNumber + 1)
-                if one_less_node:
-                    rhs_val = expected_val[op_type] * bucket.replicaNumber
-
-                if not DurabilityHelper.__compare(
-                        ops_val[op_type], rhs_val, comparison_op):
-                    verification_failed = True
-                    self.log.error("Mismatch in %s stats. %s %s %s"
-                                   % (op_type,
-                                      ops_val[op_type],
-                                      comparison_op,
-                                      rhs_val))
-
-        for op_type in ["ops_reject", "ops_get",
+        for op_type in ["ops_create", "ops_delete", "ops_update",
+                        "ops_reject", "ops_get",
                         "rollback_item_count", "sync_write_aborted_count",
                         "sync_write_committed_count", "pending_writes"]:
             if op_type in expected_val \
