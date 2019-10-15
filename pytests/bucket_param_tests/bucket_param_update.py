@@ -5,9 +5,9 @@ from sdk_exceptions import ClientException
 
 
 class BucketParamTest(BaseTestCase):
-
     def setUp(self):
         super(BucketParamTest, self).setUp()
+        self.new_replica = self.input.param("new_replica", 1)
         self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
@@ -342,3 +342,33 @@ class BucketParamTest(BaseTestCase):
             bucket_helper,
             range(min(replica_count, self.nodes_init)-2, -1, -1),
             start_doc_for_insert)
+
+    def test_MB_34947(self):
+        # Update already Created docs with async_writes
+        load_gen = doc_generator(self.key, 0, self.num_items,
+                                 doc_size=self.doc_size,
+                                 doc_type=self.doc_type,
+                                 vbuckets=self.vbuckets)
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.def_bucket, load_gen, "update", 0,
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            timeout_secs=self.sdk_timeout,
+            batch_size=10, process_concurrency=8)
+        self.task.jython_task_manager.get_task_result(task)
+
+        # Update bucket replica to new value
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_helper.change_bucket_props(
+            self.def_bucket, replicaNumber=self.new_replica)
+        self.bucket_util.print_bucket_stats()
+
+        # Start rebalance task
+        rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
+        self.sleep(10, "Wait for rebalance to start")
+
+        # Wait for rebalance task to complete
+        self.task.jython_task_manager.get_task_result(rebalance)
+
+        # Assert if rebalance failed
+        self.assertTrue(rebalance.result,
+                        "Rebalance failed after replica update")
