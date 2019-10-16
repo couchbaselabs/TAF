@@ -33,11 +33,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.durability_level or self.atomicity:
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
-        self.sleep(300)
+        self.sleep(60)
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        self.cluster.nodes_in_cluster = result_nodes
+        self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
@@ -70,10 +73,13 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.durability_level or self.atomicity:
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
-        self.sleep(300)
+        self.sleep(60)
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        self.cluster.nodes_in_cluster = result_nodes
+        self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
@@ -108,10 +114,13 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.durability_level or self.atomicity:
             for task in self.loadgen_tasks:
                 self.task_manager.get_task_result(task)
-        self.sleep(300)
+        self.sleep(60)
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        self.cluster.nodes_in_cluster = result_nodes
+        self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
@@ -170,6 +179,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        self.cluster.nodes_in_cluster = result_nodes
+        self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
@@ -227,6 +239,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        self.cluster.nodes_in_cluster = result_nodes
+        self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
@@ -280,6 +295,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        self.cluster.nodes_in_cluster = result_nodes
+        self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
         self.disable_autofailover_and_validate()
