@@ -898,8 +898,8 @@ class BucketUtils:
             self.buckets, servers, filter_list=filter_list)
         for bucket in dcp_stat_map.keys():
             if dcp_stat_map[bucket]:
-                raise Exception("the bucket {0} has unacked bytes != 0 : dcp_stat_map[bucket]"
-                                .format(bucket,dcp_stat_map[bucket]))
+                raise Exception("the bucket {0} has unacked bytes != 0 : {1}"
+                                .format(bucket, dcp_stat_map[bucket]))
 
     def _verify_all_buckets(self, server, kv_store=1, timeout=180,
                             max_verify=None, only_store_hash=True,
