@@ -31,7 +31,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import DocumentGenerator
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.exception import StatsUnavailableException
 from membase.api.rest_client import Node, RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
@@ -125,7 +125,7 @@ class BucketUtils:
             while retry_count > 0:
                 item_count = rest.get_buckets_itemCount()
                 if item_count[sample_bucket.name] == \
-                        sample_bucket.BucketStats.itemCount:
+                        sample_bucket.stats.expected_item_count:
                     status = True
                     break
                 self.sleep(sleep_time, "Sample bucket still loading")
@@ -251,10 +251,12 @@ class BucketUtils:
                     raise Exception("Bucket {0} could not be deleted"
                                     .format(bucket.name))
 
-    def create_default_bucket(self, bucket_type=Bucket.bucket_type.MEMBASE,
-                              ram_quota=None, replica=1, maxTTL=0,
-                              compression_mode="off", wait_for_warmup=True,
-                              lww=False):
+    def create_default_bucket(
+            self, bucket_type=Bucket.bucket_type.MEMBASE,
+            ram_quota=None, replica=1, maxTTL=0,
+            compression_mode="off", wait_for_warmup=True,
+            lww=False, replica_index=1,
+            eviction_policy=Bucket.bucket_eviction_policy.VALUE_ONLY):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ramQuotaMB = ram_quota
@@ -270,7 +272,9 @@ class BucketUtils:
                                  Bucket.replicaNumber: replica,
                                  Bucket.compressionMode: compression_mode,
                                  Bucket.maxTTL: maxTTL,
-                                 Bucket.lww: lww})
+                                 Bucket.lww: lww,
+                                 Bucket.replicaIndex: replica_index,
+                                 Bucket.evictionPolicy: eviction_policy})
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
@@ -365,12 +369,12 @@ class BucketUtils:
                 RestConnection(self.cluster.master), b)
 
             for j in range(b.vbuckets):
-                    active_vbucket = client1.memcached_for_vbucket(j)
-                    active_vbucket.sasl_auth_plain(
-                        memcache_credentials[active_vbucket.host]['id'],
-                        memcache_credentials[active_vbucket.host]['password'])
-                    active_vbucket.bucket_select(b)
-                    _ = active_vbucket.set_time_sync_state(j, 1)
+                    active_vb = client1.memcached_for_vbucket(j)
+                    active_vb.sasl_auth_plain(
+                        memcache_credentials[active_vb.host]['id'],
+                        memcache_credentials[active_vb.host]['password'])
+                    active_vb.bucket_select(b)
+                    _ = active_vb.set_time_sync_state(j, 1)
 
     def get_bucket_compressionMode(self, bucket='default'):
         bucket_helper = BucketHelper(self.cluster.master)
@@ -1727,40 +1731,37 @@ class BucketUtils:
         client.close()
         return inserted_keys
 
-    def perform_doc_ops_in_all_cb_buckets(self, num_items, operation,
+    def perform_doc_ops_in_all_cb_buckets(self, operation,
                                           start_key=0, end_key=1000,
                                           batch_size=5000, exp=0,
-                                          _async=False):
+                                          _async=False,
+                                          durability=""):
         """
         Create/Update/Delete docs in all cb buckets
-        :param num_items: No. of items to be created/deleted/updated
         :param operation: String - "create","update","delete"
         :param start_key: Doc Key to start the operation with
         :param end_key: Doc Key to end the operation with
+        :param batch_size: Batch size of doc_ops
+        :param exp: MaxTTL used for doc operations
+        :param _async: Boolean to decide whether to start ops in parallel
+        :param durability: Durability level to use for doc operation
         :return:
         """
-        age = range(70)
-        first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
-        profession = ['doctor', 'lawyer']
-        template = '{{"number": {0}, "first_name": "{1}", ' \
-                   + '"profession": "{2}", "mutated": 0}}'
-        gen_load = DocumentGenerator('test_docs', template, age, first,
-                                     profession, start=start_key, end=end_key)
-        self.log.info("%s %s documents..." % (operation, num_items))
+        gen_load = doc_generator('test_docs', start_key, end_key)
         try:
-            if not _async:
-                self.log.info("BATCH SIZE for documents load: %s" % batch_size)
-                self.sync_load_all_buckets(
-                    self.cluster.master, gen_load, operation, exp,
+            if _async:
+                return self._async_load_all_buckets(
+                    self.cluster, gen_load, operation, exp,
+                    durability=durability,
                     batch_size=batch_size)
-                self._verify_stats_all_buckets(self.input.servers)
             else:
-                tasks = self._async_load_all_buckets(
-                    self.cluster.master, gen_load, operation, exp,
+                self.sync_load_all_buckets(
+                    self.cluster, gen_load, operation, exp,
+                    durability=durability,
                     batch_size=batch_size)
-                return tasks
+                self.verify_stats_all_buckets(self.input.servers)
         except Exception as e:
-            self.log.info(e.message)
+            self.log.error(e.message)
 
     def fetch_available_memory_for_kv_on_a_node(self):
         """
@@ -1961,16 +1962,14 @@ class BucketUtils:
         self.log.debug('read {0} vbuckets'.format(len(bucket.vbuckets)))
         stats = parsed['basicStats']
         # vBucketServerMap
-        bucketStats = Bucket.BucketStats()
         self.log.debug('Stats: {0}'.format(stats))
-        bucketStats.opsPerSec = stats['opsPerSec']
-        bucketStats.itemCount = stats['itemCount']
+        bucket.stats.opsPerSec = stats['opsPerSec']
+        bucket.stats.itemCount = stats['itemCount']
         if bucket.bucketType != "memcached":
-            bucketStats.diskUsed = stats['diskUsed']
-        bucketStats.memUsed = stats['memUsed']
+            bucket.stats.diskUsed = stats['diskUsed']
+        bucket.stats.memUsed = stats['memUsed']
         quota = parsed['quota']
-        bucketStats.ram = quota['ram']
-        bucket.stats = bucketStats
+        bucket.stats.ram = quota['ram']
         nodes = parsed['nodes']
         for nodeDictionary in nodes:
             node = Node()

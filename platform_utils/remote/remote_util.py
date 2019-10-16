@@ -55,6 +55,18 @@ except ImportError:
              "paramiko due to import error. "
              "ssh connections to remote machines will fail!")
 
+
+class OS:
+    WINDOWS = "windows"
+    LINUX = "linux"
+    OSX = "osx"
+
+
+class COMMAND:
+    SHUTDOWN = "shutdown"
+    REBOOT = "reboot"
+
+
 class RemoteMachineInfo(object):
     def __init__(self):
         self.type = ''
@@ -3691,6 +3703,56 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command("reboot")
             self.log_command_output(o, r)
         return o, r
+
+    def reboot_server_and_wait_for_cb_run(self, cluster_util,
+                                          wait_timeout=120):
+        """Reboot a server and wait for couchbase server to run.
+        :param cluster_util: ClusterUtil object from test case
+        :param wait_timeout: timeout to whole reboot operation.
+        """
+        # self.log.info("Rebooting server '{0}'....".format(server.ip))
+        self.extract_remote_info()
+        os_type = self.info.type.lower()
+
+        if os_type == OS.WINDOWS:
+            o, r = self.execute_command(
+                "{0} -r -f -t 0".format(COMMAND.SHUTDOWN))
+        elif os_type == OS.LINUX:
+            o, r = self.execute_command(COMMAND.REBOOT)
+        self.log_command_output(o, r)
+        # wait for restart and warmup on all server
+        if os_type == OS.WINDOWS:
+            time.sleep(wait_timeout * 5)
+        else:
+            time.sleep(wait_timeout/6)
+        end_time = time.time() + 400
+        while time.time() < end_time:
+            try:
+                if os_type == "windows":
+                    o, r = self.execute_command(
+                        'netsh advfirewall set publicprofile state off')
+                    self.log_command_output(o, r)
+                    o, r = self.execute_command(
+                        'netsh advfirewall set privateprofile state off')
+                    self.log_command_output(o, r)
+                else:
+                    # Disable firewall on these nodes
+                    o, r = self.execute_command("iptables -F")
+                    self.log_command_output(o, r)
+                    o, r = self.execute_command("/sbin/iptables --list")
+                    self.log_command_output(o, r)
+                if not o:
+                    raise Exception("Node not yet reachable")
+                break
+            except Exception:
+                self.sleep(10, "Node not reachable, retry after 10 secs")
+
+        _, _ = self.execute_command("iptables -F")
+        # wait till server is ready after warmup
+        cluster_util.wait_for_ns_servers_or_assert(
+            [server],
+            wait_time=wait_timeout,
+            wait_if_warmup=True)
 
     def start_couchbase(self):
         self.extract_remote_info()

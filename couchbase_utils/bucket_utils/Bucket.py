@@ -34,21 +34,22 @@ class Bucket(object):
         PASSIVE = "passive"
         OFF = "off"
 
-    class vBucket():
+    class vBucket:
         def __init__(self):
             self.master = ''
             self.replica = []
             self.id = -1
 
-    class BucketStats():
+    class BucketStats:
         def __init__(self):
             self.opsPerSec = 0
             self.itemCount = 0
+            self.expected_item_count = 0
             self.diskUsed = 0
             self.memUsed = 0
             self.ram = 0
 
-    def __init__(self, new_params={}):
+    def __init__(self, new_params=dict()):
         self.name = new_params.get(Bucket.name, "default")
         self.bucketType = new_params.get(Bucket.bucketType,
                                          Bucket.bucket_type.MEMBASE)
@@ -77,10 +78,10 @@ class Bucket(object):
             Bucket.compressionMode,
             Bucket.bucket_compression_mode.PASSIVE)
         self.nodes = None
-        self.stats = None
-        self.servers = []
-        self.vbuckets = []
-        self.forward_map = []
+        self.stats = Bucket.BucketStats()
+        self.servers = list()
+        self.vbuckets = list()
+        self.forward_map = list()
 
     def __str__(self):
         return self.name
@@ -91,7 +92,7 @@ class TravelSample(Bucket):
         bucket_param = dict()
         bucket_param["name"] = "travel-sample"
         super(TravelSample, self).__init__(bucket_param)
-        self.BucketStats.itemCount = 31591
+        self.stats.expected_item_count = 31591
 
 
 class BeerSample(Bucket):
@@ -99,7 +100,7 @@ class BeerSample(Bucket):
         bucket_param = dict()
         bucket_param["name"] = "beer-sample"
         super(BeerSample, self).__init__(bucket_param)
-        self.BucketStats.itemCount = 7303
+        self.stats.expected_item_count = 7303
 
 
 class GamesimSample(Bucket):
@@ -107,4 +108,4 @@ class GamesimSample(Bucket):
         bucket_param = dict()
         bucket_param["name"] = "gamesim-sample"
         super(GamesimSample, self).__init__(bucket_param)
-        self.BucketStats.itemCount = 586
+        self.stats.expected_item_count = 586

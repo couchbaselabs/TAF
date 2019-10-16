@@ -1,5 +1,5 @@
 from bucket_utils.Bucket import TravelSample
-from cbas_base import *
+from cbas_base import CBASBaseTest
 
 
 class CBASFunctionalTests(CBASBaseTest):
@@ -185,7 +185,7 @@ class CBASFunctionalTests(CBASBaseTest):
             self.fail("FAIL : Actual error msg does not match the expected")
 
     def test_or_predicate_evaluation(self):
-        ds_name = "filtered_travel_ds"
+        ds_name = "filtered_ds"
         predicates = self.input.param("predicates", None) \
             .replace("&eq", "=").replace("&qt", "\"")
         self.log.info("predicates = %s", predicates)

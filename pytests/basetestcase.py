@@ -50,6 +50,11 @@ class BaseTestCase(unittest.TestCase):
                                             Bucket.bucket_type.MEMBASE)
         self.bucket_size = self.input.param("bucket_size", None)
         self.bucket_lww = self.input.param("lww", True)
+        self.bucket_replica_index = self.input.param("bucket_replica_index",
+                                                     1)
+        self.bucket_eviction_policy = \
+            self.input.param("bucket_eviction_policy", "valueOnly")
+        self.bucket_time_sync = self.input.param("bucket_time_sync", False)
         self.standard_buckets = self.input.param("standard_buckets", 1)
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
