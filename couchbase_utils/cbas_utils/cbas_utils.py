@@ -223,15 +223,6 @@ class CbasUtil:
             else:
                 return True
 
-    def create_bucket_on_cbas(self, cbas_bucket_name, cb_bucket_name,
-                              cb_server_ip=None,
-                              validate_error_msg=False,
-                              username = None, password = None, expected_error=None):
-        """
-        Creates a bucket on CBAS
-        """
-        return True
-
     def create_dataset_on_bucket(self, cbas_bucket_name, cbas_dataset_name,
                                  where_field=None, where_value=None,
                                  validate_error_msg=False, username=None,
@@ -532,7 +523,8 @@ class CbasUtil:
                                           timeout=300,
                                           analytics_timeout=300):
         """
-        Compares the count of CBAS dataset total and mutated items with the expected values.
+        Compares the count of CBAS dataset total
+        and mutated items with the expected values.
         """
         count, mutated_count = self.get_num_items_in_cbas_dataset(
             dataset_name,

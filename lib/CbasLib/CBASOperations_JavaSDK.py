@@ -33,16 +33,14 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
         if password:
             self.password = password
 
-        self.connectCluster(username, password)
-        System.setProperty("com.couchbase.analyticsEnabled", "true");
-        self.bucket = self.cluster.openBucket(bucket);
+        System.setProperty("com.couchbase.analyticsEnabled", "true")
+        self.bucket = self.cluster.openBucket(bucket)
         self.connectionLive = True
 
     def closeConn(self):
         if self.connectionLive:
             try:
                 self.bucket.close()
-                self.disconnectCluster()
                 self.connectionLive = False
             except CouchbaseException as e:
                 time.sleep(10)
@@ -51,7 +49,6 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     time.sleep(5)
                 except:
                     pass
-                self.disconnectCluster()
                 self.connectionLive = False
                 self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
@@ -62,7 +59,6 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     time.sleep(5)
                 except:
                     pass
-                self.disconnectCluster()
                 self.connectionLive = False
                 self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
@@ -74,7 +70,6 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                     time.sleep(5)
                 except:
                     pass
-                self.disconnectCluster()
                 self.connectionLive = False
                 self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())

@@ -17,7 +17,8 @@ import time
 import unittest
 import urllib2
 
-sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils", "platform_utils", "connections"] + sys.path
+sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
+            "platform_utils", "connections"] + sys.path
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputParser, TestInputSingleton

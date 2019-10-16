@@ -1,11 +1,12 @@
 from basetestcase import BaseTestCase
-from cbas_utils import CbasUtil
-from couchbase_helper.cluster import *
+from cbas_utils.cbas_utils import CbasUtil
 from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
+
+from membase.api.rest_client import RestHelper, RestConnection
 
 
 class CBASBaseTest(BaseTestCase):
-    def setUp(self, add_defualt_cbas_node=True):
+    def setUp(self, add_default_cbas_node=True):
         super(CBASBaseTest, self).setUp()
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
@@ -31,23 +32,34 @@ class CBASBaseTest(BaseTestCase):
         self.cb_bucket_password = self.input.param('cb_bucket_password', None)
         self.expected_error = self.input.param("error", None)
         if self.expected_error:
-            self.expected_error = self.expected_error.replace("INVALID_IP", invalid_ip)
-            self.expected_error = self.expected_error.replace("PORT", self.cluster.master.port)
+            self.expected_error = self.expected_error.replace("INVALID_IP",
+                                                              invalid_ip)
+            self.expected_error = \
+                self.expected_error.replace("PORT", self.cluster.master.port)
         self.cb_server_ip = self.input.param("cb_server_ip", None)
-        self.cb_server_ip = self.cb_server_ip.replace('INVALID_IP', invalid_ip)\
+        self.cb_server_ip = \
+            self.cb_server_ip.replace('INVALID_IP', invalid_ip) \
             if self.cb_server_ip is not None else None
-        self.cbas_dataset_name = self.input.param("cbas_dataset_name", 'travel_ds')
-        self.cbas_bucket_name_invalid = self.input.param('cbas_bucket_name_invalid', self.cbas_bucket_name)
+        self.cbas_dataset_name = self.input.param("cbas_dataset_name",
+                                                  'travel_ds')
+        self.cbas_bucket_name_invalid = \
+            self.input.param('cbas_bucket_name_invalid', self.cbas_bucket_name)
         self.cbas_dataset2_name = self.input.param('cbas_dataset2_name', None)
-        self.skip_create_dataset = self.input.param('skip_create_dataset', False)
-        self.disconnect_if_connected = self.input.param('disconnect_if_connected', False)
-        self.cbas_dataset_name_invalid = self.input.param('cbas_dataset_name_invalid', self.cbas_dataset_name)
-        self.skip_drop_connection = self.input.param('skip_drop_connection',False)
+        self.skip_create_dataset = self.input.param('skip_create_dataset',
+                                                    False)
+        self.disconnect_if_connected = \
+            self.input.param('disconnect_if_connected', False)
+        self.cbas_dataset_name_invalid = \
+            self.input.param('cbas_dataset_name_invalid',
+                             self.cbas_dataset_name)
+        self.skip_drop_connection = self.input.param('skip_drop_connection',
+                                                     False)
         self.skip_drop_dataset = self.input.param('skip_drop_dataset', False)
-        self.query_id = self.input.param('query_id',None)
-        self.mode = self.input.param('mode',None)
+        self.query_id = self.input.param('query_id', None)
+        self.mode = self.input.param('mode', None)
         self.num_concurrent_queries = self.input.param('num_queries', 5000)
-        self.concurrent_batch_size = self.input.param('concurrent_batch_size', 100)
+        self.concurrent_batch_size = self.input.param('concurrent_batch_size',
+                                                      100)
         self.compiler_param = self.input.param('compiler_param', None)
         self.compiler_param_val = self.input.param('compiler_param_val', None)
         self.expect_reject = self.input.param('expect_reject', False)
@@ -93,7 +105,7 @@ class CBASBaseTest(BaseTestCase):
             self.cbas_util = CbasUtil(self.cluster.master, self.cbas_node)
             if "cbas" in self.cluster.master.services:
                 self.cleanup_cbas()
-            if add_defualt_cbas_node:
+            if add_default_cbas_node:
                 if self.cluster.master.ip != self.cbas_node.ip:
                     self.otpNodes.append(
                         self.cluster_util.add_node(self.cbas_node))
@@ -153,3 +165,26 @@ class CBASBaseTest(BaseTestCase):
                 self.log.info("********* No buckets to drop *********")
         except Exception as e:
             self.log.info(e.message)
+
+    def remove_node(self, otpnode=None, wait_for_rebalance=True):
+        nodes = self.rest.node_statuses()
+        '''This is the case when master node is running cbas service as well'''
+        if len(nodes) <= len(otpnode):
+            return
+
+        helper = RestHelper(self.rest)
+        try:
+            removed = helper.remove_nodes(
+                knownNodes=[node.id for node in nodes],
+                ejectedNodes=[node.id for node in otpnode],
+                wait_for_rebalance=wait_for_rebalance)
+        except Exception:
+            self.sleep(5, "Rebalance failed on Removal. Retry.. THIS IS A BUG")
+            removed = helper.remove_nodes(
+                knownNodes=[node.id for node in nodes],
+                ejectedNodes=[node.id for node in otpnode],
+                wait_for_rebalance=wait_for_rebalance)
+        if wait_for_rebalance:
+            self.assertTrue(removed,
+                            "Rebalance operation failed while removing %s"
+                            % otpnode)
