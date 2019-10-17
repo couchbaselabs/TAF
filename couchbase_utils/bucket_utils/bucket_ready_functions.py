@@ -1673,38 +1673,6 @@ class BucketUtils:
         client.close()
         return inserted_keys
 
-    def perform_doc_ops_in_all_cb_buckets(self, operation,
-                                          start_key=0, end_key=1000,
-                                          batch_size=5000, exp=0,
-                                          _async=False,
-                                          durability=""):
-        """
-        Create/Update/Delete docs in all cb buckets
-        :param operation: String - "create","update","delete"
-        :param start_key: Doc Key to start the operation with
-        :param end_key: Doc Key to end the operation with
-        :param batch_size: Batch size of doc_ops
-        :param exp: MaxTTL used for doc operations
-        :param _async: Boolean to decide whether to start ops in parallel
-        :param durability: Durability level to use for doc operation
-        :return:
-        """
-        gen_load = doc_generator('test_docs', start_key, end_key)
-        try:
-            if _async:
-                return self._async_load_all_buckets(
-                    self.cluster, gen_load, operation, exp,
-                    durability=durability,
-                    batch_size=batch_size)
-            else:
-                self.sync_load_all_buckets(
-                    self.cluster, gen_load, operation, exp,
-                    durability=durability,
-                    batch_size=batch_size)
-                self.verify_stats_all_buckets(self.input.servers)
-        except Exception as e:
-            self.log.error(e.message)
-
     def fetch_available_memory_for_kv_on_a_node(self):
         """
         Calculates the Memory that can be allocated for KV service on a node

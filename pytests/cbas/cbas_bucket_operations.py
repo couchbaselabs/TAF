@@ -3,8 +3,11 @@ import time
 
 from BucketLib.BucketOperations import BucketHelper
 from cbas_base import CBASBaseTest
+from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
+from sdk_exceptions import ClientException
 
 
 class CBASBucketOperations(CBASBaseTest):
@@ -47,7 +50,7 @@ class CBASBucketOperations(CBASBaseTest):
     def setup_for_test(self, skip_data_loading=False):
         if not skip_data_loading:
             # Load Couchbase bucket first
-            self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+            self.perform_doc_ops_in_all_cb_buckets(
                 "create",
                 0,
                 self.num_items)
@@ -96,7 +99,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.setup_for_test()
 
         # Load more docs in Couchbase bucket.
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "create",
             self.num_items,
             self.num_items * 2)
@@ -112,7 +115,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.setup_for_test(skip_data_loading=True)
 
         # Load Couchbase bucket first.
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "create",
             0,
             self.num_items)
@@ -128,7 +131,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.setup_for_test()
 
         # Delete some docs in Couchbase bucket.
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "delete",
             0,
             self.num_items / 2)
@@ -144,7 +147,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.setup_for_test()
 
         # Delete all docs in Couchbase bucket.
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "delete",
             0,
             self.num_items)
@@ -159,7 +162,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.setup_for_test()
 
         # Update some docs in Couchbase bucket
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
             self.num_items / 10)
@@ -176,7 +179,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.setup_for_test()
 
         # Update all docs in Couchbase bucket
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
             self.num_items)
@@ -196,15 +199,15 @@ class CBASBucketOperations(CBASBaseTest):
         self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
 
         # Perform Create, Update, Delete ops in the CB bucket
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "create",
             self.num_items,
             self.num_items * 2)
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
             self.num_items)
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "delete",
             0,
             self.num_items / 2)
@@ -226,15 +229,15 @@ class CBASBucketOperations(CBASBaseTest):
         self.setup_for_test()
 
         # Perform Create, Update, Delete ops in the CB bucket
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "create",
             self.num_items,
             self.num_items * 2)
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
             self.num_items)
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "delete",
             0,
             self.num_items / 2)
@@ -380,7 +383,7 @@ class CBASBucketOperations(CBASBaseTest):
     def test_ingestion_resumes_on_reconnect(self):
         self.setup_for_test()
 
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
             self.num_items / 4)
@@ -393,7 +396,7 @@ class CBASBucketOperations(CBASBaseTest):
         # Disconnect from bucket
         self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
 
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "update",
             self.num_items / 4,
             self.num_items / 2)
@@ -429,7 +432,7 @@ class CBASBucketOperations(CBASBaseTest):
 
         # Perform Create, Update, Delete ops in the CB bucket
         self.log.info("Performing Mutations")
-        self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+        self.perform_doc_ops_in_all_cb_buckets(
             "delete",
             0,
             self.num_items / 2)
@@ -510,15 +513,15 @@ class CBASBucketOperations(CBASBaseTest):
         index_fields = index_fields.replace('-', ',')
         query = "create index {0} on {1}({2});" \
             .format("sec_idx", self.cbas_dataset_name, index_fields)
-        create_index_task = self.cluster.async_cbas_query_execute(
-            self.cluster.master, self.cbas_node, None, query, 'default')
+        create_index_task = self.task.async_cbas_query_execute(
+            self.cluster.master, self.cbas_util, None, query, 'default')
 
         self.log.info('Flush bucket while index are getting created')
         # Flush the CB bucket
         BucketHelper(self.cluster.master).flush_bucket(self.cb_bucket_name)
 
         self.log.info('Get result on index creation')
-        create_index_task.get_result()
+        self.task_manager.get_task_result(create_index_task)
 
         self.log.info('Connect back cbas bucket')
         self.cbas_util.connect_to_bucket(self.cbas_bucket_name)
@@ -539,11 +542,12 @@ class CBASBucketOperations(CBASBaseTest):
                       'dataset and validate count')
         self.setup_for_test()
 
-        self.log.info('Kill memcached service')
-        self.kill_memcached()
+        self.log.info('Kill memcached service in all cluster nodes')
+        for node in self.cluster.servers:
+            RemoteMachineShellConnection(node).kill_memcached()
 
         self.log.info('Validate document count')
-        count_n1ql = self.rest.query_tool(
+        _ = self.rest.query_tool(
             'select count(*) from %s'
             % self.cb_bucket_name)['results'][0]['$1']
         self.cbas_util.validate_cbas_dataset_items_count(
@@ -560,8 +564,9 @@ class CBASBucketOperations(CBASBaseTest):
         self.setup_for_test()
 
         self.log.info('Restart couchbase')
-        shell = RemoteMachineShellConnection(self.cluster_util.master)
-        shell.reboot_server_and_wait_for_cb_run(self.cluster_util)
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.reboot_server_and_wait_for_cb_run(self.cluster_util,
+                                                self.cluster.master)
 
         self.log.info('Validate document count')
         count_n1ql = self.rest.query_tool(
@@ -585,9 +590,6 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             replica_index=self.bucket_replica_index,
             eviction_policy=self.bucket_eviction_policy)
 
-        self.log.info("Create connection")
-        self.cbas_util.createConn(self.cb_bucket_name)
-
         self.log.info("Fetch RAM document load percentage")
         self.document_ram_percentage = \
             self.input.param("document_ram_percentage", 0.90)
@@ -596,25 +598,23 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.start = 0
         self.num_items = 30000
         self.end = self.num_items
+        bucket_helper = BucketHelper(self.cluster.master)
         while True:
             self.log.info("Add documents to bucket")
-            self.bucket_util.perform_doc_ops_in_all_cb_buckets(
+            self.perform_doc_ops_in_all_cb_buckets(
                 "create",
                 self.start,
                 self.end)
 
             self.log.info("Calculate available free memory")
-            stats_all_buckets = dict()
-            stats_all_buckets[self.cb_bucket_name] = StatsCommon()
-            memory_used = int(stats_all_buckets[self.cb_bucket_name].get_stats(
-                [self.cluster.master],
-                self.cb_bucket_name,
-                '',
-                'mem_used')[self.servers[0]])
+            bucket_json = bucket_helper.get_bucket_json(self.cb_bucket_name)
+            mem_used = 0
+            for node_stat in bucket_json["nodes"]:
+                mem_used += node_stat["interestingStats"]["mem_used"]
 
-            if memory_used < (self.document_ram_percentage
-                              * self.bucket_ram
-                              * 1000000):
+            if mem_used < (self.document_ram_percentage
+                           * self.bucket_ram
+                           * 1000000):
                 self.log.info("Continue loading we have more free memory")
                 self.start = self.end
                 self.end = self.end + self.num_items
@@ -641,28 +641,45 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.load_document_until_ram_percentage()
 
         self.log.info("Fetch current document count")
-        bucket_helper = BucketHelper(self.cluster.master)
-        item_count = bucket_helper.get_bucket(self.cb_bucket_name).stats.itemCount
+        target_bucket = None
+        self.bucket_util.get_all_buckets()
+        for tem_bucket in self.bucket_util.buckets:
+            if tem_bucket.name == self.cb_bucket_name:
+                target_bucket = tem_bucket
+                break
+        item_count = target_bucket.stats.itemCount
         self.log.info("Completed base load with %s items" % item_count)
 
         self.log.info("Load more until we are out of memory")
-        client = SDKClient(hosts=[self.cluster.master.ip],
-                           bucket=self.cb_bucket_name,
-                           password=self.cluster.master.rest_password)
+        client = SDKClient(RestConnection(self.cluster.master),
+                           target_bucket)
         i = item_count
-        insert_success = True
-        while insert_success:
-            insert_success = client.insert_document("key-id" + str(i),
-                                                    '{"name":"dave"}')
+        op_result = {"status": True}
+        while op_result["status"] is True:
+            op_result = client.crud("create",
+                                    "key-id" + str(i),
+                                    '{"name":"dave"}',
+                                    durability=self.durability_level)
             i += 1
+
+        if ClientException.RequestTimeoutException not in op_result["error"] \
+                or ClientException.RetryReason.KV_TEMPORARY_FAILURE \
+                not in op_result["error"]:
+            client.close()
+            self.fail("Invalid exception for OOM insert: %s" % op_result)
 
         self.log.info('Memory is full at {0} items'.format(i))
         self.log.info("As a result added more %s items" % (i - item_count))
 
         self.log.info("Fetch item count")
-        stats = bucket_helper.get_bucket(self.cb_bucket_name).stats
-        item_count_when_oom = stats.itemCount
-        mem_when_oom = stats.memUsed
+        target_bucket = None
+        self.bucket_util.get_all_buckets()
+        for tem_bucket in self.bucket_util.buckets:
+            if tem_bucket.name == self.cb_bucket_name:
+                target_bucket = tem_bucket
+                break
+        item_count_when_oom = target_bucket.stats.itemCount
+        mem_when_oom = target_bucket.stats.memUsed
         self.log.info('Item count when OOM {0} and memory used {1}'
                       .format(item_count_when_oom, mem_when_oom))
 
@@ -682,7 +699,6 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
       document_ram_percentage=0.80
     """
     def test_nru_eviction_impact_on_cbas(self):
-
         self.log.info("Create dataset")
         self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
                                                 self.cbas_dataset_name)
@@ -694,20 +710,36 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.load_document_until_ram_percentage()
 
         self.log.info("Fetch current document count")
-        bucket_helper = BucketHelper(self.cluster.master)
-        item_count = bucket_helper.get_bucket(self.cb_bucket_name).stats.itemCount
+        target_bucket = None
+        self.bucket_util.get_all_buckets()
+        for tem_bucket in self.bucket_util.buckets:
+            if tem_bucket.name == self.cb_bucket_name:
+                target_bucket = tem_bucket
+                break
+
+        item_count = target_bucket.stats.itemCount
         self.log.info("Completed base load with %s items" % item_count)
 
         self.log.info("Get initial inserted 100 docs, so they aren't removed")
-        client = SDKClient(hosts=[self.cluster.master.ip],
-                           bucket=self.cb_bucket_name,
-                           password=self.cluster.master.rest_password)
-        for i in range(100):
-            client.get("test_docs-" + str(i))
+        client = SDKClient(RestConnection(self.cluster.master),
+                           target_bucket)
+        for doc_index in range(100):
+            doc_key = "test_docs-" + str(doc_index)
+            client.read(doc_key)
 
         self.log.info("Add 20% more items to trigger NRU")
-        for i in range(item_count, int(item_count * 1.2)):
-            client.insert_document("key-id" + str(i), '{"name":"dave"}')
+        for doc_index in range(item_count, int(item_count * 1.2)):
+            doc_key = "key_id-" + str(doc_index)
+            op_result = client.crud("create",
+                                    doc_key,
+                                    '{"name":"dave"}',
+                                    durability=self.durability_level)
+            if op_result["status"] is False:
+                client.close()
+                self.fail("Insert failed for %s: %s" % (doc_key, op_result))
+
+        # Disconnect the SDK client
+        client.close()
 
         self.log.info("Validate document count on CBAS")
         count_n1ql = self.rest.query_tool(

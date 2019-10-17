@@ -4330,3 +4330,31 @@ class MonitorBucketCompaction(Task):
                                 % (self.bucket.name, self.progress))
 
         self.complete_task()
+
+
+class CBASQueryExecuteTask(Task):
+    def __init__(self, master, cbas_util, cbas_endpoint,
+                 statement, bucket_name):
+        super(CBASQueryExecuteTask, self).__init__("Cbas_query_%s"
+                                                   % bucket_name)
+        self.master = master
+        self.cbas_util = cbas_util
+        self.cbas_endpoint = cbas_endpoint
+        self.statement = statement
+
+    def call(self):
+        self.start_task()
+        try:
+            response, metrics, errors, results, handle = \
+                self.cbas_util.execute_statement_on_cbas_util(self.statement)
+
+            if response:
+                self.set_result(True)
+            else:
+                self.test_log.error("Error during CBAS query: %s" % errors)
+                self.set_result(False)
+        except Exception as e:
+            self.set_result(False)
+            self.set_exception(e)
+
+        self.complete_task()

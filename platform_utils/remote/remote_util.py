@@ -3705,6 +3705,7 @@ class RemoteMachineShellConnection:
         return o, r
 
     def reboot_server_and_wait_for_cb_run(self, cluster_util,
+                                          server,
                                           wait_timeout=120):
         """Reboot a server and wait for couchbase server to run.
         :param cluster_util: ClusterUtil object from test case
@@ -3720,14 +3721,15 @@ class RemoteMachineShellConnection:
         elif os_type == OS.LINUX:
             o, r = self.execute_command(COMMAND.REBOOT)
         self.log_command_output(o, r)
-        # wait for restart and warmup on all server
         if os_type == OS.WINDOWS:
-            time.sleep(wait_timeout * 5)
+            sleep_time = wait_timeout * 5
         else:
-            time.sleep(wait_timeout/6)
+            sleep_time = wait_timeout / 6
+        self.sleep(sleep_time, "Wait for server to reboot and warmup")
         end_time = time.time() + 400
         while time.time() < end_time:
             try:
+                self.connect()
                 if os_type == "windows":
                     o, r = self.execute_command(
                         'netsh advfirewall set publicprofile state off')

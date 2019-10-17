@@ -1,5 +1,6 @@
 from basetestcase import BaseTestCase
 from cbas_utils.cbas_utils import CbasUtil
+from couchbase_helper.documentgenerator import DocumentGenerator
 from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 
 from membase.api.rest_client import RestHelper, RestConnection
@@ -165,6 +166,45 @@ class CBASBaseTest(BaseTestCase):
                 self.log.info("********* No buckets to drop *********")
         except Exception as e:
             self.log.info(e.message)
+
+    def perform_doc_ops_in_all_cb_buckets(self, operation,
+                                          start_key=0, end_key=1000,
+                                          batch_size=10, exp=0,
+                                          _async=False,
+                                          durability=""):
+        """
+        Create/Update/Delete docs in all cb buckets
+        :param operation: String - "create","update","delete"
+        :param start_key: Doc Key to start the operation with
+        :param end_key: Doc Key to end the operation with
+        :param batch_size: Batch size of doc_ops
+        :param exp: MaxTTL used for doc operations
+        :param _async: Boolean to decide whether to start ops in parallel
+        :param durability: Durability level to use for doc operation
+        :return:
+        """
+        age = range(70)
+        first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
+        profession = ['doctor', 'lawyer']
+        template = '{{"number": {0}, "first_name": "{1}", ' \
+                   + '"profession": "{2}", "mutated": 0}}'
+
+        doc_gen = DocumentGenerator('test_docs', template, age, first,
+                                    profession, start=start_key, end=end_key)
+        try:
+            if _async:
+                return self.bucket_util._async_load_all_buckets(
+                    self.cluster, doc_gen, operation, exp,
+                    durability=durability,
+                    batch_size=batch_size)
+            else:
+                self.bucket_util.sync_load_all_buckets(
+                    self.cluster, doc_gen, operation, exp,
+                    durability=durability,
+                    batch_size=batch_size)
+                self.bucket_util.verify_stats_all_buckets(self.num_items)
+        except Exception as e:
+            self.log.error(e.message)
 
     def remove_node(self, otpnode=None, wait_for_rebalance=True):
         nodes = self.rest.node_statuses()
