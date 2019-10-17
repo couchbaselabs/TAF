@@ -25,13 +25,12 @@ from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
     BucketCreateTask, PrintOpsRate
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
-from bucket_utils.Bucket import Bucket
+from BucketLib.bucket import Bucket
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import doc_generator
 from membase.api.exception import StatsUnavailableException
 from membase.api.rest_client import Node, RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
@@ -905,33 +904,6 @@ class BucketUtils:
                 raise Exception("the bucket {0} has unacked bytes != 0 : {1}"
                                 .format(bucket, dcp_stat_map[bucket]))
 
-    def _verify_all_buckets(self, server, kv_store=1, timeout=180,
-                            max_verify=None, only_store_hash=True,
-                            batch_size=1000, replica_to_read=None):
-        """
-        Verifies data on all of the nodes in a cluster.
-
-        Verifies all of the data in a specific kv_store index for all buckets
-        in the cluster.
-
-        Args:
-            server - A server in the cluster. (TestInputServer)
-            kv_store - The kv store index to check. (int)
-            timeout - Waiting the end of the thread. (str)
-        """
-        tasks = []
-        if len(self.buckets) > 1:
-            batch_size = 1
-        for bucket in self.buckets:
-            if bucket.bucketType == 'memcached':
-                continue
-            tasks.append(self.task.async_verify_data(
-                server, bucket, bucket.kvs[kv_store], max_verify,
-                only_store_hash, batch_size, replica_to_read,
-                compression=self.sdk_compression))
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
-
     def disable_compaction(self, server=None, bucket="default"):
         new_config = {"viewFragmntThresholdPercentage": None,
                       "dbFragmentThresholdPercentage": None,
@@ -1118,20 +1090,6 @@ class BucketUtils:
                               .format(key,
                                       node_map[bucket][node][vbucket][key]))
 
-    def get_meta_data_set_all(self, dest_server, kv_store=1):
-        """
-        Method to get all meta data set for buckets and from the servers
-        """
-        data_map = dict()
-        for bucket in self.buckets:
-            self.log.info(" Collect data for bucket {0}".format(bucket.name))
-            task = self.task.async_get_meta_data(
-                dest_server, bucket, bucket.kvs[kv_store],
-                compression=self.sdk_compression)
-            task.result()
-            data_map[bucket.name] = task.get_meta_data_store()
-        return data_map
-
     def vb_distribution_analysis(self, servers=[], buckets=[], num_replicas=0,
                                  total_vbuckets=0, std=1.0, type="rebalance",
                                  graceful=True):
@@ -1297,22 +1255,6 @@ class BucketUtils:
             raise Exception(summary)
         self.log.info("End Verification for Active Vs Replica")
         return disk_replica_dataset, disk_active_dataset
-
-#     def data_active_and_replica_analysis(self, server, max_verify=None,
-#                                          only_store_hash=True, kv_store=1):
-#         for bucket in self.buckets:
-#             task = self.task.async_verify_active_replica_data(
-#                 server, bucket, bucket.kvs[kv_store], max_verify,
-#                 self.sdk_compression)
-#             task.result()
-
-    def data_meta_data_analysis(self, dest_server, meta_data_store,
-                                kv_store=1):
-        for bucket in self.buckets:
-            task = self.task.async_verify_meta_data(
-                dest_server, bucket, bucket.kvs[kv_store],
-                meta_data_store[bucket.name])
-            task.result()
 
     def compare_per_node_for_failovers_consistency(self, map1, vbucketMap):
         """
