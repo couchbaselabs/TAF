@@ -6,7 +6,7 @@ from threading import Thread
 from membase.api.rest_client import RestConnection, RestHelper
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
 from couchbase_helper.documentgenerator import doc_generator
-from bucket_utils.Bucket import Bucket
+from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils

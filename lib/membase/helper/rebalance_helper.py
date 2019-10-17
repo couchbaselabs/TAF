@@ -2,7 +2,7 @@ import logging
 import time
 from random import shuffle
 
-from bucket_utils import Bucket
+from BucketLib.bucket import Bucket
 from membase.api.exception import StatsUnavailableException, \
     ServerAlreadyJoinedException, RebalanceFailedException, \
     InvalidArgumentException, ServerSelfJoinException, \

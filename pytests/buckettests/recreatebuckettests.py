@@ -1,7 +1,8 @@
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
-from bucket_utils.Bucket import Bucket
+from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import DocumentGenerator
+
 
 class RecreateBucketTests(BaseTestCase):
 
@@ -14,7 +15,7 @@ class RecreateBucketTests(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.append(self.cluster.master)
-        #self.bucket_util.create_default_bucket()
+        # self.bucket_util.create_default_bucket()
         self.bucket_util.add_rbac_user()
 
     def tearDown(self):

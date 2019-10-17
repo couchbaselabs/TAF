@@ -1,5 +1,5 @@
 from basetestcase import BaseTestCase
-from bucket_utils.Bucket import Bucket
+from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 

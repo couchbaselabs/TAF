@@ -11,7 +11,7 @@ from copy import deepcopy
 from threading import Thread
 
 from TestInput import TestInputSingleton
-from bucket_utils.Bucket import Bucket
+from BucketLib.bucket import Bucket
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
 from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
 from exception import ServerAlreadyJoinedException, ServerUnavailableException, InvalidArgumentException

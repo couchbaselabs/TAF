@@ -12,7 +12,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from memcached.helper.data_helper import MemcachedClientHelper, \
                                          VBucketAwareMemcached
 from testconstants import MIN_COMPACTION_THRESHOLD
-from bucket_utils.Bucket import Bucket
+from BucketLib.bucket import Bucket
 
 
 class AutoCompactionTests(BaseTestCase):
