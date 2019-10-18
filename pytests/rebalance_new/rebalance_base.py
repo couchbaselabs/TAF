@@ -1,6 +1,7 @@
 import copy
 import json
 
+from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
@@ -88,9 +89,9 @@ class RebalanceBaseTest(BaseTestCase):
 
     def _create_multiple_buckets(self):
         master = self.cluster.master
-        eviction_policy = "valueOnly"
-        if self.bucket_type.lower() == "ephemeral":
-            eviction_policy = 'noEviction'
+        eviction_policy = Bucket.EvictionPolicy.VALUE_ONLY
+        if self.bucket_type.lower() == Bucket.Type.EPHEMERAL:
+            eviction_policy = Bucket.EvictionPolicy.NO_EVICTION
         buckets_created = self.bucket_util.create_multiple_buckets(
             master, self.num_replicas, bucket_count=self.standard_buckets,
             bucket_type=self.bucket_type, eviction_policy=eviction_policy)

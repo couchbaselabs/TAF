@@ -15,21 +15,25 @@ class Bucket(object):
     compressionMode = "compressionMode"
     uuid = "uuid"
 
-    class bucket_type:
-        MEMBASE = "membase"
+    class Type:
         EPHEMERAL = "ephemeral"
+        MEMBASE = "membase"
         MEMCACHED = "memcached"
 
-    class bucket_eviction_policy:
-        VALUE_ONLY = "valueOnly"
+    class EvictionPolicy:
         FULL_EVICTION = "fullEviction"
         NO_EVICTION = "noEviction"
         NRU_EVICTION = "nruEviction"
+        VALUE_ONLY = "valueOnly"
 
-    class bucket_compression_mode:
+    class CompressionMode:
         ACTIVE = "active"
         PASSIVE = "passive"
         OFF = "off"
+
+    class Priority:
+        LOW = 3
+        HIGH = 8
 
     class vBucket:
         def __init__(self):
@@ -49,19 +53,19 @@ class Bucket(object):
     def __init__(self, new_params=dict()):
         self.name = new_params.get(Bucket.name, "default")
         self.bucketType = new_params.get(Bucket.bucketType,
-                                         Bucket.bucket_type.MEMBASE)
+                                         Bucket.Type.MEMBASE)
         self.replicaNumber = new_params.get(Bucket.replicaNumber, 0)
         self.replicaServers = new_params.get(Bucket.replicaServers, [])
         self.ramQuotaMB = new_params.get(Bucket.ramQuotaMB, 100)
 
-        if self.bucketType == Bucket.bucket_type.EPHEMERAL:
+        if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
                 Bucket.evictionPolicy,
-                Bucket.bucket_eviction_policy.NO_EVICTION)
+                Bucket.EvictionPolicy.NO_EVICTION)
         else:
             self.evictionPolicy = new_params.get(
                 Bucket.evictionPolicy,
-                Bucket.bucket_eviction_policy.VALUE_ONLY)
+                Bucket.EvictionPolicy.VALUE_ONLY)
 
         self.replicaIndex = new_params.get(Bucket.replicaIndex, 0)
         self.priority = new_params.get(Bucket.priority, None)
@@ -72,7 +76,7 @@ class Bucket(object):
         self.flushEnabled = new_params.get(Bucket.flushEnabled, 1)
         self.compressionMode = new_params.get(
             Bucket.compressionMode,
-            Bucket.bucket_compression_mode.PASSIVE)
+            Bucket.CompressionMode.PASSIVE)
         self.nodes = None
         self.stats = Bucket.BucketStats()
         self.servers = list()

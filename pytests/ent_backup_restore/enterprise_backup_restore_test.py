@@ -3057,7 +3057,8 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
         5. Restores data ans validates
         6. Ensures that same view is created in restore cluster
         """
-        if "ephemeral" in self.input.param("bucket_type", 'membase'):
+        if Bucket.Type.EPHEMERAL in \
+                self.input.param("bucket_type", Bucket.Type.MEMBASE):
             self.log.info("\n****** view does not support on ephemeral bucket ******")
             return
         rest_src = RestConnection(self.backupset.cluster_host)
@@ -3113,7 +3114,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
         rebalance = self.cluster.async_rebalance(self.cluster_to_backup, [], [])
         rebalance.result()
         self.test_storage_mode = self.cluster_storage_mode
-        if "ephemeral" in self.bucket_type:
+        if Bucket.Type.EPHEMERAL in self.bucket_type:
             self.log.info("ephemeral bucket needs to set backup cluster to memopt for gsi.")
             self.test_storage_mode = "memory_optimized"
             self._reset_storage_mode(rest_src, self.test_storage_mode)
@@ -3169,7 +3170,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
             else:
                 self.fail("GSI index not created in restore cluster as expected")
         finally:
-            if "ephemeral" in self.bucket_type:
+            if Bucket.Type.EPHEMERAL in self.bucket_type:
                 self.log.info("reset storage mode back to original")
                 self._reset_storage_mode(rest_src, self.cluster_storage_mode)
                 self._reset_storage_mode(rest_target, self.cluster_storage_mode)
@@ -3350,7 +3351,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
         self.backup_cluster_validate()
         self.backup_restore_validate(compare_uuid=False, seqno_compare_function=">=")
         """ only membase bucket has warmup state """
-        if self.bucket_type == "membase":
+        if self.bucket_type == Bucket.Type.MEMBASE:
             NodeHelper.wait_warmup_completed([self.backupset.cluster_host])
 
     def stat(self, key):

@@ -39,7 +39,8 @@ class BaseTestCase(unittest.TestCase):
         self.__cb_clusters = []
         self.num_servers = self.input.param("servers", len(self.servers))
         self.primary_index_created = False
-        self.index_quota_percent = self.input.param("index_quota_percent", None)
+        self.index_quota_percent = self.input.param("index_quota_percent",
+                                                    None)
         self.gsi_type = self.input.param("gsi_type", 'plasma')
         # CBAS setting
         self.jre_path = self.input.param("jre_path", None)
@@ -47,21 +48,25 @@ class BaseTestCase(unittest.TestCase):
 
         # Bucket specific params
         self.bucket_type = self.input.param("bucket_type",
-                                            Bucket.bucket_type.MEMBASE)
+                                            Bucket.Type.MEMBASE)
         self.bucket_size = self.input.param("bucket_size", None)
         self.bucket_lww = self.input.param("lww", True)
         self.bucket_replica_index = self.input.param("bucket_replica_index",
                                                      1)
         self.bucket_eviction_policy = \
-            self.input.param("bucket_eviction_policy", "valueOnly")
+            self.input.param("bucket_eviction_policy",
+                             Bucket.EvictionPolicy.VALUE_ONLY)
         self.bucket_time_sync = self.input.param("bucket_time_sync", False)
         self.standard_buckets = self.input.param("standard_buckets", 1)
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
         self.vbuckets = self.input.param("vbuckets", 1024)
         self.num_replicas = self.input.param("replicas", 1)
-        self.active_resident_threshold = int(self.input.param("active_resident_threshold", 100))
-        self.compression_mode = self.input.param("compression_mode", 'passive')
+        self.active_resident_threshold = \
+            int(self.input.param("active_resident_threshold", 100))
+        self.compression_mode = \
+            self.input.param("compression_mode",
+                             Bucket.CompressionMode.PASSIVE)
         # End of bucket parameters
 
         # Doc specific params
@@ -110,14 +115,21 @@ class BaseTestCase(unittest.TestCase):
         self.forceEject = self.input.param("forceEject", False)
         self.wait_timeout = self.input.param("wait_timeout", 60)
         self.dgm_run = self.input.param("dgm_run", False)
-        self.verify_unacked_bytes = self.input.param("verify_unacked_bytes", False)
-        self.disabled_consistent_view = self.input.param("disabled_consistent_view", None)
-        self.rebalanceIndexWaitingDisabled = self.input.param("rebalanceIndexWaitingDisabled", None)
-        self.rebalanceIndexPausingDisabled = self.input.param("rebalanceIndexPausingDisabled", None)
-        self.maxParallelIndexers = self.input.param("maxParallelIndexers", None)
-        self.maxParallelReplicaIndexers = self.input.param("maxParallelReplicaIndexers", None)
+        self.verify_unacked_bytes = \
+            self.input.param("verify_unacked_bytes", False)
+        self.disabled_consistent_view = \
+            self.input.param("disabled_consistent_view", None)
+        self.rebalanceIndexWaitingDisabled = \
+            self.input.param("rebalanceIndexWaitingDisabled", None)
+        self.rebalanceIndexPausingDisabled = \
+            self.input.param("rebalanceIndexPausingDisabled", None)
+        self.maxParallelIndexers = \
+            self.input.param("maxParallelIndexers", None)
+        self.maxParallelReplicaIndexers = \
+            self.input.param("maxParallelReplicaIndexers", None)
         self.quota_percent = self.input.param("quota_percent", None)
-        self.skip_buckets_handle = self.input.param("skip_buckets_handle", False)
+        self.skip_buckets_handle = self.input.param("skip_buckets_handle",
+                                                    False)
 
         # Initiate logging variables
         self.log = logging.getLogger("test")
@@ -141,7 +153,8 @@ class BaseTestCase(unittest.TestCase):
             # Multi cluster setup
             counter = 1
             for _, nodes in self.input.clusters.iteritems():
-                self.__cb_clusters.append(CBCluster(name="C%s" % counter, servers=nodes))
+                self.__cb_clusters.append(CBCluster(name="C%s" % counter,
+                                                    servers=nodes))
                 counter += 1
         else:
             # Single cluster
@@ -163,7 +176,8 @@ class BaseTestCase(unittest.TestCase):
 
         """ some tests need to bypass checking cb server at set up
             to run installation """
-        self.skip_init_check_cbserver = self.input.param("skip_init_check_cbserver", False)
+        self.skip_init_check_cbserver = \
+            self.input.param("skip_init_check_cbserver", False)
 
         try:
             if self.skip_setup_cleanup:
@@ -182,13 +196,15 @@ class BaseTestCase(unittest.TestCase):
                         self.cb_version = RestConnection(cluster.master).get_nodes_version()
                     else:
                         self.log.debug("couchbase server does not run yet")
-                    # We stopped supporting TAP protocol since 3.x and 3.x support also has stopped
+                    # Stopped supporting TAP protocol since 3.x
+                    # and 3.x support also has stopped
                     self.protocol = "dcp"
             self.services_map = None
 
             self.__log_setup_status("started")
             for cluster in self.__cb_clusters:
-                if not self.skip_buckets_handle and not self.skip_init_check_cbserver:
+                if not self.skip_buckets_handle \
+                        and not self.skip_init_check_cbserver:
                     self.log.debug("Cleaning up cluster")
                     cluster_util = ClusterUtils(cluster, self.task_manager)
                     bucket_util = BucketUtils(cluster, cluster_util,
@@ -292,7 +308,7 @@ class BaseTestCase(unittest.TestCase):
                     self.log.warn("CLEANUP WAS SKIPPED")
                 else:
                     if test_failed:
-                        # collect logs here because we have not shut things down
+                        # Collect logs because we have not shut things down
                         if TestInputSingleton.input.param("get-cbcollect-info",
                                                           False):
                             self.fetch_cb_collect_logs()
@@ -322,7 +338,7 @@ class BaseTestCase(unittest.TestCase):
                 traceback.print_exc()
                 self.log.warning("Killing memcached due to {0}".format(e))
                 cluster_util.kill_memcached()
-                # increase case_number to retry tearDown in setup for the next test
+                # Increase case_number to retry tearDown in setup for next test
                 self.case_number += 1000
             finally:
                 if not self.input.param("skip_cleanup", False):
@@ -354,7 +370,8 @@ class BaseTestCase(unittest.TestCase):
 
     def _initialize_nodes(self, task, cluster, disabled_consistent_view=None,
                           rebalanceIndexWaitingDisabled=None,
-                          rebalanceIndexPausingDisabled=None, maxParallelIndexers=None,
+                          rebalanceIndexPausingDisabled=None,
+                          maxParallelIndexers=None,
                           maxParallelReplicaIndexers=None,
                           port=None, quota_percent=None, services=None):
         quota = 0
@@ -364,19 +381,22 @@ class BaseTestCase(unittest.TestCase):
             assigned_services = services
             if cluster.master != server:
                 assigned_services = None
-            init_tasks.append(task.async_init_node(server, disabled_consistent_view,
-                                                   rebalanceIndexWaitingDisabled,
-                                                   rebalanceIndexPausingDisabled,
-                                                   maxParallelIndexers,
-                                                   maxParallelReplicaIndexers, init_port,
-                                                   quota_percent, services=assigned_services,
-                                                   index_quota_percent=self.index_quota_percent,
-                                                   gsi_type=self.gsi_type))
+            init_tasks.append(
+                task.async_init_node(
+                    server, disabled_consistent_view,
+                    rebalanceIndexWaitingDisabled,
+                    rebalanceIndexPausingDisabled,
+                    maxParallelIndexers,
+                    maxParallelReplicaIndexers, init_port,
+                    quota_percent, services=assigned_services,
+                    index_quota_percent=self.index_quota_percent,
+                    gsi_type=self.gsi_type))
         for _task in init_tasks:
             node_quota = self.task_manager.get_task_result(_task)
             if node_quota < quota or quota == 0:
                 quota = node_quota
-        if quota < 100 and not len(set([server.ip for server in self.servers])) == 1:
+        if quota < 100 and not len(set([server.ip
+                                        for server in self.servers])) == 1:
             self.log.warn("RAM quota was defined less than 100 MB:")
             for server in cluster.servers:
                 remote_client = RemoteMachineShellConnection(server)

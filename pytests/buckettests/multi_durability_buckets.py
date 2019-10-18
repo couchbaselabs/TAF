@@ -48,7 +48,7 @@ class MultiDurabilityTests(BaseTestCase):
 
             # If bucket_type not provided, set replica value to 'MEMBASE'
             if len(bucket_type_list)-1 < index:
-                self.bucket_dict[index]["type"] = Bucket.bucket_type.MEMBASE
+                self.bucket_dict[index]["type"] = Bucket.Type.MEMBASE
             else:
                 self.bucket_dict[index]["type"] = bucket_type_list[index]
 

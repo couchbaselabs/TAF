@@ -4,7 +4,7 @@ import sys
 
 # import crc32
 # from clitest.importexporttest import ImportExportTests
-
+from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import \
@@ -1450,7 +1450,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             try:
                 task.result()
             except DesignDocCreationException:
-                if self.bucket_type == 'ephemeral':
+                if self.bucket_type == Bucket.Type.EPHEMERAL:
                     return True
                 else:
                     raise
@@ -1540,7 +1540,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         shell.start_couchbase()
         self.sleep(20)
 
-        if self.bucket_type == 'ephemeral':
+        if self.bucket_type == Bucket.Type.EPHEMERAL:
             try:
                 self.assertFalse(self.client.get(key).success)
                 self.fail("get should throw NotFoundError when doc deleted")
@@ -1565,7 +1565,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             self.client.mutate_in(k, SD.upsert('my', {'value': 1},
                                                xattr=True), persist_to=1)
         except:
-            if self.bucket_type == 'ephemeral':
+            if self.bucket_type == Bucket.Type.EPHEMERAL:
                 return
             else:
                 raise

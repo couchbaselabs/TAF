@@ -3,6 +3,7 @@ import os, shutil, ast, re, subprocess
 import json
 import urllib
 
+from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from couchbase_helper.data_analysis_helper import DataCollector
 from membase.helper.rebalance_helper import RebalanceHelper
@@ -569,10 +570,9 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
                                             self.backupset.restore_cluster_host.ip))
                     elif self.backupset.map_buckets:
                         self.log.info("Create new bucket name to restore to this bucket")
-                        bucket_maps = ""
                         bucket_name = bucket.name + "_" + str(count)
-                    if self.bucket_type == "ephemeral":
-                        self.eviction_policy = "noEviction"
+                    if self.bucket_type == Bucket.Type.EPHEMERAL:
+                        self.eviction_policy = Bucket.EvictionPolicy.NO_EVICTION
                         self.log.info("ephemeral bucket needs to set restore cluster "
                                       "to memopt for gsi.")
                         self.test_storage_mode = "memory_optimized"
@@ -2264,8 +2264,8 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
             self.bucket_base_params['membase']['non_ephemeral'])
         bucket_params['size'] = bucket_size
         if self.ephemeral:
-            bucket_params['bucket_type'] = 'ephemeral'
-            bucket_params['eviction_policy'] = 'noEviction'
+            bucket_params['bucket_type'] = Bucket.Type.EPHEMERAL
+            bucket_params['eviction_policy'] = Bucket.EvictionPolicy.NO_EVICTION
         standard_buckets = []
         for i in range(0, self.new_buckets):
             if self.recreate_bucket:
@@ -2315,8 +2315,8 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
             self.bucket_base_params['membase']['non_ephemeral'])
         bucket_params['size'] = bucket_size
         if self.ephemeral:
-            bucket_params['bucket_type'] = 'ephemeral'
-            bucket_params['eviction_policy'] = 'noEviction'
+            bucket_params['bucket_type'] = Bucket.Type.EPHEMERAL
+            bucket_params['eviction_policy'] = Bucket.EvictionPolicy.NO_EVICTION
         standard_buckets = []
         for i in range(0, self.new_buckets):
             if self.recreate_bucket:
@@ -2571,16 +2571,17 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
                     self.log.info("Creating bucket {0} in restore host {1}"
                                               .format(bucket_name,
                                               self.backupset.restore_cluster_host.ip))
-                    if self.bucket_type == "ephemeral":
-                        self.eviction_policy = "noEviction"
+                    if self.bucket_type == Bucket.Type.EPHEMERAL:
+                        self.eviction_policy = Bucket.EvictionPolicy.NO_EVICTION
                     rest_src.create_bucket(bucket=bucket_name,
-                                            ramQuotaMB=bucket_size,
-                                            authType=bucket.authType if bucket.authType else 'none',
-                                            bucketType=self.bucket_type,
-                                            proxyPort=bucket.port,
-                                            saslPassword=bucket.saslPassword,
-                                            evictionPolicy=self.eviction_policy,
-                                            lww=self.lww_new)
+                                           ramQuotaMB=bucket_size,
+                                           authType=bucket.authType \
+                                               if bucket.authType else 'none',
+                                           bucketType=self.bucket_type,
+                                           proxyPort=bucket.port,
+                                           saslPassword=bucket.saslPassword,
+                                           evictionPolicy=self.eviction_policy,
+                                           lww=self.lww_new)
                     bucket_ready = rest_helper.vbucket_map_ready(bucket_name)
                     if not bucket_ready:
                         self.fail("Bucket %s not created after 120 seconds."
@@ -2666,13 +2667,13 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
                 elif "create_buckets" in action:
                     self.new_buckets = int(params[0])
                     if params.__len__() == 2:
-                        if params[1] == "ephemeral":
+                        if params[1] == Bucket.Type.EPHEMERAL:
                             self.ephemeral = True
                 elif "recreate_buckets" in action:
                     self.new_buckets = int(params[0])
                     self.recreate_bucket = True
                     if params.__len__() == 2:
-                        if params[1] == "ephemeral":
+                        if params[1] == Bucket.Type.EPHEMERAL:
                             self.ephemeral = True
                 elif "delete_bkup" in action:
                     iterations = 1

@@ -251,11 +251,11 @@ class BucketUtils:
                                     .format(bucket.name))
 
     def create_default_bucket(
-            self, bucket_type=Bucket.bucket_type.MEMBASE,
+            self, bucket_type=Bucket.Type.MEMBASE,
             ram_quota=None, replica=1, maxTTL=0,
             compression_mode="off", wait_for_warmup=True,
             lww=False, replica_index=1,
-            eviction_policy=Bucket.bucket_eviction_policy.VALUE_ONLY):
+            eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ramQuotaMB = ram_quota
@@ -380,11 +380,14 @@ class BucketUtils:
         bucket_info = bucket_helper.get_bucket_json(bucket=bucket)
         return bucket_info['compressionMode']
 
-    def create_multiple_buckets(self, server, replica,
-                                bucket_ram_ratio=(2.0 / 3.0),
-                                bucket_count=3, bucket_type='membase',
-                                eviction_policy='valueOnly', maxttl=0,
-                                compression_mode="active"):
+    def create_multiple_buckets(
+            self, server, replica,
+            bucket_ram_ratio=(2.0 / 3.0),
+            bucket_count=3,
+            bucket_type=Bucket.Type.MEMBASE,
+            eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
+            maxttl=0,
+            compression_mode=Bucket.CompressionMode.ACTIVE):
         success = True
         rest = RestConnection(server)
         info = rest.get_nodes_self()
@@ -505,7 +508,7 @@ class BucketUtils:
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
         servers = self.cluster_util.get_kv_nodes()
-        if bucket.bucketType == Bucket.bucket_type.MEMCACHED:
+        if bucket.bucketType == Bucket.Type.MEMCACHED:
             items_actual = 0
             for server in servers:
                 client = MemcachedClientHelper.direct_client(server, bucket)
@@ -2043,7 +2046,7 @@ class BucketUtils:
 
     def _wait_warmup_completed(self, servers, bucket, wait_time=300):
         # Return True, if bucket_type is not equal to MEMBASE
-        if bucket.bucketType != Bucket.bucket_type.MEMBASE:
+        if bucket.bucketType != Bucket.Type.MEMBASE:
             return True
 
         self.log.info("Waiting for bucket %s to complete warmup" % bucket.name)
