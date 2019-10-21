@@ -249,7 +249,8 @@ class FailoverTests(FailoverBaseTest):
             DurableExceptions.RequestTimeoutException,
             DurableExceptions.RequestCanceledException,
             DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException
+            DurableExceptions.DurabilityImpossibleException,
+            DurableExceptions.TemporaryFailureException
         ]
 
         # Rebalance Monitoring
@@ -370,7 +371,8 @@ class FailoverTests(FailoverBaseTest):
             DurableExceptions.RequestTimeoutException,
             DurableExceptions.RequestCanceledException,
             DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException
+            DurableExceptions.DurabilityImpossibleException,
+            DurableExceptions.TemporaryFailureException
         ]
 
         if not self.atomicity:
