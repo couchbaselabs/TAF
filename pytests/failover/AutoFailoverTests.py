@@ -22,7 +22,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         3. Disable autofailover and validate.
         :return: None
         """
-        self.enable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autofailover_and_validate()
+            self.enable_autoreprovision()
+        else:
+            self.enable_autofailover_and_validate()
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
@@ -43,7 +47,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
-        self.disable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autoreprovision()
+        else:
+            self.disable_autofailover_and_validate()
 
     def test_autofailover_during_rebalance(self):
         """
@@ -56,7 +63,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         :return: None
         """
-        self.enable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autofailover_and_validate()
+            self.enable_autoreprovision()
+        else:
+            self.enable_autofailover_and_validate()
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
@@ -82,7 +93,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
-        self.disable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autoreprovision()
+        else:
+            self.disable_autofailover_and_validate()
 
     def test_autofailover_after_rebalance(self):
         """
@@ -95,7 +109,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Disable autofailover and validate.
         :return: None
         """
-        self.enable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autofailover_and_validate()
+            self.enable_autoreprovision()
+        else:
+            self.enable_autofailover_and_validate()
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
@@ -123,7 +141,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
-        self.disable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autoreprovision()
+        else:
+            self.disable_autofailover_and_validate()
 
     def test_rebalance_after_autofailover(self):
         """
@@ -136,7 +157,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Disable autofailover and validate.
         :return: None
         """
-        self.enable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autofailover_and_validate()
+            self.enable_autoreprovision()
+        else:
+            self.enable_autofailover_and_validate()
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
@@ -184,7 +209,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
-        self.disable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autoreprovision()
+        else:
+            self.disable_autofailover_and_validate()
 
     def test_autofailover_and_addback_of_node(self):
         """
@@ -198,7 +226,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
             return
-        self.enable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autofailover_and_validate()
+            self.enable_autoreprovision()
+        else:
+            self.enable_autofailover_and_validate()
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
@@ -244,7 +276,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
-        self.disable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autoreprovision()
+        else:
+            self.disable_autofailover_and_validate()
 
     def test_autofailover_and_remove_failover_node(self):
         """
@@ -260,7 +295,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                           "skipping the test")
             return
         bucket = self.bucket_util.buckets[0]
-        self.enable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autofailover_and_validate()
+            self.enable_autoreprovision()
+        else:
+            self.enable_autofailover_and_validate()
         self.sleep(5)
 
         # Start load_gen, if it is durability_test
@@ -300,4 +339,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.cluster.master = self.cluster.nodes_in_cluster[0]
         if self.durability_level:
             self.data_load_after_autofailover()
-        self.disable_autofailover_and_validate()
+        if self.auto_reprovision:
+            self.disable_autoreprovision()
+        else:
+            self.disable_autofailover_and_validate()

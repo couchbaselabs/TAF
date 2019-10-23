@@ -3094,7 +3094,7 @@ class AutoFailoverNodesFailureTask(Task):
     def __init__(self, task_manager, master, servers_to_fail, failure_type,
                  timeout, pause=0, expect_auto_failover=True, timeout_buffer=3,
                  check_for_failover=True, failure_timers=None,
-                 disk_timeout=0, disk_location=None, disk_size=200):
+                 disk_timeout=0, disk_location=None, disk_size=200, auto_reprovision=False):
         super(AutoFailoverNodesFailureTask, self) \
             .__init__("AutoFailoverNodesFailureTask")
         self.task_manager = task_manager
@@ -3119,6 +3119,7 @@ class AutoFailoverNodesFailureTask(Task):
             failure_timers = []
         self.failure_timers = failure_timers
         self.rebalance_in_progress = False
+        self.auto_reprovision = auto_reprovision
 
     def call(self):
         rest = RestConnection(self.master)
@@ -3170,7 +3171,7 @@ class AutoFailoverNodesFailureTask(Task):
         autofailover_initiated, time_taken = \
             self._wait_for_autofailover_initiation(
                 self.max_time_to_wait_for_failover)
-        if self.expect_auto_failover:
+        if self.expect_auto_failover and not self.auto_reprovision:
             if autofailover_initiated:
                 if time_taken < max_timeout + 1:
                     self.test_log.debug("Autofailover of node {0} successfully"
@@ -3422,8 +3423,12 @@ class AutoFailoverNodesFailureTask(Task):
         ui_logs = rest.get_logs(20)
         ui_logs_text = [t["text"] for t in ui_logs]
         ui_logs_time = [t["serverTime"] for t in ui_logs]
-        expected_log = "Starting failing over ['ns_1@{}']".format(
-            failed_over_node.ip)
+        if self.auto_reprovision:
+            expected_log = "has been reprovisioned on following nodes: ['ns_1@{}']".format(
+                failed_over_node.ip)
+        else:
+            expected_log = "Starting failing over ['ns_1@{}']".format(
+                failed_over_node.ip)
         if expected_log in ui_logs_text:
             failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
             return True, failed_over_time

@@ -9,6 +9,7 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
+from bucket_utils.Bucket import Bucket
 
 
 class AutoFailoverBaseTest(BaseTestCase):
@@ -17,6 +18,7 @@ class AutoFailoverBaseTest(BaseTestCase):
 
     def setUp(self):
         super(AutoFailoverBaseTest, self).setUp()
+        self.auto_reprovision = self.input.param("auto_reprovision", False)
         self._get_params()
         self.rest = RestConnection(self.orchestrator)
         self.initial_load_gen = self.get_doc_generator(0, self.num_items)
@@ -92,7 +94,10 @@ class AutoFailoverBaseTest(BaseTestCase):
                      if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket(replica=self.num_replicas)
+        if self.auto_reprovision:
+            self.bucket_util.create_default_bucket(replica=self.num_replicas, bucket_type=Bucket.bucket_type.EPHEMERAL)
+        else:
+            self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
         self.sleep(10)
 
@@ -217,6 +222,15 @@ class AutoFailoverBaseTest(BaseTestCase):
             enableServerGroup=self.server_group_failover)
         return status
 
+    def enable_autoreprovision(self):
+        """
+        Enable the enable_autoreprovision setting with num node failures
+        :return: True If the setting was set, else return
+        False
+        """
+        status = self.rest.update_autoreprovision_settings(True, self.num_node_failures)
+        return status
+
     def disable_autofailover(self):
         """
         Disable the autofailover setting.
@@ -224,6 +238,15 @@ class AutoFailoverBaseTest(BaseTestCase):
         False
         """
         status = self.rest.update_autofailover_settings(False, 120, False)
+        return status
+
+    def disable_autoreprovision(self):
+        """
+        Disable the autoreprovision setting.
+        :return: True If the setting was disabled, else return
+        False
+        """
+        status = self.rest.update_autoreprovision_settings(False)
         return status
 
     def enable_autofailover_and_validate(self):
@@ -272,7 +295,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "enable_firewall", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks, auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -289,7 +312,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "disable_firewall", self.timeout,
             self.pause_between_failover_action, False,
-            self.timeout_buffer, False)
+            self.timeout_buffer, False, auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -309,7 +332,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "restart_couchbase", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks, auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         self.sleep(30, "Waiting for couchbase-server to come up")
         try:
@@ -330,7 +353,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "stop_couchbase", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks,auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -347,7 +370,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         task = AutoFailoverNodesFailureTask(
             self.task_manager, self.orchestrator, self.server_to_fail,
             "start_couchbase", self.timeout, 0, False, self.timeout_buffer,
-            False)
+            False, auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -369,7 +392,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "restart_network", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks,auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -390,7 +413,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "restart_machine", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks, auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -425,7 +448,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "stop_memcached", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks, auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -435,7 +458,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             task = AutoFailoverNodesFailureTask(
                 self.task_manager, self.orchestrator, self.server_to_fail,
                 "start_memcached", self.timeout, 0, False, 0,
-                check_for_failover=False)
+                check_for_failover=False, auto_reprovision=self.auto_reprovision)
             self.task_manager.add_new_task(task)
             self.task_manager.get_task_result(task)
             self.sleep(60)
@@ -452,7 +475,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         task = AutoFailoverNodesFailureTask(
             self.task_manager, self.orchestrator, self.server_to_fail,
             "network_split", self.timeout, self.pause_between_failover_action,
-            False, self.timeout_buffer)
+            False, self.timeout_buffer, auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
