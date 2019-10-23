@@ -77,29 +77,31 @@ class RebalanceBaseTest(BaseTestCase):
         self.log.info("==========Finished rebalance base setup========")
 
     def _create_default_bucket(self):
-        master = self.cluster.master
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
-        info = RestConnection(master).get_nodes_self()
+        info = RestConnection(self.cluster.master).get_nodes_self()
         available_ram = int(info.memoryQuota * node_ram_ratio)
         if available_ram < 100 or self.active_resident_threshold < 100:
             available_ram = 100
-        self.bucket_util.create_default_bucket(ram_quota=available_ram,
-                                               bucket_type=self.bucket_type,
-                                               replica=self.num_replicas)
+        self.bucket_util.create_default_bucket(
+            ram_quota=available_ram,
+            bucket_type=self.bucket_type,
+            replica=self.num_replicas,
+            eviction_policy=self.bucket_eviction_policy)
 
     def _create_multiple_buckets(self):
-        master = self.cluster.master
-        eviction_policy = Bucket.EvictionPolicy.VALUE_ONLY
-        if self.bucket_type.lower() == Bucket.Type.EPHEMERAL:
-            eviction_policy = Bucket.EvictionPolicy.NO_EVICTION
         buckets_created = self.bucket_util.create_multiple_buckets(
-            master, self.num_replicas, bucket_count=self.standard_buckets,
-            bucket_type=self.bucket_type, eviction_policy=eviction_policy)
-        self.assertTrue(buckets_created, "unable to create multiple buckets")
+            self.cluster.master,
+            self.num_replicas,
+            bucket_count=self.standard_buckets,
+            bucket_type=self.bucket_type,
+            eviction_policy=self.bucket_eviction_policy)
+        self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         for bucket in self.bucket_util.buckets:
-            ready = self.bucket_util.wait_for_memcached(master, bucket)
-            self.assertTrue(ready, msg="wait_for_memcached failed")
+            ready = self.bucket_util.wait_for_memcached(
+                self.cluster.master,
+                bucket)
+            self.assertTrue(ready, msg="Wait_for_memcached failed")
 
     def create_buckets(self):
         if self.standard_buckets == 1:

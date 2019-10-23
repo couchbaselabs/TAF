@@ -62,6 +62,9 @@ class Bucket(object):
             self.evictionPolicy = new_params.get(
                 Bucket.evictionPolicy,
                 Bucket.EvictionPolicy.NO_EVICTION)
+            if self.evictionPolicy not in [Bucket.EvictionPolicy.NRU_EVICTION,
+                                           Bucket.EvictionPolicy.NO_EVICTION]:
+                self.evictionPolicy = Bucket.EvictionPolicy.NO_EVICTION
         else:
             self.evictionPolicy = new_params.get(
                 Bucket.evictionPolicy,
