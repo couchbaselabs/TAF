@@ -9,7 +9,6 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
-from bucket_utils.Bucket import Bucket
 
 
 class AutoFailoverBaseTest(BaseTestCase):
