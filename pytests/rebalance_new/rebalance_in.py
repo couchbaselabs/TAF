@@ -107,6 +107,8 @@ class RebalanceInTests(RebalanceBaseTest):
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
 
+        if self.doc_ops == "delete":
+            return
         self.sleep(20, "Wait for cluster to be ready after rebalance")
 
         # CRUDs after rebalance operations
