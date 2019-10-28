@@ -2381,6 +2381,11 @@ class BucketUtils:
             node = self.cluster.master
         rest = RestConnection(node)
 
+        # Enable diag_eval outside localhost
+        shell = RemoteMachineShellConnection(node)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
         for bucket in buckets:
             code = "ns_bucket:update_bucket_props(\"" + bucket.name \
                + "\", [{extra_config_string, " \
