@@ -508,7 +508,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         Initialize the test parameters.
         :return:  Nothing
         """
-        self.timeout = self.input.param("timeout", 60)
+        self.timeout = self.input.param("timeout", 300)
         self.max_count = self.input.param("maxCount", 1)
         self.server_group_failover = self.input.param("serverGroupFailover",
                                                       False)

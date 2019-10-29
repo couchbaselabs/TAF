@@ -68,6 +68,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             result = self._check_for_autofailover_initiation_for_server_group_failover(self.server_to_fail)
             self.assertTrue(result, "Server group failover message was not seen in logs")
         finally:
+            self.sleep(300)
             self.start_couchbase_server()
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
