@@ -1,5 +1,7 @@
 import time
+from random import randint
 
+from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_cli import CouchbaseCLI
@@ -41,6 +43,12 @@ class AutoFailoverBaseTest(BaseTestCase):
                                                       self.nodes_out:self.nodes_init]
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.servers), self.durability_level)
+
+        # Variable for durability tests
+        self.num_nodes_affected = 1
+        if self.num_replicas > 1:
+            self.num_nodes_affected = 2
+
         self.active_vb_in_failover_nodes = list()
         self.replica_vb_in_failover_nodes = list()
         self.get_vbucket_info_from_failover_nodes()
@@ -80,12 +88,14 @@ class AutoFailoverBaseTest(BaseTestCase):
     def _loadgen(self):
         tasks = []
         if self.atomicity:
-            tasks.append(self.async_load_all_buckets_atomicity(self.run_time_create_load_gen,
-                                                 "create", 0))
+            tasks.append(self.async_load_all_buckets_atomicity(
+                self.run_time_create_load_gen, "create", 0))
 
         else:
-            subsequent_load_gen = self.get_doc_generator(self.num_items, self.num_items * 2)
-            tasks = self.async_load_all_buckets(subsequent_load_gen, "create", 0)
+            subsequent_load_gen = self.get_doc_generator(self.num_items,
+                                                         self.num_items * 2)
+            tasks = self.async_load_all_buckets(subsequent_load_gen,
+                                                "create", 0)
         return tasks
 
     def set_up_cluster(self):
@@ -94,7 +104,9 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         if self.auto_reprovision:
-            self.bucket_util.create_default_bucket(replica=self.num_replicas, bucket_type=Bucket.bucket_type.EPHEMERAL)
+            self.bucket_util.create_default_bucket(
+                replica=self.num_replicas,
+                bucket_type=Bucket.Type.EPHEMERAL)
         else:
             self.bucket_util.create_default_bucket(replica=self.num_replicas)
         self.bucket_util.add_rbac_user()
@@ -134,11 +146,12 @@ class AutoFailoverBaseTest(BaseTestCase):
     def async_load_all_buckets_atomicity(self, kv_gen, op_type, exp=0, batch_size=20):
 
         task = self.task.async_load_gen_docs_atomicity(
-                        self.cluster,self.bucket_util.buckets, kv_gen, op_type,exp,
-                        batch_size=batch_size,process_concurrency=8,timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
-                        transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,durability=self.durability_level)
+            self.cluster,self.bucket_util.buckets, kv_gen, op_type,exp,
+            batch_size=batch_size,process_concurrency=8,
+            timeout_secs=self.sdk_timeout,retries=self.sdk_retries,
+            transaction_timeout=self.transaction_timeout,
+            commit=self.transaction_commit,durability=self.durability_level)
         return task
-
 
     def load_all_buckets_atomicity(self, kv_gen, op_type, exp, batch_size=20):
         task = self.async_load_all_buckets(kv_gen, op_type, exp, batch_size)
@@ -294,7 +307,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "enable_firewall", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks, auto_reprovision=self.auto_reprovision)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks,
+            auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -331,7 +345,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "restart_couchbase", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks, auto_reprovision=self.auto_reprovision)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks,
+            auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         self.sleep(30, "Waiting for couchbase-server to come up")
         try:
@@ -352,7 +367,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "stop_couchbase", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks,auto_reprovision=self.auto_reprovision)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks,
+            auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -391,7 +407,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "restart_network", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks,auto_reprovision=self.auto_reprovision)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks,
+            auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -412,7 +429,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "restart_machine", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks, auto_reprovision=self.auto_reprovision)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks,
+            auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -447,7 +465,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "stop_memcached", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks, auto_reprovision=self.auto_reprovision)
+            self.timeout_buffer, failure_timers=node_down_timer_tasks,
+            auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
         try:
             self.task_manager.get_task_result(task)
@@ -457,7 +476,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             task = AutoFailoverNodesFailureTask(
                 self.task_manager, self.orchestrator, self.server_to_fail,
                 "start_memcached", self.timeout, 0, False, 0,
-                check_for_failover=False, auto_reprovision=self.auto_reprovision)
+                check_for_failover=False,
+                auto_reprovision=self.auto_reprovision)
             self.task_manager.add_new_task(task)
             self.task_manager.get_task_result(task)
             self.sleep(60)
@@ -523,7 +543,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.key = 'test_docs'.rjust(self.key_size, '0')
         self.num_items = self.input.param("num_items", 1000000)
         self.update_items = self.input.param("update_items", 100000)
-        self.delete_items = self.input.param("delete_items", 100000)  
+        self.delete_items = self.input.param("delete_items", 100000)
         self.add_back_node = self.input.param("add_back_node", True)
         self.recovery_strategy = self.input.param("recovery_strategy",
                                                   "delta")
@@ -643,7 +663,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             # Detect whether durability is going to succeed or not
             # based on the fail_over type and num_server to fail
             durability_success = self.durability_helper.durability_succeeds(
-                bucket.name, self.cluster.master, induced_error=self.failover_action,
+                bucket.name, self.cluster.master,
+                induced_error=self.failover_action,
                 failed_nodes=self.server_to_fail)
 
             no_error_ops = ["read"]
@@ -737,22 +758,26 @@ class AutoFailoverBaseTest(BaseTestCase):
             gen_create = doc_generator(self.key, self.num_items*2,
                                    self.num_items * 3)
             task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, gen_create, "create", 0,
-                    batch_size=10, process_concurrency=8, replicate_to=self.replicate_to,
-                    persist_to=self.persist_to, timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                    transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,
-                    durability=self.durability_level, sync=self.sync)
+                self.cluster, self.bucket_util.buckets, gen_create, "create", 0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+                transaction_timeout=self.transaction_timeout,
+                commit=self.transaction_commit,
+                durability=self.durability_level, sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
         else:
             task = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_create, "create", 0,
-                batch_size=10, replicate_to=self.replicate_to, persist_to=self.persist_to,
+                batch_size=10, replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
             # Verify there is not failed docs in the task
             if len(task.fail.keys()) != 0:
                 self.log_failure("Some CRUD failed after autofailover")
+
 
 class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
     def setUp(self):
@@ -942,3 +967,18 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 self.fail("Exception: {}".format(e))
         else:
             super(DiskAutoFailoverBasetest, self).bring_back_failed_nodes_up()
+
+    def getTargetNodes(self):
+        def select_randam_node(nodes):
+            rand_node_index = randint(1, self.nodes_init-1)
+            if self.cluster.nodes_in_cluster[rand_node_index] not in node_list:
+                nodes.append(self.cluster.nodes_in_cluster[rand_node_index])
+
+        node_list = list()
+        if len(self.cluster.nodes_in_cluster) > 1:
+            # Choose random nodes, if the cluster is not a single node cluster
+            while len(node_list) != self.num_nodes_affected:
+                select_randam_node(node_list)
+        else:
+            node_list.append(self.cluster.master)
+        return node_list
