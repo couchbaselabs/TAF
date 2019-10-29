@@ -759,7 +759,11 @@ class BucketUtils:
                 if ClientException.DurabilityAmbiguousException \
                         in str(exception) \
                         or ClientException.RequestTimeoutException \
-                        in str(exception):
+                        in str(exception) \
+                        or (ClientException.RequestCanceledException
+                            in str(exception) and
+                            "CHANNEL_CLOSED_WHILE_IN_FLIGHT" \
+                            in str(exception)):
                     ambiguous_state = True
 
                 result = client.crud(
