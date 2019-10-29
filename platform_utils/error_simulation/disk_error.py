@@ -1,9 +1,11 @@
-from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
+from Jython_tasks.task import AutoFailoverNodesFailureTask
 
 
 class DiskError:
-    FAILOVER_DISK = "failover_disk"
+    DISK_FAILURE = "disk_failure"
     DISK_FULL = "disk_full"
+    RECOVER_DISK_FAILURE = "recover_disk_failure"
+    RECOVER_DISK_FULL_FAILURE = "recover_disk_full_failure"
 
     def __init__(self, logger, task_manager, orchestrator,
                  server_to_fail, timeout, pause_between_failover_action,
@@ -24,20 +26,10 @@ class DiskError:
     def create(self, action=None):
         self.log.info("Simulation disk scenario '{0}'".format(action))
 
-        if action == DiskError.FAILOVER_DISK:
+        if action in [DiskError.DISK_FAILURE, DiskError.DISK_FULL]:
             task = AutoFailoverNodesFailureTask(
                 self.task_manager, self.orchestrator, self.server_to_fail,
-                "disk_failure", self.timeout,
-                self.pause_between_failover_action, self.failover_expected,
-                self.timeout_buffer, disk_timeout=self.disk_timeout,
-                disk_location=self.disk_location,
-                disk_size=self.disk_location_size)
-            self.task_manager.add_new_task(task)
-            self.task_manager.get_task_result(task)
-        elif action == DiskError.DISK_FULL:
-            task = AutoFailoverNodesFailureTask(
-                self.task_manager, self.orchestrator, self.server_to_fail,
-                "disk_full", self.timeout, self.pause_between_failover_action,
+                action, self.timeout, self.pause_between_failover_action,
                 self.failover_expected, self.timeout_buffer,
                 disk_timeout=self.disk_timeout,
                 disk_location=self.disk_location,
@@ -50,10 +42,10 @@ class DiskError:
     def revert(self, action=None):
         self.log.info("Reverting disk scenario '{0}'".format(action))
 
-        if action == DiskError.FAILOVER_DISK:
-            action = "recover_disk_failure"
+        if action == DiskError.DISK_FAILURE:
+            action = DiskError.RECOVER_DISK_FAILURE
         elif action == DiskError.DISK_FULL:
-            action = "recover_disk_full_failure"
+            action = DiskError.RECOVER_DISK_FULL_FAILURE
         else:
             self.log.warning("Unsupported disk action '{0}'".format(action))
             return

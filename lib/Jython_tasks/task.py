@@ -3095,7 +3095,8 @@ class AutoFailoverNodesFailureTask(Task):
     def __init__(self, task_manager, master, servers_to_fail, failure_type,
                  timeout, pause=0, expect_auto_failover=True, timeout_buffer=3,
                  check_for_failover=True, failure_timers=None,
-                 disk_timeout=0, disk_location=None, disk_size=200, auto_reprovision=False):
+                 disk_timeout=0, disk_location=None, disk_size=200,
+                 auto_reprovision=False):
         super(AutoFailoverNodesFailureTask, self) \
             .__init__("AutoFailoverNodesFailureTask")
         self.task_manager = task_manager
@@ -3209,7 +3210,7 @@ class AutoFailoverNodesFailureTask(Task):
                     return True
                 self.set_exception(AutoFailoverException(message))
                 return False
-            else:
+            elif self.expect_auto_failover:
                 self.test_log.error("Node not autofailed over as expected")
                 rest.print_UI_logs(10)
                 return False

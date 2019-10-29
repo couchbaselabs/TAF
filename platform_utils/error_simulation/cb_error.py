@@ -34,7 +34,8 @@ class CouchbaseError:
                                                 signum=9)
 
     def create(self, action=None, bucket_name="default"):
-        self.log.info("Simulating '{0}' in {1}".format(action, self.shell_conn.ip))
+        self.log.info("Simulating '{0}' in {1}".format(action,
+                                                       self.shell_conn.ip))
         if action == CouchbaseError.STOP_MEMCACHED:
             _, error = self.__interrupt_process("memcached", "stop")
             self.__handle_shell_error(error)
@@ -56,7 +57,8 @@ class CouchbaseError:
             self.log.error("Unsupported action: '{0}'".format(action))
 
     def revert(self, action=None, bucket_name="default"):
-        self.log.info("Reverting '{0}' in {1}".format(action, self.shell_conn.ip))
+        self.log.info("Reverting '{0}' in {1}"
+                      .format(action, self.shell_conn.ip))
         if action == CouchbaseError.STOP_MEMCACHED:
             _, error = self.__interrupt_process("memcached", "resume")
             self.__handle_shell_error(error)
@@ -70,4 +72,5 @@ class CouchbaseError:
             cbepctl_obj = Cbepctl(self.shell_conn)
             cbepctl_obj.persistence(bucket_name, "start")
         else:
-            self.log.error("Unsupported action to revert: '{0}'".format(action))
+            self.log.error("Unsupported action to revert: '{0}'"
+                           .format(action))

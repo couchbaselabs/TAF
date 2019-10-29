@@ -1,5 +1,4 @@
 import time
-from random import randint
 
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
@@ -43,11 +42,6 @@ class AutoFailoverBaseTest(BaseTestCase):
                                                       self.nodes_out:self.nodes_init]
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.servers), self.durability_level)
-
-        # Variable for durability tests
-        self.num_nodes_affected = 1
-        if self.num_replicas > 1:
-            self.num_nodes_affected = 2
 
         self.active_vb_in_failover_nodes = list()
         self.replica_vb_in_failover_nodes = list()
@@ -967,18 +961,3 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 self.fail("Exception: {}".format(e))
         else:
             super(DiskAutoFailoverBasetest, self).bring_back_failed_nodes_up()
-
-    def getTargetNodes(self):
-        def select_randam_node(nodes):
-            rand_node_index = randint(1, self.nodes_init-1)
-            if self.cluster.nodes_in_cluster[rand_node_index] not in node_list:
-                nodes.append(self.cluster.nodes_in_cluster[rand_node_index])
-
-        node_list = list()
-        if len(self.cluster.nodes_in_cluster) > 1:
-            # Choose random nodes, if the cluster is not a single node cluster
-            while len(node_list) != self.num_nodes_affected:
-                select_randam_node(node_list)
-        else:
-            node_list.append(self.cluster.master)
-        return node_list

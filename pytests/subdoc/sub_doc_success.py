@@ -540,7 +540,6 @@ class BasicOps(DurabilityTestsBase):
             error_sim[node.ip].create(self.simulate_error,
                                       bucket_name=def_bucket.name)
 
-
         # Load sub_docs for upsert/remove mutation to work
         sub_doc_gen = sub_doc_generator(self.key,
                                         start=insert_end_index,

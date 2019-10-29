@@ -61,7 +61,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 cbstat_obj[node.ip].failover_stats(self.bucket.name)
 
         if self.simulate_error \
-                in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:
+                in [DiskError.DISK_FULL, DiskError.DISK_FAILURE]:
             error_sim = DiskError(self.log, self.task_manager,
                                   self.cluster.master, target_nodes,
                                   60, 0, False, 120,
@@ -131,7 +131,9 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                                  .format(task.op_type, task.fail))
 
         if self.simulate_error \
-                not in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:
+                in [DiskError.DISK_FULL, DiskError.DISK_FAILURE]:
+            error_sim.revert(self.simulate_error)
+        else:
             # Revert the induced error condition
             for node in target_nodes:
                 error_sim[node.ip].revert(self.simulate_error,
@@ -315,7 +317,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                           - len(gen_delete.doc_keys)
 
         if self.simulate_error \
-                not in [DiskError.DISK_FULL, DiskError.FAILOVER_DISK]:
+                not in [DiskError.DISK_FULL, DiskError.DISK_FAILURE]:
             # Revert the induced error condition
             for node in target_nodes:
                 error_sim[node.ip].revert(self.simulate_error,
