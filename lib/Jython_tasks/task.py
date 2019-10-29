@@ -464,9 +464,8 @@ class GenericLoadingTask(Task):
         try:
             self._process_values_for_update(key_val)
             client = self.client or shared_client
-            retry_docs = key_val
             success, fail = client.upsertMulti(
-                retry_docs, self.exp, exp_unit=self.exp_unit,
+                key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
                 doc_type=doc_type, durability=durability)
@@ -733,6 +732,8 @@ class GenericLoadingTask(Task):
                 self.random.seed(key)
                 index = self.random.choice(range(len(value)))
                 value = value[0:index] + self.random.choice(string.ascii_uppercase) + value[index + 1:]
+            except Exception:
+                value = key_val[key]
             finally:
                 key_val[key] = value
 

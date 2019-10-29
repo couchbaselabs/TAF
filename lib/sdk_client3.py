@@ -132,8 +132,8 @@ class SDKClient(object):
                 for field, val in value.items():
                     json_obj.put(field, val)
                 return json_obj
-            elif doc_type.find("binary") != -1:
-                pass
+            else:
+                return value
         except Exception:
             pass
 

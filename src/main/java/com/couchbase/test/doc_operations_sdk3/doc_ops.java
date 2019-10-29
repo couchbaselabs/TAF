@@ -13,7 +13,6 @@ import org.reactivestreams.Publisher;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
-import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.client.java.kv.InsertOptions;
 import com.couchbase.client.java.kv.GetOptions;
@@ -32,17 +31,17 @@ import reactor.util.function.Tuple2;
 
 public class doc_ops {
 
-	public List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
+	public List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, Object>> documents,
 			long expiry, String expiryTimeUnit, int persistTo, int replicateTo,
 			String durabilityLevel, long timeOut, String timeOutTimeUnit) {
 		InsertOptions insertOptions = this.getInsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeOutTimeUnit, durabilityLevel);
 		ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<ConcurrentHashMap<String, Object>>>() {
-					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+				.flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
+					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
 						String id = documentToInsert.getT1();
-						JsonObject content = documentToInsert.getT2();
+						Object content = documentToInsert.getT2();
 						final ConcurrentHashMap<String, Object> retValue = new ConcurrentHashMap<String, Object>();
 						retValue.put("document", content);
 						retValue.put("error", "");
@@ -68,17 +67,17 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
+	public List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, Object>> documents,
 			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
 			final DurabilityLevel durabilityLevel, final long timeOut, final String timeOutTimeUnit) {
 		final InsertOptions insertOptions = this.getInsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeOutTimeUnit, durabilityLevel);
 		final ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<ConcurrentHashMap<String, Object>>>() {
-					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+				.flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
+					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
 						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
+						final Object content = documentToInsert.getT2();
 						final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
 						returnValue.put("document", content);
 						returnValue.put("error", "");
@@ -104,17 +103,17 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<ConcurrentHashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
+	public List<ConcurrentHashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, Object>> documents,
 			long expiry, final String expiryTimeUnit, final int persistTo, final int replicateTo,
 			final String durabilityLevel, final long timeOut, final String timeUnit) {
 		final UpsertOptions upsertOptions = this.getUpsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeUnit, durabilityLevel);
 		final ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<ConcurrentHashMap<String, Object>>>() {
-					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+				.flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
+					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
 						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
+						final Object content = documentToInsert.getT2();
 						final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
 						returnValue.put("document", content);
 						returnValue.put("error", "");
@@ -140,17 +139,17 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<ConcurrentHashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, JsonObject>> documents,
+	public List<ConcurrentHashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, Object>> documents,
 			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
 			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
 		final UpsertOptions upsertOptions = this.getUpsertOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeUnit, durabilityLevel);
 		final ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<ConcurrentHashMap<String, Object>>>() {
-					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+				.flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
+					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
 						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
+						final Object content = documentToInsert.getT2();
 						final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
 						returnValue.put("document", content);
 						returnValue.put("error", "");
@@ -176,17 +175,17 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<ConcurrentHashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, JsonObject>> documents,
+	public List<ConcurrentHashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, Object>> documents,
 			long expiry, final String expiryTimeUnit, final int persistTo, final int replicateTo,
 			final String durabilityLevel, final long timeOut, final String timeUnit) {
 		final ReplaceOptions replaceOptions = this.getReplaceOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeUnit, durabilityLevel);
 		final ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<ConcurrentHashMap<String, Object>>>() {
-					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+				.flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
+					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
 						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
+						final Object content = documentToInsert.getT2();
 						final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
 						returnValue.put("document", content);
 						returnValue.put("error", "");
@@ -212,17 +211,17 @@ public class doc_ops {
 		return returnValue;
 	}
 
-	public List<ConcurrentHashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, JsonObject>> documents,
+	public List<ConcurrentHashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, Object>> documents,
 			long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
 			final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit) {
 		final ReplaceOptions replaceOptions = this.getReplaceOptions(expiry, expiryTimeUnit, persistTo, replicateTo,
 				timeOut, timeUnit, durabilityLevel);
 		final ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-				.flatMap(new Function<Tuple2<String, JsonObject>, Publisher<ConcurrentHashMap<String, Object>>>() {
-					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, JsonObject> documentToInsert) {
+				.flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
+					public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
 						final String id = documentToInsert.getT1();
-						final JsonObject content = documentToInsert.getT2();
+						final Object content = documentToInsert.getT2();
 						final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
 						returnValue.put("document", content);
 						returnValue.put("error", "");
