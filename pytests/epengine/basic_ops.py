@@ -79,7 +79,8 @@ class basic_ops(BaseTestCase):
         # wait for it to persist
         persisted = 0
         while persisted == 0:
-            opaque, rep_time, persist_time, persisted, cas = sdk_client.observe(KEY_NAME)
+            opaque, rep_time, persist_time, persisted, cas = \
+                sdk_client.observe(KEY_NAME)
 
         try:
             rc = sdk_client.evict_key(KEY_NAME)
@@ -122,11 +123,13 @@ class basic_ops(BaseTestCase):
                            0x1512a3186faa0000)
         except MemcachedError as error:
             stats = mc.stats()
-            self.log.info('After 2nd setWithMeta(), curr_items: {} and curr_temp_items:{}'
+            self.log.info('After 2nd setWithMeta(), curr_items: {} '
+                          'and curr_temp_items: {}'
                           .format(stats['curr_items'],
                                   stats['curr_temp_items']))
             if int(stats['curr_temp_items']) == 1:
-                self.fail("Error on second setWithMeta(), expected curr_temp_items to be 0")
+                self.fail("Error on second setWithMeta(), "
+                          "expected curr_temp_items to be 0")
             else:
                 self.log.info("<MemcachedError #%d ``%s''>"
                               % (error.status, error.message))
@@ -185,7 +188,8 @@ class basic_ops(BaseTestCase):
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, doc_create, "create", 0,
-            batch_size=self.batch_size, process_concurrency=self.process_concurrency,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
@@ -249,29 +253,35 @@ class basic_ops(BaseTestCase):
         expected_num_items = self.num_items
         num_of_mutations = 1
 
+        if self.target_vbucket:
+            mutation_doc_count = len(doc_update.doc_keys)
+        else:
+            mutation_doc_count = (doc_update.end - doc_update.start
+                                  + len(task.fail.keys()))
+
         if doc_op == "update":
             self.log.info("Performing 'update' mutation over the docs")
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "update", 0,
-                batch_size=self.batch_size, process_concurrency=self.process_concurrency,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
                 ryow=self.ryow,
                 check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
-            ref_val["ops_update"] = (doc_update.end - doc_update.start
-                                     + len(task.fail.keys()))
+            ref_val["ops_update"] = mutation_doc_count
             if self.durability_level:
-                ref_val["sync_write_committed_count"] += \
-                    (doc_update.end - doc_update.start)
+                ref_val["sync_write_committed_count"] += mutation_doc_count
             if self.ryow:
                 check_durability_failures()
 
             # Read all the values to validate update operation
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "read", 0,
-                batch_size=self.batch_size, process_concurrency=self.process_concurrency,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
@@ -288,19 +298,19 @@ class basic_ops(BaseTestCase):
             self.log.info("Performing 'delete' mutation over the docs")
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "delete", 0,
-                batch_size=self.batch_size, process_concurrency=self.process_concurrency,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
                 ryow=self.ryow, check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
-            expected_num_items = self.num_items \
-                                 - (self.num_items - num_item_start_for_crud)
-            ref_val["ops_delete"] = (doc_update.end - doc_update.start
-                                     + len(task.fail.keys()))
+            expected_num_items = \
+                self.num_items - (self.num_items - num_item_start_for_crud)
+            ref_val["ops_delete"] = mutation_doc_count
+
             if self.durability_level:
-                ref_val["sync_write_committed_count"] += \
-                    (doc_update.end - doc_update.start)
+                ref_val["sync_write_committed_count"] += mutation_doc_count
             if self.ryow:
                 check_durability_failures()
 
@@ -349,9 +359,9 @@ class basic_ops(BaseTestCase):
         self.bucket_util.verify_stats_all_buckets(expected_num_items)
 
     def test_large_doc_size(self):
-        # bucket size=256MB, when Bucket gets filled 236MB then test starts failing
-        # document size=2MB, No of docs = 221 , load 250 docs
-        # generate docs with size >= 1MB , See MB-29333
+        # bucket size=256MB, when Bucket gets filled 236MB then
+        # test starts failing document size=2MB, No of docs = 221,
+        # load 250 docs generate docs with size >= 1MB , See MB-29333
 
         self.doc_size *= 1024000
         gens_load = self.generate_docs_bigdata(
