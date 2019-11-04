@@ -168,8 +168,6 @@ class basic_ops(BaseTestCase):
         ref_val["sync_write_aborted_count"] = 0
         ref_val["sync_write_committed_count"] = 0
 
-        one_less_node = self.nodes_init == self.num_replicas
-
         if self.durability_level:
             pass
             #ignore_exceptions.append(
@@ -234,8 +232,7 @@ class basic_ops(BaseTestCase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict,
-            one_less_node=one_less_node)
+            vbuckets=self.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -350,8 +347,7 @@ class basic_ops(BaseTestCase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict,
-            one_less_node=one_less_node)
+            vbuckets=self.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 

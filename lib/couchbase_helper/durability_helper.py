@@ -30,6 +30,9 @@ class DurableExceptions:
     DecodingFailedException = \
         "com.couchbase.client.core.error.DecodingFailedException"
 
+    def __init__(self):
+        pass
+
 
 class DurabilityHelper:
 
@@ -226,16 +229,13 @@ class DurabilityHelper:
 
     def verify_vbucket_details_stats(self, bucket, kv_servers,
                                      vbuckets=1024,
-                                     expected_val=dict(),
-                                     one_less_node=False):
+                                     expected_val=dict()):
         """
 
         :param bucket: Bucket object
         :param kv_servers: List of kv_nodes currently present in the cluster
         :param vbuckets: Total vbucket count for the bucket. Default 1024
         :param expected_val: dict() containing expected key,value pairs
-        :param one_less_node: Bool value denoting,
-                              num_nodes == bucket.replicaNumber
         :return verification_failed: Bool value denoting verification
                                      failed or not
         """
@@ -261,24 +261,14 @@ class DurabilityHelper:
 
         for vb_num in range(0, vbuckets):
             vb_num = str(vb_num)
-            for op_type in ["ops_create", "ops_delete", "ops_update",
-                            "ops_reject", "ops_get",
-                            "rollback_item_count", "sync_write_aborted_count",
-                            "sync_write_committed_count", "pending_writes"]:
+            for op_type in ops_val.keys():
                 ops_val[op_type] += int(vb_details_stats[vb_num][op_type])
 
-        for op_type in ["ops_create", "ops_delete", "ops_update",
-                        "ops_reject", "ops_get",
-                        "rollback_item_count", "sync_write_aborted_count",
-                        "sync_write_committed_count", "pending_writes"]:
+        # Verification block
+        for op_type in ops_val.keys():
             self.log.info("%s for %s: %s" % (op_type, bucket.name,
                                              ops_val[op_type]))
 
-        # Verification block
-        for op_type in ["ops_create", "ops_delete", "ops_update",
-                        "ops_reject", "ops_get",
-                        "rollback_item_count", "sync_write_aborted_count",
-                        "sync_write_committed_count", "pending_writes"]:
             if op_type in expected_val \
                     and not DurabilityHelper.__compare(ops_val[op_type],
                                                        expected_val[op_type],

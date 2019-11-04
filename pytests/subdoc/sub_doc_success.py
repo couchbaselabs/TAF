@@ -36,8 +36,6 @@ class BasicOps(DurabilityTestsBase):
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["sync_write_committed_count"] = 0
 
-        one_less_node = self.nodes_init == self.num_replicas
-
         if self.durability_level:
             pass
             # ignore_exceptions.append(
@@ -68,13 +66,13 @@ class BasicOps(DurabilityTestsBase):
 
         # Update verification_dict and validate
         verification_dict["ops_create"] = self.num_items+len(task.fail.keys())
+        verification_dict["ops_update"] = self.num_items
         if self.durability_level:
-            verification_dict["sync_write_committed_count"] = self.num_items
+            verification_dict["sync_write_committed_count"] = self.num_items*2
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict,
-            one_less_node=one_less_node)
+            vbuckets=self.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -110,11 +108,11 @@ class BasicOps(DurabilityTestsBase):
                  + len(task.fail.keys()))
             if self.durability_level:
                 verification_dict["sync_write_committed_count"] += \
-                    (sub_doc_gen.end - sub_doc_gen.start)
+                    num_item_start_for_crud
 
             # Edit doc_gen template to read the mutated value as well
-            sub_doc_gen.template = sub_doc_gen.template \
-                                   .replace(" }}", ", \"mutated\": \"\" }}")
+            sub_doc_gen.template = \
+                sub_doc_gen.template.replace(" }}", ", \"mutated\": \"\" }}")
             # Read all the values to validate update operation
             task = self.task.async_load_gen_sub_docs(
                 self.cluster, def_bucket, sub_doc_gen, "read", 0,
@@ -156,7 +154,7 @@ class BasicOps(DurabilityTestsBase):
                  + len(task.fail.keys()))
             if self.durability_level:
                 verification_dict["sync_write_committed_count"] += \
-                    (sub_doc_gen.end - sub_doc_gen.start)
+                    num_item_start_for_crud
 
             # Edit doc_gen template to read the mutated value as well
             sub_doc_gen.template = sub_doc_gen.template \
@@ -193,13 +191,9 @@ class BasicOps(DurabilityTestsBase):
         self.bucket_util._wait_for_stats_all_buckets()
 
         # Validate verification_dict and validate
-        if self.durability_level:
-            verification_dict["sync_write_committed_count"] += self.num_items
-
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict,
-            one_less_node=one_less_node)
+            vbuckets=self.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -221,7 +215,6 @@ class BasicOps(DurabilityTestsBase):
         doc_ops = self.input.param("op_type", "create")
         tasks = list()
         def_bucket = self.bucket_util.buckets[0]
-        one_less_node = self.nodes_init == self.num_replicas
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -345,8 +338,7 @@ class BasicOps(DurabilityTestsBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict,
-            one_less_node=one_less_node)
+            vbuckets=self.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -374,7 +366,6 @@ class BasicOps(DurabilityTestsBase):
         insert_end_index = self.num_items/3
         upsert_end_index = (self.num_items/3) * 2
         def_bucket = self.bucket_util.buckets[0]
-        one_less_node = self.nodes_init == self.num_replicas
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -481,8 +472,7 @@ class BasicOps(DurabilityTestsBase):
         # Verify vb-details cbstats
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict,
-            one_less_node=one_less_node)
+            vbuckets=self.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
