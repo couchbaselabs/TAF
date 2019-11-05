@@ -258,7 +258,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.swap_orchestrator:
             self.rest = RestConnection(new_swap_servers[0])
-            self.master = new_swap_servers[0]
+            self.cluster.master = self.master = new_swap_servers[0]
 
         self.log.info("SWAP REBALANCE PHASE")
         self.rest.rebalance(otpNodes=[node.id for node in self.rest.node_statuses()],
@@ -326,7 +326,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                             .format(toBeEjectedNodes))
         else:
             self.log.info("rebalance completed successfully")
-        self.cluster.update_master(self.master)
 
         # Wait till load phase is over
         if not self.atomicity:
