@@ -466,7 +466,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.fail_orchestrator:
             self.rest = RestConnection(new_swap_servers[0])
-            self.master = new_swap_servers[0]
+            self.cluster.master = new_swap_servers[0]
 
         self.rest.rebalance(otpNodes=[node.id for node in self.rest.node_statuses()],
                             ejectedNodes=optNodesIds)
