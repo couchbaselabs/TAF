@@ -244,8 +244,7 @@ class BasicOps(DurabilityTestsBase):
         # Update verification_dict and validate
         verification_dict["ops_create"] = self.num_items
         if self.durability_level:
-            verification_dict["sync_write_aborted_count"] = 0
-            verification_dict["sync_write_committed_count"] = self.num_items*2
+            verification_dict["sync_write_committed_count"] = self.num_items
 
         self.log.info("Validating doc_count")
         self.bucket_util._wait_for_stats_all_buckets()
@@ -285,6 +284,11 @@ class BasicOps(DurabilityTestsBase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
+
+            verification_dict["ops_update"] += self.num_items
+            if self.durability_level:
+                verification_dict["sync_write_committed_count"] += \
+                    self.num_items
 
             doc_gen[0] = sub_doc_generator_for_edit(
                 self.key,
@@ -329,22 +333,21 @@ class BasicOps(DurabilityTestsBase):
 
         verification_dict["ops_update"] += self.num_items
         if self.durability_level:
-            verification_dict["sync_write_aborted_count"] += 0
             verification_dict["sync_write_committed_count"] += self.num_items
 
         # Wait for all task to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
+        # Verify doc count and other stats
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
             vbuckets=self.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
-
-        # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def test_non_overlapping_parallel_cruds(self):
         """
@@ -387,6 +390,11 @@ class BasicOps(DurabilityTestsBase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
+        verification_dict["ops_update"] += \
+            (curr_doc_gen.end - curr_doc_gen.start)
+        if self.durability_level:
+            verification_dict["sync_write_committed_count"] += \
+                (curr_doc_gen.end - curr_doc_gen.start)
 
         # Create required doc_generators for CRUD ops
         doc_gen["create"] = doc_generator(self.key,
@@ -439,6 +447,9 @@ class BasicOps(DurabilityTestsBase):
         for index in range(0, 4):
             op_type = doc_ops[index]
             curr_doc_gen = sub_doc_gen[op_type]
+            mutation_count = curr_doc_gen.end - curr_doc_gen.start
+            if op_type != "read":
+                verification_dict["ops_update"] += mutation_count
 
             if index < 2:
                 # Durability doc_loader for first two ops specified in doc_ops
@@ -448,6 +459,9 @@ class BasicOps(DurabilityTestsBase):
                     batch_size=10, process_concurrency=1,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout))
+                if op_type != "read" and self.durability_level:
+                    verification_dict["sync_write_committed_count"] += \
+                        mutation_count
             else:
                 # Non-SyncWrites for last two ops specified in doc_ops
                 tasks.append(self.task.async_load_gen_sub_docs(
@@ -457,17 +471,20 @@ class BasicOps(DurabilityTestsBase):
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     timeout_secs=self.sdk_timeout))
 
-        # Update num_items to sync with new docs created
-        self.num_items *= 2
-        verification_dict["ops_create"] = self.num_items
-        verification_dict["ops_update"] = self.num_items / 2
-        if self.durability_level:
-            verification_dict["sync_write_aborted_count"] = 0
-            verification_dict["sync_write_committed_count"] = self.num_items
-
         # Wait for all task to complete
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+
+        # Update num_items to sync with new docs created
+        self.num_items *= 2
+        verification_dict["ops_create"] = self.num_items
+        if self.durability_level:
+            verification_dict["sync_write_committed_count"] += \
+                self.num_items
+
+        # Verify doc count and other stats
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Verify vb-details cbstats
         failed = self.durability_helper.verify_vbucket_details_stats(
@@ -475,10 +492,6 @@ class BasicOps(DurabilityTestsBase):
             vbuckets=self.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
-
-        # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def test_with_persistence_issues(self):
         """
