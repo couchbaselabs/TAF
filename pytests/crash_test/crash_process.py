@@ -10,6 +10,8 @@ from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
+from sdk_exceptions import ClientException
+
 
 class CrashTest(BaseTestCase):
     def setUp(self):
@@ -234,8 +236,7 @@ class CrashTest(BaseTestCase):
             target_vbuckets = self.getVbucketNumbers(remote, def_bucket.name,
                                                      self.target_node)
             if self.target_node == "active":
-                retry_exceptions = [
-                    "com.couchbase.client.core.error.RequestTimeoutException"]
+                retry_exceptions = [ClientException.RequestTimeoutException]
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
             remote.disconnect()
@@ -312,10 +313,11 @@ class CrashTest(BaseTestCase):
 
         # Validate doc count
         if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+
             stats_failed = self.durability_helper.verify_vbucket_details_stats(
                 def_bucket, self.cluster_util.get_kv_nodes(),
                 vbuckets=self.vbuckets, expected_val=verification_dict)
             if stats_failed:
                 self.fail("Cbstats verification failed")
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
