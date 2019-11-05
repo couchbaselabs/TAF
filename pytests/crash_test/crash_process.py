@@ -316,8 +316,10 @@ class CrashTest(BaseTestCase):
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-            stats_failed = self.durability_helper.verify_vbucket_details_stats(
-                def_bucket, self.cluster_util.get_kv_nodes(),
-                vbuckets=self.vbuckets, expected_val=verification_dict)
-            if stats_failed:
-                self.fail("Cbstats verification failed")
+            if self.process_name != "memcached":
+                stats_failed = \
+                    self.durability_helper.verify_vbucket_details_stats(
+                        def_bucket, self.cluster_util.get_kv_nodes(),
+                        vbuckets=self.vbuckets, expected_val=verification_dict)
+                if stats_failed:
+                    self.fail("Cbstats verification failed")
