@@ -540,7 +540,7 @@ class ExpiryMaxTTL(BaseTestCase):
         self.task.jython_task_manager.get_task_result(doc_op_task)
 
         self.log.info("10. Validating docs exists after creation")
-        if len(doc_op_task.success.keys()) != self.num_items:
+        if len(doc_op_task.fail.keys()) != 0:
             self.fail("Doc recreate failed for keys: %s"
                       % doc_op_task.fail.keys())
 
