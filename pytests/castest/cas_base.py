@@ -32,7 +32,8 @@ class CasBaseTest(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.add_rbac_user()
-        self.bucket_util.create_default_bucket(replica=self.num_replicas,
+        self.bucket_util.create_default_bucket(ram_quota=self.bucket_size,
+                                               replica=self.num_replicas,
                                                lww=self.bucket_lww)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
