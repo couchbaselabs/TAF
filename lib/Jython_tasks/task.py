@@ -164,7 +164,7 @@ class RebalanceTask(Task):
                                     "--- OUT --->"])
             else:
                 self.table.add_row([node_ip,
-                                    stat["services"],
+                                    ", ".join(stat["services"]),
                                     "Cluster node"])
 
     def __str__(self):
