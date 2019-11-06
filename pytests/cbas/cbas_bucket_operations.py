@@ -43,6 +43,9 @@ class CBASBucketOperations(CBASBaseTest):
         if self.bucket_time_sync:
             self.bucket_util._set_time_sync_on_buckets(["default"])
 
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
+
     def tearDown(self):
         self.cleanup_cbas()
         super(CBASBucketOperations, self).tearDown()
@@ -590,6 +593,8 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             replica_index=self.bucket_replica_index,
             eviction_policy=self.bucket_eviction_policy)
 
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
         self.log.info("Fetch RAM document load percentage")
         self.document_ram_percentage = \
             self.input.param("document_ram_percentage", 0.90)
@@ -604,7 +609,8 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             self.perform_doc_ops_in_all_cb_buckets(
                 "create",
                 self.start,
-                self.end)
+                self.end,
+                durability=self.durability_level)
 
             self.log.info("Calculate available free memory")
             bucket_json = bucket_helper.get_bucket_json(self.cb_bucket_name)
@@ -618,6 +624,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
                 self.log.info("Continue loading we have more free memory")
                 self.start = self.end
                 self.end = self.end + self.num_items
+                self.num_items = self.end
             else:
                 break
 
