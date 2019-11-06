@@ -601,7 +601,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
 
     def load_document_until_ram_percentage(self):
         self.start = 0
-        self.num_items = 30000
+        self.num_items = 10000
         self.end = self.num_items
         bucket_helper = BucketHelper(self.cluster.master)
         while True:

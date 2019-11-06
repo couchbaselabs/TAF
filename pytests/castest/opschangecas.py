@@ -70,21 +70,25 @@ class OpsChangeCasTests(CasBaseTest):
                                 durability=self.durability_level,
                                 cas=old_cas)
                         else:
-                            for exp in [0, 60, 0]:
+                            prev_exp = 0
+                            for exp in [0, 60, 0, 0]:
                                 result = client.touch(
                                     key, exp,
                                     durability=self.durability_level,
                                     timeout=self.sdk_timeout)
-                                if exp == 0 and result["cas"] != old_cas:
-                                    self.log_failure("CAS updated for touch "
-                                                     "with exp=0: %s" % result)
+                                if exp == prev_exp:
+                                    if result["cas"] != old_cas:
+                                        self.log_failure(
+                                            "CAS updated for "
+                                            "touch with same exp: %s"
+                                            % result)
                                 else:
                                     if result["cas"] == old_cas:
-                                        self.log_failure("CAS not updated "
-                                                         "%s == %s"
-                                                         % (old_cas,
-                                                            result["cas"]))
+                                        self.log_failure(
+                                            "CAS not updated %s == %s"
+                                            % (old_cas, result["cas"]))
                                     old_cas = result["cas"]
+                                prev_exp = exp
 
                         if result["status"] is False:
                             client.close()
@@ -92,11 +96,11 @@ class OpsChangeCasTests(CasBaseTest):
                             return
 
                         new_cas = result["cas"]
-                        if old_cas == new_cas:
-                            self.log_failure("CAS old (%s) == new (%s)"
-                                             % (old_cas, new_cas))
-
                         if ops == 'update':
+                            if old_cas == new_cas:
+                                self.log_failure("CAS old (%s) == new (%s)"
+                                                 % (old_cas, new_cas))
+
                             if json.loads(str(result["value"])) \
                                     != json.loads(value):
                                 self.log_failure("Value mismatch. "
