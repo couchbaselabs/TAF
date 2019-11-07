@@ -80,6 +80,11 @@ class Task(Callable):
         self.complete_task()
         raise BaseException(self.exception)
 
+    def set_warn(self, exception):
+        self.exception = exception
+        self.complete_task()
+        self.log.warn("Warning : {0}".format(self.thread_name))
+
     def complete_task(self):
         self.completed = True
         self.end_time = time.time()
@@ -3189,7 +3194,7 @@ class AutoFailoverNodesFailureTask(Task):
                         self.current_failure_node.ip, self.timeout, time_taken)
                     self.test_log.error(message)
                     rest.print_UI_logs(10)
-                    self.set_exception(AutoFailoverException(message))
+                    self.set_warn(AutoFailoverException(message))
                     return False
             else:
                 message = "Autofailover of node {0} was not initiated after " \
@@ -3197,7 +3202,7 @@ class AutoFailoverNodesFailureTask(Task):
                     self.current_failure_node.ip, self.timeout)
                 rest.print_UI_logs(10)
                 self.test_log.error(message)
-                self.set_exception(AutoFailoverException(message))
+                self.set_warn(AutoFailoverException(message))
                 return False
         else:
             if autofailover_initiated:

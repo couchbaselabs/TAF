@@ -776,7 +776,7 @@ class FailoverTests(FailoverBaseTest):
                       len(self.buckets) * self.wait_timeout * self.num_items/50000)
 
         for task in tasks:
-            task.result(self.wait_timeout * 20)
+            task.result(timeout=self.wait_timeout * 20)
 
     def query_and_monitor_view_tasks(self, servers):
         """ Monitor Query Tasks for their completion """
