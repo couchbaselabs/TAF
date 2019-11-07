@@ -512,7 +512,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         create_from = items
 
         # Update replica value before performing rebalance in/out
-        if self.replica_to_update and self.active_resident_threshold == 100:
+        if self.replica_to_update:
             bucket_helper = BucketHelper(self.cluster.master)
 
             # Update bucket replica to new value as given in conf file
@@ -556,7 +556,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             self.cluster.servers[:self.nodes_init], servs_in, toBeEjectedNodes)
 
         # CRUDs while rebalance is running in parallel
-        self.gen_update = self.get_doc_generator(create_from,
+        self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + items)
         self.sleep(10, "wait for rebalance to start")
         tasks_info = self.loadgen_docs()
