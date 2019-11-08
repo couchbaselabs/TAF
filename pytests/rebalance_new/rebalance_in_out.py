@@ -624,6 +624,9 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         Note: This is a Negative case. i.e: Durability will be broken
         """
+        if not self.durability_level:
+            self.log.info("The test is not valid for Durability=None")
+            return
         master = self.cluster.master
         creds = self.input.membase_settings
         def_bucket = self.bucket_util.buckets[0]
