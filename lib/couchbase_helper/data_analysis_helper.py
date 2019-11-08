@@ -1,6 +1,7 @@
 import os.path
 import uuid
 
+from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from membase.api.rest_client import RestConnection
@@ -557,16 +558,13 @@ class DataCollector(object):
               if we are not doing per node data collection
               Vbucket Information :: {bucket : [vbucket_seqno {key:value} U vbucket_details {key:value} U vbucket {key:value}]}
         """
-        bucketMap = {}
-        vbucket = []
-        vbucket_seqno = []
-        vbucket_details = []
+        bucketMap = dict()
         for bucket in buckets:
-            bucketMap[bucket.name] = {}
-        for bucket in buckets:
-            dataMap = {}
+            if bucket.bucketType == Bucket.Type.MEMCACHED:
+                continue
+            dataMap = dict()
             for server in servers:
-                map_data = {}
+                map_data = dict()
                 client = MemcachedClientHelper.direct_client(server, bucket)
                 if collect_vbucket:
                     vbucket = client.stats('vbucket')

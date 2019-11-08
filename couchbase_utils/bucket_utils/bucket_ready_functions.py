@@ -562,6 +562,8 @@ class BucketUtils:
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(), self.buckets, skip_consistency=True)
         for bucket in self.buckets:
+            if bucket.bucketType == Bucket.Type.MEMCACHED:
+                continue
             self.verify_stats_for_bucket(bucket, items, timeout=timeout)
             # Validate seq_no snap_start/stop values with initial load
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])

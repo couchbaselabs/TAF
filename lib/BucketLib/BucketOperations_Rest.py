@@ -83,7 +83,10 @@ class BucketHelper(RestConnection):
                     vbucketInfo.id = counter
                     counter += 1
                     bucket.vbuckets.append(vbucketInfo)
-            bucket.vbActiveNumNonResident = parsed["basicStats"]["vbActiveNumNonResident"]
+            bucket.vbActiveNumNonResident = 100
+            if "vbActiveNumNonResident" in parsed["basicStats"]:
+                bucket.vbActiveNumNonResident = \
+                    parsed["basicStats"]["vbActiveNumNonResident"]
             bucket.maxTTL = parsed["maxTTL"]
         return bucket
 
@@ -296,6 +299,10 @@ class BucketHelper(RestConnection):
                        'evictionPolicy': bucket_params.get('evictionPolicy'),
                        'compressionMode': bucket_params.get('compressionMode'),
                        'maxTTL': bucket_params.get('maxTTL')}
+
+        # Remove 'replicaNumber' in case of MEMCACHED bucket
+        if bucket_params.get("bucketType") == Bucket.Type.MEMCACHED:
+            init_params.pop('replicaNumber', None)
 
         # Remove 'replicaIndex' parameter in case of EPHEMERAL bucket
         if bucket_params.get("bucketType") == Bucket.Type.EPHEMERAL:
