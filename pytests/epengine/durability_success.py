@@ -1,3 +1,4 @@
+from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
@@ -313,8 +314,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                                  .format(task.op_type, task.fail))
 
         # Update num_items value accordingly to the CRUD performed
-        self.num_items += (self.num_items+self.crud_batch_size) \
-                          - len(gen_delete.doc_keys)
+        self.num_items += len(gen_create.doc_keys) - len(gen_delete.doc_keys)
 
         if self.simulate_error \
                 not in [DiskError.DISK_FULL, DiskError.DISK_FAILURE]:
@@ -326,6 +326,13 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 # Disconnect the shell connection
                 shell_conn[node.ip].disconnect()
             self.sleep(10, "Wait for node recovery to complete")
+
+            # In case of error with Ephemeral bucket, need to rebalance
+            # to make sure data is redistributed properly
+            if self.bucket_type == Bucket.Type.EPHEMERAL:
+                result = self.task.rebalance(self.servers[0:self.nodes_init],
+                                             [], [])
+                self.assertTrue(result, "Rebalance failed")
 
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
