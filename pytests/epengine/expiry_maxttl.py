@@ -170,50 +170,51 @@ class ExpiryMaxTTL(BaseTestCase):
         7. Run expiry pager after 'doc_new_expiry' seconds and
            get item count, must be 0
         """
-        doc_init_expiry = 100
-        doc_new_expiry = 60
-        for bucket in self.bucket_util.buckets:
-            self._load_json(bucket, self.num_items, exp=doc_init_expiry)
-        self.bucket_util.update_all_bucket_maxTTL(maxttl=doc_new_expiry)
+        doc_ttl = 180
+        bucket_ttl = 60
+        def_bucket = self.bucket_util.buckets[0]
 
-        self.sleep(doc_new_expiry, "waiting before running expiry pager...")
+        self.log.info("Inserting docs with expiry=%s" % doc_ttl)
+        self._load_json(def_bucket, self.num_items, exp=doc_ttl)
+
+        self.log.info("Updating bucket ttl=%s" % bucket_ttl)
+        self.bucket_util.update_all_bucket_maxTTL(maxttl=bucket_ttl)
+
+        self.sleep(bucket_ttl, "Wait for bucket_ttl expiry time")
         self.bucket_util._expiry_pager()
-        self.sleep(20, "waiting for item count to come down...")
+        self.sleep(20, "Waiting for items to get purged")
 
-        for bucket in self.bucket_util.buckets:
-            items = self.bucket_helper_obj.get_active_key_count(bucket.name)
-            self.log.info("Doc expiry set to = 100s, maxTTL = 60s "
-                          "(set after doc creation), after 60s, item count={0}"
-                          .format(items))
-            if items != self.num_items:
-                self.fail("FAIL: Items with larger expiry before "
-                          "maxTTL updation deleted!")
+        items = self.bucket_helper_obj.get_active_key_count(def_bucket.name)
+        self.assertTrue(items == self.num_items,
+                        "After %ss, items expected (%s) != actual (%s). "
+                        "Items with larger doc_ttl expired before "
+                        "maxTTL updation deleted!"
+                        % (bucket_ttl, self.num_items, items))
 
-        self.sleep(40, "Waiting before running expiry pager...")
+        self.sleep(doc_ttl-bucket_ttl, "Wait for doc_ttl-bucket_ttl time")
         self.bucket_util._expiry_pager()
-        self.sleep(20, "Waiting for item count to come down...")
-        for bucket in self.bucket_util.buckets:
-            items = self.bucket_helper_obj.get_active_key_count(bucket.name)
-            self.log.info("Doc expiry set to = 100s, maxTTL = 60s"
-                          "(set after doc creation), after 100s,"
-                          " item count = {0}".format(items))
-            if items != 0:
-                self.fail("FAIL: Items with not greater expiry set before "
-                          "maxTTL updation not deleted after elapsed TTL!")
+        self.sleep(20, "Waiting for items to get purged")
 
-        for bucket in self.bucket_util.buckets:
-            self._load_json(bucket, self.num_items, exp=doc_init_expiry)
+        items = self.bucket_helper_obj.get_active_key_count(def_bucket.name)
+        self.assertTrue(items == 0,
+                        "After %ss, items expected (0) != actual (%s). "
+                        "Items with not greater expiry set before "
+                        "maxTTL updation not deleted after elapsed TTL!"
+                        % (doc_ttl-bucket_ttl, items))
 
-        self.sleep(doc_new_expiry, "waiting before running expiry pager...")
+        self.log.info("Inserting docs with expiry=%s" % doc_ttl)
+        for def_bucket in self.bucket_util.buckets:
+            self._load_json(def_bucket, self.num_items, exp=doc_ttl)
+
+        self.sleep(bucket_ttl, "Wait only till bucket_ttl time")
         self.bucket_util._expiry_pager()
-        self.sleep(20, "waiting for item count to come down...")
-        for bucket in self.bucket_util.buckets:
-            items = self.bucket_helper_obj.get_active_key_count(bucket.name)
-            self.log.info("Doc expiry set to = 100s, maxTTL = 60s, after 100s,"
-                          " item count = {0}".format(items))
-            if items != 0:
-                self.fail("FAIL: Items with not greater expiry not "
-                          "deleted after elapsed maxTTL!")
+        self.sleep(20, "Waiting for items to get purged")
+
+        items = self.bucket_helper_obj.get_active_key_count(def_bucket.name)
+        self.assertTrue(items == 0,
+                        "After %ss, items expected (0) != actual (%s). "
+                        "Items with not greater expiry not "
+                        "deleted after elapsed maxTTL!" % (bucket_ttl, items))
 
     def test_maxttl_possible_values(self):
         """
