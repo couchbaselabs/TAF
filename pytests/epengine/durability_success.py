@@ -330,8 +330,16 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             # In case of error with Ephemeral bucket, need to rebalance
             # to make sure data is redistributed properly
             if self.bucket_type == Bucket.Type.EPHEMERAL:
-                result = self.task.rebalance(self.servers[0:self.nodes_init],
-                                             [], [])
+                retry_num = 0
+                while retry_num != 2:
+                    result = self.task.rebalance(
+                        self.servers[0:self.nodes_init],
+                        [], [])
+                    if result:
+                        break
+                    retry_num += 1
+                    self.sleep(10, "Wait before retrying rebalance")
+
                 self.assertTrue(result, "Rebalance failed")
 
         self.bucket_util._wait_for_stats_all_buckets()
@@ -357,7 +365,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             if op_failed:
                 self.log_failure(
                     "CRUD '{0}' failed on retry with no error condition"
-                        .format(op_type))
+                    .format(op_type))
 
         # Close the SDK connection
         client.close()
@@ -371,16 +379,21 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 cbstat_obj[node.ip].failover_stats(self.bucket.name)
 
             # Failover stat validation
-            if self.simulate_error == "kill_memcached":
+            if self.simulate_error == CouchbaseError.KILL_MEMCACHED:
                 val = failover_info["init"][node.ip] \
                       != failover_info["afterCrud"][node.ip]
             else:
-                val = failover_info["init"][node.ip] \
-                      == failover_info["afterCrud"][node.ip]
+                if self.simulate_error != CouchbaseError.STOP_MEMCACHED \
+                        and self.bucket_type == Bucket.Type.EPHEMERAL:
+                    val = failover_info["init"][node.ip] \
+                          != failover_info["afterCrud"][node.ip]
+                else:
+                    val = failover_info["init"][node.ip] \
+                          == failover_info["afterCrud"][node.ip]
             error_msg = "Failover stats mismatch after error condition:" \
                         " %s != %s" \
-                        .format(failover_info["init"][node.ip],
-                                failover_info["afterCrud"][node.ip])
+                        % (failover_info["init"][node.ip],
+                           failover_info["afterCrud"][node.ip])
             self.assertTrue(val, msg=error_msg)
 
             # Seq_no validation (High level)
