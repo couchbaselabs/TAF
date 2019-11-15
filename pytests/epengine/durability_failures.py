@@ -176,7 +176,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         gen_loader_2 = None
 
         # Override the crud_batch_size
-        self.crud_batch_size = 5
+        self.crud_batch_size = 4
 
         # Select nodes to affect and open required shell_connections
         target_nodes = self.getTargetNodes()
@@ -625,7 +625,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         gen_loader = list()
 
         # Override crud_batch_size to minimum value for testing
-        self.crud_batch_size = 5
+        self.crud_batch_size = 4
 
         # Select nodes to affect and open required shell_connections
         target_nodes = self.getTargetNodes()
