@@ -1,5 +1,6 @@
 from random import randint
 
+from BucketLib.bucket import Bucket
 from Rest_Connection import RestConnection
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
@@ -310,6 +311,12 @@ class CrashTest(BaseTestCase):
         verification_dict["pending_writes"] = 0
         if self.durability_level:
             verification_dict["sync_write_committed_count"] = self.num_items
+
+        if self.bucket_type == Bucket.Type.EPHEMERAL \
+                and self.process_name == "memcached":
+            result = self.task.rebalance(self.servers[:self.nodes_init],
+                                         [], [])
+            self.assertTrue(result, "Rebalance failed")
 
         # Validate doc count
         if not self.atomicity:
