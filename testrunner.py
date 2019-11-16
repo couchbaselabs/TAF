@@ -406,6 +406,9 @@ def main():
             result.errors = [(name, e.message)]
         else:
             result = unittest.TextTestRunner(verbosity=2).run(suite)
+            if result.failures or result.errors:
+                print "#"*60, "\n", "## \tTest Failed: Rerunning it one more time", "\n", "#"*60
+                result = unittest.TextTestRunner(verbosity=2).run(suite)
 #             test_timeout = TestInputSingleton.input.param("test_timeout", None)
 #             t = StoppableThreadWithResult(target=unittest.TextTestRunner(verbosity=2).run,
 #                name="test_thread",
