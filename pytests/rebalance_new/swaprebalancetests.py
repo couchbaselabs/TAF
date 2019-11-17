@@ -455,6 +455,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.log.info("failover node {0} and rebalance afterwards"
                           .format(node))
             self.rest.fail_over(node)
+            self.rest.monitorRebalance()
 
         new_swap_servers = self.servers[self.nodes_init:self.nodes_init+self.failover_factor]
         for server in new_swap_servers:
