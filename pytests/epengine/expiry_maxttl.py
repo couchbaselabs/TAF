@@ -536,6 +536,7 @@ class ExpiryMaxTTL(BaseTestCase):
         doc_op_task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=8,
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             compression=self.sdk_compression)
         self.task.jython_task_manager.get_task_result(doc_op_task)
