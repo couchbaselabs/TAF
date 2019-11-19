@@ -410,6 +410,9 @@ def main():
             result = unittest.TextTestRunner(verbosity=2).run(suite)
             if TestInputSingleton.input.param("rerun") and (result.failures or result.errors):
                 print "#"*60, "\n", "## \tTest Failed: Rerunning it one more time", "\n", "#"*60
+                print("####### Running test with trace logs enabled #######")
+                TestInputSingleton.input.test_params["log_level"] = "debug"
+                TestInputSingleton.input.test_params["infra_log_level"] = "debug"
                 result = unittest.TextTestRunner(verbosity=2).run(suite)
 #             test_timeout = TestInputSingleton.input.param("test_timeout", None)
 #             t = StoppableThreadWithResult(target=unittest.TextTestRunner(verbosity=2).run,

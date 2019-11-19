@@ -22,7 +22,7 @@ class BaseTestCase(unittest.TestCase):
 
         # Framework specific parameters
         self.log_level = self.input.param("log_level", "info").upper()
-        self.infra_log_level = self.input.param("infra_log_level", "info").upper()
+        self.infra_log_level = self.input.param("infra_log_level", "error").upper()
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
         self.tear_down_while_setup = self.input.param("tear_down_while_setup", True)
         self.test_timeout = self.input.param("test_timeout", 3600)
@@ -402,7 +402,7 @@ class BaseTestCase(unittest.TestCase):
             for server in cluster.servers:
                 remote_client = RemoteMachineShellConnection(server)
                 ram = remote_client.extract_remote_info().ram
-                self.log.info("{0}: {1} MB".format(server.ip, ram))
+                self.log.debug("{0}: {1}".format(server.ip, ram))
                 remote_client.disconnect()
 
         if self.jre_path:
