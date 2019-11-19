@@ -4,6 +4,7 @@ import os
 import time
 import traceback
 import unittest
+import inspect
 
 from BucketLib.bucket import Bucket
 from couchbase_helper.cluster import ServerTasks
@@ -463,7 +464,12 @@ class BaseTestCase(unittest.TestCase):
                 self.log.error("API perform_cb_collect returned False")
 
     def sleep(self, timeout=15, message=""):
-        self.log.info("{0}. Sleep for {1} secs ...".format(message, timeout))
+        self.log.info("Sleep is called from %s -> %s():L%s" % (
+            inspect.stack()[1][1],
+            inspect.stack()[1][3],
+            inspect.stack()[1][2]))
+        self.log.info("Reason:{0} Sleep for {1} secs ...".format(message,
+                                                                 timeout))
         time.sleep(timeout)
 
     def log_failure(self, message):
