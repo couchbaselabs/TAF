@@ -1,26 +1,30 @@
 import logging
 import threading
+import time
 
 from java.util.concurrent import Executors, TimeUnit
 from threading import InterruptedException
-from time import sleep
 
 
 class TaskManager:
     def __init__(self, number_of_threads=10):
         self.log = logging.getLogger("infra")
-        self.log.debug("Initiating TaskManager with {0} threads"
-                       .format(number_of_threads))
+        self.log.info("Initiating TaskManager with {0} threads"
+                      .format(number_of_threads))
         self.number_of_threads = number_of_threads
         self.pool = Executors.newFixedThreadPool(self.number_of_threads)
         self.futures = {}
         self.tasks = []
 
+    def sleep(self, time_in_sec, message):
+        self.log.info("%s. Sleep for %s seconds.." % (message, time_in_sec))
+        time.sleep(time_in_sec)
+
     def add_new_task(self, task):
         future = self.pool.submit(task)
         self.futures[task.thread_name] = future
         self.tasks.append(task)
-        self.log.debug("Added new task: {0}".format(task.thread_name))
+        self.log.info("Added new task: {0}".format(task.thread_name))
 
     def get_all_result(self):
         return self.pool.invokeAll(self.tasks)
@@ -37,11 +41,12 @@ class TaskManager:
         future = self.futures[task.thread_name]
         i = 0
         while not future.isDone() and i < 30:
-            self.log.debug("task {0}{1}".format(task.thread_name, future.isDone()))
-            sleep(1)
+            self.sleep(1, "Wait for %s to complete. Current status: %s"
+                          % (task.thread_name, future.isDone()))
             i += 1
         else:
-            self.log.debug("Task {0} in already finished. No need to stop task".format(task.thread_name))
+            self.log.debug("Task {0} in already finished. No need to stop task"
+                           .format(task.thread_name))
         if not future.isDone():
             self.log.debug("Stopping task {0}".format(task.thread_name))
             future.cancel(True)
@@ -50,7 +55,7 @@ class TaskManager:
         self.shutdown(timeout)
 
     def shutdown(self, timeout):
-        self.log.debug("Running TaskManager shutdown")
+        self.log.info("Running TaskManager shutdown")
         self.pool.shutdown()
         try:
             if not self.pool.awaitTermination(timeout, TimeUnit.SECONDS):
@@ -73,9 +78,10 @@ class TaskManager:
     def abort_all_tasks(self):
         for task_name, future in self.futures.items():
             if not future.isDone():
-                self.log.debug("Stopping task {0}".format(task_name))
+                self.log.info("Stopping task {0}".format(task_name))
                 result = future.cancel(True)
                 if result:
                     self.log.debug("Stopped task {0}".format(task_name))
                 else:
-                    self.log.debug("Task {0} could not be cancelled.".format(task_name))
+                    self.log.debug("Task {0} could not be cancelled."
+                                   .format(task_name))

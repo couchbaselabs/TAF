@@ -1,8 +1,8 @@
-'''
+"""
 Created on Oct 24, 2017
 
 @author: riteshagarwal
-'''
+"""
 import mode
 
 if mode.java:

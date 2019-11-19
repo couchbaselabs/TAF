@@ -1,9 +1,8 @@
-'''
+"""
 Created on Sep 25, 2017
 
 @author: riteshagarwal
-'''
-from membase.api import httplib2
+"""
 import base64
 import json
 import logging
@@ -11,6 +10,8 @@ import traceback
 import socket
 import time
 from TestInput import TestInputSingleton
+
+from membase.api import httplib2
 from membase.api.exception import ServerUnavailableException
 
 
@@ -48,7 +49,7 @@ class RestConnection(object):
             self.port = serverInfo["port"]
             self.index_port = 9102
             self.fts_port = 8094
-            self.query_port=8093
+            self.query_port = 8093
             if "index_port" in serverInfo.keys():
                 self.index_port = serverInfo["index_port"]
             if "fts_port" in serverInfo.keys():
@@ -79,8 +80,8 @@ class RestConnection(object):
             if hasattr(serverInfo, 'fts_port'):
                 if serverInfo.fts_port:
                     self.fts_port = serverInfo.fts_port
-            if hasattr(serverInfo, 'hostname') and serverInfo.hostname and\
-               serverInfo.hostname.find(self.ip) == -1:
+            if hasattr(serverInfo, 'hostname') and serverInfo.hostname \
+               and serverInfo.hostname.find(self.ip) == -1:
                 self.hostname = serverInfo.hostname
             if hasattr(serverInfo, 'services'):
                 self.services = serverInfo.services
@@ -100,15 +101,19 @@ class RestConnection(object):
                (http_res.find('Node is unknown to this cluster') > -1 or
                     http_res.find('Unexpected server error, request logged') > -1):
                 self.log.error("Error {0}, 5 seconds sleep before retry"
-                          .format(http_res))
+                               .format(http_res))
                 time.sleep(5)
                 if iteration == 2:
                     self.log.error("Node {0}:{1} is in a broken state!"
-                              .format(self.ip, self.port))
+                                   .format(self.ip, self.port))
                     raise ServerUnavailableException(self.ip)
                 continue
             else:
                 break
+
+    def sleep(self, time_in_sec, message=""):
+        self.log.debug("%s. Sleep for %s seconds" % (message, time_in_sec))
+        time.sleep(time_in_sec)
 
     def init_http_request(self, api):
         content = None
@@ -130,9 +135,9 @@ class RestConnection(object):
             return content, False
 
     def _create_capi_headers(self, username=None, password=None):
-        if username==None:
+        if username is None:
             username = self.username
-        if password==None:
+        if password is None:
             password = self.password
         authorization = base64.encodestring('%s:%s' % (username, password))
         return {'Content-Type': 'application/json',
@@ -148,45 +153,51 @@ class RestConnection(object):
                 return "auth: " + base64.decodestring(val[6:])
         return ""
 
-    def _http_request(self, api, method='GET', params='', headers=None, timeout=120):
+    def _http_request(self, api, method='GET', params='', headers=None,
+                      timeout=120):
         if not headers:
             headers = self._create_headers()
         end_time = time.time() + timeout
         while True:
             try:
-                response, content = httplib2.Http(timeout=timeout).request(api, method, params, headers)
+                response, content = httplib2.Http(timeout=timeout).request(
+                    api, method, params, headers)
                 if response['status'] in ['200', '201', '202']:
                     return True, content, response
                 else:
                     try:
                         json_parsed = json.loads(content)
-                    except ValueError as e:
-                        json_parsed = {}
-                        json_parsed["error"] = "status: {0}, content: {1}".format(response['status'], content)
+                    except ValueError:
+                        json_parsed = dict()
+                        json_parsed["error"] = "status: {0}, content: {1}" \
+                            .format(response['status'], content)
                     reason = "unknown"
                     if "error" in json_parsed:
                         reason = json_parsed["error"]
-                    message = '{0} {1} body: {2} headers: {3} error: {4} reason: {5} {6} {7}'.\
-                              format(method, api, params, headers, response['status'], reason,
-                                     content.rstrip('\n'), self._get_auth(headers))
+                    message = '{0} {1} body: {2} headers: {3} ' \
+                              'error: {4} reason: {5} {6} {7}'.\
+                              format(method, api, params, headers,
+                                     response['status'], reason,
+                                     content.rstrip('\n'),
+                                     self._get_auth(headers))
                     self.log.error(message)
                     self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response
             except socket.error as e:
                 self.log.error("Socket error while connecting to {0}. "
-                          "Error {1}".format(api, e))
+                               "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
             except httplib2.ServerNotFoundError as e:
                 self.log.error("ServerNotFoundError while connecting to {0}. "
-                          "Error {1}".format(api, e))
+                               "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
             time.sleep(3)
 
     def _create_headers(self):
         authorization = base64.encodestring('%s:%s'
-                                            % (self.username,self.password))
+                                            % (self.username, self.password))
         return {'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',

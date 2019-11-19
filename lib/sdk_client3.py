@@ -57,7 +57,7 @@ class SDKClient(object):
     def __init__(self, rest, bucket, info=None,  username="Administrator",
                  password="password",
                  quiet=True, certpath=None, transcoder=None, compression=True):
-        self.log = logging.getLogger("infra")
+        self.log = logging.getLogger("test")
         self.rest = rest
         self.hosts = []
         if rest.ip == "127.0.0.1":
@@ -103,7 +103,8 @@ class SDKClient(object):
                         clusterOptions)
                     break
                 except ConfigException as e:
-                    self.log.error("%s: Exception occurred while creating cluster connection: %s" % (i, str(e)))
+                    self.log.error("%s: Exception occurred while creating cluster connection: %s"
+                                   % (i, str(e)))
                     i += 1
 
             self.bucketObj = self.cluster.bucket(self.bucket)
@@ -116,12 +117,11 @@ class SDKClient(object):
         if self.cluster:
             self.cluster.disconnect()
             self.cluster.environment().shutdown()
-            self.log.debug("Closed down Cluster Connection")
+            self.log.debug("Cluster disconnected and env shutdown")
             SDKClient.sdk_disconnections += 1
 
     # Translate APIs for document operations
     def translate_to_json_object(self, value, doc_type="json"):
-
         if type(value) == JsonObject:
             return value
 
@@ -393,13 +393,13 @@ class SDKClient(object):
                            "error": None, "status": True,
                            "cas": deleteResult.cas()})
         except KeyNotFoundException as e:
-            self.log.error("Exception: Document id {0} not found - {1}"
-                           .format(key, e))
+            self.log.warning("Exception: Document id {0} not found - {1}"
+                             .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except CASMismatchException as e:
-            self.log.error("Exception: Cas mismatch for doc {0} - {1}"
-                           .format(key, e))
+            self.log.warning("Exception: Cas mismatch for doc {0} - {1}"
+                             .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except TemporaryFailureException as e:
@@ -408,12 +408,12 @@ class SDKClient(object):
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except CouchbaseException as e:
-            self.log.error("Generic exception for doc {0} - {1}"
-                           .format(key, e))
+            self.log.warning("Generic exception for doc {0} - {1}"
+                            .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except (RequestCanceledException, RequestTimeoutException) as ex:
-            self.log.error("Request cancelled/timed-out: " + str(ex))
+            self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except Exception as e:
@@ -446,11 +446,11 @@ class SDKClient(object):
                            "error": None, "status": True,
                            "cas": insert_result.cas()})
         except KeyExistsException as ex:
-            self.log.error("The document already exists! => " + str(ex))
+            self.log.warning("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except (RequestCanceledException, RequestTimeoutException) as ex:
-            self.log.error("Request cancelled/timed-out: " + str(ex))
+            self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except CouchbaseOutOfMemoryException as ex:
@@ -486,20 +486,20 @@ class SDKClient(object):
                            "error": None, "status": True,
                            "cas": replace_result.cas()})
         except KeyExistsException as ex:
-            self.log.error("The document already exists! => " + str(ex))
+            self.log.warning("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except CASMismatchException as e:
-            self.log.error("Exception: Cas mismatch for doc {0} - {1}"
-                           .format(key, e))
+            self.log.warning("Exception: Cas mismatch for doc {0} - {1}"
+                             .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except KeyNotFoundException as e:
-            self.log.error("Key '%s' not found!" % key)
+            self.log.warning("Key '%s' not found!" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except (RequestCanceledException, RequestTimeoutException) as ex:
-            self.log.error("Request cancelled/timed-out: " + str(ex))
+            self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except Exception as ex:
@@ -530,10 +530,10 @@ class SDKClient(object):
                 touch_options)
             result.update({"status": True, "cas": touch_result.cas()})
         except KeyNotFoundException as e:
-            self.log.error("Document key '%s' not found!" % key)
+            self.log.warning("Document key '%s' not found!" % key)
             result["error"] = str(e)
         except (RequestCanceledException, RequestTimeoutException) as ex:
-            self.log.error("Request cancelled/timed-out: " + str(ex))
+            self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except Exception as ex:
@@ -563,11 +563,11 @@ class SDKClient(object):
             result["value"] = str(get_result.contentAsObject())
             result["cas"] = get_result.cas()
         except KeyNotFoundException as e:
-            self.log.error("Document key '%s' not found!" % key)
+            self.log.warning("Document key '%s' not found!" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except (RequestCanceledException, RequestTimeoutException) as ex:
-            self.log.error("Request cancelled/timed-out: " + str(ex))
+            self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except Exception as ex:
@@ -582,11 +582,6 @@ class SDKClient(object):
             key,
             GetAllReplicasOptions.getAllReplicasOptions())
         for item in get_result.toArray():
-            """
-            self.log.info("Found document: key=%s, cas=%s, content=%s"
-                     % (key, str(item.cas()),
-                        item.contentAsObject()))
-            """
             result.append({"key": key,
                            "value": item.contentAsObject(),
                            "cas": item.cas(), "status": True})
@@ -614,11 +609,11 @@ class SDKClient(object):
                            "error": None, "status": True,
                            "cas": upsertResult.cas()})
         except KeyExistsException as ex:
-            self.log.error("Upsert: Document already exists! => " + str(ex))
+            self.log.warning("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except (RequestCanceledException, RequestTimeoutException) as ex:
-            self.log.error("Request cancelled/timed-out: " + str(ex))
+            self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except Exception as ex:
@@ -742,19 +737,19 @@ class SDKClient(object):
     def delete_multi(self, keys, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
                      durability=""):
-        result = SDKClient.doc_op.bulkDelete(self.collection, keys,
-                                     persist_to, replicate_to,
-                                     durability, timeout,
-                                     time_unit)
+        result = SDKClient.doc_op.bulkDelete(
+            self.collection, keys,
+            persist_to, replicate_to, durability,
+            timeout, time_unit)
         return self.__tranlate_delete_multi_results(result)
 
     def touch_multi(self, keys, exp=0,
                     persist_to=0, replicate_to=0, durability="",
                     timeout=5, time_unit="seconds"):
-        result = SDKClient.doc_op.bulkTouch(self.collection, keys, exp,
-                                    persist_to, replicate_to,
-                                    durability, timeout,
-                                    time_unit)
+        result = SDKClient.doc_op.bulkTouch(
+            self.collection, keys, exp,
+            persist_to, replicate_to,
+            durability, timeout, time_unit)
         return self.__tranlate_delete_multi_results(result)
 
     def setMulti(self, keys, exp=0, exp_unit="seconds",
@@ -769,9 +764,10 @@ class SDKClient(object):
                 content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = SDKClient.doc_op.bulkInsert(self.collection, docs, exp, exp_unit,
-                                     persist_to, replicate_to, durability,
-                                     timeout, time_unit)
+        result = SDKClient.doc_op.bulkInsert(
+            self.collection, docs, exp, exp_unit,
+            persist_to, replicate_to, durability,
+            timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
 
     def upsertMulti(self, keys, exp=0, exp_unit="seconds",
@@ -783,9 +779,10 @@ class SDKClient(object):
             content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = SDKClient.doc_op.bulkUpsert(self.collection, docs, exp, exp_unit,
-                                     persist_to, replicate_to, durability,
-                                     timeout, time_unit)
+        result = SDKClient.doc_op.bulkUpsert(
+            self.collection, docs, exp, exp_unit,
+            persist_to, replicate_to, durability,
+            timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
 
     def replaceMulti(self, keys, exp=0, exp_unit="seconds",
@@ -797,13 +794,15 @@ class SDKClient(object):
             content = self.translate_to_json_object(value, doc_type)
             tuple = Tuples.of(key, content)
             docs.append(tuple)
-        result = SDKClient.doc_op.bulkReplace(self.collection, docs, exp, exp_unit,
-                                      persist_to, replicate_to, durability,
-                                      timeout, time_unit)
+        result = SDKClient.doc_op.bulkReplace(
+            self.collection, docs, exp, exp_unit,
+            persist_to, replicate_to, durability,
+            timeout, time_unit)
         return self.__translate_upsert_multi_results(result)
 
     def getMulti(self, keys, timeout=5, time_unit="seconds"):
-        result = SDKClient.doc_op.bulkGet(self.collection, keys, timeout, time_unit)
+        result = SDKClient.doc_op.bulkGet(self.collection, keys, timeout,
+                                          time_unit)
         return self.__translate_get_multi_results(result)
 
     # Bulk CRUDs for sub-doc APIs
@@ -828,6 +827,7 @@ class SDKClient(object):
         :param durability: Durability level parameter
         :param create_path: Boolean used to create sub_doc path if not exists
         :param xattr: Boolean. If 'True', perform xattr operation
+        :param cas: CAS for the document to use
         :return:
         """
         mutate_in_specs = []
@@ -869,7 +869,9 @@ class SDKClient(object):
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
         :param durability: Durability level parameter
+        :param create_path: Boolean used to create sub_doc path if not exists
         :param xattr: Boolean. If 'True', perform xattr operation
+        :param cas: CAS for the document to use
         :return:
         """
         mutate_in_specs = []
@@ -901,6 +903,8 @@ class SDKClient(object):
                      path.
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
+        :param xattr: Boolean. If 'True', perform xattr operation
+        :param cas: CAS for the document to use
         :return:
         """
         mutate_in_specs = []
@@ -911,8 +915,9 @@ class SDKClient(object):
             mutate_in_spec = []
             for _tuple in value:
                 _path = _tuple[0]
-                _mutate_in_spec = SDKClient.sub_doc_op.getLookUpInSpec(_path,
-                                                                  xattr)
+                _mutate_in_spec = SDKClient.sub_doc_op.getLookUpInSpec(
+                    _path,
+                    xattr)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
@@ -939,6 +944,7 @@ class SDKClient(object):
         :param time_unit: timeout time unit
         :param durability: Durability level parameter
         :param xattr: Boolean. If 'True', perform xattr operation
+        :param cas: CAS for the document to use
         :return:
         """
         mutate_in_specs = []
@@ -980,6 +986,8 @@ class SDKClient(object):
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
         :param durability: Durability level parameter
+        :param xattr: Boolean. If 'True', perform xattr operation
+        :param cas: CAS for the document to use
         :return:
         """
         mutate_in_specs = []

@@ -20,20 +20,32 @@ class Bucket(object):
         MEMBASE = "membase"
         MEMCACHED = "memcached"
 
+        def __init__(self):
+            pass
+
     class EvictionPolicy:
         FULL_EVICTION = "fullEviction"
         NO_EVICTION = "noEviction"
         NRU_EVICTION = "nruEviction"
         VALUE_ONLY = "valueOnly"
 
+        def __init__(self):
+            pass
+
     class CompressionMode:
         ACTIVE = "active"
         PASSIVE = "passive"
         OFF = "off"
 
+        def __init__(self):
+            pass
+
     class Priority:
         LOW = 3
         HIGH = 8
+
+        def __init__(self):
+            pass
 
     class vBucket:
         def __init__(self):

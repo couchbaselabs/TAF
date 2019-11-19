@@ -23,11 +23,11 @@ class BucketHelper(RestConnection):
         try:
             buckets = self.get_buckets_json()
             names = [item.name for item in buckets]
-            self.log.info("Node %s existing buckets: %s" % (self.ip, names))
+            self.log.debug("Node %s existing buckets: %s" % (self.ip, names))
             for item in buckets:
                 if item.name == bucket:
-                    self.log.info("Node %s found bucket %s"
-                                  % (bucket, self.ip))
+                    self.log.debug("Node %s found bucket %s"
+                                   % (bucket, self.ip))
                     return True
             return False
         except Exception:
@@ -39,8 +39,8 @@ class BucketHelper(RestConnection):
         status, content, _ = self._http_request(api)
         num = 1
         while not status and num_attempt > num:
-            self.log.error("Try to get {0} again after {1} sec"
-                      .format(api, timeout))
+            self.sleep("Try to get {0} again after {1} sec"
+                       .format(api, timeout))
             time.sleep(timeout)
             status, content, _ = self._http_request(api)
             num += 1
@@ -174,7 +174,7 @@ class BucketHelper(RestConnection):
 
     def get_bucket_stats_for_node(self, bucket='default', node=None):
         if not node:
-            self.log.error('node_ip not specified')
+            self.log.critical('node_ip not specified')
             return None
         stats = {}
         api = "{0}{1}{2}{3}{4}:{5}{6}" \
@@ -198,7 +198,7 @@ class BucketHelper(RestConnection):
 
     def get_bucket_status(self, bucket):
         if not bucket:
-            self.log.error("Bucket Name not Specified")
+            self.log.critical("Bucket Name not Specified")
             return None
         api = self.baseUrl + 'pools/default/buckets'
         status, content, _ = self._http_request(api)
@@ -207,7 +207,7 @@ class BucketHelper(RestConnection):
             for item in json_parsed:
                 if item["name"] == bucket:
                     return item["nodes"][0]["status"]
-            self.log.error("Bucket {} doesn't exist".format(bucket))
+            self.log.warning("Bucket {} doesn't exist".format(bucket))
             return None
 
     def fetch_bucket_stats(self, bucket='default', zoom='minute'):
@@ -260,7 +260,7 @@ class BucketHelper(RestConnection):
                                  bucket_name)
         status, content, _ = self._http_request(api)
         if not status:
-            self.log.error("error while getting {0}. Please retry".format(api))
+            self.log.error("Error while getting {0}. Please retry".format(api))
             raise GetBucketInfoFailed(bucket_name, content)
         return json.loads(content)
 
@@ -287,7 +287,6 @@ class BucketHelper(RestConnection):
 
     # figure out the proxy port
     def create_bucket(self, bucket_params={}):
-
         api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets')
         init_params = {'name': bucket_params.get('name'),
                        'ramQuotaMB': bucket_params.get('ramQuotaMB'),
@@ -313,7 +312,9 @@ class BucketHelper(RestConnection):
 
         params = urllib.urlencode(init_params)
 
-        self.log.info("{0} with param: {1}".format(api, params))
+        self.log.info("Creating '%s' bucket %s"
+                      % (init_params['bucketType'], init_params['name']))
+        self.log.debug("{0} with param: {1}".format(api, params))
         create_start_time = time.time()
 
         maxwait = 60
@@ -323,21 +324,21 @@ class BucketHelper(RestConnection):
                 break
             elif (int(header['status']) == 503 and
                     '{"_":"Bucket with given name still exists"}' in content):
-                self.log.info("The bucket still exists, sleep 1 sec and retry")
-                time.sleep(1)
+                self.sleep(1, "The bucket still exists, sleep 1 sec and retry")
             else:
                 raise BucketCreationException(
                     ip=self.ip, bucket_name=bucket_params.get('name'))
 
         if (numsleep + 1) == maxwait:
-            self.log.error("Tried to create the bucket for {0} secs. giving up"
-                      .format(maxwait))
+            self.log.warning("Failed creating the bucket after {0} secs"
+                             .format(maxwait))
             raise BucketCreationException(
                 ip=self.ip, bucket_name=bucket_params.get('name'))
 
         create_time = time.time() - create_start_time
-        self.log.info("{0:.02f} seconds to create bucket {1}"
-                 .format(round(create_time, 2), bucket_params.get('name')))
+        self.log.debug("{0:.02f} seconds to create bucket {1}"
+                       .format(round(create_time, 2),
+                               bucket_params.get('name')))
         return status
 
     def change_bucket_props(self, bucket, ramQuotaMB=None, authType=None,
@@ -372,7 +373,8 @@ class BucketHelper(RestConnection):
             params_dict["compressionMode"] = compressionMode
         params = urllib.urlencode(params_dict)
 
-        self.log.info("%s with param: %s" % (api, params))
+        self.log.info("Updating bucket properties for %s" % bucket)
+        self.log.debug("%s with param: %s" % (api, params))
         status, content, _ = self._http_request(api, 'POST', params)
         if timeSynchronization:
             if status:
@@ -381,7 +383,7 @@ class BucketHelper(RestConnection):
         if not status:
             raise Exception("Unable to set bucket settings %s for bucket"
                             % (params, bucket))
-        self.log.info("bucket %s updated" % bucket)
+        self.log.debug("Bucket %s updated" % bucket)
         bucket.__dict__.update(params_dict)
         return status
 
@@ -444,8 +446,8 @@ class BucketHelper(RestConnection):
             params["allowedTimePeriod[abortOutside]"] = allowedTimePeriodAbort
 
         params = urllib.urlencode(params)
-        self.log.info("'%s' bucket's settings will be changed with params: %s"
-                 % (bucket, params))
+        self.log.debug("Bucket '%s' settings will be changed with params: %s"
+                       % (bucket, params))
         return self._http_request(api, "POST", params)
 
     def disable_auto_compaction(self):
@@ -461,14 +463,15 @@ class BucketHelper(RestConnection):
 
     def flush_bucket(self, bucket="default"):
         bucket_name = bucket
+        self.log.info("Triggering bucket flush for '%s'" % bucket_name)
         api = self.baseUrl + "pools/default/buckets/{0}/controller/doFlush" \
             .format(bucket_name)
         status, _, _ = self._http_request(api, 'POST')
-        self.log.info("Flush for bucket '%s' was triggered" % bucket_name)
+        self.log.debug("Bucket flush '%s' triggered" % bucket_name)
         return status
 
     def get_bucket_CCCP(self, bucket):
-        self.log.info("Getting CCCP config")
+        self.log.debug("Getting CCCP config")
         api = '%spools/default/b/%s' % (self.baseUrl, bucket)
         status, content, _ = self._http_request(api)
         if status:
@@ -476,25 +479,26 @@ class BucketHelper(RestConnection):
         return None
 
     def compact_bucket(self, bucket="default"):
+        self.log.debug("Triggering bucket compaction for '%s'" % bucket)
         api = self.baseUrl \
               + 'pools/default/buckets/{0}/controller/compactBucket' \
                 .format(bucket)
         status, _, _ = self._http_request(api, 'POST')
         if status:
-            self.log.info('Bucket compaction successful')
+            self.log.debug('Bucket compaction successful')
         else:
             raise BucketCompactionException(bucket)
 
         return True
 
     def cancel_bucket_compaction(self, bucket="default"):
+        self.log.debug("Stopping bucket compaction for '%s'" % bucket)
         api = self.baseUrl \
               + 'pools/default/buckets/{0}/controller/cancelBucketCompaction' \
                 .format(bucket)
         status, _, _ = self._http_request(api, 'POST')
-        self.log.info("Status is {0}".format(status))
         if status:
-            self.log.info('Cancel bucket compaction successful')
+            self.log.debug('Cancel bucket compaction successful')
         else:
             raise BucketCompactionException(bucket)
         return True
@@ -530,7 +534,7 @@ class BucketHelper(RestConnection):
         json_parsed = json.loads(content)
         if not status:
             raise Exception("unable to get random document/key for bucket %s"
-                            % (bucket))
+                            % bucket)
         return json_parsed
 
     '''

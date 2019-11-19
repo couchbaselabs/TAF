@@ -36,7 +36,7 @@ import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from Jython_tasks.task_manager import TaskManager
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
-from time import sleep
+from couchbase_helper.durability_helper import DurableExceptions
 
 
 class Task(Callable):
@@ -55,9 +55,9 @@ class Task(Callable):
         if self.exception:
             raise self.exception
         elif self.completed:
-            self.log.debug("Task %s completed on: %s"
-                           % (self.thread_name,
-                              str(time.strftime("%H:%M:%S",
+            self.log.info("Task %s completed on: %s"
+                          % (self.thread_name,
+                             str(time.strftime("%H:%M:%S",
                                                 time.gmtime(self.end_time)))))
             return "%s task completed in %.2fs" % \
                    (self.thread_name, self.completed - self.started,)
@@ -69,10 +69,14 @@ class Task(Callable):
         else:
             return "[%s] not yet scheduled" % self.thread_name
 
+    def sleep(self, time_in_sec, message):
+        self.log.info("%s. Sleep for %s seconds.." % (message, time_in_sec))
+        time.sleep(time_in_sec)
+
     def start_task(self):
         self.started = True
         self.start_time = time.time()
-        self.log.debug("Thread %s is started:" % self.thread_name)
+        self.log.info("Thread '%s' started" % self.thread_name)
 
     def set_exception(self, exception):
         self.exception = exception
@@ -82,12 +86,12 @@ class Task(Callable):
     def set_warn(self, exception):
         self.exception = exception
         self.complete_task()
-        self.log.warn("Warning : {0}".format(self.thread_name))
+        self.log.warn("Warning from '%s': %s" % (self.thread_name, exception))
 
     def complete_task(self):
         self.completed = True
         self.end_time = time.time()
-        self.log.debug("Thread %s is completed:" % self.thread_name)
+        self.log.info("Thread '%s' completed" % self.thread_name)
 
     def set_result(self, result):
         self.result = result
@@ -133,10 +137,11 @@ class RebalanceTask(Task):
     def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
                  progress=30, use_hostnames=False, services=None,
                  check_vbucket_shuffling=True, sleep_before_rebalance=0):
-        super(RebalanceTask, self).__init__("Rebalance_task_IN=[{}]_OUT=[{}]_{}"
-                                            .format(",".join([node.ip for node in to_add]),
-                                                    ",".join([node.ip for node in to_remove]),
-                                                    str(time.time())))
+        super(RebalanceTask, self).__init__(
+            "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
+            .format(",".join([node.ip for node in to_add]),
+                    ",".join([node.ip for node in to_remove]),
+                    str(time.time())))
         self.servers = servers
         self.to_add = to_add
         self.to_remove = to_remove
@@ -213,8 +218,8 @@ class RebalanceTask(Task):
                         if "kv" not in services:
                             self.monitor_vbuckets_shuffling = False
                 if self.monitor_vbuckets_shuffling:
-                    self.test_log.info("Will monitor vbucket shuffling for "
-                                       "swap rebalance")
+                    self.test_log.debug("Will monitor vbucket shuffling for "
+                                        "swap rebalance")
             self.add_nodes()
             self.start_rebalance()
             self.table.display("Rebalance Overview")
@@ -273,11 +278,13 @@ class RebalanceTask(Task):
                                                                    node.port))
                 else:
                     if self.use_hostnames:
-                        if server.hostname == node.ip and int(server.port) == int(node.port):
+                        if server.hostname == node.ip \
+                                and int(server.port) == int(node.port):
                             ejectedNodes.append(node.id)
                             self.test_log.debug(remove_node_msg
                                                 .format(node.ip, node.port))
-                    elif server.ip == node.ip and int(server.port) == int(node.port):
+                    elif server.ip == node.ip \
+                            and int(server.port) == int(node.port):
                         ejectedNodes.append(node.id)
                         self.test_log.debug(remove_node_msg.format(node.ip,
                                                                    node.port))
@@ -392,7 +399,7 @@ class GenericLoadingTask(Task):
 
     def call(self):
         self.start_task()
-        self.log.debug("Starting GenericLoadingTask thread")
+        self.log.debug("Starting thread '%s'" % self.thread_name)
         try:
             while self.has_next():
                 self.next()
@@ -400,8 +407,8 @@ class GenericLoadingTask(Task):
             self.test_log.error(e)
             self.set_exception(Exception(e.message))
             return
-        self.log.debug("Load generation thread completed")
         self.complete_task()
+        self.log.debug("Thread '%s' completed" % self.thread_name)
 
     def has_next(self):
         raise NotImplementedError
@@ -1116,13 +1123,13 @@ class Durability(Task):
             reader = threading.Thread(target=self.Reader)
             reader.start()
 
-            self.log.debug("Starting load generation thread")
+            self.log.debug("Starting loader thread '%s'" % self.thread_name)
             try:
                 while self.has_next():
                     self.next()
             except Exception as e:
                 self.set_exception(Exception(e.message))
-            self.log.debug("Load generation thread completed")
+            self.log.debug("Loader thread '%s' completed" % self.thread_name)
 
             self.log.debug("== Tasks in DurabilityDocumentLoaderTask pool ==")
             self.task_manager.print_tasks_in_pool()
@@ -1269,7 +1276,7 @@ class Durability(Task):
                                 self.test_log.error("Document is rolled back to original during delete -> %s"%(key))
 
                     if self.persistence_offset == self.end:
-                        self.log.info("BREAKING PERSISTENCE!!")
+                        self.log.warning("Breaking thread persistence!!")
                         break
                     self.persistence_offset = self.write_offset
 
@@ -1456,12 +1463,13 @@ class LoadDocumentsGeneratorsTask(Task):
             for task in tasks:
                 try:
                     self.task_manager.get_task_result(task)
-                    self.log.info("Items loaded in task {} are {}"
-                                  .format(task.thread_name, task.docs_loaded))
+                    self.log.debug("Items loaded in task {} are {}"
+                                   .format(task.thread_name, task.docs_loaded))
                     i = 0
                     while task.docs_loaded < task.generator._doc_gen.end - task.generator._doc_gen.start and i < 60:
-                        self.log.error("Bug in java Futures task. Items loaded in task {} is {}".format(task.thread_name, task.docs_loaded))
-                        sleep(1)
+                        self.sleep(1, "Bug in java futures task. "
+                                      "Items loaded in task %s is %s"
+                                      % (task.thread_name, task.docs_loaded))
                         i += 1
                 except Exception as e:
                     self.test_log.error(e)
@@ -1489,8 +1497,8 @@ class LoadDocumentsGeneratorsTask(Task):
             self.log.debug("======================================")
             for task in tasks:
                 self.task_manager.stop_task(task)
-                self.log.info("Task '{0}' complete. Loaded {1} items"
-                              .format(task.thread_name, task.docs_loaded))
+                self.log.debug("Task '{0}' complete. Loaded {1} items"
+                               .format(task.thread_name, task.docs_loaded))
             for client in self.clients:
                 client.close()
         self.complete_task()
@@ -1631,11 +1639,11 @@ class LoadSubDocumentsGeneratorsTask(Task):
                 finally:
                     self.fail.update(task.fail)
                     self.success.update(task.success)
-                    self.log.debug("Failed to load {} sub_docs from {} "
-                                   "to {}"
-                                   .format(task.fail.__len__(),
-                                           task.generator._doc_gen.start,
-                                           task.generator._doc_gen.end))
+                    self.log.warning("Failed to load {} sub_docs from {} "
+                                     "to {}"
+                                     .format(task.fail.__len__(),
+                                             task.generator._doc_gen.start,
+                                             task.generator._doc_gen.end))
         except Exception as e:
             self.log.error(e)
             self.set_exception(e)
@@ -4006,8 +4014,12 @@ class MonitorViewFragmentationTask(Task):
 
         try:
             auto_compact_percentage = self._get_current_auto_compaction_percentage()
-            if auto_compact_percentage != "undefined" and auto_compact_percentage < self.fragmentation_value:
-                self.log.warn("Auto compaction is set to %s. Therefore fragmentation_value %s may not be reached" % (auto_compact_percentage, self.fragmentation_value))
+            if auto_compact_percentage != "undefined" \
+                    and auto_compact_percentage < self.fragmentation_value:
+                self.test_log.warn(
+                    "Auto compaction is set to %s. "
+                    "Therefore fragmentation_value %s may not be reached"
+                    % (auto_compact_percentage, self.fragmentation_value))
 
         except GetBucketInfoFailed as e:
             self.set_exception(e)
@@ -4039,19 +4051,22 @@ class MonitorViewFragmentationTask(Task):
         while new_frag_value < self.fragmentation_value and timeout > 0:
             new_frag_value = MonitorViewFragmentationTask.calc_ddoc_fragmentation(
                 rest, self.design_doc_name, bucket=self.bucket)
-            self.log.info("%s: current amount of fragmentation = %d, \
-            required: %d" % (self.design_doc_name,
-                             new_frag_value, self.fragmentation_value))
+            self.test_log.info("%s: current amount of fragmentation = %d, \
+                               required: %d"
+                               % (self.design_doc_name,
+                                  new_frag_value,
+                                  self.fragmentation_value))
             if new_frag_value > self.fragmentation_value:
                 self.result = True
                 break
             timeout -= 1
-            sleep(1)
+            self.sleep(1, "Wait for fragmentation_level to reach")
 
     @staticmethod
     def aggregate_ddoc_info(rest, design_doc_name, bucket="default",
                             with_rebalance=False):
 
+        infra_log = logging.getLogger("infra")
         nodes = rest.node_statuses()
         info = []
         for node in nodes:
@@ -4064,10 +4079,10 @@ class MonitorViewFragmentationTask(Task):
             try:
                 status, content = rest.set_view_info(bucket, design_doc_name)
             except Exception as e:
-                print(str(e))
+                infra_log.error(e)
                 if "Error occured reading set_view _info" in str(e) and with_rebalance:
-                    print("node {0} {1} is not ready yet?: {2}".format(
-                                    node.id, node.port, e.message))
+                    infra_log.warning("Node {0} {1} not ready yet?: {2}"
+                                      .format(node.id, node.port, e.message))
                 else:
                     raise e
             if status:
@@ -4120,12 +4135,15 @@ class ViewCompactionTask(Task):
         try:
             self.compaction_revision, self.precompacted_fragmentation = \
                 self._get_compaction_details()
-            self.log.info("{0}: stats compaction before triggering it: ({1},{2})".
-                          format(self.design_doc_name,
-                                 self.compaction_revision, self.precompacted_fragmentation))
+            self.test_log.debug(
+                "{0}: stats compaction before triggering it: ({1},{2})"
+                .format(self.design_doc_name,
+                        self.compaction_revision,
+                        self.precompacted_fragmentation))
             if self.precompacted_fragmentation == 0:
-                self.log.info("%s: There is nothing to compact, fragmentation is 0" %
-                              self.design_doc_name)
+                self.test_log.warning(
+                    "%s: There is nothing to compact, fragmentation is 0"
+                    % self.design_doc_name)
                 self.set_result(False)
                 return
             self.rest.ddoc_compaction(self.ddoc_id, self.bucket)
@@ -4144,23 +4162,29 @@ class ViewCompactionTask(Task):
         try:
             _compaction_running = self._is_compacting()
             new_compaction_revision, fragmentation = self._get_compaction_details()
-            self.log.info("{0}: stats compaction:revision and fragmentation: ({1},{2})".
-                          format(self.design_doc_name,
-                                 new_compaction_revision, fragmentation))
+            self.test_log.debug(
+                "{0}: stats compaction:revision and fragmentation: ({1},{2})"
+                .format(self.design_doc_name,
+                        new_compaction_revision,
+                        fragmentation))
 
             if new_compaction_revision == self.compaction_revision and _compaction_running :
                 # compaction ran successfully but compaction was not changed
                 # perhaps we are still compacting
-                self.log.info("design doc {0} is compacting".format(self.design_doc_name))
+                self.test_log.debug("design doc {0} is compacting"
+                                    .format(self.design_doc_name))
                 self.check()
             elif new_compaction_revision > self.compaction_revision or\
-                 self.precompacted_fragmentation > fragmentation:
-                self.log.info("{1}: compactor was run, compaction revision was changed on {0}".format(new_compaction_revision,
-                                                                                                      self.design_doc_name))
+                self.precompacted_fragmentation > fragmentation:
+                self.test_log.info(
+                    "{1}: compactor was run, compaction revision was changed on {0}"
+                    .format(new_compaction_revision,
+                            self.design_doc_name))
                 frag_val_diff = fragmentation - self.precompacted_fragmentation
-                self.log.info("%s: fragmentation went from %d to %d" % \
-                              (self.design_doc_name,
-                               self.precompacted_fragmentation, fragmentation))
+                self.test_log.info("%s: fragmentation went from %d to %d"
+                                   % (self.design_doc_name,
+                                      self.precompacted_fragmentation,
+                                      fragmentation))
 
                 if frag_val_diff > 0:
 
@@ -4168,8 +4192,10 @@ class ViewCompactionTask(Task):
                     # perhaps we are still compacting
                     if self._is_compacting():
                         self.check()
-                    self.log.info("compaction was completed, but fragmentation value {0} is more than before compaction {1}".
-                                  format(fragmentation, self.precompacted_fragmentation))
+                    self.test_log.warning(
+                        "Compaction completed, but fragmentation value {0} is more than before compaction {1}"
+                        .format(fragmentation,
+                                self.precompacted_fragmentation))
                     # probably we already compacted, but no work needed to be done
                     self.set_result(self.with_rebalance)
                 else:
@@ -4182,28 +4208,34 @@ class ViewCompactionTask(Task):
                         self.check()
                     else:
                         new_compaction_revision, fragmentation = self._get_compaction_details()
-                        self.log.info("{2}: stats compaction: ({0},{1})".
-                          format(new_compaction_revision, fragmentation,
-                                 self.design_doc_name))
+                        self.test_log.info("{2}: stats compaction: ({0},{1})"
+                                           .format(new_compaction_revision,
+                                                   fragmentation,
+                                                   self.design_doc_name))
                         # case of rebalance when with concurrent updates it's possible that
                         # compaction value has not changed significantly
-                        if new_compaction_revision > self.compaction_revision and self.with_rebalance:
-                            self.log.info("the compaction revision was increased")
+                        if new_compaction_revision > self.compaction_revision \
+                                and self.with_rebalance:
+                            self.test_log.info("Compaction revision increased")
                             self.set_result(True)
                             return
                         else:
                             continue
                 # print details in case of failure
-                self.log.info("design doc {0} is compacting:{1}".format(self.design_doc_name, self._is_compacting()))
+                self.test_log.info("design doc {0} is compacting:{1}"
+                                   .format(self.design_doc_name,
+                                           self._is_compacting()))
                 new_compaction_revision, fragmentation = self._get_compaction_details()
-                self.log.error("stats compaction still: ({0},{1})".
-                          format(new_compaction_revision, fragmentation))
-                status, content = self.rest.set_view_info(self.bucket, self.design_doc_name)
+                self.test_log.error("Stats compaction still: ({0},{1})"
+                                    .format(new_compaction_revision,
+                                            fragmentation))
+                status, content = self.rest.set_view_info(self.bucket,
+                                                          self.design_doc_name)
                 stats = content["stats"]
-                self.log.warn("general compaction stats:{0}".format(stats))
-                self.set_exception(Exception("Check system logs, looks like compaction failed to start"))
-
-        except (SetViewInfoNotFound) as ex:
+                self.test_log.warn("General compaction stats:{0}"
+                                   .format(stats))
+                self.set_exception("Check system logs, looks like compaction failed to start")
+        except SetViewInfoNotFound as ex:
             self.result = False
             self.set_exception(ex)
         # catch and set all unexpected exceptions
@@ -4244,7 +4276,7 @@ class CompactBucketTask(Task):
         status = BucketHelper(self.server).compact_bucket(self.bucket.name)
         if status is False:
             self.set_result(False)
-            self.log.error("Compact bucket rest call failed")
+            self.test_log.error("Compact bucket rest call failed")
         else:
             while self.retries != 0:
                 self.check()
@@ -4254,8 +4286,8 @@ class CompactBucketTask(Task):
                 time.sleep(30)
 
             if self.result is False:
-                self.log.error("Compaction failed to complete within "
-                               "%s retries" % self.retries)
+                self.test_log.error("Compaction failed to complete within "
+                                    "%s retries" % self.retries)
 
         self.complete_task()
 
