@@ -389,6 +389,8 @@ def main():
         TestInputSingleton.input.test_params.update(runtime_test_params)
         TestInputSingleton.input.test_params["case_number"] = case_number
         TestInputSingleton.input.test_params["logs_folder"] = logs_folder
+        if "rerun" not in TestInputSingleton.input.test_params:
+            TestInputSingleton.input.test_params["rerun"] = True
         print "Test Input params:"
         print(TestInputSingleton.input.test_params)
         if "get-coredumps" in TestInputSingleton.input.test_params:
@@ -406,7 +408,7 @@ def main():
             result.errors = [(name, e.message)]
         else:
             result = unittest.TextTestRunner(verbosity=2).run(suite)
-            if result.failures or result.errors:
+            if TestInputSingleton.input.test_params["rerun"] and (result.failures or result.errors):
                 print "#"*60, "\n", "## \tTest Failed: Rerunning it one more time", "\n", "#"*60
                 result = unittest.TextTestRunner(verbosity=2).run(suite)
 #             test_timeout = TestInputSingleton.input.param("test_timeout", None)
