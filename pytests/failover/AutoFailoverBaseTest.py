@@ -745,12 +745,10 @@ class AutoFailoverBaseTest(BaseTestCase):
                 validate_durability_for_bucket(b_index, bucket_obj)
 
     def data_load_after_autofailover(self):
-        gen_create = doc_generator(self.key, self.num_items,
-                                   self.num_items * 2)
+        gen_create = doc_generator(self.key, self.num_items*2,
+                                   self.num_items * 3)
         self.bucket = self.bucket_util.buckets[0]
         if self.atomicity:
-            gen_create = doc_generator(self.key, self.num_items*2,
-                                   self.num_items * 3)
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets, gen_create, "create", 0,
                 batch_size=10, process_concurrency=8,
