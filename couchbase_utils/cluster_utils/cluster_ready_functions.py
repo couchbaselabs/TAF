@@ -217,7 +217,6 @@ class ClusterUtils:
             cluster_name=None, cluster_username=None,
             cluster_password=new_password, cluster_port=False)
 
-        self.log.debug(output)
         # MB-10136 & MB-9991
         if not result:
             raise Exception("Password didn't change!")
@@ -650,7 +649,7 @@ class ClusterUtils:
         if started and wait_for_completion:
             result = self.rest.monitorRebalance()
             # self.assertTrue(result, "Rebalance operation failed after adding %s cbas nodes,"%self.cbas_servers)
-            self.log.debug("successfully rebalanced cluster {0}".format(result))
+            self.log.debug("Successfully rebalanced cluster {0}".format(result))
         else:
             result = started
         return result
@@ -880,9 +879,11 @@ class ClusterUtils:
             if output is not None:
                 if "ok" not in output:
                     self.log.error(
-                        "Error in enabling diag/eval on non-local hosts on {}: Error: {}".format(server.ip, error))
+                        "Error in enabling diag/eval on non-local hosts on {}: Error: {}"
+                        .format(server.ip, error))
                 else:
-                    self.log.debug("Enabled diag/eval for non-local hosts from {}".format(server.ip))
+                    self.log.debug("Enabled diag/eval for non-local hosts from {}"
+                                   .format(server.ip))
             else:
                 self.log.debug("Running in compatibility mode, not enabled diag/eval for non-local hosts")
             _, dir_name = RestConnection(server).diag_eval(
@@ -895,10 +896,11 @@ class ClusterUtils:
             else:
                 count = int(count)
             if count > panic_count:
-                self.log.info("===== PANIC OBSERVED IN THE LOGS ON SERVER {0}=====".format(server.ip))
+                self.log.warn("=== PANIC OBSERVED IN THE LOGS ON SERVER %s ==="
+                              % server.ip)
                 panic_trace, _ = shell.execute_command("zgrep \"{0}\" {1}".
                                                        format(panic_str, log))
-                self.log.info("\n {0}".format(panic_trace))
+                self.log.error("\n {0}".format(panic_trace))
                 panic_count = count
             os_info = shell.extract_remote_info()
             if os_info.type.lower() == "windows":
@@ -906,12 +908,13 @@ class ClusterUtils:
                 dir_name_crash = 'c://CrashDumps'
             else:
                 dir_name_crash = str(dir_name) + '/../crash/'
-            core_dump_count, err = shell.execute_command("ls {0}| wc -l".format(dir_name_crash))
+            core_dump_count, err = shell.execute_command(
+                "ls {0}| wc -l".format(dir_name_crash))
             if isinstance(core_dump_count, list):
                 core_dump_count = int(core_dump_count[0])
             else:
                 core_dump_count = int(core_dump_count)
             if core_dump_count > 0:
-                self.log.info("===== CORE DUMPS SEEN ON SERVER {0} : {1} crashes seen =====".format(
-                    server.ip, core_dump_count))
+                self.log.error("=== CORE DUMPS SEEN ON SERVER %s: %s crashes seen ==="
+                               % (server.ip, core_dump_count))
             shell.disconnect()

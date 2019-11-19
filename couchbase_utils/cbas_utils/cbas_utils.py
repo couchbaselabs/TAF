@@ -16,7 +16,7 @@ from remote.remote_util import RemoteMachineShellConnection
 
 class CbasUtil:
     def __init__(self, master, cbas_node):
-        self.log = logging.getLogger("infra")
+        self.log = logging.getLogger("test")
         self.cbas_node = cbas_node
         self.master = master
         self.cbas_helper = CBASHelper(master, cbas_node)
@@ -31,7 +31,7 @@ class CbasUtil:
         """
         pretty = "true"
         try:
-            self.log.info("Running query on cbas: %s" % statement)
+            self.log.debug("Running query on cbas: %s" % statement)
             response = self.cbas_helper.execute_statement_on_cbas(
                 statement, mode, pretty, timeout, client_context_id,
                 username, password,
@@ -81,7 +81,7 @@ class CbasUtil:
         """
         pretty = "true"
         try:
-            self.log.info("Running query on cbas: %s" % statement)
+            self.log.debug("Running query on cbas: %s" % statement)
             response = self.cbas_helper.execute_parameter_statement_on_cbas(
                 statement, mode, pretty, timeout, client_context_id,
                 username, password,
@@ -322,9 +322,9 @@ class CbasUtil:
                 if "Failover response The vbucket belongs to another server" in actual_error or "Bucket configuration doesn't contain a vbucket map" in actual_error:
                     retry_attempt -= 1
                     time.sleep(10)
-                    self.log.info("Retrying connecting of bucket")
+                    self.log.debug("Retrying connecting of bucket")
                 else:
-                    self.log.info("Not a vbucket error, so don't retry")
+                    self.log.debug("Not a vbucket error, so don't retry")
                     connect_bucket_failed = False
             else:
                 connect_bucket_failed = False
@@ -393,9 +393,9 @@ class CbasUtil:
                         or "Bucket configuration doesn't contain a vbucket map" in actual_error:
                     retry_attempt -= 1
                     time.sleep(10)
-                    self.log.info("Retrying connecting of bucket")
+                    self.log.debug("Retrying connecting of bucket")
                 else:
-                    self.log.info("Not a vbucket error, so don't retry")
+                    self.log.debug("Not a vbucket error, so don't retry")
                     connect_bucket_failed = False
             else:
                 connect_bucket_failed = False
@@ -465,11 +465,12 @@ class CbasUtil:
 
         counter = 0
         while timeout > counter:
-            self.log.info("Total items in CB Bucket to be ingested in CBAS datasets %s"
-                          % num_items)
+            self.log.debug("Total items in CB Bucket to be ingested "
+                           "in CBAS datasets %s"
+                           % num_items)
             if num_items == total_items:
-                self.log.info("Data ingestion completed in %s seconds."
-                              % counter)
+                self.log.debug("Data ingestion completed in %s seconds."
+                               % counter)
                 return True
             else:
                 time.sleep(2)
@@ -499,8 +500,8 @@ class CbasUtil:
         if status != "success":
             self.log.error("Query failed")
         else:
-            self.log.info("No. of items in CBAS dataset {0} : {1}"
-                          .format(dataset_name, results[0]['$1']))
+            self.log.debug("No. of items in CBAS dataset {0} : {1}"
+                           .format(dataset_name, results[0]['$1']))
             total_items = results[0]['$1']
 
         status, metrics, errors, results, _ = \
@@ -511,8 +512,8 @@ class CbasUtil:
         if status != "success":
             self.log.error("Query failed")
         else:
-            self.log.info("No. of items mutated in CBAS dataset {0}: {1}"
-                          .format(dataset_name, results[0]['$1']))
+            self.log.debug("No. of items mutated in CBAS dataset {0}: {1}"
+                           .format(dataset_name, results[0]['$1']))
             mutated_items = results[0]['$1']
 
         return total_items, mutated_items
@@ -549,10 +550,10 @@ class CbasUtil:
                     analytics_timeout=analytics_timeout)
                 tries -= 1
 
-        self.log.info("Expected Count: %s, Actual Count: %s"
-                      % (expected_count, count))
-        self.log.info("Expected Mutated Count: %s, Actual Mutated Count: %s"
-                      % (expected_mutated_count, mutated_count))
+        self.log.debug("Expected Count: %s, Actual Count: %s"
+                       % (expected_count, count))
+        self.log.debug("Expected Mutated Count: %s, Actual Mutated Count: %s"
+                       % (expected_mutated_count, mutated_count))
 
         if count != expected_count:
             return False
@@ -574,7 +575,7 @@ class CbasUtil:
             status = self.cbas_helper.delete_active_request_on_cbas(payload,
                                                                     username,
                                                                     password)
-            self.log.info (status)
+            self.log.info(status)
             return status
         except Exception, e:
             raise Exception(str(e))
@@ -608,7 +609,7 @@ class CbasUtil:
         if 'handle' in response:
             handle = response['handle']
 
-        self.log.info("status=%s, handle=%s" % (status, handle))
+        self.log.debug("status=%s, handle=%s" % (status, handle))
         return status, handle
 
     def retrieve_result_using_handle(self, server, handle):
@@ -660,15 +661,15 @@ class CbasUtil:
         if status != "success":
             actual_error = errors[0]["msg"]
             if expected_error not in actual_error:
-                self.log.info("Error message mismatch. Expected: %s, got: %s"
-                              % (expected_error, actual_error))
+                self.log.debug("Error message mismatch. Expected: %s, got: %s"
+                               % (expected_error, actual_error))
                 return False
-            self.log.info("Error message matched. Expected: %s, got: %s"
-                          % (expected_error, actual_error))
+            self.log.debug("Error message matched. Expected: %s, got: %s"
+                           % (expected_error, actual_error))
             if expected_error_code is not None:
                 if expected_error_code != errors[0]["code"]:
-                    self.log.info("Error code mismatch. Expected: %s, got: %s"
-                                  % (expected_error_code, errors[0]["code"]))
+                    self.log.debug("Error code mismatch. Expected: %s, got: %s"
+                                   % (expected_error_code, errors[0]["code"]))
                     return False
                 self.log.info("Error code matched. Expected: %s, got: %s"
                               % (expected_error_code, errors[0]["code"]))
@@ -679,7 +680,7 @@ class CbasUtil:
         """
         Asynchronously run queries
         """
-        self.log.info("Executing %s queries concurrently", num_queries)
+        self.log.deebug("Executing %s queries concurrently", num_queries)
 
         cbas_base_url = "http://{0}:8095/analytics/service" \
                         .format(self.cbas_node.ip)
@@ -707,7 +708,7 @@ class CbasUtil:
         self.handles = []
         self.concurrent_batch_size = batch_size
         # Run queries concurrently
-        self.log.info("Running queries concurrently now...")
+        self.log.debug("Running queries concurrently now...")
         threads = []
         if rest:
             self.cbas_util = rest
@@ -721,17 +722,17 @@ class CbasUtil:
             # Send requests in batches, and sleep for 5 seconds before sending another batch of queries.
             i += 1
             if i % self.concurrent_batch_size == 0:
-                self.log.info("submitted {0} queries".format(i))
+                self.log.debug("Submitted {0} queries".format(i))
                 time.sleep(5)
             thread.start()
         for thread in threads:
             thread.join()
 
-        self.log.info("%s queries submitted, %s failed, %s passed, "
-                      "%s rejected, %s cancelled, %s timeout"
-                      % (num_queries, self.failed_count, self.success_count,
-                         self.rejected_count, self.cancel_count,
-                         self.timeout_count))
+        self.log.debug("%s queries submitted, %s failed, %s passed, "
+                       "%s rejected, %s cancelled, %s timeout"
+                       % (num_queries, self.failed_count, self.success_count,
+                          self.rejected_count, self.cancel_count,
+                          self.timeout_count))
         if self.failed_count+self.error_count != 0:
             raise Exception("Queries Failed:%s , Queries Error Out:%s"
                             % (self.failed_count, self.error_count))
@@ -755,65 +756,65 @@ class CbasUtil:
                 if status == "success":
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
-                            self.log.info("Query result: %s", results[0]['$1'])
-                            self.log.info("*** Thread %s: failure ***", name)
+                            self.log.warn("Query result: %s", results[0]['$1'])
+                            self.log.error("*** Thread %s: failure ***", name)
                             self.failed_count += 1
                         else:
-                            self.log.info("--- Thread %s: success ---", name)
+                            self.log.debug("--- Thread %s: success ---", name)
                             self.success_count += 1
                     else:
-                        self.log.info("--- Thread %s: success ---", name)
+                        self.log.debug("--- Thread %s: success ---", name)
                         self.success_count += 1
                 else:
-                    self.log.info("Status = %s", status)
-                    self.log.info("*** Thread %s: failure ***", name)
+                    self.log.warn("Status = %s", status)
+                    self.log.error("*** Thread %s: failure ***", name)
                     self.failed_count += 1
             elif mode == "async":
                 if status == "running" and handle:
-                    self.log.info("--- Thread %s: success ---", name)
+                    self.log.debug("--- Thread %s: success ---", name)
                     print handle
                     self.handles.append(handle)
                     self.success_count += 1
                 else:
-                    self.log.info("Status = %s", status)
-                    self.log.info("*** Thread %s: failure ***", name)
+                    self.log.warn("Status = %s", status)
+                    self.log.error("*** Thread %s: failure ***", name)
                     self.failed_count += 1
             elif mode == "deferred":
                 if status == "success" and handle:
-                    self.log.info("--- Thread %s: success ---", name)
+                    self.log.debug("--- Thread %s: success ---", name)
                     self.handles.append(handle)
                     self.success_count += 1
                 else:
-                    self.log.info("Status = %s", status)
-                    self.log.info("*** Thread %s: failure ***", name)
+                    self.log.warn("Status = %s", status)
+                    self.log.error("*** Thread %s: failure ***", name)
                     self.failed_count += 1
             elif mode is None:
                 if status == "success":
-                    self.log.info("--- Thread %s: success ---", name)
+                    self.log.debug("--- Thread %s: success ---", name)
                     self.success_count += 1
                 else:
-                    self.log.info("Status = %s", status)
-                    self.log.info("*** Thread %s: failure ***", name)
+                    self.log.warn("Status = %s", status)
+                    self.log.error("*** Thread %s: failure ***", name)
                     self.failed_count += 1
 
         except Exception, e:
             if str(e) == "Request Rejected":
-                self.log.info("Error 503 : Request Rejected")
+                self.log.debug("Error 503 : Request Rejected")
                 self.rejected_count += 1
             elif str(e) == "Request TimeoutException":
-                self.log.info("Request TimeoutException")
+                self.log.debug("Request TimeoutException")
                 self.timeout_count += 1
             elif str(e) == "Request RuntimeException":
-                self.log.info("Request RuntimeException")
+                self.log.debug("Request RuntimeException")
                 self.timeout_count += 1
             elif str(e) == "Request RequestCancelledException":
-                self.log.info("Request RequestCancelledException")
+                self.log.debug("Request RequestCancelledException")
                 self.cancel_count += 1
             elif str(e) == "CouchbaseException":
-                self.log.info("General CouchbaseException")
+                self.log.debug("General CouchbaseException")
                 self.rejected_count += 1
             elif str(e) == "Capacity cannot meet job requirement":
-                self.log.info(
+                self.log.debug(
                     "Error 500 : Capacity cannot meet job requirement")
                 self.rejected_count += 1
             else:
@@ -829,8 +830,8 @@ class CbasUtil:
             self.execute_statement_on_cbas_util(statement)
         if status != "success":
             result = False
-            self.log.info("Index not created. Metadata query status = %s",
-                          status)
+            self.log.debug("Index not created. Metadata query status = %s",
+                           status)
         else:
             index_found = False
             for index in content:
@@ -843,7 +844,7 @@ class CbasUtil:
                         else:
                             field_names.append(str(index_field.split(":")[0]))
                             field_names.sort()
-                    self.log.info(field_names)
+                    self.log.debug(field_names)
                     actual_field_names = []
                     for index_field in index["Index"]["SearchKey"]:
                         if type(index_field) is list:
@@ -852,10 +853,10 @@ class CbasUtil:
                         actual_field_names.sort()
 
                     actual_field_names.sort()
-                    self.log.info(actual_field_names)
+                    self.log.debug(actual_field_names)
                     if field_names != actual_field_names:
                         result = False
-                        self.log.info("Index fields not correct")
+                        self.log.debug("Index fields not correct")
                     break
             result &= index_found
         return result, content
@@ -893,8 +894,8 @@ class CbasUtil:
                     cc_node_ip = node['nodeName'][:-5]
                     break
 
-        self.log.info("cc_config_urls=%s, ccNodeId=%s, ccNodeIP=%s"
-                      % (cc_node_config_url, cc_node_id, cc_node_ip))
+        self.log.debug("cc_config_urls=%s, ccNodeId=%s, ccNodeIP=%s"
+                       % (cc_node_config_url, cc_node_id, cc_node_ip))
         return cc_node_ip
 
     def retrieve_nodes_config(self, only_cc_node_url=True, shell=None):
@@ -931,9 +932,9 @@ class CbasUtil:
                     cc_node_config_url = node['configUri']
                     break
 
-        self.log.info("cc_config_urls=%s, ccNodeId=%s"
-                      % (cc_node_config_url, cc_node_id))
-        self.log.info("Nodes: %s" % nodes)
+        self.log.debug("cc_config_urls=%s, ccNodeId=%s"
+                       % (cc_node_config_url, cc_node_id))
+        self.log.debug("Nodes: %s" % nodes)
         return nodes, cc_node_id, cc_node_config_url
 
     def fetch_analytics_cluster_response(self, shell=None):
@@ -1014,7 +1015,7 @@ class CbasUtil:
             response = response + line
         if response:
             response = json.loads(response)
-        self.log.info("Api %s: %s" % (url, response))
+        self.log.debug("Api %s: %s" % (url, response))
 
         if not shell:
             shell.disconnect()
@@ -1074,7 +1075,7 @@ class CbasUtil:
             response = response + line
         if response:
             response = json.loads(response)
-        self.log.info("Api %s: %s" % (url, response))
+        self.log.debug("Api %s: %s" % (url, response))
 
         if not shell:
             shell.disconnect()
@@ -1182,21 +1183,21 @@ class CbasUtil:
                 node_in_test, handle, shell)
             if status == "running":
                 run_count += 1
-                self.log.info("query with handle %s is running." % handle)
+                self.log.debug("query with handle %s is running." % handle)
             elif status == "failed":
                 fail_count += 1
-                self.log.info("query with handle %s is failed." % handle)
+                self.log.debug("query with handle %s is failed." % handle)
             elif status == "success":
                 success_count += 1
-                self.log.info("query with handle %s is successful." % handle)
+                self.log.debug("query with handle %s is successful." % handle)
             else:
                 aborted_count += 1
-                self.log.info("Queued job is deleted: %s" % status)
+                self.log.debug("Queued job is deleted: %s" % status)
 
-        self.log.info("%s queued jobs are Running." % run_count)
-        self.log.info("%s queued jobs are Failed." % fail_count)
-        self.log.info("%s queued jobs are Successful." % success_count)
-        self.log.info("%s queued jobs are Aborted." % aborted_count)
+        self.log.debug("%s queued jobs are Running." % run_count)
+        self.log.debug("%s queued jobs are Failed." % fail_count)
+        self.log.debug("%s queued jobs are Successful." % success_count)
+        self.log.debug("%s queued jobs are Aborted." % aborted_count)
 
     def update_service_parameter_configuration_on_cbas(self, config_map=None,
                                                        username=None,

@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 
@@ -9,6 +10,7 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 
 from TestInput import TestInputSingleton
+
 
 class TOPOLOGY:
     CHAIN = "chain"
@@ -182,10 +184,11 @@ class XDCRUtils:
         for cluster in self.__cb_clusters:
             cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
             cluster.bucket_util = BucketUtils(cluster, cluster.cluster_util,
-                                      self.task)
+                                              self.task)
         self.input = TestInputSingleton.input
         self.init_parameters()
         self.create_buckets()
+        self.log = logging.getLogger("test")
 
     def __is_test_failed(self):
         return (hasattr(self, '_resultForDoCleanups')
@@ -207,7 +210,7 @@ class XDCRUtils:
               1. Remove all remote cluster references.
               2. Remove all replications.
         """
-        self.log.info("removing xdcr/nodes settings")
+        self.log.info("Removing xdcr/nodes settings")
         for cb_cluster in self.__cb_clusters:
             rest = RestConnection(cb_cluster.master)
             rest.remove_all_replications()
@@ -287,9 +290,6 @@ class XDCRUtils:
         for cluster in self.__cb_clusters:
             cluster.bucket_util.create_multiple_buckets(cluster.master, self._num_replicas)
 
-    def get_log(self):
-        return self.log
-
     def get_goxdcr_log_dir(self, node):
         """Gets couchbase log directory, even for cluster_run
         """
@@ -314,7 +314,7 @@ class XDCRUtils:
                 matches, err = shell.execute_command("grep \"{0}\" {1}".
                                                      format(str, goxdcr_log))
                 if matches:
-                    self.log.info(matches)
+                    self.log.debug(matches)
 
             count, err = shell.execute_command("grep \"{0}\" {1} | wc -l".
                                                format(str, goxdcr_log))
@@ -324,7 +324,7 @@ class XDCRUtils:
                 matches, err = shell.execute_command("zgrep \"{0}\" {1}".
                                                      format(str, goxdcr_log))
                 if matches:
-                    self.log.info(matches)
+                    self.log.debug(matches)
 
             count, err = shell.execute_command("zgrep \"{0}\" {1} | wc -l".
                                                format(str, goxdcr_log))
@@ -590,7 +590,8 @@ class XDCRUtils:
         for cb_cluster in self.__cb_clusters:
             for remote_cluster_ref in cb_cluster.xdcr_remote_clusters:
                 for repl in remote_cluster_ref.get_replications():
-                    self.log.info("Merging keys for replication {0}".format(repl))
+                    self.log.debug("Merging keys for replication {0}"
+                                   .format(repl))
                     self.__merge_keys(
                         repl.get_src_bucket().get_stats(),
                         repl.get_dest_bucket().get_stats(),
@@ -607,10 +608,10 @@ class XDCRUtils:
         valid_keys_dest, deleted_keys_dest = kv_dest_bucket[
             kvs_num].key_set()
 
-        self.log.info("src_kvstore has %s valid and %s deleted keys"
-                      % (len(valid_keys_src), len(deleted_keys_src)))
-        self.log.info("dest kvstore has %s valid and %s deleted keys"
-                      % (len(valid_keys_dest), len(deleted_keys_dest)))
+        self.log.debug("src_kvstore has %s valid and %s deleted keys"
+                       % (len(valid_keys_src), len(deleted_keys_src)))
+        self.log.debug("dest kvstore has %s valid and %s deleted keys"
+                       % (len(valid_keys_dest), len(deleted_keys_dest)))
 
         if filter_exp:
             # If key based adv filter
@@ -622,7 +623,7 @@ class XDCRUtils:
                 valid_keys_src
             )
             valid_keys_src = filtered_src_keys
-            self.log.info(
+            self.log.debug(
                 "{0} keys matched the filter expression {1}".format(
                     len(valid_keys_src),
                     filter_exp))
@@ -661,9 +662,9 @@ class XDCRUtils:
 
         valid_keys_dest, deleted_keys_dest = kv_dest_bucket[
             kvs_num].key_set()
-        self.log.info("After merging: destination bucket's kv_store now has {0}"
-                      " valid keys and {1} deleted keys".
-                      format(len(valid_keys_dest), len(deleted_keys_dest)))
+        self.log.debug("After merging: destination bucket's kv_store now has "
+                       "{0} valid keys and {1} deleted keys"
+                       .format(len(valid_keys_dest), len(deleted_keys_dest)))
 
     def __execute_query(self, server, query):
         try:
@@ -940,7 +941,7 @@ class XDCReplication:
         self.__updated_params = {}
 
         self.__parse_test_xdcr_params()
-        # self.log = logger.Logger.get_logger()
+        self.log = logging.getLogger("test")
 
         # Response from REST API
         self.__rep_id = None
@@ -1161,7 +1162,7 @@ class XDCReplication:
                 Target Bucket: {1}".format(self.__from_bucket, self.__to_bucket))
 
         if not self._is_cluster_replicating():
-            self.log.info("XDCR completed on {0}".format(src_master.ip))
+            self.log.debug("XDCR completed on {0}".format(src_master.ip))
 
     def __validate_resume_event(self):
         ValidateAuditEvent.validate_audit_event(
