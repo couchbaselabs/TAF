@@ -56,7 +56,8 @@ class CBASBucketOperations(CBASBaseTest):
             self.perform_doc_ops_in_all_cb_buckets(
                 "create",
                 0,
-                self.num_items)
+                self.num_items,
+                durability=self.durability_level)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(

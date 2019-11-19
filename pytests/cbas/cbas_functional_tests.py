@@ -1,4 +1,4 @@
-from bucket_utils.Bucket import TravelSample
+from BucketLib.bucket import TravelSample
 from cbas_base import CBASBaseTest
 
 
