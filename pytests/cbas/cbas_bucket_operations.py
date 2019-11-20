@@ -370,7 +370,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
 
         # Compact the CB bucket
-        BucketHelper(self.cluster.master).flush_bucket(self.cb_bucket_name)
+        BucketHelper(self.cluster.master).compact_bucket(self.cb_bucket_name)
 
         # Connect to Bucket
         self.cbas_util.connect_to_bucket(
