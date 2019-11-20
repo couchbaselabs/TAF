@@ -867,7 +867,8 @@ class BucketUtils:
                               retries=5, durability="",
                               ignore_exceptions=[], retry_exceptions=[],
                               active_resident_threshold=100,
-                              ryow=False, check_persistence=False):
+                              ryow=False, check_persistence=False,
+                              suppress_error_table=False):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -891,7 +892,8 @@ class BucketUtils:
             sdk_compression, process_concurrency, retries, durability,
             ignore_exceptions, retry_exceptions, ryow=ryow,
             active_resident_threshold=active_resident_threshold,
-            check_persistence=check_persistence)
+            check_persistence=check_persistence,
+            suppress_error_table=suppress_error_table)
 
         # Wait for all doc_loading tasks to complete and populate failures
         self.verify_doc_op_task_exceptions(tasks_info, cluster)

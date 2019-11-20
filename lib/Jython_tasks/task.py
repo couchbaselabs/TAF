@@ -1524,7 +1524,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 compression=self.compression,
                 durability=self.durability,
                 task_identifier=self.task_identifier,
-                skip_read_on_error=self.skip_read_on_error)
+                skip_read_on_error=self.skip_read_on_error,
+                suppress_error_table=self.suppress_error_table)
             tasks.append(task)
         return tasks
 

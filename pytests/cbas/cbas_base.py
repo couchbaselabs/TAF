@@ -196,12 +196,14 @@ class CBASBaseTest(BaseTestCase):
                 return self.bucket_util._async_load_all_buckets(
                     self.cluster, doc_gen, operation, exp,
                     durability=durability,
-                    batch_size=batch_size)
+                    batch_size=batch_size,
+                    suppress_error_table=True)
             else:
                 self.bucket_util.sync_load_all_buckets(
                     self.cluster, doc_gen, operation, exp,
                     durability=durability,
-                    batch_size=batch_size)
+                    batch_size=batch_size,
+                    suppress_error_table=True)
                 self.bucket_util.verify_stats_all_buckets(self.num_items)
         except Exception as e:
             self.log.error(e.message)

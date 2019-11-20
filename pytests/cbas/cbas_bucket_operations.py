@@ -602,9 +602,12 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
 
     def load_document_until_ram_percentage(self):
         self.start = 0
-        self.num_items = 10000
-        self.end = self.num_items
+        doc_batch_size = 5000
+        self.end = doc_batch_size
         bucket_helper = BucketHelper(self.cluster.master)
+        mem_cap = (self.document_ram_percentage
+                   * self.bucket_ram
+                   * 1000000)
         while True:
             self.log.info("Add documents to bucket")
             self.perform_doc_ops_in_all_cb_buckets(
@@ -619,12 +622,10 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             for node_stat in bucket_json["nodes"]:
                 mem_used += node_stat["interestingStats"]["mem_used"]
 
-            if mem_used < (self.document_ram_percentage
-                           * self.bucket_ram
-                           * 1000000):
-                self.log.info("Continue loading we have more free memory")
+            if mem_used < mem_cap:
+                self.log.info("Memory used: %s < %s" % (mem_used, mem_cap))
                 self.start = self.end
-                self.end = self.end + self.num_items
+                self.end = self.end + doc_batch_size
                 self.num_items = self.end
             else:
                 break
@@ -743,8 +744,8 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
                                     '{"name":"dave"}',
                                     durability=self.durability_level)
             if op_result["status"] is False:
-                client.close()
-                self.fail("Insert failed for %s: %s" % (doc_key, op_result))
+                self.log.warning("Insert failed for %s: %s"
+                                 % (doc_key, op_result))
 
         # Disconnect the SDK client
         client.close()
