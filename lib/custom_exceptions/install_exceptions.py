@@ -1,0 +1,2 @@
+class InstallException(Exception):
+    pass
