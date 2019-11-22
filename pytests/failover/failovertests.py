@@ -5,9 +5,8 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from failover.failoverbasetest import FailoverBaseTest
 from membase.api.rest_client import RestConnection, RestHelper
-from membase.helper.rebalance_helper import RebalanceHelper
 from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
-from BucketLib.BucketOperations import BucketHelper
+from sdk_exceptions import SDKException
 
 GRACEFUL = "graceful"
 
@@ -77,7 +76,7 @@ class FailoverTests(FailoverBaseTest):
         durability_will_fail = False
         # Variable to track the number of nodes failed
         num_nodes_failed = 1
-        
+
 
         # Find nodes that will under go failover
         if self.failoverMaster:
@@ -243,14 +242,12 @@ class FailoverTests(FailoverBaseTest):
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[node.id for node in chosen])
 
-        from couchbase_helper.durability_helper import DurableExceptions
-
         retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException,
-            DurableExceptions.TemporaryFailureException
+            SDKException.RequestTimeoutException,
+            SDKException.RequestCanceledException,
+            SDKException.DurabilityAmbiguousException,
+            SDKException.DurabilityImpossibleException,
+            SDKException.TemporaryFailureException
         ]
 
         # Rebalance Monitoring
@@ -365,14 +362,12 @@ class FailoverTests(FailoverBaseTest):
                                 ejectedNodes=[],
                                 deltaRecoveryBuckets=self.deltaRecoveryBuckets)
 
-        from couchbase_helper.durability_helper import DurableExceptions
-
         retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException,
-            DurableExceptions.TemporaryFailureException
+            SDKException.RequestTimeoutException,
+            SDKException.RequestCanceledException,
+            SDKException.DurabilityAmbiguousException,
+            SDKException.DurabilityImpossibleException,
+            SDKException.TemporaryFailureException
         ]
 
         if not self.atomicity:

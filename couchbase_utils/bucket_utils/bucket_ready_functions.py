@@ -38,7 +38,7 @@ from membase.helper.rebalance_helper import RebalanceHelper
 from memcached.helper.data_helper import MemcachedClientHelper, \
                                          VBucketAwareMemcached
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
                           MIN_COMPACTION_THRESHOLD
@@ -758,11 +758,11 @@ class BucketUtils:
                     continue
 
                 ambiguous_state = False
-                if ClientException.DurabilityAmbiguousException \
+                if SDKException.DurabilityAmbiguousException \
                         in str(exception) \
-                        or ClientException.RequestTimeoutException \
+                        or SDKException.RequestTimeoutException \
                         in str(exception) \
-                        or (ClientException.RequestCanceledException
+                        or (SDKException.RequestCanceledException
                             in str(exception) and
                             "CHANNEL_CLOSED_WHILE_IN_FLIGHT" \
                             in str(exception)):
@@ -784,10 +784,10 @@ class BucketUtils:
                         break
                 if result["status"] \
                         or (ambiguous_state
-                            and ClientException.KeyExistsException in result["error"]
+                            and SDKException.KeyExistsException in result["error"]
                             and task_info["op_type"] in ["create", "update"]) \
                         or (ambiguous_state
-                            and ClientException.KeyNotFoundException in result["error"]
+                            and SDKException.KeyNotFoundException in result["error"]
                             and task_info["op_type"] == "delete"):
                     tasks_info[task][dict_key]["success"].update(key_value)
                 else:

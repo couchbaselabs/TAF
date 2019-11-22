@@ -1,9 +1,8 @@
 from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
-from rebalance_new.swaprebalancetests import SwapRebalanceBase
 from BucketLib.BucketOperations import BucketHelper
-from couchbase_helper.durability_helper import DurableExceptions
+from sdk_exceptions import SDKException
 
 
 class RebalanceInOutTests(RebalanceBaseTest):
@@ -241,9 +240,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.doc_ops = "update"
         self.gen_update = self.get_doc_generator(0, self.num_items)
         retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
+            SDKException.RequestTimeoutException,
+            SDKException.RequestCanceledException,
+            SDKException.DurabilityAmbiguousException,
             ]
 
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
@@ -337,9 +336,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.doc_ops = "update"
         self.gen_update = self.get_doc_generator(0, self.num_items)
         retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
+            SDKException.RequestTimeoutException,
+            SDKException.RequestCanceledException,
+            SDKException.DurabilityAmbiguousException,
             ]
 
         for i in range(self.nodes_init, self.num_servers):

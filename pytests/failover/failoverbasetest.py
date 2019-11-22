@@ -3,14 +3,14 @@ from basetestcase import BaseTestCase
 from couchbase_helper.document import View
 from remote.remote_util import RemoteUtilHelper
 from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
-from couchbase_helper.durability_helper import DurableExceptions
+from sdk_exceptions import SDKException
 
 retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException
-            ]
+    SDKException.RequestTimeoutException,
+    SDKException.RequestCanceledException,
+    SDKException.DurabilityAmbiguousException,
+    SDKException.DurabilityImpossibleException]
+
 
 class FailoverBaseTest(BaseTestCase):
 
@@ -194,13 +194,13 @@ class FailoverBaseTest(BaseTestCase):
                      retry_exceptions=[],
                      ignore_exceptions=[],
                      task_verification=False):
-        loaders = []
         retry_exceptions = list(set(retry_exceptions +
-                                    [DurableExceptions.RequestTimeoutException,
-                                     DurableExceptions.RequestCanceledException,
-                                     DurableExceptions.DurabilityImpossibleException,
-                                     DurableExceptions.DurabilityAmbiguousException]))
+                                    [SDKException.RequestTimeoutException,
+                                     SDKException.RequestCanceledException,
+                                     SDKException.DurabilityImpossibleException,
+                                     SDKException.DurabilityAmbiguousException]))
 
-        loaders = self.start_parallel_cruds(retry_exceptions, ignore_exceptions,
+        loaders = self.start_parallel_cruds(retry_exceptions,
+                                            ignore_exceptions,
                                             task_verification)
         return loaders

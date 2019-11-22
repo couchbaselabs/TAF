@@ -11,7 +11,7 @@ from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 
 
 class CrashTest(BaseTestCase):
@@ -237,7 +237,7 @@ class CrashTest(BaseTestCase):
             target_vbuckets = self.getVbucketNumbers(remote, def_bucket.name,
                                                      self.target_node)
             if self.target_node == "active":
-                retry_exceptions = [ClientException.RequestTimeoutException]
+                retry_exceptions = [SDKException.RequestTimeoutException]
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
             remote.disconnect()

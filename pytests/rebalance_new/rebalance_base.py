@@ -1,14 +1,12 @@
-import copy
 import json
 
-from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from couchbase_helper.durability_helper import DurableExceptions
+from sdk_exceptions import SDKException
 
 
 class RebalanceBaseTest(BaseTestCase):
@@ -186,10 +184,10 @@ class RebalanceBaseTest(BaseTestCase):
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
 
-        retry_exceptions = list([DurableExceptions.RequestTimeoutException,
-                                 DurableExceptions.RequestCanceledException,
-                                 DurableExceptions.DurabilityImpossibleException,
-                                 DurableExceptions.DurabilityAmbiguousException])
+        retry_exceptions = list([SDKException.RequestTimeoutException,
+                                 SDKException.RequestCanceledException,
+                                 SDKException.DurabilityImpossibleException,
+                                 SDKException.DurabilityAmbiguousException])
 
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
@@ -297,12 +295,12 @@ class RebalanceBaseTest(BaseTestCase):
                      task_verification=False):
         loaders = []
         retry_exceptions = list(set(retry_exceptions +
-                                    [DurableExceptions.RequestTimeoutException,
-                                     DurableExceptions.RequestCanceledException,
-                                     DurableExceptions.DurabilityImpossibleException,
-                                     DurableExceptions.DurabilityAmbiguousException]))
+                                    [SDKException.RequestTimeoutException,
+                                     SDKException.RequestCanceledException,
+                                     SDKException.DurabilityImpossibleException,
+                                     SDKException.DurabilityAmbiguousException]))
         if self.check_temporary_failure_exception:
-            retry_exceptions.append(DurableExceptions.TemporaryFailureException)
+            retry_exceptions.append(SDKException.TemporaryFailureException)
         if self.atomicity:
             loaders = self.start_parallel_cruds_atomicity(self.sync, task_verification)
         else:

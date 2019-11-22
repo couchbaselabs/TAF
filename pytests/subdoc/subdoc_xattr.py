@@ -10,7 +10,6 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import \
     doc_generator, \
     sub_doc_generator
-from couchbase_helper.durability_helper import DurableExceptions
 from error_simulation.cb_error import CouchbaseError
 from membase.api.exception import DesignDocCreationException
 from couchbase_helper.document import View
@@ -19,7 +18,7 @@ from membase.api.rest_client import RestConnection
 # from newupgradebasetest import NewUpgradeBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 
 
 class SubdocBaseTest(BaseTestCase):
@@ -274,7 +273,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items)
         sdk_exception = str(failed_items[self.doc_id]["error"])
         self.assertTrue(
-            DurableExceptions.PathNotFoundException in sdk_exception,
+            SDKException.PathNotFoundException in sdk_exception,
             "Invalid SDK exception %s" % sdk_exception)
 
         # Finally, use lookup_in with 'xattrs' attribute enabled
@@ -354,7 +353,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items)
         sdk_exception = str(failed_items[self.doc_id]["error"])
         self.assertTrue(
-            ClientException.PathNotFoundException in sdk_exception,
+            SDKException.PathNotFoundException in sdk_exception,
             "Invalid SDK exception %s" % sdk_exception)
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
@@ -381,7 +380,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             xattr=True)
         self.assertTrue(failed_items, "Subdoc Xattr insert with 16 chars")
 
-        self.assertTrue(ClientException.DecodingFailedException
+        self.assertTrue(SDKException.DecodingFailedException
                         in failed_items[self.doc_id]["error"],
                         "Invalid exception: %s" % failed_items[self.doc_id])
 
@@ -501,7 +500,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                xattr=is_xattr)
             self.assertEqual(failed_items[self.doc_id]["cas"], 0,
                              "CAS is non-zero")
-            self.assertTrue(ClientException.KeyNotFoundException
+            self.assertTrue(SDKException.KeyNotFoundException
                             in str(failed_items[self.doc_id]["error"]),
                             "Invalid exception")
 
@@ -573,7 +572,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items)
         sdk_exception = str(failed_items[self.doc_id]["error"])
         self.assertTrue(
-            ClientException.PathNotFoundException in sdk_exception,
+            SDKException.PathNotFoundException in sdk_exception,
             "Invalid SDK exception %s" % sdk_exception)
 
         # Try to upsert a single xattr
@@ -612,7 +611,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                            xattr=True)
         self.assertTrue(failed_items, "Able to read deleted xattr")
         sdk_exception = str(failed_items[self.doc_id]["error"])
-        self.assertTrue(ClientException.PathNotFoundException
+        self.assertTrue(SDKException.PathNotFoundException
                         in sdk_exception, "Invalid exception: %s"
                                           % sdk_exception)
 
@@ -652,7 +651,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items)
         sdk_exception = str(failed_items[self.doc_id]["error"])
         self.assertTrue(
-            ClientException.PathNotFoundException in sdk_exception,
+            SDKException.PathNotFoundException in sdk_exception,
             "Invalid SDK exception %s" % sdk_exception)
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
@@ -743,7 +742,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             self.assertFalse(success, "Subdoc read succees: %s" % success)
             self.assertTrue(failed_item, "Subdoc still exists")
             sdk_error = str(failed_item[self.doc_id]["error"])
-            self.assertTrue(ClientException.PathNotFoundException
+            self.assertTrue(SDKException.PathNotFoundException
                             in sdk_error, "Invalid exception %s" % sdk_error)
 
     def test_update_xattr(self):
@@ -1618,7 +1617,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             durability=self.durability_level)
         sdk_error = str(failed_items[self.doc_id]["error"])
         self.assertTrue(failed_items, "Subdoc CRUD succeeded: %s" % success)
-        self.assertTrue(ClientException.DurabilityImpossibleException
+        self.assertTrue(SDKException.DurabilityImpossibleException
                         in sdk_error, "Invalid exception: %s" % sdk_error)
 
     def test_doc_sync_write_in_progress(self):
@@ -1684,19 +1683,19 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
                 sdk_exception = str(result["error"])
                 expected_exception = \
-                    ClientException.RequestCanceledException
+                    SDKException.RequestCanceledException
                 retry_reason = \
-                    ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
+                    SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
                 if op_type == "create":
                     if sw_test_op == "delete" or sw_test_op not in doc_tasks:
                         expected_exception = \
-                            ClientException.KeyNotFoundException
+                            SDKException.KeyNotFoundException
                         retry_reason = None
                 elif sw_test_op not in doc_tasks:
                     expected_exception = \
-                        ClientException.RequestTimeoutException
+                        SDKException.RequestTimeoutException
                     retry_reason = \
-                        ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+                        SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
                 if expected_exception not in sdk_exception:
                     self.log_failure("Invalid exception: %s" % result)
                 elif retry_reason is not None \
@@ -1794,9 +1793,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                                               create_path=True,
                                               xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
-            if ClientException.RequestTimeoutException not in sdk_exception:
+            if SDKException.RequestTimeoutException not in sdk_exception:
                 self.log_failure("Invalid exception: %s" % failed_item)
-            elif ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
+            elif SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
                     not in sdk_exception:
                 self.log_failure("Retry reason missing: %s" % failed_item)
 

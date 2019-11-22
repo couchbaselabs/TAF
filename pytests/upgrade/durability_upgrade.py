@@ -1,5 +1,5 @@
 from couchbase_helper.documentgenerator import doc_generator
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 from upgrade.upgrade_base import UpgradeBase
 
 
@@ -75,7 +75,7 @@ class UpgradeTests(UpgradeBase):
                     self.log_failure("SyncWrite succeeded with mixed mode cluster")
                 else:
                     for doc_id, doc_result in sync_write_task.fail.items():
-                        if ClientException.FeatureNotAvailableException \
+                        if SDKException.FeatureNotAvailableException \
                                 not in str(doc_result["error"]):
                             self.log_failure("Invalid exception for %s: %s"
                                              % (doc_id, doc_result))

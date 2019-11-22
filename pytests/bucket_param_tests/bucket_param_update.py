@@ -1,7 +1,7 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 
 
 class BucketParamTest(BaseTestCase):
@@ -216,10 +216,10 @@ class BucketParamTest(BaseTestCase):
             self.bucket_util.print_bucket_stats()
 
             d_impossible_exception = \
-                ClientException.DurabilityImpossibleException
+                SDKException.DurabilityImpossibleException
             ignore_exceptions = list()
-            retry_exceptions = [ClientException.DurabilityAmbiguousException,
-                                ClientException.RequestTimeoutException]
+            retry_exceptions = [SDKException.DurabilityAmbiguousException,
+                                SDKException.RequestTimeoutException]
 
             suppress_error_table = False
             if self.def_bucket.replicaNumber == 3 or replica_num == 3:
@@ -272,7 +272,7 @@ class BucketParamTest(BaseTestCase):
             ignore_exceptions = list()
             if replica_num == 3:
                 ignore_exceptions.append(
-                    ClientException.DurabilityImpossibleException)
+                    SDKException.DurabilityImpossibleException)
 
             self.log.info("Performing doc_ops(update) after rebalance")
             tasks, _, _ = self.doc_ops_operations(

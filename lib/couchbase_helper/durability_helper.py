@@ -6,34 +6,6 @@ from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
 
 
-class DurableExceptions:
-    KeyExistsException = \
-        "com.couchbase.client.core.error.KeyExistsException"
-    DurabilityImpossibleException = \
-        "com.couchbase.client.core.error.DurabilityImpossibleException"
-    DurableWriteInProgressException = \
-        "com.couchbase.client.core.error.DurableWriteInProgressException"
-    DurabilityAmbiguousException = \
-        "com.couchbase.client.core.error.DurabilityAmbiguousException"
-    RequestTimeoutException = \
-        "com.couchbase.client.core.error.RequestTimeoutException"
-    TemporaryFailureException = \
-        "com.couchbase.client.core.error.TemporaryFailureException"
-    RequestCanceledException = \
-        "com.couchbase.client.core.error.RequestCanceledException"
-    ValueTooLargeException = \
-        "com.couchbase.client.core.error.ValueTooLargeException"
-    KeyNotFoundException = \
-        "com.couchbase.client.core.error.KeyNotFoundException"
-    PathNotFoundException = \
-        "com.couchbase.client.core.error.subdoc.PathNotFoundException"
-    DecodingFailedException = \
-        "com.couchbase.client.core.error.DecodingFailedException"
-
-    def __init__(self):
-        pass
-
-
 class DurabilityHelper:
 
     EQUAL = '=='

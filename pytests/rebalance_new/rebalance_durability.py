@@ -1,12 +1,9 @@
 from math import floor
 
 from BucketLib.BucketOperations import BucketHelper
-from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from membase.helper.cluster_helper import ClusterOperationHelper
 from rebalance_base import RebalanceBaseTest
-from remote.remote_util import RemoteMachineShellConnection
-from couchbase_helper.durability_helper import DurableExceptions
+from sdk_exceptions import SDKException
 
 
 class RebalanceDurability(RebalanceBaseTest):
@@ -25,14 +22,17 @@ class RebalanceDurability(RebalanceBaseTest):
         """
         Common function to perform Create/Update/Delete operations
         """
-        tasks = list()
-        self.gen_create = self.get_doc_generator(self.start_from, self.start_from + self.add_items)
-        self.gen_delete = self.get_doc_generator(self.delete_from, self.delete_from + self.delete_items)
+        self.gen_create = self.get_doc_generator(
+            self.start_from,
+            self.start_from + self.add_items)
+        self.gen_delete = self.get_doc_generator(
+            self.delete_from,
+            self.delete_from + self.delete_items)
 
         retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
+            SDKException.RequestTimeoutException,
+            SDKException.RequestCanceledException,
+            SDKException.DurabilityAmbiguousException,
             ]
 
         # CRUDs while rebalance is running in parallel
@@ -63,8 +63,7 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-    #             self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
-    
+
             # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
 
@@ -88,7 +87,6 @@ class RebalanceDurability(RebalanceBaseTest):
                     self.assertFalse(
                         task_info["ops_failed"],
                         "Doc ops failed for task: {}".format(task.thread_name))
-    #                 self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
         for replicas in [1, 0]:
             self.log.info("Updating the bucket replicas to {0}"
@@ -109,7 +107,6 @@ class RebalanceDurability(RebalanceBaseTest):
                     self.assertFalse(
                         task_info["ops_failed"],
                         "Doc ops failed for task: {}".format(task.thread_name))
-    #                 self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
@@ -129,7 +126,6 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-#             self.assertTrue(len(task.fail) == 0, "CRUD failed during initial rebalance")
 
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
@@ -142,9 +138,10 @@ class RebalanceDurability(RebalanceBaseTest):
             self.log.info("Increasing the bucket replicas to {0}"
                           .format(replicas))
             self.bucket_util.update_all_bucket_replicas(replicas=replicas)
-            rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
-                                            [self.cluster.servers[replicas]],
-                                            [])
+            rebalance_result = self.task.rebalance(
+                self.cluster.nodes_in_cluster,
+                [self.cluster.servers[replicas]],
+                [])
             self.assertTrue(rebalance_result)
             self.cluster.nodes_in_cluster.extend([self.cluster.servers[replicas]])
             # Wait for all doc_load tasks to complete and validate
@@ -210,7 +207,9 @@ class RebalanceDurability(RebalanceBaseTest):
             self.assertTrue(rebalance_result)
             nodes_in_cluster -= 1
 
-            if nodes_in_cluster < nodes_required_for_durability and self.durability_level and self.durability_level.lower() != "none":
+            if nodes_in_cluster < nodes_required_for_durability \
+                    and self.durability_level \
+                    and self.durability_level.lower() != "none":
                 durability_will_fail = True
 
             tasks = list()
@@ -219,12 +218,15 @@ class RebalanceDurability(RebalanceBaseTest):
             gen_create = doc_generator(self.key, self.num_items,
                                        self.num_items+num_of_docs_to_insert)
             if self.atomicity:
-                tasks.append(self.task.async_load_gen_docs_atomicity(self.cluster, 
-                    self.bucket_util.buckets, gen_create, "rebalance_update", exp=0, 
-                    batch_size=10, process_concurrency=self.process_concurrency,
-                    replicate_to=self.replicate_to, persist_to=self.persist_to, 
-                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries, 
-                    update_count=self.update_count, transaction_timeout=self.transaction_timeout, 
+                tasks.append(self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets, gen_create,
+                    "rebalance_update", exp=0,
+                    batch_size=10,
+                    process_concurrency=self.process_concurrency,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                    update_count=self.update_count,
+                    transaction_timeout=self.transaction_timeout,
                     commit=True, durability=self.durability_level, sync=True,
                     num_threads=1,record_fail=True,defer=self.defer))
                 self.num_items=self.num_items+num_of_docs_to_insert
@@ -233,13 +235,15 @@ class RebalanceDurability(RebalanceBaseTest):
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, def_bucket, gen_create, "create", exp=0,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
-                    durability=self.durability_level, timeout_secs=self.sdk_timeout,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout,
                     batch_size=20, process_concurrency=4))
-    
+
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, def_bucket, gen_update, "update", 0,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
-                    durability=self.durability_level, timeout_secs=self.sdk_timeout,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout,
                     batch_size=20, process_concurrency=4))
 
             # Wait for all CRUD tasks to complete
@@ -290,25 +294,29 @@ class RebalanceDurability(RebalanceBaseTest):
         gen_create = doc_generator(self.key, self.num_items,
                                    self.num_items+num_of_docs_to_insert)
         if self.atomicity:
-            tasks.append(self.task.async_load_gen_docs_atomicity(self.cluster, 
-                self.bucket_util.buckets, gen_create, "rebalance_update", exp=0, 
+            tasks.append(self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets, gen_create,
+                "rebalance_update", exp=0,
                 batch_size=10, process_concurrency=self.process_concurrency,
-                replicate_to=self.replicate_to, persist_to=self.persist_to, 
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries, 
-                update_count=self.update_count, transaction_timeout=self.transaction_timeout, 
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
                 commit=True, durability=self.durability_level, sync=True,
                 num_threads=1,record_fail=True,defer=self.defer))
         else:
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_create, "create", exp=0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, timeout_secs=self.sdk_timeout,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
                 batch_size=20))
-    
+
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_update, "update", 0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, timeout_secs=self.sdk_timeout,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
                 batch_size=20))
 
         for task in tasks:
@@ -325,7 +333,7 @@ class RebalanceDurability(RebalanceBaseTest):
             # After rebalance-in durability should work fine
             # So recalculating the self.num_items to match gen_create loader
             self.num_items += num_of_docs_to_insert
-    
+
             # Reset the tasks list
             tasks = list()
             # Create tasks for doc verification
@@ -335,11 +343,11 @@ class RebalanceDurability(RebalanceBaseTest):
             tasks.append(self.task.async_validate_docs(
                 self.cluster, def_bucket, gen_create, "create", 0,
                 batch_size=10, process_concurrency=4))
-    
+
             # Wait for all doc verification tasks to complete
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
-    
+
             # Verify doc load count to match the overall CRUDs
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -379,7 +387,8 @@ class RebalanceDurability(RebalanceBaseTest):
         rebalance_result = self.task.rebalance(
             self.cluster.servers[:self.nodes_init],
             [], [self.cluster.servers[0]])
-        self.assertTrue(rebalance_result, "Rebalance out orchestrator node failed")
+        self.assertTrue(rebalance_result,
+                        "Rebalance out orchestrator node failed")
         # Wait for all CRUD tasks to complete and verify no failures are seen
         self.cluster.master = self.servers[1]
         wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
@@ -398,7 +407,8 @@ class RebalanceDurability(RebalanceBaseTest):
         bucket_helper.change_bucket_props(def_bucket,
                                           replicaNumber=self.replica_to_update)
         # Start and wait till rebalance is complete
-        rebalance = self.task.async_rebalance(self.cluster.nodes_in_cluster, [], [])
+        rebalance = self.task.async_rebalance(self.cluster.nodes_in_cluster,
+                                              [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
 
@@ -421,7 +431,8 @@ class RebalanceDurability(RebalanceBaseTest):
         sleep_time = self.input.param("sleep_time", 15)
         afterTimePeriod = self.input.param("afterTimePeriod", 40)
         rebalance_operation = self.input.param("rebalance_operation")
-        self.change_retry_rebalance_settings(enabled=True, afterTimePeriod=afterTimePeriod,
+        self.change_retry_rebalance_settings(enabled=True,
+                                             afterTimePeriod=afterTimePeriod,
                                              maxAttempts=1)
         self.rest.update_autofailover_settings(False, 120)
         test_failure_condition = self.input.param("test_failure_condition")
@@ -442,7 +453,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 for task, task_info in task_update.items():
                     self.task_manager.get_task_result(task)
             else:
-                self.bucket_util.verify_doc_op_task_exceptions(task_update, self.cluster)
+                self.bucket_util.verify_doc_op_task_exceptions(task_update,
+                                                               self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(task_update)
             # Delete the rebalance test condition so that we recover from the error
             self.delete_rebalance_test_condition(test_failure_condition)
@@ -455,7 +467,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 for task, task_info in task_update.items():
                     self.task_manager.get_task_result(task)
             else:
-                self.bucket_util.verify_doc_op_task_exceptions(task_update, self.cluster)
+                self.bucket_util.verify_doc_op_task_exceptions(task_update,
+                                                               self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(task_update)
         finally:
             self.delete_rebalance_test_condition(test_failure_condition)
@@ -463,4 +476,3 @@ class RebalanceDurability(RebalanceBaseTest):
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
-        

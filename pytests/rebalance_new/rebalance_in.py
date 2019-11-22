@@ -1,18 +1,16 @@
 import time
 
 import Jython_tasks.task as jython_tasks
-from membase.api.exception import RebalanceFailedException
 from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
-from couchbase_helper.durability_helper import DurableExceptions
+from sdk_exceptions import SDKException
 
 retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException
-            ]
+    SDKException.RequestTimeoutException,
+    SDKException.RequestCanceledException,
+    SDKException.DurabilityAmbiguousException,
+    SDKException.DurabilityImpossibleException]
 
 
 class RebalanceInTests(RebalanceBaseTest):
@@ -194,7 +192,8 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
                                                  delete_from + items/2)
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                       task_verification=True)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
@@ -209,7 +208,7 @@ class RebalanceInTests(RebalanceBaseTest):
         else:
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
-                
+
     def rebalance_in_after_ops(self):
         """
         Rebalances nodes into cluster while doing docs ops:create/delete/update
@@ -442,10 +441,10 @@ class RebalanceInTests(RebalanceBaseTest):
                 self.cluster.master, bucket))
 
         retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException
+            SDKException.RequestTimeoutException,
+            SDKException.RequestCanceledException,
+            SDKException.DurabilityAmbiguousException,
+            SDKException.DurabilityImpossibleException
             ]
 
         # CRUDs while rebalance is running in parallel
@@ -579,16 +578,14 @@ class RebalanceInTests(RebalanceBaseTest):
         """
 
         num_of_items = self.num_items
-        tasks_info = dict()
         task = None
         op_type = None
 
         retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException
-            ]
+            SDKException.RequestTimeoutException,
+            SDKException.RequestCanceledException,
+            SDKException.DurabilityAmbiguousException,
+            SDKException.DurabilityImpossibleException]
 
         for i in range(self.nodes_init, self.num_servers, 2):
             # Start rebalance task
@@ -631,7 +628,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                     batch_size=10,timeout_secs=self.sdk_timeout,process_concurrency=8,
                                     retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
-                                    commit=self.transaction_commit,durability=self.durability_level, 
+                                    commit=self.transaction_commit,durability=self.durability_level,
                                     sync=self.sync, defer=self.defer)
                     else:
                         task = self.task.async_load_gen_docs(

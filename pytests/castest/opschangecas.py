@@ -7,7 +7,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 
 
 class OpsChangeCasTests(CasBaseTest):
@@ -150,7 +150,7 @@ class OpsChangeCasTests(CasBaseTest):
                                          cas=old_cas)
                     if result["status"] is True:
                         self.log_failure("The item should already be deleted")
-                    if ClientException.KeyNotFoundException \
+                    if SDKException.KeyNotFoundException \
                             not in result["error"]:
                         self.log_failure("Invalid Excepetion: %s" % result)
                     if result["cas"] != 0:
@@ -176,7 +176,7 @@ class OpsChangeCasTests(CasBaseTest):
                     if result["status"] is True:
                         self.log_failure("Able to mutate %s with old cas: %s"
                                          % (key, old_cas))
-                    if ClientException.KeyNotFoundException \
+                    if SDKException.KeyNotFoundException \
                             not in result["error"]:
                         self.log_failure("Invalid error after expiry: %s"
                                          % result)
@@ -406,7 +406,7 @@ class OpsChangeCasTests(CasBaseTest):
                                  timeout=self.sdk_timeout)
             if result["status"] is True:
                 self.log_failure("Read succeeded after delete: %s" % result)
-            elif ClientException.KeyNotFoundException \
+            elif SDKException.KeyNotFoundException \
                     not in str(result["error"]):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)
@@ -418,7 +418,7 @@ class OpsChangeCasTests(CasBaseTest):
                                  cas=create_cas)
             if result["status"] is True:
                 self.log_failure("Replace succeeded after delete: %s" % result)
-            if ClientException.KeyNotFoundException \
+            if SDKException.KeyNotFoundException \
                     not in str(result["error"]):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)

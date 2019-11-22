@@ -33,11 +33,10 @@ from java.lang import Thread
 from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 from reactor.util.function import Tuples
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
-import com.couchbase.client.java.json.JsonObject as JsonObject
 from Jython_tasks.task_manager import TaskManager
+from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from time import sleep
-from couchbase_helper.durability_helper import DurableExceptions
 
 
 class Task(Callable):
@@ -1309,8 +1308,8 @@ class Durability(Task):
                                         "Key isn't durable although SDK reports Durable, Key = %s getFromAllReplica = %s"
                                         % (key, result))
                             elif len(result) > 0:
-                                if not (DurableExceptions.DurabilityAmbiguousException in self.create_failed[key]["error"] or
-                                   DurableExceptions.RequestTimeoutException in self.create_failed[key]["error"]):
+                                if not (SDKException.DurabilityAmbiguousException in self.create_failed[key]["error"] or
+                                   SDKException.RequestTimeoutException in self.create_failed[key]["error"]):
                                     self.test_log.error(
                                         "SDK threw exception but document is present in the Server -> %s:%s"
                                         % (key, result))
@@ -1923,7 +1922,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                          % self.op_type))
         result_map, self.failed_reads = self.batch_read(key_value.keys())
         for key, value in self.failed_reads.items():
-            if DurableExceptions.KeyNotFoundException not in str(self.failed_reads[key]["error"]):
+            if SDKException.KeyNotFoundException not in str(self.failed_reads[key]["error"]):
                 self.failed_item_table.add_row([key, value['error']])
         missing_keys, wrong_values = self.validate_key_val(result_map,
                                                            key_value)
@@ -1964,7 +1963,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     wrong_value = "Key: {} Expected: {} Actual: {}" \
                         .format(key, expected_val, actual_val)
                     wrong_values.append(wrong_value)
-            elif DurableExceptions.KeyNotFoundException in str(self.failed_reads[key]["error"]):
+            elif SDKException.KeyNotFoundException in str(self.failed_reads[key]["error"]):
                 missing_keys.append(key)
         return missing_keys, wrong_values
 

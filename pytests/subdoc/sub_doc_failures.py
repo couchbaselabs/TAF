@@ -10,7 +10,7 @@ from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 from table_view import TableView
 
 
@@ -340,7 +340,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
                         doc_id, self.vbuckets)
-                    if ClientException.DurabilityAmbiguousException \
+                    if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
                             "Invalid exception for doc %s, vb %s: %s"
@@ -797,10 +797,10 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure("Exception not seen for few docs: {0}"
                              .format(failed_docs))
 
-        expected_exception = ClientException.RequestTimeoutException
-        retry_reason = ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+        expected_exception = SDKException.RequestTimeoutException
+        retry_reason = SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
         if self.doc_ops[0] in "create":
-            expected_exception = ClientException.KeyNotFoundException
+            expected_exception = SDKException.KeyNotFoundException
             retry_reason = None
         valid_exception = self.durability_helper.validate_durability_exception(
             failed_docs,

@@ -7,7 +7,7 @@ from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 
 
 class CBASBucketOperations(CBASBaseTest):
@@ -671,8 +671,8 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
                                     durability=self.durability_level)
             i += 1
 
-        if ClientException.RequestTimeoutException not in op_result["error"] \
-                or ClientException.RetryReason.KV_TEMPORARY_FAILURE \
+        if SDKException.RequestTimeoutException not in op_result["error"] \
+                or SDKException.RetryReason.KV_TEMPORARY_FAILURE \
                 not in op_result["error"]:
             client.close()
             self.fail("Invalid exception for OOM insert: %s" % op_result)

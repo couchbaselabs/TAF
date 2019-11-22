@@ -1,4 +1,4 @@
-class ClientException:
+class SDKException:
     KeyExistsException = \
         "com.couchbase.client.core.error.KeyExistsException"
     DurabilityImpossibleException = \

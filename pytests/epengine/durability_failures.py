@@ -9,7 +9,7 @@ from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import ClientException
+from sdk_exceptions import SDKException
 from table_view import TableView
 
 
@@ -269,14 +269,14 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                        timeout=3, time_unit="seconds",
                                        fail_fast=fail_fast)
 
-                expected_exception = ClientException.RequestTimeoutException
+                expected_exception = SDKException.RequestTimeoutException
                 retry_reason = \
-                    ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+                    SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
                 if fail_fast:
                     expected_exception = \
-                        ClientException.RequestCanceledException
+                        SDKException.RequestCanceledException
                     retry_reason = \
-                        ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
+                        SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
 
                 # Validate the returned error from the SDK
                 if expected_exception not in str(fail["error"]):
@@ -734,8 +734,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         valid_exception = self.durability_helper.validate_durability_exception(
             failed_docs,
-            ClientException.RequestTimeoutException,
-            retry_reason=ClientException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS)
+            SDKException.RequestTimeoutException,
+            retry_reason=SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS)
 
         if not valid_exception:
             self.log_failure("Got invalid exception")
@@ -1271,7 +1271,7 @@ class TimeoutTests(DurabilityTestsBase):
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
                         doc_id, self.vbuckets)
-                    if ClientException.DurabilityAmbiguousException \
+                    if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
                             "Invalid exception for doc %s, vb %s: %s"
@@ -1351,7 +1351,7 @@ class TimeoutTests(DurabilityTestsBase):
                     self.log_failure("%s failed in retry for %s"
                                      % (op_type, doc_key))
 
-                if ClientException.DurabilityAmbiguousException \
+                if SDKException.DurabilityAmbiguousException \
                         not in str(doc_info["error"]):
                     table_view.add_row([doc_key, doc_info["error"]])
 

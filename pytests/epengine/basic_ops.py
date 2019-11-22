@@ -3,13 +3,13 @@ import json
 
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper, \
-                                               DurableExceptions
+from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
 
 from membase.api.rest_client import RestConnection
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_exceptions import SDKException
 from table_view import TableView
 
 """
@@ -379,7 +379,7 @@ class basic_ops(BaseTestCase):
         # Load a doc which is greater than 20MB
         # with compression enabled and check if it fails
         # check with compression_mode as active, passive and off
-        val_error = DurableExceptions.ValueTooLargeException
+        val_error = SDKException.ValueTooLargeException
         gens_load = self.generate_docs_bigdata(
             docs_per_day=1, document_size=(self.doc_size * 1024000))
         for bucket in self.bucket_util.buckets:

@@ -1,19 +1,17 @@
 import datetime
 from rebalance_base import RebalanceBaseTest
-from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection, RestHelper
 from membase.helper.rebalance_helper import RebalanceHelper
 from membase.api.exception import RebalanceFailedException
 from remote.remote_util import RemoteMachineShellConnection
 from BucketLib.BucketOperations import BucketHelper
-from couchbase_helper.durability_helper import DurableExceptions
+from sdk_exceptions import SDKException
 
 retry_exceptions = [
-            DurableExceptions.RequestTimeoutException,
-            DurableExceptions.RequestCanceledException,
-            DurableExceptions.DurabilityAmbiguousException,
-            DurableExceptions.DurabilityImpossibleException
-            ]
+    SDKException.RequestTimeoutException,
+    SDKException.RequestCanceledException,
+    SDKException.DurabilityAmbiguousException,
+    SDKException.DurabilityImpossibleException]
 
 
 class SwapRebalanceBase(RebalanceBaseTest):
