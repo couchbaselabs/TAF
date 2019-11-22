@@ -14,6 +14,7 @@ from com.couchbase.client.core.error import KeyExistsException, \
                                             RequestTimeoutException, \
                                             KeyNotFoundException, \
                                             CASMismatchException, \
+                                            CouchbaseOutOfMemoryException, \
                                             TemporaryFailureException, \
                                             RequestCanceledException,\
                                             ConfigException
@@ -450,6 +451,10 @@ class SDKClient(object):
                            "error": str(ex), "status": False})
         except (RequestCanceledException, RequestTimeoutException) as ex:
             self.log.error("Request cancelled/timed-out: " + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
+        except CouchbaseOutOfMemoryException as ex:
+            self.log.warning("OOM exception: %s" % ex)
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except Exception as ex:
