@@ -375,6 +375,7 @@ public class SimpleTransaction {
 	public List<LogDefer> RunTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
 											  List<String> Deletekeys, Boolean commit, boolean sync, int updatecount) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
+		List<LogDefer> res1 = new ArrayList<LogDefer>();
 //		synchronous API - transactions
 		if (sync) {
 			try {
@@ -431,10 +432,17 @@ public class SimpleTransaction {
 
 
 				});
-//				result.log().logs().forEach(System.err::println);
+				res1 = result.log().logs();
+				if (res1.toString().contains("IllegalDocumentState"))
+				{
+					System.out.println("IllegalDocumentState seen"); 
+					result.log().logs().forEach(System.err::println); }
 
 			}
 			catch (TransactionFailed err) {
+				System.out.println("create keys are " + Createkeys);
+				System.out.println("update keys are " + Updatekeys);
+				System.out.println("delete keys are " + Deletekeys);
 				res = err.result().log().logs();
 				if (res.toString().contains("DurabilityImpossibleException")) {
 					System.out.println("DurabilityImpossibleException seen"); }
