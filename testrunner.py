@@ -408,7 +408,7 @@ def main():
             result.errors = [(name, e.message)]
         else:
             result = unittest.TextTestRunner(verbosity=2).run(suite)
-            if TestInputSingleton.input.test_params["rerun"] and (result.failures or result.errors):
+            if TestInputSingleton.input.param["rerun"] and (result.failures or result.errors):
                 print "#"*60, "\n", "## \tTest Failed: Rerunning it one more time", "\n", "#"*60
                 result = unittest.TextTestRunner(verbosity=2).run(suite)
 #             test_timeout = TestInputSingleton.input.param("test_timeout", None)
