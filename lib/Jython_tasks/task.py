@@ -36,7 +36,6 @@ import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from Jython_tasks.task_manager import TaskManager
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
-from couchbase_helper.durability_helper import DurableExceptions
 
 
 class Task(Callable):
