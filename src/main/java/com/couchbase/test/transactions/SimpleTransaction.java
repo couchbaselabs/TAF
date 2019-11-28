@@ -433,7 +433,15 @@ public class SimpleTransaction {
 
 
 				});
-				TimeUnit.SECONDS.sleep(1); // sleep so that txn logs captures IllegalDocumentState
+				try
+			     {
+					TimeUnit.SECONDS.sleep(1);// sleep so that txn logs captures IllegalDocumentState
+			      }
+			      catch(Exception e)
+			      {
+			          System.out.println(e);
+			       }
+				 
 				res1 = result.log().logs();
 				if (res1.toString().contains("IllegalDocumentState"))
 				{
