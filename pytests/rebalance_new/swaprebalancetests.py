@@ -118,9 +118,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self._create_multiple_buckets()
 
     def validate_docs(self):
-        if self.atomicity:
-            return
-#         self.gen_create = self.get_doc_generator(0, self.num_items)
+        self.gen_create = self.get_doc_generator(0, self.num_items)
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_validate_docs(
@@ -130,8 +128,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.task.jython_task_manager.get_task_result(task)
             task.client.close()
 
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
 
     def _common_test_body_swap_rebalance(self, do_stop_start=False):
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(retry_exceptions=retry_exceptions)
