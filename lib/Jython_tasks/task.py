@@ -1888,7 +1888,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
 
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  flag=0, proxy_client=None, batch_size=1, pause_secs=1,
-                 timeout_secs=30, compression=True):
+                 timeout_secs=30, compression=True, check_replica=False):
         super(ValidateDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
@@ -1910,6 +1910,9 @@ class ValidateDocumentsTask(GenericLoadingTask):
             self.log.debug("Changing client to proxy %s:%s..."
                            % (proxy_client.host, proxy_client.port))
             self.client = proxy_client
+        self.check_replica = check_replica
+        self.replicas = bucket.replicaNumber
+        self.client = client
 
     def has_next(self):
         return self.generator.has_next()
@@ -1927,7 +1930,33 @@ class ValidateDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
-        result_map, self.failed_reads = self.batch_read(key_value.keys())
+        if self.check_replica:
+            # change to getFromReplica
+            result_map = dict()
+            self.failed_reads = dict()
+            for key in key_value.keys():
+                try:
+                    result = self.client.getFromAllReplica(key)
+                    if all(_result for _result in result) and len(result) == self.replicas+1:
+                        key = key.decode()
+                        if result[0]["status"]:
+                            result_map[key] = dict()
+                            result_map[key]["value"] = result[0]["value"]
+                            result_map[key]["cas"] = result[0]["cas"]
+                    elif result:
+                        self.failed_reads[key] = dict()
+                        self.failed_reads[key]["cas"] = result[0]["cas"]
+                        self.failed_reads[key]["error"] = result
+                        self.failed_reads[key]["value"] = dict()
+                    else:
+                        self.failed_reads[key] = dict()
+                        self.failed_reads[key]["cas"] = 0
+                        self.failed_reads[key]["error"] = SDKException.KeyNotFoundException
+                        self.failed_reads[key]["value"] = dict()
+                except Exception as error:
+                    self.set_exception(error)
+        else:
+            result_map, self.failed_reads = self.batch_read(key_value.keys())
         for key, value in self.failed_reads.items():
             if SDKException.KeyNotFoundException not in str(self.failed_reads[key]["error"]):
                 self.failed_item_table.add_row([key, value['error']])
@@ -1979,7 +2008,7 @@ class DocumentsValidatorTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators,
                  op_type, exp, flag=0, only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=60, compression=True,
-                 process_concurrency=4):
+                 process_concurrency=4, check_replica=False):
         super(DocumentsValidatorTask, self).__init__(
             "DocumentsValidatorTask_{}".format(time.time()))
         self.cluster = cluster
@@ -2005,6 +2034,7 @@ class DocumentsValidatorTask(Task):
             self.buckets = bucket
         else:
             self.bucket = bucket
+        self.check_replica = check_replica
 
     def call(self):
         self.start_task()
@@ -2065,7 +2095,7 @@ class DocumentsValidatorTask(Task):
                 self.cluster, self.bucket, self.client, generator,
                 self.op_type, self.exp, self.flag, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                compression=self.compression)
+                compression=self.compression, check_replica=self.check_replica)
             tasks.append(task)
         return tasks
 

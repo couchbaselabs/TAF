@@ -344,7 +344,7 @@ class ServerTasks(object):
     def async_validate_docs(self, cluster, bucket, generator, opt_type, exp=0,
                             flag=0, only_store_hash=True, batch_size=1,
                             pause_secs=1, timeout_secs=5, compression=True,
-                            process_concurrency=4):
+                            process_concurrency=4, check_replica=False):
         self.log.debug("Validating documents")
         client = SDKClient(RestConnection(cluster.master), bucket)
         _task = jython_tasks.DocumentsValidatorTask(
@@ -352,7 +352,7 @@ class ServerTasks(object):
             opt_type, exp, flag=flag, only_store_hash=only_store_hash,
             batch_size=batch_size, pause_secs=pause_secs,
             timeout_secs=timeout_secs, compression=compression,
-            process_concurrency=process_concurrency)
+            process_concurrency=process_concurrency, check_replica=check_replica)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

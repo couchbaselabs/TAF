@@ -578,13 +578,16 @@ class SDKClient(object):
 
     def getFromAllReplica(self, key):
         result = []
-        get_result = self.collection.getAllReplicas(
-            key,
-            GetAllReplicasOptions.getAllReplicasOptions())
-        for item in get_result.toArray():
-            result.append({"key": key,
-                           "value": item.contentAsObject(),
-                           "cas": item.cas(), "status": True})
+        getResult = self.collection.getAllReplicas(key, GetAllReplicasOptions.getAllReplicasOptions())
+        try:
+            getResult = getResult.toArray()
+            if getResult:
+                for item in getResult:
+                    result.append({"key": key,
+                                   "value": item.contentAsObject(),
+                                   "cas": item.cas(), "status": True})
+        except:
+            pass
         return result
 
     def upsert(self, key, value, exp=0, exp_unit="seconds",
