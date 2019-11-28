@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.concurrent.TimeUnit;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -432,6 +433,7 @@ public class SimpleTransaction {
 
 
 				});
+				TimeUnit.SECONDS.sleep(1); // sleep so that txn logs captures IllegalDocumentState
 				res1 = result.log().logs();
 				if (res1.toString().contains("IllegalDocumentState"))
 				{
