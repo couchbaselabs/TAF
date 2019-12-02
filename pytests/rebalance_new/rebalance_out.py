@@ -115,18 +115,19 @@ class RebalanceOutTests(RebalanceBaseTest):
                 if self.doc_ops is not None:
                     if "update" in self.doc_ops:
                         tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_update, "update", 0,
-                        batch_size=10, check_replica=True))
+                            self.cluster, bucket, self.gen_update, "update", 0,
+                            batch_size=10, check_replica=self.check_replica))
                     if "create" in self.doc_ops:
                         tasks.append(
-                        self.task.async_validate_docs(
-                            self.cluster, bucket, self.gen_create, "create", 0,
-                            batch_size=10, process_concurrency=8, check_replica=True))
+                            self.task.async_validate_docs(
+                                self.cluster, bucket, self.gen_create, "create",
+                                0, batch_size=10, process_concurrency=8,
+                                check_replica=self.check_replica))
                     if "delete" in self.doc_ops:
                         tasks.append(
-                        self.task.async_validate_docs(
-                            self.cluster, bucket, self.gen_delete, "delete", 0,
-                            batch_size=10, check_replica=True))
+                            self.task.async_validate_docs(
+                                self.cluster, bucket, self.gen_delete, "delete", 0,
+                                batch_size=10, check_replica=self.check_replica))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         if not self.atomicity:

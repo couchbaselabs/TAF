@@ -36,6 +36,7 @@ class RebalanceBaseTest(BaseTestCase):
             result = self.task.rebalance([self.cluster.master], nodes_init, [])
             self.assertTrue(result, "Initial rebalance failed")
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.check_replica = self.input.param("check_replica", False)
 
         self.bucket_util.add_rbac_user()
         if self.standard_buckets > 10:
