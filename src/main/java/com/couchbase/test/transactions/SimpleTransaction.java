@@ -435,7 +435,7 @@ public class SimpleTransaction {
 				});
 				try
 			     {
-					TimeUnit.SECONDS.sleep(1);// sleep so that txn logs captures IllegalDocumentState
+					TimeUnit.MILLISECONDS.sleep(20);// sleep so that txn logs captures IllegalDocumentState
 			      }
 			      catch(Exception e)
 			      {
