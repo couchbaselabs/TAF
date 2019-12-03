@@ -42,6 +42,8 @@ class RebalanceBaseTest(BaseTestCase):
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
         self.create_buckets()
+        if self.magma_storage:
+            self.bucket_util.update_bucket_props("backend", "magma")
         self.sleep(20)
 
         if self.flusher_batch_split_trigger:

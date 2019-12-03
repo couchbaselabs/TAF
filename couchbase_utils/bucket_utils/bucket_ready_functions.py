@@ -2379,3 +2379,29 @@ class BucketUtils:
                 stats = mc.stats()
                 self.assertTrue(int(stats['ep_flusher_batch_split_trigger']) \
                                 == flusher_batch_split_trigger)
+
+    def update_bucket_props(self, command, value, buckets=[], node=None):
+        self.log.info("Changing the bucket properties by changing {0} to {1}".
+                      format(command, value))
+        if not buckets:
+            buckets = self.buckets
+        if node is None:
+            node = self.cluster.master
+        rest = RestConnection(node)
+
+        shell = RemoteMachineShellConnection(node)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
+        for bucket in buckets:
+            cmd = 'ns_bucket:update_bucket_props("%s", [{extra_config_string, "%s=%s"}]).'%(bucket.name, command, value)
+            rest.diag_eval(cmd)
+
+        # Restart Memcached in all cluster nodes to reflect the settings
+        for server in self.cluster_util.get_kv_nodes(master=node):
+            shell = RemoteMachineShellConnection(server)
+            shell.restart_couchbase()
+            shell.disconnect()
+        # Add warmup check instead of a blind sleep.
+        # TODO: See _warmup_check in WarmUpTests class
+        self.sleep(60)
