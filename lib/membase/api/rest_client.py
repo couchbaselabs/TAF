@@ -2759,7 +2759,7 @@ class RestConnection(object):
             params.update(query_params)
             params = urllib.urlencode(params)
             if verbose:
-                self.test_log.info('query params : {0}'.format(params))
+                self.test_log.debug('Query params: {0}'.format(params))
             api = "http://%s:%s/query?%s" % (self.ip, port, params)
 
         status, content, header = self._http_request(api, 'POST', timeout=timeout, headers=headers)

@@ -1,7 +1,6 @@
 import random
 import time
 
-from membase.helper.cluster_helper import ClusterOperationHelper
 from newtuq import QueryTests
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.query_definitions import SQLDefinitionGenerator
@@ -15,19 +14,19 @@ class BaseSecondaryIndexingTests(QueryTests):
         super(BaseSecondaryIndexingTests, self).setUp()
         self.ansi_join = self.input.param("ansi_join", False)
         self.index_lost_during_move_out = []
-        self.verify_using_index_status = self.input.param("verify_using_index_status",False)
-        self.use_replica_when_active_down = self.input.param("use_replica_when_active_down",True)
-        self.use_where_clause_in_index= self.input.param("use_where_clause_in_index",False)
-        self.scan_consistency= self.input.param("scan_consistency","request_plus")
-        self.scan_vector_per_values= self.input.param("scan_vector_per_values",None)
-        self.timeout_for_index_online= self.input.param("timeout_for_index_online",600)
-        self.verify_query_result= self.input.param("verify_query_result",True)
-        self.verify_explain_result= self.input.param("verify_explain_result",True)
-        self.defer_build= self.input.param("defer_build",True)
+        self.verify_using_index_status = self.input.param("verify_using_index_status", False)
+        self.use_replica_when_active_down = self.input.param("use_replica_when_active_down", True)
+        self.use_where_clause_in_index = self.input.param("use_where_clause_in_index", False)
+        self.scan_consistency = self.input.param("scan_consistency", "request_plus")
+        self.scan_vector_per_values = self.input.param("scan_vector_per_values", None)
+        self.timeout_for_index_online = self.input.param("timeout_for_index_online", 600)
+        self.verify_query_result = self.input.param("verify_query_result", True)
+        self.verify_explain_result = self.input.param("verify_explain_result", True)
+        self.defer_build = self.input.param("defer_build", True)
         self.build_index_after_create = self.input.param("build_index_after_create", True)
-        self.run_query_with_explain= self.input.param("run_query_with_explain",True)
-        self.run_query= self.input.param("run_query",True)
-        self.graceful = self.input.param("graceful",False)
+        self.run_query_with_explain = self.input.param("run_query_with_explain", True)
+        self.run_query = self.input.param("run_query", True)
+        self.graceful = self.input.param("graceful", False)
         self.groups = self.input.param("groups", "all").split(":")
         self.use_rest = self.input.param("use_rest", False)
         self.plasma_dgm = self.input.param("plasma_dgm", False)
@@ -46,9 +45,11 @@ class BaseSecondaryIndexingTests(QueryTests):
             self.query_definitions = query_definition_generator.filter_by_group(self.groups, self.query_definitions)
         self.ops_map = self._create_operation_map()
         self.find_nodes_in_list()
-        self.nodes_out_list, self.index_nodes_out = self.cluster_util.generate_map_nodes_out_dist(self.nodes_out_dist,
-                                                                                                  self.targetMaster,
-                                                                                                  self.targetIndexManager)
+        self.nodes_out_list, self.index_nodes_out = \
+            self.cluster_util.generate_map_nodes_out_dist(
+                self.nodes_out_dist,
+                self.targetMaster,
+                self.targetIndexManager)
         self.memory_create_list = []
         self.memory_drop_list = []
         self.skip_cleanup = self.input.param("skip_cleanup", False)
@@ -61,12 +62,15 @@ class BaseSecondaryIndexingTests(QueryTests):
         self.defer_build = self.defer_build and self.use_gsi_for_secondary
         self.num_index_replicas = self.input.param("num_index_replica", 0)
         self.rest = RestConnection(self.cluster.master)
+        self.log.info("=== BaseSecondaryIndexingTests Setup complete ===")
 
     def tearDown(self):
         super(BaseSecondaryIndexingTests, self).tearDown()
 
-    def create_index(self, bucket, query_definition, deploy_node_info=None, desc=None):
-        create_task = self.async_create_index(bucket, query_definition, deploy_node_info, desc=desc)
+    def create_index(self, bucket, query_definition, deploy_node_info=None,
+                     desc=None):
+        create_task = self.async_create_index(bucket, query_definition,
+                                              deploy_node_info, desc=desc)
         create_task.result()
         if self.build_index_after_create:
             if self.defer_build:
@@ -80,26 +84,35 @@ class BaseSecondaryIndexingTests(QueryTests):
         index_where_clause = None
         if self.use_where_clause_in_index:
             index_where_clause = query_definition.index_where_clause
-        self.query = query_definition.generate_index_create_query(bucket=bucket,
-                                                                  use_gsi_for_secondary=self.use_gsi_for_secondary,
-                                                                  deploy_node_info=deploy_node_info,
-                                                                  defer_build=self.defer_build,
-                                                                  index_where_clause=index_where_clause, num_replica=self.num_index_replicas, desc=desc)
-        create_index_task = self.gsi_thread.async_create_index(server=self.n1ql_node, bucket=bucket,
-                                                               query=self.query, n1ql_helper=self.n1ql_helper,
-                                                               index_name=query_definition.index_name,
-                                                               defer_build=self.defer_build)
+        self.query = query_definition.generate_index_create_query(
+            bucket=bucket,
+            use_gsi_for_secondary=self.use_gsi_for_secondary,
+            deploy_node_info=deploy_node_info,
+            defer_build=self.defer_build,
+            index_where_clause=index_where_clause,
+            num_replica=self.num_index_replicas, desc=desc)
+        create_index_task = self.gsi_thread.async_create_index(
+            server=self.n1ql_node,
+            bucket=bucket,
+            query=self.query,
+            n1ql_helper=self.n1ql_helper,
+            index_name=query_definition.index_name,
+            defer_build=self.defer_build)
         return create_index_task
 
-    def create_index_using_rest(self, bucket, query_definition, exprType='N1QL', deploy_node_info=None, desc=None):
-        ind_content = query_definition.generate_gsi_index_create_query_using_rest(bucket=bucket,
-                                                                                  deploy_node_info=deploy_node_info,
-                                                                                  defer_build=None,
-                                                                                  index_where_clause=None,
-                                                                                  gsi_type=self.gsi_type,
-                                                                                  desc=desc)
+    def create_index_using_rest(self, bucket, query_definition,
+                                exprType='N1QL', deploy_node_info=None,
+                                desc=None):
+        ind_content = \
+            query_definition.generate_gsi_index_create_query_using_rest(
+                bucket=bucket,
+                deploy_node_info=deploy_node_info,
+                defer_build=None,
+                index_where_clause=None,
+                gsi_type=self.gsi_type,
+                desc=desc)
 
-        self.log.info("Creating index {0}...".format(query_definition.index_name))
+        self.log.info("Creating index %s" % query_definition.index_name)
         return self.rest.create_index_with_rest(ind_content)
 
     def async_build_index(self, bucket, index_list=None):

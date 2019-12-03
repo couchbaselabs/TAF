@@ -21,14 +21,14 @@ class QueryTests(BaseTestCase):
         for server in self.cluster.servers:
             rest = RestConnection(server)
             temp = rest.cluster_status()
-            self.log.info ("Initial status of {0} cluster is {1}".format(server.ip, temp['nodes'][0]['status']))
-            while (temp['nodes'][0]['status'] == 'warmup'):
+            while temp['nodes'][0]['status'] == 'warmup':
                 self.log.info ("Waiting for cluster to become healthy")
                 self.sleep(5)
                 temp = rest.cluster_status()
-            self.log.info ("current status of {0}  is {1}".format(server.ip, temp['nodes'][0]['status']))
 
-        indexer_node = self.cluster_util.get_nodes_from_services_map(service_type="index", get_all_nodes=True)
+        indexer_node = self.cluster_util.get_nodes_from_services_map(
+            service_type="index",
+            get_all_nodes=True)
         # Set indexer storage mode
         indexer_rest = RestConnection(indexer_node[0])
         doc = {"indexer.settings.storage_mode": self.gsi_type}
@@ -78,29 +78,30 @@ class QueryTests(BaseTestCase):
         self.load(self.gens_load, flag=self.item_flag, verify_data=verify_data, batch_size=self.batch_size)
         if self.doc_ops:
             self.ops_dist_map = self.calculate_data_change_distribution(
-                create_per=self.create_ops_per , update_per=self.update_ops_per ,
+                create_per=self.create_ops_per, update_per=self.update_ops_per,
                 delete_per=self.delete_ops_per, expiry_per=self.expiry_ops_per,
                 start=0, end=self.docs_per_day)
-            self.log.info(self.ops_dist_map)
             self.docs_gen_map = self.generate_ops_docs(self.docs_per_day, 0)
             self.full_docs_list_after_ops = self.generate_full_docs_list_after_ops(self.docs_gen_map)
         # Define Helper Method which will be used for running n1ql queries, create index, drop index
-        self.n1ql_helper = N1QLHelper(version=self.version, shell=self.shell,
+        self.n1ql_helper = N1QLHelper(
+            version=self.version, shell=self.shell,
             use_rest=self.use_rest, max_verify=self.max_verify,
             buckets=self.bucket_util.buckets, item_flag=self.item_flag,
             n1ql_port=self.n1ql_port, full_docs_list=self.full_docs_list,
             log=self.log, input=self.input, master=self.cluster.master)
         self.n1ql_node = self.cluster_util.get_nodes_from_services_map(service_type="n1ql")
-        self.log.info(self.n1ql_node)
         #self.n1ql_helper._start_command_line_query(self.n1ql_node)
         # sleep to avoid race condition during bootstrap
         if self.create_primary_index:
             try:
-                self.n1ql_helper.create_primary_index(using_gsi=self.use_gsi_for_primary,
-                 server=self.n1ql_node)
+                self.n1ql_helper.create_primary_index(
+                    using_gsi=self.use_gsi_for_primary,
+                    server=self.n1ql_node)
             except Exception, ex:
                 self.log.info(ex)
                 raise ex
+        self.log.info("=== QueryTests setUp complete ===")
 
     def tearDown(self):
         self.check_gsi_logs_for_panic()
@@ -133,23 +134,21 @@ class QueryTests(BaseTestCase):
             self.fail("There is no dataset %s, please enter a valid one" % self.dataset)
 
     def generate_ops_docs(self, num_items, start=0):
-        try:
-            json_generator = JsonGenerator()
-            if self.dataset == "simple":
-                return self.generate_ops(num_items, start, json_generator.generate_docs_simple)
-            if self.dataset == "sales":
-                return self.generate_ops(num_items, start, json_generator.generate_docs_sales)
-            if self.dataset == "employee" or self.dataset == "default":
-                return self.generate_ops(num_items, start, json_generator.generate_docs_employee)
-            if self.dataset == "sabre":
-                return self.generate_ops(num_items, start, json_generator.generate_docs_sabre)
-            if self.dataset == "bigdata":
-                return self.generate_ops(num_items, start, json_generator.generate_docs_bigdata)
-            if self.dataset == "array":
-                return self.generate_ops(num_items, start, json_generator.generate_all_type_documents_for_gsi)
-        except Exception, ex:
-            self.log.info(ex)
-            self.fail("There is no dataset %s, please enter a valid one" % self.dataset)
+        json_generator = JsonGenerator()
+        if self.dataset == "simple":
+            return self.generate_ops(num_items, start, json_generator.generate_docs_simple)
+        if self.dataset == "sales":
+            return self.generate_ops(num_items, start, json_generator.generate_docs_sales)
+        if self.dataset in ["employee", "default"]:
+            return self.generate_ops(num_items, start, json_generator.generate_docs_employee)
+        if self.dataset == "sabre":
+            return self.generate_ops(num_items, start, json_generator.generate_docs_sabre)
+        if self.dataset == "bigdata":
+            return self.generate_ops(num_items, start, json_generator.generate_docs_bigdata)
+        if self.dataset == "array":
+            return self.generate_ops(num_items, start, json_generator.generate_all_type_documents_for_gsi)
+        self.log.error("Invalid dataset: %s" % self.dataset)
+        self.fail("Invalid dataset %s, select a valid one" % self.dataset)
 
     def generate_docs_default(self, docs_per_day, start=0):
         json_generator = JsonGenerator()
@@ -184,14 +183,13 @@ class QueryTests(BaseTestCase):
     def generate_ops(self, docs_per_day, start=0, method=None):
         gen_docs_map = {}
         for key in self.ops_dist_map.keys():
-            isShuffle = False
-            if key == "update":
-                isShuffle = True
             if self.dataset != "bigdata":
-                gen_docs_map[key] = method(docs_per_day=self.ops_dist_map[key]["end"],
+                gen_docs_map[key] = method(
+                    docs_per_day=self.ops_dist_map[key]["end"],
                     start=self.ops_dist_map[key]["start"])
             else:
-                gen_docs_map[key] = method(value_size=self.value_size,
+                gen_docs_map[key] = method(
+                    value_size=self.value_size,
                     end=self.ops_dist_map[key]["end"],
                     start=self.ops_dist_map[key]["start"])
         return gen_docs_map
@@ -251,9 +249,16 @@ class QueryTests(BaseTestCase):
         if self.scan_consistency == "request_plus":
             verify_data = False
         if self.doc_ops:
-            self.bucket_util.sync_ops_all_buckets(docs_gen_map=self.docs_gen_map, batch_size=self.batch_size, verify_data=verify_data)
+            self.bucket_util.sync_ops_all_buckets(
+                self.cluster,
+                docs_gen_map=self.docs_gen_map,
+                batch_size=self.batch_size,
+                verify_data=verify_data,
+                exp=self.expiry,
+                num_items=self.num_items)
             self.n1ql_helper.full_docs_list = self.full_docs_list_after_ops
-            self.gen_results = TuqGenerators(self.log, self.n1ql_helper.full_docs_list)
+            self.gen_results = TuqGenerators(self.log,
+                                             self.n1ql_helper.full_docs_list)
 
     def load(self, generators_load, buckets=None, exp=0, flag=0,
              kv_store=1, only_store_hash=True, batch_size=1, pause_secs=1,
@@ -288,7 +293,6 @@ class QueryTests(BaseTestCase):
         self.num_items = items + start_items
         if verify_data:
             self.bucket_util.verify_cluster_stats(self.num_items)
-        self.log.info("LOAD IS FINISHED")
 
     def check_gsi_logs_for_panic(self):
         """ Checks if a string 'str' is present in goxdcr.log on server

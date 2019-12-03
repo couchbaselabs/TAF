@@ -573,12 +573,12 @@ class TuqGenerators(object):
 
 class JsonGenerator:
 
-    def generate_docs_employee(self, docs_per_day = 1, start=0, isShuffle = False):
+    def generate_docs_employee(self, docs_per_day=1, start=0, isShuffle=False):
         generators = []
-        types = self._shuffle(['Engineer', 'Sales', 'Support'],isShuffle)
-        join_yr = self._shuffle([2010, 2011],isShuffle)
-        join_mo = self._shuffle(xrange(1, 12 + 1),isShuffle)
-        join_day = self._shuffle(xrange(1, 28 + 1),isShuffle)
+        types = self._shuffle(['Engineer', 'Sales', 'Support'], isShuffle)
+        join_yr = self._shuffle([2010, 2011], isShuffle)
+        join_mo = self._shuffle(xrange(1, 12 + 1), isShuffle)
+        join_day = self._shuffle(xrange(1, 28 + 1), isShuffle)
         template = '{{ "name":"{0}", "join_yr":{1}, "join_mo":{2}, "join_day":{3},'
         template += ' "email":"{4}", "job_title":"{5}", "test_rate":{8}, "skills":{9},'
         template += '"VMs": {10},'
@@ -589,33 +589,34 @@ class JsonGenerator:
                 for month in join_mo:
                     for day in join_day:
                         random.seed(count)
-                        count+=1
+                        count += 1
                         prefix = "employee"+str(random.random()*100000)
                         name = ["employee-%s" % (str(day))]
                         email = ["%s-mail@couchbase.com" % (str(day))]
                         vms = [{"RAM": month, "os": "ubuntu",
                                 "name": "vm_%s" % month, "memory": month},
                                {"RAM": month, "os": "windows",
-                                "name": "vm_%s"% (month + 1), "memory": month}
-                             ]
-                        generators.append(DocumentGenerator("query-test" + prefix,
-                                               template,
-                                               name, [year], [month], [day],
-                                               email, [info], range(1,10), range(1,10),
-                                               [float("%s.%s" % (month, month))],
-                                               [["skill%s" % y for y in join_yr]],
-                                               [vms],
-                                               start=start, end=docs_per_day))
+                                "name": "vm_%s" % (month + 1),
+                                "memory": month}]
+                        generators.append(
+                            DocumentGenerator(
+                                "query-test"+prefix, template,
+                                name, [year], [month], [day],
+                                email, [info], range(1, 10), range(1, 10),
+                                [float("%s.%s" % (month, month))],
+                                [["skill%s" % y for y in join_yr]], [vms],
+                                start=start, end=docs_per_day))
         return generators
 
-    def generate_docs_employee_more_field_types(self, docs_per_day = 1, start=0, isShuffle = False):
+    def generate_docs_employee_more_field_types(self, docs_per_day=1, start=0,
+                                                isShuffle=False):
         generators = []
-        types = self._shuffle(['Engineer', 'Sales', 'Support'],isShuffle)
-        join_yr = self._shuffle([2010, 2011],isShuffle)
-        join_mo = self._shuffle(xrange(1, 12 + 1),isShuffle)
-        join_day = self._shuffle(xrange(1, 28 + 1),isShuffle)
+        types = self._shuffle(['Engineer', 'Sales', 'Support'], isShuffle)
+        join_yr = self._shuffle([2010, 2011], isShuffle)
+        join_mo = self._shuffle(xrange(1, 12 + 1), isShuffle)
+        join_day = self._shuffle(xrange(1, 28 + 1), isShuffle)
         hikes = [5,10,1,20,15]
-        permanent=[True,False]
+        permanent = [True,False]
         template = '{{ "name":"{0}", "join_yr":{1}, "join_mo":{2}, "join_day":{3},'
         template += ' "email":"{4}", "job_title":"{5}", "test_rate":{8}, "skills":{9},'
         template += '"VMs": {10},'
@@ -647,7 +648,6 @@ class JsonGenerator:
                                                [random.sample(hikes,3)],
                                                start=start, end=docs_per_day))
         return generators
-
 
     def generate_docs_employee_array(self, docs_per_day = 1, start=0, isShuffle = False):
         generators = []

@@ -1353,8 +1353,8 @@ class BucketUtils:
         self.log.debug("End Verification for failovers logs comparison")
         return new_failovers_stats
 
-    def sync_ops_all_buckets(self, docs_gen_map={}, batch_size=10,
-                             verify_data=True):
+    def sync_ops_all_buckets(self, cluster, docs_gen_map, batch_size=10,
+                             verify_data=True, exp=0, num_items=0):
         for key in docs_gen_map.keys():
             if key != "remaining":
                 op_type = key
@@ -1362,8 +1362,10 @@ class BucketUtils:
                     op_type = "update"
                     verify_data = False
                     self.expiry = 3
-                self.load(docs_gen_map[key], op_type=op_type, exp=self.expiry,
-                          verify_data=verify_data, batch_size=batch_size)
+                self.sync_load_all_buckets(cluster, docs_gen_map[key][0], op_type, exp)
+                #self.load(docs_gen_map[key], op_type=op_type, exp=self.expiry,verify_data=verify_data, batch_size=batch_size)
+                if verify_data:
+                    self.verify_cluster_stats(num_items)
         if "expiry" in docs_gen_map.keys():
             self._expiry_pager()
 

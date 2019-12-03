@@ -53,7 +53,7 @@ class N1QLHelper:
         if self.n1ql_port is None or self.n1ql_port == '':
             self.n1ql_port = self.input.param("n1ql_port", 8093)
             if not self.n1ql_port:
-                self.log.info(" n1ql_port is not defined, processing will not proceed further")
+                self.log.warning(" n1ql_port is not defined, processing will not proceed further")
                 raise Exception("n1ql_port is not defined, processing will not proceed further")
         cred_params = {'creds': []}
         for bucket in self.buckets:
@@ -67,7 +67,7 @@ class N1QLHelper:
             if scan_vector:
                 query_params['scan_vector']= str(scan_vector).replace("'", '"')
             if verbose:
-                self.log.info('RUN QUERY %s' % query)
+                self.log.info('Run Query: %s' % query)
             result = RestConnection(server).query_tool(query, self.n1ql_port, query_params=query_params, is_prepared = is_prepared, verbose = verbose)
         else:
             shell = RemoteMachineShellConnection(server)
@@ -77,14 +77,10 @@ class N1QLHelper:
             if "#primary" in query:
                 query = query.replace("'#primary'", '\\"#primary\\"')
             query = "select curl('POST', " + url + ", {'data' : 'statement=%s'})" % query
-            print query
             output = shell.execute_commands_inside(cmd, query, "", "", "", "", "")
-            print "-"*128
-            print output
             new_curl = json.dumps(output[47:])
             string_curl = json.loads(new_curl)
             result = json.loads(string_curl)
-            print result
             shell.disconnect()
         if isinstance(result, str) or 'errors' in result:
             error_result = str(result)
@@ -92,13 +88,13 @@ class N1QLHelper:
             if length_display > 500:
                 error_result = error_result[:500]
             raise CBQError(error_result, server.ip)
-        self.log.info("TOTAL ELAPSED TIME: %s" % result["metrics"]["elapsedTime"])
+        self.log.debug("Time taken: %s" % result["metrics"]["elapsedTime"])
         return result
 
     def _verify_results(self, actual_result, expected_result, missing_count = 1, extra_count = 1):
-        self.log.info(" Analyzing Actual Result")
+        self.log.info("Analyzing Actual Result")
         actual_result = self._gen_dict(actual_result)
-        self.log.info(" Analyzing Expected Result")
+        self.log.info("Analyzing Expected Result")
         expected_result = self._gen_dict(expected_result)
         if len(actual_result) != len(expected_result):
             raise Exception("Results are incorrect.Actual num %s. Expected num: %s.\n" % (len(actual_result), len(expected_result)))
