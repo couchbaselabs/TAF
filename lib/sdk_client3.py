@@ -10,6 +10,7 @@ import logging
 
 from com.couchbase.client.core.env import TimeoutConfig
 from com.couchbase.client.core.error import DocumentExistsException, \
+                                            DurabilityAmbiguousException, \
                                             CouchbaseException, \
                                             TimeoutException, \
                                             DocumentNotFoundException, \
@@ -618,6 +619,10 @@ class SDKClient(object):
         except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
+        except DurabilityAmbiguousException as ex:
+            self.log.warning("Durability Ambiguous for key: %s" % key)
+            result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))

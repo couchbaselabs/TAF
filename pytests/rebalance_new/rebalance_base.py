@@ -24,6 +24,8 @@ class RebalanceBaseTest(BaseTestCase):
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
         self.key = 'test_docs'.rjust(self.key_size, '0')
         self.flusher_batch_split_trigger = self.input.param("flusher_batch_split_trigger", None)
+        self.test_abort_snapshot = self.input.param("test_abort_snapshot",
+                                                    False)
         self.items = self.num_items
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.cluster.servers)
         info = self.rest.get_nodes_self()

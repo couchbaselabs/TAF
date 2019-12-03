@@ -5,10 +5,12 @@ from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
+from error_simulation.cb_error import CouchbaseError
 
 from membase.api.rest_client import RestConnection
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from table_view import TableView
 
@@ -544,6 +546,44 @@ class basic_ops(BaseTestCase):
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+
+    def MB36948(self):
+        node_to_stop = self.servers[0]
+        self.log.info("Adding index/query node")
+        self.task.rebalance([self.cluster.master], [self.servers[2]], [],
+                            services=["n1ql,index"])
+        self.log.info("Creating SDK client connection")
+        client = SDKClient(RestConnection(self.cluster.master),
+                           self.bucket_util.buckets[0])
+
+        self.log.info("Stopping memcached on: %s" % node_to_stop)
+        ssh_conn = RemoteMachineShellConnection(node_to_stop)
+        err_sim = CouchbaseError(self.log, ssh_conn)
+        err_sim.create(CouchbaseError.STOP_MEMCACHED)
+
+        result = client.crud("create", "abort1", "abort1_val")
+        if not result["status"]:
+            self.log_failure("Async SET failed")
+
+        result = client.crud("update", "abort1", "abort1_val",
+                             durability=self.durability_level,
+                             timeout=3, time_unit="seconds")
+        if result["status"]:
+            self.log_failure("Sync write succeeded")
+        if SDKException.DurabilityAmbiguousException not in result["error"]:
+            self.log_failure("Invalid exception for sync_write: %s" % result)
+
+        self.log.info("Resuming memcached on: %s" % node_to_stop)
+        err_sim.revert(CouchbaseError.STOP_MEMCACHED)
+
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(1)
+
+        self.log.info("Closing ssh & SDK connections")
+        ssh_conn.disconnect()
+        client.close()
+
+        self.validate_test_failure()
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.

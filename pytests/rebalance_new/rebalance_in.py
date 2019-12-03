@@ -1,6 +1,8 @@
 import time
 
 import Jython_tasks.task as jython_tasks
+from cb_tools.cbstats import Cbstats
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
@@ -236,6 +238,27 @@ class RebalanceInTests(RebalanceBaseTest):
                 retries=self.sdk_retries))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+
+        if self.test_abort_snapshot:
+            self.log.info("Creating abort scenarios for all vbs")
+            for server in self.cluster_util.get_kv_nodes():
+                ssh_shell = RemoteMachineShellConnection(server)
+                cbstats = Cbstats(ssh_shell)
+                replica_vbs = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name, "replica")
+                load_gen = doc_generator(self.key, 0, 5000,
+                                         target_vbucket=replica_vbs)
+                success = self.bucket_util.load_durable_aborts(
+                    ssh_shell, [load_gen],
+                    self.bucket_util.buckets[0],
+                    self.durability_level,
+                    "update", "all_aborts")
+                if not success:
+                    self.log_failure("Simulating aborts failed")
+                ssh_shell.disconnect()
+
+            self.validate_test_failure()
+
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
         self.sleep(20)
         for bucket in self.bucket_util.buckets:
@@ -651,7 +674,7 @@ class RebalanceInTests(RebalanceBaseTest):
                     if self.atomicity:
                         task = self.task.async_load_gen_docs_atomicity(
                                     self.cluster, self.bucket_util.buckets, self.gen_delete,
-                                    "rebalance_delete",0, batch_size=10,
+                                    "rebalance_delete", 0, batch_size=10,
                                     timeout_secs=self.sdk_timeout,process_concurrency=8,
                                     retries=self.sdk_retries,
                                     transaction_timeout=self.transaction_timeout,
@@ -735,6 +758,28 @@ class RebalanceInTests(RebalanceBaseTest):
 
         views = list()
         tasks = list()
+
+        if self.test_abort_snapshot:
+            self.log.info("Creating sync_write abort scenarios for all vbs")
+            for server in self.cluster_util.get_kv_nodes():
+                ssh_shell = RemoteMachineShellConnection(server)
+                cbstats = Cbstats(ssh_shell)
+                replica_vbs = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name,
+                    "replica")
+                load_gen = doc_generator(self.key, 0, 5000,
+                                         target_vbucket=replica_vbs)
+                success = self.bucket_util.load_durable_aborts(
+                    ssh_shell, [load_gen],
+                    self.bucket_util.buckets[0],
+                    self.durability_level,
+                    "update", "all_aborts")
+                if not success:
+                    self.log_failure("Simulating aborts failed")
+                ssh_shell.disconnect()
+
+            self.validate_test_failure()
+
         for bucket in self.bucket_util.buckets:
             temp = self.bucket_util.make_default_views(self.default_view,
                                                        self.default_view_name,
@@ -916,6 +961,27 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         servs_init = self.cluster.servers[:self.nodes_init]
         warmup_node = servs_init[-1]
+
+        if self.test_abort_snapshot:
+            self.log.info("Creating sync_write abort scenario for replica vbs")
+            for server in self.cluster_util.get_kv_nodes():
+                ssh_shell = RemoteMachineShellConnection(server)
+                cbstats = Cbstats(ssh_shell)
+                replica_vbs = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name, "replica")
+                load_gen = doc_generator(self.key, 0, 5000,
+                                         target_vbucket=replica_vbs)
+                success = self.bucket_util.load_durable_aborts(
+                    ssh_shell, [load_gen],
+                    self.bucket_util.buckets[0],
+                    self.durability_level,
+                    "update", "all_aborts")
+                if not success:
+                    self.log_failure("Simulating aborts failed")
+                ssh_shell.disconnect()
+
+            self.validate_test_failure()
+
         shell = RemoteMachineShellConnection(warmup_node)
         shell.stop_couchbase()
         self.sleep(20)
@@ -1124,4 +1190,3 @@ class RebalanceInTests(RebalanceBaseTest):
                         'RAM wasn\'t chnged')
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
-
