@@ -872,6 +872,79 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.validate_test_failure()
 
+    def test_durability_abort(self):
+        """
+        Test to validate durability abort is triggered properly with proper
+        rollback on active vbucket
+        :return:
+        """
+        crud_batch_size = 50
+        replica_vbs = dict()
+        verification_dict = dict()
+        load_gen = dict()
+
+        self.log.info("Loading docs such that all sync_writes will be aborted")
+        for server in self.cluster_util.get_kv_nodes():
+            ssh_shell = RemoteMachineShellConnection(server)
+            cbstats = Cbstats(ssh_shell)
+            replica_vbs[server] = cbstats.vbucket_list(self.bucket.name,
+                                                       "replica")
+            load_gen[server] = doc_generator(
+                self.key,
+                self.num_items,
+                crud_batch_size,
+                target_vbucket=replica_vbs[server])
+            success = self.bucket_util.load_durable_aborts(
+                ssh_shell, [load_gen[server]],
+                self.bucket, self.durability_level,
+                "create", "all_aborts")
+            if not success:
+                self.log_failure("Failures seen during loading aborted docs")
+            ssh_shell.disconnect()
+        self.validate_test_failure()
+
+        # Validate vbucket stats
+        verification_dict["ops_create"] = self.num_items
+        verification_dict["ops_update"] = 0
+        verification_dict["ops_delete"] = 0
+        verification_dict["rollback_item_count"] = 0
+        if self.durability_level:
+            verification_dict["sync_write_aborted_count"] = crud_batch_size * 2
+            verification_dict["sync_write_committed_count"] = 0
+
+        failed = self.durability_helper.verify_vbucket_details_stats(
+            self.bucket, self.cluster_util.get_kv_nodes(),
+            vbuckets=self.vbuckets, expected_val=verification_dict)
+        if failed:
+            self.log_failure("Cbstat vbucket-details verification failed "
+                             "after aborts")
+
+        # Retry aborted keys with healthy cluster
+        for doc_op in ["create", "update", "delete", "create"]:
+            for server in self.cluster_util.get_kv_nodes():
+                task = self.task.async_load_gen_docs(
+                    self.cluster, self.bucket, load_gen[server], doc_op, 0,
+                    batch_size=20, process_concurrency=8,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout)
+                self.task.jython_task_manager.get_task_result(task)
+
+                if len(task.fail.keys()) != 0:
+                    self.log_failure("Failure seen during doc_op: %s" % doc_op)
+
+                # Update verification dict for validation
+                verification_dict["ops_" + doc_op] += crud_batch_size
+                if self.durability_level:
+                    verification_dict["sync_write_committed_count"] += \
+                        crud_batch_size
+                failed = self.durability_helper.verify_vbucket_details_stats(
+                    self.bucket, self.cluster_util.get_kv_nodes(),
+                    vbuckets=self.vbuckets, expected_val=verification_dict)
+                if failed:
+                    self.log_failure("Cbstat vbucket-details verification "
+                                     "failed after doc_op: %s" % doc_op)
+        self.validate_test_failure()
+
 
 class TimeoutTests(DurabilityTestsBase):
     def setUp(self):
