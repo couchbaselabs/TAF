@@ -1,0 +1,21 @@
+{
+	"appname": "test_import_function_1",
+	"id": 0,
+	"depcfg": {
+		"buckets": [{
+			"alias": "dst_bucket",
+			"bucket_name": "dst_bucket"
+		}],
+		"metadata_bucket": "metadata",
+		"source_bucket": "src_bucket"
+	},
+	"appcode": "function OnUpdate(doc, meta) {\n    log('document', doc);\n    dst_bucket[meta.id] = doc;\n}\nfunction OnDelete(meta) {\n    delete dst_bucket[meta.id];\n}",
+	"settings": {
+		"dcp_stream_boundary": "everything",
+		"deadline_timeout": 62,
+		"deployment_status": false,
+		"execution_timeout": 60,
+		"log_level": "INFO",
+		"processing_status": false
+	}
+}

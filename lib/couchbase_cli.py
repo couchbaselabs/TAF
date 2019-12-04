@@ -556,6 +556,31 @@ class CouchbaseCLI:
         else:
             return stdout, stderr, self._no_error_in_output(stdout)
 
+    def eventing_operation(self, subcommand, function_name, boundary="from-everything", file_name=None, name=True):
+        options = self._get_default_options()
+        options += " --name " + function_name
+        if boundary:
+            options += " --boundary " + boundary
+        if name:
+            options += " --file " + file_name
+        remote_client = RemoteMachineShellConnection(self.server)
+        stdout, stderr = remote_client.couchbase_cli(subcommand, self.hostname, options)
+        remote_client.disconnect()
+        if subcommand == "import":
+            return stdout, stderr, self._was_success(stdout, "Events imported")
+        elif subcommand == "deploy":
+            return stdout, stderr, self._was_success(stdout, "Request to deploy the function was accepted")
+        elif subcommand == "pause":
+            return stdout, stderr, self._was_success(stdout, "Function was paused")
+        elif subcommand == "resume":
+            return stdout, stderr, self._was_success(stdout, "Function was resumed")
+        elif subcommand == "undeploy":
+            return stdout, stderr, self._was_success(stdout, "Request to undeploy the function was accepted")
+        elif subcommand == "delete":
+            return stdout, stderr, self._was_success(stdout, "Request to undeploy the function was accepted")
+        elif subcommand == "list":
+            return stdout, stderr
+
     def _setting_cluster(self, cmd, data_ramsize, index_ramsize, fts_ramsize,
                          cluster_name, cluster_username,
                          cluster_password, cluster_port):
