@@ -31,13 +31,14 @@ LESS_THAN="less_than"
 AND = "and"
 OR = "or"
 
+
 class QueryDefinition(object):
-    def __init__(self, name = "default", index_name = "Random", index_fields = [],
-                 index_creation_template = INDEX_CREATION_TEMPLATE,
-                 index_drop_template = INDEX_DROP_TEMPLATE,
-                 query_template = "", groups = [],
-                 index_where_clause = None, gsi_type = None, partition_by_fields = []):
-        self.name = str(uuid.uuid4()).replace("-","")
+    def __init__(self, name="default", index_name="Random", index_fields=[],
+                 index_creation_template=INDEX_CREATION_TEMPLATE,
+                 index_drop_template=INDEX_DROP_TEMPLATE,
+                 query_template="", groups=[], index_where_clause=None,
+                 gsi_type=None, partition_by_fields=[]):
+        self.name = str(uuid.uuid4()).replace("-", "")
         self.index_name = index_name
         self.index_fields = index_fields
         self.index_where_clause = index_where_clause
@@ -47,12 +48,17 @@ class QueryDefinition(object):
         self.groups = groups
         self.partition_by_fields = partition_by_fields
 
-    def generate_index_create_query(self, bucket="default", use_gsi_for_secondary=True,
-                                    deploy_node_info=None, defer_build=None, index_where_clause=None, gsi_type=None,
-                                    num_replica=None, desc=None, partition_by_fields = []):
+    def generate_index_create_query(self, bucket="default",
+                                    use_gsi_for_secondary=True,
+                                    deploy_node_info=None, defer_build=None,
+                                    index_where_clause=None, gsi_type=None,
+                                    num_replica=None, desc=None,
+                                    partition_by_fields=[]):
         deployment_plan = {}
         if desc is None:
-            query = "CREATE INDEX {0} ON {1}({2})".format(self.index_name, bucket, ",".join(self.index_fields))
+            query = "CREATE INDEX %s ON %s(%s)" % (self.index_name,
+                                                   bucket,
+                                                   ",".join(self.index_fields))
         else:
             collations = ""
             for x, y in zip(self.index_fields, desc):
@@ -73,9 +79,9 @@ class QueryDefinition(object):
                 deployment_plan["index_type"] = "memdb"
         if not use_gsi_for_secondary:
             query += " USING VIEW "
-        if deploy_node_info != None:
+        if deploy_node_info is not None:
             deployment_plan["nodes"] = deploy_node_info
-        if defer_build != None:
+        if defer_build is not None:
             deployment_plan["defer_build"] = defer_build
         if num_replica:
             deployment_plan["num_replica"] = num_replica
@@ -83,12 +89,15 @@ class QueryDefinition(object):
             query += " WITH " + str(deployment_plan)
         return query
 
-
-    def generate_gsi_index_create_query_using_rest(self, bucket="default", deploy_node_info=None, defer_build=None,
-                                                   index_where_clause=None, gsi_type="forestdb", expr_type="N1QL",
+    def generate_gsi_index_create_query_using_rest(self, bucket="default",
+                                                   deploy_node_info=None,
+                                                   defer_build=None,
+                                                   index_where_clause=None,
+                                                   gsi_type="forestdb",
+                                                   expr_type="N1QL",
                                                    desc=None):
-        deployment_plan = {}
-        ind_content = {}
+        deployment_plan = dict()
+        ind_content = dict()
         ind_content["name"] = self.index_name
         ind_content["bucket"] = "{0}".format(bucket)
         ind_content["secExprs"] = self.index_fields
@@ -98,14 +107,16 @@ class QueryDefinition(object):
             ind_content["whereExpr"] = index_where_clause
         if desc:
             ind_content["desc"] = desc
-        if deploy_node_info != None:
+        if deploy_node_info is not None:
             deployment_plan["nodes"] = deploy_node_info
-        if defer_build != None:
+        if defer_build is not None:
             deployment_plan["defer_build"] = defer_build
         ind_content["with"] = str(deployment_plan)
         return ind_content
 
-    def generate_index_drop_query(self, bucket = "default", use_gsi_for_secondary = True, use_gsi_for_primary = True):
+    def generate_index_drop_query(self, bucket="default",
+                                  use_gsi_for_secondary=True,
+                                  use_gsi_for_primary=True):
         if "primary" in self.index_name:
             query =  "DROP PRIMARY INDEX ON {0}".format(bucket)
         else:
@@ -129,16 +140,19 @@ class QueryDefinition(object):
     def add_group(self, group):
         self.groups.append(group)
 
+
 class SQLDefinitionGenerator:
     def generate_simple_data_query_definitions(self):
         definitions_list = []
-        index_name_prefix = "simple"+str(uuid.uuid4()).replace("-","")
+        index_name_prefix = "simple"+str(uuid.uuid4()).replace("-", "")
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"job_title",
-                index_fields = ["job_title"],
-                query_template = FULL_SCAN_TEMPLATE.format("*","name IS NOT NULL"),
-                groups = [SIMPLE_INDEX, FULL_SCAN, "isnotnull",NO_ORDERBY_GROUPBY]))
+                index_fields=["job_title"],
+                query_template=FULL_SCAN_TEMPLATE.format("*",
+                                                         "name IS NOT NULL"),
+                groups=[SIMPLE_INDEX, FULL_SCAN, "isnotnull",
+                        NO_ORDERBY_GROUPBY]))
         return definitions_list
 
     def generate_employee_data_query_definitions(self):
@@ -150,63 +164,63 @@ class SQLDefinitionGenerator:
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"primary_index",
-                             index_fields = [],
-                             query_template = "SELECT * FROM %s",
-                             groups = ["full_data_set","primary"], index_where_clause = ""))
+                index_fields=[],
+                query_template="SELECT * FROM %s",
+                groups=["full_data_set", "primary"], index_where_clause = ""))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"job_title",
-                             index_fields = ["job_title"],
-                             query_template = RANGE_SCAN_ORDER_BY_TEMPLATE.format(emit_fields,"job_title IS NOT NULL","job_title,_id"),
-                             groups = [SIMPLE_INDEX, FULL_SCAN, ORDER_BY, "employee","isnotnull"], index_where_clause = " job_title IS NOT NULL "))
+                index_fields=["job_title"],
+                query_template=RANGE_SCAN_ORDER_BY_TEMPLATE.format(emit_fields,"job_title IS NOT NULL","job_title,_id"),
+                groups=[SIMPLE_INDEX, FULL_SCAN, ORDER_BY, "employee","isnotnull"], index_where_clause = " job_title IS NOT NULL "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"job_title",
-                             index_fields = ["job_title"],
-                             query_template = RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\""),
-                             groups = [SIMPLE_INDEX,RANGE_SCAN, NO_ORDERBY_GROUPBY, EQUALS,"employee"], index_where_clause = " job_title IS NOT NULL "))
+                index_fields=["job_title"],
+                query_template=RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\""),
+                groups=[SIMPLE_INDEX, RANGE_SCAN, NO_ORDERBY_GROUPBY, EQUALS,"employee"], index_where_clause = " job_title IS NOT NULL "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"job_title",
-                             index_fields = ["job_title"],
-                             query_template = RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\" ORDER BY job_title "),
-                             groups = [SIMPLE_INDEX,RANGE_SCAN, ORDER_BY, EQUALS,"employee"], index_where_clause = " job_title IS NOT NULL "))
+                index_fields=["job_title"],
+                query_template=RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\" ORDER BY job_title "),
+                groups=[SIMPLE_INDEX, RANGE_SCAN, ORDER_BY, EQUALS,"employee"], index_where_clause = " job_title IS NOT NULL "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"job_title",
-                             index_fields = ["job_title"],
-                             query_template = RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title != \"Sales\" ORDER BY _id"),
-                             groups = [SIMPLE_INDEX,RANGE_SCAN, NO_ORDERBY_GROUPBY, NOTEQUALS,"employee"], index_where_clause = " job_title IS NOT NULL "))
+                index_fields=["job_title"],
+                query_template=RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title != \"Sales\" ORDER BY _id"),
+                groups=[SIMPLE_INDEX, RANGE_SCAN, NO_ORDERBY_GROUPBY, NOTEQUALS,"employee"], index_where_clause = " job_title IS NOT NULL "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"job_title",
-                             index_fields = ["job_title"],
-                             query_template = RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\" or job_title = \"Engineer\" ORDER BY _id"),
-                             groups = [SIMPLE_INDEX,RANGE_SCAN, NO_ORDERBY_GROUPBY, OR,"employee"], index_where_clause = " job_title IS NOT NULL "))
+                index_fields=["job_title"],
+                query_template=RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\" or job_title = \"Engineer\" ORDER BY _id"),
+                groups=[SIMPLE_INDEX, RANGE_SCAN, NO_ORDERBY_GROUPBY, OR,"employee"], index_where_clause = " job_title IS NOT NULL "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"join_yr",
-                             index_fields = ["join_yr"],
-                             query_template = RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "join_yr > 2010 and join_yr < 2014 ORDER BY _id"),
-                             groups = [SIMPLE_INDEX,RANGE_SCAN, NO_ORDERBY_GROUPBY, AND,"employee"], index_where_clause = " join_yr > 2010 and join_yr < 2014 "))
+                index_fields=["join_yr"],
+                query_template=RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "join_yr > 2010 and join_yr < 2014 ORDER BY _id"),
+                groups=[SIMPLE_INDEX, RANGE_SCAN, NO_ORDERBY_GROUPBY, AND,"employee"], index_where_clause = " join_yr > 2010 and join_yr < 2014 "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"join_yr",
-                             index_fields = ["join_yr"],
-                             query_template = RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "join_yr > 1999 ORDER BY _id"),
-                             groups = [SIMPLE_INDEX,RANGE_SCAN, NO_ORDERBY_GROUPBY, GREATER_THAN,"employee"], index_where_clause = " join_yr > 2010 and join_yr < 2014 "))
+                index_fields=["join_yr"],
+                query_template=RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "join_yr > 1999 ORDER BY _id"),
+                groups=[SIMPLE_INDEX, RANGE_SCAN, NO_ORDERBY_GROUPBY, GREATER_THAN,"employee"], index_where_clause = " join_yr > 2010 and join_yr < 2014 "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"job_title_join_yr",
-                             index_fields = ["join_yr","job_title"],
-                             query_template = RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\" and join_yr > 2010 and join_yr < 2014"),
-                             groups = [COMPOSITE_INDEX,RANGE_SCAN, NO_ORDERBY_GROUPBY, EQUALS,AND,"employee"], index_where_clause = " job_title IS NOT NULL "))
+                index_fields=["join_yr","job_title"],
+                query_template=RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\" and join_yr > 2010 and join_yr < 2014"),
+                groups=[COMPOSITE_INDEX, RANGE_SCAN, NO_ORDERBY_GROUPBY, EQUALS,AND,"employee"], index_where_clause = " job_title IS NOT NULL "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix+"job_title_join_yr",
-                             index_fields = ["join_yr","job_title"],
-                             query_template = RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\" and join_yr > 2010 and join_yr < 2014 ORDER BY job_title, _id"),
-                             groups = [COMPOSITE_INDEX,RANGE_SCAN, NO_ORDERBY_GROUPBY, EQUALS,OR,"employee"], index_where_clause = " job_title IS NOT NULL "))
+                index_fields=["join_yr","job_title"],
+                query_template=RANGE_SCAN_TEMPLATE.format(emit_fields," %s " % "job_title = \"Sales\" and join_yr > 2010 and join_yr < 2014 ORDER BY job_title, _id"),
+                groups=[COMPOSITE_INDEX, RANGE_SCAN, NO_ORDERBY_GROUPBY, EQUALS,OR,"employee"], index_where_clause = " job_title IS NOT NULL "))
         definitions_list.append(
             QueryDefinition(
                 index_name=index_name_prefix + "job_title_join_yr_name_partitioned_name",
@@ -648,12 +662,12 @@ class SQLDefinitionGenerator:
                             index_where_clause=" travel_details IS NOT NULL "))
         return definitions_list
 
-    def filter_by_group(self, groups = None, query_definitions = None):
+    def filter_by_group(self, groups=None, query_definitions=None):
         if not groups:
-            groups = []
+            groups = list()
         if not query_definitions:
-            query_definitions = []
-        new_query_definitions = {}
+            query_definitions = list()
+        new_query_definitions = dict()
         for query_definition in query_definitions:
             count = 0
             for group in query_definition.groups:

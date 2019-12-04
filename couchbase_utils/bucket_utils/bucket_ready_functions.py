@@ -31,6 +31,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
+from error_simulation.cb_error import CouchbaseError
 from membase.api.exception import StatsUnavailableException
 from membase.api.rest_client import Node, RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
@@ -901,6 +902,135 @@ class BucketUtils:
         self.log_doc_ops_task_failures(tasks_info)
 
         return tasks_info
+
+    def load_durable_aborts(self, ssh_shell, load_gens, bucket,
+                            durability_level, doc_op="create",
+                            load_type="all_aborts"):
+        """
+        :param ssh_shell: ssh connection for simulating memcached_stop
+        :param load_gens: doc_load generators used for running doc_ops
+        :param bucket: Bucket object for loading data
+        :param durability_level: Durability level to use while loading
+        :param doc_op: Type of doc_operation to perform. create/update/delete
+        :param load_type: Data loading pattern.
+                          Supports: all_aborts, initial_aborts, aborts_at_end,
+                                    mixed_aborts
+                          Default is 'all_aborts'
+        :return result: 'True' if got expected result during doc_loading.
+                        'False' if received unexpected result.
+        """
+
+        def get_num_items(doc_gen):
+            if doc_gen.doc_keys:
+                return len(doc_gen.doc_keys)
+            return doc_gen.end
+
+        def load_docs(doc_gen, load_for=""):
+            if load_for == "abort":
+                return self.task.async_load_gen_docs(
+                    self.cluster, bucket, doc_gen, doc_op, 0,
+                    batch_size=2, process_concurrency=8,
+                    durability=durability_level,
+                    timeout_secs=2, start_task=False,
+                    skip_read_on_error=True, suppress_error_table=True)
+            return self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_gen, doc_op, 0,
+                batch_size=10, process_concurrency=8,
+                durability=durability_level,
+                timeout_secs=60)
+
+        result = True
+        tasks = list()
+        num_items = dict()
+        cb_err = CouchbaseError(self.log, ssh_shell)
+
+        if load_type == "initial_aborts":
+            # Initial abort task
+            task = load_docs(load_gens[0], "abort")
+            num_items[task] = get_num_items(load_gens[0])
+            cb_err.create(CouchbaseError.STOP_MEMCACHED)
+            self.task_manager.add_new_task(task)
+            self.task.jython_task_manager.get_task_result(task)
+            self.sleep(5, "Wait for all docs to get ambiguous aborts")
+            cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+
+            if len(task.fail.keys()) != num_items[task]:
+                self.log.error("Failure not seen for few keys")
+                result = False
+
+            # All other doc_loading will succeed
+            for load_gen in load_gens[1:]:
+                task = load_docs(load_gen)
+                tasks.append(task)
+                num_items[task] = get_num_items(load_gen)
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+                if len(task.fail.keys()) != 0:
+                    self.log.error("Errors during successful load attempt")
+                    result = False
+        elif load_type == "aborts_at_end":
+            # All but last doc_loading will succeed
+            for load_gen in load_gens[:-1]:
+                task = load_docs(load_gen)
+                tasks.append(task)
+                num_items[task] = get_num_items(load_gen)
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+                if len(task.fail.keys()) != 0:
+                    self.log.error("Errors during successful load attempt")
+                    result = False
+
+            # Task for trialling aborts
+            task = load_docs(load_gens[-1], "abort")
+            num_items[task] = get_num_items(load_gens[-1])
+            cb_err.create(CouchbaseError.STOP_MEMCACHED)
+            self.task_manager.add_new_task(task)
+            self.task.jython_task_manager.get_task_result(task)
+            self.sleep(5, "Wait for all docs to get ambiguous aborts")
+            cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+
+            if len(task.fail.keys()) != num_items[task]:
+                self.log.error("Failure not seen for few keys")
+                result = False
+        elif load_type == "mixed_aborts":
+            for load_gen in load_gens:
+                tasks.append(load_docs(load_gen, "abort"))
+                self.task_manager.add_new_task(tasks[-1])
+
+            # Loop to simulate periodic aborts wrt to given node
+            tasks_completed = True
+            while not tasks_completed:
+                for task in tasks:
+                    if not task.completed:
+                        tasks_completed = False
+                        break
+
+                cb_err.create(CouchbaseError.STOP_MEMCACHED)
+                self.sleep(3, "Wait to simulate random aborts")
+                cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+        else:
+            # Default is all_aborts
+            for load_gen in load_gens:
+                task = load_docs(load_gen, "abort")
+                tasks.append(task)
+                num_items[task] = get_num_items(load_gen)
+
+            cb_err.create(CouchbaseError.STOP_MEMCACHED)
+            for task in tasks:
+                self.task_manager.add_new_task(task)
+            for task in tasks:
+                self.task.jython_task_manager.get_task_result(task)
+            self.sleep(5, "Wait for all docs to get ambiguous aborts")
+            cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+
+            for task in tasks:
+                if len(task.fail.keys()) != num_items[task]:
+                    self.log.error("Failure not seen for few keys")
+                    result = False
+
+        return result
 
     def verify_unacked_bytes_all_buckets(self, filter_list=[], sleep_time=5):
         """

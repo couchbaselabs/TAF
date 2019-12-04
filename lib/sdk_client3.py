@@ -94,7 +94,7 @@ class SDKClient(object):
                                          .connectTimeout(Duration.ofSeconds(20))
                                          .kvTimeout(Duration.ofSeconds(10)))
             clusterOptions = ClusterOptions.clusterOptions(
-                "Administrator", "password").environment(cluster_env.build())
+                self.username, self.password).environment(cluster_env.build())
             i = 1
             while i <= 5:
                 try:

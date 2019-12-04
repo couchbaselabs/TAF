@@ -15,11 +15,24 @@ from BucketLib.bucket import Bucket
 from couchbase_helper import cb_constants
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
 from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
-from exception import ServerAlreadyJoinedException, ServerUnavailableException, InvalidArgumentException
-from membase.api.exception import BucketCreationException, ServerSelfJoinException, ClusterRemoteException, \
-    RebalanceFailedException, FailoverFailedException, DesignDocCreationException, QueryViewException, \
-    ReadDocumentException, GetBucketInfoFailed, CompactViewFailed, SetViewInfoNotFound, AddNodeException, \
-    BucketFlushFailed, CBRecoveryFailedException, XDCRException, SetRecoveryTypeFailed, BucketCompactionException
+from exception import \
+    InvalidArgumentException, \
+    ServerAlreadyJoinedException, \
+    ServerUnavailableException
+from membase.api.exception import \
+    AddNodeException, \
+    BucketFlushFailed, \
+    CBRecoveryFailedException, \
+    CompactViewFailed, \
+    DesignDocCreationException, \
+    FailoverFailedException, \
+    QueryViewException, \
+    RebalanceFailedException,\
+    ReadDocumentException,\
+    ServerSelfJoinException, \
+    SetRecoveryTypeFailed, \
+    SetViewInfoNotFound, \
+    XDCRException
 
 
 class RestHelper(object):
@@ -877,23 +890,6 @@ class RestConnection(object):
             self.test_log.warning(content)
         return status
 
-    def set_indexer_num_replica(self,
-                                 num_replica=0):
-        api = self.index_baseUrl + 'settings'
-        params = {'indexer.settings.num_replica': num_replica}
-        params = json.dumps(params)
-        status, content, header = self._http_request(api, 'POST',
-                                                     params=params,
-                                                     timeout=60)
-        error_message = ""
-        self.test_log.debug('settings params: {0}'.format(params))
-        status, content, header = self._http_request(api, 'POST', params)
-        if not status and error_message in content:
-            # TODO: Currently it just acknowledges if there is an error.
-            # And proceeds with further initialization.
-            self.test_log.warning(content)
-        return status
-
     def cleanup_indexer_rebalance(self, server):
         if server:
             api = "http://{0}:{1}/".format(server.ip, self.index_port) + 'cleanupRebalance'
@@ -1523,130 +1519,6 @@ class RestConnection(object):
         self.test_log.debug(bucket_map)
         return bucket_map
 
-    def trigger_index_compaction(self, timeout=120):
-        node = None
-        api = self.index_baseUrl + 'triggerCompaction'
-        status, content, header = self._http_request(api, timeout=timeout)
-        if not status:
-            raise Exception(content)
-
-    def set_index_settings(self, setting_json, timeout=120):
-        api = self.index_baseUrl + 'settings'
-        status, content, header = self._http_request(api, 'POST', json.dumps(setting_json))
-        if not status:
-            raise Exception(content)
-        self.test_log.debug("{0} set".format(setting_json))
-
-    def set_index_settings_internal(self, setting_json, timeout=120):
-        api = self.index_baseUrl + 'internal/settings'
-        status, content, header = self._http_request(api, 'POST',
-                                                     json.dumps(setting_json))
-        if not status:
-            if header['status'] == '404':
-                self.test_log.warn(
-                    "This endpoint is introduced only in 5.5.0, hence not "
-                    "found. Redirecting the request to the old endpoint")
-                self.set_index_settings(setting_json, timeout)
-            else:
-                raise Exception(content)
-        self.test_log.debug("{0} set".format(setting_json))
-
-    def get_index_settings(self, timeout=120):
-        node = None
-        api = self.index_baseUrl + 'settings'
-        status, content, header = self._http_request(api, timeout=timeout)
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
-
-    def get_index_stats(self, timeout=120, index_map=None):
-        api = self.index_baseUrl + 'stats'
-        status, content, header = self._http_request(api, timeout=timeout)
-        if status:
-            json_parsed = json.loads(content)
-            index_map = RestParser().parse_index_stats_response(json_parsed, index_map=index_map)
-        return index_map
-
-    def get_index_storage_stats(self, timeout=120, index_map=None):
-        api = self.index_baseUrl + 'stats/storage'
-        status, content, header = self._http_request(api, timeout=timeout)
-        if not status:
-            raise Exception(content)
-        json_parsed = json.loads(content)
-        index_storage_stats = {}
-        for index_stats in json_parsed:
-            bucket = index_stats["Index"].split(":")[0]
-            index_name = index_stats["Index"].split(":")[1]
-            if not bucket in index_storage_stats.keys():
-                index_storage_stats[bucket] = {}
-            index_storage_stats[bucket][index_name] = index_stats["Stats"]
-        return index_storage_stats
-
-    def get_indexer_stats(self, timeout=120, index_map=None):
-        api = self.index_baseUrl + 'stats'
-        index_map = {}
-        status, content, header = self._http_request(api, timeout=timeout)
-        if status:
-            json_parsed = json.loads(content)
-            for key in json_parsed.keys():
-                tokens = key.split(":")
-                val = json_parsed[key]
-                if len(tokens) == 1:
-                    field = tokens[0]
-                    index_map[field] = val
-        return index_map
-
-    def get_indexer_metadata(self, timeout=120, index_map=None):
-        api = self.index_baseUrl + 'getIndexStatus'
-        index_map = {}
-        status, content, header = self._http_request(api, timeout=timeout)
-        if status:
-            json_parsed = json.loads(content)
-            for key in json_parsed.keys():
-                tokens = key.split(":")
-                val = json_parsed[key]
-                if len(tokens) == 1:
-                    field = tokens[0]
-                    index_map[field] = val
-        return index_map
-
-    def get_indexer_internal_stats(self, timeout=120, index_map=None):
-        api = self.index_baseUrl + 'settings?internal=ok'
-        index_map = {}
-        status, content, header = self._http_request(api, timeout=timeout)
-        if status:
-            json_parsed = json.loads(content)
-            for key in json_parsed.keys():
-                tokens = key.split(":")
-                val = json_parsed[key]
-                if len(tokens) == 1:
-                    field = tokens[0]
-                    index_map[field] = val
-        return index_map
-
-    def get_index_status(self, timeout=120, index_map=None):
-        api = self.baseUrl + 'indexStatus'
-        index_map = {}
-        status, content, header = self._http_request(api, timeout=timeout)
-        if status:
-            json_parsed = json.loads(content)
-            index_map = RestParser().parse_index_status_response(json_parsed)
-        return index_map
-
-    def get_index_id_map(self, timeout=120):
-        api = self.baseUrl + 'indexStatus'
-        index_map = {}
-        status, content, header = self._http_request(api, timeout=timeout)
-        if status:
-            json_parsed = json.loads(content)
-            for map in json_parsed["indexes"]:
-                bucket_name = map['bucket'].encode('ascii', 'ignore')
-                if bucket_name not in index_map.keys():
-                    index_map[bucket_name] = {}
-                index_name = map['index'].encode('ascii', 'ignore')
-                index_map[bucket_name][index_name] = {}
-                index_map[bucket_name][index_name]['id'] = map['id']
-        return index_map
     # returns node data for this host
     def get_nodes_self(self, timeout=120):
         node = None
@@ -3272,156 +3144,6 @@ class RestConnection(object):
         else:
             return status, json.loads(content)
 
-    def set_downgrade_storage_mode_with_rest(self, downgrade=True, username="Administrator", password="password"):
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        if downgrade:
-            api = self.index_baseUrl + 'settings/storageMode?downgrade=true'
-        else:
-            api = self.index_baseUrl + 'settings/storageMode?downgrade=false'
-        headers = {'Content-type': 'application/json','Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'POST', headers=headers)
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
-
-    def create_index_with_rest(self, create_info, username="Administrator", password="password"):
-        self.test_log.info("CREATE INDEX USING REST WITH PARAMETERS: " + str(create_info))
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        api = self.index_baseUrl + 'api/indexes?create=true'
-        headers = {'Content-type': 'application/json','Authorization': 'Basic %s' % authorization}
-        params = json.loads("{0}".format(create_info).replace('\'', '"').replace('True', 'true').replace('False', 'false'))
-        status, content, header = self._http_request(api, 'POST', headers=headers,
-                                             params=json.dumps(params).encode("ascii", "ignore"))
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
-
-    def build_index_with_rest(self, id, username="Administrator", password="password"):
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        api = self.index_baseUrl + 'api/indexes?build=true'
-        build_info = {'ids': [id]}
-        headers = {'Content-type': 'application/json','Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'PUT', headers=headers,
-                                               params=json.dumps(build_info))
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
-
-    def drop_index_with_rest(self, id, username="Administrator", password="password"):
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        url = 'api/index/{0}'.format(id)
-        api = self.index_baseUrl + url
-        headers = {'Content-type': 'application/json','Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'DELETE', headers=headers)
-        if not status:
-            raise Exception(content)
-
-    def get_all_indexes_with_rest(self, username="Administrator", password="password"):
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        url = 'api/indexes'
-        api = self.index_baseUrl + url
-        headers = {'Content-type': 'application/json','Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'GET', headers=headers)
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
-
-    def lookup_gsi_index_with_rest(self, id, body, username="Administrator", password="password"):
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        url = 'api/index/{0}?lookup=true'.format(id)
-        api = self.index_baseUrl + url
-        headers = {'Content-type': 'application/json','Authorization': 'Basic %s' % authorization}
-        params = json.loads("{0}".format(body).replace('\'', '"').replace('True', 'true').replace('False', 'false'))
-        status, content, header = self._http_request(api, 'GET', headers=headers,
-                                             params=json.dumps(params).encode("ascii", "ignore"))
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
-
-    def full_table_scan_gsi_index_with_rest(self, id, body, username="Administrator", password="password"):
-        if "limit" not in body.keys():
-            body["limit"] = 900000
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        url = 'api/index/{0}?scanall=true'.format(id)
-        api = self.index_baseUrl + url
-        headers = {'Content-type': 'application/json','Authorization': 'Basic %s' % authorization}
-        params = json.loads("{0}".format(body).replace('\'', '"').replace('True', 'true').replace('False', 'false'))
-        status, content, header = self._http_request(
-            api, 'GET', headers=headers,
-            params=json.dumps(params).encode("ascii", "ignore"))
-        if not status:
-            raise Exception(content)
-        # Following line is added since the content uses chunked encoding
-        chunkless_content = content.replace("][", ", \n")
-        return json.loads(chunkless_content)
-
-    def range_scan_gsi_index_with_rest(self, id, body, username="Administrator", password="password"):
-        if "limit" not in body.keys():
-            body["limit"] = 300000
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        url = 'api/index/{0}?range=true'.format(id)
-        api = self.index_baseUrl + url
-        headers = {'Content-type': 'application/json',
-                   'Authorization': 'Basic %s' % authorization}
-        params = json.loads("{0}".format(body).replace(
-            '\'', '"').replace('True', 'true').replace('False', 'false'))
-        status, content, header = self._http_request(
-            api, 'GET', headers=headers,
-            params=json.dumps(params).encode("ascii", "ignore"))
-        if not status:
-            raise Exception(content)
-        #Below line is there because of MB-20758
-        content = content.split("[]")[0]
-        # Following line is added since the content uses chunked encoding
-        chunkless_content = content.replace("][", ", \n")
-        return json.loads(chunkless_content)
-
-    def multiscan_for_gsi_index_with_rest(self, id, body, username="Administrator", password="password"):
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        url = 'api/index/{0}?multiscan=true'.format(id)
-        api = self.index_baseUrl + url
-        headers = {'Accept': 'application/json','Authorization': 'Basic %s' % authorization}
-        params = json.loads("{0}".format(body).replace('\'', '"').replace(
-            'True', 'true').replace('False', 'false').replace(
-            "~[]{}UnboundedtruenilNA~", "~[]{}UnboundedTruenilNA~"))
-        params = json.dumps(params).encode("ascii", "ignore").replace("\\\\", "\\")
-        self.test_log.debug(json.dumps(params).encode("ascii", "ignore"))
-        status, content, header = self._http_request(api, 'GET', headers=headers,
-                                                     params=params)
-        if not status:
-            raise Exception(content)
-        #Below line is there because of MB-20758
-        content = content.split("[]")[0]
-        # Following line is added since the content uses chunked encoding
-        chunkless_content = content.replace("][", ", \n")
-        if chunkless_content:
-            return json.loads(chunkless_content)
-        else:
-            return content
-
-    def multiscan_count_for_gsi_index_with_rest(self, id, body, username="Administrator", password="password"):
-        authorization = base64.encodestring('%s:%s' % (username, password))
-        url = 'api/index/{0}?multiscancount=true'.format(id)
-        api = self.index_baseUrl + url
-        headers = {'Accept': 'application/json','Authorization': 'Basic %s' % authorization}
-        count_cmd_body = body.replace('\'', '"').replace('True', 'true').replace('False', 'false')
-        count_cmd_body = count_cmd_body.replace("~[]{}UnboundedtruenilNA~", "~[]{}UnboundedTruenilNA~")
-        params = json.loads(count_cmd_body)
-        params = json.dumps(params).encode("ascii", "ignore").replace("\\\\", "\\")
-        self.test_log.debug(json.dumps(params).encode("ascii", "ignore"))
-        status, content, header = self._http_request(api, 'GET', headers=headers,
-                                                     params=params)
-        if not status:
-            raise Exception(content)
-        #Below line is there because of MB-20758
-        content = content.split("[]")[0]
-        # Following line is added since the content uses chunked encoding
-        chunkless_content = content.replace("][", ", \n")
-        if chunkless_content:
-            return json.loads(chunkless_content)
-        else:
-            return content
-
     'Get list of all roles that exist in the system'
     def retrive_all_user_role(self):
         url = "/settings/rbac/roles"
@@ -3571,6 +3293,7 @@ class RestConnection(object):
             raise Exception(content)
         return content
 
+
 class MembaseServerVersion:
     def __init__(self, implementationVersion='', componentsVersion=''):
         self.implementationVersion = implementationVersion
@@ -3700,23 +3423,6 @@ class RestParser(object):
             index_map[bucket_name][index_name]['definition'] = map['definition'].encode('ascii', 'ignore')
             index_map[bucket_name][index_name]['hosts'] = map['hosts'][0].encode('ascii', 'ignore')
             index_map[bucket_name][index_name]['id'] = map['id']
-        return index_map
-
-    def parse_index_stats_response(self, parsed, index_map=None):
-        if index_map == None:
-            index_map = {}
-        for key in parsed.keys():
-            tokens = key.split(":")
-            val = parsed[key]
-            if len(tokens) > 2:
-                bucket = tokens[0]
-                index_name = tokens[1]
-                stats_name = tokens[2]
-                if bucket not in index_map.keys():
-                    index_map[bucket] = {}
-                if index_name not in index_map[bucket].keys():
-                    index_map[bucket][index_name] = {}
-                index_map[bucket][index_name][stats_name] = val
         return index_map
 
     def parse_get_nodes_response(self, parsed):

@@ -22,7 +22,7 @@ class QueryTests(BaseTestCase):
             rest = RestConnection(server)
             temp = rest.cluster_status()
             while temp['nodes'][0]['status'] == 'warmup':
-                self.log.info ("Waiting for cluster to become healthy")
+                self.log.info("Waiting for cluster to become healthy")
                 self.sleep(5)
                 temp = rest.cluster_status()
 
@@ -91,8 +91,7 @@ class QueryTests(BaseTestCase):
             n1ql_port=self.n1ql_port, full_docs_list=self.full_docs_list,
             log=self.log, input=self.input, master=self.cluster.master)
         self.n1ql_node = self.cluster_util.get_nodes_from_services_map(service_type="n1ql")
-        #self.n1ql_helper._start_command_line_query(self.n1ql_node)
-        # sleep to avoid race condition during bootstrap
+        # self.n1ql_helper._start_command_line_query(self.n1ql_node)
         if self.create_primary_index:
             try:
                 self.n1ql_helper.create_primary_index(
@@ -108,7 +107,9 @@ class QueryTests(BaseTestCase):
         if hasattr(self, 'n1ql_helper'):
             if hasattr(self, 'skip_cleanup') and not self.skip_cleanup:
                 self.n1ql_node = self.cluster_util.get_nodes_from_services_map(service_type="n1ql")
-                self.n1ql_helper.drop_primary_index(using_gsi=self.use_gsi_for_primary, server=self.n1ql_node)
+                self.n1ql_helper.drop_primary_index(
+                    using_gsi=self.use_gsi_for_primary,
+                    server=self.n1ql_node)
         if hasattr(self, 'shell') and self.shell is not None:
             if not self.skip_cleanup:
                 self.n1ql_helper._restart_indexer()

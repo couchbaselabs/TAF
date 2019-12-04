@@ -12,14 +12,16 @@ from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 
 def doc_generator(key, start, end, doc_size=256, doc_type="json",
-                  target_vbucket=None, vbuckets=1024):
+                  target_vbucket=None, vbuckets=1024, mutation_type="ADD"):
     age = range(5)
     first = ['james', 'sharon']
     body = [''.rjust(doc_size - 10, 'a')]
     # Defaults to JSON doc_type
-    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}" }}'
+    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}", ' \
+               + ' "mutation_type": "%s" }}' % mutation_type
     if doc_type in ["string", "binary"]:
-        template = "Age:{0}, first_name:{1}, body: {2}"
+        template = "age:{0}, first_name:{1}, body: {2}, mutation_type: %s" \
+                   % mutation_type
     if target_vbucket:
         return DocumentGeneratorForTargetVbucket(
             key, template, age, first, body, start=start, end=end,

@@ -220,3 +220,9 @@ class RestConnection(object):
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',
                 'Accept': '*/*'}
+
+    def get_headers_for_content_type_json(self):
+        authorization = base64.encodestring('%s:%s'
+                                            % (self.username, self.password))
+        return {'Content-type': 'application/json',
+                'Authorization': 'Basic %s' % authorization}

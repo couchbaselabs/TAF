@@ -53,22 +53,28 @@ class N1QLHelper:
         if self.n1ql_port is None or self.n1ql_port == '':
             self.n1ql_port = self.input.param("n1ql_port", 8093)
             if not self.n1ql_port:
-                self.log.warning(" n1ql_port is not defined, processing will not proceed further")
+                self.log.warning("n1ql_port is not defined, processing will not proceed further")
                 raise Exception("n1ql_port is not defined, processing will not proceed further")
         cred_params = {'creds': []}
         for bucket in self.buckets:
             if hasattr(bucket, 'saslPassword') and bucket.saslPassword:
-                cred_params['creds'].append({'user': 'local:%s' % bucket.name, 'pass': bucket.saslPassword})
+                cred_params['creds'].append({'user': 'local:%s' % bucket.name,
+                                             'pass': bucket.saslPassword})
         query_params.update(cred_params)
         if self.use_rest:
             query_params = {}
             if scan_consistency:
-                query_params['scan_consistency']= scan_consistency
+                query_params['scan_consistency'] = scan_consistency
             if scan_vector:
-                query_params['scan_vector']= str(scan_vector).replace("'", '"')
+                query_params['scan_vector'] = str(scan_vector).replace("'", '"')
             if verbose:
                 self.log.info('Run Query: %s' % query)
-            result = RestConnection(server).query_tool(query, self.n1ql_port, query_params=query_params, is_prepared = is_prepared, verbose = verbose)
+            result = RestConnection(server).query_tool(
+                query,
+                self.n1ql_port,
+                query_params=query_params,
+                is_prepared=is_prepared,
+                verbose=verbose)
         else:
             shell = RemoteMachineShellConnection(server)
             url = "'http://%s:8093/query/service'" % server.ip
@@ -604,13 +610,13 @@ class N1QLHelper:
 
     def get_index_count_using_primary_index(self, buckets, server=None):
         query = "SELECT COUNT(*) FROM {0}"
-        map= {}
+        result_map = dict()
         if server is None:
             server = self.master
         for bucket in buckets:
             res = self.run_cbq_query(query=query.format(bucket.name), server=server)
-            map[bucket.name] = int(res["results"][0]["$1"])
-        return map
+            result_map[bucket.name] = int(res["results"][0]["$1"])
+        return result_map
 
     def get_index_count_using_index(self, bucket, index_name, server=None):
         query = 'SELECT COUNT(*) FROM {0} USE INDEX ({1})'.format(bucket.name, index_name)

@@ -3017,27 +3017,29 @@ class MonitorActiveTask(Task):
                          or (self.type == 'indexer')):
                 self.current_progress = task["progress"]
                 self.task = task
-                self.test_log.debug("monitoring active task was found:" + str(task))
-                self.test_log.debug("progress %s:%s - %s %%"
+                self.test_log.debug("Monitoring active task was found:" + str(task))
+                self.test_log.debug("Progress %s:%s - %s %%"
                                     % (self.type, self.target_value, task["progress"]))
                 if self.current_progress >= self.wait_progress:
                     self.test_log.debug("Got expected progress: %s"
                                         % self.current_progress)
                     self.result = True
-        if self.wait_task:
+        if self.task is None:
             # task is not performed
-            self.test_log.error("Expected active task %s:%s was not found"
-                                % (self.type, self.target_value))
-            self.result = False
+            self.test_log.warning("Expected active task %s:%s was not found"
+                                  % (self.type, self.target_value))
+            self.result = True
+        elif self.wait_task:
+            self.test_log.debug("Polling for %s task to complete" % self.type)
+            self.check()
         else:
             # task was completed
-            self.test_log.debug("task for monitoring %s:%s completed"
+            self.test_log.debug("Task for monitoring %s:%s completed"
                                 % (self.type, self.target_value))
             self.result = True
 
     def check(self):
         tasks = self.rest.ns_server_tasks()
-        self.test_log.info("tasks running on the server: %s" % tasks)
         if self.task in tasks and self.task is not None:
             for task in tasks:
                 # if task still exists
@@ -3059,12 +3061,13 @@ class MonitorActiveTask(Task):
                     # progress value was not changed
                     elif task["progress"] == self.current_progress:
                         if self.current_iter < self.num_iterations:
-                            time.sleep(2)
+                            self.sleep(2, "Wait for next progress update")
                             self.current_iter += 1
                             self.check()
                         else:
-                            self.test_log.error("Progress for active task was not changed during %s sec"
-                                                % 2 * self.num_iterations)
+                            self.test_log.error(
+                                "Progress not changed for %s during %s sec"
+                                % (self.type, 2 * self.num_iterations))
                             self.result = False
                             return
                     else:
@@ -3073,8 +3076,7 @@ class MonitorActiveTask(Task):
                         self.result = False
                         return
         else:
-            self.test_log.info("Task %s is not running on the server"
-                               % (self.task))
+            self.test_log.info("Task %s completed on server" % self.task)
             self.result = True
 
 
