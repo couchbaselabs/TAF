@@ -1,5 +1,7 @@
 import logging
 from random import shuffle
+
+from couchbase_helper import cb_constants
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -46,7 +48,7 @@ class FailoverHelper(object):
             # wait for 5 minutes until node is down
 
             for f in failed:
-                if f.port == 8091:
+                if f.port == cb_constants.port:
                     self.test.assertTrue(RestHelper(rest).wait_for_node_status(f, "unhealthy", 300),
                                          msg="node status is not unhealthy even after waiting for 5 minutes")
                 self.test.assertTrue(rest.fail_over(f.id), msg="failover did not complete")

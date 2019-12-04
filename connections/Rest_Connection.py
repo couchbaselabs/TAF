@@ -10,6 +10,7 @@ import traceback
 import socket
 import time
 from TestInput import TestInputSingleton
+from couchbase_helper import cb_constants
 
 from membase.api import httplib2
 from membase.api.exception import ServerUnavailableException
@@ -19,7 +20,7 @@ class RestConnection(object):
 
     def __new__(self, serverInfo={}, node=None):
         # allow port to determine
-        # behavior of restconnection
+        # behavior of rest connection
         self.log = logging.getLogger("infra")
         port = None
         if isinstance(serverInfo, dict):
@@ -29,7 +30,7 @@ class RestConnection(object):
             port = serverInfo.port
 
         if not port:
-            port = 8091
+            port = cb_constants.port
 
         if int(port) in xrange(9091, 9100):
             # return elastic search rest connection
@@ -42,19 +43,19 @@ class RestConnection(object):
 
     def __init__(self, serverInfo):
         # serverInfo can be a json object/dictionary
+        index_port = cb_constants.index_port
+        fts_port = cb_constants.fts_port
+        query_port = cb_constants.n1ql_port
         if isinstance(serverInfo, dict):
             self.ip = serverInfo["ip"]
             self.username = serverInfo["username"]
             self.password = serverInfo["password"]
-            self.port = serverInfo["port"]
-            self.index_port = 9102
-            self.fts_port = 8094
-            self.query_port = 8093
+            port = serverInfo["port"]
             if "index_port" in serverInfo.keys():
-                self.index_port = serverInfo["index_port"]
+                index_port = serverInfo["index_port"]
             if "fts_port" in serverInfo.keys():
                 if serverInfo['fts_port']:
-                    self.fts_port = serverInfo["fts_port"]
+                    fts_port = serverInfo["fts_port"]
             self.hostname = ''
             self.services = ''
             if "hostname" in serverInfo:
@@ -65,21 +66,18 @@ class RestConnection(object):
             self.ip = serverInfo.ip
             self.username = serverInfo.rest_username
             self.password = serverInfo.rest_password
-            self.port = serverInfo.port
+            port = serverInfo.port
             self.hostname = ''
-            self.index_port = 9102
-            self.fts_port = 8094
-            self.query_port = 8093
             self.services = "kv"
             if hasattr(serverInfo, "services"):
                 self.services = serverInfo.services
             if hasattr(serverInfo, 'index_port'):
-                self.index_port = serverInfo.index_port
+                index_port = serverInfo.index_port
             if hasattr(serverInfo, 'query_port'):
-                self.query_port = serverInfo.query_port
+                query_port = serverInfo.query_port
             if hasattr(serverInfo, 'fts_port'):
                 if serverInfo.fts_port:
-                    self.fts_port = serverInfo.fts_port
+                    fts_port = serverInfo.fts_port
             if hasattr(serverInfo, 'hostname') and serverInfo.hostname \
                and serverInfo.hostname.find(self.ip) == -1:
                 self.hostname = serverInfo.hostname
@@ -90,22 +88,33 @@ class RestConnection(object):
             """ from watson, services param order and format:
                 new_services=fts-kv-index-n1ql """
             self.services_node_init = self.input.param("new_services", None)
-        self.baseUrl = "http://{0}:{1}/".format(self.ip, self.port)
+
+        url_host = "%s" % self.ip
         if self.hostname:
-            self.baseUrl = "http://{0}:{1}/".format(self.hostname, self.port)
+            url_host = "%s" % self.hostname
+
+        generic_url = "http://{0}:{1}/"
+
+        self.baseUrl = generic_url.format(url_host, port)
+        self.indexUrl = generic_url.format(url_host, index_port)
+        self.queryUrl = generic_url.format(url_host, query_port)
+        self.ftsUrl = generic_url.format(url_host, fts_port)
 
         # for Node is unknown to this cluster error
+        node_unknown_msg = "Node is unknown to this cluster"
+        unexpected_server_err_msg = "Unexpected server error, request logged"
         for iteration in xrange(5):
-            http_res, success = self.init_http_request(self.baseUrl + 'nodes/self')
-            if not success and type(http_res) == unicode and\
-               (http_res.find('Node is unknown to this cluster') > -1 or
-                    http_res.find('Unexpected server error, request logged') > -1):
+            http_res, success = \
+                self.init_http_request(self.baseUrl + 'nodes/self')
+            if not success and type(http_res) == unicode \
+               and (http_res.find(node_unknown_msg) > -1
+                    or http_res.find(unexpected_server_err_msg) > -1):
                 self.log.error("Error {0}, 5 seconds sleep before retry"
                                .format(http_res))
                 time.sleep(5)
                 if iteration == 2:
                     self.log.error("Node {0}:{1} is in a broken state!"
-                                   .format(self.ip, self.port))
+                                   .format(self.ip, port))
                     raise ServerUnavailableException(self.ip)
                 continue
             else:
@@ -145,7 +154,8 @@ class RestConnection(object):
                 'Connection': 'close',
                 'Accept': '*/*'}
 
-    def _get_auth(self, headers):
+    @staticmethod
+    def get_auth(headers):
         key = 'Authorization'
         if key in headers:
             val = headers[key]
@@ -179,7 +189,7 @@ class RestConnection(object):
                               format(method, api, params, headers,
                                      response['status'], reason,
                                      content.rstrip('\n'),
-                                     self._get_auth(headers))
+                                     RestConnection.get_auth(headers))
                     self.log.error(message)
                     self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response

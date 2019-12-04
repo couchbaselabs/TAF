@@ -10,6 +10,7 @@ import time
 
 import testconstants
 from couchbase_cli import CouchbaseCLI
+from couchbase_helper import cb_constants
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from table_view import TableView
@@ -444,8 +445,8 @@ class ClusterUtils:
                                        .format(server.ip, hostname))
                         server.ip = hostname
                         shell.disconnect()
-                    if (port != 8091 and port == int(server.port)) or \
-                            (port == 8091 and server.ip == ip):
+                    if (port != cb_constants.port and port == int(server.port)) \
+                            or (port == cb_constants.port and server.ip == ip):
                         node_list.append(server)
             self.log.debug("All nodes in cluster: {0}".format(node_list))
             if get_all_nodes:
@@ -633,7 +634,7 @@ class ClusterUtils:
                     otpNodes.append(self.rest.add_node(
                         user=server.rest_username,
                         password=server.rest_password,
-                        remoteIp=server.ip, port=8091,
+                        remoteIp=server.ip, port=cb_constants.port,
                         services=server.services.split(",")))
 
             self.rebalance(wait_for_completion)
@@ -666,7 +667,7 @@ class ClusterUtils:
             services = node.services.split(",")
         otpnode = self.rest.add_node(user=node.rest_username,
                                      password=node.rest_password,
-                                     remoteIp=node.ip, port=8091,
+                                     remoteIp=node.ip, port=cb_constants.port,
                                      services=services)
         if rebalance:
             self.rebalance(wait_for_completion=wait_for_rebalance_completion)

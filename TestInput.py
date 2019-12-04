@@ -11,6 +11,7 @@ from builds.build_query import BuildQuery
 # configuration
 # which tests
 # ideally should accept a regular expression
+from couchbase_helper import cb_constants
 
 
 class TestInputSingleton:
@@ -482,7 +483,7 @@ class TestInputParser:
                 if server.cli_path == '':
                     server.cli_path = '/opt/membase/bin/'
                 if not server.port:
-                    server.port = 8091
+                    server.port = cb_constants.port
             t_input.servers = servers
             t_input.membase_settings = membase_setting
             return t_input

@@ -12,6 +12,7 @@ from threading import Thread
 
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
+from couchbase_helper import cb_constants
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
 from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
 from exception import ServerAlreadyJoinedException, ServerUnavailableException, InvalidArgumentException
@@ -723,9 +724,10 @@ class RestConnection(object):
                     raise ServerUnavailableException(ip=self.ip)
             time.sleep(3)
 
-    def init_cluster(self, username='Administrator', password='password', port='8091'):
+    def init_cluster(self, username='Administrator', password='password',
+                     port=cb_constants.port):
         api = self.baseUrl + 'settings/web'
-        params = urllib.urlencode({'port': port,
+        params = urllib.urlencode({'port': str(port),
                                    'username': username,
                                    'password': password})
         self.test_log.debug('settings/web params on {0}:{1}:{2}'
@@ -784,7 +786,9 @@ class RestConnection(object):
                                     services=self.node_services)
         self.init_cluster(username=self.username, password=self.password)
 
-    def init_node_services(self, username='Administrator', password='password', hostname='127.0.0.1', port='8091', services=None):
+    def init_node_services(self, username='Administrator', password='password',
+                           hostname='127.0.0.1', port=cb_constants.port,
+                           services=None):
         api = self.baseUrl + '/node/controller/setupServices'
         if services is None:
             self.test_log.critical("services are marked as None, will not work")
@@ -1067,7 +1071,8 @@ class RestConnection(object):
     # can't add the node to itself ( TODO )
     # server already added
     # returns otpNode
-    def add_node(self, user='', password='', remoteIp='', port='8091', zone_name='', services=None):
+    def add_node(self, user='', password='', remoteIp='',
+                 port=cb_constants.port, zone_name='', services=None):
         otpNode = None
 
         # if ip format is ipv6 and enclosing brackets are not found,
@@ -1139,7 +1144,8 @@ class RestConnection(object):
     # can't add the node to itself ( TODO )
     # server already added
     # returns otpNode
-    def do_join_cluster(self, user='', password='', remoteIp='', port='8091', zone_name='', services=None):
+    def do_join_cluster(self, user='', password='', remoteIp='',
+                        port=cb_constants.port, zone_name='', services=None):
         otpNode = None
         self.test_log.debug('Adding remote node {0}:{1} to cluster {2}:{3}'
                             .format(remoteIp, port, self.ip, self.port))
@@ -2830,7 +2836,7 @@ class RestConnection(object):
 
     def index_tool_stats(self):
         self.test_log.info('index n1ql stats')
-        api = "http://%s:8091/indexStatus" % (self.ip)
+        api = "http://%s:%s/indexStatus" % (self.ip, cb_constants.port)
         params = ""
         status, content, header = self._http_request(api, 'GET', params)
         self.test_log.debug(content)
@@ -3567,7 +3573,7 @@ class OtpNode(object):
         self.id = id
         self.ip = ''
         self.replication = ''
-        self.port = 8091
+        self.port = cb_constants.port
         self.gracefulFailoverPossible = 'true'
         # extract ns ip from the otpNode string
         # its normally ns_1@10.20.30.40
@@ -3640,7 +3646,7 @@ class Node(object):
         self.ip = ""
         self.rest_username = ""
         self.rest_password = ""
-        self.port = 8091
+        self.port = cb_constants.port
         self.services = []
         self.storageTotalRam = 0
 
