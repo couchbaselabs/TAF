@@ -1,7 +1,6 @@
 import base64
 import json
-from Rest_Connection import RestConnection
-
+from membase.api.rest_client import RestConnection
 
 class EventingHelper(RestConnection):
     def __init__(self, server):
@@ -418,7 +417,7 @@ class EventingHelper(RestConnection):
         url = "api/v1/functions/" + name
         api = self.eventing_baseUrl + url
         headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'POST',
+        status, content, header = self._http_request(api, 'POST', headers=headers,
                                                      params=json.dumps(body).encode("ascii", "ignore"))
         if not status:
             raise Exception(content)
