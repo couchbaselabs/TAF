@@ -46,6 +46,7 @@ class RestConnection(object):
         index_port = cb_constants.index_port
         fts_port = cb_constants.fts_port
         query_port = cb_constants.n1ql_port
+        eventing_port = cb_constants.eventing_port
         if isinstance(serverInfo, dict):
             self.ip = serverInfo["ip"]
             self.username = serverInfo["username"]
@@ -56,6 +57,9 @@ class RestConnection(object):
             if "fts_port" in serverInfo.keys():
                 if serverInfo['fts_port']:
                     fts_port = serverInfo["fts_port"]
+            if "eventing_port" in serverInfo.keys():
+                if serverInfo['eventing_port']:
+                    self.eventing_port = serverInfo["eventing_port"]
             self.hostname = ''
             self.services = ''
             if "hostname" in serverInfo:
@@ -78,6 +82,9 @@ class RestConnection(object):
             if hasattr(serverInfo, 'fts_port'):
                 if serverInfo.fts_port:
                     fts_port = serverInfo.fts_port
+            if hasattr(serverInfo, 'eventing_port'):
+                if serverInfo.eventing_port:
+                    self.eventing_port = serverInfo.eventing_port
             if hasattr(serverInfo, 'hostname') and serverInfo.hostname \
                and serverInfo.hostname.find(self.ip) == -1:
                 self.hostname = serverInfo.hostname
@@ -99,6 +106,7 @@ class RestConnection(object):
         self.indexUrl = generic_url.format(url_host, index_port)
         self.queryUrl = generic_url.format(url_host, query_port)
         self.ftsUrl = generic_url.format(url_host, fts_port)
+        self.eventing_baseUrl = generic_url.format(url_host, eventing_port)
 
         # for Node is unknown to this cluster error
         node_unknown_msg = "Node is unknown to this cluster"

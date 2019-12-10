@@ -578,6 +578,16 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
         return o, r
 
+    def kill_eventing_process(self, name):
+        self.extract_remote_info()
+        if self.info.type.lower() == 'windows':
+            o, r = self.execute_command(command="taskkill /F /T /IM {0}*".format(name))
+            self.log_command_output(o, r)
+        else:
+            o, r = self.execute_command(command="killall -9 {0}".format(name))
+            self.log_command_output(o, r)
+        return o, r
+
     def change_log_level(self, new_log_level):
         self.log.debug("%s - Change LOG_LEVEL to %s"
                        % (self.ip, new_log_level))

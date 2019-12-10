@@ -130,7 +130,6 @@ class ServerTasks(object):
                             ryow=False, check_persistence=False,
                             start_task=True,
                             suppress_error_table=False):
-
         clients = list()
         if active_resident_threshold == 100:
             self.log.debug("Loading documents to {}".format(bucket.name))
