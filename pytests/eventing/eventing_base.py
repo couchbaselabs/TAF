@@ -703,8 +703,6 @@ class EventingBaseTest(BaseTestCase):
 
     def load(self, load_gen, bucket, operation="create"):
         self.log.info("doc_generator created")
-        print(load_gen)
-        print(bucket)
         task = self.task.async_load_gen_docs(
                 self.cluster, bucket, load_gen, operation, 0,
                 batch_size=10,
