@@ -267,7 +267,7 @@ class RestConnection(object):
             self.baseUrl = "http://{0}:{1}/".format(self.hostname, self.port)
             self.capiBaseUrl = "http://{0}:{1}/".format(self.hostname, 8092)
             self.query_baseUrl = "http://{0}:{1}/".format(self.hostname, 8093)
-            self.eventing_baseUrl = "http://{0}:{1}/".format(self.hostname, self.eventing_port)
+            self.eventing_baseUrl = "http://{0}:{1}/".format(self.hostname, 8096)
 
         # for Node is unknown to this cluster error
         for iteration in xrange(5):

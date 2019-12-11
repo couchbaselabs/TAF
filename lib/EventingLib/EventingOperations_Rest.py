@@ -194,7 +194,7 @@ class EventingHelper(RestConnection):
 
     def get_composite_eventing_status(self):
         authorization = base64.encodestring('%s:%s' % (self.username, self.password))
-        url = "/api/v1/status"
+        url = "api/v1/status"
         api = self.eventing_baseUrl + url
         headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
         status, content, header = self._http_request(api, 'GET', headers=headers)

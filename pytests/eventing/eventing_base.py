@@ -19,7 +19,6 @@ class EventingBaseTest(BaseTestCase):
     def setUp(self):
         super(EventingBaseTest, self).setUp()
         self.bucket_helper = BucketHelper(self.cluster.master)
-        self.eventing_helper = EventingHelper(self.cluster.master)
         self.input = TestInputSingleton.input
         self.services_init = self.input.param("services_init", None)
         self.services = self.cluster_util.get_services(self.cluster.servers, self.services_init)
@@ -41,6 +40,7 @@ class EventingBaseTest(BaseTestCase):
         self.server = self.master
         self.restServer = self.cluster_util.get_nodes_from_services_map(service_type="eventing")
         self.rest = RestConnection(self.restServer)
+        self.eventing_helper = EventingHelper(self.restServer)
         self.rest.set_indexer_storage_mode()
         self.log.info(
             "Setting the min possible memory quota so that adding mode nodes to the cluster wouldn't be a problem.")
