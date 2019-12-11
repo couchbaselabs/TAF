@@ -9,12 +9,12 @@ import json as pyJson
 import logging
 
 from com.couchbase.client.core.env import TimeoutConfig
-from com.couchbase.client.core.error import KeyExistsException, \
+from com.couchbase.client.core.error import DocumentExistsException, \
                                             CouchbaseException, \
-                                            RequestTimeoutException, \
-                                            KeyNotFoundException, \
-                                            CASMismatchException, \
-                                            CouchbaseOutOfMemoryException, \
+                                            TimeoutException, \
+                                            DocumentNotFoundException, \
+                                            CasMismatchException, \
+                                            ServerOutOfMemoryException, \
                                             TemporaryFailureException, \
                                             RequestCanceledException,\
                                             ConfigException
@@ -445,15 +445,15 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True,
                            "cas": insert_result.cas()})
-        except KeyExistsException as ex:
+        except DocumentExistsException as ex:
             self.log.warning("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except CouchbaseOutOfMemoryException as ex:
+        except ServerOutOfMemoryException as ex:
             self.log.warning("OOM exception: %s" % ex)
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
@@ -485,20 +485,20 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True,
                            "cas": replace_result.cas()})
-        except KeyExistsException as ex:
+        except DocumentExistsException as ex:
             self.log.warning("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except CASMismatchException as e:
+        except CasMismatchException as e:
             self.log.warning("Exception: Cas mismatch for doc {0} - {1}"
                              .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
-        except KeyNotFoundException as e:
+        except DocumentNotFoundException as e:
             self.log.warning("Key '%s' not found!" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
@@ -611,11 +611,11 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True,
                            "cas": upsertResult.cas()})
-        except KeyExistsException as ex:
+        except DocumentExistsException as ex:
             self.log.warning("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
