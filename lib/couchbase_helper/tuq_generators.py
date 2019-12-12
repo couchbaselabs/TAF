@@ -873,18 +873,20 @@ class JsonGenerator:
                                                   start=start, end=end))
         return generators
 
-    def generate_docs_bigdata(self, key_prefix = "big_dataset", value_size = 1024, start=0, docs_per_day=1, end=None):
+    def generate_docs_bigdata(self, key_prefix="big_dataset", value_size=1024,
+                              start=0, docs_per_day=1, end=None):
         if end is None:
             end = docs_per_day
         age = range(start, end)
         name = ['a' * value_size,]
         template = '{{ "age": {0}, "name": "{1}" }}'
 
-        gen_load = DocumentGenerator(key_prefix, template, age, name, start=start,
-                                     end=end)
+        gen_load = DocumentGenerator(key_prefix, template, age, name,
+                                     start=start, end=end)
         return gen_load
 
-    def generate_docs_simple(self, key_prefix ="simple_dataset", start=0, docs_per_day = 1000, isShuffle = False):
+    def generate_docs_simple(self, key_prefix="simple_dataset", start=0,
+                             docs_per_day=1000, isShuffle=False):
         end = docs_per_day
         age = self._shuffle(range(start, end), isShuffle)
         name = [key_prefix + '-' + str(i) for i in self._shuffle(xrange(start, end), isShuffle)]
