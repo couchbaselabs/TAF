@@ -2650,15 +2650,15 @@ class N1QLQueryTask(Task):
 class CreateIndexTask(Task):
     def __init__(self, server, bucket, index_name, query, n1ql_helper=None,
                  retry_time=2, defer_build=False, timeout=240):
-        super(CreateIndexTask, self).__init__("create_index_task")
-        Task.__init__(self, "create_index_task")
+        super(CreateIndexTask, self).__init__("Task_create_index_%s"
+                                              % index_name)
         self.server = server
         self.bucket = bucket
         self.defer_build = defer_build
         self.query = query
         self.index_name = index_name
         self.n1ql_helper = n1ql_helper
-        self.retry_time = 2
+        self.retry_time = retry_time
         self.retried = 0
         self.timeout = timeout
 
@@ -2667,9 +2667,9 @@ class CreateIndexTask(Task):
         try:
             # Query and get results
             self.n1ql_helper.run_cbq_query(query=self.query, server=self.server)
-            return_value = self.check()
+            self.result = self.check()
             self.complete_task()
-            return return_value
+            return self.result
         except CreateIndexException as e:
             # initial query failed, try again
             if self.retried < self.retry_time:
@@ -2692,7 +2692,7 @@ class CreateIndexTask(Task):
             if not check:
                 raise CreateIndexException("Index {0} not created as expected"
                                            .format(self.index_name))
-            return True
+            return check
         except CreateIndexException as e:
             # subsequent query failed! exit
             self.test_log.error(e)
@@ -2706,22 +2706,23 @@ class CreateIndexTask(Task):
 class BuildIndexTask(Task):
     def __init__(self, server, bucket, query, n1ql_helper=None,
                  retry_time=2):
-        super(BuildIndexTask, self).__init__("build_index_task")
+        super(BuildIndexTask, self).__init__("Task_Build_index")
         self.server = server
         self.bucket = bucket
         self.query = query
         self.n1ql_helper = n1ql_helper
-        self.retry_time = 2
+        self.retry_time = retry_time
         self.retried = 0
 
     def call(self):
         self.start_task()
         try:
             # Query and get results
-            self.n1ql_helper.run_cbq_query(query=self.query, server=self.server)
-            return_value = self.check()
+            self.n1ql_helper.run_cbq_query(query=self.query,
+                                           server=self.server)
+            self.result = self.check()
             self.complete_task()
-            return return_value
+            return self.result
         except CreateIndexException as e:
             # initial query failed, try again
             if self.retried < self.retry_time:

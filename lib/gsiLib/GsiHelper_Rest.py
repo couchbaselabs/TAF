@@ -77,6 +77,32 @@ class GsiHelper(RestConnection):
                     index_map[field] = val
         return index_map
 
+    def index_status(self):
+        result = dict()
+        api = self.baseUrl + "indexStatus"
+        status, content, header = self._http_request(api)
+        if status:
+            content = json.loads(content)
+            for val in content["indexes"]:
+                bucket_name = val['bucket'].encode('ascii', 'ignore')
+                if bucket_name not in result.keys():
+                    result[bucket_name] = dict()
+                index_name = val['index'].encode('ascii', 'ignore')
+                result[bucket_name][index_name] = dict()
+                result[bucket_name][index_name]['status'] = \
+                    val['status'].encode('ascii', 'ignore')
+                result[bucket_name][index_name]['progress'] = \
+                    str(val['progress']).encode('ascii', 'ignore')
+                result[bucket_name][index_name]['definition'] = \
+                    val['definition'].encode('ascii', 'ignore')
+                if len(val['hosts']) == 1:
+                    result[bucket_name][index_name]['hosts'] = \
+                        val['hosts'][0].encode('ascii', 'ignore')
+                else:
+                    result[bucket_name][index_name]['hosts'] = val['hosts']
+                result[bucket_name][index_name]['id'] = val['id']
+        return result
+
     def get_index_id_map(self, timeout=120):
         api = self.baseUrl + 'indexStatus'
         index_map = dict()
@@ -185,7 +211,7 @@ class GsiHelper(RestConnection):
     def full_table_scan_gsi_index(self, index_id, body):
         if "limit" not in body.keys():
             body["limit"] = 900000
-        url = 'api/index/{0}?scanall=true'.format(index_id)
+        url = 'internal/index/{0}?scanall=true'.format(index_id)
         api = self.indexUrl + url
         headers = self.get_headers_for_content_type_json()
         params = json.loads("{0}".format(body)
@@ -204,7 +230,7 @@ class GsiHelper(RestConnection):
     def range_scan_gsi_index(self, index_id, body):
         if "limit" not in body.keys():
             body["limit"] = 300000
-        url = 'api/index/{0}?range=true'.format(index_id)
+        url = 'internal/index/{0}?range=true'.format(index_id)
         api = self.indexUrl + url
         headers = self.get_headers_for_content_type_json()
         params = json.loads("{0}".format(body).replace(
@@ -245,7 +271,7 @@ class GsiHelper(RestConnection):
             return content
 
     def multiscan_count_for_gsi_index(self, index_id, body):
-        url = 'api/index/{0}?multiscancount=true'.format(index_id)
+        url = 'internal/index/{0}?multiscancount=true'.format(index_id)
         api = self.indexUrl + url
         headers = self.get_headers_for_content_type_json()
         count_cmd_body = body.replace('\'', '"').replace('True', 'true') \

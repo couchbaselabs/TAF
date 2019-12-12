@@ -1,6 +1,7 @@
 import copy
 import json
 
+from gsiLib.gsiHelper import GsiHelper
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
@@ -13,8 +14,8 @@ class QueryTests(BaseTestCase):
     def setUp(self):
         super(QueryTests, self).setUp()
         self.expiry = self.input.param("expiry", 0)
-        self.batch_size = self.input.param("batch_size", 1)
-        self.scan_consistency = self.input.param("scan_consistency", "request_plus")
+        self.scan_consistency = self.input.param("scan_consistency",
+                                                 "request_plus")
         self.skip_cleanup = self.input.param("skip_cleanup", False)
         self.run_async = self.input.param("run_async", True)
         self.version = self.input.param("cbq_version", "git_repo")
@@ -30,15 +31,16 @@ class QueryTests(BaseTestCase):
             service_type="index",
             get_all_nodes=True)
         # Set indexer storage mode
-        indexer_rest = RestConnection(indexer_node[0])
+        self.indexer_rest = GsiHelper(indexer_node[0], self.log)
         doc = {"indexer.settings.storage_mode": self.gsi_type}
-        indexer_rest.set_index_settings_internal(doc)
+        self.indexer_rest.set_index_settings_internal(doc)
         doc = {"indexer.api.enableTestServer": True}
-        indexer_rest.set_index_settings_internal(doc)
-        self.indexer_scanTimeout = self.input.param("indexer_scanTimeout", None)
+        self.indexer_rest.set_index_settings_internal(doc)
+        self.indexer_scanTimeout = self.input.param("indexer_scanTimeout",
+                                                    None)
         if self.indexer_scanTimeout is not None:
             for server in indexer_node:
-                rest = RestConnection(server)
+                rest = GsiHelper(server, self.log)
                 rest.set_index_settings({"indexer.settings.scan_timeout": self.indexer_scanTimeout})
         if self.input.tuq_client and "client" in self.input.tuq_client:
             self.shell = RemoteMachineShellConnection(self.input.tuq_client["client"])
@@ -75,22 +77,27 @@ class QueryTests(BaseTestCase):
         verify_data = False
         if self.scan_consistency != "request_plus":
             verify_data = True
-        self.load(self.gens_load, flag=self.item_flag, verify_data=verify_data, batch_size=self.batch_size)
+        self.load(self.gens_load,
+                  flag=self.item_flag,
+                  verify_data=verify_data)
         if self.doc_ops:
             self.ops_dist_map = self.calculate_data_change_distribution(
                 create_per=self.create_ops_per, update_per=self.update_ops_per,
                 delete_per=self.delete_ops_per, expiry_per=self.expiry_ops_per,
                 start=0, end=self.docs_per_day)
             self.docs_gen_map = self.generate_ops_docs(self.docs_per_day, 0)
-            self.full_docs_list_after_ops = self.generate_full_docs_list_after_ops(self.docs_gen_map)
-        # Define Helper Method which will be used for running n1ql queries, create index, drop index
+            self.full_docs_list_after_ops = \
+                self.generate_full_docs_list_after_ops(self.docs_gen_map)
+        # Define Helper Method which will be used for running n1ql queries,
+        # create index, drop index
         self.n1ql_helper = N1QLHelper(
             version=self.version, shell=self.shell,
             use_rest=self.use_rest, max_verify=self.max_verify,
             buckets=self.bucket_util.buckets, item_flag=self.item_flag,
             n1ql_port=self.n1ql_port, full_docs_list=self.full_docs_list,
             log=self.log, input=self.input, master=self.cluster.master)
-        self.n1ql_node = self.cluster_util.get_nodes_from_services_map(service_type="n1ql")
+        self.n1ql_node = self.cluster_util.get_nodes_from_services_map(
+            service_type="n1ql")
         # self.n1ql_helper._start_command_line_query(self.n1ql_node)
         if self.create_primary_index:
             try:
@@ -106,7 +113,8 @@ class QueryTests(BaseTestCase):
         self.check_gsi_logs_for_panic()
         if hasattr(self, 'n1ql_helper'):
             if hasattr(self, 'skip_cleanup') and not self.skip_cleanup:
-                self.n1ql_node = self.cluster_util.get_nodes_from_services_map(service_type="n1ql")
+                self.n1ql_node = self.cluster_util.get_nodes_from_services_map(
+                    service_type="n1ql")
                 self.n1ql_helper.drop_primary_index(
                     using_gsi=self.use_gsi_for_primary,
                     server=self.n1ql_node)
@@ -115,7 +123,6 @@ class QueryTests(BaseTestCase):
                 self.n1ql_helper._restart_indexer()
                 self.n1ql_helper.killall_tuq_process()
         super(QueryTests, self).tearDown()
-
 
     def generate_docs(self, num_items, start=0):
         try:
@@ -129,25 +136,34 @@ class QueryTests(BaseTestCase):
                 return self.generate_docs_sabre(num_items, start)
             if self.dataset == "array":
                 return self.generate_docs_array(num_items, start)
-            return self.generate_docs_simple(num_items, start)
+            return getattr(self, 'generate_docs_' + self.dataset)(num_items,
+                                                                  start)
         except Exception, ex:
-            self.log.info(str(ex))
-            self.fail("There is no dataset %s, please enter a valid one" % self.dataset)
+            self.log.error(str(ex))
+            self.fail("There is no dataset %s, please enter a valid one"
+                      % self.dataset)
 
     def generate_ops_docs(self, num_items, start=0):
         json_generator = JsonGenerator()
         if self.dataset == "simple":
-            return self.generate_ops(num_items, start, json_generator.generate_docs_simple)
+            return self.generate_ops(num_items, start,
+                                     json_generator.generate_docs_simple)
         if self.dataset == "sales":
-            return self.generate_ops(num_items, start, json_generator.generate_docs_sales)
+            return self.generate_ops(num_items, start,
+                                     json_generator.generate_docs_sales)
         if self.dataset in ["employee", "default"]:
-            return self.generate_ops(num_items, start, json_generator.generate_docs_employee)
+            return self.generate_ops(num_items, start,
+                                     json_generator.generate_docs_employee)
         if self.dataset == "sabre":
-            return self.generate_ops(num_items, start, json_generator.generate_docs_sabre)
+            return self.generate_ops(num_items, start,
+                                     json_generator.generate_docs_sabre)
         if self.dataset == "bigdata":
-            return self.generate_ops(num_items, start, json_generator.generate_docs_bigdata)
+            return self.generate_ops(num_items, start,
+                                     json_generator.generate_docs_bigdata)
         if self.dataset == "array":
-            return self.generate_ops(num_items, start, json_generator.generate_all_type_documents_for_gsi)
+            return self.generate_ops(
+                num_items, start,
+                json_generator.generate_all_type_documents_for_gsi)
         self.log.error("Invalid dataset: %s" % self.dataset)
         self.fail("Invalid dataset %s, select a valid one" % self.dataset)
 
@@ -161,24 +177,29 @@ class QueryTests(BaseTestCase):
 
     def generate_docs_employee(self, docs_per_day, start=0):
         json_generator = JsonGenerator()
-        return json_generator.generate_docs_employee(docs_per_day=docs_per_day, start=start)
+        return json_generator.generate_docs_employee(docs_per_day=docs_per_day,
+                                                     start=start)
 
     def generate_docs_simple(self, docs_per_day, start=0):
         json_generator = JsonGenerator()
-        return json_generator.generate_docs_simple(start=start, docs_per_day=docs_per_day)
+        return json_generator.generate_docs_simple(start=start,
+                                                   docs_per_day=docs_per_day)
 
     def generate_docs_sales(self, docs_per_day, start=0):
         json_generator = JsonGenerator()
-        return json_generator.generate_docs_sales(docs_per_day=docs_per_day, start=start)
+        return json_generator.generate_docs_sales(docs_per_day=docs_per_day,
+                                                  start=start)
 
     def generate_docs_bigdata(self, docs_per_day, start=0):
         json_generator = JsonGenerator()
         return json_generator.generate_docs_bigdata(docs_per_day=docs_per_day,
-            start=start, value_size=self.value_size)
+                                                    start=start,
+                                                    value_size=self.value_size)
 
     def generate_docs_array(self, num_items=10, start=0):
         json_generator = JsonGenerator()
-        return json_generator.generate_all_type_documents_for_gsi(docs_per_day=num_items,
+        return json_generator.generate_all_type_documents_for_gsi(
+            docs_per_day=num_items,
             start=start)
 
     def generate_ops(self, docs_per_day, start=0, method=None):
@@ -202,7 +223,9 @@ class QueryTests(BaseTestCase):
                 update = False
                 if key == "update":
                     update = True
-                gen_docs = self.generate_full_docs_list(gens_load=gen_docs_map[key], update=update)
+                gen_docs = self.generate_full_docs_list(
+                    gens_load=gen_docs_map[key],
+                    update=update)
                 for doc in gen_docs:
                     docs.append(doc)
         return docs
@@ -238,9 +261,12 @@ class QueryTests(BaseTestCase):
 
     def async_run_doc_ops(self):
         if self.doc_ops:
-            tasks = self.bucket_util.async_ops_all_buckets(self.docs_gen_map, batch_size=self.batch_size)
+            tasks = self.bucket_util.async_ops_all_buckets(
+                self.docs_gen_map,
+                batch_size=self.batch_size)
             self.n1ql_helper.full_docs_list = self.full_docs_list_after_ops
-            self.gen_results = TuqGenerators(self.log, self.n1ql_helper.full_docs_list)
+            self.gen_results = TuqGenerators(self.log,
+                                             self.n1ql_helper.full_docs_list)
             self.log.info("------ KV OPS Done ------")
             return tasks
         return []
@@ -262,33 +288,49 @@ class QueryTests(BaseTestCase):
                                              self.n1ql_helper.full_docs_list)
 
     def load(self, generators_load, buckets=None, exp=0, flag=0,
-             kv_store=1, only_store_hash=True, batch_size=1, pause_secs=1,
-             timeout_secs=30, op_type='create', start_items=0, verify_data=True):
+             only_store_hash=True, pause_secs=1,
+             op_type='create', start_items=0,
+             verify_data=True):
         if not buckets:
             buckets = self.bucket_util.buckets
-        gens_load = {}
+        gens_load = dict()
         for bucket in buckets:
-            tmp_gen = []
+            tmp_gen = list()
             if isinstance(generators_load, list):
                 for generator_load in generators_load:
                     tmp_gen.append(copy.deepcopy(generator_load))
             else:
                 tmp_gen = copy.deepcopy(generators_load)
             gens_load[bucket.name] = copy.deepcopy(tmp_gen)
-        tasks = []
+        tasks = list()
         items = 0
         for bucket in buckets:
             if isinstance(gens_load[bucket.name], list):
                 for gen_load in gens_load[bucket.name]:
                     items += (gen_load.end - gen_load.start)
             else:
-                items += gens_load[bucket.name].end - gens_load[bucket.name].start
+                items += gens_load[bucket.name].end \
+                         - gens_load[bucket.name].start
         for bucket in buckets:
-            self.log.info("%s %s to %s documents..." % (op_type, items, bucket.name))
-            tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gens_load[bucket.name], op_type, exp,
-                                                       flag, self.persist_to, self.replicate_to,
-                                                       only_store_hash, batch_size, pause_secs, self.sdk_timeout,
-                                                       self.sdk_compression, retries=self.sdk_retries))
+            self.log.info("%s %s to %s documents..."
+                          % (op_type, items, bucket.name))
+            if type(gens_load[bucket.name]) is list:
+                for gen in gens_load[bucket.name]:
+                    tasks.append(self.task.async_load_gen_docs(
+                        self.cluster, bucket, gen, op_type, exp,
+                        flag, self.persist_to, self.replicate_to,
+                        only_store_hash, self.batch_size, pause_secs,
+                        self.sdk_timeout, self.sdk_compression,
+                        print_ops_rate=False,
+                        retries=self.sdk_retries))
+            else:
+                tasks.append(self.task.async_load_gen_docs(
+                    self.cluster, bucket, gens_load[bucket.name], op_type, exp,
+                    flag, self.persist_to, self.replicate_to,
+                    only_store_hash, self.batch_size, pause_secs,
+                    self.sdk_timeout, self.sdk_compression,
+                    print_ops_rate=False,
+                    retries=self.sdk_retries))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.num_items = items + start_items
@@ -299,11 +341,15 @@ class QueryTests(BaseTestCase):
         """ Checks if a string 'str' is present in goxdcr.log on server
             and returns the number of occurances
         """
-        nodes_out_list, index_nodes_out = self.cluster_util.generate_map_nodes_out_dist(self.nodes_out_dist,
-                                                                                        self.targetMaster,
-                                                                                        self.targetIndexManager)
+        nodes_out_list, index_nodes_out = \
+            self.cluster_util.generate_map_nodes_out_dist(
+                self.nodes_out_dist,
+                self.targetMaster,
+                self.targetIndexManager)
         panic_str = "panic"
-        indexers = self.cluster_util.get_nodes_from_services_map(service_type="index", get_all_nodes=True)
+        indexers = self.cluster_util.get_nodes_from_services_map(
+            service_type="index",
+            get_all_nodes=True)
         if not indexers:
             return None
         for server in indexers:
@@ -311,16 +357,19 @@ class QueryTests(BaseTestCase):
                 shell = RemoteMachineShellConnection(server)
                 _, dir = RestConnection(server).diag_eval('filename:absname(element(2, application:get_env(ns_server,error_logger_mf_dir))).')
                 indexer_log = str(dir) + '/indexer.log*'
-                count, err = shell.execute_command("zgrep \"{0}\" {1} | wc -l".
-                                            format(panic_str, indexer_log))
+                count, err = shell.execute_command(
+                    "zgrep \"{0}\" {1} | wc -l"
+                    .format(panic_str, indexer_log))
                 if isinstance(count, list):
                     count = int(count[0])
                 else:
                     count = int(count)
                 shell.disconnect()
                 if count > 0:
-                    self.log.info("===== PANIC OBSERVED IN INDEXER LOGS ON SERVER {0}=====".format(server.ip))
-        projectors = self.cluster_util.get_nodes_from_services_map(service_type="kv", get_all_nodes=True)
+                    self.log.info("=== PANIC OBSERVED IN INDEXER LOGS ON SERVER {0} ===".format(server.ip))
+        projectors = self.cluster_util.get_nodes_from_services_map(
+            service_type="kv",
+            get_all_nodes=True)
         if not projectors:
             return None
         for server in projectors:
@@ -328,8 +377,9 @@ class QueryTests(BaseTestCase):
                 shell = RemoteMachineShellConnection(server)
                 _, dir = RestConnection(server).diag_eval('filename:absname(element(2, application:get_env(ns_server,error_logger_mf_dir))).')
                 projector_log = str(dir) + '/projector.log*'
-                count, err = shell.execute_command("zgrep \"{0}\" {1} | wc -l".
-                                            format(panic_str, projector_log))
+                count, err = shell.execute_command(
+                    "zgrep \"{0}\" {1} | wc -l"
+                    .format(panic_str, projector_log))
                 if isinstance(count, list):
                     count = int(count[0])
                 else:
@@ -339,7 +389,8 @@ class QueryTests(BaseTestCase):
                     self.log.info("===== PANIC OBSERVED IN PROJECTOR LOGS ON SERVER {0}=====".format(server.ip))
 
     def calculate_data_change_distribution(self, create_per=0, update_per=0,
-                                           delete_per=0, expiry_per=0, start=0, end=0):
+                                           delete_per=0, expiry_per=0,
+                                           start=0, end=0):
         count = end - start
         change_dist_map = {}
         create_count = int(count * create_per)
@@ -348,23 +399,30 @@ class QueryTests(BaseTestCase):
         if update_per != 0:
             start_pointer = end_pointer
             end_pointer = start_pointer + int(count * update_per)
-            change_dist_map["update"] = {"start": start_pointer, "end": end_pointer}
+            change_dist_map["update"] = {"start": start_pointer,
+                                         "end": end_pointer}
         if expiry_per != 0:
             start_pointer = end_pointer
             end_pointer = start_pointer + int(count * expiry_per)
-            change_dist_map["expiry"] = {"start": start_pointer, "end": end_pointer}
+            change_dist_map["expiry"] = {"start": start_pointer,
+                                         "end": end_pointer}
         if delete_per != 0:
             start_pointer = end_pointer
             end_pointer = start_pointer + int(count * delete_per)
-            change_dist_map["delete"] = {"start": start_pointer, "end": end_pointer}
+            change_dist_map["delete"] = {"start": start_pointer,
+                                         "end": end_pointer}
         if (1 - (update_per + delete_per + expiry_per)) != 0:
             start_pointer = end_pointer
             end_pointer = end
-            change_dist_map["remaining"] = {"start": start_pointer, "end": end_pointer}
+            change_dist_map["remaining"] = {"start": start_pointer,
+                                            "end": end_pointer}
         if create_per != 0:
-            change_dist_map["create"] = {"start": end, "end": create_count + end + 1}
+            change_dist_map["create"] = {"start": end,
+                                         "end": create_count + end + 1}
         return change_dist_map
 
     def find_nodes_in_list(self):
         self.nodes_in_list = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
-        self.services_in = self.cluster_util.get_services(self.nodes_in_list, self.services_in, start_node=0)
+        self.services_in = self.cluster_util.get_services(self.nodes_in_list,
+                                                          self.services_in,
+                                                          start_node=0)

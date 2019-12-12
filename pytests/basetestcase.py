@@ -464,13 +464,13 @@ class BaseTestCase(unittest.TestCase):
             else:
                 self.log.error("API perform_cb_collect returned False")
 
-    def sleep(self, timeout=15, message=""):
-        self.log.info("Sleep is called from %s -> %s():L%s" % (
-            inspect.stack()[1][1],
-            inspect.stack()[1][3],
-            inspect.stack()[1][2]))
-        self.log.info("Reason:{0} Sleep for {1} secs ...".format(message,
-                                                                 timeout))
+    def sleep(self, timeout=15, message=None):
+        self.log.debug("Sleep is called from %s -> %s():L%s"
+                       % (inspect.stack()[1][1],
+                          inspect.stack()[1][3],
+                          inspect.stack()[1][2]))
+        self.log.info("Reason: %s. Sleep for %s secs ..." % (message,
+                                                             timeout))
         time.sleep(timeout)
 
     def log_failure(self, message):

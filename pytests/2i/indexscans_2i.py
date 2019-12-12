@@ -4,7 +4,6 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.query_definitions import QueryDefinition, \
     FULL_SCAN_TEMPLATE, SIMPLE_INDEX, FULL_SCAN, NO_ORDERBY_GROUPBY
-from GsiLib.gsiHelper import GsiHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -95,8 +94,8 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
             self.task.jython_task_manager.get_task_result(task)
 
     # Function to validate index's item count
-    def validate_indexed_doc_count(self, bucket, gsi_helper, index_item_count):
-        gsi_helper.wait_for_indexing_to_complete(bucket.name)
+    def validate_indexed_doc_count(self, bucket, index_item_count):
+        self.indexer_rest.wait_for_indexing_to_complete(bucket.name)
         self.sleep(5, "Wait for indexing to complete")
         self.log.info("Validate indexed item count")
         for m_type in index_item_count.keys():
@@ -120,10 +119,10 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
                                      % (m_type, count,
                                         index_item_count[m_type]))
 
-    def validate_indexed_count_from_stats(self, bucket, gsi_helper,
+    def validate_indexed_count_from_stats(self, bucket,
                                           expected_num_indexed,
                                           index_item_count):
-        gsi_stats = gsi_helper.get_index_stats()
+        gsi_stats = self.indexer_rest.get_index_stats()
         for gsi_index, stats in gsi_stats[bucket.name].items():
             if stats["num_docs_indexed"] != expected_num_indexed[gsi_index]:
                 self.log_failure("Bucket::Index - %s:%s:num_docs_indexed "
@@ -180,7 +179,6 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
 
         crud_batch_size = 50
         def_bucket = self.bucket_util.buckets[0]
-        gsi_helper = GsiHelper(self.cluster.servers[0], self.log)
         kv_nodes = self.cluster_util.get_kv_nodes()
         replica_vbs = dict()
         verification_dict = dict()
@@ -229,8 +227,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
         expected_num_indexed["durable_set_aborts"] = 0
 
         if self.create_index_during == "before_doc_ops":
-            self.validate_indexed_doc_count(def_bucket, gsi_helper,
-                                            index_item_count)
+            self.validate_indexed_doc_count(def_bucket, index_item_count)
 
         self.log.info("Loading docs such that all sync_writes will be aborted")
         for server in kv_nodes:
@@ -266,8 +263,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
             verification_dict["sync_write_aborted_count"] += \
                 crud_batch_size
             if self.create_index_during == "before_doc_ops":
-                self.validate_indexed_doc_count(def_bucket, gsi_helper,
-                                                index_item_count)
+                self.validate_indexed_doc_count(def_bucket, index_item_count)
 
             load_gen["SET"][server] = list()
             load_gen["SET"][server].append(doc_generator(
@@ -300,8 +296,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
             ssh_shell.disconnect()
 
             if self.create_index_during == "before_doc_ops":
-                self.validate_indexed_doc_count(def_bucket, gsi_helper,
-                                                index_item_count)
+                self.validate_indexed_doc_count(def_bucket, index_item_count)
         failed = durability_helper.verify_vbucket_details_stats(
             def_bucket, kv_nodes,
             vbuckets=self.vbuckets, expected_val=verification_dict)
@@ -311,11 +306,10 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
 
         if self.create_index_during == "after_doc_ops":
             self.create_gsi_indexes(def_bucket)
-            self.validate_indexed_doc_count(def_bucket, gsi_helper,
-                                            index_item_count)
+            self.validate_indexed_doc_count(def_bucket, index_item_count)
 
         self.log.info("Verify aborts are not indexed")
-        self.validate_indexed_count_from_stats(def_bucket, gsi_helper,
+        self.validate_indexed_count_from_stats(def_bucket,
                                                expected_num_indexed,
                                                index_item_count)
 
@@ -357,8 +351,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
                 index_item_count["durable_add_aborts"] += crud_batch_size
                 expected_num_indexed["#primary"] += crud_batch_size
                 expected_num_indexed["durable_add_aborts"] += crud_batch_size
-                self.validate_indexed_doc_count(def_bucket, gsi_helper,
-                                                index_item_count)
+                self.validate_indexed_doc_count(def_bucket, index_item_count)
 
             for gen_load in load_gen["SET"][server]:
                 task = self.task.async_load_gen_docs(
@@ -377,11 +370,11 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
                 expected_num_indexed["#primary"] += crud_batch_size
                 expected_num_indexed["durable_add_aborts"] += crud_batch_size
                 expected_num_indexed["durable_set_aborts"] += crud_batch_size
-                self.validate_indexed_doc_count(def_bucket, gsi_helper,
+                self.validate_indexed_doc_count(def_bucket,
                                                 index_item_count)
 
         self.log.info("Validate the mutated docs are taken into indexing")
-        self.validate_indexed_count_from_stats(def_bucket, gsi_helper,
+        self.validate_indexed_count_from_stats(def_bucket,
                                                expected_num_indexed,
                                                index_item_count)
         self.validate_test_failure()
