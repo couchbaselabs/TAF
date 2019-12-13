@@ -1,6 +1,6 @@
 class SDKException:
     KeyExistsException = \
-        "com.couchbase.client.core.error.DocumentExistsException"
+        "com.couchbase.client.core.error.KeyExistsException"
     DurabilityImpossibleException = \
         "com.couchbase.client.core.error.DurabilityImpossibleException"
     DurableWriteInProgressException = \
@@ -8,7 +8,7 @@ class SDKException:
     DurabilityAmbiguousException = \
         "com.couchbase.client.core.error.DurabilityAmbiguousException"
     RequestTimeoutException = \
-        "com.couchbase.client.core.error.TimeoutException"
+        "com.couchbase.client.core.error.RequestTimeoutException"
     TemporaryFailureException = \
         "com.couchbase.client.core.error.TemporaryFailureException"
     RequestCanceledException = \
@@ -16,7 +16,7 @@ class SDKException:
     ValueTooLargeException = \
         "com.couchbase.client.core.error.ValueTooLargeException"
     KeyNotFoundException = \
-        "com.couchbase.client.core.error.DocumentNotFoundException"
+        "com.couchbase.client.core.error.KeyNotFoundException"
     PathNotFoundException = \
         "com.couchbase.client.core.error.subdoc.PathNotFoundException"
     DecodingFailedException = \
