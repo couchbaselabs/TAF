@@ -480,9 +480,9 @@ class ClusterUtils:
                 return services
             else:
                 return None
-        if tgt_services is not None and "-" in tgt_services:
+        elif "-" in tgt_services:
             services = tgt_services.replace(":", ",").split("-")[start_node:]
-        elif tgt_services is not None:
+        else:
             for node in range(start_node, len(tgt_nodes)):
                 services.append(tgt_services.replace(":", ","))
         return services

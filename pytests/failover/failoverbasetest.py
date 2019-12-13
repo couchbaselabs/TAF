@@ -59,6 +59,8 @@ class FailoverBaseTest(BaseTestCase):
         self.graceful = self.input.param("graceful", True)
         self.failover_onebyone = self.input.param("failover_onebyone", False)
         self.new_replica = self.input.param("new_replica", None)
+        self.test_abort_snapshot = self.input.param("test_abort_snapshot",
+                                                    False)
         if self.recoveryType:
             self.recoveryType = self.recoveryType.split(":")
         if self.deltaRecoveryBuckets:
@@ -99,6 +101,9 @@ class FailoverBaseTest(BaseTestCase):
                       .format(self.case_number, self._testMethodName))
 
     def tearDown(self):
+        self.log.info(
+            "=== FailoverBaseTest tearDown started for test #{0} {1} ==="
+            .format(self.case_number, self._testMethodName))
         if hasattr(self, '_resultForDoCleanups') \
                 and len(self._resultForDoCleanups.failures) > 0 \
                 and 'stop-on-failure' in TestInputSingleton.input.test_params \
@@ -108,8 +113,6 @@ class FailoverBaseTest(BaseTestCase):
             self.cluster.shutdown(force=True)
         else:
             try:
-                self.log.info("==============  tearDown was started for test #{0} {1} =============="\
-                              .format(self.case_number, self._testMethodName))
                 RemoteUtilHelper.common_basic_setup(self.cluster.servers)
                 self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
             finally:
@@ -194,11 +197,12 @@ class FailoverBaseTest(BaseTestCase):
                      retry_exceptions=[],
                      ignore_exceptions=[],
                      task_verification=False):
-        retry_exceptions = list(set(retry_exceptions +
-                                    [SDKException.RequestTimeoutException,
-                                     SDKException.RequestCanceledException,
-                                     SDKException.DurabilityImpossibleException,
-                                     SDKException.DurabilityAmbiguousException]))
+        retry_exceptions = \
+            list(set(retry_exceptions +
+                     [SDKException.RequestTimeoutException,
+                      SDKException.RequestCanceledException,
+                      SDKException.DurabilityImpossibleException,
+                      SDKException.DurabilityAmbiguousException]))
 
         loaders = self.start_parallel_cruds(retry_exceptions,
                                             ignore_exceptions,

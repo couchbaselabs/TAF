@@ -92,6 +92,27 @@ class FailoverTests(FailoverBaseTest):
         self.load_initial_data()
         if not self.withMutationOps:
             self.run_mutation_operations()
+
+        if self.test_abort_snapshot:
+            self.log.info("Creating abort scenarios for vbs")
+            for server in self.cluster_util.get_kv_nodes():
+                ssh_shell = RemoteMachineShellConnection(server)
+                cbstats = Cbstats(ssh_shell)
+                replica_vbs = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name, "replica")
+                load_gen = doc_generator(self.key, 0, 5000,
+                                         target_vbucket=replica_vbs)
+                success = self.bucket_util.load_durable_aborts(
+                    ssh_shell, [load_gen],
+                    self.bucket_util.buckets[0],
+                    self.durability_level,
+                    "update", "all_aborts")
+                if not success:
+                    self.log_failure("Simulating aborts failed")
+                ssh_shell.disconnect()
+
+            self.validate_test_failure()
+
         # Perform View Creation Tasks and
         # check for completion if required before failover
         if self.withViewsOps:
@@ -127,11 +148,11 @@ class FailoverTests(FailoverBaseTest):
             for server in self.servers:
                 if server.ip == target_node.ip:
                     # Comment out the break once vbucket_list method is fixed
-                    break
                     shell_conn = RemoteMachineShellConnection(server)
                     cb_stats = Cbstats(shell_conn)
-                    vbuckets = cb_stats.vbucket_list(target_bucket.name,
-                                                     self.target_vbucket_type)
+                    vbuckets = cb_stats.vbucket_list(
+                        self.bucket_util.buckets[0].name,
+                        self.target_vbucket_type)
                     shell_conn.disconnect()
                     vbucket_list += vbuckets
 
