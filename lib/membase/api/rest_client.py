@@ -1106,7 +1106,7 @@ class RestConnection(object):
             {'hostname': "http://{0}:{1}".format(remoteIp, port),
              'user': user,
              'password': password})
-        if services != None:
+        if services is not None:
             services = ','.join(services)
             params = urllib.urlencode(
                 {'hostname': "http://{0}:{1}".format(remoteIp, port),

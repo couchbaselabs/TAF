@@ -38,6 +38,8 @@ class UpgradeBase(BaseTestCase):
             self.input.param("upgrade_with_data_load", True)
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
+        self.sync_write_abort_pattern = \
+            self.input.param("sync_write_abort_pattern", "all_aborts")
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -62,11 +64,9 @@ class UpgradeBase(BaseTestCase):
             self.initial_version)
 
         # Get service list to initialize the cluster
-        self.services_init = self.cluster_util.get_services(
-            self.cluster.master, self.services_init, 0)
-
-        # for index, services in enumerate(self.services_init):
-        #     self.servers[index].services = services
+        if self.services_init:
+            self.services_init = self.cluster_util.get_services(
+                self.cluster.master, self.services_init, 0)
 
         # Initialize first node in cluster
         master_rest = RestConnection(self.cluster.servers[0])
@@ -75,9 +75,11 @@ class UpgradeBase(BaseTestCase):
         # Initialize cluster using given nodes
         for index, server \
                 in enumerate(self.cluster.servers[1:self.nodes_init]):
-            master_rest.add_node(
-                remoteIp=server.ip,
-                services=self.services_init[index+1].split(','))
+            node_service = None
+            if self.services_init and len(self.services_init) > index:
+                node_service = self.services_init[index+1].split(',')
+            master_rest.add_node(remoteIp=server.ip,
+                                 services=node_service)
 
         self.task.rebalance(self.cluster.servers[0:self.nodes_init], [], [])
         self.cluster.nodes_in_cluster.extend(
@@ -289,16 +291,19 @@ class UpgradeBase(BaseTestCase):
             self.sleep(10)
             return o, e
         except Exception, e:
-            print traceback.extract_stack()
+            self.log.error(e)
             if queue is not None:
                 queue.put(False)
                 if not self.is_linux:
                     remote = RemoteMachineShellConnection(server)
-                    output, error = remote.execute_command("cmd /c schtasks /Query /FO LIST /TN removeme /V")
+                    output, error = remote.execute_command(
+                        "cmd /c schtasks /Query /FO LIST /TN removeme /V")
                     remote.log_command_output(output, error)
-                    output, error = remote.execute_command("cmd /c schtasks /Query /FO LIST /TN installme /V")
+                    output, error = remote.execute_command(
+                        "cmd /c schtasks /Query /FO LIST /TN installme /V")
                     remote.log_command_output(output, error)
-                    output, error = remote.execute_command("cmd /c schtasks /Query /FO LIST /TN upgrademe /V")
+                    output, error = remote.execute_command(
+                        "cmd /c schtasks /Query /FO LIST /TN upgrademe /V")
                     remote.log_command_output(output, error)
                     remote.disconnect()
                 raise e
@@ -349,28 +354,34 @@ class UpgradeBase(BaseTestCase):
                        deltaRecoveryBuckets=delta_recovery_buckets)
 
     def online_swap(self, node_to_upgrade, version):
-        # Record vbuckets in swap_node
         vb_details = dict()
+        vb_verification = dict()
         vb_types = ["active", "replica"]
-        shell = RemoteMachineShellConnection(node_to_upgrade)
-        cbstats = Cbstats(shell)
-        for vb_type in vb_types:
-            vb_details[vb_type] = \
-                cbstats.vbucket_list(self.bucket.name, vb_type)
-        shell.disconnect()
+
+        # Fetch active services on node_to_upgrade
+        rest = self.__get_rest_node(node_to_upgrade)
+        services = rest.get_nodes_services()
+        services_on_target_node = services[(node_to_upgrade.ip + ":"
+                                            + node_to_upgrade.port)]
+
+        # Record vbuckets in swap_node
+        if "kv" in services_on_target_node:
+            shell = RemoteMachineShellConnection(node_to_upgrade)
+            cbstats = Cbstats(shell)
+            for vb_type in vb_types:
+                vb_details[vb_type] = \
+                    cbstats.vbucket_list(self.bucket.name, vb_type)
+            shell.disconnect()
 
         # Install target version on spare node
         self.install_version_on_node([self.spare_node], version)
 
         # Fetch node not going to be involved in upgrade
-        rest = self.__get_rest_node(node_to_upgrade)
-        services = rest.get_nodes_services()
         rest.add_node(self.creds.rest_username,
                       self.creds.rest_password,
                       self.spare_node.ip,
                       self.spare_node.port,
-                      services=services[(node_to_upgrade.ip + ":"
-                                         + node_to_upgrade.port)])
+                      services=services_on_target_node)
         eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        ejectedNodes=[eject_otp_node.id])
@@ -381,29 +392,36 @@ class UpgradeBase(BaseTestCase):
                              .format(node_to_upgrade))
             return
 
-        # Fetch vbucket stats after swap rebalance for verification
-        shell = RemoteMachineShellConnection(self.spare_node)
-        cbstats = Cbstats(shell)
-        vb_verification = dict()
-        for vb_type in vb_types:
-            vb_verification[vb_type] = \
-                cbstats.vbucket_list(self.bucket.name, vb_type)
-        shell.disconnect()
+        # VBuckets shuffling verification
+        if "kv" in services_on_target_node:
+            # Fetch vbucket stats after swap rebalance for verification
+            shell = RemoteMachineShellConnection(self.spare_node)
+            cbstats = Cbstats(shell)
+            for vb_type in vb_types:
+                vb_verification[vb_type] = \
+                    cbstats.vbucket_list(self.bucket.name, vb_type)
+            shell.disconnect()
 
-        # Check vbuckets are shuffled or not
-        for vb_type in vb_types:
-            if vb_details[vb_type].sort() != vb_verification[vb_type].sort():
-                self.log_failure("%s vbuckets shuffled post swap_rebalance"
-                                 % vb_type)
-                self.log.error("%s vbuckets before vs after: %s != %s"
-                               % (vb_type,
-                                  vb_details[vb_type],
-                                  vb_verification[vb_type]))
+            # Check vbuckets are shuffled or not
+            for vb_type in vb_types:
+                if vb_details[vb_type].sort() \
+                        != vb_verification[vb_type].sort():
+                    self.log_failure("%s vbuckets shuffled post swap_rebalance"
+                                     % vb_type)
+                    self.log.error("%s vbuckets before vs after: %s != %s"
+                                   % (vb_type,
+                                      vb_details[vb_type],
+                                      vb_verification[vb_type]))
 
         # Update spare_node to rebalanced-out node
         self.spare_node = node_to_upgrade
 
     def online_incremental(self, node_to_upgrade, version):
+        # Fetch active services on node_to_upgrade
+        rest = self.__get_rest_node(node_to_upgrade)
+        services = rest.get_nodes_services()
+        services_on_target_node = services[(node_to_upgrade.ip + ":"
+                                            + node_to_upgrade.port)]
         # Rebalance-out the target_node
         rest = self.__get_rest_node(node_to_upgrade)
         eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)
@@ -422,7 +440,8 @@ class UpgradeBase(BaseTestCase):
         rest.add_node(self.creds.rest_username,
                       self.creds.rest_password,
                       node_to_upgrade.ip,
-                      node_to_upgrade.port)
+                      node_to_upgrade.port,
+                      services=services_on_target_node)
         otp_nodes = [node.id for node in rest.node_statuses()]
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
         rebalance_passed = rest.monitorRebalance()
@@ -438,4 +457,4 @@ class UpgradeBase(BaseTestCase):
         self.failover_recovery(node_to_upgrade, "full")
 
     def offline(self, node_to_upgrade, version):
-        return
+        self.fail("Yet to be implemented")
