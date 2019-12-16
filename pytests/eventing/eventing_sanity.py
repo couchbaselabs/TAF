@@ -412,3 +412,224 @@ class EventingSanity(EventingBaseTest):
         self.verify_eventing_results(self.function_name, verification_dict["ops_create"],
                                      skip_stats_validation=True)
         self.validate_test_failure()
+
+    def test_fts_index_with_aborts(self):
+        """
+        1. Create index (2i/view) on default bucket
+        2. Load multiple docs such that all sync_writes will be aborted
+        3. Verify nothing went into indexing
+        4. Load sync_write docs such that they are successful
+        5. Validate the mutated docs are taken into indexing
+        :return:
+        """
+        self.key = "test_query_doc"
+        self.index_name = "fts_test_index"
+        self.sync_write_abort_pattern = self.input.param("sync_write_abort_pattern", "all_aborts")
+        self.create_index_during = self.input.param("create_index_during", "before_doc_ops")
+        self.restServer = self.cluster_util.get_nodes_from_services_map(service_type="fts")
+        self.rest = RestConnection(self.restServer)
+        crud_batch_size = 1000
+        def_bucket = self.bucket_util.buckets[0]
+        kv_nodes = self.cluster_util.get_kv_nodes()
+        replica_vbs = dict()
+        verification_dict = dict()
+        index_item_count = dict()
+        expected_num_indexed = dict()
+        load_gen = dict()
+        load_gen["ADD"] = dict()
+        load_gen["SET"] = dict()
+        partial_aborts = ["initial_aborts", "aborts_at_end"]
+
+        durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.nodes_in_cluster),
+            durability=self.durability_level,
+            replicate_to=self.replicate_to,
+            persist_to=self.persist_to)
+
+        if self.create_index_during == "before_doc_ops":
+            self.create_fts_indexes(def_bucket.name, self.index_name)
+
+        curr_items = self.bucket_util.get_bucket_current_item_count(
+            self.cluster, def_bucket)
+        if self.sync_write_abort_pattern in ["all_aborts", "initial_aborts"]:
+            self.bucket_util.flush_bucket(kv_nodes[0], def_bucket)
+            self.num_items = 0
+        else:
+            self.num_items = curr_items
+
+        self.log.info("Disabling auto_failover to avoid node failures")
+        status = RestConnection(self.cluster.master) \
+            .update_autofailover_settings(False, 120, False)
+        self.assertTrue(status, msg="Failure during disabling auto-failover")
+
+        # Validate vbucket stats
+        verification_dict["ops_create"] = self.num_items
+        verification_dict["ops_update"] = 0
+        # verification_dict["ops_delete"] = 0
+        verification_dict["rollback_item_count"] = 0
+        verification_dict["sync_write_aborted_count"] = 0
+        verification_dict["sync_write_committed_count"] = 0
+
+        if self.create_index_during == "before_doc_ops":
+            self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+
+        self.log.info("Loading docs such that all sync_writes will be aborted")
+        for server in kv_nodes:
+            ssh_shell = RemoteMachineShellConnection(server)
+            cbstats = Cbstats(ssh_shell)
+            replica_vbs[server] = cbstats.vbucket_list(def_bucket.name,
+                                                       "replica")
+            load_gen["ADD"][server] = list()
+            load_gen["ADD"][server].append(doc_generator(
+                self.key, 0, crud_batch_size,
+                target_vbucket=replica_vbs[server],
+                mutation_type="ADD"))
+            if self.sync_write_abort_pattern in partial_aborts:
+                load_gen["ADD"][server].append(doc_generator(
+                    self.key, 10000, crud_batch_size,
+                    target_vbucket=replica_vbs[server],
+                    mutation_type="ADD"))
+                verification_dict["ops_create"] += crud_batch_size
+                verification_dict["sync_write_committed_count"] += \
+                    crud_batch_size
+
+
+            task_success = self.bucket_util.load_durable_aborts(
+                ssh_shell, load_gen["ADD"][server], def_bucket,
+                self.durability_level,
+                "create", self.sync_write_abort_pattern)
+            if not task_success:
+                self.log_failure("Failure during load_abort task")
+
+            verification_dict["sync_write_aborted_count"] += \
+                crud_batch_size
+            if self.create_index_during == "before_doc_ops":
+                self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+
+            load_gen["SET"][server] = list()
+            load_gen["SET"][server].append(doc_generator(
+                self.key, 0, crud_batch_size,
+                target_vbucket=replica_vbs[server],
+                mutation_type="SET"))
+            if self.sync_write_abort_pattern in partial_aborts:
+                load_gen["SET"][server].append(doc_generator(
+                    self.key, 10000, crud_batch_size,
+                    target_vbucket=replica_vbs[server],
+                    mutation_type="SET"))
+                verification_dict["ops_update"] += crud_batch_size
+                verification_dict["sync_write_committed_count"] += \
+                    crud_batch_size
+
+            verification_dict["sync_write_aborted_count"] += \
+                crud_batch_size
+            task_success = self.bucket_util.load_durable_aborts(
+                ssh_shell, load_gen["SET"][server], def_bucket,
+                self.durability_level,
+                "update", self.sync_write_abort_pattern)
+            if not task_success:
+                self.log_failure("Failure during load_abort task")
+
+            ssh_shell.disconnect()
+
+            if self.create_index_during == "before_doc_ops":
+                self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+        failed = durability_helper.verify_vbucket_details_stats(
+            def_bucket, kv_nodes,
+            vbuckets=self.vbuckets, expected_val=verification_dict)
+        # if failed:
+        #     self.sleep(6000)
+        #     self.log_failure("Cbstat vbucket-details verification failed")
+        self.validate_test_failure()
+
+        if self.create_index_during == "after_doc_ops":
+            self.create_fts_indexes(def_bucket.name, self.index_name)
+            self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+
+        self.log.info("Verify aborts are not indexed")
+        self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+
+        for server in kv_nodes:
+            if self.sync_write_abort_pattern == "initial_aborts":
+                load_gen["ADD"][server] = load_gen["ADD"][server][:1]
+                load_gen["SET"][server] = load_gen["SET"][server][:1]
+            elif self.sync_write_abort_pattern == "aborts_at_end":
+                load_gen["ADD"][server] = load_gen["ADD"][server][-1:]
+                load_gen["SET"][server] = load_gen["SET"][server][-1:]
+
+        self.log.info("Load sync_write docs such that they are successful")
+        for server in kv_nodes:
+            for gen_load in load_gen["ADD"][server]:
+                task = self.task.async_load_gen_docs(
+                    self.cluster, def_bucket, gen_load, "create", 0,
+                    batch_size=50, process_concurrency=8,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout)
+                self.task.jython_task_manager.get_task_result(task)
+                if len(task.fail.keys()) != 0:
+                    self.log_failure("Some failures seen during doc_ops")
+                verification_dict["ops_create"] += crud_batch_size
+                self.validate_indexed_doc_count(self.index_name, verification_dict["ops_create"])
+
+            for gen_load in load_gen["SET"][server]:
+                task = self.task.async_load_gen_docs(
+                    self.cluster, def_bucket, gen_load, "update", 0,
+                    batch_size=50, process_concurrency=8,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout)
+                self.task.jython_task_manager.get_task_result(task)
+                if len(task.fail.keys()) != 0:
+                    self.log_failure("Some failures seen during doc_ops")
+                verification_dict["ops_update"] += crud_batch_size
+                self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+
+        self.log.info("Validate the mutated docs are taken into indexing")
+        self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+        self.validate_test_failure()
+
+    def _create_fts_index_params(self, bucket_name, bucket_uuid, index_name):
+        body = {}
+        body['type'] = "fulltext-index"
+        body['name'] = index_name
+        body['sourceType'] = "couchbase"
+        body['sourceName'] = bucket_name
+        body['sourceUUID'] = bucket_uuid
+        body['planParams'] = {}
+        body['planParams']['maxPartitionsPerPIndex'] = 171
+        body['planParams']['indexPartitions'] = 6
+        body['params'] = {}
+        body['params']['doc_config'] = {}
+        body['params']['mapping'] = {}
+        body['params']['store'] = {}
+        body['params']['doc_config']['docid_prefix_delim'] = ""
+        body['params']['doc_config']['docid_regexp'] = ""
+        body['params']['doc_config']['mode'] = "type_field"
+        body['params']['doc_config']['type_field'] = "type"
+        body['params']['mapping']['analysis'] = {}
+        body['params']['mapping']['default_analyzer'] = "standard"
+        body['params']['mapping']['default_datetime_parser'] = "dateTimeOptional"
+        body['params']['mapping']['default_field'] = "_all"
+        body['params']['mapping']['default_mapping'] = {}
+        body['params']['mapping']['default_mapping']['dynamic'] = True
+        body['params']['mapping']['default_mapping']['enabled'] = True
+        body['params']['mapping']['default_type'] = "_default"
+        body['params']['mapping']['docvalues_dynamic'] = True
+        body['params']['mapping']['index_dynamic'] = True
+        body['params']['mapping']['store_dynamic'] = False
+        body['params']['mapping']['type_field'] = "_type"
+        body['params']['store']['indexType'] = "scorch"
+        body['sourceParams'] = {}
+        return body
+
+    def create_fts_indexes(self, bucket, index_name):
+        bucket_stats = self.bucket_helper.get_bucket_json(bucket)
+        bucket_uuid = bucket_stats["uuid"]
+        params = self._create_fts_index_params(bucket, bucket_uuid, index_name)
+        self.rest.create_fts_index(index_name, params)
+
+    def validate_indexed_doc_count(self, index, expected_index_item_count):
+        actual_item_count = self.rest.get_fts_index_doc_count(index)
+        print("actual_item_count : {0} expected_index_item_count : {1}".format(actual_item_count, expected_index_item_count))
+        if expected_index_item_count != actual_item_count:
+            raise Exception("data mismatch in fts index")
