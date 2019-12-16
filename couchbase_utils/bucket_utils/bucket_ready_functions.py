@@ -591,7 +591,7 @@ class BucketUtils:
         """
         tasks = []
         stat_cmd = "all"
-        for server in self.cluster.nodes_in_cluster:
+        for server in self.cluster_util.get_kv_nodes():
             for bucket in self.buckets:
                 if bucket.bucketType == 'memcached':
                     continue

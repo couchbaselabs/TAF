@@ -6,7 +6,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from scripts.install import InstallerJob
+from scripts.old_install import InstallerJob
 from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
     COUCHBASE_MP_VERSION, MV_LATESTBUILD_REPO
 
@@ -36,6 +36,8 @@ class UpgradeBase(BaseTestCase):
         self.is_downgrade = self.input.param('downgrade', False)
         self.upgrade_with_data_load = \
             self.input.param("upgrade_with_data_load", True)
+        self.test_abort_snapshot = self.input.param("test_abort_snapshot",
+                                                    False)
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -59,14 +61,27 @@ class UpgradeBase(BaseTestCase):
             self.cluster.servers[0:self.nodes_init],
             self.initial_version)
 
+        # Get service list to initialize the cluster
+        self.services_init = self.cluster_util.get_services(
+            self.cluster.master, self.services_init, 0)
+
+        # for index, services in enumerate(self.services_init):
+        #     self.servers[index].services = services
+
         # Initialize first node in cluster
-        RestConnection(self.cluster.servers[0]).init_node()
+        master_rest = RestConnection(self.cluster.servers[0])
+        master_rest.init_node()
 
         # Initialize cluster using given nodes
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+        for index, server \
+                in enumerate(self.cluster.servers[1:self.nodes_init]):
+            master_rest.add_node(
+                remoteIp=server.ip,
+                services=self.services_init[index+1].split(','))
+
+        self.task.rebalance(self.cluster.servers[0:self.nodes_init], [], [])
+        self.cluster.nodes_in_cluster.extend(
+            self.cluster.servers[0:self.nodes_init])
         self.cluster_util.print_cluster_stats()
 
         # Disable auto-failover to avaid failover of nodes
@@ -290,7 +305,7 @@ class UpgradeBase(BaseTestCase):
         if queue is not None:
             queue.put(True)
 
-    def failover_recovery(self, node_to_upgrade, version, recovery_type):
+    def failover_recovery(self, node_to_upgrade, recovery_type):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
         self.log.info("Failing over the node %s" % otp_node.id)
@@ -349,10 +364,13 @@ class UpgradeBase(BaseTestCase):
 
         # Fetch node not going to be involved in upgrade
         rest = self.__get_rest_node(node_to_upgrade)
+        services = rest.get_nodes_services()
         rest.add_node(self.creds.rest_username,
                       self.creds.rest_password,
                       self.spare_node.ip,
-                      self.spare_node.port)
+                      self.spare_node.port,
+                      services=services[(node_to_upgrade.ip + ":"
+                                         + node_to_upgrade.port)])
         eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        ejectedNodes=[eject_otp_node.id])
@@ -413,11 +431,11 @@ class UpgradeBase(BaseTestCase):
                              .format(node_to_upgrade))
             return
 
-    def failover_delta_recovery(self, node_to_upgrade, version):
-        self.failover_recovery(node_to_upgrade, version, "delta")
+    def failover_delta_recovery(self, node_to_upgrade):
+        self.failover_recovery(node_to_upgrade, "delta")
 
-    def failover_full_recovery(self, node_to_upgrade, version):
-        self.failover_recovery(node_to_upgrade, version, "full")
+    def failover_full_recovery(self, node_to_upgrade):
+        self.failover_recovery(node_to_upgrade, "full")
 
     def offline(self, node_to_upgrade, version):
         return

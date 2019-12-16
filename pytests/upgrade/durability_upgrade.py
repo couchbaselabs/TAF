@@ -40,10 +40,13 @@ class UpgradeTests(UpgradeBase):
             # Validate sync_write results after upgrade
             if self.atomicity:
                 create_batch_size = 10
-                create_gen = doc_generator(self.key, self.num_items,
-                                   self.num_items+create_batch_size)
+                create_gen = doc_generator(
+                    self.key,
+                    self.num_items,
+                    self.num_items+create_batch_size)
                 sync_write_task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, create_gen, "create",
+                    self.cluster, self.bucket_util.buckets,
+                    create_gen, "create",
                     process_concurrency=1,
                     transaction_timeout=self.transaction_timeout,
                     record_fail=True)
@@ -64,15 +67,21 @@ class UpgradeTests(UpgradeBase):
                     self.cluster, self.bucket)
                 if node_to_upgrade is None:
                     if current_items < self.num_items+create_batch_size:
-                        self.log_failure("Failures after cluster upgrade {} {}".format(current_items, self.num_items+create_batch_size))
-                elif current_items > self.num_items :
-                    self.log_failure("SyncWrite succeeded with mixed mode cluster")
+                        self.log_failure(
+                            "Failures after cluster upgrade {} {}"
+                            .format(current_items,
+                                    self.num_items+create_batch_size))
+                elif current_items > self.num_items:
+                    self.log_failure(
+                        "SyncWrite succeeded with mixed mode cluster")
             else:
                 if node_to_upgrade is None:
                     if sync_write_task.fail.keys():
                         self.log_failure("Failures after cluster upgrade")
                 elif len(sync_write_task.fail.keys()) != create_batch_size:
-                    self.log_failure("SyncWrite succeeded with mixed mode cluster")
+                    self.log_failure(
+                        "SyncWrite succeeded with mixed mode cluster")
+                    break
                 else:
                     for doc_id, doc_result in sync_write_task.fail.items():
                         if SDKException.FeatureNotAvailableException \
