@@ -67,6 +67,8 @@ class CBASBaseTest(BaseTestCase):
         self.expect_failure = self.input.param('expect_failure', False)
         self.index_name = self.input.param('index_name', "NoName")
         self.index_fields = self.input.param('index_fields', None)
+        self.test_abort_snapshot = self.input.param("test_abort_snapshot",
+                                                    False)
         if self.index_fields:
             self.index_fields = self.index_fields.split("-")
         self.otpNodes = list()

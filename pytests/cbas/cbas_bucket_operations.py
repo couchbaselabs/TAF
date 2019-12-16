@@ -2,7 +2,9 @@ import json
 import time
 
 from BucketLib.BucketOperations import BucketHelper
+from cb_tools.cbstats import Cbstats
 from cbas_base import CBASBaseTest
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
@@ -59,10 +61,52 @@ class CBASBucketOperations(CBASBaseTest):
                 self.num_items,
                 durability=self.durability_level)
 
+        if self.test_abort_snapshot:
+            self.log.info("Creating sync_write aborts before dataset creation")
+            for server in self.cluster_util.get_kv_nodes():
+                ssh_shell = RemoteMachineShellConnection(server)
+                cbstats = Cbstats(ssh_shell)
+                replica_vbs = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name,
+                    "replica")
+                load_gen = doc_generator("test_abort_key", 0, self.num_items,
+                                         target_vbucket=replica_vbs)
+                success = self.bucket_util.load_durable_aborts(
+                    ssh_shell, [load_gen],
+                    self.bucket_util.buckets[0],
+                    self.durability_level,
+                    "update", "all_aborts")
+                if not success:
+                    self.log_failure("Simulating aborts failed")
+                ssh_shell.disconnect()
+
+            self.validate_test_failure()
+
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(
             cbas_bucket_name=self.cb_bucket_name,
             cbas_dataset_name=self.cbas_dataset_name)
+
+        if self.test_abort_snapshot:
+            self.log.info("Creating sync_write aborts after dataset creation")
+            for server in self.cluster_util.get_kv_nodes():
+                ssh_shell = RemoteMachineShellConnection(server)
+                cbstats = Cbstats(ssh_shell)
+                replica_vbs = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name,
+                    "replica")
+                load_gen = doc_generator("test_abort_key", 0, self.num_items,
+                                         target_vbucket=replica_vbs)
+                success = self.bucket_util.load_durable_aborts(
+                    ssh_shell, [load_gen],
+                    self.bucket_util.buckets[0],
+                    self.durability_level,
+                    "update", "all_aborts")
+                if not success:
+                    self.log_failure("Simulating aborts failed")
+                ssh_shell.disconnect()
+
+            self.validate_test_failure()
 
         # Create indexes on the CBAS bucket
         self.create_secondary_indexes = \
@@ -88,6 +132,27 @@ class CBASBucketOperations(CBASBaseTest):
             cbas_bucket_name=self.cbas_bucket_name,
             cb_bucket_password=self.cb_bucket_password)
 
+        if self.test_abort_snapshot:
+            self.log.info("Creating sync_write aborts after dataset connect")
+            for server in self.cluster_util.get_kv_nodes():
+                ssh_shell = RemoteMachineShellConnection(server)
+                cbstats = Cbstats(ssh_shell)
+                replica_vbs = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name,
+                    "replica")
+                load_gen = doc_generator("test_abort_key", 0, self.num_items,
+                                         target_vbucket=replica_vbs)
+                success = self.bucket_util.load_durable_aborts(
+                    ssh_shell, [load_gen],
+                    self.bucket_util.buckets[0],
+                    self.durability_level,
+                    "update", "all_aborts")
+                if not success:
+                    self.log_failure("Simulating aborts failed")
+                ssh_shell.disconnect()
+
+            self.validate_test_failure()
+
         if not skip_data_loading:
             # Validate no. of items in CBAS dataset
             if not self.cbas_util.validate_cbas_dataset_items_count(
@@ -107,6 +172,29 @@ class CBASBucketOperations(CBASBaseTest):
             "create",
             self.num_items,
             self.num_items * 2)
+
+        if self.test_abort_snapshot:
+            self.log.info("Creating sync_write aborts after dataset connect")
+            for server in self.cluster_util.get_kv_nodes():
+                ssh_shell = RemoteMachineShellConnection(server)
+                cbstats = Cbstats(ssh_shell)
+                replica_vbs = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name,
+                    "replica")
+                load_gen = doc_generator("test_abort_key",
+                                         self.num_items,
+                                         self.num_items,
+                                         target_vbucket=replica_vbs)
+                success = self.bucket_util.load_durable_aborts(
+                    ssh_shell, [load_gen],
+                    self.bucket_util.buckets[0],
+                    self.durability_level,
+                    "update", "all_aborts")
+                if not success:
+                    self.log_failure("Simulating aborts failed")
+                ssh_shell.disconnect()
+
+            self.validate_test_failure()
 
         # Validate no. of items in CBAS dataset
         if not self.cbas_util.validate_cbas_dataset_items_count(
