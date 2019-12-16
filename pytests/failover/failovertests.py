@@ -148,6 +148,7 @@ class FailoverTests(FailoverBaseTest):
             for server in self.servers:
                 if server.ip == target_node.ip:
                     # Comment out the break once vbucket_list method is fixed
+                    break
                     shell_conn = RemoteMachineShellConnection(server)
                     cb_stats = Cbstats(shell_conn)
                     vbuckets = cb_stats.vbucket_list(
