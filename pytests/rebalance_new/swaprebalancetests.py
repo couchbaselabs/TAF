@@ -11,7 +11,7 @@ from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
 
 retry_exceptions = [
-    SDKException.RequestTimeoutException,
+    SDKException.TimeoutException,
     SDKException.RequestCanceledException,
     SDKException.DurabilityAmbiguousException,
     SDKException.DurabilityImpossibleException]

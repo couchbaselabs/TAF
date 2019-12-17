@@ -45,8 +45,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                   "cluster size: {0}, replica: {1}" \
                   .format(len(self.cluster.nodes_in_cluster),
                           self.num_replicas)
-        d_impossible_exception = \
-            self.durability_helper.EXCEPTIONS["durabilility_impossible"]
+        d_impossible_exception = SDKException.DurabilityImpossibleException
 
         for node in nodes_in_cluster:
             shell_conn[node.ip] = \
@@ -269,7 +268,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                        timeout=3, time_unit="seconds",
                                        fail_fast=fail_fast)
 
-                expected_exception = SDKException.RequestTimeoutException
+                expected_exception = SDKException.AmbiguousTimeoutException
                 retry_reason = \
                     SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
                 if fail_fast:
@@ -734,7 +733,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         valid_exception = self.durability_helper.validate_durability_exception(
             failed_docs,
-            SDKException.RequestTimeoutException,
+            SDKException.AmbiguousTimeoutException,
             retry_reason=SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS)
 
         if not valid_exception:

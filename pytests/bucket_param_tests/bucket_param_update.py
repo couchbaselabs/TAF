@@ -219,7 +219,7 @@ class BucketParamTest(BaseTestCase):
                 SDKException.DurabilityImpossibleException
             ignore_exceptions = list()
             retry_exceptions = [SDKException.DurabilityAmbiguousException,
-                                SDKException.RequestTimeoutException]
+                                SDKException.TimeoutException]
 
             suppress_error_table = False
             if self.def_bucket.replicaNumber == 3 or replica_num == 3:

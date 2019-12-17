@@ -7,9 +7,7 @@ from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator_for_edit
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from table_view import TableView
 
@@ -204,40 +202,40 @@ class SubDocTimeouts(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for vb_num in range(self.vbuckets):
-                vb_num = str(vb_num)
-                if vb_num not in affected_vbs:
-                    if vb_num in vb_info["init"][node.ip].keys() \
-                            and vb_info["init"][node.ip][vb_num] \
-                            != vb_info["post_timeout"][node.ip][vb_num]:
+            for vb_id in range(self.vbuckets):
+                vb_id = str(vb_id)
+                if vb_id not in affected_vbs:
+                    if vb_id in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][vb_id] \
+                            != vb_info["post_timeout"][node.ip][vb_id]:
                         self.log_failure(
                             "Unaffected vb-%s stat updated: %s != %s"
-                            % (vb_num,
-                               vb_info["init"][node.ip][vb_num],
-                               vb_info["post_timeout"][node.ip][vb_num]))
-                elif int(vb_num) in target_nodes_vbuckets["active"]:
-                    if vb_num in vb_info["init"][node.ip].keys() \
-                            and vb_info["init"][node.ip][vb_num] \
-                            != vb_info["post_timeout"][node.ip][vb_num]:
+                            % (vb_id,
+                               vb_info["init"][node.ip][vb_id],
+                               vb_info["post_timeout"][node.ip][vb_id]))
+                elif int(vb_id) in target_nodes_vbuckets["active"]:
+                    if vb_id in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][vb_id] \
+                            != vb_info["post_timeout"][node.ip][vb_id]:
                         self.log.warning(
                             err_msg
                             % (node.ip,
                                "active",
-                               vb_num,
-                               vb_info["init"][node.ip][vb_num],
-                               vb_info["post_timeout"][node.ip][vb_num]))
-                elif int(vb_num) in target_nodes_vbuckets["replica"]:
-                    if vb_num in vb_info["init"][node.ip].keys() \
-                            and vb_info["init"][node.ip][vb_num] \
-                            == vb_info["post_timeout"][node.ip][vb_num]:
+                               vb_id,
+                               vb_info["init"][node.ip][vb_id],
+                               vb_info["post_timeout"][node.ip][vb_id]))
+                elif int(vb_id) in target_nodes_vbuckets["replica"]:
+                    if vb_id in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][vb_id] \
+                            == vb_info["post_timeout"][node.ip][vb_id]:
                         retry_validation = True
                         self.log.warning(
                             err_msg
                             % (node.ip,
                                "replica",
-                               vb_num,
-                               vb_info["init"][node.ip][vb_num],
-                               vb_info["post_timeout"][node.ip][vb_num]))
+                               vb_id,
+                               vb_info["init"][node.ip][vb_id],
+                               vb_info["post_timeout"][node.ip][vb_id]))
             return retry_validation
 
         shell_conn = dict()
@@ -497,8 +495,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                   "cluster size: {0}, replica: {1}" \
             .format(len(self.cluster.nodes_in_cluster),
                     self.num_replicas)
-        d_impossible_exception = \
-            self.durability_helper.EXCEPTIONS["durabilility_impossible"]
+        d_impossible_exception = SDKException.DurabilityImpossibleException
 
         # Load basic documents without durability for validating SubDocs
         create_task = self.task.async_load_gen_docs(
@@ -797,10 +794,10 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure("Exception not seen for few docs: {0}"
                              .format(failed_docs))
 
-        expected_exception = SDKException.RequestTimeoutException
+        expected_exception = SDKException.TimeoutException
         retry_reason = SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
         if self.doc_ops[0] in "create":
-            expected_exception = SDKException.KeyNotFoundException
+            expected_exception = SDKException.DocumentNotFoundException
             retry_reason = None
         valid_exception = self.durability_helper.validate_durability_exception(
             failed_docs,

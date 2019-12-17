@@ -3,7 +3,6 @@ from basetestcase import BaseTestCase
 from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.documentgenerator import DocumentGenerator
-from BucketLib.bucket import Bucket
 
 """
 Basic test cases with commit,rollback scenarios

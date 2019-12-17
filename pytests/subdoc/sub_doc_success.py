@@ -38,8 +38,6 @@ class BasicOps(DurabilityTestsBase):
 
         if self.durability_level:
             pass
-            # ignore_exceptions.append(
-            #    "com.couchbase.client.core.error.RequestTimeoutException")
 
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]

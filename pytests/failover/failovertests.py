@@ -265,7 +265,7 @@ class FailoverTests(FailoverBaseTest):
                                 ejectedNodes=[node.id for node in chosen])
 
         retry_exceptions = [
-            SDKException.RequestTimeoutException,
+            SDKException.TimeoutException,
             SDKException.RequestCanceledException,
             SDKException.DurabilityAmbiguousException,
             SDKException.DurabilityImpossibleException,
@@ -391,7 +391,7 @@ class FailoverTests(FailoverBaseTest):
                                 deltaRecoveryBuckets=self.deltaRecoveryBuckets)
 
         retry_exceptions = [
-            SDKException.RequestTimeoutException,
+            SDKException.TimeoutException,
             SDKException.RequestCanceledException,
             SDKException.DurabilityAmbiguousException,
             SDKException.DurabilityImpossibleException,

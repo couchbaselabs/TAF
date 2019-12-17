@@ -189,7 +189,7 @@ class RebalanceBaseTest(BaseTestCase):
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
 
-        retry_exceptions = list([SDKException.RequestTimeoutException,
+        retry_exceptions = list([SDKException.TimeoutException,
                                  SDKException.RequestCanceledException,
                                  SDKException.DurabilityImpossibleException,
                                  SDKException.DurabilityAmbiguousException])
@@ -300,7 +300,7 @@ class RebalanceBaseTest(BaseTestCase):
                      task_verification=False):
         loaders = []
         retry_exceptions = list(set(retry_exceptions +
-                                    [SDKException.RequestTimeoutException,
+                                    [SDKException.TimeoutException,
                                      SDKException.RequestCanceledException,
                                      SDKException.DurabilityImpossibleException,
                                      SDKException.DurabilityAmbiguousException]))

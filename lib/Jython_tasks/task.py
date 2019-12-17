@@ -1315,7 +1315,7 @@ class Durability(Task):
                                         % (key, result))
                             elif len(result) > 0:
                                 if not (SDKException.DurabilityAmbiguousException in self.create_failed[key]["error"] or
-                                   SDKException.RequestTimeoutException in self.create_failed[key]["error"]):
+                                   SDKException.TimeoutException in self.create_failed[key]["error"]):
                                     self.test_log.error(
                                         "SDK threw exception but document is present in the Server -> %s:%s"
                                         % (key, result))
@@ -1951,14 +1951,16 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     else:
                         self.failed_reads[key] = dict()
                         self.failed_reads[key]["cas"] = 0
-                        self.failed_reads[key]["error"] = SDKException.KeyNotFoundException
+                        self.failed_reads[key]["error"] = \
+                            SDKException.DocumentNotFoundException
                         self.failed_reads[key]["value"] = dict()
                 except Exception as error:
                     self.set_exception(error)
         else:
             result_map, self.failed_reads = self.batch_read(key_value.keys())
         for key, value in self.failed_reads.items():
-            if SDKException.KeyNotFoundException not in str(self.failed_reads[key]["error"]):
+            if SDKException.DocumentNotFoundException \
+                    not in str(self.failed_reads[key]["error"]):
                 self.failed_item_table.add_row([key, value['error']])
         missing_keys, wrong_values = self.validate_key_val(result_map,
                                                            key_value)
@@ -1999,7 +2001,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     wrong_value = "Key: {} Expected: {} Actual: {}" \
                         .format(key, expected_val, actual_val)
                     wrong_values.append(wrong_value)
-            elif SDKException.KeyNotFoundException in str(self.failed_reads[key]["error"]):
+            elif SDKException.DocumentNotFoundException \
+                    in str(self.failed_reads[key]["error"]):
                 missing_keys.append(key)
         return missing_keys, wrong_values
 

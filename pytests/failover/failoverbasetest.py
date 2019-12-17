@@ -6,7 +6,7 @@ from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
 from sdk_exceptions import SDKException
 
 retry_exceptions = [
-    SDKException.RequestTimeoutException,
+    SDKException.TimeoutException,
     SDKException.RequestCanceledException,
     SDKException.DurabilityAmbiguousException,
     SDKException.DurabilityImpossibleException]
@@ -20,24 +20,30 @@ class FailoverBaseTest(BaseTestCase):
         super(FailoverBaseTest, self).setUp()
         self.defaul_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
         self.default_view_name = "default_view"
-        self.default_view = View(self.default_view_name, self.defaul_map_func, None)
+        self.default_view = View(self.default_view_name, self.defaul_map_func,
+                                 None)
         self.failoverMaster = self.input.param("failoverMaster", False)
         self.total_vbuckets = self.input.param("total_vbuckets", 1024)
         self.compact = self.input.param("compact", False)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", 20)
         self.withMutationOps = self.input.param("withMutationOps", False)
         self.withViewsOps = self.input.param("withViewsOps", False)
-        self.createIndexesDuringFailover = self.input.param("createIndexesDuringFailover", False)
+        self.createIndexesDuringFailover = \
+            self.input.param("createIndexesDuringFailover", False)
         self.upr_check = self.input.param("upr_check", True)
         self.withQueries = self.input.param("withQueries", False)
         self.numberViews = self.input.param("numberViews", False)
-        self.gracefulFailoverFail = self.input.param("gracefulFailoverFail", False)
-        self.runRebalanceAfterFailover = self.input.param("runRebalanceAfterFailover", True)
+        self.gracefulFailoverFail = self.input.param("gracefulFailoverFail",
+                                                     False)
+        self.runRebalanceAfterFailover = \
+            self.input.param("runRebalanceAfterFailover", True)
         self.failoverMaster = self.input.param("failoverMaster", False)
-        self.check_verify_failover_type = self.input.param("check_verify_failover_type", True)
+        self.check_verify_failover_type = \
+            self.input.param("check_verify_failover_type", True)
         self.recoveryType = self.input.param("recoveryType", "delta")
         self.bidirectional = self.input.param("bidirectional", False)
-        self.stopGracefulFailover = self.input.param("stopGracefulFailover", False)
+        self.stopGracefulFailover = self.input.param("stopGracefulFailover",
+                                                     False)
         self._value_size = self.input.param("value_size", 256)
         self.victim_type = self.input.param("victim_type", "other")
         self.victim_count = self.input.param("victim_count", 1)
@@ -45,7 +51,8 @@ class FailoverBaseTest(BaseTestCase):
         self.killNodes = self.input.param("killNodes", False)
         self.doc_ops = self.input.param("doc_ops", [])
         self.firewallOnNodes = self.input.param("firewallOnNodes", False)
-        self.deltaRecoveryBuckets = self.input.param("deltaRecoveryBuckets", None)
+        self.deltaRecoveryBuckets = self.input.param("deltaRecoveryBuckets",
+                                                     None)
         self.max_verify = self.input.param("max_verify", None)
         if self.doc_ops:
             self.doc_ops = self.doc_ops.split(":")
@@ -53,7 +60,6 @@ class FailoverBaseTest(BaseTestCase):
         self.target_vbucket_type = self.input.param("target_vbucket_type",
                                                     "active")
         self.dgm_run = self.input.param("dgm_run", True)
-        credentials = self.input.membase_settings
         self.add_back_flag = False
         self.during_ops = self.input.param("during_ops", None)
         self.graceful = self.input.param("graceful", True)
@@ -193,13 +199,11 @@ class FailoverBaseTest(BaseTestCase):
 
         return tasks_info
 
-    def loadgen_docs(self,
-                     retry_exceptions=[],
-                     ignore_exceptions=[],
+    def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[],
                      task_verification=False):
         retry_exceptions = \
             list(set(retry_exceptions +
-                     [SDKException.RequestTimeoutException,
+                     [SDKException.TimeoutException,
                       SDKException.RequestCanceledException,
                       SDKException.DurabilityImpossibleException,
                       SDKException.DurabilityAmbiguousException]))

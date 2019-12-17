@@ -759,7 +759,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
                                     durability=self.durability_level)
             i += 1
 
-        if SDKException.RequestTimeoutException not in op_result["error"] \
+        if SDKException.TimeoutException not in op_result["error"] \
                 or SDKException.RetryReason.KV_TEMPORARY_FAILURE \
                 not in op_result["error"]:
             client.close()

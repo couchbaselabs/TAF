@@ -150,9 +150,9 @@ class OpsChangeCasTests(CasBaseTest):
                                          cas=old_cas)
                     if result["status"] is True:
                         self.log_failure("The item should already be deleted")
-                    if SDKException.KeyNotFoundException \
+                    if SDKException.DocumentNotFoundException \
                             not in result["error"]:
-                        self.log_failure("Invalid Excepetion: %s" % result)
+                        self.log_failure("Invalid Exception: %s" % result)
                     if result["cas"] != 0:
                         self.log_failure("Delete returned invalid cas: %s, "
                                          "Expected 0" % result["cas"])
@@ -176,7 +176,7 @@ class OpsChangeCasTests(CasBaseTest):
                     if result["status"] is True:
                         self.log_failure("Able to mutate %s with old cas: %s"
                                          % (key, old_cas))
-                    if SDKException.KeyNotFoundException \
+                    if SDKException.DocumentNotFoundException \
                             not in result["error"]:
                         self.log_failure("Invalid error after expiry: %s"
                                          % result)
@@ -406,7 +406,7 @@ class OpsChangeCasTests(CasBaseTest):
                                  timeout=self.sdk_timeout)
             if result["status"] is True:
                 self.log_failure("Read succeeded after delete: %s" % result)
-            elif SDKException.KeyNotFoundException \
+            elif SDKException.DocumentNotFoundException \
                     not in str(result["error"]):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)
@@ -418,7 +418,7 @@ class OpsChangeCasTests(CasBaseTest):
                                  cas=create_cas)
             if result["status"] is True:
                 self.log_failure("Replace succeeded after delete: %s" % result)
-            if SDKException.KeyNotFoundException \
+            if SDKException.DocumentNotFoundException \
                     not in str(result["error"]):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)

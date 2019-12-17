@@ -240,7 +240,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.doc_ops = "update"
         self.gen_update = self.get_doc_generator(0, self.num_items)
         retry_exceptions = [
-            SDKException.RequestTimeoutException,
+            SDKException.TimeoutException,
             SDKException.RequestCanceledException,
             SDKException.DurabilityAmbiguousException,
             ]
@@ -336,7 +336,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.doc_ops = "update"
         self.gen_update = self.get_doc_generator(0, self.num_items)
         retry_exceptions = [
-            SDKException.RequestTimeoutException,
+            SDKException.TimeoutException,
             SDKException.RequestCanceledException,
             SDKException.DurabilityAmbiguousException,
             ]

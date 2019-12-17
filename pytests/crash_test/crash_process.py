@@ -184,9 +184,10 @@ class CrashTest(BaseTestCase):
                     self.log_failure("Unwanted failures for keys: %s"
                                      % task.fail.keys())
 
-            validate_passed = self.durability_helper.validate_durability_exception(
-                task.fail,
-                self.durability_helper.EXCEPTIONS["ambiguous"])
+            validate_passed = \
+                self.durability_helper.validate_durability_exception(
+                    task.fail,
+                    SDKException.DurabilityAmbiguousException)
             if not validate_passed:
                 self.log_failure("Unwanted exception seen during validation")
 
@@ -237,7 +238,7 @@ class CrashTest(BaseTestCase):
             target_vbuckets = self.getVbucketNumbers(remote, def_bucket.name,
                                                      self.target_node)
             if self.target_node == "active":
-                retry_exceptions = [SDKException.RequestTimeoutException]
+                retry_exceptions = [SDKException.TimeoutException]
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
             remote.disconnect()

@@ -30,7 +30,7 @@ class RebalanceDurability(RebalanceBaseTest):
             self.delete_from + self.delete_items)
 
         retry_exceptions = [
-            SDKException.RequestTimeoutException,
+            SDKException.TimeoutException,
             SDKException.RequestCanceledException,
             SDKException.DurabilityAmbiguousException,
             ]

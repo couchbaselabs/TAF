@@ -1,28 +1,42 @@
 class SDKException:
-    KeyExistsException = \
-        "com.couchbase.client.core.error.KeyExistsException"
+    CasMismatchException = \
+        "com.couchbase.client.core.error.CasMismatchException"
+    CollectionDoesNotExistException = \
+        "com.couchbase.client.core.error.CollectionDoesNotExistException"
+    CollectionsNotAvailableException = \
+        "com.couchbase.client.core.error.CollectionsNotAvailableException"
+    DecodingFailedException = \
+        "com.couchbase.client.core.error.DecodingFailedException"
+    DocumentExistsException = \
+        "com.couchbase.client.core.error.DocumentExistsException"
+    DocumentNotFoundException = \
+        "com.couchbase.client.core.error.DocumentNotFoundException"
+    DocumentLockedException = \
+        "com.couchbase.client.core.error.DocumentLockedException"
+    DurabilityAmbiguousException = \
+        "com.couchbase.client.core.error.DurabilityAmbiguousException"
     DurabilityImpossibleException = \
         "com.couchbase.client.core.error.DurabilityImpossibleException"
     DurableWriteInProgressException = \
         "com.couchbase.client.core.error.DurableWriteInProgressException"
-    DurabilityAmbiguousException = \
-        "com.couchbase.client.core.error.DurabilityAmbiguousException"
-    RequestTimeoutException = \
-        "com.couchbase.client.core.error.RequestTimeoutException"
-    TemporaryFailureException = \
-        "com.couchbase.client.core.error.TemporaryFailureException"
-    RequestCanceledException = \
-        "com.couchbase.client.core.error.RequestCanceledException"
-    ValueTooLargeException = \
-        "com.couchbase.client.core.error.ValueTooLargeException"
-    KeyNotFoundException = \
-        "com.couchbase.client.core.error.KeyNotFoundException"
-    PathNotFoundException = \
-        "com.couchbase.client.core.error.subdoc.PathNotFoundException"
-    DecodingFailedException = \
-        "com.couchbase.client.core.error.DecodingFailedException"
     FeatureNotAvailableException = \
         "com.couchbase.client.core.error.FeatureNotAvailableException"
+
+    TimeoutException = \
+        "com.couchbase.client.core.error.TimeoutException"
+    AmbiguousTimeoutException = \
+        "com.couchbase.client.core.error.AmbiguousTimeoutException"
+    UnambiguousTimeoutException = \
+        "com.couchbase.client.core.error.UnambiguousTimeoutException"
+
+    PathNotFoundException = \
+        "com.couchbase.client.core.error.subdoc.PathNotFoundException"
+    RequestCanceledException = \
+        "com.couchbase.client.core.error.RequestCanceledException"
+    TemporaryFailureException = \
+        "com.couchbase.client.core.error.TemporaryFailureException"
+    ValueTooLargeException = \
+        "com.couchbase.client.core.error.ValueTooLargeException"
 
     def __init__(self):
         pass

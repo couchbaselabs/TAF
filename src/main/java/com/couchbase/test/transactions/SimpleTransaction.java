@@ -2,42 +2,40 @@
 
 package com.couchbase.test.transactions;
 
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+
+import com.couchbase.client.core.cnc.Event;
+import com.couchbase.client.core.error.TemporaryFailureException;
+import com.couchbase.client.java.Cluster;
+import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.ReactiveCollection;
+import com.couchbase.client.java.json.JsonObject;
+import com.couchbase.transactions.TransactionDurabilityLevel;
+import com.couchbase.transactions.TransactionGetResult;
+import com.couchbase.transactions.TransactionResult;
+import com.couchbase.transactions.Transactions;
 import com.couchbase.transactions.config.TransactionConfig;
 import com.couchbase.transactions.config.TransactionConfigBuilder;
 import com.couchbase.transactions.deferred.TransactionSerializedContext;
 import com.couchbase.transactions.error.TransactionFailed;
-import com.couchbase.client.core.error.TemporaryFailureException;
 import com.couchbase.transactions.log.LogDefer;
+import com.couchbase.transactions.log.TransactionEvent;
+import com.couchbase.transactions.util.TestAttemptContextFactory;
+import com.couchbase.transactions.util.TransactionMock;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
-
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.concurrent.TimeUnit;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
-import com.couchbase.client.core.cnc.Event;
-import com.couchbase.client.java.Cluster;
-import com.couchbase.client.java.Collection;
-import com.couchbase.client.java.ReactiveCollection;
-import com.couchbase.client.java.json.JsonObject;
-import com.couchbase.transactions.AttemptContextReactive;
-import com.couchbase.transactions.TransactionDurabilityLevel;
-import com.couchbase.transactions.TransactionGetResult;
-import com.couchbase.transactions.TransactionResult;
-import com.couchbase.transactions.Transactions;
-import com.couchbase.client.core.cnc.Event;
-import com.couchbase.transactions.log.TransactionEvent;
-import com.couchbase.transactions.util.TestAttemptContextFactory;
-import com.couchbase.transactions.util.TransactionMock;
 
 public class SimpleTransaction {
 
@@ -49,8 +47,8 @@ public class SimpleTransaction {
 		        TransactionEvent te = (TransactionEvent) event;
 		        if (te.severity().ordinal() >= logLevel.ordinal()) {
 		            System.out.println(te.getClass().getSimpleName() + ": " + event.description());
-		            
-		            if (te.hasLogs()) {
+
+		            if (te.logs() != null) {
 		                te.logs().forEach(log -> {
 		                    System.out.println(te.getClass().getSimpleName() + " log: " + log.toString());
 		                });
@@ -63,7 +61,8 @@ public class SimpleTransaction {
 	Queue<String> queue=new LinkedList<>();
 
 	public TransactionConfig createTransactionConfig(int expiryTimeout, int changedurability) {
-		TransactionConfigBuilder config = TransactionConfigBuilder.create().logDirectlyCleanup(Event.Severity.VERBOSE);
+		TransactionConfigBuilder config = TransactionConfigBuilder.create().logDirectly(Event.Severity.VERBOSE);
+
 		if (changedurability > 0) {
 			switch (changedurability) {
 				case 1:
@@ -115,7 +114,7 @@ public class SimpleTransaction {
 		return res;
 	}
 
-	public List<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String, 
+	public List<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String,
 		JsonObject>> Createkeys, Boolean commit, String operation)
 	{
 		AtomicInteger attempt = new AtomicInteger(0);
@@ -130,14 +129,14 @@ public class SimpleTransaction {
 
 		    if (operation.equals("beforeAtrPending")) {
 			    mock.beforeAtrPending = (ctx) -> {
-			       if (attempt.get() == 1) return Mono.error(new TemporaryFailureException());
+			       if (attempt.get() == 1) return Mono.error(new TemporaryFailureException(null));
 			       else return Mono.just(1);
 			    };
 		    }
 
 		    if (operation.equals("afterAtrPending")) {
 			    mock.afterAtrPending = (ctx) -> {
-			       if (attempt.get() == 1) return Mono.error(new TemporaryFailureException());
+			       if (attempt.get() == 1) return Mono.error(new TemporaryFailureException(null));
 			       else return Mono.just(1);
 			    };
 		    }
@@ -146,7 +145,7 @@ public class SimpleTransaction {
 			    mock.beforeAtrComplete = (ctx) -> {
 			       if (attempt.get() == 1 && first.get()) {
 			    	   first.set(false);
-			    	   return Mono.error(new TemporaryFailureException());
+			    	   return Mono.error(new TemporaryFailureException(null));
 			       }
 			       else return Mono.just(1);
 			    };
@@ -157,7 +156,7 @@ public class SimpleTransaction {
 			    mock.beforeAtrRolledBack = (ctx) -> {
 			       if (attempt.get() == 1&& first.get()) {
 			    	   first.set(false);
-			    	   return Mono.error(new TemporaryFailureException());
+			    	   return Mono.error(new TemporaryFailureException(null));
 			       }
 			       else return Mono.just(1);
 			    };
@@ -167,7 +166,7 @@ public class SimpleTransaction {
 			    mock.afterAtrCommit = (ctx) -> {
 			       if (attempt.get() == 1&& first.get()) {
 			    	   first.set(false);
-			    	   return Mono.error(new TemporaryFailureException());
+			    	   return Mono.error(new TemporaryFailureException(null));
 			       }
 			       else return Mono.just(1);
 			    };
@@ -177,7 +176,7 @@ public class SimpleTransaction {
 			    mock.afterAtrComplete = (ctx) -> {
 			       if (attempt.get() == 1&& first.get()) {
 			    	   first.set(false);
-			    	   return Mono.error(new TemporaryFailureException());
+			    	   return Mono.error(new TemporaryFailureException(null));
 			       }
 			       else return Mono.just(1);
 			    };
@@ -210,7 +209,7 @@ public class SimpleTransaction {
 			catch (TransactionFailed err) {
 				// This per-txn log allows the app to only log failures
 				System.out.println("Transaction failed from runTransaction");
-				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+				for (LogDefer e : err.result().log().logs()) {
 					System.out.println(e);
 		        	res.add(e);
 		        }
@@ -220,8 +219,8 @@ public class SimpleTransaction {
 
 	}
 
-	public List<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String, 
-			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys, Boolean commit, String operation, String docId) 
+	public List<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String,
+			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys, Boolean commit, String operation, String docId)
 		{
 		List<LogDefer> res = new ArrayList<LogDefer>();
 			try (Transactions transactions = Transactions.create(cluster, config)) {
@@ -235,7 +234,7 @@ public class SimpleTransaction {
                     mock.afterStagedInsertComplete = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -244,7 +243,7 @@ public class SimpleTransaction {
                     mock.afterStagedReplaceComplete = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -253,7 +252,7 @@ public class SimpleTransaction {
                     mock.afterStagedRemoveComplete = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -262,7 +261,7 @@ public class SimpleTransaction {
                     mock.afterDocCommitted = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -271,7 +270,7 @@ public class SimpleTransaction {
                     mock.afterGetComplete = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -280,7 +279,7 @@ public class SimpleTransaction {
                     mock.beforeDocCommitted = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -289,7 +288,7 @@ public class SimpleTransaction {
                     mock.beforeStagedInsert = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -298,7 +297,7 @@ public class SimpleTransaction {
                     mock.beforeStagedReplace = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -307,7 +306,7 @@ public class SimpleTransaction {
                     mock.beforeStagedRemove = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -316,7 +315,7 @@ public class SimpleTransaction {
                     mock.beforeDocRemoved = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -325,7 +324,7 @@ public class SimpleTransaction {
                     mock.beforeDocRolledBack = (ctx, id) -> {
                     if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException());}
+                       return Mono.error(new TemporaryFailureException(null));}
                     else return Mono.just(1);
                     };
                 }
@@ -364,12 +363,12 @@ public class SimpleTransaction {
 			catch (TransactionFailed err) {
 				// This per-txn log allows the app to only log failures
 				System.out.println("Transaction failed from runTransaction");
-				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+				for (LogDefer e : err.result().log().logs()) {
 					System.out.println(e);
 		        	res.add(e);
 		        }
 			}
-			return res;	
+			return res;
 		}
 
 
@@ -441,11 +440,11 @@ public class SimpleTransaction {
 			      {
 			          System.out.println(e);
 			       }
-				 
+
 				res1 = result.log().logs();
 				if (res1.toString().contains("IllegalDocumentState"))
 				{
-					System.out.println("IllegalDocumentState seen"); 
+					System.out.println("IllegalDocumentState seen");
 					result.log().logs().forEach(System.err::println); }
 
 			}
@@ -457,11 +456,11 @@ public class SimpleTransaction {
 				if (res.toString().contains("DurabilityImpossibleException")) {
 					System.out.println("DurabilityImpossibleException seen"); }
 				else {
-					for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					for (LogDefer e : err.result().log().logs()) {
 						System.out.println(e);
 			        }
 				}
-			}	
+			}
 		}
 		else {
 			for (Collection collection:collections) {
@@ -500,7 +499,7 @@ public class SimpleTransaction {
 													// Do all these inserts in parallel
 													remainingDocs.size()
 											)
-	
+
 									// There's an implicit commit so no need to call ctx.commit().  The .then()
 									// converts to the
 									// expected type
@@ -536,7 +535,7 @@ public class SimpleTransaction {
                 	else {
                     for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
                         res.add(e);
-                        System.out.println(e);   
+                        System.out.println(e);
                     }}
                     return Mono.just(res);
                 }).block();
@@ -550,9 +549,9 @@ public class SimpleTransaction {
 		List<String> docToUpdate=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToUpdate.get(0);
 		List<String> remainingDocs = docToUpdate.stream().skip(1).collect(Collectors.toList());
-		
+
 		List<LogDefer> result = transaction.reactive((ctx) -> {
-			
+
 			if (commit)
 			{
 				// The first mutation must be done in serial
@@ -586,7 +585,7 @@ public class SimpleTransaction {
                 	else {
                     for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
                         res.add(e);
-                        System.out.println(e);   
+                        System.out.println(e);
                     }}
                     return Mono.just(res);
                 }).block();
@@ -600,7 +599,7 @@ public class SimpleTransaction {
 		List<String> docToDelete=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToDelete.get(0);
 		List<String> remainingDocs = docToDelete.stream().skip(1).collect(Collectors.toList());
-		
+
 		List<LogDefer> result = transaction.reactive((ctx) -> {
 			if (commit)
 			{
@@ -624,7 +623,7 @@ public class SimpleTransaction {
 							Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.remove(d1)),
 									remainingDocs.size())).then(ctx.rollback());}
 			}
-	
+
 			}).map(r -> r.log().logs())
                 .onErrorResume(err -> {
                 	if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
@@ -635,7 +634,7 @@ public class SimpleTransaction {
                 	else {
                     for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
                         res.add(e);
-                        System.out.println(e);   
+                        System.out.println(e);
                     }}
                     return Mono.just(res);
                 }).block();
@@ -646,8 +645,8 @@ public class SimpleTransaction {
 	public List<String> getQueue(int n){
 		return this.queue.stream().skip(queue.size() - n).collect(Collectors.toList());
 	}
-	
-	public Tuple2<byte[], List<LogDefer>> DeferTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String, 
+
+	public Tuple2<byte[], List<LogDefer>> DeferTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String,
 			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys) {
 		byte[] encoded = new byte[0];
 		List<LogDefer> res = new ArrayList<LogDefer>();
@@ -661,7 +660,7 @@ public class SimpleTransaction {
 						TransactionGetResult doc1=ctx.getOptional(bucket, document.getT1()).get();
 					}
 				}
-				
+
 //				update of docs
 				for (String key: Updatekeys) {
 					for (Collection bucket:collections) {
@@ -692,11 +691,11 @@ public class SimpleTransaction {
 						}
 					}
 				}
-				
+
 				ctx.defer();
 			});
 			if(result.serialized().isPresent()) {
-				 
+
 			    TransactionSerializedContext serialized = result.serialized().get();
 			    encoded = serialized.encodeAsBytes();}
 		}
@@ -705,7 +704,7 @@ public class SimpleTransaction {
 			if (res.toString().contains("DurabilityImpossibleException")) {
 				System.out.println("DurabilityImpossibleException seen"); }
 			else {
-				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+				for (LogDefer e : err.result().log().logs()) {
 					System.out.println(e);
 		        }
 			}
@@ -714,7 +713,7 @@ public class SimpleTransaction {
 		return mp;
 //		return encoded;
 	}
-	
+
 	public List<LogDefer> DefferedTransaction(Transactions transaction, Boolean commit, byte[] encoded) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
 		TransactionSerializedContext serialized = TransactionSerializedContext.createFrom(encoded);
@@ -723,20 +722,20 @@ public class SimpleTransaction {
 			if (commit) { TransactionResult result = transaction.commit(serialized);}
 			else { TransactionResult result = transaction.rollback(serialized); }
 
-		} 
+		}
 		catch (TransactionFailed err) {
 			res = err.result().log().logs();
 			if (res.toString().contains("DurabilityImpossibleException")) {
 				System.out.println("DurabilityImpossibleException seen"); }
 			else {
-				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+				for (LogDefer e : err.result().log().logs()) {
 					System.out.println(e);
 		        }
 			}
 		}
 		return res;
 	}
-	
+
 
 }
 

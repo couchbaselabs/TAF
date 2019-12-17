@@ -762,11 +762,11 @@ class BucketUtils:
                 ambiguous_state = False
                 if SDKException.DurabilityAmbiguousException \
                         in str(exception) \
-                        or SDKException.RequestTimeoutException \
+                        or SDKException.TimeoutException \
                         in str(exception) \
                         or (SDKException.RequestCanceledException
                             in str(exception) and
-                            "CHANNEL_CLOSED_WHILE_IN_FLIGHT" \
+                            "CHANNEL_CLOSED_WHILE_IN_FLIGHT"
                             in str(exception)):
                     ambiguous_state = True
 
@@ -786,10 +786,12 @@ class BucketUtils:
                         break
                 if result["status"] \
                         or (ambiguous_state
-                            and SDKException.KeyExistsException in result["error"]
+                            and SDKException.DocumentExistsException
+                            in result["error"]
                             and task_info["op_type"] in ["create", "update"]) \
                         or (ambiguous_state
-                            and SDKException.KeyNotFoundException in result["error"]
+                            and SDKException.DocumentNotFoundException
+                            in result["error"]
                             and task_info["op_type"] == "delete"):
                     tasks_info[task][dict_key]["success"].update(key_value)
                 else:

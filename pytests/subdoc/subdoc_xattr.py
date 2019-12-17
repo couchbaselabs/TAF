@@ -500,7 +500,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                xattr=is_xattr)
             self.assertEqual(failed_items[self.doc_id]["cas"], 0,
                              "CAS is non-zero")
-            self.assertTrue(SDKException.KeyNotFoundException
+            self.assertTrue(SDKException.DocumentNotFoundException
                             in str(failed_items[self.doc_id]["error"]),
                             "Invalid exception")
 
@@ -1689,11 +1689,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 if op_type == "create":
                     if sw_test_op == "delete" or sw_test_op not in doc_tasks:
                         expected_exception = \
-                            SDKException.KeyNotFoundException
+                            SDKException.DocumentNotFoundException
                         retry_reason = None
                 elif sw_test_op not in doc_tasks:
                     expected_exception = \
-                        SDKException.RequestTimeoutException
+                        SDKException.TimeoutException
                     retry_reason = \
                         SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
                 if expected_exception not in sdk_exception:
@@ -1793,7 +1793,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                                               create_path=True,
                                               xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
-            if SDKException.RequestTimeoutException not in sdk_exception:
+            if SDKException.TimeoutException not in sdk_exception:
                 self.log_failure("Invalid exception: %s" % failed_item)
             elif SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
                     not in sdk_exception:

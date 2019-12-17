@@ -15,16 +15,6 @@ class DurabilityHelper:
                            "MAJORITY_AND_PERSIST_ON_MASTER",
                            "PERSIST_TO_MAJORITY"]
 
-    EXCEPTIONS = dict()
-    EXCEPTIONS["durabilility_impossible"] = \
-        "com.couchbase.client.core.error.DurabilityImpossibleException"
-    EXCEPTIONS["write_in_progress"] = \
-        "com.couchbase.client.core.error.DurableWriteInProgressException"
-    EXCEPTIONS["ambiguous"] = \
-        "com.couchbase.client.core.error.DurabilityAmbiguousException"
-    EXCEPTIONS["request_timeout"] = \
-        "com.couchbase.client.core.error.RequestTimeoutException"
-
     def __init__(self, logger, cluster_len, durability="MAJORITY",
                  replicate_to=0, persist_to=0):
         """

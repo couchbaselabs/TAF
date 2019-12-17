@@ -9,33 +9,33 @@ import json as pyJson
 import logging
 
 from com.couchbase.client.core.env import TimeoutConfig
-from com.couchbase.client.core.error import KeyExistsException, \
-                                            DurabilityAmbiguousException, \
-                                            CouchbaseException, \
-                                            RequestTimeoutException, \
-                                            KeyNotFoundException, \
-                                            CASMismatchException, \
-                                            CouchbaseOutOfMemoryException, \
-                                            TemporaryFailureException, \
-                                            RequestCanceledException,\
-                                            ConfigException
+from com.couchbase.client.core.error import \
+    CasMismatchException, \
+    ConfigException, \
+    CouchbaseException, \
+    DocumentExistsException, \
+    DocumentNotFoundException, \
+    DurabilityAmbiguousException, \
+    RequestCanceledException, \
+    ServerOutOfMemoryException, \
+    TemporaryFailureException, \
+    TimeoutException
 from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.java.kv import \
-    InsertOptions,\
-    UpsertOptions, \
-    RemoveOptions, \
-    ReplaceOptions, \
-    TouchOptions, \
-    PersistTo,\
-    ReplicateTo, \
     GetAllReplicasOptions, \
     GetOptions, \
-    MutateInOptions
-
+    InsertOptions, \
+    MutateInOptions, \
+    PersistTo, \
+    RemoveOptions, \
+    ReplaceOptions, \
+    ReplicateTo, \
+    TouchOptions, \
+    UpsertOptions
 from java.time import Duration
 from java.time.temporal import ChronoUnit
 from java.lang import System
@@ -324,21 +324,21 @@ class SDKClient(object):
                 self.getDuration(exp, exp_unit)).timeout(
                 self.getDuration(timeout, time_unit))
 
-    def getPersistTo(self, persistTo):
+    def getPersistTo(self, persist_to):
         try:
-            persistList = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO,
+            persist_list = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO,
                            PersistTo.THREE, PersistTo.FOUR]
-            return persistList[persistTo]
+            return persist_list[persist_to]
         except Exception as e:
             pass
 
         return PersistTo.ACTIVE
 
-    def getReplicateTo(self, replicateTo):
+    def getReplicateTo(self, replicate_to):
         try:
-            replicateList = [ReplicateTo.NONE, ReplicateTo.ONE,
+            replicate_list = [ReplicateTo.NONE, ReplicateTo.ONE,
                              ReplicateTo.TWO, ReplicateTo.THREE]
-            return replicateList[replicateTo]
+            return replicate_list[replicate_to]
         except Exception:
             pass
 
@@ -389,16 +389,16 @@ class SDKClient(object):
                                             cas=cas)
             if fail_fast:
                 options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
-            deleteResult = self.collection.remove(key, options)
+            delete_result = self.collection.remove(key, options)
             result.update({"key": key, "value": None,
                            "error": None, "status": True,
-                           "cas": deleteResult.cas()})
-        except KeyNotFoundException as e:
+                           "cas": delete_result.cas()})
+        except DocumentNotFoundException as e:
             self.log.warning("Exception: Document id {0} not found - {1}"
                              .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
-        except CASMismatchException as e:
+        except CasMismatchException as e:
             self.log.warning("Exception: Cas mismatch for doc {0} - {1}"
                              .format(key, e))
             result.update({"key": key, "value": None,
@@ -413,7 +413,7 @@ class SDKClient(object):
                             .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
@@ -446,15 +446,15 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True,
                            "cas": insert_result.cas()})
-        except KeyExistsException as ex:
+        except DocumentExistsException as ex:
             self.log.warning("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except CouchbaseOutOfMemoryException as ex:
+        except ServerOutOfMemoryException as ex:
             self.log.warning("OOM exception: %s" % ex)
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
@@ -486,20 +486,20 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True,
                            "cas": replace_result.cas()})
-        except KeyExistsException as ex:
+        except DocumentExistsException as ex:
             self.log.warning("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except CASMismatchException as e:
+        except CasMismatchException as e:
             self.log.warning("Exception: Cas mismatch for doc {0} - {1}"
                              .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
-        except KeyNotFoundException as e:
+        except DocumentNotFoundException as e:
             self.log.warning("Key '%s' not found!" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
@@ -530,10 +530,10 @@ class SDKClient(object):
                 self.getDuration(exp, exp_unit),
                 touch_options)
             result.update({"status": True, "cas": touch_result.cas()})
-        except KeyNotFoundException as e:
+        except DocumentNotFoundException as e:
             self.log.warning("Document key '%s' not found!" % key)
             result["error"] = str(e)
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
@@ -563,11 +563,11 @@ class SDKClient(object):
             result["status"] = True
             result["value"] = str(get_result.contentAsObject())
             result["cas"] = get_result.cas()
-        except KeyNotFoundException as e:
+        except DocumentNotFoundException as e:
             self.log.warning("Document key '%s' not found!" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
@@ -612,11 +612,11 @@ class SDKClient(object):
             result.update({"key": key, "value": content,
                            "error": None, "status": True,
                            "cas": upsertResult.cas()})
-        except KeyExistsException as ex:
+        except DocumentExistsException as ex:
             self.log.warning("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        except (RequestCanceledException, RequestTimeoutException) as ex:
+        except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})

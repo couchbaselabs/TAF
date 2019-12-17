@@ -980,7 +980,7 @@ class OpsChangeCasTests(CasBaseTest):
             if replace_result["status"] is True:
                 self.log_failure("Replace on %s succeeded using old CAS %s"
                                  % (key, cas))
-            if SDKException.KeyNotFoundException \
+            if SDKException.DocumentNotFoundException \
                     not in str(replace_result["error"]):
                 self.log_failure("Invalid exception for %s: %s"
                                  % (key, replace_result))

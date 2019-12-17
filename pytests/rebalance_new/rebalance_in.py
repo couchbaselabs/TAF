@@ -9,7 +9,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
 retry_exceptions = [
-    SDKException.RequestTimeoutException,
+    SDKException.TimeoutException,
     SDKException.RequestCanceledException,
     SDKException.DurabilityAmbiguousException,
     SDKException.DurabilityImpossibleException]
@@ -116,7 +116,8 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
                                                  delete_from + items/2)
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
+        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                       task_verification=True)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
@@ -464,7 +465,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 self.cluster.master, bucket))
 
         retry_exceptions = [
-            SDKException.RequestTimeoutException,
+            SDKException.TimeoutException,
             SDKException.RequestCanceledException,
             SDKException.DurabilityAmbiguousException,
             SDKException.DurabilityImpossibleException
@@ -605,7 +606,7 @@ class RebalanceInTests(RebalanceBaseTest):
         op_type = None
 
         retry_exceptions = [
-            SDKException.RequestTimeoutException,
+            SDKException.TimeoutException,
             SDKException.RequestCanceledException,
             SDKException.DurabilityAmbiguousException,
             SDKException.DurabilityImpossibleException]
