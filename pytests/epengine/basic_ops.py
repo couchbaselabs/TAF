@@ -162,13 +162,12 @@ class basic_ops(BaseTestCase):
 
         # Stat validation reference variables
         verification_dict = dict()
-        ref_val = dict()
-        ref_val["ops_create"] = 0
-        ref_val["ops_update"] = 0
-        ref_val["ops_delete"] = 0
-        ref_val["rollback_item_count"] = 0
-        ref_val["sync_write_aborted_count"] = 0
-        ref_val["sync_write_committed_count"] = 0
+        verification_dict["ops_create"] = 0
+        verification_dict["ops_update"] = 0
+        verification_dict["ops_delete"] = 0
+        verification_dict["rollback_item_count"] = 0
+        verification_dict["sync_write_aborted_count"] = 0
+        verification_dict["sync_write_committed_count"] = 0
 
         if self.durability_level:
             pass
@@ -218,17 +217,11 @@ class basic_ops(BaseTestCase):
         self.bucket_util._wait_for_stats_all_buckets()
 
         # Update ref_val
-        ref_val["ops_create"] = self.num_items + len(task.fail.keys())
-        ref_val["sync_write_committed_count"] = self.num_items
+        verification_dict["ops_create"] += \
+            self.num_items + len(task.fail.keys())
         # Validate vbucket stats
-        verification_dict["ops_create"] = ref_val["ops_create"]
-        verification_dict["rollback_item_count"] = \
-            ref_val["rollback_item_count"]
         if self.durability_level:
-            verification_dict["sync_write_aborted_count"] = \
-                ref_val["sync_write_aborted_count"]
-            verification_dict["sync_write_committed_count"] = \
-                ref_val["sync_write_committed_count"]
+            verification_dict["sync_write_committed_count"] += self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
@@ -268,9 +261,10 @@ class basic_ops(BaseTestCase):
                 ryow=self.ryow,
                 check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
-            ref_val["ops_update"] = mutation_doc_count
+            verification_dict["ops_update"] += mutation_doc_count
             if self.durability_level:
-                ref_val["sync_write_committed_count"] += mutation_doc_count
+                verification_dict["sync_write_committed_count"] \
+                    += mutation_doc_count
             if self.ryow:
                 check_durability_failures()
 
@@ -304,10 +298,11 @@ class basic_ops(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
             expected_num_items = \
                 self.num_items - (self.num_items - num_item_start_for_crud)
-            ref_val["ops_delete"] = mutation_doc_count
+            verification_dict["ops_delete"] += mutation_doc_count
 
             if self.durability_level:
-                ref_val["sync_write_committed_count"] += mutation_doc_count
+                verification_dict["sync_write_committed_count"] \
+                    += mutation_doc_count
             if self.ryow:
                 check_durability_failures()
 
@@ -331,19 +326,6 @@ class basic_ops(BaseTestCase):
 
         self.log.info("Wait for ep_all_items_remaining to become '0'")
         self.bucket_util._wait_for_stats_all_buckets()
-
-        # Validate vbucket stats
-        verification_dict["ops_create"] = ref_val["ops_create"]
-        verification_dict["ops_update"] = ref_val["ops_update"]
-        verification_dict["ops_delete"] = ref_val["ops_delete"]
-
-        verification_dict["rollback_item_count"] = \
-            ref_val["rollback_item_count"]
-        if self.durability_level:
-            verification_dict["sync_write_aborted_count"] = \
-                ref_val["sync_write_aborted_count"]
-            verification_dict["sync_write_committed_count"] = \
-                ref_val["sync_write_committed_count"]
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
