@@ -16,6 +16,7 @@ from TestInput import TestInputServer
 from TestInput import TestInputSingleton
 from Queue import Queue
 
+from couchbase_helper import cb_constants
 from mc_bin_client import MemcachedClient, MemcachedError
 from mc_ascii_client import MemcachedAsciiClient
 from memcached.helper.old_kvstore import ClientKeyValueStore
@@ -313,7 +314,7 @@ class MemcachedClientHelper(object):
         for _ in nodes:
             BucketHelper(server).vbucket_map_ready(bucket, 60)
             vBuckets = BucketHelper(server).get_vbuckets(bucket)
-            port_moxi = standalone_moxi_port or 11210
+            port_moxi = standalone_moxi_port or cb_constants.memcached_port
             if ascii:
                 log.info("creating ascii client {0}:{1} {2}"
                          .format(server.ip, port_moxi, bucket))

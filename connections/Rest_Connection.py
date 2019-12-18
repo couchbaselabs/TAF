@@ -96,17 +96,16 @@ class RestConnection(object):
                 new_services=fts-kv-index-n1ql """
             self.services_node_init = self.input.param("new_services", None)
 
+        generic_url = "http://%s:%s/"
         url_host = "%s" % self.ip
         if self.hostname:
             url_host = "%s" % self.hostname
 
-        generic_url = "http://{0}:{1}/"
-
-        self.baseUrl = generic_url.format(url_host, port)
-        self.indexUrl = generic_url.format(url_host, index_port)
-        self.queryUrl = generic_url.format(url_host, query_port)
-        self.ftsUrl = generic_url.format(url_host, fts_port)
-        self.eventing_baseUrl = generic_url.format(url_host, eventing_port)
+        self.baseUrl = generic_url % (url_host, port)
+        self.indexUrl = generic_url % (url_host, index_port)
+        self.queryUrl = generic_url % (url_host, query_port)
+        self.ftsUrl = generic_url % (url_host, fts_port)
+        self.eventing_baseUrl = generic_url % (url_host, eventing_port)
 
         # for Node is unknown to this cluster error
         node_unknown_msg = "Node is unknown to this cluster"

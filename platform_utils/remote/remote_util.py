@@ -12,6 +12,7 @@ import TestInput
 from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
+from couchbase_helper import cb_constants
 from testconstants import VERSION_FILE
 from testconstants import MEMBASE_VERSIONS
 from testconstants import MISSING_UBUNTU_LIB
@@ -1584,8 +1585,9 @@ class RemoteMachineShellConnection:
         sftp.close()
         return capture_iss_file
 
-    def compact_vbuckets(self, vbuckets, nodes, upto_seq, cbadmin_user="cbadminbucket",
-                                                          cbadmin_password="password"):
+    def compact_vbuckets(self, vbuckets, nodes, upto_seq,
+                         cbadmin_user="cbadminbucket",
+                         cbadmin_password="password"):
         """
             compact each vbucket with cbcompact tools
         """
@@ -1593,9 +1595,10 @@ class RemoteMachineShellConnection:
             self.log.info("Purge delete keys in %s vbuckets.  It will take times "
                      % vbuckets)
             for vbucket in range(0, vbuckets):
-                self.execute_command("%scbcompact%s %s:11210 compact %s --dropdeletes "
+                self.execute_command("%scbcompact%s %s:%s compact %s --dropdeletes "
                                      " --purge-only-up-to-seq=%s"
                                      % (self.bin_path, self.cmd_ext, node,
+                                        cb_constants.memcached_port,
                                         cbadmin_user, cbadmin_password,
                                         vbucket, upto_seq),
                                      debug=False)
@@ -4287,14 +4290,17 @@ class RemoteMachineShellConnection:
         if bucket.saslPassword is None:
             bucket.saslPassword = ''
         if persistence != "":
-            command = "%s %s:11210  -u %s -p %s -b %s %s" \
-                      % (cbepctl_command, self.ip, cbadmin_user,
-                         cbadmin_password, bucket.name, persistence)
+            command = "%s %s:%s  -u %s -p %s -b %s %s" \
+                      % (cbepctl_command, self.ip,
+                         cb_constants.memcached_port,
+                         cbadmin_user, cbadmin_password,
+                         bucket.name, persistence)
         else:
-            command = "%s %s:11210 -u %s -p %s -b %s %s %s %s" \
-                      % (cbepctl_command, self.ip, cbadmin_user,
-                         cbadmin_password, bucket.name, param_type, param,
-                         value)
+            command = "%s %s:%s -u %s -p %s -b %s %s %s %s" \
+                      % (cbepctl_command, self.ip,
+                         cb_constants.memcached_port,
+                         cbadmin_user, cbadmin_password, bucket.name,
+                         param_type, param, value)
         output, error = self.execute_command(command)
         self.log_command_output(output, error)
         return output, error

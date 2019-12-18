@@ -2,10 +2,12 @@ import re
 import zlib
 
 from cb_tools.cb_tools_base import CbCmdBase
+from couchbase_helper import cb_constants
 
 
 class Cbstats(CbCmdBase):
-    def __init__(self, shell_conn, port=11210, username="Administrator",
+    def __init__(self, shell_conn, port=cb_constants.memcached_port,
+                 username="Administrator",
                  password="password"):
 
         CbCmdBase.__init__(self, shell_conn, "cbstats", port=port,

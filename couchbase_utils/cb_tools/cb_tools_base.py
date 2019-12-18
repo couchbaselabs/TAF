@@ -1,10 +1,12 @@
+from couchbase_helper import cb_constants
 from testconstants import \
     LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \
     WIN_COUCHBASE_BIN_PATH, MAC_COUCHBASE_BIN_PATH
 
 
 class CbCmdBase:
-    def __init__(self, shell_conn, binary_name, port=11210,
+    def __init__(self, shell_conn, binary_name,
+                 port=cb_constants.memcached_port,
                  username="Administrator", password="password"):
 
         self.shellConn = shell_conn

@@ -3,6 +3,7 @@ import time
 from random import shuffle
 
 from BucketLib.bucket import Bucket
+from couchbase_helper import cb_constants
 from membase.api.exception import StatsUnavailableException, \
     ServerAlreadyJoinedException, RebalanceFailedException, \
     InvalidArgumentException, ServerSelfJoinException, \
@@ -149,10 +150,11 @@ class RebalanceHelper:
         start = time.time()
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
-            c = MemcachedClient(master.ip, 11210)
+            c = MemcachedClient(master.ip, cb_constants.memcached_port)
             stats = c.stats()
             c.close()
-            if stats and stat_key in stats and str(stats[stat_key]) == str(stat_value):
+            if stats and stat_key in stats \
+                    and str(stats[stat_key]) == str(stat_value):
                 log.info("{0} : {1}".format(stat_key, stats[stat_key]))
                 verified = True
                 break
@@ -175,18 +177,18 @@ class RebalanceHelper:
         stats = {}
         while not stats:
             try:
-                c = MemcachedClient(master.ip, 11210)
+                c = MemcachedClient(master.ip, cb_constants.memcached_port)
                 c.sasl_auth_plain(bucket, '')
                 stats = c.stats()
             except Exception as e:
-                log.info("Exception: {0}, retry in 2 seconds ...".format(str(e)))
+                log.info("Exception: %s, retry in 2 seconds ..." % str(e))
                 stats = {}
                 time.sleep(2)
             finally:
                 c.close()
 
         while str(stats[stat_key]) != str(stat_value):
-            c = MemcachedClient(master.ip, 11210)
+            c = MemcachedClient(master.ip, cb_constants.memcached_port)
             c.sasl_auth_plain(bucket, '')
             stats = c.stats()
             c.close()

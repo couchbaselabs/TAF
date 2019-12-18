@@ -200,16 +200,18 @@ class RestConnection(object):
     def __init__(self, serverInfo):
         self.log = logging.getLogger("infra")
         self.test_log = logging.getLogger("test")
+
+        self.index_port = cb_constants.index_port
+        self.fts_port = cb_constants.fts_port
+        self.query_port = cb_constants.n1ql_port
+        self.eventing_port = cb_constants.eventing_port
+
         # serverInfo can be a json object/dictionary
         if isinstance(serverInfo, dict):
             self.ip = serverInfo["ip"]
             self.username = serverInfo["username"]
             self.password = serverInfo["password"]
             self.port = serverInfo["port"]
-            self.index_port = 9102
-            self.fts_port = 8094
-            self.query_port=8093
-            self.eventing_port = 8096
             if "index_port" in serverInfo.keys():
                 self.index_port = serverInfo["index_port"]
             if "fts_port" in serverInfo.keys():
@@ -230,10 +232,6 @@ class RestConnection(object):
             self.password = serverInfo.rest_password
             self.port = serverInfo.port
             self.hostname = ''
-            self.index_port = 9102
-            self.fts_port = 8094
-            self.query_port = 8093
-            self.eventing_port = 8096
             self.services = "kv"
             if hasattr(serverInfo, "services"):
                 self.services = serverInfo.services
@@ -257,17 +255,18 @@ class RestConnection(object):
             """ from watson, services param order and format:
                 new_services=fts-kv-index-n1ql """
             self.services_node_init = self.input.param("new_services", None)
-        self.baseUrl = "http://{0}:{1}/".format(self.ip, self.port)
-        self.fts_baseUrl = "http://{0}:{1}/".format(self.ip, self.fts_port)
-        self.index_baseUrl = "http://{0}:{1}/".format(self.ip, self.index_port)
-        self.query_baseUrl = "http://{0}:{1}/".format(self.ip, self.query_port)
-        self.capiBaseUrl = "http://{0}:{1}/".format(self.ip, 8092)
-        self.eventing_baseUrl = "http://{0}:{1}/".format(self.ip, self.eventing_port)
+
+        url_format = "http://%s:%s/"
+        url_host = self.ip
         if self.hostname:
-            self.baseUrl = "http://{0}:{1}/".format(self.hostname, self.port)
-            self.capiBaseUrl = "http://{0}:{1}/".format(self.hostname, 8092)
-            self.query_baseUrl = "http://{0}:{1}/".format(self.hostname, 8093)
-            self.eventing_baseUrl = "http://{0}:{1}/".format(self.hostname, 8096)
+            url_host = self.hostname
+
+        self.baseUrl = url_format % (url_host, self.port)
+        self.fts_baseUrl = url_format % (url_host, self.fts_port)
+        self.index_baseUrl = url_format % (url_host, self.index_port)
+        self.query_baseUrl = url_format % (url_host, self.query_port)
+        self.capi_baseUrl = url_format % (url_host, cb_constants.capi_port)
+        self.eventing_baseUrl = url_format % (url_host, self.eventing_port)
 
         # for Node is unknown to this cluster error
         for iteration in xrange(5):
@@ -288,17 +287,17 @@ class RestConnection(object):
         # determine the real couchApiBase for cluster_run
         # couchApiBase appeared in version 2.*
         if not http_res or http_res["version"][0:2] == "1.":
-            self.capiBaseUrl = self.baseUrl + "/couchBase"
+            self.capi_baseUrl = self.baseUrl + "/couchBase"
         else:
             for iteration in xrange(5):
                 if "couchApiBase" not in http_res.keys():
                     if self.is_cluster_mixed():
-                        self.capiBaseUrl = self.baseUrl + "/couchBase"
+                        self.capi_baseUrl = self.baseUrl + "/couchBase"
                         return
                     time.sleep(0.2)
                     http_res, success = self.init_http_request(self.baseUrl + 'nodes/self')
                 else:
-                    self.capiBaseUrl = http_res["couchApiBase"]
+                    self.capi_baseUrl = http_res["couchApiBase"]
                     return
             raise ServerUnavailableException("couchApiBase doesn't exist in nodes/self: %s" % http_res)
 
@@ -392,12 +391,13 @@ class RestConnection(object):
                 print e
             return content, False
 
-    def rename_node(self, hostname, username='Administrator', password='password'):
+    def rename_node(self, hostname, username='Administrator',
+                    password='password'):
         params = urllib.urlencode({'username': username,
                                    'password': password,
                                    'hostname': hostname})
 
-        api = "%snode/controller/rename" % (self.baseUrl)
+        api = "%snode/controller/rename" % self.baseUrl
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
 
@@ -431,9 +431,9 @@ class RestConnection(object):
 
     def create_design_document(self, bucket, design_doc):
         design_doc_name = design_doc.id
-        api = '%s/%s/%s' % (self.capiBaseUrl, bucket, design_doc_name)
+        api = '%s/%s/%s' % (self.capi_baseUrl, bucket, design_doc_name)
         if isinstance(bucket, Bucket):
-            api = '%s/%s/%s' % (self.capiBaseUrl, bucket.name, design_doc_name)
+            api = '%s/%s/%s' % (self.capi_baseUrl, bucket.name, design_doc_name)
 
         status, content, header = self._http_request(api, 'PUT', str(design_doc),
                                                      headers=self._create_capi_headers())
@@ -478,12 +478,12 @@ class RestConnection(object):
             design_doc_name = design_doc_name.replace('/', '%2f')
         if view_name.find('/') != -1:
             view_name = view_name.replace('/', '%2f')
-        api = self.capiBaseUrl + '%s/_design/%s/_%s/%s?%s' % (bucket,
+        api = self.capi_baseUrl + '%s/_design/%s/_%s/%s?%s' % (bucket,
                                                design_doc_name, view_type,
                                                view_name,
                                                urllib.urlencode(query))
         if isinstance(bucket, Bucket):
-            api = self.capiBaseUrl + '%s/_design/%s/_%s/%s?%s' % (bucket.name,
+            api = self.capi_baseUrl + '%s/_design/%s/_%s/%s?%s' % (bucket.name,
                                                   design_doc_name, view_type,
                                                   view_name,
                                                   urllib.urlencode(query))
@@ -520,7 +520,7 @@ class RestConnection(object):
         return json, meta
 
     def run_view(self, bucket, view, name):
-        api = self.capiBaseUrl + '/%s/_design/%s/_view/%s' % (bucket, view, name)
+        api = self.capi_baseUrl + '/%s/_design/%s/_view/%s' % (bucket, view, name)
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         if not status:
@@ -564,7 +564,7 @@ class RestConnection(object):
         if view_name is None:
             view_name = ddoc_name
         query = '/{0}/_design/{1}/_{2}/{3}'
-        api = self.capiBaseUrl + query.format(bucket, ddoc_name, type_, view_name)
+        api = self.capi_baseUrl + query.format(bucket, ddoc_name, type_, view_name)
 
         num_params = 0
         if limit != None:
@@ -592,7 +592,7 @@ class RestConnection(object):
 
     def get_couch_doc(self, doc_id, bucket="default", timeout=120):
         """ use couchBase uri to retrieve document from a bucket """
-        api = self.capiBaseUrl + '/%s/%s' % (bucket, doc_id)
+        api = self.capi_baseUrl + '/%s/%s' % (bucket, doc_id)
         status, content, header = self._http_request(api, headers=self._create_capi_headers(),
                                              timeout=timeout)
         if not status:
@@ -600,16 +600,16 @@ class RestConnection(object):
         return  json.loads(content)
 
     def _create_design_doc(self, bucket, name, function):
-        api = self.capiBaseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
         status, content, header = self._http_request(
             api, 'PUT', function, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def _get_design_doc(self, bucket, name):
-        api = self.capiBaseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capiBaseUrl + '/%s/_design/%s' % (bucket.name, name)
+            api = self.capi_baseUrl + '/%s/_design/%s' % (bucket.name, name)
 
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
@@ -629,18 +629,18 @@ class RestConnection(object):
         status, design_doc, meta = self._get_design_doc(bucket, name)
         if not status:
             raise Exception("unable to find for deletion design document")
-        api = self.capiBaseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capiBaseUrl + '/%s/_design/%s' % (bucket.name, name)
+            api = self.capi_baseUrl + '/%s/_design/%s' % (bucket.name, name)
         status, content, header = self._http_request(api, 'DELETE',
                                                      headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def spatial_compaction(self, bucket, design_name):
-        api = self.capiBaseUrl + '/%s/_design/%s/_spatial/_compact' % (bucket, design_name)
+        api = self.capi_baseUrl + '/%s/_design/%s/_spatial/_compact' % (bucket, design_name)
         if isinstance(bucket, Bucket):
-            api = self.capiBaseUrl + \
+            api = self.capi_baseUrl + \
             '/%s/_design/%s/_spatial/_compact' % (bucket.name, design_name)
 
         status, content, header = self._http_request(api, 'POST',
@@ -651,7 +651,7 @@ class RestConnection(object):
     # Make a _design/_info request
     def set_view_info(self, bucket, design_name):
         """Get view diagnostic info (node specific)"""
-        api = self.capiBaseUrl
+        api = self.capi_baseUrl
         if isinstance(bucket, Bucket):
             api += '/_set_view/{0}/_design/{1}/_info'.format(bucket.name, design_name)
         else:
@@ -666,7 +666,7 @@ class RestConnection(object):
 
     # Make a _spatial/_info request
     def spatial_info(self, bucket, design_name):
-        api = self.capiBaseUrl + \
+        api = self.capi_baseUrl + \
             '/%s/_design/%s/_spatial/_info' % (bucket, design_name)
         status, content, header = self._http_request(
             api, 'GET', headers=self._create_capi_headers())
@@ -2553,44 +2553,43 @@ class RestConnection(object):
     '''Start Monitoring/Profiling Rest Calls'''
     def set_completed_requests_collection_duration(self, server, min_time):
         http = httplib2.Http()
-        n1ql_port = 8093
-        api = "http://%s:%s/" % (server.ip, n1ql_port) + "admin/settings"
+        api = self.query_baseUrl + "admin/settings"
         body = {"completed-threshold": min_time}
-        headers = self._create_headers_with_auth('Administrator','password')
-        response,content = http.request(api, "POST", headers=headers, body=json.dumps(body))
-        return response,content
+        headers = self._create_headers_with_auth('Administrator', 'password')
+        response, content = http.request(api, "POST", headers=headers,
+                                         body=json.dumps(body))
+        return response, content
 
     def set_completed_requests_max_entries(self, server, no_entries):
         http = httplib2.Http()
-        n1ql_port = 8093
-        api = "http://%s:%s/" % (server.ip, n1ql_port) + "admin/settings"
+        api = self.query_baseUrl + "admin/settings"
         body = {"completed-limit": no_entries}
-        headers = self._create_headers_with_auth('Administrator','password')
-        response,content = http.request(api, "POST", headers=headers, body=json.dumps(body))
-        return response,content
+        headers = self._create_headers_with_auth('Administrator', 'password')
+        response, content = http.request(api, "POST", headers=headers,
+                                         body=json.dumps(body))
+        return response, content
 
     def set_profiling(self, server, setting):
         http = httplib2.Http()
-        n1ql_port = 8093
-        api = "http://%s:%s/" % (server.ip, n1ql_port) + "admin/settings"
+        api = self.query_baseUrl + "admin/settings"
         body = {"profile": setting}
-        headers = self._create_headers_with_auth('Administrator','password')
-        response,content = http.request(api, "POST", headers=headers, body=json.dumps(body))
-        return response,content
+        headers = self._create_headers_with_auth('Administrator', 'password')
+        response, content = http.request(api, "POST", headers=headers,
+                                        body=json.dumps(body))
+        return response, content
 
     def set_profiling_controls(self, server, setting):
         http = httplib2.Http()
-        n1ql_port = 8093
-        api = "http://%s:%s/" % (server.ip, n1ql_port) + "admin/settings"
+        api = self.query_baseUrl + "admin/settings"
         body = {"controls": setting}
-        headers = self._create_headers_with_auth('Administrator','password')
-        response,content = http.request(api, "POST", headers=headers, body=json.dumps(body))
-        return response,content
+        headers = self._create_headers_with_auth('Administrator', 'password')
+        response, content = http.request(api, "POST", headers=headers,
+                                         body=json.dumps(body))
+        return response, content
 
-    def get_query_admin_settings(self,server):
+    def get_query_admin_settings(self, server):
         http = httplib2.Http()
-        n1ql_port = 8093
-        api = "http://%s:%s/" % (server.ip, n1ql_port) + "admin/settings"
+        api = self.query_baseUrl + "admin/settings"
         headers = self._create_headers_with_auth('Administrator', 'password')
         response, content = http.request(api, "GET", headers=headers)
         result = json.loads(content)
@@ -2598,51 +2597,55 @@ class RestConnection(object):
 
     def get_query_vitals(self,server):
         http = httplib2.Http()
-        n1ql_port = 8093
-        api = "http://%s:%s/" % (server.ip, n1ql_port) + "admin/vitals"
+        api = self.query_baseUrl + "admin/vitals"
         headers = self._create_headers_with_auth('Administrator', 'password')
         response, content = http.request(api, "GET", headers=headers)
         return response, content
     '''End Monitoring/Profiling Rest Calls'''
 
-    def query_tool(self, query, port=8093, timeout=650, query_params={}, is_prepared=False, named_prepare=None,
-                   verbose = True, encoded_plan=None, servers=None):
+    def query_tool(self, query, port=8093, timeout=650, query_params={},
+                   is_prepared=False, named_prepare=None,
+                   verbose=True, encoded_plan=None, servers=None):
         key = 'prepared' if is_prepared else 'statement'
         headers = None
-        content=""
         prepared = json.dumps(query)
         if is_prepared:
             if named_prepare and encoded_plan:
                 http = httplib2.Http()
-                if len(servers)>1:
+                if len(servers) > 1:
                     url = "http://%s:%s/query/service" % (servers[1].ip, port)
                 else:
                     url = "http://%s:%s/query/service" % (self.ip, port)
 
                 headers = self._create_headers_encoded_prepared()
-                body = {'prepared': named_prepare, 'encoded_plan':encoded_plan}
+                body = {'prepared': named_prepare,
+                        'encoded_plan': encoded_plan}
 
-                response, content = http.request(url, 'POST', headers=headers, body=json.dumps(body))
+                response, content = http.request(url, 'POST',
+                                                 headers=headers,
+                                                 body=json.dumps(body))
 
                 return eval(content)
 
             elif named_prepare and not encoded_plan:
                 params = 'prepared=' + urllib.quote(prepared, '~()')
-                params = 'prepared="%s"'% named_prepare
+                params = 'prepared="%s"' % named_prepare
             else:
                 prepared = json.dumps(query)
                 prepared = str(prepared.encode('utf-8'))
                 params = 'prepared=' + urllib.quote(prepared, '~()')
             if 'creds' in query_params and query_params['creds']:
-                headers = self._create_headers_with_auth(query_params['creds'][0]['user'].encode('utf-8'),
-                                                         query_params['creds'][0]['pass'].encode('utf-8'))
+                headers = self._create_headers_with_auth(
+                    query_params['creds'][0]['user'].encode('utf-8'),
+                    query_params['creds'][0]['pass'].encode('utf-8'))
             api = "http://%s:%s/query/service?%s" % (self.ip, port, params)
             self.test_log.debug("%s" % api)
         else:
-            params = {key : query}
+            params = {key: query}
             if 'creds' in query_params and query_params['creds']:
-                headers = self._create_headers_with_auth(query_params['creds'][0]['user'].encode('utf-8'),
-                                                         query_params['creds'][0]['pass'].encode('utf-8'))
+                headers = self._create_headers_with_auth(
+                    query_params['creds'][0]['user'].encode('utf-8'),
+                    query_params['creds'][0]['pass'].encode('utf-8'))
                 del query_params['creds']
             params.update(query_params)
             params = urllib.urlencode(params)
@@ -2650,17 +2653,19 @@ class RestConnection(object):
                 self.test_log.debug('Query params: {0}'.format(params))
             api = "http://%s:%s/query?%s" % (self.ip, port, params)
 
-        status, content, header = self._http_request(api, 'POST', timeout=timeout, headers=headers)
+        status, content, header = self._http_request(api, 'POST',
+                                                     timeout=timeout,
+                                                     headers=headers)
         try:
             return json.loads(content)
         except ValueError:
             return content
 
-    def analytics_tool(self, query, port=8095, timeout=650, query_params={}, is_prepared=False, named_prepare=None,
-                   verbose = True, encoded_plan=None, servers=None):
+    def analytics_tool(self, query, port=8095, timeout=650, query_params={},
+                       is_prepared=False, named_prepare=None,
+                       verbose=True, encoded_plan=None, servers=None):
         key = 'prepared' if is_prepared else 'statement'
         headers = None
-        content=""
         prepared = json.dumps(query)
         if is_prepared:
             if named_prepare and encoded_plan:
@@ -2673,7 +2678,9 @@ class RestConnection(object):
                 headers = {'Content-type': 'application/json'}
                 body = {'prepared': named_prepare, 'encoded_plan':encoded_plan}
 
-                response, content = http.request(url, 'POST', headers=headers, body=json.dumps(body))
+                response, content = http.request(url, 'POST',
+                                                 headers=headers,
+                                                 body=json.dumps(body))
 
                 return eval(content)
 
@@ -2685,22 +2692,26 @@ class RestConnection(object):
                 prepared = str(prepared.encode('utf-8'))
                 params = 'prepared=' + urllib.quote(prepared, '~()')
             if 'creds' in query_params and query_params['creds']:
-                headers = self._create_headers_with_auth(query_params['creds'][0]['user'].encode('utf-8'),
-                                                         query_params['creds'][0]['pass'].encode('utf-8'))
+                headers = self._create_headers_with_auth(
+                    query_params['creds'][0]['user'].encode('utf-8'),
+                    query_params['creds'][0]['pass'].encode('utf-8'))
             api = "%s/analytics/service?%s" % (self.cbas_base_url, params)
             self.test_log.info("%s" % api)
         else:
             params = {key : query}
             if 'creds' in query_params and query_params['creds']:
-                headers = self._create_headers_with_auth(query_params['creds'][0]['user'].encode('utf-8'),
-                                                         query_params['creds'][0]['pass'].encode('utf-8'))
+                headers = self._create_headers_with_auth(
+                    query_params['creds'][0]['user'].encode('utf-8'),
+                    query_params['creds'][0]['pass'].encode('utf-8'))
                 del query_params['creds']
             params.update(query_params)
             params = urllib.urlencode(params)
             if verbose:
                 self.test_log.info('Query params: {0}'.format(params))
             api = "%s/analytics/service?%s" % (self.cbas_base_url, params)
-        status, content, header = self._http_request(api, 'POST', timeout=timeout, headers=headers)
+        status, content, header = self._http_request(api, 'POST',
+                                                     timeout=timeout,
+                                                     headers=headers)
         try:
             return json.loads(content)
         except ValueError:
@@ -2708,7 +2719,7 @@ class RestConnection(object):
 
     def query_tool_stats(self):
         self.test_log.info('Query n1ql stats')
-        api = "http://%s:8093/admin/stats" % (self.ip)
+        api = self.query_baseUrl + "/admin/stats"
         status, content, header = self._http_request(api, 'GET')
         self.test_log.debug(content)
         try:
@@ -2717,8 +2728,8 @@ class RestConnection(object):
             return content
 
     def index_tool_stats(self):
-        self.test_log.info('index n1ql stats')
-        api = "http://%s:%s/indexStatus" % (self.ip, cb_constants.port)
+        self.test_log.info('Index n1ql stats')
+        api = "http://%s:%s/indexStatus" % (self.ip, self.port)
         params = ""
         status, content, header = self._http_request(api, 'GET', params)
         self.test_log.debug(content)
@@ -2729,14 +2740,14 @@ class RestConnection(object):
 
     # return all rack/zone info
     def get_all_zones_info(self, timeout=120):
-        zones = {}
+        zones = dict()
         api = self.baseUrl + 'pools/default/serverGroups'
         status, content, header = self._http_request(api, timeout=timeout)
         if status:
             zones = json.loads(content)
         else:
             raise Exception("Failed to get all zones info.\n \
-                  Zone only supports from couchbase server version 2.5 and up.")
+                  Zone only supports from couchbase server version >= 2.5")
         return zones
 
     # return group name and unique uuid
@@ -2752,8 +2763,8 @@ class RestConnection(object):
     def add_zone(self, zone_name):
         api = self.baseUrl + 'pools/default/serverGroups'
         request_name = "name={0}".format(zone_name)
-        status, content, header = self._http_request(api, "POST", \
-                                        params=request_name)
+        status, content, header = self._http_request(api, "POST",
+                                                     params=request_name)
         if status:
             self.test_log.info("Zone {0} added".format(zone_name))
             return True
@@ -2771,7 +2782,8 @@ class RestConnection(object):
                 found = True
                 break
         if not found:
-            raise Exception("There is not zone with name: %s in cluster" % zone_name)
+            raise Exception("There is not zone with name: %s in cluster"
+                            % zone_name)
         status, content, header = self._http_request(api, "DELETE")
         if status:
             self.test_log.info("Zone {0} deleted".format(zone_name))
@@ -2790,11 +2802,12 @@ class RestConnection(object):
                 found = True
                 break
         if not found:
-            raise Exception("There is not zone with name: %s in cluster" % old_name)
-        status, content, header = self._http_request(api, "PUT", params=request_name)
+            raise Exception("There is not zone with name: %s in cluster"
+                            % old_name)
+        status, content, header = self._http_request(api, "PUT",
+                                                     params=request_name)
         if status:
-            self.test_log.info("Zone {0} renamed to {1}".format(old_name,
-                                                                new_name))
+            self.test_log.info("Zone %s renamed to %s" % (old_name, new_name))
         else:
             raise Exception("Failed to rename zone with name: %s " % old_name)
 
@@ -3373,8 +3386,8 @@ class Node(object):
         self.availableStorage = []
         self.storage = []
         self.memoryQuota = 0
-        self.moxi = 11211
-        self.memcached = 11210
+        self.moxi = cb_constants.moxi_port
+        self.memcached = cb_constants.memcached_port
         self.id = ""
         self.ip = ""
         self.rest_username = ""
@@ -3411,18 +3424,22 @@ class NodePort(object):
 
 class RestParser(object):
     def parse_index_status_response(self, parsed):
-        index_map = {}
-        for map in parsed["indexes"]:
-            bucket_name = map['bucket'].encode('ascii', 'ignore')
+        index_map = dict()
+        for index_map in parsed["indexes"]:
+            bucket_name = index_map['bucket'].encode('ascii', 'ignore')
             if bucket_name not in index_map.keys():
                 index_map[bucket_name] = {}
-            index_name = map['index'].encode('ascii', 'ignore')
+            index_name = index_map['index'].encode('ascii', 'ignore')
             index_map[bucket_name][index_name] = {}
-            index_map[bucket_name][index_name]['status'] = map['status'].encode('ascii', 'ignore')
-            index_map[bucket_name][index_name]['progress'] = str(map['progress']).encode('ascii', 'ignore')
-            index_map[bucket_name][index_name]['definition'] = map['definition'].encode('ascii', 'ignore')
-            index_map[bucket_name][index_name]['hosts'] = map['hosts'][0].encode('ascii', 'ignore')
-            index_map[bucket_name][index_name]['id'] = map['id']
+            index_map[bucket_name][index_name]['status'] = \
+                index_map['status'].encode('ascii', 'ignore')
+            index_map[bucket_name][index_name]['progress'] = \
+                str(index_map['progress']).encode('ascii', 'ignore')
+            index_map[bucket_name][index_name]['definition'] = \
+                index_map['definition'].encode('ascii', 'ignore')
+            index_map[bucket_name][index_name]['hosts'] = \
+                index_map['hosts'][0].encode('ascii', 'ignore')
+            index_map[bucket_name][index_name]['id'] = index_map['id']
         return index_map
 
     def parse_get_nodes_response(self, parsed):
@@ -3448,7 +3465,8 @@ class RestParser(object):
         node.clusterMembership = parsed['clusterMembership']
         node.version = parsed['version']
         node.curr_items = 0
-        if 'interestingStats' in parsed and 'curr_items' in parsed['interestingStats']:
+        if 'interestingStats' in parsed \
+                and 'curr_items' in parsed['interestingStats']:
             node.curr_items = parsed['interestingStats']['curr_items']
         node.port = parsed["hostname"][parsed["hostname"].rfind(":") + 1:]
         node.os = parsed['os']
@@ -3465,34 +3483,37 @@ class RestParser(object):
         if 'memoryQuota' in parsed:
             node.memoryQuota = parsed['memoryQuota']
         if 'availableStorage' in parsed:
-            availableStorage = parsed['availableStorage']
-            for key in availableStorage:
-                # let's assume there is only one disk in each noce
+            available_storage = parsed['availableStorage']
+            for key in available_storage:
+                # let's assume there is only one disk in each node
                 dict_parsed = parsed['availableStorage']
-                if 'path' in dict_parsed and 'sizeKBytes' in dict_parsed and 'usagePercent' in dict_parsed:
-                    diskStorage = NodeDiskStorage()
-                    diskStorage.path = dict_parsed['path']
-                    diskStorage.sizeKBytes = dict_parsed['sizeKBytes']
-                    diskStorage.type = key
-                    diskStorage.usagePercent = dict_parsed['usagePercent']
-                    node.availableStorage.append(diskStorage)
-                    self.test_log.info(diskStorage)
+                if 'path' in dict_parsed and 'sizeKBytes' in dict_parsed \
+                        and 'usagePercent' in dict_parsed:
+                    disk_storage = NodeDiskStorage()
+                    disk_storage.path = dict_parsed['path']
+                    disk_storage.sizeKBytes = dict_parsed['sizeKBytes']
+                    disk_storage.type = key
+                    disk_storage.usagePercent = dict_parsed['usagePercent']
+                    node.availableStorage.append(disk_storage)
+                    self.test_log.info(disk_storage)
 
         if 'storage' in parsed:
             storage = parsed['storage']
             for key in storage:
                 disk_storage_list = storage[key]
                 for dict_parsed in disk_storage_list:
-                    if 'path' in dict_parsed and 'state' in dict_parsed and 'quotaMb' in dict_parsed:
-                        dataStorage = NodeDataStorage()
-                        dataStorage.path = dict_parsed['path']
-                        dataStorage.index_path = dict_parsed.get('index_path', '')
-                        dataStorage.quotaMb = dict_parsed['quotaMb']
-                        dataStorage.state = dict_parsed['state']
-                        dataStorage.type = key
-                        node.storage.append(dataStorage)
+                    if 'path' in dict_parsed and 'state' in dict_parsed \
+                            and 'quotaMb' in dict_parsed:
+                        data_storage = NodeDataStorage()
+                        data_storage.path = dict_parsed['path']
+                        data_storage.index_path = dict_parsed.get('index_path',
+                                                                  '')
+                        data_storage.quotaMb = dict_parsed['quotaMb']
+                        data_storage.state = dict_parsed['state']
+                        data_storage.type = key
+                        node.storage.append(data_storage)
 
-        # ports":{"proxy":11211,"direct":11210}
+        # Format: ports={"proxy":11211,"direct":11210}
         if "ports" in parsed:
             ports = parsed["ports"]
             if "proxy" in ports:
@@ -3501,11 +3522,11 @@ class RestParser(object):
                 node.memcached = ports["direct"]
 
         if "storageTotals" in parsed:
-            storageTotals = parsed["storageTotals"]
-            if storageTotals.get("ram"):
-                if storageTotals["ram"].get("total"):
-                    ramKB = storageTotals["ram"]["total"]
-                    node.storageTotalRam = ramKB/(1024*1024)
+            storage_totals = parsed["storageTotals"]
+            if storage_totals.get("ram"):
+                if storage_totals["ram"].get("total"):
+                    ram_kb = storage_totals["ram"]["total"]
+                    node.storageTotalRam = ram_kb/(1024*1024)
 
                     if IS_CONTAINER:
                         # the storage total values are more accurate than

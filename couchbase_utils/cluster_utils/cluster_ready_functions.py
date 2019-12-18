@@ -758,28 +758,38 @@ class ClusterUtils:
                 if versions[0][:5] in testconstants.COUCHBASE_VERSION_2:
                     command = "tap"
                     if not info == 'windows':
-                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep :vb_filter: |  awk '{print $1}' \
+                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep :vb_filter: |  awk '{print $1}' \
                             | xargs | sed 's/eq_tapq:replication_ns_1@//g'  | sed 's/:vb_filter://g' \
-                            " % (cbstat_command, node, command, "default", saslpassword)
+                            " % (cbstat_command, node,
+                                 cb_constants.memcached_port,
+                                 command, "default", saslpassword)
                     else:
-                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep.exe :vb_filter: | gawk.exe '{print $1}' \
+                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep.exe :vb_filter: | gawk.exe '{print $1}' \
                                | sed.exe 's/eq_tapq:replication_ns_1@//g'  | sed.exe 's/:vb_filter://g' \
-                               " % (cbstat_command, node, command, "default", saslpassword)
+                               " % (cbstat_command, node,
+                                    cb_constants.memcached_port,
+                                    command, "default", saslpassword)
                     output, error = shell.execute_command(commands)
                 elif versions[0][:5] in testconstants.COUCHBASE_VERSION_3 or \
                         versions[0][:5] in testconstants.COUCHBASE_FROM_VERSION_4:
                     command = "dcp"
                     if not info == 'windows':
-                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep :replication:ns_1@%s |  grep vb_uuid | \
+                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep :replication:ns_1@%s |  grep vb_uuid | \
                                     awk '{print $1}' | sed 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
                                     sed 's/:.*//g' | sort -u | xargs \
-                                   " % (cbstat_command, node, command, "default", saslpassword, node, node)
+                                   " % (cbstat_command, node,
+                                        cb_constants.memcached_port,
+                                        command, "default", saslpassword,
+                                        node, node)
                         output, error = shell.execute_command(commands)
                     else:
-                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
+                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
                                     gawk.exe '{print $1}' | sed.exe 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
                                     sed.exe 's/:.*//g' \
-                                   " % (cbstat_command, node, command, "default", saslpassword, node, node)
+                                   " % (cbstat_command, node,
+                                        cb_constants.memcached_port,
+                                        command, "default", saslpassword,
+                                        node, node)
                         output, error = shell.execute_command(commands)
                         output = sorted(set(output))
                 shell.log_command_output(output, error)
@@ -788,11 +798,13 @@ class ClusterUtils:
                     self.log.debug("{0}".format(nodes))
                     self.log.debug("replicas of node {0} are in nodes {1}"
                                    .format(node, output))
-                    self.log.debug("replicas of node {0} are not in its zone {1}"
-                                   .format(node, group))
+                    self.log.debug(
+                        "Replicas of node %s are not in its zone %s"
+                        % (node, group))
                 else:
-                    exception_str = "Replica of node {0} are on its own zone {1}" \
-                                    .format(node, group)
+                    exception_str = \
+                        "Replica of node %s are on its own zone %s" \
+                        % (node, group)
                     self.log.error(exception_str)
                     raise Exception(exception_str)
         shell.disconnect()

@@ -21,7 +21,6 @@ DELETED_ITEMS = "deletedItems"
 UPDATED_ITEMS = "updatedItems"
 LOGICAL_RESULT = "logicalresult"
 RESULT = "result"
-MEMCACHED_PORT = 11210
 
 
 class DataAnalysisResultAnalyzer:

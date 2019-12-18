@@ -18,6 +18,7 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from TestInput import TestInputServer
 from cb_tools.cbstats import Cbstats
+from couchbase_helper import cb_constants
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     doc_generator, SubdocDocumentGenerator
@@ -3579,38 +3580,39 @@ class NodeDownTimerTask(Task):
                         self.set_result(True)
                         break
                 except Exception as e:
-                    self.test_log.warning("Unexpected exception: {}".format(e))
+                    self.test_log.warning("Unexpected exception: %s" % e)
                     self.complete_task()
                     return True
                 try:
                     self.start_time = time.time()
-                    socket.socket().connect(("{}".format(self.node), 8091))
+                    socket.socket().connect(("%s" % self.node,
+                                             cb_constants.port))
                     socket.socket().close()
-                    socket.socket().connect(("{}".format(self.node), 11210))
+                    socket.socket().connect(("%s" % self.node,
+                                             cb_constants.memcached_port))
                     socket.socket().close()
                 except socket.error:
                     self.test_log.debug(
-                        "Injected failure in {}. Caught due to ports"
-                        .format(self.node))
+                        "Injected failure in %s. Caught due to ports"
+                        % self.node)
                     self.complete_task()
                     return True
             else:
                 try:
                     self.start_time = time.time()
-                    socket.socket().connect(("{}".format(self.node),
+                    socket.socket().connect(("%s" % self.node,
                                              int(self.port)))
                     socket.socket().close()
-                    socket.socket().connect(("{}".format(self.node), 11210))
+                    socket.socket().connect(("%s" % self.node,
+                                             cb_constants.memcached_port))
                     socket.socket().close()
                 except socket.error:
-                    self.test_log.debug("Injected failure in {}"
-                                        .format(self.node))
+                    self.test_log.debug("Injected failure in %s" % self.node)
                     self.complete_task()
                     return True
         if time.time() >= end_task:
             self.complete_task()
-            self.test_log.error("Could not inject failure in {}"
-                                .format(self.node))
+            self.test_log.error("Could not inject failure in %s" % self.node)
             return False
 
 
