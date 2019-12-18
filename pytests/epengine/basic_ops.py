@@ -2,7 +2,7 @@ import time
 import json
 
 from basetestcase import BaseTestCase
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
@@ -100,7 +100,7 @@ class basic_ops(BaseTestCase):
     # Reproduce test case for MB-28078
     def do_setWithMeta_twice(self):
         mc = MemcachedClient(self.cluster.master.ip,
-                             cb_constants.memcached_port)
+                             constants.memcached_port)
         mc.sasl_auth_plain(self.cluster.master.rest_username,
                            self.cluster.master.rest_password)
         mc.bucket_select('default')
@@ -459,7 +459,7 @@ class basic_ops(BaseTestCase):
 
     def verify_stat(self, items, value="active"):
         mc = MemcachedClient(self.cluster.master.ip,
-                             cb_constants.memcached_port)
+                             constants.memcached_port)
         mc.sasl_auth_plain(self.cluster.master.rest_username,
                            self.cluster.master.rest_password)
         mc.bucket_select('default')
@@ -568,7 +568,7 @@ class basic_ops(BaseTestCase):
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
         mc = MemcachedClient(self.cluster.master.ip,
-                             cb_constants.memcached_port)
+                             constants.memcached_port)
         mc.sasl_auth_plain(self.cluster.master.rest_username,
                            self.cluster.master.rest_password)
         mc.bucket_select('default')

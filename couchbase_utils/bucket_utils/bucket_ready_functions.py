@@ -2249,7 +2249,8 @@ class BucketUtils:
             while time.time() - start < wait_time:
                 result = None
                 try:
-                    result = cbstat_obj.all_stats(bucket.name, "ep_warmup_thread")
+                    result = cbstat_obj.all_stats(bucket.name,
+                                                  "ep_warmup_thread")
                 except:
                     pass
                 if result is not None and result == "complete":

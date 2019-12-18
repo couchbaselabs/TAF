@@ -10,7 +10,7 @@ import traceback
 import socket
 import time
 from TestInput import TestInputSingleton
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 
 from membase.api import httplib2
 from membase.api.exception import ServerUnavailableException
@@ -30,7 +30,7 @@ class RestConnection(object):
             port = serverInfo.port
 
         if not port:
-            port = cb_constants.port
+            port = constants.port
 
         if int(port) in xrange(9091, 9100):
             # return elastic search rest connection
@@ -43,10 +43,10 @@ class RestConnection(object):
 
     def __init__(self, serverInfo):
         # serverInfo can be a json object/dictionary
-        index_port = cb_constants.index_port
-        fts_port = cb_constants.fts_port
-        query_port = cb_constants.n1ql_port
-        eventing_port = cb_constants.eventing_port
+        index_port = constants.index_port
+        fts_port = constants.fts_port
+        query_port = constants.n1ql_port
+        eventing_port = constants.eventing_port
         if isinstance(serverInfo, dict):
             self.ip = serverInfo["ip"]
             self.username = serverInfo["username"]

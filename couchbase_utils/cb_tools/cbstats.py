@@ -1,16 +1,15 @@
+import logging
 import re
 import zlib
 
 from cb_tools.cb_tools_base import CbCmdBase
-from couchbase_helper import cb_constants
 
 
 class Cbstats(CbCmdBase):
-    def __init__(self, shell_conn, port=cb_constants.memcached_port,
-                 username="Administrator",
+    def __init__(self, shell_conn, username="Administrator",
                  password="password"):
 
-        CbCmdBase.__init__(self, shell_conn, "cbstats", port=port,
+        CbCmdBase.__init__(self, shell_conn, "cbstats",
                            username=username, password=password)
 
     def __calculate_vbucket_num(self, doc_key, total_vbuckets):
@@ -132,6 +131,8 @@ class Cbstats(CbCmdBase):
 
         pattern = "[ \t]*{0}[ \t]*:[ \t]+([a-zA-Z0-9]+)".format(field_to_grep)
         regexp = re.compile(pattern)
+        if type(output) is not list:
+            output = [output]
         for line in output:
             match_result = regexp.match(line)
             if match_result:
@@ -200,11 +201,16 @@ class Cbstats(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
+        # In case of cluster_run, output is plain string due to direct exec
+        if type(output) is str:
+            output = output.split("\n")
 
         pattern = "[ \t]*vb_([0-9]+):([0-9a-zA-Z_]*):?[ \t]+([0-9A-Za-z\-\.\:\",_\[\]]+)"
         regexp = re.compile(pattern)
 
         for line in output:
+            if line.strip() == '':
+                continue
             match_result = regexp.match(line)
             vb_num = match_result.group(1)
             stat_name = match_result.group(2)

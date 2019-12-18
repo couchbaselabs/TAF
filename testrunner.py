@@ -1,21 +1,23 @@
 #!/usr/bin/env python
-from java.lang import System
 import base64
 import gzip
-from httplib import BadStatusLine
 import logging.config
-from optparse import OptionParser, OptionGroup
 import os
-from os.path import basename, splitext
-from pprint import pprint
 import re
 import shutil
 import sys
-from threading import Thread, Event
 import threading
 import time
 import unittest
 import urllib2
+
+from httplib import BadStatusLine
+from optparse import OptionParser, OptionGroup
+from os.path import basename, splitext
+from pprint import pprint
+from threading import Thread, Event
+
+from java.lang import System
 
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "connections"] + sys.path
@@ -315,6 +317,7 @@ def main():
     # ensure command line params get higher priority
     runtime_test_params.update(TestInputSingleton.input.test_params)
     TestInputSingleton.input.test_params = runtime_test_params
+
     print("Global Test input params:")
     pprint(TestInputSingleton.input.test_params)
     import mode

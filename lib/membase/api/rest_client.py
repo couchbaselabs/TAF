@@ -12,7 +12,7 @@ from threading import Thread
 
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
 from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
 from exception import \
@@ -201,10 +201,10 @@ class RestConnection(object):
         self.log = logging.getLogger("infra")
         self.test_log = logging.getLogger("test")
 
-        self.index_port = cb_constants.index_port
-        self.fts_port = cb_constants.fts_port
-        self.query_port = cb_constants.n1ql_port
-        self.eventing_port = cb_constants.eventing_port
+        self.index_port = constants.index_port
+        self.fts_port = constants.fts_port
+        self.query_port = constants.n1ql_port
+        self.eventing_port = constants.eventing_port
 
         # serverInfo can be a json object/dictionary
         if isinstance(serverInfo, dict):
@@ -265,17 +265,19 @@ class RestConnection(object):
         self.fts_baseUrl = url_format % (url_host, self.fts_port)
         self.index_baseUrl = url_format % (url_host, self.index_port)
         self.query_baseUrl = url_format % (url_host, self.query_port)
-        self.capi_baseUrl = url_format % (url_host, cb_constants.capi_port)
+        self.capi_baseUrl = url_format % (url_host, constants.capi_port)
         self.eventing_baseUrl = url_format % (url_host, self.eventing_port)
 
         # for Node is unknown to this cluster error
         for iteration in xrange(5):
-            http_res, success = self.init_http_request(self.baseUrl + 'nodes/self')
+            http_res, success = self.init_http_request(self.baseUrl +
+                                                       'nodes/self')
             if not success and type(http_res) == unicode and\
-               (http_res.find('Node is unknown to this cluster') > -1 or \
-                http_res.find('Unexpected server error, request logged') > -1):
-                self.test_log.error("Error {0} was gotten, 5 seconds sleep before retry"\
-                                    .format(http_res))
+               (http_res.find('Node is unknown to this cluster') > -1 or
+                    http_res.find('Unexpected server error, request logged') > -1):
+                self.test_log.error(
+                    "Error {0} was gotten, 5 seconds sleep before retry"
+                    .format(http_res))
                 time.sleep(5)
                 if iteration == 2:
                     self.test_log.error("Node {0}:{1} is in a broken state!"
@@ -748,7 +750,7 @@ class RestConnection(object):
             time.sleep(3)
 
     def init_cluster(self, username='Administrator', password='password',
-                     port=cb_constants.port):
+                     port=constants.port):
         api = self.baseUrl + 'settings/web'
         params = urllib.urlencode({'port': str(port),
                                    'username': username,
@@ -810,7 +812,7 @@ class RestConnection(object):
         self.init_cluster(username=self.username, password=self.password)
 
     def init_node_services(self, username='Administrator', password='password',
-                           hostname='127.0.0.1', port=cb_constants.port,
+                           hostname='127.0.0.1', port=constants.port,
                            services=None):
         api = self.baseUrl + '/node/controller/setupServices'
         if services is None:
@@ -1078,7 +1080,7 @@ class RestConnection(object):
     # server already added
     # returns otpNode
     def add_node(self, user='', password='', remoteIp='',
-                 port=cb_constants.port, zone_name='', services=None):
+                 port=constants.port, zone_name='', services=None):
         otpNode = None
 
         # if ip format is ipv6 and enclosing brackets are not found,
@@ -1151,7 +1153,7 @@ class RestConnection(object):
     # server already added
     # returns otpNode
     def do_join_cluster(self, user='', password='', remoteIp='',
-                        port=cb_constants.port, zone_name='', services=None):
+                        port=constants.port, zone_name='', services=None):
         otpNode = None
         self.test_log.debug('Adding remote node {0}:{1} to cluster {2}:{3}'
                             .format(remoteIp, port, self.ip, self.port))
@@ -3319,7 +3321,7 @@ class OtpNode(object):
         self.id = id
         self.ip = ''
         self.replication = ''
-        self.port = cb_constants.port
+        self.port = constants.port
         self.gracefulFailoverPossible = 'true'
         # extract ns ip from the otpNode string
         # its normally ns_1@10.20.30.40
@@ -3386,13 +3388,13 @@ class Node(object):
         self.availableStorage = []
         self.storage = []
         self.memoryQuota = 0
-        self.moxi = cb_constants.moxi_port
-        self.memcached = cb_constants.memcached_port
+        self.moxi = constants.moxi_port
+        self.memcached = constants.memcached_port
         self.id = ""
         self.ip = ""
         self.rest_username = ""
         self.rest_password = ""
-        self.port = cb_constants.port
+        self.port = constants.port
         self.services = []
         self.storageTotalRam = 0
 

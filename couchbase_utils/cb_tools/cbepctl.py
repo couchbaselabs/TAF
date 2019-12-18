@@ -1,9 +1,9 @@
 from cb_tools.cb_tools_base import CbCmdBase
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 
 
 class Cbepctl(CbCmdBase):
-    def __init__(self, shell_conn, port=cb_constants.memcached_port,
+    def __init__(self, shell_conn, port=constants.memcached_port,
                  username="Administrator", password="password"):
         CbCmdBase.__init__(self, shell_conn, "cbepctl", port=port,
                            username=username, password=password)

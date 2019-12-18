@@ -8,7 +8,9 @@ Created on Mar 14, 2019
 import json as pyJson
 import logging
 
-from com.couchbase.client.core.env import TimeoutConfig
+from com.couchbase.client.core.env import \
+    SeedNode, \
+    TimeoutConfig
 from com.couchbase.client.core.error import \
     CasMismatchException, \
     ConfigException, \
@@ -39,11 +41,20 @@ from com.couchbase.client.java.kv import \
 from java.time import Duration
 from java.time.temporal import ChronoUnit
 from java.lang import System
-from java.util.logging import Logger, Level, ConsoleHandler
+from java.util import \
+    Collections, \
+    HashSet, \
+    Optional
+from java.util.logging import \
+    ConsoleHandler, \
+    Level, \
+    Logger
 from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
+
+from Cb_constants import ClusterRun
 
 
 class SDKClient(object):
@@ -55,7 +66,7 @@ class SDKClient(object):
     Java SDK Client Implementation for testrunner - master branch
     """
 
-    def __init__(self, rest, bucket, info=None,  username="Administrator",
+    def __init__(self, rest, bucket, info=None, username="Administrator",
                  password="password",
                  quiet=True, certpath=None, transcoder=None, compression=True):
         self.log = logging.getLogger("test")
@@ -89,23 +100,37 @@ class SDKClient(object):
             for h in logger.getParent().getHandlers():
                 if isinstance(h, ConsoleHandler):
                     h.setLevel(Level.SEVERE)
-            cluster_env = ClusterEnvironment \
-                          .builder() \
-                          .timeoutConfig(TimeoutConfig.builder()
-                                         .connectTimeout(Duration.ofSeconds(20))
-                                         .kvTimeout(Duration.ofSeconds(10)))
-            clusterOptions = ClusterOptions.clusterOptions(
-                self.username, self.password).environment(cluster_env.build())
+            cluster_env = \
+                ClusterEnvironment \
+                .builder() \
+                .timeoutConfig(TimeoutConfig.builder()
+                               .connectTimeout(Duration.ofSeconds(20))
+                               .kvTimeout(Duration.ofSeconds(10)))
+
+            cluster_options = \
+                ClusterOptions \
+                .clusterOptions(self.username, self.password) \
+                .environment(cluster_env.build())
             i = 1
             while i <= 5:
                 try:
+                    # Code for cluster_run
+                    if self.rest.port in xrange(ClusterRun.port,
+                                                ClusterRun.port+10):
+                        master_seed = HashSet(Collections.singletonList(
+                            SeedNode.create(
+                                self.rest.ip,
+                                Optional.of(ClusterRun.memcached_port),
+                                Optional.of(int(self.rest.port)))))
+                        cluster_options = \
+                            cluster_options.seedNodes(master_seed)
                     self.cluster = Cluster.connect(
-                        ", ".join(self.hosts).replace(" ", ""),
-                        clusterOptions)
+                            ", ".join(self.hosts).replace(" ", ""),
+                            cluster_options)
                     break
                 except ConfigException as e:
-                    self.log.error("%s: Exception occurred while creating cluster connection: %s"
-                                   % (i, str(e)))
+                    self.log.error("Exception during cluster connection: %s"
+                                   % e)
                     i += 1
 
             self.bucketObj = self.cluster.bucket(self.bucket)

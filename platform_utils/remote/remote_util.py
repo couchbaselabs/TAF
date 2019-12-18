@@ -12,7 +12,7 @@ import TestInput
 from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 from testconstants import VERSION_FILE
 from testconstants import MEMBASE_VERSIONS
 from testconstants import MISSING_UBUNTU_LIB
@@ -174,6 +174,7 @@ class RemoteMachineShellConnection:
         self.password = serverInfo.ssh_password
         self.ssh_key = serverInfo.ssh_key
         self.port = serverInfo.port
+        self.memcached_port = serverInfo.memcached_port
 
         self.bin_path = LINUX_COUCHBASE_BIN_PATH
         self.cmd_ext = ""
@@ -202,6 +203,10 @@ class RemoteMachineShellConnection:
             self.bin_path = WIN_COUCHBASE_BIN_PATH
 
     def connect(self):
+        # For cluster_run case
+        if not self.remote:
+            return
+
         self.log.debug("Connecting to {0} with username: {1}, password: {2}"
                        .format(self.ip, self.username, self.password))
         self.jsch = JSch()
@@ -211,6 +216,10 @@ class RemoteMachineShellConnection:
         self.session.connect()
 
     def disconnect(self):
+        # For cluster_run case
+        if not self.remote:
+            return
+
         self.log.debug("Disconnecting ssh_client for {0}".format(self.ip))
         self.session.disconnect()
         RemoteMachineShellConnection.disconnections += 1
@@ -1598,7 +1607,7 @@ class RemoteMachineShellConnection:
                 self.execute_command("%scbcompact%s %s:%s compact %s --dropdeletes "
                                      " --purge-only-up-to-seq=%s"
                                      % (self.bin_path, self.cmd_ext, node,
-                                        cb_constants.memcached_port,
+                                        constants.memcached_port,
                                         cbadmin_user, cbadmin_password,
                                         vbucket, upto_seq),
                                      debug=False)
@@ -3328,13 +3337,17 @@ class RemoteMachineShellConnection:
                                         .format(process_name), debug=False)
             self.log_command_output(o, r)
         else:
-            if (force == True):
-                o, r = self.execute_command("kill -9 $(ps aux | grep '{0}' |  awk '{{print $2}}')"
-                                            .format(process_name), debug=False)
+            if force is True:
+                o, r = self.execute_command(
+                    "kill -9 $(ps aux | grep '{0}' |  awk '{{print $2}}')"
+                    .format(process_name),
+                    debug=False)
                 self.log_command_output(o, r)
             else:
-                o, r = self.execute_command("kill $(ps aux | grep '{0}' |  awk '{{print $2}}')"
-                                            .format(process_name), debug=False)
+                o, r = self.execute_command(
+                    "kill $(ps aux | grep '{0}' |  awk '{{print $2}}')"
+                    .format(process_name),
+                    debug=False)
                 self.log_command_output(o, r)
 
 #     def disconnect(self):
@@ -4292,13 +4305,13 @@ class RemoteMachineShellConnection:
         if persistence != "":
             command = "%s %s:%s  -u %s -p %s -b %s %s" \
                       % (cbepctl_command, self.ip,
-                         cb_constants.memcached_port,
+                         constants.memcached_port,
                          cbadmin_user, cbadmin_password,
                          bucket.name, persistence)
         else:
             command = "%s %s:%s -u %s -p %s -b %s %s %s %s" \
                       % (cbepctl_command, self.ip,
-                         cb_constants.memcached_port,
+                         constants.memcached_port,
                          cbadmin_user, cbadmin_password, bucket.name,
                          param_type, param, value)
         output, error = self.execute_command(command)

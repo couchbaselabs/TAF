@@ -18,7 +18,7 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from TestInput import TestInputServer
 from cb_tools.cbstats import Cbstats
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     doc_generator, SubdocDocumentGenerator
@@ -3589,10 +3589,10 @@ class NodeDownTimerTask(Task):
                 try:
                     self.start_time = time.time()
                     socket.socket().connect(("%s" % self.node,
-                                             cb_constants.port))
+                                             constants.port))
                     socket.socket().close()
                     socket.socket().connect(("%s" % self.node,
-                                             cb_constants.memcached_port))
+                                             constants.memcached_port))
                     socket.socket().close()
                 except socket.error:
                     self.test_log.debug(
@@ -3607,7 +3607,7 @@ class NodeDownTimerTask(Task):
                                              int(self.port)))
                     socket.socket().close()
                     socket.socket().connect(("%s" % self.node,
-                                             cb_constants.memcached_port))
+                                             constants.memcached_port))
                     socket.socket().close()
                 except socket.error:
                     self.test_log.debug("Injected failure in %s" % self.node)

@@ -1,15 +1,15 @@
-from couchbase_helper import cb_constants
+import logging
+import time
+import Queue
+from threading import Thread
+
+from Cb_constants import constants
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from mc_bin_client import MemcachedClient
 from membase.helper.rebalance_helper import RebalanceHelper
 import memcacheConstants
-import logging
-import time
-import Queue
-from threading import Thread
-import traceback
 
 
 class ClusterOperationHelper(object):
@@ -173,7 +173,7 @@ class ClusterOperationHelper(object):
     @staticmethod
     def flushctl_start(servers, username=None, password=None):
         for server in servers:
-            c = MemcachedClient(server.ip, cb_constants.memcached_port)
+            c = MemcachedClient(server.ip, constants.memcached_port)
             if username:
                 c.sasl_auth_plain(username, password)
             c.start_persistence()
@@ -181,7 +181,7 @@ class ClusterOperationHelper(object):
     @staticmethod
     def flushctl_stop(servers, username=None, password=None):
         for server in servers:
-            c = MemcachedClient(server.ip, cb_constants.memcached_port)
+            c = MemcachedClient(server.ip, constants.memcached_port)
             if username:
                 c.sasl_auth_plain(username, password)
             c.stop_persistence()
@@ -282,7 +282,7 @@ class ClusterOperationHelper(object):
     def get_mb_stats(servers, key):
         log = logging.getLogger("infra")
         for server in servers:
-            c = MemcachedClient(server.ip, cb_constants.memcached_port)
+            c = MemcachedClient(server.ip, constants.memcached_port)
             log.info("Get flush param on server {0}, {1}".format(server, key))
             val = c.stats().get(key, None)
             log.info("Get flush param on server {0}, {1}".format(server, val))

@@ -4,7 +4,7 @@ import json
 from random import randrange, randint
 from threading import Thread
 
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 from couchbase_helper.cluster import Cluster
 from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
@@ -515,7 +515,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                                   (self.cli_command_location,
                                    self.cmd_ext,
                                    node.ip,
-                                   cb_constants.memcached_port,
+                                   constants.memcached_port,
                                    "bucket0",
                                    authentication))
         shell.disconnect()
@@ -890,7 +890,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                                       (self.cli_command_location,
                                        self.cmd_ext,
                                        node.ip,
-                                       cb_constants.memcached_port,
+                                       constants.memcached_port,
                                        bucket.name))
         shell.disconnect()
         self.log.info("Load 2nd batch docs")
@@ -916,7 +916,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                         cmd = "%scbstats%s %s:%s failovers -u %s -p %s | grep num_entries " \
                               "| gawk%s '{printf $2}' | grep -m 5 '4\|5\|6\|7'" \
                               % (self.cli_command_location, self.cmd_ext,
-                                 server.ip, cb_constants.memcached_port,
+                                 server.ip, constants.memcached_port,
                                  "cbadminbucket", "password", self.cmd_ext)
                         output, error = shell.execute_command(cmd)
                         shell.disconnect()
@@ -1487,7 +1487,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                 "timestamp": "{0}".format(self.backups[0]),
                 "bucket": "{0}".format(self.buckets[0].name),
                 "sockname": "%s:%s" % (self.backupset.cluster_host.ip,
-                                       cb_constants.memcached_port),
+                                       constants.memcached_port),
                 "peername": "{0}".format(self.backupset.backup_host.ip)
             }
         elif action == 'restore':
@@ -1500,7 +1500,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                 "timestamp": "{0}".format(self.backups[0]),
                 "bucket": "{0}".format(self.buckets[0].name),
                 "sockname": "%s:%s" % (self.backupset.restore_cluster_host.ip,
-                                       cb_constants.memcached_port),
+                                       constants.memcached_port),
                 "peername": "{0}".format(self.backupset.backup_host.ip)
             }
         return expected_results

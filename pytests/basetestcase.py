@@ -7,6 +7,7 @@ import unittest
 import inspect
 
 from BucketLib.bucket import Bucket
+from Cb_constants import ClusterRun, CbServer
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from membase.api.rest_client import RestHelper, RestConnection
@@ -150,6 +151,18 @@ class BaseTestCase(unittest.TestCase):
         self.cleanup = False
         self.nonroot = False
         self.test_failure = None
+
+        # Populate memcached_port in case of cluster_run
+        cluster_run_base_port = ClusterRun.port
+        if int(self.input.servers[0].port) == ClusterRun.port:
+            for server in self.input.servers:
+                server.port = cluster_run_base_port
+                cluster_run_base_port += 1
+                # If not defined in node.ini under 'memcached_port' section
+                if server.memcached_port is CbServer.memcached_port:
+                    server.memcached_port = \
+                        ClusterRun.memcached_port \
+                        + (2 * (int(server.port) - ClusterRun.port))
 
         self.__log_setup_status("started")
         if len(self.input.clusters) > 1:
