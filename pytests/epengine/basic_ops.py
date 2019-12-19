@@ -171,9 +171,6 @@ class basic_ops(BaseTestCase):
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["sync_write_committed_count"] = 0
 
-        if self.durability_level:
-            pass
-
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
 
@@ -222,7 +219,7 @@ class basic_ops(BaseTestCase):
         verification_dict["ops_create"] += \
             self.num_items + len(task.fail.keys())
         # Validate vbucket stats
-        if self.durability_level:
+        if self.durability_level in DurabilityHelper.SupportedDurability:
             verification_dict["sync_write_committed_count"] += self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
@@ -264,7 +261,7 @@ class basic_ops(BaseTestCase):
                 check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
             verification_dict["ops_update"] += mutation_doc_count
-            if self.durability_level:
+            if self.durability_level in DurabilityHelper.SupportedDurability:
                 verification_dict["sync_write_committed_count"] \
                     += mutation_doc_count
             if self.ryow:
@@ -302,7 +299,7 @@ class basic_ops(BaseTestCase):
                 self.num_items - (self.num_items - num_item_start_for_crud)
             verification_dict["ops_delete"] += mutation_doc_count
 
-            if self.durability_level:
+            if self.durability_level in DurabilityHelper.SupportedDurability:
                 verification_dict["sync_write_committed_count"] \
                     += mutation_doc_count
             if self.ryow:
