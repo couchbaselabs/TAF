@@ -44,9 +44,6 @@ class RebalanceBaseTest(BaseTestCase):
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
         self.create_buckets()
-        if self.magma_storage:
-            self.bucket_util.update_bucket_props("backend", "magma")
-        self.sleep(20)
 
         if self.flusher_batch_split_trigger:
             self.bucket_util.set_flusher_batch_split_trigger(self.cluster.master,
@@ -57,7 +54,7 @@ class RebalanceBaseTest(BaseTestCase):
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
         if not self.atomicity:
-            tasks_info = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
+            _ = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -89,6 +86,7 @@ class RebalanceBaseTest(BaseTestCase):
             ram_quota=available_ram,
             bucket_type=self.bucket_type,
             replica=self.num_replicas,
+            storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
 
     def _create_multiple_buckets(self):
@@ -97,6 +95,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.num_replicas,
             bucket_count=self.standard_buckets,
             bucket_type=self.bucket_type,
+            storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 

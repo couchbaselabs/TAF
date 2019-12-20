@@ -68,7 +68,8 @@ class BaseTestCase(unittest.TestCase):
         self.compression_mode = \
             self.input.param("compression_mode",
                              Bucket.CompressionMode.PASSIVE)
-        self.magma_storage = self.input.param("magma_storage", False)
+        self.bucket_storage = self.input.param("bucket_storage",
+                                               Bucket.Storage.couchstore)
         # End of bucket parameters
 
         # Doc specific params

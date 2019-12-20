@@ -164,6 +164,9 @@ class BucketUtils:
                               % (bucket.name, raise_exception)
             raise Exception(raise_exception)
 
+        if bucket.storage == Bucket.Storage.magma:
+            self.update_bucket_props("backend", "magma", [bucket])
+
     def delete_bucket(self, serverInfo, bucket, wait_for_bucket_deletion=True):
         self.log.debug('Deleting existing bucket {0} on {1}'
                        .format(bucket, serverInfo))
@@ -257,6 +260,7 @@ class BucketUtils:
             ram_quota=None, replica=1, maxTTL=0,
             compression_mode="off", wait_for_warmup=True,
             lww=False, replica_index=1,
+            storage=Bucket.Storage.couchstore,
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
@@ -275,6 +279,7 @@ class BucketUtils:
                                  Bucket.maxTTL: maxTTL,
                                  Bucket.lww: lww,
                                  Bucket.replicaIndex: replica_index,
+                                 Bucket.storage: storage,
                                  Bucket.evictionPolicy: eviction_policy})
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
@@ -389,6 +394,7 @@ class BucketUtils:
             bucket_type=Bucket.Type.MEMBASE,
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
             maxttl=0,
+            storage=Bucket.Storage.couchstore,
             compression_mode=Bucket.CompressionMode.ACTIVE):
         success = True
         rest = RestConnection(server)
@@ -412,6 +418,7 @@ class BucketUtils:
                                  Bucket.bucketType: bucket_type,
                                  Bucket.evictionPolicy: eviction_policy,
                                  Bucket.maxTTL: maxttl,
+                                 Bucket.storage: storage,
                                  Bucket.compressionMode: compression_mode})
                 tasks[bucket] = self.async_create_bucket(bucket)
 
@@ -433,6 +440,8 @@ class BucketUtils:
                 if not warmed_up:
                     success = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name
+                elif bucket.storage == Bucket.Storage.magma:
+                    self.update_bucket_props("backend", "magma", [bucket])
 
             if raise_exception:
                 raise Exception(raise_exception)

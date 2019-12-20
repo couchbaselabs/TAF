@@ -18,6 +18,7 @@ class MultiBucketTests(BaseTestCase):
         # Create  multiple buckets here
         buckets_created = self.bucket_util.create_multiple_buckets(
             self.cluster.master, self.num_replicas,
+            storage=self.bucket_storage,
             bucket_count=self.standard_buckets, bucket_type=self.bucket_type)
         self.assertTrue(buckets_created, "Multi-bucket creation failed")
         self.bucket_util.add_rbac_user()
