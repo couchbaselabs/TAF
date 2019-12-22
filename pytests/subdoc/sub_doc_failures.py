@@ -794,7 +794,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure("Exception not seen for few docs: {0}"
                              .format(failed_docs))
 
-        expected_exception = SDKException.TimeoutException
+        expected_exception = SDKException.AmbiguousTimeoutException
         retry_reason = SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
         if self.doc_ops[0] in "create":
             expected_exception = SDKException.DocumentNotFoundException
