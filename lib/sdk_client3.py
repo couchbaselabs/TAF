@@ -499,6 +499,10 @@ class SDKClient(object):
             self.log.warning("Key '%s' not found!" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
+        except DurabilityAmbiguousException as e:
+            self.log.warning("D_Ambiguous for key %s" % key)
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
@@ -721,8 +725,8 @@ class SDKClient(object):
             mutate_in_specs.append(SDKClient.sub_doc_op.getReplaceMutateInSpec(
                 sub_key, value, xattr))
             if not xattr:
-                mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1))
+                mutate_in_specs.append(
+                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], exp, time_unit,
@@ -731,8 +735,8 @@ class SDKClient(object):
             result = self.__translate_upsert_multi_sub_doc_result(result)
         elif op_type == "subdoc_read":
             mutate_in_specs = list()
-            mutate_in_specs.append(SDKClient.sub_doc_op.getLookUpInSpec(value,
-                                                                   xattr))
+            mutate_in_specs.append(
+                SDKClient.sub_doc_op.getLookUpInSpec(value, xattr))
             content = Tuples.of(key, mutate_in_specs)
             result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
                 self.collection, [content])
