@@ -644,10 +644,15 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         result, _ = self.client.crud("subdoc_read",
                                      self.doc_id,
                                      "my.attr")
+        if self.xattr:
+            result = result["xattrs"]
+        else:
+            result = result["non_xattrs"]
+
         self.assertEqual(
-            result["xattrs"]["value"][0],
+            result["value"][0],
             "PATH_NOT_FOUND",
-            "Invalid SDK return value: %s" % result["xattrs"]["value"])
+            "Invalid SDK return value: %s" % result["value"])
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
         self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",

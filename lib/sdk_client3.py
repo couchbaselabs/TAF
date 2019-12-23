@@ -454,6 +454,10 @@ class SDKClient(object):
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
+        except DurabilityAmbiguousException as e:
+            self.log.warning("D_Ambiguous for key %s" % key)
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
         except ServerOutOfMemoryException as ex:
             self.log.warning("OOM exception: %s" % ex)
             result.update({"key": key, "value": content,
