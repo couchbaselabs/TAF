@@ -9,12 +9,10 @@ from membase.api.exception import RebalanceFailedException
 from remote.remote_util import RemoteMachineShellConnection
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
+from rebalance_new import rebalance_base
 
-retry_exceptions = [
-    SDKException.TimeoutException,
-    SDKException.RequestCanceledException,
-    SDKException.DurabilityAmbiguousException,
-    SDKException.DurabilityImpossibleException]
+retry_exceptions = rebalance_base.retry_exceptions +\
+                    [SDKException.RequestCanceledException]
 
 
 class SwapRebalanceBase(RebalanceBaseTest):

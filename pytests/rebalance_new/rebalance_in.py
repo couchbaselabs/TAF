@@ -7,12 +7,10 @@ from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from rebalance_new import rebalance_base
 
-retry_exceptions = [
-    SDKException.TimeoutException,
-    SDKException.RequestCanceledException,
-    SDKException.DurabilityAmbiguousException,
-    SDKException.DurabilityImpossibleException]
+retry_exceptions = rebalance_base.retry_exceptions +\
+                    [SDKException.RequestCanceledException]
 
 
 class RebalanceInTests(RebalanceBaseTest):
@@ -464,13 +462,6 @@ class RebalanceInTests(RebalanceBaseTest):
             compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
 
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            SDKException.DurabilityImpossibleException
-            ]
-
         # CRUDs while rebalance is running in parallel
         tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
@@ -604,12 +595,6 @@ class RebalanceInTests(RebalanceBaseTest):
         num_of_items = self.num_items
         task = None
         op_type = None
-
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            SDKException.DurabilityImpossibleException]
 
         for i in range(self.nodes_init, self.num_servers, 2):
             # Start rebalance task

@@ -8,6 +8,10 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
+retry_exceptions = list([SDKException.TimeoutException,
+                         SDKException.DurabilityImpossibleException,
+                         SDKException.DurabilityAmbiguousException])
+
 
 class RebalanceBaseTest(BaseTestCase):
     def setUp(self):
@@ -188,10 +192,7 @@ class RebalanceBaseTest(BaseTestCase):
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
 
-        retry_exceptions = list([SDKException.TimeoutException,
-                                 SDKException.RequestCanceledException,
-                                 SDKException.DurabilityImpossibleException,
-                                 SDKException.DurabilityAmbiguousException])
+        retry_exceptions_local = retry_exceptions + [SDKException.RequestCanceledException]
 
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
@@ -199,7 +200,7 @@ class RebalanceBaseTest(BaseTestCase):
             durability=self.durability_level, timeout_secs=timeout_secs,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, sdk_compression=compression,
-            process_concurrency=8, retry_exceptions=retry_exceptions,
+            process_concurrency=8, retry_exceptions=retry_exceptions_local,
             active_resident_threshold=self.active_resident_threshold)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():

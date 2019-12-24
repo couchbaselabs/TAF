@@ -3,6 +3,7 @@ from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
+from rebalance_new import rebalance_base
 
 
 class RebalanceInOutTests(RebalanceBaseTest):
@@ -239,15 +240,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
         self.doc_ops = "update"
         self.gen_update = self.get_doc_generator(0, self.num_items)
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            ]
 
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             # CRUDs while rebalance is running in parallel
-            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+            tasks_info = self.loadgen_docs(retry_exceptions=rebalance_base.retry_exceptions)
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
             self.sleep(10)
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
@@ -257,7 +253,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+            tasks_info = self.loadgen_docs(retry_exceptions=rebalance_base.retry_exceptions)
 
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
@@ -335,14 +331,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         self.doc_ops = "update"
         self.gen_update = self.get_doc_generator(0, self.num_items)
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            ]
 
         for i in range(self.nodes_init, self.num_servers):
-            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+            tasks_info = self.loadgen_docs(retry_exceptions=rebalance_base.retry_exceptions)
             self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:i], [])
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
@@ -350,7 +341,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
 
             self.sleep(10)
 
-            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+            tasks_info = self.loadgen_docs(retry_exceptions=rebalance_base.retry_exceptions)
             self.add_remove_servers_and_rebalance([], self.cluster.servers[self.nodes_init:i])
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)

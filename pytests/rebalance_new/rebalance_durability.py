@@ -4,6 +4,7 @@ from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator
 from rebalance_base import RebalanceBaseTest
 from sdk_exceptions import SDKException
+from rebalance_new import rebalance_base
 
 
 class RebalanceDurability(RebalanceBaseTest):
@@ -29,14 +30,8 @@ class RebalanceDurability(RebalanceBaseTest):
             self.delete_from,
             self.delete_from + self.delete_items)
 
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            ]
-
         # CRUDs while rebalance is running in parallel
-        tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+        tasks_info = self.loadgen_docs(retry_exceptions=rebalance_base.retry_exceptions)
 
         if self.doc_ops is not None:
             if "create" in self.doc_ops:
