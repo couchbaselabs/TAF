@@ -2,6 +2,7 @@ from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
+from couchbase_helper.durability_helper import DurabilityHelper
 
 
 class BucketParamTest(BaseTestCase):
@@ -297,9 +298,14 @@ class BucketParamTest(BaseTestCase):
 
                 for task, task_info in tasks.items():
                     if replica_num == 3:
-                        self.assertTrue(
-                            len(task.fail.keys()) == (self.num_items/2),
-                            "Few doc_ops succeeded")
+                        if self.durability_level in DurabilityHelper.SupportedDurability:
+                            self.assertTrue(
+                                len(task.fail.keys()) == (self.num_items/2),
+                                "Few doc_ops succeeded while they should have failed.")
+                        else:
+                            self.assertTrue(
+                                len(task.fail.keys()) == 0,
+                                "Few doc_ops failed while they should have succeeded.")
                     self.assertFalse(
                         task_info["ops_failed"],
                         "Doc update failed after replica update rebalance")
