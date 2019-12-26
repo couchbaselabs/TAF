@@ -2212,7 +2212,11 @@ class BucketUtils:
             shell = RemoteMachineShellConnection(server)
             cbstat_obj = Cbstats(shell)
             while time.time() - start < wait_time:
-                result = cbstat_obj.all_stats(bucket.name, "ep_warmup_thread")
+                result = None
+                try:
+                    result = cbstat_obj.all_stats(bucket.name, "ep_warmup_thread")
+                except:
+                    pass
                 if result is not None and result == "complete":
                     warmed_up = True
                     break

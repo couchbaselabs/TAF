@@ -7,6 +7,7 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from BucketLib.bucket import Bucket
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -38,8 +39,6 @@ class MagmaBaseTest(BaseTestCase):
             self._create_default_bucket()
         else:
             self._create_multiple_buckets()
-        self.bucket_util.update_bucket_props("backend", "magma")
-
         self.gen_create = doc_generator(self.key, 0, self.num_items,
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
@@ -47,7 +46,7 @@ class MagmaBaseTest(BaseTestCase):
                                         vbuckets=self.vbuckets)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
-        tasks_info = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
+        _ = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
         self.log.info("Verifying num_items counts after doc_ops")
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -75,6 +74,7 @@ class MagmaBaseTest(BaseTestCase):
             ram_quota=available_ram,
             bucket_type=self.bucket_type,
             replica=self.num_replicas,
+            storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
 
     def _create_multiple_buckets(self):
@@ -83,6 +83,7 @@ class MagmaBaseTest(BaseTestCase):
             self.num_replicas,
             bucket_count=self.standard_buckets,
             bucket_type=self.bucket_type,
+            storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
@@ -115,8 +116,10 @@ class MagmaBaseTest(BaseTestCase):
                         "Doc_ops failed in rebalance_base._load_all_buckets")
         return tasks_info
 
-    def start_parallel_cruds(self, retry_exceptions=[], ignore_exceptions=[],
-                             task_verification=False):
+    def start_parallel_cruds(self,
+                             retry_exceptions=[],
+                             ignore_exceptions=[],
+                             _sync=False):
         tasks_info = dict()
         if "update" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -148,7 +151,7 @@ class MagmaBaseTest(BaseTestCase):
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
-        if task_verification:
+        if _sync:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
@@ -158,13 +161,15 @@ class MagmaBaseTest(BaseTestCase):
     def loadgen_docs(self,
                      retry_exceptions=[],
                      ignore_exceptions=[],
-                     task_verification=False):
+                     _sync=False):
         retry_exceptions = list(set(retry_exceptions +
-                                    [SDKException.RequestTimeoutException,
+                                    [SDKException.TimeoutException,
+                                     SDKException.AmbiguousTimeoutException,
                                      SDKException.RequestCanceledException]))
 
         if self.check_temporary_failure_exception:
             retry_exceptions.append(SDKException.TemporaryFailureException)
-        loaders = self.start_parallel_cruds(retry_exceptions, ignore_exceptions,
-                                            task_verification)
+        loaders = self.start_parallel_cruds(retry_exceptions,
+                                            ignore_exceptions,
+                                            _sync)
         return loaders
