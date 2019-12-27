@@ -34,7 +34,6 @@ class MagmaCrashTests(MagmaBaseTest):
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
-            self.sleep(5, "Sleep after memcached kill")
             self.gen_create = doc_generator(self.key,
                                             items*i,
                                             items*(i+1),
@@ -44,5 +43,9 @@ class MagmaCrashTests(MagmaBaseTest):
                                             vbuckets=self.vbuckets)
             self.loadgen_docs(_sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
+            data_validation = self.task.async_validate_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                self.gen_create, "create", 0, batch_size=10)
+            self.task.jython_task_manager.get_task_result(data_validation)
             self.bucket_util.verify_stats_all_buckets(items*(i+1))
 

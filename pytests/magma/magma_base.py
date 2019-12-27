@@ -31,7 +31,8 @@ class MagmaBaseTest(BaseTestCase):
             self.assertTrue(result, "Initial rebalance failed")
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.check_replica = self.input.param("check_replica", False)
-
+        self.bucket_storage = self.input.param("bucket_storage",
+                                               Bucket.Storage.magma)
         self.bucket_util.add_rbac_user()
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)

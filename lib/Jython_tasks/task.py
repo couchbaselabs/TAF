@@ -1938,7 +1938,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
             for key in key_value.keys():
                 try:
                     result = self.client.getFromAllReplica(key)
-                    if all(_result for _result in result) and len(result) == self.replicas+1:
+                    if all(_result for _result in result) and len(result) == min(self.replicas+1,
+                                                                                 len(self.cluster.nodes_in_cluster)):
                         key = key.decode()
                         if result[0]["status"]:
                             result_map[key] = dict()
