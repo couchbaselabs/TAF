@@ -44,5 +44,5 @@ class MagmaCrashTests(MagmaBaseTest):
                                             vbuckets=self.vbuckets)
             self.loadgen_docs(_sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items+items*i)
+            self.bucket_util.verify_stats_all_buckets(items*(i+1))
 
