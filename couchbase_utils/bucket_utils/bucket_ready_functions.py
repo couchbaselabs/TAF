@@ -771,6 +771,8 @@ class BucketUtils:
                 ambiguous_state = False
                 if SDKException.DurabilityAmbiguousException \
                         in str(exception) \
+                        or SDKException.AmbiguousTimeoutException \
+                        in str(exception) \
                         or SDKException.TimeoutException \
                         in str(exception) \
                         or (SDKException.RequestCanceledException
