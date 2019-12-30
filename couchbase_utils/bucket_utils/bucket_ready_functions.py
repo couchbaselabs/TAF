@@ -942,7 +942,7 @@ class BucketUtils:
             if load_for == "abort":
                 return self.task.async_load_gen_docs(
                     self.cluster, bucket, doc_gen, doc_op, 0,
-                    batch_size=2, process_concurrency=8,
+                    batch_size=1, process_concurrency=8,
                     durability=durability_level,
                     timeout_secs=2, start_task=False,
                     skip_read_on_error=True, suppress_error_table=True)

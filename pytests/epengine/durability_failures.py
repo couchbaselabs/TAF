@@ -910,7 +910,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         verification_dict["rollback_item_count"] = 0
         if self.durability_level:
             verification_dict["sync_write_aborted_count"] = crud_batch_size * 2
-            verification_dict["sync_write_committed_count"] = 0
+            verification_dict["sync_write_committed_count"] = self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(),
