@@ -905,7 +905,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Validate vbucket stats
         verification_dict["ops_create"] = self.num_items
         verification_dict["ops_update"] = 0
-        verification_dict["ops_delete"] = 0
+        # Uncomment once MB-37153 is resolved
+        # verification_dict["ops_delete"] = 0
         verification_dict["rollback_item_count"] = 0
         if self.durability_level:
             verification_dict["sync_write_aborted_count"] = crud_batch_size * 2
@@ -932,7 +933,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     self.log_failure("Failure seen during doc_op: %s" % doc_op)
 
                 # Update verification dict for validation
-                verification_dict["ops_" + doc_op] += crud_batch_size
+                # Remove 'if' statement once MB-37153 is resolved
+                if doc_op != "delete":
+                    verification_dict["ops_" + doc_op] += crud_batch_size
                 if self.durability_level:
                     verification_dict["sync_write_committed_count"] += \
                         crud_batch_size
