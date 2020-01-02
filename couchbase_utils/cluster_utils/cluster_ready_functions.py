@@ -565,13 +565,11 @@ class ClusterUtils:
             master = self.cluster.master
         rest = RestConnection(master)
         versions = rest.get_nodes_versions()
-        for version in versions:
-            if "3.5" > version:
-                return servers
         if servers is None:
             servers = self.cluster.servers
         kv_servers = self.get_nodes_from_services_map(service_type="kv",
-                                                      get_all_nodes=True,servers=servers,
+                                                      get_all_nodes=True,
+                                                      servers=servers,
                                                       master=master)
         new_servers = []
         for server in servers:

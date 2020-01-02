@@ -4749,7 +4749,7 @@ class RemoteMachineShellConnection:
         if output:
             for x in output:
                 x = x.strip()
-                if x and x[:5] in COUCHBASE_VERSIONS and "-" in x:
+                if x and "-" in x and x.split("-")[0] in COUCHBASE_VERSIONS:
                     fv = x
                     tmp = x.split("-")
                     sv = tmp[0]
