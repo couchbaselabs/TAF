@@ -581,6 +581,39 @@ class BucketUtils:
             self.assertTrue(result,
                             "snap_start and snap_end corruption found!!!")
 
+    def _wait_for_stat(self, bucket, stat_map=None,
+                       stat_name="ep_queue_size",
+                       stat_cond='==',
+                       timeout=60):
+        """
+        Waits for queues to drain on all servers and buckets in a cluster.
+
+        A utility function that waits for all of the items loaded to be
+        persisted and replicated.
+
+        Args:
+          servers - List of all servers in the cluster ([TestInputServer])
+          ep_queue_size - expected ep_queue_size (int)
+          ep_queue_size_cond - condition for comparing (str)
+          check_ep_dcp_items_remaining - to check if replication is complete
+          timeout - Waiting the end of the thread. (str)
+        """
+        tasks = []
+        stat_cmd = "all"
+        if stat_map:
+            for server, stat_value in stat_map.items():
+                if bucket.bucketType == 'memcached':
+                    continue
+                shell_conn = RemoteMachineShellConnection(server)
+                tasks.append(self.task.async_wait_for_stats(
+                    [shell_conn], bucket, stat_cmd,
+                    stat_name, stat_cond, stat_value,
+                    timeout=timeout))
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+            for shell in task.shellConnList:
+                shell.disconnect()
+
     def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
                                     check_ep_items_remaining=False,
@@ -1540,7 +1573,7 @@ class BucketUtils:
 
     def _run_compaction(self, number_of_times=100):
         try:
-            for _ in range(1, number_of_times):
+            for _ in range(0, number_of_times):
                 for bucket in self.buckets:
                     BucketHelper(self.cluster.master).compact_bucket(
                         bucket.name)

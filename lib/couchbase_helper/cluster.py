@@ -861,7 +861,7 @@ class ServerTasks(object):
         Returns:
             boolean - Whether or not the cbrecovery completed successfully"""
         _task = self.async_compact_bucket(server, bucket)
-        status = _task.get_result()
+        status = self.jython_task_manager.get_task_result(_task)
         return status
 
     def async_monitor_compaction(self, cluster, bucket):
