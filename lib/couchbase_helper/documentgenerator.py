@@ -327,7 +327,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         self.args = args
         self.template = template
         self.doc_type = "json"
-        self.doc_keys = list()
+        self.doc_keys = dict()
         self.doc_keys_len = 0
         self.key_counter = 1
 
@@ -360,20 +360,10 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                 (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
-                self.doc_keys.append(doc_key)
+                self.doc_keys.update({self.start+self.doc_keys_len: doc_key})
                 self.doc_keys_len += 1
             self.key_counter += 1
-        self.end = self.key_counter
-
-    def has_next(self):
-        for doc_key in self.doc_keys:
-            doc_index = int(doc_key.split("-")[-1])
-            if doc_index >= self.end:
-                break
-            if self.start <= doc_index:
-                return True
-        self.start = self.end
-        return False
+        self.end = self.start + self.doc_keys_len
 
     """
     Creates the next generated document and increments the iterator.
@@ -382,18 +372,6 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
     """
     def next(self):
         if self.itr > self.end:
-            raise StopIteration
-        doc_found = False
-        for doc_key in self.doc_keys:
-            doc_index = int(doc_key.split("-")[-1])
-            if doc_index >= self.end:
-                break
-            if self.start <= doc_index:
-                doc_found = True
-                self.doc_keys.remove(doc_key)
-                break
-
-        if not doc_found:
             raise StopIteration
 
         rand_hash = self.name + '-' + str(self.itr)
@@ -406,7 +384,8 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                                              .replace('True', 'true') \
                                              .replace('False', 'false') \
                                              .replace('\\', '\\\\')
-        self.itr = doc_index
+        doc_key = self.doc_keys[self.itr]
+        self.itr += 1
         return doc_key, doc
 
 
