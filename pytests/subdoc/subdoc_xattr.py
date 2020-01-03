@@ -1795,9 +1795,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                                               create_path=True,
                                               xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
-            if SDKException.TimeoutException not in sdk_exception:
+            if SDKException.AmbiguousTimeoutException not in sdk_exception:
                 self.log_failure("Invalid exception: %s" % failed_item)
-            elif SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
+            if SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
                     not in sdk_exception:
                 self.log_failure("Retry reason missing: %s" % failed_item)
 
