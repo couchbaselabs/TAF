@@ -7,8 +7,8 @@ from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 #from couchbase_helper.durability_helper import DurableExceptions
-from couchbase_helper.documentgenerator import GleamBookUsersDocumentGenerator
-from couchbase_helper.documentgenerator import GleamBookMessagesDocumentGenerator
+#from couchbase_helper.documentgenerator import GleamBookUsersDocumentGenerator
+#from couchbase_helper.documentgenerator import GleamBookMessagesDocumentGenerator
 import random
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
