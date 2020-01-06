@@ -17,7 +17,7 @@ class CouchbaseError:
 
     def __handle_shell_error(self, error):
         if len(error) != 0:
-            raise("\n".join(error))
+            raise Exception("\n".join(error))
 
     def __interrupt_process(self, process_name, action):
         if action == "stop":

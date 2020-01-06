@@ -678,7 +678,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
         gen_update_delete = doc_generator(
             self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
-            target_vbucket=target_vbuckets)
+            target_vbucket=target_vbuckets, mutate=1)
         gen_subdoc = sub_doc_generator(
             self.key, 0, self.crud_batch_size,
             vbuckets=self.vbuckets, target_vbucket=target_vbuckets)

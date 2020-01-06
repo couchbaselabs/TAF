@@ -237,7 +237,8 @@ class basic_ops(BaseTestCase):
         doc_update = doc_generator(
             self.key, 0, num_item_start_for_crud,
             doc_size=self.doc_size, doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket, vbuckets=self.vbuckets)
+            target_vbucket=self.target_vbucket, vbuckets=self.vbuckets,
+            mutate=1)
 
         expected_num_items = self.num_items
         num_of_mutations = 1
@@ -279,7 +280,9 @@ class basic_ops(BaseTestCase):
             op_failed_tbl.set_headers(["Update failed key", "CAS", "Value"])
             for key, value in task.success.items():
                 if json.loads(str(value["value"]))["mutated"] != 1:
-                    op_failed_tbl.add_row([key, value["cas"], value["value"]])
+                    op_failed_tbl.add_row([key,
+                                           str(value["cas"]),
+                                           value["value"]])
 
             op_failed_tbl.display("Update failed for keys:")
             if len(op_failed_tbl.rows) != 0:
