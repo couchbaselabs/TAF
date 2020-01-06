@@ -224,7 +224,7 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
                 self.update_perc = 0
             process_concurrency = (self.delete_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
         retry_exceptions = [
-            SDKException.RequestTimeoutException,
+            SDKException.AmbiguousTimeoutException,
             SDKException.RequestCanceledException,
             SDKException.DurabilityAmbiguousException,
             SDKException.DurabilityImpossibleException,
