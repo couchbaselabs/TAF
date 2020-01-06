@@ -12,24 +12,27 @@ from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 
 def doc_generator(key, start, end, doc_size=256, doc_type="json",
-                  target_vbucket=None, vbuckets=1024, mutation_type="ADD", mutate = 0, key_size=8):
+                  target_vbucket=None, vbuckets=1024, mutation_type="ADD",
+                  mutate=0, key_size=8):
     age = range(5)
     first = ['james', 'sharon']
     body = [''.rjust(doc_size - 10, 'a')]
-    mutate = [mutate]
     # Defaults to JSON doc_type
-    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}", "mutated":"{3}" ' \
-               + ' "mutation_type": "%s" }}' % mutation_type
+    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}", ' \
+               '"mutated": %s, "mutation_type": "%s" }}'\
+               % (mutate, mutation_type)
     if doc_type in ["string", "binary"]:
-        template = "age:{0}, first_name:{1}, body: {2}, mutated:{3}, mutation_type: %s" \
-                   % mutation_type
+        template = 'age:{0}, first_name: "{1}", body: "{2}", ' \
+                   'mutated:  %s, mutation_type: "%s"' \
+                   % (mutate, mutation_type)
     if target_vbucket:
         return DocumentGeneratorForTargetVbucket(
-            key, template, age, first, body, mutate, start=start, end=end,
+            key, template, age, first, body, start=start, end=end,
             doc_type=doc_type, target_vbucket=target_vbucket,
             vbuckets=vbuckets)
-    return DocumentGenerator(key, template, age, first, body, mutate,
-                             start=start, end=end, doc_type=doc_type, key_size=key_size)
+    return DocumentGenerator(key, template, age, first, body,
+                             start=start, end=end, doc_type=doc_type,
+                             key_size=key_size)
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
