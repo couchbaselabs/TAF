@@ -106,50 +106,101 @@ def main():
     tests_to_launch = list()
     cb = Bucket('couchbase://' + TEST_SUITE_DB + '/QE-Test-Suites')
 
-    if options.run == "12hr_weekly":
-        suite_string = "('12hour' in partOf or 'weekly' in partOf)"
-    else:
-        suite_string = "'" + options.run + "' in partOf"
+    # Start of new logic
+    new_doc_format = True
+    query_data = dict()
+    query_data["new"] = dict()
+    query_data["old"] = dict()
 
-    if options.component is None or options.component == 'None':
-        query_string = "select * from `QE-Test-Suites` where " \
-                       + suite_string + " order by component"
-    else:
-        if options.subcomponent is None or options.subcomponent == 'None':
-            split_components = options.component.split(',')
-            component_string = ''
-            for i in range(len(split_components)):
-                component_string = component_string \
-                                   + "'" + split_components[i] + "'"
-                if i < len(split_components) - 1:
-                    component_string = component_string + ','
+    query_data["new"]["select_string"] = \
+        "SELECT test_suite.confFile, " \
+        "test_suite.config, " \
+        "comp.component, " \
+        "comp.framework, " \
+        "subcomp.subcomponent, " \
+        "subcomp.implementedIn, " \
+        "subcomp.initNodes, " \
+        "subcomp.mailing_list, " \
+        "subcomp.mode, " \
+        "subcomp.os, " \
+        "subcomp.parameters, " \
+        "subcomp.slave, " \
+        "subcomp.timeOut " \
+        "FROM `QE-Test-Suites` test_suite " \
+        "LEFT OUTER UNNEST test_suite.components AS comp " \
+        "LEFT OUTER UNNEST comp.subcomponents AS subcomp "
+    query_data["new"]["partOf"] = "subcomp.partOf"
+    query_data["new"]["component"] = "comp.component"
+    query_data["new"]["sub_component"] = "subcomp.subcomponent"
 
-            query_string = "select * from `QE-Test-Suites` where %s " \
-                           "and component in [%s] order by component;" \
-                           % (suite_string, component_string)
+    query_data["old"]["select_string"] = "SELECT * FROM `QE-Test-Suites` "
+    query_data["old"]["partOf"] = "partOf"
+    query_data["old"]["component"] = "component"
+    query_data["old"]["sub_component"] = "subcomponent"
+
+    for version in ["new", "old"]:
+        if options.run == "12hr_weekly":
+            suite_string = "('12hour' IN {0} OR" \
+                           " 'weekly' IN {0})" \
+                           .format(query_data[version]["partOf"])
         else:
-            # have a subcomponent, assume only 1 component
-            split_subcomponents = options.subcomponent.split(',')
-            subcomponent_string = ''
-            for i in range(len(split_subcomponents)):
-                print('subcomponentString is', subcomponent_string)
-                subcomponent_string = subcomponent_string \
-                                      + "'" + split_subcomponents[i] + "'"
-                if i < len(split_subcomponents) - 1:
-                    subcomponent_string = subcomponent_string + ','
-            query_string = "select * from `QE-Test-Suites` where %s and " \
-                           "component in ['%s'] and subcomponent in [%s];" \
-                           % (suite_string, options.component,
-                              subcomponent_string)
+            suite_string = "'" + options.run + "' in subcomp.partOf"
 
-    print('Query is:', query_string)
-    _ = N1QLQuery(query_string)
-    results = cb.n1ql_query(query_string)
+        if options.component is None or options.component == 'None':
+            query_string = query_data[version]["select_string"] \
+                           + "WHERE " + suite_string + " ORDER BY " \
+                           + query_data[version]["component"]
+        else:
+            if options.subcomponent is None or options.subcomponent == 'None':
+                split_components = options.component.split(',')
+                component_string = ''
+                for i in range(len(split_components)):
+                    component_string = component_string \
+                                       + "'" + split_components[i] + "'"
+                    if i < len(split_components) - 1:
+                        component_string = component_string + ','
+
+                query_string = query_data[version]["select_string"] + \
+                               "WHERE %s " \
+                               "AND %s IN [%s] " \
+                               "ORDER BY %s ;" \
+                               % (suite_string,
+                                  query_data[version]["component"],
+                                  component_string,
+                                  query_data[version]["component"])
+            else:
+                # have a subcomponent, assume only 1 component
+                split_subcomponents = options.subcomponent.split(',')
+                subcomponent_string = ''
+                for i in range(len(split_subcomponents)):
+                    print('subcomponentString is', subcomponent_string)
+                    subcomponent_string = subcomponent_string \
+                                          + "'" + split_subcomponents[i] + "'"
+                    if i < len(split_subcomponents) - 1:
+                        subcomponent_string = subcomponent_string + ','
+                query_string = query_data[version]["select_string"] + \
+                               "WHERE %s AND %s IN ['%s'] AND " \
+                               "%s IN [%s];" \
+                               % (suite_string,
+                                  query_data[version]["component"],
+                                  options.component,
+                                  query_data[version]["sub_component"],
+                                  subcomponent_string)
+
+        print('Query is:', query_string)
+        _ = N1QLQuery(query_string)
+        results = cb.n1ql_query(query_string)
+
+        if version == "old" and results:
+            new_doc_format = False
 
     framework = None
     for row in results:
         try:
-            data = row['QE-Test-Suites']
+            if new_doc_format:
+                data = row
+            else:
+                data = row['QE-Test-Suites']
             # trailing spaces causes problems opening the files
             data['config'] = data['config'].rstrip()
             print('row', data)
