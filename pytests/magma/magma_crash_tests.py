@@ -91,3 +91,42 @@ class MagmaCrashTests(MagmaBaseTest):
                 wait_time=self.wait_timeout * 10))
             self.bucket_util.verify_stats_all_buckets(items)
         shell.disconnect()
+
+    def test_magma_rollback_to_0(self):
+        items = self.num_items
+        mem_only_items = self.input.param("rollback_items", 10000)
+        if self.nodes_init < 2 or self.num_replicas<1:
+            self.fail("Not enough nodes/replicas in the cluster/bucket to test rollback")
+        self.num_rollbacks = self.input.param("num_rollbacks", 10)
+        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
+        self.target_vbucket = Cbstats(shell).vbucket_list(self.bucket_util.buckets[0].name)
+        start = self.num_items
+        # Stopping persistence on NodeA
+        mem_client = MemcachedClientHelper.direct_client(
+            self.input.servers[0], self.bucket_util.buckets[0])
+        mem_client.stop_persistence()
+        for i in xrange(1, self.num_rollbacks+1):
+            self.gen_create = doc_generator(self.key,
+                                            start,
+                                            mem_only_items,
+                                            doc_size=self.doc_size,
+                                            doc_type=self.doc_type,
+                                            target_vbucket=self.target_vbucket,
+                                            vbuckets=self.vbuckets)
+            self.loadgen_docs(_sync=True)
+            start = self.gen_create.key_counter
+            stat_map = {self.cluster.nodes_in_cluster[0]: mem_only_items*i}
+            for node in self.cluster.nodes_in_cluster[1:]:
+                stat_map.update({node: 0})
+
+            for bucket in self.bucket_util.buckets:
+                self.bucket_util._wait_for_stat(bucket, stat_map)
+            self.sleep(60)
+
+        shell.kill_memcached()
+        self.assertTrue(self.bucket_util._wait_warmup_completed(
+            [self.cluster_util.cluster.master],
+            self.bucket_util.buckets[0],
+            wait_time=self.wait_timeout * 10))
+        self.bucket_util.verify_stats_all_buckets(items)
+        shell.disconnect()
