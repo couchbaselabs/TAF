@@ -33,6 +33,9 @@ class MagmaBaseTest(BaseTestCase):
         self.check_replica = self.input.param("check_replica", False)
         self.bucket_storage = self.input.param("bucket_storage",
                                                Bucket.Storage.magma)
+        self.bucket_eviction_policy = self.input.param(
+            "bucket_eviction_policy",
+            Bucket.EvictionPolicy.FULL_EVICTION)
         self.bucket_util.add_rbac_user()
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
