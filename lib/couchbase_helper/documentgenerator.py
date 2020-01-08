@@ -29,14 +29,14 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json",
         return DocumentGeneratorForTargetVbucket(
             key, template, age, first, body, start=start, end=end,
             doc_type=doc_type, target_vbucket=target_vbucket,
-            vbuckets=vbuckets)
+            vbuckets=vbuckets, key_size=key_size)
     return DocumentGenerator(key, template, age, first, body,
                              start=start, end=end, doc_type=doc_type,
                              key_size=key_size)
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
-                      target_vbucket=None, vbuckets=1024):
+                      target_vbucket=None, vbuckets=1024, key_size=8):
     first_name = ['james', 'sharon']
     last_name = [''.rjust(doc_size - 10, 'a')]
     city = ["Chicago", "Dallas", "Seattle", "Aurora", "Columbia"]
@@ -50,7 +50,8 @@ def sub_doc_generator(key, start, end, doc_size=256,
                                    city, state, pin_code,
                                    start=start, end=end,
                                    target_vbucket=target_vbucket,
-                                   vbuckets=vbuckets)
+                                   vbuckets=vbuckets,
+                                   key_size=key_size)
 
 
 def sub_doc_generator_for_edit(key, start, end, template_index=0,
@@ -197,6 +198,7 @@ class SubdocDocumentGenerator(KVGenerator):
         self.doc_keys = list()
         self.doc_keys_len = 0
         self.key_counter = 0
+        self.key_size = 0
         self.target_vbucket = None
         self.vbuckets = None
 
@@ -224,13 +226,17 @@ class SubdocDocumentGenerator(KVGenerator):
         if 'vbuckets' in kwargs:
             self.vbuckets = kwargs['vbuckets']
 
+        if 'key_size' in kwargs:
+            self.key_size = kwargs['key_size']
+
         if self.target_vbucket is not None:
             self.key_counter = self.start
             self.create_key_for_vbucket()
 
     def create_key_for_vbucket(self):
         while self.doc_keys_len < self.end:
-            doc_key = "{0}-{1}".format(self.name, str(self.key_counter))
+            doc_key = "%s-%s" % (self.name,
+                                 str(self.key_counter).zfill(self.key_size))
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                      (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
@@ -300,7 +306,7 @@ class SubdocDocumentGenerator(KVGenerator):
                               range(12))
             self.itr += 1
         else:
-            doc_key = self.name + '-' + str(self.itr)
+            doc_key = "%s-%s" % (self.name, str(self.itr).zfill(self.key_size))
             self.itr += 1
         return doc_key, return_val
 
@@ -332,6 +338,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         self.doc_type = "json"
         self.doc_keys = dict()
         self.doc_keys_len = 0
+        self.key_size = 0
         self.key_counter = 1
 
         size = 0
@@ -345,21 +352,29 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         if 'start' in kwargs:
             self.start = kwargs['start']
             self.itr = kwargs['start']
+
         if 'end' in kwargs:
             self.end = kwargs['end']
+
         if 'doc_type' in kwargs:
             self.doc_type = kwargs['doc_type']
+
         if 'vbuckets' in kwargs:
             self.vbuckets = kwargs['vbuckets']
+
         if 'target_vbucket' in kwargs:
             self.target_vbucket = kwargs['target_vbucket']
+
+        if 'key_size' in kwargs:
+            self.key_size = kwargs['key_size']
 
         self.key_counter = self.start
         self.create_key_for_vbucket()
 
     def create_key_for_vbucket(self):
         while self.doc_keys_len < self.end:
-            doc_key = "{0}-{1}".format(self.name, str(self.key_counter))
+            doc_key = "%s-%s" % (self.name,
+                                 str(self.key_counter).zfill(self.key_size))
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                 (self.vbuckets-1)
             if tem_vb in self.target_vbucket:

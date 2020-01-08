@@ -4,6 +4,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator,\
     sub_doc_generator_for_edit
+from couchbase_helper.durability_helper import DurabilityHelper
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
@@ -29,15 +30,22 @@ class BasicOps(DurabilityTestsBase):
 
         # Stat validation reference variables
         verification_dict = dict()
-        verification_dict["ops_create"] = 0
+        verification_dict["ops_create"] = self.num_items
         verification_dict["ops_update"] = 0
         verification_dict["ops_delete"] = 0
         verification_dict["rollback_item_count"] = 0
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["sync_write_committed_count"] = 0
 
-        if self.durability_level:
-            pass
+        if self.durability_level in DurabilityHelper.SupportedDurability:
+            verification_dict["sync_write_committed_count"] += self.num_items
+
+        # Initial validation
+        failed = self.durability_helper.verify_vbucket_details_stats(
+            def_bucket, self.cluster_util.get_kv_nodes(),
+            vbuckets=self.vbuckets, expected_val=verification_dict)
+        if failed:
+            self.fail("Cbstat vbucket-details verification failed")
 
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
@@ -63,10 +71,9 @@ class BasicOps(DurabilityTestsBase):
         self.bucket_util._wait_for_stats_all_buckets()
 
         # Update verification_dict and validate
-        verification_dict["ops_create"] = self.num_items+len(task.fail.keys())
-        verification_dict["ops_update"] = self.num_items
-        if self.durability_level:
-            verification_dict["sync_write_committed_count"] = self.num_items*2
+        verification_dict["ops_update"] += self.num_items
+        if self.durability_level in DurabilityHelper.SupportedDurability:
+            verification_dict["sync_write_committed_count"] += self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
