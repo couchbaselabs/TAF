@@ -82,9 +82,6 @@ class MagmaCrashTests(MagmaBaseTest):
             for bucket in self.bucket_util.buckets:
                 self.bucket_util._wait_for_stat(bucket, stat_map)
 
-#             self.task.compact_bucket(self.cluster.master,
-#                                      bucket=self.bucket_util.buckets[0])
-#             self.bucket_util._run_compaction(number_of_times=1)
             # Kill memcached on NodeA to trigger rollback on other Nodes
             # replica vBuckets
             shell.kill_memcached()
@@ -92,6 +89,5 @@ class MagmaCrashTests(MagmaBaseTest):
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
-            self.sleep(60)
             self.bucket_util.verify_stats_all_buckets(items)
         shell.disconnect()
