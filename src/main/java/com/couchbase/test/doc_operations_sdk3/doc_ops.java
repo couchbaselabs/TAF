@@ -9,24 +9,23 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
-
+import com.couchbase.client.core.error.DecodingFailureException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
+import com.couchbase.client.java.kv.GetOptions;
 import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.client.java.kv.InsertOptions;
-import com.couchbase.client.java.kv.GetOptions;
-import com.couchbase.client.java.kv.TouchOptions;
 import com.couchbase.client.java.kv.MutationResult;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.RemoveOptions;
 import com.couchbase.client.java.kv.ReplaceOptions;
 import com.couchbase.client.java.kv.ReplicateTo;
+import com.couchbase.client.java.kv.TouchOptions;
 import com.couchbase.client.java.kv.UpsertOptions;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 
 public class doc_ops {
@@ -579,7 +578,7 @@ public class doc_ops {
 			return DurabilityLevel.MAJORITY;
 		}
 		if (durabilityLevel.equalsIgnoreCase("MAJORITY_AND_PERSIST_ON_MASTER")) {
-			return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER;
+			return DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE;
 		}
 		if (durabilityLevel.equalsIgnoreCase("PERSIST_TO_MAJORITY")) {
 			return DurabilityLevel.PERSIST_TO_MAJORITY;

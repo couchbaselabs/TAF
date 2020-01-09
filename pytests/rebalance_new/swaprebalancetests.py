@@ -122,7 +122,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 batch_size=10, process_concurrency=8))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-            task.client.close()
 
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()

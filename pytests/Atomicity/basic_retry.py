@@ -142,7 +142,7 @@ class basic_ops(BaseTestCase):
             
         if self.update_retry:
             threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "delete", self.keys, self.transaction_commit, self.update_count)))
-            threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "update", self.keys, self.transaction_commit, self.update_count)))    
+            threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "update", self.keys, 10, self.update_count)))    
         
         else:
             update_docs = self.__chunks(self.keys[:self.num_items/2], self.num_txn)    

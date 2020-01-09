@@ -7,9 +7,10 @@ import java.util.List;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
-import com.couchbase.client.core.msg.kv.DurabilityLevel;
-import com.couchbase.client.core.error.DecodingFailedException;
+
+import com.couchbase.client.core.error.DecodingFailureException;
 import com.couchbase.client.core.error.subdoc.PathNotFoundException;
+import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.kv.LookupInResult;
@@ -188,14 +189,14 @@ public class SubDocOperations extends doc_ops {
                                             for (int i=0; i<lookUpInSpecs.size(); i++) {
                                                 try {
                                                 		content.add(optionalResult.contentAsObject(i));
-                                                } catch (DecodingFailedException e1) {
+                                                } catch (DecodingFailureException e1) {
                                                 		try {
                                                 			content.add(optionalResult.contentAsArray(i));
-                                                		} catch (DecodingFailedException e2) {
+                                                		} catch (DecodingFailureException e2) {
                                                 			try {
                                                 				content.add(optionalResult.contentAs(i, Integer.class));
                                                 			}
-                                                			catch (DecodingFailedException e3) {
+                                                			catch (DecodingFailureException e3) {
                                                 				try {
                                                 					content.add(optionalResult.contentAs(i, String.class));
                                                 				} catch (Exception e4) {

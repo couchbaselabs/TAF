@@ -138,6 +138,7 @@ class SDKClient(object):
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))
 
+
     def close(self):
         self.log.debug("Closing down the cluster")
         if self.cluster:

@@ -80,7 +80,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                         batch_size=10, process_concurrency=8))
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
-                    task.client.close()
+#                     task.client.close()
                 self.bucket_util.verify_cluster_stats(self.num_items,
                                                       check_ep_items_remaining=True,
                                                       check_bucket_stats=False,
@@ -161,7 +161,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                         batch_size=10, process_concurrency=2))
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
-                    task.client.close()
+#                     task.client.close()
                 self.bucket_util.verify_cluster_stats(self.num_items,
                                           check_bucket_stats=False,
                                           verify_total_items=False)
@@ -226,7 +226,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                         batch_size=10, process_concurrency=8))
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
-                    task.client.close()
+#                     task.client.close()
                 if self.withMutationOps:
                     self.gen_create = self.get_doc_generator(self.num_items/2, self.num_items)
                     tasks = self.bucket_util._async_load_all_buckets(
@@ -253,7 +253,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                             batch_size=10, process_concurrency=4))
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
-                    task.client.close()
+#                     task.client.close()
                 self.bucket_util.verify_cluster_stats(self.num_items, check_bucket_stats=False, verify_total_items=False)
 
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -328,7 +328,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     batch_size=10, process_concurrency=8))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
-                task.client.close()
+#                 task.client.close()
         self.shuffle_nodes_between_zones_and_rebalance()
         self.bucket_util.verify_cluster_stats(self.num_items,
                                               check_ep_items_remaining=True,
