@@ -55,7 +55,8 @@ def sub_doc_generator(key, start, end, doc_size=256,
 
 
 def sub_doc_generator_for_edit(key, start, end, template_index=0,
-                               target_vbucket=None, vbuckets=1024):
+                               target_vbucket=None, vbuckets=1024,
+                               key_size=8):
     template = list()
     template.append('{{ "name.last": "LastNameUpdate", \
                         "addr.city": "CityUpdate", \
@@ -70,7 +71,8 @@ def sub_doc_generator_for_edit(key, start, end, template_index=0,
     return SubdocDocumentGenerator(key, template[template_index],
                                    start=start, end=end,
                                    target_vbucket=target_vbucket,
-                                   vbuckets=vbuckets)
+                                   vbuckets=vbuckets,
+                                   key_size=key_size)
 
 
 class KVGenerator(object):

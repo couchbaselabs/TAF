@@ -111,7 +111,7 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["ops_update"] += \
                 (sub_doc_gen.end - sub_doc_gen.start
                  + len(task.fail.keys()))
-            if self.durability_level:
+            if self.durability_level in DurabilityHelper.SupportedDurability:
                 verification_dict["sync_write_committed_count"] += \
                     num_item_start_for_crud
 
@@ -157,7 +157,7 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["ops_update"] += \
                 (sub_doc_gen.end - sub_doc_gen.start
                  + len(task.fail.keys()))
-            if self.durability_level:
+            if self.durability_level in DurabilityHelper.SupportedDurability:
                 verification_dict["sync_write_committed_count"] += \
                     num_item_start_for_crud
 
