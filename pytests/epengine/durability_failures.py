@@ -1004,7 +1004,8 @@ class TimeoutTests(DurabilityTestsBase):
                                         doc_size=self.doc_size)
         doc_gen["update"] = doc_generator(self.key, int(self.num_items/2),
                                           self.num_items,
-                                          doc_size=self.doc_size)
+                                          doc_size=self.doc_size,
+                                          mutate=1)
 
         # Create SDK Client
         client = SDKClient(RestConnection(self.cluster.master),
