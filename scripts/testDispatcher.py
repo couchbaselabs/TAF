@@ -191,16 +191,19 @@ def main():
         _ = N1QLQuery(query_string)
         results = cb.n1ql_query(query_string)
 
-        if version == "old" and results:
-            new_doc_format = False
+        result_rows = list()
+        for row in results:
+            result_rows.append(row)
+        if result_rows:
+            if version == "old":
+                new_doc_format = False
+            break
 
     framework = None
-    for row in results:
+    for data in result_rows:
         try:
-            if new_doc_format:
-                data = row
-            else:
-                data = row['QE-Test-Suites']
+            if not new_doc_format:
+                data = data['QE-Test-Suites']
             # trailing spaces causes problems opening the files
             data['config'] = data['config'].rstrip()
             print('row', data)
