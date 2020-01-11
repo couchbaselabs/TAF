@@ -48,7 +48,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.add_rbac_user()
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
-        self.create_buckets()
+        self.create_buckets(self.bucket_size)
 
         if self.flusher_batch_split_trigger:
             self.bucket_util.set_flusher_batch_split_trigger(
@@ -84,11 +84,13 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished rebalance base setup========")
 
-    def _create_default_bucket(self):
+    def _create_default_bucket(self, bucket_size):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
         info = RestConnection(self.cluster.master).get_nodes_self()
         available_ram = int(info.memoryQuota * node_ram_ratio)
-        if available_ram < 100 or self.active_resident_threshold < 100:
+        if bucket_size is not None:
+            available_ram = bucket_size
+        elif available_ram < 100 or self.active_resident_threshold < 100:
             available_ram = 100
         self.bucket_util.create_default_bucket(
             ram_quota=available_ram,
@@ -113,9 +115,9 @@ class RebalanceBaseTest(BaseTestCase):
                 bucket)
             self.assertTrue(ready, msg="Wait_for_memcached failed")
 
-    def create_buckets(self):
+    def create_buckets(self, bucket_size):
         if self.standard_buckets == 1:
-            self._create_default_bucket()
+            self._create_default_bucket(bucket_size)
         else:
             self._create_multiple_buckets()
 
