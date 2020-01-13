@@ -159,8 +159,7 @@ class ClusterUtils:
                     if len(rest.get_pools_info()["pools"]) == 0:
                         success_cleaned.append(removed)
                         break
-                    else:
-                        time.sleep(0.1)
+                    time.sleep(1)
                 if time.time() - start > 10:
                     self.log.error("'pools' on node {0}:{1} - {2}"
                                    .format(removed.ip, removed.port,
@@ -697,10 +696,10 @@ class ClusterUtils:
                 knownNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in otpnode],
                 wait_for_rebalance=wait_for_rebalance)
-        if wait_for_rebalance:
-            removed
-            # self.assertTrue(removed,
-            # "Rebalance operation failed while removing %s,"%otpnode)
+        # if wait_for_rebalance:
+        #     self.assertTrue(
+        #         removed,
+        #         "Rebalance operation failed while removing %s," % otpnode)
 
     def get_victim_nodes(self, nodes, master=None, chosen=None,
                          victim_type="master", victim_count=1):

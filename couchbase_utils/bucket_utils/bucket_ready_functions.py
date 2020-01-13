@@ -339,12 +339,13 @@ class DocLoaderUtils(object):
             num_buckets_to_consider)
 
         # Add new num_items for newly added collections
-        for b_name, s_dict in op_details["collections_added"].items():
-            bucket = BucketUtils.get_bucket_obj(buckets, b_name)
-            for s_name, c_dict in s_dict["scopes"].items():
-                for c_name, _ in c_dict["collections"].items():
-                    bucket.scopes[s_name].collections[c_name].num_items = \
-                        num_items_for_new_collections
+        for bucket_name, scope_dict in op_details["collections_added"].items():
+            b_obj = BucketUtils.get_bucket_obj(buckets, bucket_name)
+            for scope_name, col_dict in scope_dict["scopes"].items():
+                for col_name, _ in col_dict["collections"].items():
+                    b_obj.scopes[
+                        scope_name].collections[
+                        col_name].num_items = num_items_for_new_collections
 
         create_load_gens(doc_crud_spec)
         create_load_gens(op_details["collections_added"],
@@ -1246,6 +1247,8 @@ class BucketUtils(ScopeUtils):
         task = self.async_create_bucket(bucket)
         self.task_manager.get_task_result(task)
         if task.result and wait_for_warmup:
+            # Need this sleep, since we need time for memcached to
+            # accept cbstats or any bucket request connection
             self.sleep(2)
             warmed_up = self._wait_warmup_completed(
                 self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
@@ -1336,7 +1339,7 @@ class BucketUtils(ScopeUtils):
                 buckets = self.get_all_buckets(serverInfo)
             except Exception as e:
                 self.log.error(e)
-                self.sleep(15, "Wait to retry get_all_buckets() call")
+                self.sleep(10, "Wait before get_all_buckets() call")
                 buckets = self.get_all_buckets(serverInfo)
             self.log.debug('Deleting existing buckets {0} on {1}'
                            .format([b.name for b in buckets], serverInfo.ip))
@@ -1722,8 +1725,6 @@ class BucketUtils(ScopeUtils):
                                      Bucket.compressionMode: compression_mode})
                     tasks[bucket] = self.async_create_bucket(bucket)
                     count += 1
-            # Wait before checking for warmup
-            self.sleep(10)
 
             raise_exception = None
             for bucket, task in tasks.items():
@@ -1732,9 +1733,9 @@ class BucketUtils(ScopeUtils):
                     self.buckets.append(bucket)
                 else:
                     raise_exception = "Create bucket %s failed" % bucket.name
-                    continue
 
-                # Check for warm_up
+            # Check for warm_up
+            for bucket in self.buckets:
                 warmed_up = self._wait_warmup_completed(
                     self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
                 if not warmed_up:
@@ -1788,6 +1789,24 @@ class BucketUtils(ScopeUtils):
             helper.change_bucket_props(
                 bucket, replicaNumber=replicas)
 
+    def is_warmup_complete(self, buckets, retry_count=5):
+        buckets_warmed_up = True
+        while retry_count != 0:
+            self.sleep(2)
+            buckets_warmed_up = True
+            for bucket in buckets:
+                try:
+                    warmed_up = self._wait_warmup_completed(
+                        self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+                    if not warmed_up:
+                        buckets_warmed_up = False
+                        break
+                except:
+                    buckets_warmed_up = False
+                    break
+            retry_count -= 1
+        return buckets_warmed_up
+
     def verify_cluster_stats(self, items, master=None,
                              timeout=None, check_items=True,
                              check_bucket_stats=True,
@@ -1840,16 +1859,16 @@ class BucketUtils(ScopeUtils):
         shell_conn_list1 = list()
         shell_conn_list2 = list()
         for cluster_node in servers:
-            remote_conn = RemoteMachineShellConnection(cluster_node)
-            shell_conn_list1.append(remote_conn)
-            shell_conn_list2.append(RemoteMachineShellConnection(cluster_node))
+            shell_conn_list1.append(
+                RemoteMachineShellConnection(cluster_node))
+            shell_conn_list2.append(
+                RemoteMachineShellConnection(cluster_node))
 
         # Create Tasks to verify total items/replica count in the bucket
         stats_tasks.append(self.task.async_wait_for_stats(
             shell_conn_list1, bucket, stat_cmd,
             'vb_replica_curr_items', '==', items * available_replicas,
             timeout=timeout))
-        self.sleep(5)
         stats_tasks.append(self.task.async_wait_for_stats(
             shell_conn_list2, bucket, stat_cmd,
             'curr_items_tot', '==', items * (available_replicas + 1),
@@ -1864,9 +1883,7 @@ class BucketUtils(ScopeUtils):
             self.log.error("Unable to get expected stats from the "
                            "selected node")
 
-        for remote_conn in shell_conn_list1:
-            remote_conn.disconnect()
-        for remote_conn in shell_conn_list2:
+        for remote_conn in shell_conn_list1 + shell_conn_list2:
             remote_conn.disconnect()
 
     def verify_stats_all_buckets(self, items, timeout=500):
@@ -2471,7 +2488,6 @@ class BucketUtils(ScopeUtils):
                 self.task_manager.add_new_task(task)
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
-            self.sleep(5, "Wait for all docs to get ambiguous aborts")
             cb_err.revert(CouchbaseError.STOP_MEMCACHED)
 
             for task in tasks:
@@ -2481,21 +2497,18 @@ class BucketUtils(ScopeUtils):
 
         return result
 
-    def verify_unacked_bytes_all_buckets(self, filter_list=[], sleep_time=5):
+    def verify_unacked_bytes_all_buckets(self, filter_list=[]):
         """
         Waits for max_unacked_bytes = 0 on all servers and buckets in a cluster
         A utility function that waits upr flow with unacked_bytes = 0
         """
-        self.sleep(sleep_time)
         servers = self.cluster_util.get_kv_nodes()
         dcp_stat_map = self.data_collector.collect_compare_dcp_stats(
             self.buckets, servers, filter_list=filter_list)
         for bucket in dcp_stat_map.keys():
             if dcp_stat_map[bucket]:
-                self.log.critical("the bucket {0} has unacked bytes != 0 : {1}"
-                                .format(bucket, dcp_stat_map[bucket]))
-#                 raise Exception("the bucket {0} has unacked bytes != 0 : {1}"
-#                                 .format(bucket, dcp_stat_map[bucket]))
+                self.log.critical("Bucket {0} has unacked bytes != 0: {1}"
+                                  .format(bucket, dcp_stat_map[bucket]))
 
     def disable_compaction(self, server=None, bucket="default"):
         new_config = {"viewFragmntThresholdPercentage": None,
@@ -2530,7 +2543,6 @@ class BucketUtils(ScopeUtils):
             allowedTimePeriodToMin=_config["allowedTimePeriodToMin"],
             allowedTimePeriodAbort=_config["allowedTimePeriodAbort"],
             bucket=bucket)
-        self.sleep(5)
 
     def get_vbucket_seqnos(self, servers, buckets, skip_consistency=False,
                            per_node=True):
@@ -3032,7 +3044,7 @@ class BucketUtils(ScopeUtils):
             for server in servers:
                 ClusterOperationHelper.flushctl_set(server, "exp_pager_stime",
                                                     val, bucket)
-        self.sleep(val, "wait for expiry pager to run on all these nodes")
+        self.sleep(val, "Wait for expiry pager to run on all these nodes")
 
     def set_auto_compaction(self, bucket_helper,
                             parallelDBAndVC="false",
@@ -3607,7 +3619,7 @@ class BucketUtils(ScopeUtils):
         if bucket.bucketType != Bucket.Type.MEMBASE:
             return True
 
-        self.log.debug("Waiting for bucket %s to complete warmup"
+        self.log.debug("Waiting for bucket %s to complete warm-up"
                        % bucket.name)
         warmed_up = False
         start = time.time()
@@ -3626,7 +3638,7 @@ class BucketUtils(ScopeUtils):
                 if result is not None and result == "complete":
                     warmed_up = True
                     break
-                self.sleep(2, "Warmup not complete for %s on %s"
+                self.sleep(2, "Warm-up not complete for %s on %s"
                            % (bucket.name, server.ip))
             shell.disconnect()
 
@@ -3679,13 +3691,13 @@ class BucketUtils(ScopeUtils):
                     server, design_doc_name, view, bucket, with_query,
                     check_replication=check_replication)
                 tasks.append(t_)
-                self.sleep(5)
+                self.sleep(0.1, "To make sure create_view task to get "
+                                "unique thread name")
         else:
             t_ = self.async_create_view(
                 server, design_doc_name, None, bucket, with_query,
                 check_replication=check_replication)
             tasks.append(t_)
-            self.sleep(5)
         return tasks
 
     def create_views(self, server, design_doc_name, views, bucket="default",
@@ -3848,10 +3860,12 @@ class BucketUtils(ScopeUtils):
                     self.log.error("Task '%s' failed" % task.thread_name)
                 result = result and task.result
         except Exception as e:
+            self.log.error(e)
             for task in tasks:
                 task.cancel()
-            raise Exception("Failed to get expected results for view query after {0} sec"
-                            .format(wait_time))
+            raise Exception(
+                "View query failed to get expected results after %s secs"
+                % wait_time)
         return result
 
     def make_default_views(self, default_view, prefix, count,
@@ -3916,9 +3930,12 @@ class BucketUtils(ScopeUtils):
             shell.kill_memcached()
             shell.disconnect()
 
-        # Add warmup check instead of a blind sleep.
-        # TODO: See _warmup_check in WarmUpTests class
-        self.sleep(60)
+        # Check bucket-warm_up after Memcached restart
+        retry_count = 10
+        buckets_warmed_up = self.is_warmup_complete(buckets, retry_count)
+        if not buckets_warmed_up:
+            self.log.critical("Few bucket(s) not warmed up "
+                              "within expected time")
 
         for server in self.cluster_util.get_kv_nodes(master=node):
             for bucket in buckets:
@@ -3941,7 +3958,9 @@ class BucketUtils(ScopeUtils):
         shell.disconnect()
 
         for bucket in buckets:
-            cmd = 'ns_bucket:update_bucket_props("%s", [{extra_config_string, "%s=%s"}]).'%(bucket.name, command, value)
+            cmd = 'ns_bucket:update_bucket_props(' \
+                  '"%s", [{extra_config_string, "%s=%s"}]).' \
+                  % (bucket.name, command, value)
             rest.diag_eval(cmd)
 
         # Restart Memcached in all cluster nodes to reflect the settings
@@ -3949,9 +3968,13 @@ class BucketUtils(ScopeUtils):
             shell = RemoteMachineShellConnection(server)
             shell.restart_couchbase()
             shell.disconnect()
-        # Add warmup check instead of a blind sleep.
-        # TODO: See _warmup_check in WarmUpTests class
-        self.sleep(60)
+
+        # Check bucket-warm_up after Couchbase restart
+        retry_count = 10
+        buckets_warmed_up = self.is_warmup_complete(buckets, retry_count)
+        if not buckets_warmed_up:
+            self.log.critical("Few bucket(s) not warmed up "
+                              "within expected time")
 
     def validate_manifest_uid(self, bucket):
         status = True

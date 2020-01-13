@@ -122,7 +122,8 @@ class ClusterOperationHelper(object):
         return True
 
     @staticmethod
-    def persistence_verification_per_node(rest, bucket, queue=None, timeout=1260):
+    def persistence_verification_per_node(rest, bucket, queue=None,
+                                          timeout=1260):
         stat_key = 'ep_flusher_todo'
         start = time.time()
         stats = []
@@ -134,10 +135,11 @@ class ClusterOperationHelper(object):
                 stats.append(_new_stats[stat_key])
                 time.sleep(0.5)
             else:
-                log.error("unable to obtain stats for bucket : {0}".format(bucket))
+                log.error("unable to obtain stats for bucket: %s" % bucket)
         value_90th = ClusterOperationHelper.percentile(stats, 90)
         average = float(sum(stats)) / len(stats)
-        log.info("90th percentile value is {0} and average {1}".format(value_90th, average))
+        log.info("90th percentile value is {0} and average {1}"
+                 .format(value_90th, average))
         if value_90th == 0 and average == 0:
             queue.put(False)
             return
@@ -249,7 +251,7 @@ class ClusterOperationHelper(object):
                         'klog_max_entry_ratio', 'queue_age_cap', 'max_size',
                         'max_txn_size', 'mem_high_wat', 'mem_low_wat',
                         'min_data_age', 'timing_log', 'alog_sleep_time',
-                        'bfilter_enabled' ]
+                        'bfilter_enabled']
         if key in tap_params:
             return memcacheConstants.ENGINE_PARAM_TAP
         if key in checkpoint_params:

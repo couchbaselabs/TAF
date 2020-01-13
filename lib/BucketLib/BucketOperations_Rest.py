@@ -105,8 +105,7 @@ class BucketHelper(RestConnection):
             vBuckets = self.get_vbuckets(bucket)
             if vBuckets:
                 return True
-            else:
-                time.sleep(0.5)
+            time.sleep(0.5)
         msg = 'Vbucket map not ready for bucket {0} after waiting {1} seconds'
         self.log.warn(msg.format(bucket, timeout_in_seconds))
         return False
@@ -281,8 +280,6 @@ class BucketHelper(RestConnection):
         api = '{0}{1}'.format(self.baseUrl, "sampleBuckets/install")
         data = '["{0}"]'.format(sample_name)
         status, _, _ = self._http_request(api, 'POST', data)
-        # Sleep to allow the sample bucket to be loaded
-        time.sleep(10)
         return status
 
     # figure out the proxy port

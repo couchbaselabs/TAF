@@ -340,7 +340,6 @@ class BaseTestCase(unittest.TestCase):
 
             if not self.skip_init_check_cbserver:
                 self.__log("started")
-                self.sleep(5)
         except Exception, e:
             traceback.print_exc()
             self.task.shutdown(force=True)

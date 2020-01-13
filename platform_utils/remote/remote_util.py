@@ -2224,7 +2224,7 @@ class RemoteMachineShellConnection:
             self.remove_win_backup_dir()
             self.remove_win_collect_tmp()
             self.log.info('sleep for 5 seconds before running task '
-                     'schedule uninstall on {0}'.format(self.ip))
+                          'schedule uninstall on %s' % self.ip)
 
             """ the code below need to remove when bug MB-11985
                 is fixed in 3.0.1 """

@@ -73,7 +73,7 @@ class RestHelper(object):
         nodes = self.rest.node_statuses(timeout)
         return all(node.status == 'healthy' for node in nodes)
 
-    def rebalance_reached(self, percentage=100, wait_step=3):
+    def rebalance_reached(self, percentage=100, wait_step=2):
         start = time.time()
         progress = 0
         previous_progress = 0
@@ -91,7 +91,6 @@ class RestHelper(object):
                 else:
                     retry = 0
                     previous_progress = progress
-            # sleep for 2 seconds
             time.sleep(wait_step)
         if progress <= 0:
             self.test_log.error("Rebalance progress: {0}".format(progress))
@@ -250,6 +249,8 @@ class RestConnection(object):
                 self.hostname = serverInfo.hostname
             if hasattr(serverInfo, 'services'):
                 self.services = serverInfo.services
+
+        self.node_services = list()
         self.input = TestInputSingleton.input
         if self.input is not None:
             """ from watson, services param order and format:
@@ -296,7 +297,7 @@ class RestConnection(object):
                     if self.is_cluster_mixed():
                         self.capi_baseUrl = self.baseUrl + "/couchBase"
                         return
-                    time.sleep(0.2)
+                    time.sleep(0.5)
                     http_res, success = self.init_http_request(self.baseUrl + 'nodes/self')
                 else:
                     self.capi_baseUrl = http_res["couchApiBase"]
@@ -709,7 +710,8 @@ class RestConnection(object):
                 return "auth: " + base64.decodestring(val[6:])
         return ""
 
-    def _http_request(self, api, method='GET', params='', headers=None, timeout=120):
+    def _http_request(self, api, method='GET', params='', headers=None,
+                      timeout=120):
         if not headers:
             headers = self._create_headers()
         end_time = time.time() + timeout
@@ -725,9 +727,11 @@ class RestConnection(object):
                 else:
                     try:
                         json_parsed = json.loads(content)
-                    except ValueError as e:
-                        json_parsed = {}
-                        json_parsed["error"] = "status: {0}, content: {1}".format(response['status'], content)
+                    except ValueError:
+                        json_parsed = dict()
+                        json_parsed["error"] = "status: {0}, content: {1}" \
+                                               .format(response['status'],
+                                                       content)
                     reason = "unknown"
                     if "error" in json_parsed:
                         reason = json_parsed["error"]
@@ -747,7 +751,7 @@ class RestConnection(object):
                                     .format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
-            time.sleep(3)
+            time.sleep(2)
 
     def init_cluster(self, username='Administrator', password='password',
                      port=constants.port):
@@ -763,7 +767,7 @@ class RestConnection(object):
     def init_node(self):
         """ need a standalone method to initialize a node that could call
             anywhere with quota from testconstant """
-        self.node_services = []
+        self.node_services = list()
         if self.services_node_init is None and self.services == "":
             self.node_services = ["kv"]
         elif self.services_node_init is None and self.services != "":
@@ -772,7 +776,6 @@ class RestConnection(object):
             self.node_services = self.services_node_init.split("-")
         kv_quota = 0
         while kv_quota == 0:
-            time.sleep(1)
             kv_quota = int(self.get_nodes_self().mcdMemoryReserved)
         info = self.get_nodes_self()
 
@@ -1220,10 +1223,11 @@ class RestConnection(object):
         self.diag_eval("gen_server:cast(ns_cluster, leave).")
         self.check_delay_restart_coucbase_server()
 
-    """ when we do reset couchbase server by force reject, couchbase server will not
-        down right away but delay few seconds to be down depend on server spec.
-        This fx will detect that delay and return true when couchbase server down and
-        up again after force reject """
+    """ when we do reset couchbase server by force reject, couchbase server
+        will not down right away but delay few seconds to be down depend
+        on server spec.
+        This fx will detect that delay and return true when
+        couchbase server down and up again after force reject """
     def check_delay_restart_coucbase_server(self):
         api = self.baseUrl + 'nodes/self'
         headers = self._create_headers()
@@ -1231,11 +1235,14 @@ class RestConnection(object):
         count_cbserver_up = 0
         while break_out < 60 and count_cbserver_up < 2:
             try:
-                response, content = httplib2.Http(timeout=120).request(api, 'GET', '', headers)
-                if response['status'] in ['200', '201', '202'] and count_cbserver_up == 0:
+                response, content = httplib2.Http(timeout=120).request(
+                    api, 'GET', '', headers)
+                if response['status'] in ['200', '201', '202'] \
+                        and count_cbserver_up == 0:
                     self.test_log.debug("Couchbase server is up but down soon")
                     time.sleep(1)
-                    break_out += 1  # time needed for couchbase server reload after reset config
+                    # Time for couchbase server reload after reset config
+                    break_out += 1
                 elif response['status'] in ['200', '201', '202']:
                     count_cbserver_up = 2
                     self.test_log.debug("Couchbase server is up again")
@@ -1245,7 +1252,6 @@ class RestConnection(object):
                 time.sleep(2)
                 break_out += 1
                 count_cbserver_up = 1
-                pass
         if break_out >= 60:
             raise Exception("Couchbase server did not start after 60 seconds")
 
@@ -1370,11 +1376,10 @@ class RestConnection(object):
         return status, content
 
     def get_admin_credentials(self):
-        code = 'ns_config:search_node_prop(node(), ns_config:latest(), memcached, admin_user)'
-        status, id = self.diag_eval(code)
-
-        code = 'ns_config:search_node_prop(node(), ns_config:latest(), memcached, admin_pass)'
-        status, password = self.diag_eval(code)
+        code = 'ns_config:search_node_prop(node(), ' \
+               'ns_config:latest(), memcached, %s)'
+        status, id = self.diag_eval(code % "admin_user")
+        status, password = self.diag_eval(code % "admin_pass")
         return id.strip('"'), password.strip('"')
 
     def monitorRebalance(self, stop_if_loop=True):
@@ -1398,7 +1403,7 @@ class RestConnection(object):
             if stop_if_loop:
                 # reset same_progress_count if get a different result,
                 # or progress is still O
-                # (it may take a long time until the results are different from 0)
+                # it may take long time until the results are different from 0
                 if previous_progress != progress or progress == 0:
                     previous_progress = progress
                     same_progress_count = 0
@@ -1406,24 +1411,22 @@ class RestConnection(object):
                     same_progress_count += 1
                 if same_progress_count > 50:
                     self.test_log.error("Rebalance progress code in "
-                                        "infinite loop: {0}".format(progress))
+                                        "infinite loop: %s" % progress)
                     return False
-            # sleep 10 seconds to printout less log
-            time.sleep(10)
+            # Sleep to printout less log
+            time.sleep(3)
         if progress < 0:
-            self.test_log.error("Rebalance progress code: {0}"
-                                .format(progress))
+            self.test_log.error("Rebalance progress code: %s" % progress)
             return False
         else:
             duration = time.time() - start
+            sleep = duration
             if duration > 10:
                 sleep = 5
-            else:
-                sleep = duration
-            self.test_log.info("Rebalance done. Taken {0} seconds to complete"
-                               .format(duration))
-            self.test_log.info("Sleep for {0} seconds after rebalance"
-                               .format(sleep))
+            self.test_log.info("Rebalance done. Taken %s seconds to complete"
+                               % duration)
+            self.test_log.info("Sleep for %s seconds after rebalance" % sleep)
+            # Sleep required for ns_server to be ready for further actions
             time.sleep(sleep)
             return True
 
@@ -1640,7 +1643,7 @@ class RestConnection(object):
         status, content, header = self._http_request(api)
         count = 0
         while not content and count < 7:
-            self.test_log.warning("Retring after 5 seconds sleep")
+            self.test_log.warning("Retrying get_nodes() after 5 seconds")
             time.sleep(5)
             status, content, header = self._http_request(api)
             count += 1

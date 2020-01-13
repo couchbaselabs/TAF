@@ -45,10 +45,9 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                 self.disconnectCluster()
                 self.connectionLive = False
             except CouchbaseException as e:
-                time.sleep(10)
                 try:
-                    self.bucket.close()
                     time.sleep(5)
+                    self.bucket.close()
                 except:
                     pass
                 self.disconnectCluster()
@@ -56,10 +55,9 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                 self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
             except TimeoutException as e:
-                time.sleep(10)
                 try:
-                    self.bucket.close()
                     time.sleep(5)
+                    self.bucket.close()
                 except:
                     pass
                 self.disconnectCluster()
@@ -68,10 +66,9 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                 traceback.print_exception(*sys.exc_info())
             except RuntimeException as e:
                 self.log.info("RuntimeException from Java SDK. %s" % str(e))
-                time.sleep(10)
                 try:
-                    self.bucket.close()
                     time.sleep(5)
+                    self.bucket.close()
                 except:
                     pass
                 self.disconnectCluster()

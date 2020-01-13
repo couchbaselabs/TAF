@@ -295,11 +295,6 @@ class RebalanceTask(Task):
                         self.test_log.debug(remove_node_msg.format(node.ip,
                                                                    node.port))
 
-        if self.rest.is_cluster_mixed():
-            # workaround MB-8094
-            self.test_log.warning("Mixed cluster. Sleep 15secs before rebalance")
-            time.sleep(15)
-
         self.rest.rebalance(otpNodes=[node.id for node in nodes],
                             ejectedNodes=ejectedNodes)
         self.start_time = time.time()
@@ -346,7 +341,7 @@ class RebalanceTask(Task):
         # before we declare ourselves done
         if progress != -1 and status != 'none':
             if self.retry_get_progress < self.retry_get_process_num:
-                time.sleep(10)
+                time.sleep(5)
                 self.check()
             else:
                 self.result = False
@@ -367,8 +362,7 @@ class RebalanceTask(Task):
                                 (len(rest.get_pools_info()["pools"]) == 0):
                             success_cleaned.append(removed)
                             break
-                        else:
-                            time.sleep(0.1)
+                        time.sleep(0.5)
                     except (ServerUnavailableException, IncompleteRead), e:
                         self.test_log.error(e)
 
@@ -453,11 +447,9 @@ class GenericLoadingTask(Task):
                     failed_item_table = TableView(self.test_log.info)
                     failed_item_table.set_headers(["Create doc_Id",
                                                    "Exception"])
-                try:
-                    Thread.sleep(timeout)
-                except Exception as e:
-                    self.test_log.error(e)
                 if not skip_read_on_error:
+                    # Sleep before reading the doc for verification
+                    Thread.sleep(timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(fail.keys())
@@ -497,11 +489,9 @@ class GenericLoadingTask(Task):
                     failed_item_table = TableView(self.test_log.info)
                     failed_item_table.set_headers(["Update doc_Id",
                                                    "Exception"])
-                try:
-                    Thread.sleep(timeout)
-                except Exception as e:
-                    self.test_log.error(e)
                 if not skip_read_on_error:
+                    # Sleep before reading the doc for verification
+                    Thread.sleep(timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(fail.keys())
@@ -542,11 +532,9 @@ class GenericLoadingTask(Task):
                     failed_item_table = TableView(self.test_log.info)
                     failed_item_table.set_headers(["Replace doc_Id",
                                                    "Exception"])
-                try:
-                    Thread.sleep(timeout)
-                except Exception as e:
-                    self.test_log.error(e)
                 if not skip_read_on_error:
+                    # Sleep before reading the doc for verification
+                    Thread.sleep(timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(fail.keys())
@@ -2209,7 +2197,6 @@ class StatsWaitTask(Task):
                                 "Received: %s for bucket '%s'"
                                 % (self.stat, stat_result, self.comparison,
                                    self.value, val_dict, self.bucket.name))
-            time.sleep(5)
             return False
         else:
             self.test_log.debug("Ready: %s %s %s %s. "
@@ -2650,7 +2637,7 @@ class N1QLQueryTask(Task):
             return_value = self.check()
             self.complete_task()
             return return_value
-        except N1QLQueryException as e:
+        except N1QLQueryException:
             # initial query failed, try again
             if self.retried < self.retry_time:
                 self.retried += 1
@@ -3017,8 +3004,8 @@ class BucketCreateTask(Task):
                                     .format(self.bucket, self.bucket.ramQuotaMB))
                 return True
             else:
-                self.test_log.error("Vbucket map not ready after try {0}"
-                                    .format(self.retries))
+                self.test_log.error("Vbucket map not ready after try %s"
+                                    % self.retries)
                 if self.retries >= 5:
                     return False
         except Exception as e:
@@ -3536,12 +3523,23 @@ class AutoFailoverNodesFailureTask(Task):
         self.disk_location = disk_location
         self.disk_size = disk_size
         if failure_timers is None:
-            failure_timers = []
+            failure_timers = list()
         self.failure_timers = failure_timers
         self.rebalance_in_progress = False
         self.auto_reprovision = auto_reprovision
 
+    def check_failure_timer_task_start(self, timer_task, retry_count=5):
+        while retry_count != 0 and not timer_task.started:
+            self.sleep(1, "Wait for failover timer to start")
+            retry_count -= 1
+        if retry_count == 0:
+            self.task_manager.stop_task(timer_task)
+            self.set_exception("Node failure task failed to start")
+            return False
+        return True
+
     def call(self):
+        self.start_task()
         rest = RestConnection(self.master)
         if rest._rebalance_progress_status() == "running":
             self.rebalance_in_progress = True
@@ -3689,7 +3687,7 @@ class AutoFailoverNodesFailureTask(Task):
     def _enable_firewall(self, node):
         node_failure_timer = self.failure_timers[self.itr]
         self.task_manager.add_new_task(node_failure_timer)
-        time.sleep(2)
+        self.check_failure_timer_task_start(node_failure_timer)
         RemoteUtilHelper.enable_firewall(node)
         self.test_log.debug("Enabled firewall on {}".format(node))
         self.task_manager.get_task_result(node_failure_timer)
@@ -3703,7 +3701,7 @@ class AutoFailoverNodesFailureTask(Task):
     def _restart_couchbase_server(self, node):
         node_failure_timer = self.failure_timers[self.itr]
         self.task_manager.add_new_task(node_failure_timer)
-        time.sleep(2)
+        self.check_failure_timer_task_start(node_failure_timer)
         shell = RemoteMachineShellConnection(node)
         shell.restart_couchbase()
         shell.disconnect()
@@ -3714,7 +3712,7 @@ class AutoFailoverNodesFailureTask(Task):
     def _stop_couchbase_server(self, node):
         node_failure_timer = self.failure_timers[self.itr]
         self.task_manager.add_new_task(node_failure_timer)
-        time.sleep(1)
+        self.check_failure_timer_task_start(node_failure_timer)
         shell = RemoteMachineShellConnection(node)
         shell.stop_couchbase()
         shell.disconnect()
@@ -3731,7 +3729,7 @@ class AutoFailoverNodesFailureTask(Task):
     def _stop_restart_network(self, node, stop_time):
         node_failure_timer = self.failure_timers[self.itr]
         self.task_manager.add_new_task(node_failure_timer)
-        time.sleep(2)
+        self.check_failure_timer_task_start(node_failure_timer)
         shell = RemoteMachineShellConnection(node)
         shell.stop_network(stop_time)
         shell.disconnect()
@@ -3743,7 +3741,7 @@ class AutoFailoverNodesFailureTask(Task):
     def _restart_machine(self, node):
         node_failure_timer = self.failure_timers[self.itr]
         self.task_manager.add_new_task(node_failure_timer)
-        time.sleep(2)
+        self.check_failure_timer_task_start(node_failure_timer)
         shell = RemoteMachineShellConnection(node)
         command = "/sbin/reboot"
         shell.execute_command(command=command)
@@ -3754,7 +3752,7 @@ class AutoFailoverNodesFailureTask(Task):
     def _stop_memcached(self, node):
         node_failure_timer = self.failure_timers[self.itr]
         self.task_manager.add_new_task(node_failure_timer)
-        time.sleep(2)
+        self.check_failure_timer_task_start(node_failure_timer)
         shell = RemoteMachineShellConnection(node)
         o, r = shell.stop_memcached()
         self.test_log.debug("Killed memcached. {0} {1}".format(o, r))
@@ -3933,6 +3931,7 @@ class NodeDownTimerTask(Task):
         self.start_time = 0
 
     def call(self):
+        self.start_task()
         self.test_log.debug("Starting execution of NodeDownTimerTask")
         end_task = time.time() + self.timeout
         while not self.completed and time.time() < end_task:
@@ -3987,7 +3986,7 @@ class NodeDownTimerTask(Task):
 
 class Atomicity(Task):
     instances = 1
-    num_items = 10000
+    num_items = 110
     mutations = num_items
     start_from = 0
     op_type = "insert"
@@ -4272,31 +4271,27 @@ class Atomicity(Task):
                             "End of First Transaction that is getting timeout")
                     else:
                         exception = err
-                        self.test_log.info(
-                            "Sleep for 60 secs for txn to clean up")
-                        time.sleep(60)
 
                 if Atomicity.defer:
                     self.test_log.info(
                         "Going to commit/rollback the deffered transaction")
                     self.retries = 5
                     if op_type != "create":
-                       commit = self.commit
+                        commit = self.commit
                     for encoded in self.encoding:
                         err = Transaction().DefferedTransaction(
                             self.transaction, commit, encoded)
                         if err:
                             while self.retries > 0:
-                                if "DurabilityImpossibleException" in str(err):
+                                if SDKException.DurabilityImpossibleException \
+                                        in str(err):
                                     self.retries -= 1
                                     self.test_log.info("DurabilityImpossibleException seen while transaction defer")
-                                    time.sleep(60)
                                     err = Transaction().DefferedTransaction(
                                         self.transaction, self.commit, encoded)
                                     if err:
                                         continue
-                                    else:
-                                        break
+                                    break
                                 else:
                                     exception = err
                                     break
@@ -4373,13 +4368,10 @@ class Atomicity(Task):
                 elif SDKException.DurabilityImpossibleException in str(err) \
                         and self.retries > 0:
                     self.test_log.info("DurabilityImpossibleException seen so retrying...")
-                    time.sleep(60)
                     self.transaction_load(doc, commit, update_keys, op_type)
                     self.retries -= 1
                 else:
                     exception = err
-                    self.test_log.info("Sleep for 60 secs for to clean up")
-                    time.sleep(60)
             elif Atomicity.defer:
                 self.encoding.append(ret.getT1())
 
@@ -4640,33 +4632,35 @@ class ViewCompactionTask(Task):
                                       fragmentation))
 
                 if frag_val_diff > 0:
-
                     # compaction ran successfully but datasize still same
                     # perhaps we are still compacting
                     if self._is_compacting():
                         self.check()
                     self.test_log.warning(
-                        "Compaction completed, but fragmentation value {0} is more than before compaction {1}"
+                        "Compaction completed, but fragmentation value {0} "
+                        "is more than before compaction {1}"
                         .format(fragmentation,
                                 self.precompacted_fragmentation))
-                    # probably we already compacted, but no work needed to be done
+                    # Probably we already compacted, so nothing to do here
                     self.set_result(self.with_rebalance)
                 else:
                     self.set_result(True)
             else:
                 # Sometimes the compacting is not started immediately
-                for i in xrange(17):
-                    time.sleep(3)
+                for i in xrange(20):
+                    time.sleep(2)
                     if self._is_compacting():
                         self.check()
                     else:
-                        new_compaction_revision, fragmentation = self._get_compaction_details()
+                        new_compaction_revision, fragmentation = \
+                            self._get_compaction_details()
                         self.test_log.info("{2}: stats compaction: ({0},{1})"
                                            .format(new_compaction_revision,
                                                    fragmentation,
                                                    self.design_doc_name))
-                        # case of rebalance when with concurrent updates it's possible that
-                        # compaction value has not changed significantly
+                        # case of rebalance when with concurrent updates
+                        # it's possible that compacttion value has
+                        # not changed significantly
                         if new_compaction_revision > self.compaction_revision \
                                 and self.with_rebalance:
                             self.test_log.info("Compaction revision increased")
