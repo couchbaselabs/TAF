@@ -10,11 +10,13 @@ from couchbase_helper.documentgenerator import doc_generator
 from cb_tools.cbepctl import Cbepctl
 from memcached.helper.data_helper import MemcachedClientHelper
 from cb_tools.cbstats import Cbstats
+import random
 
 
 class MagmaCrashTests(MagmaBaseTest):
     def setUp(self):
         super(MagmaCrashTests, self).setUp()
+        self.doc_size_randomize = self.input.param("doc_size_random", False)
 
     def tearDown(self):
         super(MagmaCrashTests, self).tearDown()
@@ -30,27 +32,33 @@ class MagmaCrashTests(MagmaBaseTest):
     def test_crash_magma_n_times(self):
         self.num_crashes = self.input.param("num_crashes", 10)
         items = self.num_items
+        start = self.num_items
         shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
         for i in xrange(1, self.num_crashes+1):
+            end = start + random.randint(items, items*2)
             shell.kill_memcached()
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
+            if self.doc_size_randomize:
+                self.doc_size = random.randint(0, self.doc_size)
             self.gen_create = doc_generator(self.key,
-                                            items*i,
-                                            items*(i+1),
+                                            start,
+                                            end,
                                             doc_size=self.doc_size,
                                             doc_type=self.doc_type,
                                             target_vbucket=self.target_vbucket,
                                             vbuckets=self.vbuckets)
             self.loadgen_docs(_sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
-            data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_create, "create", 0, batch_size=10)
-            self.task.jython_task_manager.get_task_result(data_validation)
-            self.bucket_util.verify_stats_all_buckets(items*(i+1))
+            if not self.doc_size_randomize:
+                data_validation = self.task.async_validate_docs(
+                    self.cluster, self.bucket_util.buckets[0],
+                    self.gen_create, "create", 0, batch_size=10)
+                self.task.jython_task_manager.get_task_result(data_validation)
+            start = end
+            self.bucket_util.verify_stats_all_buckets(items, timeout=300)
 
     def test_magma_rollback_n_times(self):
         items = self.num_items
@@ -89,7 +97,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
-            self.bucket_util.verify_stats_all_buckets(items)
+            self.bucket_util.verify_stats_all_buckets(items, timeout=300)
         shell.disconnect()
 
     def test_magma_rollback_to_0(self):
