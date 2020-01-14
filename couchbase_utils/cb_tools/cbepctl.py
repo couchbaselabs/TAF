@@ -3,9 +3,9 @@ from Cb_constants import constants
 
 
 class Cbepctl(CbCmdBase):
-    def __init__(self, shell_conn, port=constants.memcached_port,
-                 username="Administrator", password="password"):
-        CbCmdBase.__init__(self, shell_conn, "cbepctl", port=port,
+    def __init__(self, shell_conn, username="Administrator",
+                 password="password"):
+        CbCmdBase.__init__(self, shell_conn, "cbepctl",
                            username=username, password=password)
 
     def set(self, bucket_name, set_type, key, value):
