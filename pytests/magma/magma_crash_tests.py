@@ -33,10 +33,14 @@ class MagmaCrashTests(MagmaBaseTest):
         self.num_crashes = self.input.param("num_crashes", 10)
         items = self.num_items
         start = self.num_items
-        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
-        for i in xrange(1, self.num_crashes+1):
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
+        for _ in xrange(1, self.num_crashes+1):
             end = start + random.randint(items, items*2)
-            shell.kill_memcached()
+            for node in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(node)
+                shell.kill_memcached()
+                shell.disconnect()
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
