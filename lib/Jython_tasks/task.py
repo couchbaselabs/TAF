@@ -3904,8 +3904,8 @@ class Atomicity(Task):
                                         break
                                 else:
                                     exception=err
-                                    self.test_log.info("Sleep for 60 seconds so that the txn gets cleaned up")
-                                    time.sleep(60)
+#                                     self.test_log.info("Sleep for 60 seconds so that the txn gets cleaned up")
+#                                     time.sleep(60)
                                     break
 
                 if exception:
@@ -4014,7 +4014,10 @@ class Atomicity(Task):
                     try:
                         value = key_val[key]  # new updated value, however it is not their in orginal code "LoadDocumentsTask"
                         value_json = Json.loads(value)
-                        value_json['mutated'] += Atomicity.updatecount
+                        try:
+                            value_json['mutated'] += Atomicity.updatecount
+                        except KeyError:
+                            pass
                         value = Json.dumps(value_json)
                     except ValueError:
                         self.random.seed(key)
