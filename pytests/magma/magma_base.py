@@ -1,13 +1,11 @@
 import json
+import os
 
-from basetestcase import BaseTestCase
-from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper
-from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
+from basetestcase import BaseTestCase
+from couchbase_helper.documentgenerator import doc_generator
+from membase.api.rest_client import RestConnection
+from sdk_exceptions import SDKException
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -43,11 +41,15 @@ class MagmaBaseTest(BaseTestCase):
             self._create_default_bucket()
         else:
             self._create_multiple_buckets()
+        self.disable_magma_commit_points = self.input.param("disable_magma_commit_points", False)
+        if self.disable_magma_commit_points:
+            self.bucket_util.update_bucket_props("backend", "magma;magma_max_commit_points=0",
+                                                 self.bucket_util.buckets)
         self.gen_create = doc_generator(self.key, 0, self.num_items,
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.vbuckets)
+                                        vbuckets=self.cluster_util.vbuckets)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
         _ = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
@@ -63,7 +65,7 @@ class MagmaBaseTest(BaseTestCase):
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.vbuckets)
+                                        vbuckets=self.cluster_util.vbuckets)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished rebalance base setup========")

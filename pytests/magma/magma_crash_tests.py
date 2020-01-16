@@ -4,13 +4,15 @@ Created on Dec 12, 2019
 @author: riteshagarwal
 '''
 
-from magma_base import MagmaBaseTest
-from remote.remote_util import RemoteMachineShellConnection
-from couchbase_helper.documentgenerator import doc_generator
-from cb_tools.cbepctl import Cbepctl
-from memcached.helper.data_helper import MemcachedClientHelper
-from cb_tools.cbstats import Cbstats
+import os
 import random
+
+from cb_tools.cbstats import Cbstats
+from couchbase_helper.documentgenerator import doc_generator
+from magma_base import MagmaBaseTest
+from membase.api.rest_client import RestConnection
+from memcached.helper.data_helper import MemcachedClientHelper
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class MagmaCrashTests(MagmaBaseTest):
@@ -53,7 +55,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                             doc_size=self.doc_size,
                                             doc_type=self.doc_type,
                                             target_vbucket=self.target_vbucket,
-                                            vbuckets=self.vbuckets)
+                                            vbuckets=self.cluster_util.vbuckets)
             self.loadgen_docs(_sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
             if not self.doc_size_randomize:
@@ -84,7 +86,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                             doc_size=self.doc_size,
                                             doc_type=self.doc_type,
                                             target_vbucket=self.target_vbucket,
-                                            vbuckets=self.vbuckets)
+                                            vbuckets=self.cluster_util.vbuckets)
             self.loadgen_docs(_sync=True)
             start = self.gen_create.key_counter
             stat_map = {self.cluster.nodes_in_cluster[0]: mem_only_items}
@@ -124,7 +126,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                             doc_size=self.doc_size,
                                             doc_type=self.doc_type,
                                             target_vbucket=self.target_vbucket,
-                                            vbuckets=self.vbuckets)
+                                            vbuckets=self.cluster_util.vbuckets)
             self.loadgen_docs(_sync=True)
             start = self.gen_create.key_counter
             stat_map = {self.cluster.nodes_in_cluster[0]: mem_only_items*i}
@@ -144,4 +146,55 @@ class MagmaCrashTests(MagmaBaseTest):
         shell.disconnect()
 
     def test_space_amplification(self):
-        pass
+        self.num_updates = self.input.param("num_updates", 50)
+        items = self.num_items
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
+        self.doc_ops = "update"
+        exact_size = self.num_items*self.doc_size*(1+self.num_replicas)
+        max_size = self.num_items*self.doc_size*(1+self.num_replicas) * 2
+        for i in xrange(1, self.num_updates+1):
+            self.log.info("Iteration: {}, updating {} items".format(i, items))
+            start = 0
+            end = items
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                [self.cluster_util.cluster.master],
+                self.bucket_util.buckets[0],
+                wait_time=self.wait_timeout * 10))
+            self.gen_update = doc_generator(self.key,
+                                            start,
+                                            end,
+                                            doc_size=self.doc_size,
+                                            doc_type=self.doc_type,
+                                            target_vbucket=self.target_vbucket,
+                                            vbuckets=self.cluster_util.vbuckets)
+            self.loadgen_docs(_sync=True)
+            self.bucket_util._wait_for_stats_all_buckets()
+            data_validation = self.task.async_validate_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                self.gen_update, "update", 0, batch_size=10)
+            self.task.jython_task_manager.get_task_result(data_validation)
+            self.bucket_util.verify_stats_all_buckets(end, timeout=300)
+
+            # check for space amplification here
+            data_size = 0
+            for server in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(server)
+                for bucket in self.bucket_util.buckets:
+                    data_size += int(
+                        shell.execute_command(
+                            "du -c %s | tail -1 | awk '{print $1}'" %
+                            os.path.join(
+                                RestConnection(server).get_data_path(),
+                                bucket.name, "magma.*/kvstore*")
+                            )[0][0].rstrip("\n")
+                        )
+                shell.disconnect()
+                print data_size
+
+            self.assertTrue(
+                data_size >= exact_size and data_size <= max_size,
+                "Exact Data Size {} \n \
+                Actual Size {} \n \
+                Max Expected Size {}".format(exact_size, data_size, max_size)
+                )
