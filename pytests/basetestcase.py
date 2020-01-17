@@ -299,10 +299,12 @@ class BaseTestCase(unittest.TestCase):
             self.fail(e)
 
     def tearDown(self):
+        server_with_crashes = self.check_coredump_exist(self.servers)
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         self.tearDownEverything()
+        self.assertEqual(len(server_with_crashes), 0, msg="Test failed, Coredump found on servers {}".format(server_with_crashes));
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
@@ -505,3 +507,35 @@ class BaseTestCase(unittest.TestCase):
 
     def get_task_mgr(self):
         return self.task_manager
+
+    def check_coredump_exist(self, servers):
+        """checks coredump on the given nodes/node
+        return: a list (list of servers with crashes or a empty list if no core dump exists)
+        Args: list of servers
+        """
+        
+        self.log.info("Initializing core dump check on all the nodes");
+        servers_with_crashes = [];
+        for server in servers:
+            shell = RemoteMachineShellConnection(server);
+            shell.extract_remote_info();
+            if shell.info.type.lower() == "linux":
+                rest = RestConnection(server)
+                core_path = str(rest.get_data_path()).split("data")[0] + "crash/"
+
+            elif shell.info.type.lower() == "windows":
+                core_path = 'c://CrashDumps'
+            o, e = shell.execute_command("ls -l {} | grep '.dmp' | wc -l".format(core_path));
+            output = o[0].split('\n')[0];
+            if int(output) == 0:
+                print("=== No core exists on node {}".format(server.ip));
+                shell.disconnect();
+                pass;
+            else:
+                self.log.error(" === CORE DUMPS SEEN ON SERVER {} : {} crashes seen === ".format(server.ip, output));
+                if TestInputSingleton.input.param("get-cbcollect-info", True):
+                    servers_with_crashes.append(server.ip);
+                shell.disconnect();
+        if servers_with_crashes:
+            self.fetch_cb_collect_logs();
+        return (servers_with_crashes);

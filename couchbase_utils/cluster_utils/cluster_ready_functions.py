@@ -407,10 +407,13 @@ class ClusterUtils:
                 # Start node
                 rest = RestConnection(node)
                 data_path = rest.get_data_path()
+                core_path= str(rest.get_data_path()).split("data")[0] + "crash/"
                 # Stop node
                 self.stop_server(node)
                 # Delete Path
                 shell.cleanup_data_config(data_path)
+                shell.cleanup_data_config(core_path);
+                
                 self.start_server(node)
                 shell.disconnect()
             time.sleep(10)
