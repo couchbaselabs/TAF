@@ -3854,7 +3854,7 @@ class Atomicity(Task):
                     for client in Atomicity.clients:
                         self.batch_update(last_batch, client, persist_to=self.persist_to, replicate_to=self.replicate_to,
                                   timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
-                    self.update_keys = last_batch.keys()
+    
 
                 if op_type == "general_delete":
                     self.test_log.debug("performing delete for keys {}".format(last_batch.keys()))
@@ -4014,10 +4014,7 @@ class Atomicity(Task):
                     try:
                         value = key_val[key]  # new updated value, however it is not their in orginal code "LoadDocumentsTask"
                         value_json = Json.loads(value)
-                        try:
-                            value_json['mutated'] += Atomicity.updatecount
-                        except KeyError:
-                            pass
+                        value_json['mutated'] = Atomicity.updatecount
                         value = Json.dumps(value_json)
                     except ValueError:
                         self.random.seed(key)
