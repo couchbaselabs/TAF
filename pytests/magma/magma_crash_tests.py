@@ -65,6 +65,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.task.jython_task_manager.get_task_result(data_validation)
             start = end
             self.bucket_util.verify_stats_all_buckets(end, timeout=300)
+            self.gen_update = self.gen_create
 
     def test_magma_rollback_n_times(self):
         items = self.num_items

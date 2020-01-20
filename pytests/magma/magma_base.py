@@ -127,7 +127,7 @@ class MagmaBaseTest(BaseTestCase):
                              ignore_exceptions=[],
                              _sync=False):
         tasks_info = dict()
-        if "update" in self.doc_ops:
+        if "update" in self.doc_ops and self.gen_update is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -136,7 +136,7 @@ class MagmaBaseTest(BaseTestCase):
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions)
             tasks_info.update(tem_tasks_info.items())
-        if "create" in self.doc_ops:
+        if "create" in self.doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_create, "create", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -146,7 +146,7 @@ class MagmaBaseTest(BaseTestCase):
                 ignore_exceptions=ignore_exceptions)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
-        if "delete" in self.doc_ops:
+        if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_delete, "delete", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
