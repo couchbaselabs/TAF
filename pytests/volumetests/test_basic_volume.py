@@ -575,7 +575,7 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
             self.bucket_util.vb_distribution_analysis(
                 servers=nodes, buckets=self.bucket_util.buckets,
                 num_replicas=2,
-                std=std, total_vbuckets=self.vbuckets)
+                std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.sleep(10)
             self.tasks = []
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
@@ -642,7 +642,7 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
             self.bucket_util.vb_distribution_analysis(
                 servers=nodes, buckets=self.bucket_util.buckets,
                 num_replicas=2,
-                std=std, total_vbuckets=self.vbuckets)
+                std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.sleep(10)
             self.tasks = []
             self.bucket_util.print_bucket_stats()
@@ -701,7 +701,7 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
             self.bucket_util.vb_distribution_analysis(
                 servers=nodes, buckets=self.bucket_util.buckets,
                 num_replicas=2,
-                std=std, total_vbuckets=self.vbuckets)
+                std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.bucket_util.print_bucket_stats()
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)

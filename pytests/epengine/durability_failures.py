@@ -205,12 +205,12 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+            vbuckets=self.cluster_util.vbuckets, target_vbucket=target_vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -368,11 +368,11 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items+self.crud_batch_size,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.num_items, vbuckets=self.vbuckets)
+            self.key, 0, self.num_items, vbuckets=self.cluster_util.vbuckets)
         gen_delete = doc_generator(
-            self.key, 0, half_of_num_items, vbuckets=self.vbuckets)
+            self.key, 0, half_of_num_items, vbuckets=self.cluster_util.vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -654,12 +654,12 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+            vbuckets=self.cluster_util.vbuckets, target_vbucket=target_vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -790,11 +790,11 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items+self.crud_batch_size,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets)
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets)
         gen_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets)
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -914,7 +914,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed "
                              "after aborts")
@@ -941,7 +941,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                         crud_batch_size
                 failed = self.durability_helper.verify_vbucket_details_stats(
                     self.bucket, self.cluster_util.get_kv_nodes(),
-                    vbuckets=self.vbuckets, expected_val=verification_dict)
+                    vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
                 if failed:
                     self.log_failure("Cbstat vbucket-details verification "
                                      "failed after doc_op: %s" % doc_op)

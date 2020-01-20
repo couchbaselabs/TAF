@@ -72,7 +72,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                                                   path=None)
             self.bucket_util.verify_unacked_bytes_all_buckets()
             nodes = self.cluster.nodes_in_cluster
-        #self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0, total_vbuckets=self.vbuckets)
+        #self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0, total_vbuckets=self.cluster_util.vbuckets)
 
     def test_rebalance_in_out_with_failover_addback_recovery(self):
         """
@@ -222,7 +222,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                                               path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster.nodes_in_cluster
-        #self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0, total_vbuckets=self.vbuckets)
+        #self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0, total_vbuckets=self.cluster_util.vbuckets)
 
     def test_incremental_rebalance_in_out_with_mutation(self):
         """

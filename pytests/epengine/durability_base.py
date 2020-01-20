@@ -60,7 +60,7 @@ class DurabilityTestsBase(BaseTestCase):
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.vbuckets)
+                vbuckets=self.cluster_util.vbuckets)
             self.log.info("doc_generator created")
 
             self.log.info("Loading {0} items into bucket"

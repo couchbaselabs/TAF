@@ -28,7 +28,7 @@ class BucketParamTest(BaseTestCase):
         doc_create = doc_generator(self.key, 0, self.num_items,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.vbuckets)
+                                   vbuckets=self.cluster_util.vbuckets)
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -191,7 +191,7 @@ class BucketParamTest(BaseTestCase):
                                        start_doc_for_insert + self.num_items,
                                        doc_size=self.doc_size,
                                        doc_type=self.doc_type,
-                                       vbuckets=self.vbuckets)
+                                       vbuckets=self.cluster_util.vbuckets)
 
             # Creating doc updater to be used by test cases
             doc_update = doc_generator(
@@ -200,7 +200,7 @@ class BucketParamTest(BaseTestCase):
                 start_doc_for_insert,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                vbuckets=self.vbuckets)
+                vbuckets=self.cluster_util.vbuckets)
 
             # Creating doc updater to be used by test cases
             doc_delete = doc_generator(
@@ -208,7 +208,7 @@ class BucketParamTest(BaseTestCase):
                 start_doc_for_insert - self.num_items,
                 start_doc_for_insert - (self.num_items/2),
                 doc_size=self.doc_size, doc_type=self.doc_type,
-                vbuckets=self.vbuckets)
+                vbuckets=self.cluster_util.vbuckets)
 
             self.log.info("Updating replica count of bucket to {0}"
                           .format(replica_num))
@@ -355,7 +355,7 @@ class BucketParamTest(BaseTestCase):
         load_gen = doc_generator(self.key, 0, self.num_items,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.vbuckets)
+                                 vbuckets=self.cluster_util.vbuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, self.def_bucket, load_gen, "update", 0,
             persist_to=self.persist_to, replicate_to=self.replicate_to,

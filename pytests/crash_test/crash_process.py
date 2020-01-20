@@ -61,7 +61,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets, gen_create, "create",
@@ -91,7 +91,7 @@ class CrashTest(BaseTestCase):
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
                         bucket, self.cluster_util.get_kv_nodes(),
-                        vbuckets=self.vbuckets,
+                        vbuckets=self.cluster_util.vbuckets,
                         expected_val=verification_dict)
 
                 if stats_failed:
@@ -140,7 +140,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -251,7 +251,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets, gen_load, "create",
@@ -328,6 +328,6 @@ class CrashTest(BaseTestCase):
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
                         def_bucket, self.cluster_util.get_kv_nodes(),
-                        vbuckets=self.vbuckets, expected_val=verification_dict)
+                        vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
                 if stats_failed:
                     self.fail("Cbstats verification failed")

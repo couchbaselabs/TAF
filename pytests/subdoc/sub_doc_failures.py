@@ -22,7 +22,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.key, 0, self.num_items/2,
             doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("Loading {0} Sub-docs into the bucket: {1}"
                       .format(self.num_items/2, self.bucket))
         task = self.task.async_load_gen_sub_docs(
@@ -675,13 +675,16 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+            vbuckets=self.cluster_util.vbuckets,
+            target_vbucket=target_vbuckets)
         gen_update_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
+            self.key, 0, self.crud_batch_size,
+            vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_subdoc = sub_doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+            vbuckets=self.cluster_util.vbuckets,
+            target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Start CRUD operation based on the given 'doc_op' type
@@ -704,7 +707,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             if self.doc_ops[1] == "insert" and self.doc_ops[0] == "create":
                 gen_subdoc = sub_doc_generator(
                     self.key, self.num_items, self.crud_batch_size,
-                    vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+                    vbuckets=self.cluster_util.vbuckets, target_vbucket=target_vbuckets)
                 gen_loader[1] = gen_subdoc
             gen_loader[1] = gen_subdoc
 

@@ -179,7 +179,7 @@ class basic_ops(BaseTestCase):
         doc_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("Loading {0} docs into the bucket: {1}"
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_docs(
@@ -224,7 +224,7 @@ class basic_ops(BaseTestCase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -237,11 +237,11 @@ class basic_ops(BaseTestCase):
         doc_update = doc_generator(
             self.key, 0, num_item_start_for_crud,
             doc_size=self.doc_size, doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket, vbuckets=self.vbuckets,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
             mutate=1)
 
         expected_num_items = self.num_items
-        num_of_mutations = 1
 
         if self.target_vbucket:
             mutation_doc_count = len(doc_update.doc_keys)
@@ -331,7 +331,7 @@ class basic_ops(BaseTestCase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 

@@ -196,7 +196,7 @@ class RebalanceBaseTest(BaseTestCase):
         return doc_generator(self.key, start, end, doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.vbuckets)
+                             vbuckets=self.cluster_util.vbuckets)
 
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,

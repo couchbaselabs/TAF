@@ -54,7 +54,7 @@ class ExpiryMaxTTL(BaseTestCase):
         doc_create = doc_generator(
             self.key, 0, num_items, doc_size=self.doc_size,
             doc_type="json", target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("doc_generator created")
         task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_create, op_type, exp,
@@ -370,11 +370,11 @@ class ExpiryMaxTTL(BaseTestCase):
         ttl_gen_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         non_ttl_gen_create = doc_generator(
             self.key, self.num_items, self.num_items*2, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
 
         # Set durability levels based on doc_ops_type
         non_ttl_task_property["op_type"] = "create"
@@ -475,7 +475,7 @@ class ExpiryMaxTTL(BaseTestCase):
         gen_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=target_vbuckets,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         doc_op_task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create, "create", self.maxttl,
             batch_size=10, process_concurrency=8,

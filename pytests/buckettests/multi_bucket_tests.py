@@ -29,7 +29,7 @@ class MultiBucketTests(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("doc_generator created")
 
         # Load all buckets with initial load of docs
@@ -74,7 +74,7 @@ class MultiBucketTests(BaseTestCase):
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items * 2,
             doc_size=self.doc_size, doc_type="json",
-            target_vbucket=self.target_vbucket, vbuckets=self.vbuckets)
+            target_vbucket=self.target_vbucket, vbuckets=self.cluster_util.vbuckets)
 
         update_dict(bucket_1, "create", gen_create)
         update_dict(bucket_2, "update", self.load_gen)

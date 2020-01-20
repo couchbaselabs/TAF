@@ -29,7 +29,7 @@ class basic_ops(BaseTestCase):
         self.gen_create = doc_generator(self.key, 0, self.num_items, doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.vbuckets)
+                             vbuckets=self.cluster_util.vbuckets)
         self.rebalance_in = self.input.param("rabalance_in",True)
                              
         # Loading of 1M docs through normal loader
@@ -47,13 +47,13 @@ class basic_ops(BaseTestCase):
         self.gen_create = doc_generator(self.key, self.num_items, self.num_items+1000, doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.vbuckets)
+                             vbuckets=self.cluster_util.vbuckets)
         self.log.info("Going to perform any Transaction Operation")
         self.op_type = self.input.param("op_type","create")
         self.gen_delete = doc_generator(self.key, 0,self.delete_items, doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.vbuckets)
+                             vbuckets=self.cluster_util.vbuckets)
         
         tasks = []
         if "update" in self.op_type:

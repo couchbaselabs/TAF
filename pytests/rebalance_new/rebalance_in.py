@@ -298,7 +298,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.bucket_util.vb_distribution_analysis(
             servers=nodes, buckets=self.bucket_util.buckets,
             num_replicas=self.num_replicas,
-            std=std, total_vbuckets=self.vbuckets)
+            std=std, total_vbuckets=self.cluster_util.vbuckets)
 
     def rebalance_in_with_failover_full_addback_recovery(self):
         """
@@ -353,7 +353,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.bucket_util.vb_distribution_analysis(
             servers=nodes, buckets=self.bucket_util.buckets,
             num_replicas=self.num_replicas,
-            std=std, total_vbuckets=self.vbuckets)
+            std=std, total_vbuckets=self.cluster_util.vbuckets)
 
     def rebalance_in_with_failover(self):
         """
@@ -435,7 +435,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.bucket_util.vb_distribution_analysis(
             servers=nodes, buckets=self.bucket_util.buckets,
             num_replicas=self.num_replicas,
-            std=std, total_vbuckets=self.vbuckets)
+            std=std, total_vbuckets=self.cluster_util.vbuckets)
 
     def rebalance_in_with_compaction_and_ops(self):
         """
