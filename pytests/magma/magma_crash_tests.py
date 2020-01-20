@@ -152,8 +152,10 @@ class MagmaCrashTests(MagmaBaseTest):
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
         self.doc_ops = "update"
-        exact_size = self.num_items*self.doc_size*(1+self.num_replicas)
-        max_size = self.num_items*self.doc_size*(1+self.num_replicas) * 2
+        metadata_size = 200
+        exact_size = self.num_items*(self.doc_size + metadata_size)\
+            * (1 + self.num_replicas)
+        max_size = exact_size * 2
         for i in xrange(1, self.num_updates+1):
             self.log.info("Iteration: {}, updating {} items".format(i, items))
             start = 0
@@ -191,11 +193,12 @@ class MagmaCrashTests(MagmaBaseTest):
                             )[0][0].rstrip("\n")
                         )
                 shell.disconnect()
-                print data_size
+
+            data_size *= 1024
 
             self.assertTrue(
                 data_size >= exact_size and data_size <= max_size,
-                "Exact Data Size {} \n \
-                Actual Size {} \n \
+                "Exact Data Size {} \n\
+                Actual Size {} \n\
                 Max Expected Size {}".format(exact_size, data_size, max_size)
                 )
