@@ -591,7 +591,50 @@ class BucketHelper(RestConnection):
     def change_password_builtin_user(self, user_id, password):
         url = "controller/changePassword/" + user_id
         api = self.baseUrl + url
-        status, content, _ = self._http_request(api, 'POST', password)
+        status, content, _ = self._http_request(api,
+                                                'POST',
+                                                password)
         if not status:
             raise Exception(content)
         return json.loads(content)
+
+    # Collection/Scope specific APIs
+    def create_collection(self, bucket, scope, collection):
+        api = self.baseUrl + 'pools/default/buckets/%s/collections/%s' \
+                             % (bucket, scope)
+        params = {'name': collection}
+        params = urllib.urlencode(params)
+        headers = self._create_headers()
+        status, content, _ = self._http_request(api,
+                                                'POST',
+                                                params=params,
+                                                headers=headers)
+        return status, content
+
+    def create_scope(self, bucket, scope):
+        api = self.baseUrl + 'pools/default/buckets/%s/collections' % bucket
+        params = urllib.urlencode({'name': scope})
+        headers = self._create_headers()
+        status, content, _ = self._http_request(api,
+                                                'POST',
+                                                params=params,
+                                                headers=headers)
+        return status, content
+
+    def delete_scope(self, bucket, scope):
+        api = self.baseUrl + 'pools/default/buckets/%s/collections/%s' \
+                             % (bucket, scope)
+        headers = self._create_headers()
+        status, content, _ = self._http_request(api,
+                                                'DELETE',
+                                                headers=headers)
+        return status, content
+
+    def delete_collection(self, bucket, scope, collection):
+        api = self.baseUrl + 'pools/default/buckets/%s/collections/%s/%s' \
+                             % (bucket, scope, collection)
+        headers = self._create_headers()
+        status, content, _ = self._http_request(api,
+                                                'DELETE',
+                                                headers=headers)
+        return status, content

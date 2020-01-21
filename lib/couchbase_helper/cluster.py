@@ -128,7 +128,9 @@ class ServerTasks(object):
                             skip_read_on_error=False,
                             ryow=False, check_persistence=False,
                             start_task=True,
-                            suppress_error_table=False):
+                            suppress_error_table=False,
+                            scope=None,
+                            collection=None):
         clients = list()
         if active_resident_threshold == 100:
             self.log.debug("Loading documents to {}".format(bucket.name))
@@ -138,7 +140,8 @@ class ServerTasks(object):
             gen_end = max(int(generator.end), 1)
             gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
             for _ in range(gen_start, gen_end, gen_range):
-                client = SDKClient([cluster.master], bucket)
+                client = SDKClient([cluster.master], bucket,
+                                   scope, collection)
                 clients.append(client)
             if not ryow:
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
@@ -174,7 +177,8 @@ class ServerTasks(object):
                     check_persistence=check_persistence)
         else:
             for _ in range(process_concurrency):
-                client = SDKClient([cluster.master], bucket)
+                client = SDKClient([cluster.master], bucket,
+                                   scope, collection)
                 clients.append(client)
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, clients,
@@ -201,7 +205,8 @@ class ServerTasks(object):
                                 process_concurrency=8, print_ops_rate=True,
                                 durability="",
                                 start_task=True,
-                                task_identifier=""):
+                                task_identifier="",
+                                scope=None, collection=None):
         self.log.debug("Loading sub documents to {}".format(bucket.name))
         if not isinstance(generator, SubdocDocumentGenerator):
             raise Exception("Document generator needs to be of "
@@ -212,7 +217,8 @@ class ServerTasks(object):
         gen_range = max(int(
             (generator.end - generator.start) / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
-            client = SDKClient([cluster.master], bucket)
+            client = SDKClient([cluster.master], bucket,
+                               scope, collection)
             clients.append(client)
         _task = jython_tasks.LoadSubDocumentsGeneratorsTask(
             cluster,
@@ -246,10 +252,13 @@ class ServerTasks(object):
                                      durability="",
                                      batch_size=10,
                                      timeout_secs=5,
-                                     process_concurrency=4):
+                                     process_concurrency=4,
+                                     scope=None, collection=None):
         clients = list()
         for _ in range(process_concurrency):
-            clients.append(SDKClient([cluster.master], bucket))
+            client = SDKClient([cluster.master], bucket,
+                               scope, collection)
+            clients.append(client)
         _task = jython_tasks.ContinuousDocUpdateTask(
             cluster, self.jython_task_manager, bucket, clients, generator,
             exp, persist_to=persist_to,
@@ -270,7 +279,9 @@ class ServerTasks(object):
                                       process_concurrency=8, retries=5,
                                       update_count=1, transaction_timeout=5,
                                       commit=True, durability=0, sync=True,
-                                      num_threads=5, record_fail=False, defer=False):
+                                      num_threads=5, record_fail=False,
+                                      defer=False, scope=None,
+                                      collection=None):
 
         self.log.info("Loading documents ")
         bucket_list = list()
@@ -282,7 +293,8 @@ class ServerTasks(object):
             temp_bucket_list = []
             temp_client_list = []
             for bucket in buckets:
-                client = SDKClient([cluster.master], bucket)
+                client = SDKClient([cluster.master], bucket,
+                                   scope, collection)
                 temp_client_list.append(client)
                 temp_bucket_list.append(client.collection)
             bucket_list.append(temp_bucket_list)
@@ -339,9 +351,11 @@ class ServerTasks(object):
     def async_validate_docs(self, cluster, bucket, generator, opt_type, exp=0,
                             flag=0, only_store_hash=True, batch_size=1,
                             pause_secs=1, timeout_secs=5, compression=True,
-                            process_concurrency=4, check_replica=False):
+                            process_concurrency=4, check_replica=False,
+                            scope=None, collection=None):
         self.log.debug("Validating documents")
-        client = SDKClient([cluster.master], bucket)
+        client = SDKClient([cluster.master], bucket,
+                           scope, collection)
         _task = jython_tasks.DocumentsValidatorTask(
             cluster, self.jython_task_manager, bucket, client, [generator],
             opt_type, exp, flag=flag, only_store_hash=only_store_hash,

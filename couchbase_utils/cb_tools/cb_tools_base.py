@@ -1,4 +1,4 @@
-from Cb_constants import constants, ClusterRun
+from Cb_constants import ClusterRun
 from TestInput import TestInputSingleton
 from testconstants import \
     LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \

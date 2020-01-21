@@ -67,7 +67,7 @@ class SDKClient(object):
     Java SDK Client Implementation for testrunner - master branch
     """
 
-    def __init__(self, servers, bucket,
+    def __init__(self, servers, bucket, scope=None, collection=None,
                  username="Administrator", password="password",
                  certpath=None, compression=True):
         # Used during Cluster.connect() call
@@ -76,11 +76,15 @@ class SDKClient(object):
         # Used while creating connection for Cluster_run
         self.servers = tuple()
 
+        self.scope_name = scope
+        self.collection_name = collection
         self.username = username
         self.password = password
         self.default_timeout = 0
         self.cluster = None
         self.bucket = bucket
+        self.bucketObj = None
+        self.collection = None
         self.log = logging.getLogger("test")
 
         if hasattr(bucket, 'name'):
@@ -141,7 +145,7 @@ class SDKClient(object):
                     i += 1
 
             self.bucketObj = self.cluster.bucket(self.bucket)
-            self.collection = self.bucketObj.defaultCollection()
+            self.select_collection(self.scope_name, self.collection_name)
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))
 
@@ -152,6 +156,23 @@ class SDKClient(object):
             self.cluster.environment().shutdown()
             self.log.debug("Cluster disconnected and env shutdown")
             SDKClient.sdk_disconnections += 1
+
+    # Select target Scope::Collection, else select default collection
+    def select_collection(self, scope_name, collection_name):
+        """
+        Method to select collection. Can be called directly from test case.
+        If scope/collection name is None, 'default' collection is selected
+        """
+        if collection_name is not None:
+            if scope_name is None:
+                self.collection = self.bucketObj \
+                                  .collection(collection_name)
+            else:
+                self.collection = self.bucketObj \
+                                  .scope(scope_name) \
+                                  .collection(collection_name)
+        else:
+            self.collection = self.bucketObj.defaultCollection()
 
     # Translate APIs for document operations
     def translate_to_json_object(self, value, doc_type="json"):

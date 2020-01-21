@@ -25,6 +25,213 @@ class Cbstats(CbCmdBase):
         """
         return (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & (total_vbuckets-1)
 
+    def get_scopes(self, bucket):
+        """
+        Fetches list of scopes for the particular bucket
+        Uses command:
+          cbstats localhost:port scopes
+
+        Arguments:
+        :bucket - Bucket object to fetch the name
+
+        Returns:
+        :scope_data - Dict containing the scopes stat values
+        """
+        scope_data = dict()
+        id_scope_dict = dict()
+        cmd = "%s localhost:%s -u %s -p %s -b %s scopes" \
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
+                 bucket.name)
+
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+
+        pattern = "[ \t]*manifest:scopes:([0-9xa-f]+):name:" \
+                  "[ \t]+([a-zA-Z_0-9]+)"
+        scope_name_pattern = re.compile(pattern)
+        scope_names = scope_name_pattern.findall(str(output))
+        for scope in scope_names:
+            scope_data[scope[1]] = dict()
+            scope_data[scope[1]]["id"] = scope[0]
+            id_scope_dict[scope[0]] = scope[1]
+
+        # Cluster_run case
+        if type(output) is str:
+            output = output.split("\n")
+
+        scope_count_pattern = "[ \t]*manifest:scopes:[ \t]+([0-9]+)"
+        scope_uid_pattern = "[ \t]*manifest:uid:[ \t]+([0-9]+)"
+        collection_count_pattern = "[ \t]*manifest:scopes:([0-9xa-z]+):" \
+                                   "collections:[ \t]+([0-9]+)"
+
+        scope_count_pattern = re.compile(scope_count_pattern)
+        scope_uid_pattern = re.compile(scope_uid_pattern)
+        collection_count_pattern = re.compile(collection_count_pattern)
+
+        for line in output:
+            collection_count = collection_count_pattern.match(line)
+            scope_count = scope_count_pattern.match(line)
+            scope_uid = scope_uid_pattern.match(line)
+
+            if collection_count:
+                curr_scope_name = id_scope_dict[
+                    collection_count.group(1)]
+                scope_data[curr_scope_name]["collections"] = \
+                    int(collection_count.group(2))
+            elif scope_count:
+                scope_data["count"] = int(scope_count.group(1))
+            elif scope_uid:
+                scope_data["uid"] = scope_uid.group(1)
+            elif not scope_name_pattern.match(line):
+                raise Exception("Unexpected pattern in scopes stats")
+
+        return scope_data
+
+    def get_scope_details(self, bucket_name):
+        """
+        Fetches scopes-details status from the server
+        Uses command:
+          cbstats localhost:port scopes-details
+
+        Arguments:
+        :bucket_name - Name of the bucket to get the stats
+
+        Returns:
+        :scope_data - Dict containing the scopes_details stat values
+        """
+        scope_data = dict()
+        cmd = "%s localhost:%s -u %s -p %s -b %s scopes-details" \
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
+                 bucket_name)
+
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+
+        pattern = "[ \t]*manifest:scopes:([0-9xa-h]+):collections:" \
+                  "[ \t]+(a-zA-Z_0-9)+"
+        regexp = re.compile(pattern)
+        scope_name_match = regexp.findall(str(output))
+        for scope in scope_name_match:
+            scope_name = scope.group(1)
+            scope_data[scope_name] = dict()
+            scope_data[scope_name]["id"] = scope.group(0)
+
+        # Cluster_run case
+        if type(output) is str:
+            output = output.split("\n")
+
+        for line in output:
+            match_result = regexp.match(line)
+            if match_result:
+                scope_data = match_result.group(1)
+                break
+
+        return scope_data
+
+    def get_collections(self, bucket):
+        """
+        Fetches list of collections from the server
+        Uses command:
+          cbstats localhost:port collections
+
+        Arguments:
+        :bucket - Bucket object to fetch the name
+
+        Returns:
+        :collection_data - Dict containing the collections stat values
+        """
+        collection_data = dict()
+        id_collection_dict = dict()
+
+        # Fetch scope_data before fetching collections
+        scope_data = self.get_scopes(bucket)
+
+        cmd = "%s localhost:%s -u %s -p %s -b %s collections" \
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
+                 bucket.name)
+
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+
+        pattern = "[ \t]*manifest:collection:([0-9xa-f]+):name:" \
+                  "[ \t]+([a-zA-Z_0-9]+)"
+        scope_name_pattern = re.compile(pattern)
+        scope_names = scope_name_pattern.findall(str(output))
+        for scope in scope_names:
+            collection_data[scope[1]] = dict()
+            collection_data[scope[1]]["id"] = scope[0]
+            id_collection_dict[scope[0]] = scope[1]
+
+        # Cluster_run case
+        if type(output) is str:
+            output = output.split("\n")
+
+        collection_items_pattern = "collection:%s:items:[ \t]+([0-9]+)"
+        collection_count_pattern = "manifest:collections:[ \t]+([0-9]+)"
+        default_collection_exist_pattern = "manifest:default_exists:[ \t]+" \
+                                           "([truefals]+)"
+        collection_uid_pattern = "manifest:uid:[ \t]+([0-9]+)"
+
+        collection_items_pattern = re.compile(collection_items_pattern)
+        collection_count_pattern = re.compile(collection_count_pattern)
+        default_collection_exist_pattern = re.compile(
+            default_collection_exist_pattern)
+        collection_uid_pattern = re.compile(collection_uid_pattern)
+
+        for line in output:
+            collection_items = collection_items_pattern.match(line)
+            collection_count = collection_count_pattern.match(line)
+            default_collection_exist = \
+                default_collection_exist_pattern.match(line)
+            collection_uid = collection_uid_pattern.match(line)
+
+        return collection_data
+
+    def get_collection_details(self, bucket_name):
+        """
+        Fetches collections_details from the server
+        Uses command:
+          cbstats localhost:port collections-details
+
+        Arguments:
+        :bucket_name - Name of the bucket to get the stats
+
+        Returns:
+        :collection_data - Dict containing the collections stat values
+        """
+        collection_data = dict()
+        cmd = "%s localhost:%s -u %s -p %s -b %s collections-details" \
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
+                 bucket_name)
+
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+
+        pattern = "[ \t]*manifest:scopes:([0-9xa-h]+):collections:" \
+                  "[ \t]+(a-zA-Z_0-9)+"
+        regexp = re.compile(pattern)
+        scope_name_match = regexp.findall(str(output))
+        for scope in scope_name_match:
+            scope_name = scope.group(1)
+            collection_data[scope_name] = dict()
+            collection_data[scope_name]["id"] = scope.group(0)
+
+        # Cluster_run case
+        if type(output) is str:
+            output = output.split("\n")
+
+        for line in output:
+            match_result = regexp.match(line)
+            if match_result:
+                scope_data = match_result.group(1)
+                break
+
+        return collection_data
+
     def get_stats(self, bucket_name, stat_name, field_to_grep=None):
         """
         Fetches stats using cbstat and greps for specific line.

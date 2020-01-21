@@ -1,5 +1,4 @@
 from cb_tools.cb_tools_base import CbCmdBase
-from Cb_constants import constants
 
 
 class Cbepctl(CbCmdBase):

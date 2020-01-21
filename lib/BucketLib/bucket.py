@@ -92,6 +92,7 @@ class Bucket(object):
         self.servers = list()
         self.vbuckets = list()
         self.forward_map = list()
+        self.scope = dict()
 
     def __str__(self):
         return self.name

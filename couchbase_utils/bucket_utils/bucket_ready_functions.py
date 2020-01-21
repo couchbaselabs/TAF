@@ -2583,3 +2583,72 @@ class BucketUtils:
         # Add warmup check instead of a blind sleep.
         # TODO: See _warmup_check in WarmUpTests class
         self.sleep(60)
+
+    # Collection/Scope specific API calls
+    def create_scope(self, node, bucket, scope="scope0"):
+        status, content = BucketHelper(node).create_scope(bucket, scope)
+        if status is False:
+            self.log.error("Scope '%s::%s' creation failed: %s"
+                           % (bucket, scope, content))
+            raise Exception("create_scope failed")
+
+        self.log.debug("Scope '%s::%s' creation successful" % (bucket, scope))
+
+    def delete_scope(self, node, scope, bucket):
+        """
+        Scope should be passed as default scope can not be deleted
+        """
+        status, content = BucketHelper(node).delete_collection(bucket, scope)
+        if status is False:
+            self.log.error("Scope '%s::%s' deletion failed: %s"
+                           % (bucket, scope, content))
+            raise Exception("delete_scope failed")
+
+        self.log.debug("Scope '%s::%s' deleted" % (bucket, scope))
+
+    def create_collection(self, node, bucket, scope="scope0",
+                          collection="mycollection0"):
+        status, content = BucketHelper(node).create_collection(bucket,
+                                                               scope,
+                                                               collection)
+        if status is False:
+            self.log.error("Collection '%s::%s::%s' creation failed: %s"
+                           % (bucket, scope, collection, content))
+            raise Exception("create_collection failed")
+
+        self.log.debug("Collection '%s' creation successful" % collection)
+
+    def delete_collection(self, node, bucket, scope='_default',
+                          collection='_default'):
+        status, content = BucketHelper(node).delete_collection(bucket,
+                                                               scope,
+                                                               collection)
+        if status is False:
+            self.log.error("Collection '%s::%s::%s' delete failed: %s"
+                           % (bucket, scope, collection, content))
+            raise Exception("delete_collection")
+
+    def create_scope_collection(self, node, bucket, collection_name,
+                                scope_num, collection_num):
+        collection_name[bucket] = ["_default._default"]
+        for i in range(scope_num):
+            if i == 0:
+                scope_name = "_default"
+            else:
+                scope_name = bucket + str(i)
+                self.create_scope(node, bucket, scope=scope_name)
+            try:
+                if i == 0:
+                    num = int(collection_num[i] - 1)
+                else:
+                    num = int(collection_num[i])
+            except Exception:
+                num = 2
+            for n in range(num):
+                collection = 'collection' + str(n)
+                self.create_collection(node, bucket, scope=scope_name,
+                                       collection=collection)
+                collection_name[bucket].append(scope_name + '.' + collection)
+
+        self.log.info("Created collections for the bucket %s: %s"
+                      % (bucket, collection_name[bucket]))
