@@ -106,11 +106,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
             test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
                                       .format(timeout))
 
-    def create_buckets(self):
-        if self.standard_buckets == 1:
-            self._create_default_bucket()
-        else:
-            self._create_multiple_buckets()
 
     def validate_docs(self):
         self.log.info("Validating docs")
