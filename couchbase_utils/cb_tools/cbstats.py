@@ -46,7 +46,7 @@ class Cbstats(CbCmdBase):
         """
 
         cmd = "%s localhost:%s -u %s -p %s -b %s %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, stat_name)
 
         if field_to_grep:
@@ -63,7 +63,7 @@ class Cbstats(CbCmdBase):
         :return error:  Buffer containing warnings/errors from the execution
         """
         cmd = "%s localhost:%s %s -u %s -p %s kvtimings" % (self.cbstatCmd,
-                                                            self.port,
+                                                            self.mc_port,
                                                             command,
                                                             self.username,
                                                             self.password)
@@ -96,7 +96,7 @@ class Cbstats(CbCmdBase):
         """
 
         cmd = "%s localhost:%s -u %s -p %s -b %s %s %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, stat_name, vbucket_num)
 
         if field_to_grep:
@@ -162,7 +162,7 @@ class Cbstats(CbCmdBase):
 
         vb_list = list()
         cmd = "%s localhost:%s -u %s -p %s -b %s vbucket" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name)
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
@@ -195,7 +195,7 @@ class Cbstats(CbCmdBase):
 
         stats = dict()
         cmd = "%s localhost:%s -u %s -p %s -b %s vbucket-details" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name)
 
         output, error = self._execute_cmd(cmd)
@@ -255,7 +255,7 @@ class Cbstats(CbCmdBase):
             vbucket_num = self.__calculate_vbucket_num(doc_key, total_vbuckets)
 
         cmd = "%s localhost:%s -u %s -p %s -b %s vkey %s %s | grep %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, doc_key, vbucket_num, field_to_grep)
 
         output, error = self._execute_cmd(cmd)

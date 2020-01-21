@@ -24,7 +24,7 @@ class Cbepctl(CbCmdBase):
         :Exception - Warnings/Errors (if any) during the command execution
         """
         cmd = "%s localhost:%s -u %s -p %s -b %s set %s %s %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, set_type, key, value)
         _, error = self._execute_cmd(cmd)
         if len(error) != 0:
@@ -44,7 +44,7 @@ class Cbepctl(CbCmdBase):
         :Exception - Warnings/Errors (if any) during the command execution
         """
         cmd = "%s localhost:%s -u %s -p %s -b %s %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, action.lower())
         _, error = self._execute_cmd(cmd)
         if len(error) != 0:

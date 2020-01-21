@@ -10,7 +10,8 @@ class CbCmdBase:
                  username="Administrator", password="password"):
 
         self.shellConn = shell_conn
-        self.port = shell_conn.memcached_port
+        self.port = shell_conn.port
+        self.mc_port = shell_conn.memcached_port
         self.username = username
         self.password = password
         self.binaryName = binary_name
