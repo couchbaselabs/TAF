@@ -16,7 +16,6 @@ import time
 from httplib import IncompleteRead
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
-from TestInput import TestInputServer
 from cb_tools.cbstats import Cbstats
 from Cb_constants import constants
 from couchbase_helper.document import DesignDocument
@@ -3854,7 +3853,7 @@ class Atomicity(Task):
                     for client in Atomicity.clients:
                         self.batch_update(last_batch, client, persist_to=self.persist_to, replicate_to=self.replicate_to,
                                   timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
-    
+
 
                 if op_type == "general_delete":
                     self.test_log.debug("performing delete for keys {}".format(last_batch.keys()))
@@ -3916,9 +3915,7 @@ class Atomicity(Task):
                         break
 
             self.test_log.info("Atomicity Load generation thread completed")
-
-
-            self.inserted_keys = {}
+            self.inserted_keys = dict()
             for client in Atomicity.clients:
                 self.inserted_keys[client] = []
                 self.inserted_keys[client].extend(self.all_keys)
@@ -3977,7 +3974,6 @@ class Atomicity(Task):
                     time.sleep(60)
             elif Atomicity.defer:
                 self.encoding.append(ret.getT1())
-
 
         def __chunks(self, l, n):
             """Yield successive n-sized chunks from l."""
@@ -4338,11 +4334,7 @@ class CompactBucketTask(Task):
 
         for node in nodes:
             current_compaction_count[node.ip] = 0
-            s = TestInputServer()
-            s.ip = node.ip
-            s.ssh_username = self.server.ssh_username
-            s.ssh_password = self.server.ssh_password
-            shell = RemoteMachineShellConnection(s)
+            shell = RemoteMachineShellConnection(self.server)
             res = Cbstats(shell).get_kvtimings()
             shell.disconnect()
             for i in res[0]:
