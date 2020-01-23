@@ -786,7 +786,7 @@ class BucketUtils:
         for task, task_info in tasks_info.items():
             self.task_manager.get_task_result(task)
 
-            client = SDKClient(RestConnection(cluster.master),
+            client = SDKClient([cluster.master],
                                task_info["bucket"])
             for key, failed_doc in task.fail.items():
                 found = False

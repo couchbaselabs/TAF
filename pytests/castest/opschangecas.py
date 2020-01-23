@@ -4,7 +4,6 @@ import time
 from cb_tools.cbstats import Cbstats
 from castest.cas_base import CasBaseTest
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -48,8 +47,7 @@ class OpsChangeCasTests(CasBaseTest):
         """
 
         for bucket in self.bucket_util.buckets:
-            client = SDKClient(RestConnection(self.cluster.master),
-                               bucket)
+            client = SDKClient([self.cluster.master], bucket)
             gen = generator
             while gen.has_next():
                 key, value = gen.next()
@@ -261,7 +259,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         self.log.info("3. Touch intial self.num_items docs which are "
                       "residing on disk due to DGM")
-        client = SDKClient(RestConnection(self.cluster.master),
+        client = SDKClient([self.cluster.master],
                            self.bucket_util.buckets[0])
         while load_gen.has_next():
             key, _ = load_gen.next()
@@ -291,8 +289,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         KEY_NAME = 'key1'
 
-        rest = RestConnection(self.master)
-        client = SDKClient(rest, 'default')
+        client = SDKClient([self.cluster.master], 'default')
 
         # set a key
         client.memcached(KEY_NAME).set(KEY_NAME, 0, 0,
@@ -326,7 +323,7 @@ class OpsChangeCasTests(CasBaseTest):
         rebalance.result()
 
         # verify the CAS is good
-        client = SDKClient(rest, 'default')
+        client = SDKClient([self.cluster.master], 'default')
         mc_active = client.memcached(KEY_NAME)
         active_CAS = mc_active.getMeta(KEY_NAME)[4]
 
@@ -340,8 +337,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         KEY_NAME = 'key1'
 
-        rest = RestConnection(self.master)
-        client = SDKClient(rest, 'default')
+        client = SDKClient([self.cluster.master], 'default')
 
         # set a key
         client.memcached(KEY_NAME).set(KEY_NAME, 0, 0,
@@ -365,8 +361,7 @@ class OpsChangeCasTests(CasBaseTest):
         remote.start_server()
         time.sleep(30)
 
-        rest = RestConnection(self.master)
-        client = SDKClient(rest, 'default')
+        client = SDKClient([self.cluster.master], 'default')
         mc_active = client.memcached(KEY_NAME)
 
         maxCas = mc_active.getMeta(KEY_NAME)[4]
@@ -380,7 +375,7 @@ class OpsChangeCasTests(CasBaseTest):
     key not exists error, this test only requires one node
     """
     def key_not_exists_test(self):
-        client = SDKClient(self.rest, self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
         load_gen = doc_generator(self.key, 0, 1,
                                  doc_size=256)
         key, val = load_gen.next()

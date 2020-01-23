@@ -66,32 +66,38 @@ class SDKClient(object):
     Java SDK Client Implementation for testrunner - master branch
     """
 
-    def __init__(self, rest, bucket, info=None, username="Administrator",
-                 password="password",
-                 quiet=True, certpath=None, transcoder=None, compression=True):
-        self.log = logging.getLogger("test")
-        self.rest = rest
-        self.hosts = []
-        if rest.ip == "127.0.0.1":
-            self.hosts.append("{0}:{1}".format(rest.ip, rest.port))
-            self.scheme = "http"
-        else:
-            self.hosts.append(rest.ip)
-            self.scheme = "couchbase"
+    def __init__(self, servers, bucket,
+                 username="Administrator", password="password",
+                 certpath=None, compression=True):
+        # Used during Cluster.connect() call
+        self.hosts = list()
+
+        # Used while creating connection for Cluster_run
+        self.servers = tuple()
+
         self.username = username
         self.password = password
-        if hasattr(bucket, 'name'):
-            self.bucket = bucket.name
-        else:
-            self.bucket = bucket
-        self.quiet = quiet
-        self.transcoder = transcoder
         self.default_timeout = 0
         self.cluster = None
-        self._createConn()
+        self.bucket = bucket
+        self.log = logging.getLogger("test")
+
+        if hasattr(bucket, 'name'):
+            self.bucket = bucket.name
+
+        for server in servers:
+            self.servers += (server.ip, int(server.port))
+            if server.ip == "127.0.0.1":
+                self.hosts.append("%s:%s" % (server.ip, server.port))
+                self.scheme = "http"
+            else:
+                self.hosts.append(server.ip)
+                self.scheme = "couchbase"
+
+        self.__create_conn()
         SDKClient.sdk_connections += 1
 
-    def _createConn(self):
+    def __create_conn(self):
         try:
             self.log.debug("Creating cluster connection")
             System.setProperty("com.couchbase.forceIPv4", "false")
@@ -115,13 +121,13 @@ class SDKClient(object):
             while i <= 5:
                 try:
                     # Code for cluster_run
-                    if self.rest.port in xrange(ClusterRun.port,
-                                                ClusterRun.port+10):
+                    if int(self.servers[0][1]) in xrange(ClusterRun.port,
+                                                         ClusterRun.port+10):
                         master_seed = HashSet(Collections.singletonList(
                             SeedNode.create(
-                                self.rest.ip,
+                                self.servers[0][0],
                                 Optional.of(ClusterRun.memcached_port),
-                                Optional.of(int(self.rest.port)))))
+                                Optional.of(int(self.servers[0][1])))))
                         cluster_options = \
                             cluster_options.seedNodes(master_seed)
                     self.cluster = Cluster.connect(

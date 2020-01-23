@@ -5,7 +5,6 @@ from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 from cbas_base import CBASBaseTest
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
@@ -748,8 +747,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.log.info("Completed base load with %s items" % item_count)
 
         self.log.info("Load more until we are out of memory")
-        client = SDKClient(RestConnection(self.cluster.master),
-                           target_bucket)
+        client = SDKClient([self.cluster.master], target_bucket)
         i = item_count
         op_result = {"status": True}
         while op_result["status"] is True:
@@ -818,8 +816,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.log.info("Completed base load with %s items" % item_count)
 
         self.log.info("Get initial inserted 100 docs, so they aren't removed")
-        client = SDKClient(RestConnection(self.cluster.master),
-                           target_bucket)
+        client = SDKClient([self.cluster.master], target_bucket)
         for doc_index in range(100):
             doc_key = "test_docs-" + str(doc_index)
             client.read(doc_key)

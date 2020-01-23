@@ -5,7 +5,6 @@ import time
 from castest.cas_base import CasBaseTest
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -17,8 +16,7 @@ class OpsChangeCasTests(CasBaseTest):
         self.key = "test_cas"
         self.expire_time = self.input.param("expire_time", 35)
         self.item_flag = self.input.param("item_flag", 0)
-        self.rest = RestConnection(self.cluster.master)
-        self.client = SDKClient(self.rest, self.bucket)
+        self.client = SDKClient([self.cluster.master], self.bucket)
         self.load_gen = doc_generator(self.key, 0, self.num_items,
                                       doc_size=self.doc_size)
         self.node_data = dict()

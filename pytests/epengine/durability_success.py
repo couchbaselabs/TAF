@@ -4,7 +4,6 @@ from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from error_simulation.disk_error import DiskError
-from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -151,8 +150,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Create a SDK client connection to retry operation
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):
@@ -346,8 +344,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Create a SDK client connection to retry operation
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):

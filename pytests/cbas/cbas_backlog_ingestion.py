@@ -7,7 +7,6 @@ Created on 28-Mar-2018
 """
 import uuid
 import json
-import datetime
 import time
 
 import testconstants
@@ -17,7 +16,7 @@ from membase.helper.cluster_helper import ClusterOperationHelper
 
 from BucketLib.BucketOperations import BucketHelper
 from cbas.cbas_base import CBASBaseTest
-from sdk_client import SDKClient
+from sdk_client3 import SDKClient
 
 
 class CBASBacklogIngestion(CBASBaseTest):
@@ -140,10 +139,10 @@ class CBASBacklogIngestion(CBASBaseTest):
 
         self.log.info("Update the documents with profession teacher to expire in next 1 seconds")
         self.perform_doc_ops_in_all_cb_buckets(num_items // 2, "update", num_items, num_items + (num_items // 2), exp=1)
-        
+
         self.log.info("Wait for documents to expire")
         self.sleep(15, message="Waiting for documents to expire")
-        
+
         self.log.info("Wait for ingestion to complete")
         self.cbas_util.wait_for_ingestion_complete([cbas_dataset_name], num_items)
         self.cbas_util.wait_for_ingestion_complete([cbas_dataset_with_clause], 0)
@@ -385,7 +384,7 @@ class BucketOperations(CBASBaseTest):
 
         self.log.info("Fetch test case arguments")
         self.fetch_test_case_arguments()
-        
+
         self.log.info("Fetch and set memory quota")
         memory_for_kv = int(self.fetch_available_memory_for_kv_on_a_node())
         self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=memory_for_kv)
@@ -432,7 +431,7 @@ class BucketOperations(CBASBaseTest):
         for bucket in kv_buckets:
             self.cbas_util.createConn(bucket.name)
             break
-            
+
         self.log.info("Create {0} datasets".format(self.num_of_cb_buckets * self.num_of_dataset_per_cbas))
         for kv_bucket in kv_buckets:
             for index in range(self.num_of_dataset_per_cbas):
@@ -447,7 +446,7 @@ class BucketOperations(CBASBaseTest):
             for index in range(self.num_of_dataset_per_cbas):
                 self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
                                 kv_bucket.name.replace("-", "_") + self.dataset_prefix + str(index), self.num_items))
-                        
+
     def tearDown(self):
         super(BucketOperations, self).tearDown()
 
@@ -624,7 +623,7 @@ class CBASDataOperations(CBASBaseTest):
             client.update_xattr_attribute(document_id=document_id_prefix + str(i), path="a",
                                           value="{'xattr-value': 11}", xattr=True, create_parents=True)
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.dataset_name, self.num_of_documents))
-        
+
         # TODO Uncomment the below lines once we figure out why removing xattr cause Couchbase OOM exception
         #self.log.info("Delete xattr attribute and assert document count on dataset")
         #for i in range(self.num_of_documents):

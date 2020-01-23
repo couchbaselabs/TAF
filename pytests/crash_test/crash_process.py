@@ -7,7 +7,6 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
@@ -192,7 +191,7 @@ class CrashTest(BaseTestCase):
                 self.log_failure("Unwanted exception seen during validation")
 
             # Create SDK connection for CRUD retries
-            sdk_client = SDKClient(RestConnection(self.cluster.master),
+            sdk_client = SDKClient([self.cluster.master],
                                    def_bucket)
             for doc_key, crud_result in task.fail.items():
                 result = sdk_client.crud("create",

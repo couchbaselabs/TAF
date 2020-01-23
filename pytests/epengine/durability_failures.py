@@ -6,7 +6,6 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
@@ -241,8 +240,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             start_task=False)
 
         # SDK client for performing individual ops
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
 
         # Perform specified action
         for node in target_nodes:
@@ -399,8 +397,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.sleep(20, message="Wait for task_1 ops to reach the server")
 
         # SDK client for performing individual ops
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
         # Perform specified CRUD operation on sync_write docs
         while gen_loader.has_next():
             key, value = gen_loader.next()
@@ -572,8 +569,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         error_sim.revert(self.simulate_error, self.bucket.name)
 
         # SDK client for performing retry operations
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
         # Retry failed docs
         create_failed = self.durability_helper.retry_with_no_error(
             client, doc_errors["create"], "create")
@@ -858,8 +854,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
         # Create SDK Client
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         # Retry failed docs
         self.durability_helper.retry_with_no_error(client, error_docs,
@@ -1010,8 +1005,7 @@ class TimeoutTests(DurabilityTestsBase):
                                           mutate=1)
 
         # Create SDK Client
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         for op_type in ["create", "update", "read", "delete"]:
             self.log.info("Performing '%s' with timeout=%s"
@@ -1164,8 +1158,7 @@ class TimeoutTests(DurabilityTestsBase):
         shell_conn.disconnect()
 
         # Create SDK Client
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         # Wait for document_loader tasks to complete and retry failed docs
         op_type = None
@@ -1395,8 +1388,7 @@ class TimeoutTests(DurabilityTestsBase):
         self.validate_test_failure()
 
         # SDK client for retrying AMBIGUOUS for unexpected keys
-        sdk_client = SDKClient(RestConnection(self.cluster.master),
-                               self.bucket)
+        sdk_client = SDKClient([self.cluster.master], self.bucket)
 
         # Doc error validation
         for op_type in doc_gen.keys():

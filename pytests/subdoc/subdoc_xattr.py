@@ -210,7 +210,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         super(SubdocXattrSdkTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = SDKClient(RestConnection(self.cluster.master),
+        self.client = SDKClient([self.cluster.master],
                                 self.bucket_util.buckets[0])
 
     def tearDown(self):
@@ -1593,7 +1593,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         super(SubdocXattrDurabilityTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = SDKClient(RestConnection(self.cluster.master),
+        self.client = SDKClient([self.cluster.master],
                                 self.bucket_util.buckets[0])
 
     def tearDown(self):

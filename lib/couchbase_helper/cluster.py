@@ -4,7 +4,6 @@ import Jython_tasks.task as jython_tasks
 
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
-from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from BucketLib.BucketOperations import BucketHelper
 
@@ -139,7 +138,7 @@ class ServerTasks(object):
             gen_end = max(int(generator.end), 1)
             gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
             for _ in range(gen_start, gen_end, gen_range):
-                client = SDKClient(RestConnection(cluster.master), bucket)
+                client = SDKClient([cluster.master], bucket)
                 clients.append(client)
             if not ryow:
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
@@ -174,9 +173,8 @@ class ServerTasks(object):
                     durability=durability, majority_value=majority_value,
                     check_persistence=check_persistence)
         else:
-            rest_client = RestConnection(cluster.master)
             for _ in range(process_concurrency):
-                client = SDKClient(rest_client, bucket)
+                client = SDKClient([cluster.master], bucket)
                 clients.append(client)
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, clients,
@@ -214,7 +212,7 @@ class ServerTasks(object):
         gen_range = max(int(
             (generator.end - generator.start) / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
-            client = SDKClient(RestConnection(cluster.master), bucket)
+            client = SDKClient([cluster.master], bucket)
             clients.append(client)
         _task = jython_tasks.LoadSubDocumentsGeneratorsTask(
             cluster,
@@ -250,9 +248,8 @@ class ServerTasks(object):
                                      timeout_secs=5,
                                      process_concurrency=4):
         clients = list()
-        rest = RestConnection(cluster.master)
         for _ in range(process_concurrency):
-            clients.append(SDKClient(rest, bucket))
+            clients.append(SDKClient([cluster.master], bucket))
         _task = jython_tasks.ContinuousDocUpdateTask(
             cluster, self.jython_task_manager, bucket, clients, generator,
             exp, persist_to=persist_to,
@@ -285,8 +282,7 @@ class ServerTasks(object):
             temp_bucket_list = []
             temp_client_list = []
             for bucket in buckets:
-                client = SDKClient(RestConnection(cluster.master),
-                                               bucket)
+                client = SDKClient([cluster.master], bucket)
                 temp_client_list.append(client)
                 temp_bucket_list.append(client.collection)
             bucket_list.append(temp_bucket_list)
@@ -345,7 +341,7 @@ class ServerTasks(object):
                             pause_secs=1, timeout_secs=5, compression=True,
                             process_concurrency=4, check_replica=False):
         self.log.debug("Validating documents")
-        client = SDKClient(RestConnection(cluster.master), bucket)
+        client = SDKClient([cluster.master], bucket)
         _task = jython_tasks.DocumentsValidatorTask(
             cluster, self.jython_task_manager, bucket, client, [generator],
             opt_type, exp, flag=flag, only_store_hash=only_store_hash,

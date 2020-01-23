@@ -8,7 +8,6 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
 from error_simulation.cb_error import CouchbaseError
 
-from membase.api.rest_client import RestConnection
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
@@ -63,9 +62,9 @@ class basic_ops(BaseTestCase):
         KEY_NAME2 = 'key2'
         self.log.info('Starting basic ops')
 
-        rest = RestConnection(self.cluster.master)
         default_bucket = self.bucket_util.get_all_buckets()[0]
-        smart_client = VBucketAwareMemcached(rest, default_bucket)
+        smart_client = SDKClient([self.cluster.master],
+                                 default_bucket)
         sdk_client = smart_client.get_client()
         # mcd = client.memcached(KEY_NAME)
 
@@ -536,7 +535,7 @@ class basic_ops(BaseTestCase):
         self.task.rebalance([self.cluster.master], [self.servers[2]], [],
                             services=["n1ql,index"])
         self.log.info("Creating SDK client connection")
-        client = SDKClient(RestConnection(self.cluster.master),
+        client = SDKClient([self.cluster.master],
                            self.bucket_util.buckets[0])
 
         self.log.info("Stopping memcached on: %s" % node_to_stop)
