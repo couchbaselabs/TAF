@@ -1,13 +1,13 @@
 from random import randint
 
 from BucketLib.bucket import Bucket
-from Rest_Connection import RestConnection
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
