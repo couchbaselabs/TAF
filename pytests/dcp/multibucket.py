@@ -15,7 +15,7 @@ class DCPMultiBucket(DCPBase):
         password = self.input.param("password", None)
         nodeA = self.servers[0]
 
-        vbuckets = [vb for vb in range(self.vbuckets)]
+        vbuckets = [vb for vb in range(self.cluster_util.vbuckets)]
         shell_conn = RemoteMachineShellConnection(nodeA)
         cb_stat_obj = Cbstats(shell_conn)
 

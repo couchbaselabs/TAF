@@ -2,7 +2,6 @@ from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
 from BucketLib.BucketOperations import BucketHelper
-from sdk_exceptions import SDKException
 from rebalance_new import rebalance_base
 
 
@@ -215,14 +214,20 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.shuffle_nodes_between_zones_and_rebalance(servs_out)
         self.cluster.nodes_in_cluster = result_nodes
         if not self.atomicity:
-            self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
-        self.bucket_util.compare_failovers_logs(prev_failover_stats, result_nodes, self.bucket_util.buckets)
+            self.bucket_util.verify_cluster_stats(
+                self.num_items,
+                check_ep_items_remaining=True)
+        self.bucket_util.compare_failovers_logs(prev_failover_stats,
+                                                result_nodes,
+                                                self.bucket_util.buckets)
         self.sleep(30)
-        self.bucket_util.data_analysis_active_replica_all(disk_active_dataset, disk_replica_dataset, result_nodes, self.bucket_util.buckets,
-                                              path=None)
+        self.bucket_util.data_analysis_active_replica_all(
+            disk_active_dataset, disk_replica_dataset, result_nodes,
+            self.bucket_util.buckets, path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster.nodes_in_cluster
-        #self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0, total_vbuckets=self.cluster_util.vbuckets)
+        # self.bucket_util.vb_distribution_analysis(servers=nodes,
+        # std=1.0, total_vbuckets=self.cluster_util.vbuckets)
 
     def test_incremental_rebalance_in_out_with_mutation(self):
         """
@@ -706,7 +711,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items-1000)
 
-        for vb_num in range(0, self.vbuckets, 128):
+        for vb_num in range(0, self.cluster_util.vbuckets, 128):
             self.target_vbucket = [vb_num]
             self.log.info("Targeting vBucket: {}".format(vb_num))
             self.gen_create = self.get_doc_generator(self.num_items,

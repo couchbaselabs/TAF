@@ -413,8 +413,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                    time_unit="seconds")
 
             # Validate the returned error from the SDK
-            vb_num = self.bucket_util.get_vbucket_num_for_key(key,
-                                                              self.vbuckets)
+            vb_num = self.bucket_util.get_vbucket_num_for_key(
+                key,
+                self.cluster_util.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 if "error" not in fail:
                     self.log_failure("No failure detected for {0}"
@@ -530,7 +531,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["withDiskIssue"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Verify cbstats for the affected vbuckets are not updated during CRUDs
-        for vb in range(self.vbuckets):
+        for vb in range(self.cluster_util.vbuckets):
             if vb in active_vb_numbers:
                 for stat_name in vb_info["withDiskIssue"][vb].keys():
                     stat_before_crud = vb_info["init"][vb][stat_name]
@@ -545,7 +546,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         def validate_doc_errors(crud_type):
             for doc in doc_errors[crud_type]:
                 vb_num = self.bucket_util.get_vbucket_num_for_key(
-                    doc["key"], self.vbuckets)
+                    doc["key"], self.cluster_util.vbuckets)
                 if vb_num in active_vb_numbers:
                     if "durability_not_possible" not in str(doc["error"]):
                         self.log_failure("Invalid exception {0}".format(doc))
@@ -835,8 +836,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
             key = doc["key"]
             fail = doc["fail"]
             # Validate the returned error from the SDK
-            vb_num = self.bucket_util.get_vbucket_num_for_key(key,
-                                                              self.vbuckets)
+            vb_num = self.bucket_util.get_vbucket_num_for_key(
+                key,
+                self.cluster_util.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 if "error" not in fail:
                     self.log_failure("No failures detected")
@@ -1228,7 +1230,7 @@ class TimeoutTests(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for vb_num in range(self.vbuckets):
+            for vb_num in range(self.cluster_util.vbuckets):
                 vb_num = str(vb_num)
                 if vb_num not in affected_vbs:
                     if vb_num in vb_info["init"][node.ip].keys() \
@@ -1346,7 +1348,7 @@ class TimeoutTests(DurabilityTestsBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.vbuckets)
+                        doc_id, self.cluster_util.vbuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
@@ -1370,7 +1372,7 @@ class TimeoutTests(DurabilityTestsBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.vbuckets)))
+                        self.cluster_util.vbuckets)))
 
         affected_vbs = list(set(affected_vbs))
         err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"

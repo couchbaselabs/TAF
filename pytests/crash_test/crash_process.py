@@ -229,7 +229,7 @@ class CrashTest(BaseTestCase):
         def_bucket = self.bucket_util.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        target_vbuckets = range(0, self.vbuckets)
+        target_vbuckets = range(0, self.cluster_util.vbuckets)
         retry_exceptions = list()
 
         # If Memcached is killed, we should not perform KV ops on

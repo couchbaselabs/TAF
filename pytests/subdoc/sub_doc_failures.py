@@ -202,7 +202,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for vb_id in range(self.vbuckets):
+            for vb_id in range(self.cluster_util.vbuckets):
                 vb_id = str(vb_id)
                 if vb_id not in affected_vbs:
                     if vb_id in vb_info["init"][node.ip].keys() \
@@ -337,7 +337,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.vbuckets)
+                        doc_id, self.cluster_util.vbuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
@@ -361,7 +361,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.vbuckets)))
+                        self.cluster_util.buckets)))
 
         affected_vbs = list(set(affected_vbs))
         err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"

@@ -88,8 +88,9 @@ class FailoverBaseTest(BaseTestCase):
         self.afterfailover_gen_delete = doc_generator(
             self.key, self.num_items * 0.5, self.num_items * 0.75)
 
-        if self.vbuckets is not None and self.vbuckets != self.total_vbuckets:
-            self.total_vbuckets = self.vbuckets
+        if self.cluster_util.vbuckets is not None \
+                and self.cluster_util.vbuckets != self.total_vbuckets:
+            self.total_vbuckets = self.cluster_util.vbuckets
         self.nodes_init = self.input.param("nodes_init", 1)
         self.nodes_in = self.input.param("nodes_in", 1)
         self.nodes_out = self.input.param("nodes_out", 1)

@@ -78,7 +78,7 @@ class DCPRebalanceTests(DCPBase):
         cb_stat_obj = Cbstats(shell_conn)
         vb_info = cb_stat_obj.vbucket_seqno(self.bucket_util.buckets[0].name)
 
-        for vb in range(0, self.vbuckets):
+        for vb in range(0, self.cluster_util.vbuckets):
             total_mutations += int(vb_info[vb]["high_seqno"])
 
         # Disconnect the Cbstats shell_conn
