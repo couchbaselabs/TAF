@@ -250,7 +250,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Create required doc_generator for target_vbucket list
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
-                                   self.num_items+self.crud_batch_size,
+                                   self.crud_batch_size,
                                    target_vbucket=target_vbuckets)
         gen_delete = doc_generator(self.key, 0, 50,
                                    target_vbucket=target_vbuckets)
