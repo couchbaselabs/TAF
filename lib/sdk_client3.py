@@ -39,6 +39,7 @@ from com.couchbase.client.java.kv import \
     TouchOptions, \
     UpsertOptions
 from java.time import Duration
+from java.nio.charset import StandardCharsets
 from java.time.temporal import ChronoUnit
 from java.lang import System
 from java.util import \
@@ -165,6 +166,8 @@ class SDKClient(object):
                 for field, val in value.items():
                     json_obj.put(field, val)
                 return json_obj
+            elif doc_type.find("binary") != -1:
+                return value.getBytes(StandardCharsets.UTF_8)
             else:
                 return value
         except Exception:
@@ -325,32 +328,21 @@ class SDKClient(object):
 
         return options
 
-    def getTouchOptions(self, persist_to=0, replicate_to=0,
-                        durability="", timeout=5, time_unit="seconds"):
+    def getTouchOptions(self, timeout=5, time_unit="seconds"):
         return TouchOptions.touchOptions() \
             .timeout(self.getDuration(timeout, time_unit))
-        # if persist_to != 0 or replicate_to != 0:
-        #     options = TouchOptions.touchOptions() \
-        #         .durability(self.getPersistTo(persist_to),
-        #                     self.getReplicateTo(replicate_to)) \
-        #         .timeout(self.getDuration(timeout, time_unit))
-        # else:
-        #     options = TouchOptions.touchOptions() \
-        #         .durability(self.getDurabilityLevel(durability)) \
-        #         .timeout(self.getDuration(timeout, time_unit))
-        # return options
 
     def getMutateInOptions(self, exp=0, exp_unit="seconds",
                            persist_to=0, replicate_to=0, timeout=5,
                            time_unit="seconds", durability=""):
         if persist_to != 0 or replicate_to != 0:
-            options = MutateInOptions.mutateInOptions().durability(
+            return MutateInOptions.mutateInOptions().durability(
                 self.getPersistTo(persist_to), self.getReplicateTo(
                     replicate_to)).expiry(
                 self.getDuration(exp, exp_unit)).timeout(
                 self.getDuration(timeout, time_unit))
         else:
-            MutateInOptions.mutateInOptions().durability(
+            return MutateInOptions.mutateInOptions().durability(
                 self.getDurabilityLevel(durability)).expiry(
                 self.getDuration(exp, exp_unit)).timeout(
                 self.getDuration(timeout, time_unit))
@@ -558,8 +550,7 @@ class SDKClient(object):
             "status": False,
             "error": None
         }
-        touch_options = self.getTouchOptions(persist_to, replicate_to,
-                                             durability, timeout, time_unit)
+        touch_options = self.getTouchOptions(timeout, time_unit)
         if fail_fast:
             touch_options = touch_options.retryStrategy(
                 FailFastRetryStrategy.INSTANCE)
@@ -722,10 +713,13 @@ class SDKClient(object):
                 mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
+            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
+                                              timeout, time_unit, durability)
+            if cas > 0:
+                options = options.cas(cas)
+
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], exp, time_unit,
-                persist_to, replicate_to, durability, timeout, time_unit,
-                cas)
+                self.collection, [content], options)
             return self.__translate_upsert_multi_sub_doc_result(result)
         elif op_type == "subdoc_upsert":
             sub_key, value = value[0], value[1]
@@ -736,10 +730,12 @@ class SDKClient(object):
                 mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
+            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
+                                              timeout, time_unit, durability)
+            if cas > 0:
+                options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], exp, time_unit,
-                persist_to, replicate_to, durability, timeout, time_unit,
-                cas)
+                self.collection, [content], options)
             return self.__translate_upsert_multi_sub_doc_result(result)
         elif op_type == "subdoc_delete":
             mutate_in_specs = list()
@@ -749,10 +745,12 @@ class SDKClient(object):
                 mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
                     "mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
+            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
+                                              timeout, time_unit, durability)
+            if cas > 0:
+                options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], exp, time_unit,
-                persist_to, replicate_to, durability, timeout, time_unit,
-                cas)
+                self.collection, [content], options)
             result = self.__translate_upsert_multi_sub_doc_result(result)
         elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
@@ -763,10 +761,12 @@ class SDKClient(object):
                 mutate_in_specs.append(
                     SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
+            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
+                                              timeout, time_unit, durability)
+            if cas > 0:
+                options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], exp, time_unit,
-                persist_to, replicate_to, durability, timeout, time_unit,
-                cas)
+                self.collection, [content], options)
             result = self.__translate_upsert_multi_sub_doc_result(result)
         elif op_type == "subdoc_read":
             mutate_in_specs = list()
@@ -784,19 +784,22 @@ class SDKClient(object):
     def delete_multi(self, keys, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
                      durability=""):
+        options = self.getRemoveOptions(persist_to=persist_to,
+                                        replicate_to=replicate_to,
+                                        timeout=timeout,
+                                        time_unit=time_unit,
+                                        durability=durability)
         result = SDKClient.doc_op.bulkDelete(
-            self.collection, keys,
-            persist_to, replicate_to, durability,
-            timeout, time_unit)
+            self.collection, keys, options)
         return self.__tranlate_delete_multi_results(result)
 
     def touch_multi(self, keys, exp=0,
-                    persist_to=0, replicate_to=0, durability="",
                     timeout=5, time_unit="seconds"):
+        touch_options = self.getTouchOptions(timeout, time_unit)
+        exp_duration = self.getDuration(exp, "seconds");
         result = SDKClient.doc_op.bulkTouch(
             self.collection, keys, exp,
-            persist_to, replicate_to,
-            durability, timeout, time_unit)
+            touch_options, exp_duration)
         return self.__tranlate_delete_multi_results(result)
 
     def setMulti(self, keys, exp=0, exp_unit="seconds",
@@ -809,12 +812,15 @@ class SDKClient(object):
             content = value
             if doc_type == "json":
                 content = self.translate_to_json_object(value, doc_type)
-            tuple = Tuples.of(key, content)
-            docs.append(tuple)
+            docs.append(Tuples.of(key, content))
+        options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
+                                        persist_to=persist_to,
+                                        replicate_to=replicate_to,
+                                        timeout=timeout,
+                                        time_unit=time_unit,
+                                        durability=durability)
         result = SDKClient.doc_op.bulkInsert(
-            self.collection, docs, exp, exp_unit,
-            persist_to, replicate_to, durability,
-            timeout, time_unit)
+            self.collection, docs, options)
         return self.__translate_upsert_multi_results(result)
 
     def upsertMulti(self, keys, exp=0, exp_unit="seconds",
@@ -824,12 +830,15 @@ class SDKClient(object):
         docs = []
         for key, value in keys.items():
             content = self.translate_to_json_object(value, doc_type)
-            tuple = Tuples.of(key, content)
-            docs.append(tuple)
+            docs.append(Tuples.of(key, content))
+        options = self.getUpsertOptions(exp=exp, exp_unit=exp_unit,
+                                        persist_to=persist_to,
+                                        replicate_to=replicate_to,
+                                        timeout=timeout,
+                                        time_unit=time_unit,
+                                        durability=durability)
         result = SDKClient.doc_op.bulkUpsert(
-            self.collection, docs, exp, exp_unit,
-            persist_to, replicate_to, durability,
-            timeout, time_unit)
+            self.collection, docs, options)
         return self.__translate_upsert_multi_results(result)
 
     def replaceMulti(self, keys, exp=0, exp_unit="seconds",
@@ -839,17 +848,20 @@ class SDKClient(object):
         docs = []
         for key, value in keys.items():
             content = self.translate_to_json_object(value, doc_type)
-            tuple = Tuples.of(key, content)
-            docs.append(tuple)
+            docs.append(Tuples.of(key, content))
+        options = self.getReplaceOptions(persist_to=persist_to,
+                                         replicate_to=replicate_to,
+                                         timeout=timeout,
+                                         time_unit=time_unit,
+                                         durability=durability)
         result = SDKClient.doc_op.bulkReplace(
             self.collection, docs, exp, exp_unit,
-            persist_to, replicate_to, durability,
-            timeout, time_unit)
+            options)
         return self.__translate_upsert_multi_results(result)
 
     def getMulti(self, keys, timeout=5, time_unit="seconds"):
-        result = SDKClient.doc_op.bulkGet(self.collection, keys, timeout,
-                                          time_unit)
+        read_options = self.getReadOptions(timeout, time_unit)
+        result = SDKClient.doc_op.bulkGet(self.collection, keys, read_options)
         return self.__translate_get_multi_results(result)
 
     # Bulk CRUDs for sub-doc APIs
@@ -892,10 +904,12 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
+        options = self.getMutateInOptions(exp, exp_unit, persist_to, replicate_to,
+                                          timeout, time_unit, durability)
+        if cas > 0:
+            options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
-            self.collection, mutate_in_specs, exp, exp_unit,
-            persist_to, replicate_to, durability, timeout, time_unit,
-            cas)
+            self.collection, mutate_in_specs, options)
         return self.__translate_upsert_multi_sub_doc_result(result)
 
     def sub_doc_upsert_multi(self, keys, exp=0, exp_unit="seconds",
@@ -936,10 +950,12 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
+        options = self.getMutateInOptions(exp, exp_unit, persist_to, replicate_to,
+                                          timeout, time_unit, durability)
+        if cas > 0:
+            options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
-            self.collection, mutate_in_specs, exp, exp_unit,
-            persist_to, replicate_to, durability, timeout, time_unit,
-            cas)
+            self.collection, mutate_in_specs, options)
         return self.__translate_upsert_multi_sub_doc_result(result)
 
     def sub_doc_read_multi(self, keys, timeout=5, time_unit="seconds",
@@ -1009,10 +1025,12 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
+        options = self.getMutateInOptions(exp, exp_unit, persist_to, replicate_to,
+                                          timeout, time_unit, durability)
+        if cas > 0:
+            options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
-            self.collection, mutate_in_specs, exp, exp_unit,
-            persist_to, replicate_to, durability, timeout, time_unit,
-            cas)
+            self.collection, mutate_in_specs, options)
         return self.__translate_upsert_multi_sub_doc_result(result)
 
     def sub_doc_replace_multi(self, keys, exp=0, exp_unit="seconds",
@@ -1052,8 +1070,10 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
+        options = self.getMutateInOptions(exp, exp_unit, persist_to, replicate_to,
+                                          timeout, time_unit, durability)
+        if cas > 0:
+            options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
-            self.collection, mutate_in_specs, exp, exp_unit,
-            persist_to, replicate_to, durability, timeout, time_unit,
-            cas)
+            self.collection, mutate_in_specs, options)
         return self.__translate_upsert_multi_sub_doc_result(result)

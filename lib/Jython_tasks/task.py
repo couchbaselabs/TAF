@@ -572,16 +572,12 @@ class GenericLoadingTask(Task):
         return success, fail
 
     def batch_touch(self, key_val, exp=0, shared_client=None,
-                    persist_to=None, replicate_to=None, durability="",
                     timeout=None, timeunit=None):
         self.client = self.client or shared_client
         success, fail = self.client.touch_multi(key_val.keys(),
                                                 exp=exp,
-                                                persist_to=persist_to,
-                                                replicate_to=replicate_to,
                                                 timeout=timeout,
-                                                time_unit=timeunit,
-                                                durability=durability)
+                                                time_unit=timeunit)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Touch doc_Id", "Exception"])
@@ -840,11 +836,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         elif self.op_type == 'touch':
             success, fail = self.batch_touch(key_value,
                                              exp=self.exp,
-                                             persist_to=self.persist_to,
-                                             replicate_to=self.replicate_to,
                                              timeout=self.timeout,
-                                             timeunit=self.time_unit,
-                                             durability=self.durability)
+                                             timeunit=self.time_unit)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == 'read':

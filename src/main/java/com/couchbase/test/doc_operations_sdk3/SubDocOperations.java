@@ -27,16 +27,6 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 
 public class SubDocOperations extends doc_ops {
-    private MutateInOptions getMutateInOptions(long expiry, String expiryTimeUnit, PersistTo persistTo,
-            ReplicateTo replicateTo, long timeOut, String timeUnit, DurabilityLevel durabilityLevel) {
-        Duration exp = this.getDuration(expiry, expiryTimeUnit);
-        Duration timeout = this.getDuration(timeOut, timeUnit);
-        if (persistTo != PersistTo.NONE || replicateTo != ReplicateTo.NONE) {
-            return MutateInOptions.mutateInOptions().durability(persistTo, replicateTo).expiry(exp).timeout(timeout);
-        } else {
-            return MutateInOptions.mutateInOptions().durability(durabilityLevel).expiry(exp).timeout(timeout);
-        }
-    }
 
     public MutateInSpec getInsertMutateInSpec(String path, Object value,Boolean createPath, Boolean xattr) {
         MutateInSpec mutateInSpec;
@@ -116,27 +106,7 @@ public class SubDocOperations extends doc_ops {
     }
 
     public List<HashMap<String, Object>> bulkSubDocOperation(Collection collection,
-            List<Tuple2<String, List<MutateInSpec>>> mutateInSpecs, long expiry, final String expiryTimeUnit,
-            final int persistTo, final int replicateTo, final String durabilityLevel, final long timeOut,
-            final String timeUnit, long cas) {
-        PersistTo persistto = this.getPersistTo(persistTo);
-        ReplicateTo replicateto = this.getReplicateTo(replicateTo);
-        DurabilityLevel durabilitylevel = this.getDurabilityLevel(durabilityLevel);
-        return this.bulkSubDocOperation(collection, mutateInSpecs,
-        								   expiry, expiryTimeUnit,
-                                        persistto, replicateto, durabilitylevel,
-                                        timeOut, timeUnit,
-                                        cas);
-    }
-
-    public List<HashMap<String, Object>> bulkSubDocOperation(Collection collection,
-            List<Tuple2<String, List<MutateInSpec>>> mutateInSpecs, long expiry, final String expiryTimeUnit, final PersistTo persistTo, final ReplicateTo replicateTo,
-            final DurabilityLevel durabilityLevel, final long timeOut, final String timeUnit, long cas) {
-        MutateInOptions t_mutateInOptions = this.getMutateInOptions(expiry, expiryTimeUnit, persistTo, replicateTo, timeOut, timeUnit, durabilityLevel);
-        if (cas > 0) {
-           t_mutateInOptions = t_mutateInOptions.cas(cas);
-        }
-        final MutateInOptions mutateInOptions = t_mutateInOptions;
+            List<Tuple2<String, List<MutateInSpec>>> mutateInSpecs, MutateInOptions t_mutateInOptions) {
         final ReactiveCollection reactiveCollection = collection.reactive();
         List<HashMap<String, Object>> returnValue = Flux.fromIterable(mutateInSpecs)
                 .flatMap(new Function<Tuple2<String, List<MutateInSpec>>, Publisher<HashMap<String, Object>>>() {
@@ -149,7 +119,7 @@ public class SubDocOperations extends doc_ops {
                         returnValue.put("status", true);
                         returnValue.put("id", id);
                         returnValue.put("result", null);
-                        return reactiveCollection.mutateIn(id, subDocOps, mutateInOptions)
+                        return reactiveCollection.mutateIn(id, subDocOps, t_mutateInOptions)
                                 .map(new Function<MutateInResult, HashMap<String, Object>>() {
                                     public HashMap<String, Object> apply(MutateInResult result) {
                                         returnValue.put("result", result);
