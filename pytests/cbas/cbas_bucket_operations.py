@@ -40,6 +40,7 @@ class CBASBucketOperations(CBASBaseTest):
             replica=self.num_replicas,
             lww=self.bucket_lww,
             replica_index=self.bucket_replica_index,
+            storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
         if self.bucket_time_sync:
             self.bucket_util._set_time_sync_on_buckets(["default"])
@@ -679,6 +680,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             replica=self.num_replicas,
             lww=self.bucket_lww,
             replica_index=self.bucket_replica_index,
+            storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
 
         self.cluster_util.print_cluster_stats()

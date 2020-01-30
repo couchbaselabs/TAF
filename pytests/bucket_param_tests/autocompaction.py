@@ -140,7 +140,7 @@ class AutoCompactionTests(BaseTestCase):
 
             self.bucket = Bucket({Bucket.name: self.bucket.name,
                                   Bucket.ramQuotaMB: int(available_ram),
-                                  Bucket.storage: self.bucket_storage,
+                                  Bucket.storageBackend: self.bucket_storage,
                                   Bucket.replicaNumber: self.num_replicas})
             self.bucket_util.create_bucket(self.bucket)
             self.bucket_util.wait_for_memcached(server_info, self.bucket)

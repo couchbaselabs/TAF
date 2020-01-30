@@ -69,8 +69,8 @@ class BaseTestCase(unittest.TestCase):
             self.input.param("compression_mode",
                              Bucket.CompressionMode.PASSIVE)
         self.bucket_storage = self.input.param("bucket_storage",
-                                               Bucket.Storage.couchstore)
-        if self.bucket_storage == Bucket.Storage.magma:
+                                               Bucket.StorageBackend.couchstore)
+        if self.bucket_storage == Bucket.StorageBackend.magma:
             self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
         # End of bucket parameters
 

@@ -39,7 +39,8 @@ class basic_ops(BaseTestCase):
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.create_default_bucket(
             replica=self.num_replicas, compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type, storage=self.bucket_storage)
+            bucket_type=self.bucket_type, storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
         self.src_bucket = self.bucket_util.get_all_buckets()

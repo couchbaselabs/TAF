@@ -22,9 +22,12 @@ class ExpiryMaxTTL(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.create_default_bucket(
-            bucket_type=self.bucket_type, maxTTL=self.maxttl,
+            bucket_type=self.bucket_type,
+            maxTTL=self.maxttl,
             storage=self.bucket_storage,
-            replica=self.num_replicas, compression_mode=self.compression_mode)
+            eviction_policy=self.bucket_eviction_policy,
+            replica=self.num_replicas,
+            compression_mode=self.compression_mode)
         self.bucket_util.add_rbac_user()
         self.bucket_util.get_all_buckets()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)

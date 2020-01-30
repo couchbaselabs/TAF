@@ -9,7 +9,7 @@ class Bucket(object):
     priority = "priority"
     flushEnabled = "flushEnabled"
     lww = "lww"
-    storage = "storage"
+    storageBackend = "storageBackend"
     maxTTL = "maxTTL"
     replicaIndex = "replicaIndex"
     threadsNumber = "threadsNumber"
@@ -42,7 +42,7 @@ class Bucket(object):
             self.replica = []
             self.id = -1
 
-    class Storage(object):
+    class StorageBackend(object):
         magma = "magma"
         couchstore = "couchstore"
 
@@ -76,8 +76,8 @@ class Bucket(object):
                 Bucket.EvictionPolicy.VALUE_ONLY)
 
         self.replicaIndex = new_params.get(Bucket.replicaIndex, 0)
-        self.storage = new_params.get(Bucket.storage,
-                                      Bucket.Storage.couchstore)
+        self.storageBackend = new_params.get(Bucket.storageBackend,
+                                             Bucket.StorageBackend.couchstore)
         self.priority = new_params.get(Bucket.priority, None)
         self.threadsNumber = new_params.get(Bucket.threadsNumber, 3)
         self.uuid = None

@@ -43,7 +43,9 @@ class CrashTest(BaseTestCase):
                 persist_to=self.persist_to)
         self.bucket_util.create_default_bucket(
             bucket_type=self.bucket_type, ram_quota=self.bucket_size,
-            replica=self.num_replicas, compression_mode="off")
+            replica=self.num_replicas, compression_mode="off",
+            storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
         verification_dict = dict()

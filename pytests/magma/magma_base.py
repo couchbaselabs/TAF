@@ -30,7 +30,7 @@ class MagmaBaseTest(BaseTestCase):
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.check_replica = self.input.param("check_replica", False)
         self.bucket_storage = self.input.param("bucket_storage",
-                                               Bucket.Storage.magma)
+                                               Bucket.StorageBackend.magma)
         self.bucket_eviction_policy = self.input.param(
             "bucket_eviction_policy",
             Bucket.EvictionPolicy.FULL_EVICTION)
