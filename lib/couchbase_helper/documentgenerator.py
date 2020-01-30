@@ -16,7 +16,9 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json",
                   mutate=0, key_size=8):
     age = range(5)
     first = ['james', 'sharon']
-    body = [''.rjust(doc_size - 10, 'a')]
+    letters = string.ascii_lowercase
+    body = [''.join(random.choice(letters) for _ in range(doc_size - 10))]
+
     # Defaults to JSON doc_type
     template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}", ' \
                '"mutated": %s, "mutation_type": "%s" }}'\
