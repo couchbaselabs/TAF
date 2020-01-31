@@ -169,6 +169,7 @@ class RebalanceBaseTest(BaseTestCase):
                                  ejectedNodes=nodes_to_remove)
         if started:
             result = rest.monitorRebalance()
+            self.assertTrue(result, msg="Rebalance failed{}".format(result))
             msg = "successfully rebalanced cluster {0}"
             self.log.info(msg.format(result))
         # Verify replicas of one node should not be in the same zone
