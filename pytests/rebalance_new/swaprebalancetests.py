@@ -418,8 +418,14 @@ class SwapRebalanceBase(RebalanceBaseTest):
         # Failover selected nodes
         for node in opt_nodes_ids:
             self.log.info("Failover node %s and rebalance afterwards" % node)
-            self.rest.fail_over(node)
-
+            if self.durability_level:
+                self.rest.fail_over(node)
+            else:
+                self.rest.fail_over(node, graceful=True)
+            self.assertTrue(self.rest.monitorRebalance(),
+                            msg="Rebalance failed after failover of node {0}"
+                            .format(node))
+            
         self.rest.rebalance(
             otpNodes=[node.id for node in self.rest.node_statuses()],
             ejectedNodes=opt_nodes_ids)
@@ -485,8 +491,13 @@ class SwapRebalanceBase(RebalanceBaseTest):
         # Failover selected nodes
         for node in opt_nodes_ids:
             self.log.info("Failover node %s and rebalance afterwards" % node)
-            self.rest.fail_over(node)
-            self.rest.monitorRebalance()
+            if self.durability_level:
+                self.rest.fail_over(node)
+            else:
+                self.rest.fail_over(node, graceful=True)
+            self.assertTrue(self.rest.monitorRebalance(),
+                            msg="Rebalance failed after failover of node {0}"
+                            .format(node))
 
         new_swap_servers = \
             self.servers[self.nodes_init:self.nodes_init+self.failover_factor]
