@@ -493,7 +493,8 @@ class GenericLoadingTask(Task):
                                         .format(fail.keys()))
                     read_map = self.batch_read(fail.keys())
                     for key, value in fail.items():
-                        if key in read_map and read_map[key]["cas"] != 0:
+                        if key in read_map and read_map[key]["cas"] != 0 \
+                           and value == key_val[key]:
                             success[key] = value
                             success[key].pop("error")
                             fail.pop(key)
