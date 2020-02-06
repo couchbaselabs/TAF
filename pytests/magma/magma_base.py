@@ -18,6 +18,7 @@ class MagmaBaseTest(BaseTestCase):
         self.key = 'test_docs'.rjust(self.key_size, '0')
         self.items = self.num_items
         self.check_temporary_failure_exception = False
+        self.dgm_batch = self.input.param("dgm_batch", 5000)
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.cluster.servers)
         info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
@@ -52,10 +53,19 @@ class MagmaBaseTest(BaseTestCase):
                                         vbuckets=self.cluster_util.vbuckets)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
-        _ = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
-        self.log.info("Verifying num_items counts after doc_ops")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.result_task = self._load_all_buckets(self.cluster, self.gen_create,
+                                                  "create", 0, batch_size=self.batch_size,
+                                                  dgm_batch=self.dgm_batch )
+        if self.active_resident_threshold == 100:
+            self.log.info("Verifying num_items counts after doc_ops")
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+        else:
+            for task in self.result_task.keys():
+                num_items = task.doc_index;
+                self.log.info("Verifying num_items counts after doc_ops")
+                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util.verify_stats_all_buckets(num_item
 
         # Initialize doc_generators
         self.active_resident_threshold = 100
@@ -74,7 +84,7 @@ class MagmaBaseTest(BaseTestCase):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
         info = RestConnection(self.cluster.master).get_nodes_self()
         available_ram = int(info.memoryQuota * node_ram_ratio)
-        if available_ram < 100 or self.active_resident_threshold < 100:
+        if available_ram < 100:
             available_ram = 100
         self.bucket_util.create_default_bucket(
             ram_quota=available_ram,
@@ -105,7 +115,7 @@ class MagmaBaseTest(BaseTestCase):
 
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
-                          timeout_secs=30, compression=True):
+                          timeout_secs=30, compression=True, dgm_batch=5000):
 
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
@@ -114,7 +124,8 @@ class MagmaBaseTest(BaseTestCase):
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, sdk_compression=compression,
             process_concurrency=8,
-            active_resident_threshold=self.active_resident_threshold)
+            active_resident_threshold=self.active_resident_threshold,
+            dgm_batch=dgm_batch)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
                 self.num_items = task.doc_index

@@ -129,6 +129,7 @@ class ServerTasks(object):
                             ryow=False, check_persistence=False,
                             start_task=True,
                             suppress_error_table=False,
+                            dgm_batch=5000,
                             scope=None,
                             collection=None):
         clients = list()
@@ -190,7 +191,8 @@ class ServerTasks(object):
                 durability=durability,
                 timeout_secs=timeout_secs,
                 process_concurrency=process_concurrency,
-                active_resident_threshold=active_resident_threshold)
+                active_resident_threshold=active_resident_threshold,
+                dgm_batch=dgm_batch)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task
@@ -279,8 +281,8 @@ class ServerTasks(object):
                                       process_concurrency=8, retries=5,
                                       update_count=1, transaction_timeout=5,
                                       commit=True, durability=0, sync=True,
-                                      num_threads=5, record_fail=False,
-                                      defer=False, scope=None,
+                                      num_threads=5, record_fail=False, defer=False,
+                                      scope=None,
                                       collection=None):
 
         self.log.info("Loading documents ")

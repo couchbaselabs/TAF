@@ -564,7 +564,7 @@ class BucketUtils:
         for remote_conn in shell_conn_list2:
             remote_conn.disconnect()
 
-    def verify_stats_all_buckets(self, items, timeout=60):
+    def verify_stats_all_buckets(self, items, timeout=500):
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(), self.buckets, skip_consistency=True)
         for bucket in self.buckets:
@@ -612,7 +612,7 @@ class BucketUtils:
     def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
                                     check_ep_items_remaining=False,
-                                    timeout=60):
+                                    timeout=500):
         """
         Waits for queues to drain on all servers and buckets in a cluster.
 
@@ -847,7 +847,7 @@ class BucketUtils:
                           compression=True, process_concurrency=8, retries=5,
                           active_resident_threshold=100,
                           ryow=False, check_persistence=False,
-                          suppress_error_table=False):
+                          suppress_error_table=False, dgm_batch=5000):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
@@ -857,7 +857,7 @@ class BucketUtils:
             process_concurrency=process_concurrency, retries=retries,
             active_resident_threshold=active_resident_threshold,
             ryow=ryow, check_persistence=check_persistence,
-            suppress_error_table=suppress_error_table)
+            suppress_error_table=suppress_error_table, dgm_batch=dgm_batch)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,
@@ -868,7 +868,7 @@ class BucketUtils:
                                 ignore_exceptions=[], retry_exceptions=[],
                                 active_resident_threshold=100,
                                 ryow=False, check_persistence=False,
-                                suppress_error_table=False):
+                                suppress_error_table=False, dgm_batch=5000):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -893,7 +893,7 @@ class BucketUtils:
                 sdk_compression, process_concurrency, retries,
                 active_resident_threshold=active_resident_threshold,
                 ryow=ryow, check_persistence=check_persistence,
-                suppress_error_table=suppress_error_table)
+                suppress_error_table=suppress_error_table, dgm_batch=dgm_batch)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp, replicate_to=replicate_to,
                 persist_to=persist_to, durability=durability,
@@ -911,7 +911,7 @@ class BucketUtils:
                               ignore_exceptions=[], retry_exceptions=[],
                               active_resident_threshold=100,
                               ryow=False, check_persistence=False,
-                              suppress_error_table=False):
+                              suppress_error_table=False, dgm_batch=5000):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -936,7 +936,7 @@ class BucketUtils:
             ignore_exceptions, retry_exceptions, ryow=ryow,
             active_resident_threshold=active_resident_threshold,
             check_persistence=check_persistence,
-            suppress_error_table=suppress_error_table)
+            suppress_error_table=suppress_error_table, dgm_batch=dgm_batch)
 
         # Wait for all doc_loading tasks to complete and populate failures
         self.verify_doc_op_task_exceptions(tasks_info, cluster)
