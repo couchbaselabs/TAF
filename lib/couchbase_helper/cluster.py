@@ -281,7 +281,8 @@ class ServerTasks(object):
                                       process_concurrency=8, retries=5,
                                       update_count=1, transaction_timeout=5,
                                       commit=True, durability=0, sync=True,
-                                      num_threads=5, record_fail=False, defer=False,
+                                      num_threads=5, record_fail=False,
+                                      defer=False,
                                       scope=None,
                                       collection=None):
 

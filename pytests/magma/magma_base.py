@@ -65,7 +65,7 @@ class MagmaBaseTest(BaseTestCase):
                 num_items = task.doc_index;
                 self.log.info("Verifying num_items counts after doc_ops")
                 self.bucket_util._wait_for_stats_all_buckets()
-                self.bucket_util.verify_stats_all_buckets(num_item
+                self.bucket_util.verify_stats_all_buckets(num_items)
 
         # Initialize doc_generators
         self.active_resident_threshold = 100
