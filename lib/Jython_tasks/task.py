@@ -429,7 +429,6 @@ class GenericLoadingTask(Task):
         success = dict()
         fail = dict()
         try:
-            self._process_values_for_create(key_val)
             client = shared_client or self.client
             success, fail = client.setMulti(
                 key_val, self.exp, exp_unit=self.exp_unit,
@@ -472,7 +471,6 @@ class GenericLoadingTask(Task):
         success = dict()
         fail = dict()
         try:
-            self._process_values_for_update(key_val)
             client = self.client or shared_client
             success, fail = client.upsertMulti(
                 key_val, self.exp, exp_unit=self.exp_unit,
@@ -516,7 +514,6 @@ class GenericLoadingTask(Task):
         success = dict()
         fail = dict()
         try:
-            self._process_values_for_update(key_val)
             client = self.client or shared_client
             retry_docs = key_val
             success, fail = client.replaceMulti(
@@ -709,44 +706,8 @@ class GenericLoadingTask(Task):
                                .format(error))
         return success, fail
 
-    def _process_values_for_create(self, key_val):
-        for key, value in key_val.items():
-            try:
-                value_json = Json.loads(value)
-                # value_json['mutated'] = 0
-                value = Json.dumps(value_json)
-            except ValueError:
-                value = Json.dumps(value)
-            except TypeError:
-                self.random.seed(key)
-                index = self.random.choice(range(len(value)))
-                value = value[0:index] + self.random.choice(string.ascii_uppercase) + value[index + 1:]
-            except Exception, e:
-                self.test_log.error(e)
-            finally:
-                key_val[key] = value
-
-    def _process_values_for_update(self, key_val):
-        self._process_values_for_create(key_val)
-        for key, value in key_val.items():
-            try:
-                # new updated value, however it is not their in orginal "LoadDocumentsTask"
-                value = key_val[key]
-                value_json = Json.loads(value)
-                # value_json['mutated'] += 1
-                value = Json.dumps(value_json)
-            except ValueError:
-                self.random.seed(key)
-                index = self.random.choice(range(len(value)))
-                value = value[0:index] + self.random.choice(string.ascii_uppercase) + value[index + 1:]
-            except Exception:
-                value = key_val[key]
-            finally:
-                key_val[key] = value
-
 
 class LoadDocumentsTask(GenericLoadingTask):
-
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
@@ -1915,15 +1876,6 @@ class ValidateDocumentsTask(GenericLoadingTask):
 
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch()
-        if self.op_type == 'create':
-            self._process_values_for_create(key_value)
-        elif self.op_type == 'update':
-            self._process_values_for_update(key_value)
-        elif self.op_type == 'delete':
-            pass
-        else:
-            self.set_exception(Exception("Bad operation type: %s"
-                                         % self.op_type))
         if self.check_replica:
             # change to getFromReplica
             result_map = dict()
@@ -3791,7 +3743,6 @@ class Atomicity(Task):
             doc_gen = self.generator
             while self.has_next():
                 self.key_value = doc_gen.next_batch()
-                self._process_values_for_create(self.key_value)
                 self.all_keys.extend(self.key_value.keys())
                 self.keys_values.update(self.key_value)
 

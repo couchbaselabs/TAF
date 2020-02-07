@@ -41,7 +41,7 @@ from com.couchbase.client.java.kv import \
 from java.time import Duration
 from java.nio.charset import StandardCharsets
 from java.time.temporal import ChronoUnit
-from java.lang import System
+from java.lang import System, String
 from java.util import \
     Collections, \
     HashSet, \
@@ -56,6 +56,7 @@ import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 from Cb_constants import ClusterRun
+from com.couchbase.client.java.codec import RawBinaryTranscoder
 
 
 class SDKClient(object):
@@ -176,9 +177,8 @@ class SDKClient(object):
 
     # Translate APIs for document operations
     def translate_to_json_object(self, value, doc_type="json"):
-        if type(value) == JsonObject:
+        if type(value) == JsonObject and doc_type == "json":
             return value
-
         json_obj = JsonObject.create()
         try:
             if doc_type.find("json") != -1:
@@ -188,10 +188,11 @@ class SDKClient(object):
                     json_obj.put(field, val)
                 return json_obj
             elif doc_type.find("binary") != -1:
+                value = String(value)
                 return value.getBytes(StandardCharsets.UTF_8)
             else:
                 return value
-        except Exception:
+        except Exception as e:
             pass
 
         return json_obj
@@ -470,6 +471,7 @@ class SDKClient(object):
     def insert(self, key, value, exp=0, exp_unit="seconds",
                persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
+               doc_type="json",
                durability="", fail_fast=False):
 
         result = dict()
@@ -482,6 +484,8 @@ class SDKClient(object):
                                             timeout=timeout,
                                             time_unit=time_unit,
                                             durability=durability)
+            if doc_type == "binary":
+                options = options.transcoder(RawBinaryTranscoder.INSTANCE)
             if fail_fast:
                 options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
@@ -830,9 +834,7 @@ class SDKClient(object):
 
         docs = []
         for key, value in keys.items():
-            content = value
-            if doc_type == "json":
-                content = self.translate_to_json_object(value, doc_type)
+            content = self.translate_to_json_object(value, doc_type)
             docs.append(Tuples.of(key, content))
         options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
                                         persist_to=persist_to,
@@ -840,6 +842,8 @@ class SDKClient(object):
                                         timeout=timeout,
                                         time_unit=time_unit,
                                         durability=durability)
+        if doc_type == "binary":
+            options = options.transcoder(RawBinaryTranscoder.INSTANCE)
         result = SDKClient.doc_op.bulkInsert(
             self.collection, docs, options)
         return self.__translate_upsert_multi_results(result)
@@ -858,6 +862,8 @@ class SDKClient(object):
                                         timeout=timeout,
                                         time_unit=time_unit,
                                         durability=durability)
+        if doc_type == "binary":
+            options = options.transcoder(RawBinaryTranscoder.INSTANCE)
         result = SDKClient.doc_op.bulkUpsert(
             self.collection, docs, options)
         return self.__translate_upsert_multi_results(result)
@@ -875,6 +881,8 @@ class SDKClient(object):
                                          timeout=timeout,
                                          time_unit=time_unit,
                                          durability=durability)
+        if doc_type == "binary":
+            options = options.transcoder(RawBinaryTranscoder.INSTANCE)
         result = SDKClient.doc_op.bulkReplace(
             self.collection, docs, exp, exp_unit,
             options)
