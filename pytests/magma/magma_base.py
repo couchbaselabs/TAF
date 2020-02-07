@@ -56,17 +56,12 @@ class MagmaBaseTest(BaseTestCase):
         self.result_task = self._load_all_buckets(self.cluster, self.gen_create,
                                                   "create", 0, batch_size=self.batch_size,
                                                   dgm_batch=self.dgm_batch )
-        if self.active_resident_threshold == 100:
-            self.log.info("Verifying num_items counts after doc_ops")
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
-        else:
+        if self.active_resident_threshold != 100:
             for task in self.result_task.keys():
-                num_items = task.doc_index;
-                self.log.info("Verifying num_items counts after doc_ops")
-                self.bucket_util._wait_for_stats_all_buckets()
-                self.bucket_util.verify_stats_all_buckets(num_items)
-
+                self.num_items = task.doc_index;
+        self.log.info("Verifying num_items counts after doc_ops")
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
         # Initialize doc_generators
         self.active_resident_threshold = 100
         self.gen_create = None
