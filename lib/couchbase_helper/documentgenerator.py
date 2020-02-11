@@ -175,7 +175,7 @@ class DocumentGenerator(KVGenerator):
             doc_key = ''.join(self.random.choice(
                 ascii_uppercase+ascii_lowercase+digits) for _ in range(12))
         else:
-            doc_key = self.name + '-' + str(self.itr).zfill(self.key_size)
+            doc_key = self.name + '-' + str(abs(self.itr)).zfill(self.key_size)
         self.itr += 1
         return doc_key, doc
 

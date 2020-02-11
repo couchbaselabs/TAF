@@ -16,6 +16,9 @@ class MagmaBaseTest(BaseTestCase):
         self.key_size = self.input.param("key_size", 0)
         self.replica_to_update = self.input.param("new_replica", None)
         self.key = 'test_docs'.rjust(self.key_size, '0')
+        self.random_key=self.input.param("random_key", False)
+        if self.random_key:
+            self.key="random_keys"      
         self.items = self.num_items
         self.check_temporary_failure_exception = False
         self.dgm_batch = self.input.param("dgm_batch", 5000)
@@ -73,7 +76,7 @@ class MagmaBaseTest(BaseTestCase):
                                         vbuckets=self.cluster_util.vbuckets)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
-        self.log.info("==========Finished rebalance base setup========")
+        self.log.info("==========Finished magma base setup========")
 
     def _create_default_bucket(self):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
