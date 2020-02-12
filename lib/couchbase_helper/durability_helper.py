@@ -12,7 +12,7 @@ class DurabilityHelper:
     GREATER_THAN_EQ = '>='
 
     SupportedDurability = ["MAJORITY",
-                           "MAJORITY_AND_PERSIST_ON_MASTER",
+                           "MAJORITY_AND_PERSIST_TO_ACTIVE",
                            "PERSIST_TO_MAJORITY"]
 
     def __init__(self, logger, cluster_len, durability="MAJORITY",
