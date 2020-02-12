@@ -21,6 +21,7 @@ from collections import defaultdict
 import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
+from Cb_constants import CbServer
 from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
     BucketCreateTask, PrintOpsRate
 from SecurityLib.rbac import RbacUtil
@@ -45,7 +46,6 @@ from testconstants import MAX_COMPACTION_THRESHOLD, \
                           MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
 
-# from couchbase_helper.stats_tools import StatsCommon
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
@@ -2594,7 +2594,7 @@ class BucketUtils:
 
         self.log.debug("Scope '%s::%s' creation successful" % (bucket, scope))
 
-    def delete_scope(self, node, scope, bucket):
+    def drop_scope(self, node, scope, bucket):
         """
         Scope should be passed as default scope can not be deleted
         """
@@ -2618,8 +2618,8 @@ class BucketUtils:
 
         self.log.debug("Collection '%s' creation successful" % collection)
 
-    def delete_collection(self, node, bucket, scope='_default',
-                          collection='_default'):
+    def drop_collection(self, node, bucket, scope=CbServer.default_scope,
+                        collection=CbServer.default_collection):
         status, content = BucketHelper(node).delete_collection(bucket,
                                                                scope,
                                                                collection)

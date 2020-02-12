@@ -25,8 +25,10 @@ from com.couchbase.client.core.error import \
 from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster, ClusterOptions
+from com.couchbase.client.java.codec import RawBinaryTranscoder
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.java.json import JsonObject
+from com.couchbase.client.java.manager.collection import CollectionSpec
 from com.couchbase.client.java.kv import \
     GetAllReplicasOptions, \
     GetOptions, \
@@ -55,8 +57,7 @@ from reactor.util.function import Tuples
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
-from Cb_constants import ClusterRun
-from com.couchbase.client.java.codec import RawBinaryTranscoder
+from Cb_constants import ClusterRun, CbServer
 
 
 class SDKClient(object):
@@ -157,23 +158,6 @@ class SDKClient(object):
             self.cluster.environment().shutdown()
             self.log.debug("Cluster disconnected and env shutdown")
             SDKClient.sdk_disconnections += 1
-
-    # Select target Scope::Collection, else select default collection
-    def select_collection(self, scope_name, collection_name):
-        """
-        Method to select collection. Can be called directly from test case.
-        If scope/collection name is None, 'default' collection is selected
-        """
-        if collection_name is not None:
-            if scope_name is None:
-                self.collection = self.bucketObj \
-                                  .collection(collection_name)
-            else:
-                self.collection = self.bucketObj \
-                                  .scope(scope_name) \
-                                  .collection(collection_name)
-        else:
-            self.collection = self.bucketObj.defaultCollection()
 
     # Translate APIs for document operations
     def translate_to_json_object(self, value, doc_type="json"):
@@ -418,6 +402,79 @@ class SDKClient(object):
             temporal_unit = ChronoUnit.SECONDS
 
         return Duration.of(time, temporal_unit)
+
+    # Scope/Collection APIs
+    def collection_manager(self):
+        """
+        :return collection_manager object:
+        """
+        return self.bucketObj.collections()
+
+    @staticmethod
+    def get_collection_spec(scope="_default", collection="_default"):
+        """
+        Returns collection_spec object for further usage in tests.
+
+        :param scope: - Name of the scope
+        :param collection: - Name of the collection
+        :return CollectionSpec object:
+        """
+        return CollectionSpec.create(collection, scope)
+
+    def select_collection(self, scope_name, collection_name):
+        """
+        Method to select collection. Can be called directly from test case.
+        If scope/collection name is None, 'default' collection is selected
+        """
+        if collection_name is not None:
+            if scope_name is None:
+                self.collection = self.bucketObj \
+                    .collection(collection_name)
+            else:
+                self.collection = self.bucketObj \
+                    .scope(scope_name) \
+                    .collection(collection_name)
+        else:
+            self.collection = self.bucketObj.defaultCollection()
+
+    def create_scope(self, scope):
+        """
+        Create a scope using the given name
+        :param scope: Scope name to be created
+        """
+        self.collection_manager().createScope(scope)
+
+    def drop_scope(self, scope):
+        """
+        Drop a scope using the given name
+        :param scope: Scope name to be dropped
+        """
+        self.collection_manager().dropScope(scope)
+
+    def create_collection(self, collection, scope=CbServer.default_scope):
+        """
+        API to creae collection under a particular scope
+        :param collection: Collection name to be created
+        :param scope: Scope under which the collection is
+                      going to be created
+                      default: Cb_Server's default scope name
+        """
+        collection_spec = SDKClient.get_collection_spec(scope,
+                                                        collection)
+        self.collection_manager().createCollection(collection_spec)
+
+    def drop_collection(self, scope=CbServer.default_scope,
+                        collection=CbServer.default_collection):
+        """
+        API to drop the collection (if exists)
+        :param scope: Scope name for targeted collection
+                      default: Cb_Server's default scope name
+        :param collection: Targeted collection name to drop
+                           default: Cb_Server's default collection name
+        """
+        collection_spec = SDKClient.get_collection_spec(scope,
+                                                        collection)
+        self.collection_manager().dropCollection(collection_spec)
 
     # Singular CRUD APIs
     def delete(self, key, persist_to=0, replicate_to=0,

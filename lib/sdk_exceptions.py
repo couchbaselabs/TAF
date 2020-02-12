@@ -1,4 +1,4 @@
-class SDKException:
+class SDKException(object):
     CasMismatchException = \
         "com.couchbase.client.core.error.CasMismatchException"
     CollectionDoesNotExistException = \
@@ -38,15 +38,10 @@ class SDKException:
     ValueTooLargeException = \
         "com.couchbase.client.core.error.ValueTooLargeException"
 
-    def __init__(self):
-        pass
-
-    class RetryReason:
+    class RetryReason(object):
         KV_SYNC_WRITE_IN_PROGRESS = \
             "KV_SYNC_WRITE_IN_PROGRESS"
         KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES = \
             "NO_MORE_RETRIES (KV_SYNC_WRITE_IN_PROGRESS)"
         KV_TEMPORARY_FAILURE = "KV_TEMPORARY_FAILURE"
-
-        def __init__(self):
-            pass
+        KV_COLLECTION_OUTDATED = "KV_COLLECTION_OUTDATED"

@@ -9,3 +9,6 @@ class CbServer(object):
     memcached_port = 11210
     moxi_port = 11211
 
+    default_scope = "_default"
+    default_collection = "_default"
+

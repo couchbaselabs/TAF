@@ -1,4 +1,3 @@
-import logging
 import re
 import zlib
 
@@ -146,7 +145,7 @@ class Cbstats(CbCmdBase):
         id_collection_dict = dict()
 
         # Fetch scope_data before fetching collections
-        scope_data = self.get_scopes(bucket)
+        # scope_data = self.get_scopes(bucket)
 
         cmd = "%s localhost:%s -u %s -p %s -b %s collections" \
               % (self.cbstatCmd, self.mc_port, self.username, self.password,
@@ -169,11 +168,11 @@ class Cbstats(CbCmdBase):
         if type(output) is str:
             output = output.split("\n")
 
-        collection_items_pattern = "collection:%s:items:[ \t]+([0-9]+)"
-        collection_count_pattern = "manifest:collections:[ \t]+([0-9]+)"
-        default_collection_exist_pattern = "manifest:default_exists:[ \t]+" \
-                                           "([truefals]+)"
-        collection_uid_pattern = "manifest:uid:[ \t]+([0-9]+)"
+        collection_items_pattern = "[ \t]*collection:%s:items:[ \t]+([0-9]+)"
+        collection_count_pattern = "[ \t]*manifest:collections:[ \t]+([0-9]+)"
+        default_collection_exist_pattern = "[ \t]*manifest:default_exists:" \
+                                           "[ \t]+([truefals]+)"
+        collection_uid_pattern = "[ \t]*manifest:uid:[ \t]+([0-9]+)"
 
         collection_items_pattern = re.compile(collection_items_pattern)
         collection_count_pattern = re.compile(collection_count_pattern)
@@ -187,7 +186,20 @@ class Cbstats(CbCmdBase):
             default_collection_exist = \
                 default_collection_exist_pattern.match(line)
             collection_uid = collection_uid_pattern.match(line)
-
+            if default_collection_exist:
+                if default_collection_exist.group(1) == "true":
+                    collection_data["default_exists"] = True
+                elif default_collection_exist.group(1) == "false":
+                    collection_data["default_exists"] = False
+                else:
+                    raise Exception("Invalid output '%s'" % line)
+            elif collection_uid:
+                collection_data["uid"] = int(collection_uid.group(1))
+            elif collection_count:
+                collection_data["count"] = int(collection_count.group(1))
+            elif collection_items:
+                # TODO: Need to update once MB-37746 is fixed
+                pass
         return collection_data
 
     def get_collection_details(self, bucket_name):
