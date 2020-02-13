@@ -13,14 +13,11 @@ from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 def doc_generator(key, start, end, doc_size=256, doc_type="json",
                   target_vbucket=None, vbuckets=1024, mutation_type="ADD",
-                  mutate=0, key_size=8, randomize=False):
+                  mutate=0, key_size=8, randomize_doc_size=False,
+                  randomize_value=False):
     age = range(5)
     first = ['james', 'sharon']
-    if randomize:
-        letters = string.ascii_lowercase
-        body = [''.join(random.choice(letters) for _ in range(doc_size - 10))]
-    else:
-        body = [''.rjust(doc_size - 10, 'a')]
+
     # Defaults to JSON doc_type
     template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}", ' \
                '"mutated": %s, "mutation_type": "%s" }}'\
@@ -31,12 +28,16 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json",
                    % (mutate, mutation_type)
     if target_vbucket:
         return DocumentGeneratorForTargetVbucket(
-            key, template, age, first, body, start=start, end=end,
+            key, template, age, first, doc_size=doc_size, start=start, end=end,
             doc_type=doc_type, target_vbucket=target_vbucket,
-            vbuckets=vbuckets, key_size=key_size)
-    return DocumentGenerator(key, template, age, first, body,
+            vbuckets=vbuckets, key_size=key_size,
+            randomize_doc_size=randomize_doc_size,
+            randomize_value=randomize_value)
+    return DocumentGenerator(key, template, age, first, doc_size=doc_size,
                              start=start, end=end, doc_type=doc_type,
-                             key_size=key_size)
+                             key_size=key_size,
+                             randomize_doc_size=randomize_doc_size,
+                             randomize_value=randomize_value)
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
@@ -151,6 +152,15 @@ class DocumentGenerator(KVGenerator):
         if 'key_size' in kwargs:
             self.key_size = kwargs['key_size']
 
+        if 'doc_size' in kwargs:
+            self.doc_size = kwargs['doc_size']
+
+        if 'randomize_doc_size' in kwargs:
+            self.randomize_doc_size = kwargs['randomize_doc_size']
+
+        if 'randomize_value' in kwargs:
+            self.randomize_value = kwargs['randomize_value']
+
     """Creates the next generated document and increments the iterator.
 
     Returns:
@@ -166,6 +176,20 @@ class DocumentGenerator(KVGenerator):
         for arg in self.args:
             value = self.random.choice(arg)
             doc_args.append(value)
+
+        body = ""
+        if self.randomize_doc_size:
+            doc_size = random.randint(0, self.doc_size)
+        else:
+            doc_size = self.doc_size
+
+        if self.randomize_value:
+            letters = string.ascii_lowercase
+            body = [''.join(random.choice(letters) for _ in range(doc_size - 10))][0]
+        else:
+            body = [''.rjust(doc_size - 10, 'a')][0]
+
+        doc_args.append(body)
         doc = self.template.format(*doc_args).replace('\'', '"') \
                                              .replace('True', 'true') \
                                              .replace('False', 'false') \
@@ -375,6 +399,15 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         if 'key_size' in kwargs:
             self.key_size = kwargs['key_size']
 
+        if 'doc_size' in kwargs:
+            self.doc_size = kwargs['doc_size']
+
+        if 'randomize_doc_size' in kwargs:
+            self.randomize_doc_size = kwargs['randomize_doc_size']
+
+        if 'randomize_value' in kwargs:
+            self.randomize_value = kwargs['randomize_value']
+
         self.key_counter = self.start
         self.create_key_for_vbucket()
 
@@ -405,6 +438,21 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         for arg in self.args:
             value = self.random.choice(arg)
             doc_args.append(value)
+
+        body = ""
+        if self.randomize_doc_size:
+            doc_size = random.randint(0, self.doc_size)
+        else:
+            doc_size = self.doc_size
+
+        if self.randomize_value:
+            letters = string.ascii_lowercase
+            body = [''.join(random.choice(letters) for _ in range(doc_size - 10))][0]
+        else:
+            body = [''.rjust(doc_size - 10, 'a')][0]
+
+        doc_args.append(body)
+
         doc = self.template.format(*doc_args).replace('\'', '"') \
                                              .replace('True', 'true') \
                                              .replace('False', 'false') \
