@@ -18,7 +18,6 @@ from remote.remote_util import RemoteMachineShellConnection
 class MagmaCrashTests(MagmaBaseTest):
     def setUp(self):
         super(MagmaCrashTests, self).setUp()
-        self.doc_size_randomize = self.input.param("doc_size_random", False)
 
     def tearDown(self):
         super(MagmaCrashTests, self).tearDown()
@@ -55,10 +54,12 @@ class MagmaCrashTests(MagmaBaseTest):
                                             doc_size=self.doc_size,
                                             doc_type=self.doc_type,
                                             target_vbucket=self.target_vbucket,
-                                            vbuckets=self.cluster_util.vbuckets)
+                                            vbuckets=self.cluster_util.vbuckets,
+                                            randomize_doc_size=self.randomize_doc_size,
+                                            randomize_value=self.randomize_value)
             self.loadgen_docs(_sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
-            if not self.doc_size_randomize:
+            if not (self.randomize_doc_size or self.randomize_value):
                 data_validation = self.task.async_validate_docs(
                     self.cluster, self.bucket_util.buckets[0],
                     self.gen_create, "create", 0, batch_size=10)
@@ -70,7 +71,7 @@ class MagmaCrashTests(MagmaBaseTest):
     def test_magma_rollback_n_times(self):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 100000)
-        if self.nodes_init < 2 or self.num_replicas<1:
+        if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket to test rollback")
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
         shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
@@ -87,15 +88,22 @@ class MagmaCrashTests(MagmaBaseTest):
                                             doc_size=self.doc_size,
                                             doc_type=self.doc_type,
                                             target_vbucket=self.target_vbucket,
-                                            vbuckets=self.cluster_util.vbuckets)
+                                            vbuckets=self.cluster_util.vbuckets,
+                                            randomize_doc_size=self.randomize_doc_size,
+                                            randomize_value=self.randomize_value)
             self.loadgen_docs(_sync=True)
             start = self.gen_create.key_counter
-            stat_map = {self.cluster.nodes_in_cluster[0]: mem_only_items}
+            ep_queue_size_map = {self.cluster.nodes_in_cluster[0]: mem_only_items}
+            vb_replica_queue_size_map = {self.cluster.nodes_in_cluster[0]: 0}
             for node in self.cluster.nodes_in_cluster[1:]:
-                stat_map.update({node: 0})
+                ep_queue_size_map.update({node: 0})
+                vb_replica_queue_size_map.update({node: 0})
 
             for bucket in self.bucket_util.buckets:
-                self.bucket_util._wait_for_stat(bucket, stat_map)
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(bucket,
+                                                vb_replica_queue_size_map,
+                                                stat_name="vb_replica_queue_size")
 
             # Kill memcached on NodeA to trigger rollback on other Nodes
             # replica vBuckets
@@ -110,7 +118,7 @@ class MagmaCrashTests(MagmaBaseTest):
     def test_magma_rollback_to_0(self):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
-        if self.nodes_init < 2 or self.num_replicas<1:
+        if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket to test rollback")
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
         shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
@@ -127,7 +135,9 @@ class MagmaCrashTests(MagmaBaseTest):
                                             doc_size=self.doc_size,
                                             doc_type=self.doc_type,
                                             target_vbucket=self.target_vbucket,
-                                            vbuckets=self.cluster_util.vbuckets)
+                                            vbuckets=self.cluster_util.vbuckets,
+                                            randomize_doc_size=self.randomize_doc_size,
+                                            randomize_value=self.randomize_value)
             self.loadgen_docs(_sync=True)
             start = self.gen_create.key_counter
             stat_map = {self.cluster.nodes_in_cluster[0]: mem_only_items*i}
@@ -170,7 +180,9 @@ class MagmaCrashTests(MagmaBaseTest):
                                             doc_size=self.doc_size,
                                             doc_type=self.doc_type,
                                             target_vbucket=self.target_vbucket,
-                                            vbuckets=self.cluster_util.vbuckets)
+                                            vbuckets=self.cluster_util.vbuckets,
+                                            randomize_doc_size=self.randomize_doc_size,
+                                            randomize_value=self.randomize_value)
             self.loadgen_docs(_sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
             data_validation = self.task.async_validate_docs(

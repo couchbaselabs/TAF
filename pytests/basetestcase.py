@@ -82,6 +82,8 @@ class BaseTestCase(unittest.TestCase):
         self.num_items = self.input.param("num_items", 100000)
         self.target_vbucket = self.input.param("target_vbucket", None)
         self.maxttl = self.input.param("maxttl", 0)
+        self.randomize_doc_size = self.input.param("randomize_doc_size", False)
+        self.randomize_value = self.input.param("randomize_value", False)
         # End of doc specific parameters
 
         # Transactions parameters

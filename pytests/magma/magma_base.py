@@ -53,7 +53,9 @@ class MagmaBaseTest(BaseTestCase):
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets)
+                                        vbuckets=self.cluster_util.vbuckets,
+                                        randomize_doc_size=self.randomize_doc_size,
+                                        randomize_value=self.randomize_value)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
         self.result_task = self._load_all_buckets(self.cluster, self.gen_create,
