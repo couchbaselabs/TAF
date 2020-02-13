@@ -6,6 +6,7 @@ Created on Sep 26, 2017
 
 import copy
 import logging
+from datetime import datetime
 
 import crc32
 import exceptions
@@ -26,7 +27,7 @@ from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
     BucketCreateTask, PrintOpsRate
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
-from BucketLib.bucket import Bucket
+from BucketLib.bucket import Bucket, Collection, Scope
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
@@ -65,7 +66,244 @@ Parameters:
 """
 
 
-class BucketUtils:
+class DocLoaderUtils(object):
+    log = logging.getLogger("test")
+
+
+class CollectionUtils(DocLoaderUtils):
+    @staticmethod
+    def get_collection_obj(scope, collection_name):
+        """
+        Fetch the target collection object under the given scope object
+
+        :param scope: Scope object to iterate through all collections
+        :param collection_name: Target collection name to fetch the object
+        """
+        collection = None
+        if collection_name in scope.collections.keys():
+            collection = scope.collections[collection_name]
+        return collection
+
+    @staticmethod
+    def get_active_collections(bucket, scope_name, only_names=False):
+        """
+        Fetches collections which are active under the given bucket::scope
+
+        :param bucket: Bucket object under which to fetch the collections
+        :param scope_name: Scope name under which to fetch the collections
+        :param only_names: Boolean to fetch only the collection names
+                           instead of collection objects
+        """
+        collections = list()
+        scope = ScopeUtils.get_scope_obj(bucket, scope_name)
+
+        for collection_name, collection in scope.collections.items():
+            if not collection.is_dropped:
+                if only_names:
+                    collections.append(collection_name)
+                else:
+                    collections.append(collection)
+        return collections
+
+    @staticmethod
+    def create_collection_object(bucket, scope_name, collection_spec):
+        """
+        Function to append the newly created collection under the
+        scope object of the bucket.
+
+        :param bucket: Bucket object under which the collection is created
+        :param scope_name: Scope name under which the collection is created
+        :param collection_spec: Collection spec as required by the
+                                bucket.Collection class
+        """
+        collection_name = collection_spec.get("name")
+        scope = ScopeUtils.get_scope_obj(bucket, scope_name)
+        collection = CollectionUtils.get_collection_obj(scope, collection_name)
+
+        # If collection already dropped with same name use it or create one
+        if collection:
+            Collection.recreated(collection, collection_spec)
+        else:
+            collection = Collection(collection_spec)
+            scope.collections[collection_name] = collection
+
+    @staticmethod
+    def mark_collection_as_dropped(bucket, scope_name, collection_name):
+        """
+        Function to mark the collection as dropped
+
+        :param bucket: Bucket object under which the collection is created
+        :param scope_name: Scope name under which the collection is created
+        :param collection_name: Collection name to be marked as dropped
+        """
+        scope = ScopeUtils.get_scope_obj(bucket, scope_name)
+        collection = CollectionUtils.get_collection_obj(scope, collection_name)
+        collection.is_dropped = True
+
+    @staticmethod
+    def create_collection(node, bucket, scope_name="scope0",
+                          collection_spec=dict()):
+        """
+        Function to create collection under the given scope_name
+
+        :param node: TestInputServer object to create a rest/sdk connection
+        :param bucket: Bucket object under which the scope should be created
+        :param scope_name: Scope_name under which the collection to be created
+        :param collection_spec: Collection spec as expected by
+                                bucket.Collection class
+        """
+        collection = collection_spec.get("name")
+        status, content = BucketHelper(node).create_collection(bucket,
+                                                               scope_name,
+                                                               collection)
+        if status is False:
+            CollectionUtils.log.error(
+                "Collection '%s::%s::%s' creation failed: %s"
+                % (bucket, scope_name, collection, content))
+            raise Exception("create_collection failed")
+
+        CollectionUtils.create_collection_object(bucket,
+                                                 scope_name,
+                                                 collection_spec)
+        CollectionUtils.log.debug("Collection '%s' creation successful"
+                                  % collection)
+
+    @staticmethod
+    def drop_collection(node, bucket, scope_name=CbServer.default_scope,
+                        collection_name=CbServer.default_collection):
+        """
+        Function to drop collection under the given scope_name
+
+        :param node: TestInputServer object to create a rest/sdk connection
+        :param bucket: Bucket object under which the scope should be dropped
+        :param scope_name: Scope_name under which the collection to be dropped
+        :param collection_name: Collection name which has to dropped
+        """
+        status, content = BucketHelper(node).delete_collection(bucket,
+                                                               scope_name,
+                                                               collection_name)
+        if status is False:
+            CollectionUtils.log.error(
+                "Collection '%s::%s::%s' delete failed: %s"
+                % (bucket, scope_name, collection_name, content))
+            raise Exception("delete_collection")
+
+        CollectionUtils.mark_collection_as_dropped(bucket,
+                                                   scope_name,
+                                                   collection_name)
+
+
+class ScopeUtils(CollectionUtils):
+    @staticmethod
+    def get_scope_obj(bucket, scope_name):
+        """
+        Fetch the target scope object under the given bucket object
+
+        :param bucket: Bucket object to iterate through all scopes
+        :param scope_name: Target scope name to fetch the object
+        """
+        scope = None
+        if scope_name in bucket.scopes.keys():
+            scope = bucket.scopes[scope_name]
+        return scope
+
+    @staticmethod
+    def get_active_scopes(bucket, only_names=False):
+        """
+        Fetches scopes which are active under the given bucket object
+
+        :param bucket: Bucket object under which to fetch the scopes from
+        :param only_names: Boolean to enable getting only the scope names
+                           instead of objects
+        """
+        scopes = list()
+        for scope_name, scope in bucket.scopes.items():
+            if not scope.is_dropped:
+                if only_names:
+                    scopes.append(scope_name)
+                else:
+                    scopes.append(scope)
+        return scopes
+
+    @staticmethod
+    def create_scope_object(bucket, scope_spec=dict()):
+        """
+        Function to append the newly created scope object under
+        the bucket object
+
+        :param bucket: Bucket object under which the collection is created
+        :param scope_spec: Scope spec as required by the bucket.Scope class
+        """
+        scope_name = scope_spec.get("name")
+        scope = ScopeUtils.get_scope_obj(bucket, scope_name)
+
+        # If collection already dropped with same name use it or create one
+        if scope:
+            Scope.recreated(scope, scope_spec)
+        else:
+            scope = Scope(scope_spec)
+            bucket.scopes[scope_name] = scope
+
+    @staticmethod
+    def mark_scope_as_dropped(bucket, scope_name):
+        """
+        Function to mark the scope as dropped.
+        Also mark all the collection under the scope as dropped.
+
+        :param bucket: Bucket object under which the scope is dropped
+        :param scope_name: Scope name under is marked as dropped
+        """
+        scope = ScopeUtils.get_scope_obj(bucket, scope_name)
+
+        # Mark all collection under the scope as dropped
+        for collection_name, _ in scope.collections.items():
+            CollectionUtils.mark_collection_as_dropped(bucket,
+                                                       scope.name,
+                                                       collection_name)
+        # Mark the scope as dropped
+        scope.is_dropped = True
+
+    @staticmethod
+    def create_scope(node, bucket, scope_spec=dict()):
+        """
+        Function to create a scope under the given bucket
+
+        :param node: TestInputServer object to create a rest/sdk connection
+        :param bucket: Bucket object under which the scope should be dropped
+        :param scope_spec: Scope_spec as expected by the bucket.Scope class
+        """
+        scope_name = scope_spec.get("name")
+        status, content = BucketHelper(node).create_scope(bucket, scope_name)
+        if status is False:
+            ScopeUtils.log.error("Scope '%s::%s' creation failed: %s"
+                                 % (bucket, scope_name, content))
+            raise Exception("create_scope failed")
+
+        ScopeUtils.create_scope_object(bucket, scope_spec)
+        ScopeUtils.log.debug("Scope '%s::%s' creation successful"
+                             % (bucket, scope_name))
+
+    @staticmethod
+    def drop_scope(node, bucket, scope_name):
+        """
+        Function to drop scope under the given bucket
+
+        :param node: TestInputServer object to create a rest/sdk connection
+        :param bucket: Bucket object under which the scope should be dropped
+        :param scope_name: Scope_name to be dropped
+        """
+        status, content = BucketHelper(node).delete_collection(bucket,
+                                                               scope_name)
+        if status is False:
+            ScopeUtils.log.error("Scope '%s::%s' deletion failed: %s"
+                                 % (bucket, scope_name, content))
+            raise Exception("delete_scope failed")
+
+        ScopeUtils.mark_scope_as_dropped(bucket, scope_name)
+        ScopeUtils.log.debug("Scope '%s::%s' deleted" % (bucket, scope_name))
+
+
+class BucketUtils(ScopeUtils):
     def __init__(self, cluster, cluster_util, server_task):
         self.cluster = cluster
         self.task = server_task
@@ -100,6 +338,28 @@ class BucketUtils:
             msg = "{0} is false".format(expr)
         if expr:
             raise(Exception(msg))
+
+    @staticmethod
+    def get_random_name():
+        """
+        API to generate random name which can be used to name
+        a bucket/scope/collection
+        """
+        invalid_start_chars = "_%"
+        spl_chars = "-"
+        char_set = string.ascii_letters \
+                   + string.digits \
+                   + invalid_start_chars \
+                   + spl_chars
+
+        random.seed(datetime.now())
+        name_len = random.randint(1, 30)
+        rand_name = ''.join(random.choice(char_set) for _ in range(name_len))
+
+        # Remove if name starts with invalid_start_charset
+        if rand_name[0] in invalid_start_chars:
+            rand_name = rand_name[1:]
+        return rand_name
 
     # Fetch/Create/Delete buckets
     def load_sample_bucket(self, sample_bucket):
@@ -566,7 +826,9 @@ class BucketUtils:
 
     def verify_stats_all_buckets(self, items, timeout=500):
         vbucket_stats = self.get_vbucket_seqnos(
-            self.cluster_util.get_kv_nodes(), self.buckets, skip_consistency=True)
+            self.cluster_util.get_kv_nodes(),
+            self.buckets,
+            skip_consistency=True)
         for bucket in self.buckets:
             if bucket.bucketType == Bucket.Type.MEMCACHED:
                 continue
@@ -2584,71 +2846,141 @@ class BucketUtils:
         # TODO: See _warmup_check in WarmUpTests class
         self.sleep(60)
 
-    # Collection/Scope specific API calls
-    def create_scope(self, node, bucket, scope="scope0"):
-        status, content = BucketHelper(node).create_scope(bucket, scope)
-        if status is False:
-            self.log.error("Scope '%s::%s' creation failed: %s"
-                           % (bucket, scope, content))
-            raise Exception("create_scope failed")
-
-        self.log.debug("Scope '%s::%s' creation successful" % (bucket, scope))
-
-    def drop_scope(self, node, scope, bucket):
+    def get_expected_total_num_items(self, bucket):
         """
-        Scope should be passed as default scope can not be deleted
+        Function to calculate the expected num_items under the given bucket.
+        This will aggregate all active collections' num_items under
+        each active scopes for the given bucket object
         """
-        status, content = BucketHelper(node).delete_collection(bucket, scope)
-        if status is False:
-            self.log.error("Scope '%s::%s' deletion failed: %s"
-                           % (bucket, scope, content))
-            raise Exception("delete_scope failed")
+        num_items = 0
+        for scope in ScopeUtils.get_active_scopes(bucket):
+            for collection in CollectionUtils.get_active_collections(
+                    bucket,
+                    scope.name):
+                num_items += collection.num_items
+        return num_items
 
-        self.log.debug("Scope '%s::%s' deleted" % (bucket, scope))
+    def validate_bucket_collection_hierarchy(self, bucket,
+                                             cbstat_obj_list,
+                                             collection_data):
+        """
+        API to validate the Bucket-Scope-Collection hierarchy is maintained
+        as required by the given test.
+        Uses bucket_obj.scope dict to validate against cbstats output.
 
-    def create_collection(self, node, bucket, scope="scope0",
-                          collection="mycollection0"):
-        status, content = BucketHelper(node).create_collection(bucket,
-                                                               scope,
-                                                               collection)
-        if status is False:
-            self.log.error("Collection '%s::%s::%s' creation failed: %s"
-                           % (bucket, scope, collection, content))
-            raise Exception("create_collection failed")
+        :param bucket: Bucket object for hierarchy reference
+        :param cbstat_obj_list: List of Cbstats object to fetch required stats
+        :param collection_data: Dict representing the aggregated
+                                collection's num_items as per cbstats
 
-        self.log.debug("Collection '%s' creation successful" % collection)
+        :return status: Boolean value representing the validation status.
+                        'True' for success, 'False' for failure
+        """
+        scope_data = None
+        status = True
+        # Validate scope data is consistent across each KV node
+        for cb_stat in cbstat_obj_list:
+            tem_scope_data = cb_stat.get_scopes(bucket)
+            if scope_data is None:
+                scope_data = tem_scope_data
+            elif scope_data != tem_scope_data:
+                status = False
+                self.log.error("Mismatch in cbstats scope output. %s != %s"
+                               % (tem_scope_data, scope_data))
+        if scope_data is None:
+            status = False
+            self.log.error("No scope data to process")
 
-    def drop_collection(self, node, bucket, scope=CbServer.default_scope,
-                        collection=CbServer.default_collection):
-        status, content = BucketHelper(node).delete_collection(bucket,
-                                                               scope,
-                                                               collection)
-        if status is False:
-            self.log.error("Collection '%s::%s::%s' delete failed: %s"
-                           % (bucket, scope, collection, content))
-            raise Exception("delete_collection")
+        active_scopes = ScopeUtils.get_active_scopes(bucket)
+        # Validate scope count
+        if len(active_scopes) != scope_data["count"]:
+            status = False
+            self.log.error("Mismatch in scope count in cbstats. "
+                           "Expected: %s, Actual: %s"
+                           % (len(active_scopes), scope_data["count"]))
 
-    def create_scope_collection(self, node, bucket, collection_name,
-                                scope_num, collection_num):
-        collection_name[bucket] = ["_default._default"]
-        for i in range(scope_num):
-            if i == 0:
-                scope_name = "_default"
+        for _, scope in bucket.scopes.items():
+            active_collections = \
+                CollectionUtils.get_active_collections(bucket, scope.name)
+            # Validate collection count under current scope
+            if len(active_collections) \
+                    != scope_data[scope.name]["collections"]:
+                status = False
+                self.log.error("Mismatch in collection count for scope '%s' "
+                               "in cbstats. Expected: %s, Actual: %s"
+                               % (scope.name,
+                                  len(active_collections),
+                                  scope_data[scope.name]["collections"]))
+
+            # Validate expected collection values
+            for collection in active_collections:
+                if collection_data[collection.name]["num_items"] \
+                        != collection.num_items:
+                    status = False
+                    self.log.error(
+                        "Mismatch in %s::%s doc_count. "
+                        "Expected: %s, Actual: %s"
+                        % (scope.name, collection.name,
+                           collection_data[collection.name]["num_items"],
+                           collection.num_items))
+        return status
+
+    def validate_doc_count_as_per_collections(self, bucket):
+        """
+        Function to validate doc_item_count as per the collection object's
+        num_items value against cbstats count from KV nodes
+
+        Throws exception if mismatch in stats.
+
+        :param bucket: Bucket object using which the validation should be done
+        """
+        status = True
+        collection_data = None
+        cb_stat_objects = list()
+
+        # Validate total expected doc_count matches with the overall bucket
+        total_bucket_doc_count = self.get_expected_total_num_items(bucket)
+        self.verify_stats_all_buckets(total_bucket_doc_count)
+
+        # Create required cb_stat objects
+        for node in self.cluster_util.get_kv_nodes():
+            shell = RemoteMachineShellConnection(node)
+            cb_stat_objects.append(Cbstats(shell))
+
+        # Fetch aggregated collection's doc_count from cbstats
+        def_collection_exists = True
+        if bucket \
+                .scopes[CbServer.default_scope] \
+                .collections[CbServer.default_collection].is_dropped:
+            def_collection_exists = False
+
+        for cb_stat in cb_stat_objects:
+            tem_collection_data = cb_stat.get_collections(bucket)
+            if tem_collection_data["default_exists"] != def_collection_exists:
+                status = False
+                self.log.error("%s - Mismatch in 'default_exists' field. "
+                               "Expected: %s, Actual: %s"
+                               % (cb_stat.shellConn.ip,
+                                  tem_collection_data["default_exists"],
+                                  def_collection_exists))
+            if collection_data is None:
+                collection_data = tem_collection_data
             else:
-                scope_name = bucket + str(i)
-                self.create_scope(node, bucket, scope=scope_name)
-            try:
-                if i == 0:
-                    num = int(collection_num[i] - 1)
-                else:
-                    num = int(collection_num[i])
-            except Exception:
-                num = 2
-            for n in range(num):
-                collection = 'collection' + str(n)
-                self.create_collection(node, bucket, scope=scope_name,
-                                       collection=collection)
-                collection_name[bucket].append(scope_name + '.' + collection)
+                for key, value in tem_collection_data:
+                    if type(value) is dict and "num_items" in value:
+                        collection_data[key]["num_items"] += value["num_items"]
 
-        self.log.info("Created collections for the bucket %s: %s"
-                      % (bucket, collection_name[bucket]))
+        # Validate scope-collection hierarchy with doc_count
+        status = \
+            status \
+            and self.validate_bucket_collection_hierarchy(bucket,
+                                                          cb_stat_objects,
+                                                          collection_data)
+
+        # Disconnect all created shell connections
+        for cb_stat in cb_stat_objects:
+            cb_stat.shellConn.disconnect()
+
+        # Raise exception if the status is 'False'
+        if not status:
+            raise Exception("Collections stat validation failed")

@@ -47,7 +47,7 @@ class Cbstats(CbCmdBase):
             raise Exception("\n".join(error))
 
         pattern = "[ \t]*manifest:scopes:([0-9xa-f]+):name:" \
-                  "[ \t]+([a-zA-Z_0-9]+)"
+                  "[ \t]+([a-zA-Z_0-9%-]+)"
         scope_name_pattern = re.compile(pattern)
         scope_names = scope_name_pattern.findall(str(output))
         for scope in scope_names:
@@ -109,7 +109,7 @@ class Cbstats(CbCmdBase):
             raise Exception("\n".join(error))
 
         pattern = "[ \t]*manifest:scopes:([0-9xa-h]+):collections:" \
-                  "[ \t]+(a-zA-Z_0-9)+"
+                  "[ \t]+(a-zA-Z_0-9%-)+"
         regexp = re.compile(pattern)
         scope_name_match = regexp.findall(str(output))
         for scope in scope_name_match:
@@ -156,19 +156,20 @@ class Cbstats(CbCmdBase):
             raise Exception("\n".join(error))
 
         pattern = "[ \t]*manifest:collection:([0-9xa-f]+):name:" \
-                  "[ \t]+([a-zA-Z_0-9]+)"
-        scope_name_pattern = re.compile(pattern)
-        scope_names = scope_name_pattern.findall(str(output))
-        for scope in scope_names:
-            collection_data[scope[1]] = dict()
-            collection_data[scope[1]]["id"] = scope[0]
-            id_collection_dict[scope[0]] = scope[1]
+                  "[ \t]+([a-zA-Z_0-9%-]+)"
+        collection_name_pattern = re.compile(pattern)
+        collection_names = collection_name_pattern.findall(str(output))
+        for collection in collection_names:
+            collection_data[collection[1]] = dict()
+            collection_data[collection[1]]["id"] = collection[0]
+            id_collection_dict[collection[0]] = collection[1]
 
         # Cluster_run case
         if type(output) is str:
             output = output.split("\n")
 
-        collection_items_pattern = "[ \t]*collection:%s:items:[ \t]+([0-9]+)"
+        collection_items_pattern = \
+            "[ \t]*collection:([0-9xa-f]+):items:[ \t]+([0-9]+)"
         collection_count_pattern = "[ \t]*manifest:collections:[ \t]+([0-9]+)"
         default_collection_exist_pattern = "[ \t]*manifest:default_exists:" \
                                            "[ \t]+([truefals]+)"
@@ -198,8 +199,9 @@ class Cbstats(CbCmdBase):
             elif collection_count:
                 collection_data["count"] = int(collection_count.group(1))
             elif collection_items:
-                # TODO: Need to update once MB-37746 is fixed
-                pass
+                num_items = int(collection_items.group(2))
+                collection_data[id_collection_dict[
+                    collection_items.group(1)]]["num_items"] = num_items
         return collection_data
 
     def get_collection_details(self, bucket_name):
@@ -224,7 +226,7 @@ class Cbstats(CbCmdBase):
             raise Exception("\n".join(error))
 
         pattern = "[ \t]*manifest:scopes:([0-9xa-h]+):collections:" \
-                  "[ \t]+(a-zA-Z_0-9)+"
+                  "[ \t]+(a-zA-Z_0-9%-)+"
         regexp = re.compile(pattern)
         scope_name_match = regexp.findall(str(output))
         for scope in scope_name_match:

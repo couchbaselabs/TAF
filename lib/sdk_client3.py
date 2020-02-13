@@ -85,12 +85,13 @@ class SDKClient(object):
         self.default_timeout = 0
         self.cluster = None
         self.bucket = bucket
+        self.bucket_name = bucket
         self.bucketObj = None
         self.collection = None
         self.log = logging.getLogger("test")
 
         if hasattr(bucket, 'name'):
-            self.bucket = bucket.name
+            self.bucket_name = bucket.name
 
         for server in servers:
             self.servers += (server.ip, int(server.port))
@@ -146,7 +147,7 @@ class SDKClient(object):
                                    % e)
                     i += 1
 
-            self.bucketObj = self.cluster.bucket(self.bucket)
+            self.bucketObj = self.cluster.bucket(self.bucket_name)
             self.select_collection(self.scope_name, self.collection_name)
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))

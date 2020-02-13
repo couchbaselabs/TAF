@@ -1,3 +1,42 @@
+from Cb_constants import CbServer
+
+
+class Scope(object):
+    def __init__(self, scope_spec=dict()):
+        self.name = scope_spec.get("name")
+        self.collections = dict()
+
+        # Meta data for test case validation
+        self.is_dropped = False
+        self.recreated = 0
+
+    @staticmethod
+    def recreated(scope_obj, scope_spec):
+        # Update meta fields
+        scope_obj.is_dropped = False
+        scope_obj.recreated += 1
+
+
+class Collection(object):
+    def __init__(self, collection_spec=dict()):
+        self.name = collection_spec.get("name")
+        self.num_items = collection_spec.get("num_items", 0)
+        self.maxTTL = collection_spec.get("maxTTL", 0)
+
+        # Meta data for test case validation
+        self.is_dropped = False
+        self.recreated = 0
+
+    @staticmethod
+    def recreated(collection_obj, collection_spec):
+        collection_obj.num_items = collection_spec.get("num_items", 0)
+        collection_obj.maxTTL = collection_spec.get("maxTTL", 0)
+
+        # Update meta fields
+        collection_obj.is_dropped = False
+        collection_obj.recreated += 1
+
+
 class Bucket(object):
     name = "name"
     replicas = "replicas"
@@ -92,7 +131,13 @@ class Bucket(object):
         self.servers = list()
         self.vbuckets = list()
         self.forward_map = list()
-        self.scope = dict()
+        self.scopes = dict()
+
+        # Create default scope-collection association
+        scope = Scope({"name": CbServer.default_scope})
+        collection = Collection({"name": CbServer.default_collection})
+        scope.collections[CbServer.default_collection] = collection
+        self.scopes[CbServer.default_scope] = scope
 
     def __str__(self):
         return self.name
