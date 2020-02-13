@@ -61,7 +61,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.check_temporary_failure_exception = True
         if not self.atomicity:
             _ = self._load_all_buckets(self.cluster, self.gen_create,
-                                       "create", 0)
+                                       "create", 0, batch_size=self.batch_size)
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -212,7 +212,8 @@ class RebalanceBaseTest(BaseTestCase):
             durability=self.durability_level, timeout_secs=timeout_secs,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, sdk_compression=compression,
-            process_concurrency=8, retry_exceptions=retry_exceptions_local,
+            process_concurrency=self.process_concurrency,
+            retry_exceptions=retry_exceptions_local,
             active_resident_threshold=self.active_resident_threshold)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
@@ -290,6 +291,7 @@ class RebalanceBaseTest(BaseTestCase):
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
+                process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
@@ -299,6 +301,7 @@ class RebalanceBaseTest(BaseTestCase):
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_create, "create", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
+                process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
@@ -309,6 +312,7 @@ class RebalanceBaseTest(BaseTestCase):
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_delete, "delete", 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
+                process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
