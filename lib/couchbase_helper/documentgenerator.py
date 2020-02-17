@@ -89,6 +89,7 @@ class KVGenerator(object):
         self.random = random.Random()
         self.randomize_doc_size = False
         self.randomize_value = False
+        self.doc_size = 256
 
     def has_next(self):
         return self.itr < self.end
