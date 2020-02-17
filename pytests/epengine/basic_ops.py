@@ -2,7 +2,8 @@ import time
 import json
 
 from basetestcase import BaseTestCase
-from Cb_constants import constants
+from Cb_constants import constants, CbServer
+from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
@@ -33,6 +34,12 @@ class basic_ops(BaseTestCase):
 
         self.key = 'test_docs'.rjust(self.key_size, '0')
 
+        # Scope_name can be '_default', 'random' to create a random scope
+        self.scope_name = self.input.param("scope", CbServer.default_scope)
+        # collection_name will be 'False' to disable collection testing.
+        # else to create collection with random name for testing
+        self.collection_name = self.input.param("collection", False)
+
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -42,6 +49,26 @@ class basic_ops(BaseTestCase):
             bucket_type=self.bucket_type, storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
+
+        # Create Scope/Collection based on inputs given
+        if self.scope_name != CbServer.default_scope:
+            self.scope_name = BucketUtils.get_random_name()
+            BucketUtils.create_scope(self.cluster.master,
+                                     self.bucket_util.buckets[0],
+                                     {"name": self.scope_name})
+        if self.collection_name is not None:
+            self.collection_name = BucketUtils.get_random_name()
+            BucketUtils.create_collection(self.cluster.master,
+                                          self.bucket_util.buckets[0],
+                                          self.scope_name,
+                                          {"name": self.collection_name,
+                                           "num_items": self.num_items})
+            self.log.info("Using scope::collection - '%s::%s'"
+                          % (self.scope_name, self.collection_name))
+        else:
+            # Complete fallback to pre-Cheshire_Cat testing,
+            # collection_name is already 'None'
+            self.scope_name = None
 
         self.src_bucket = self.bucket_util.get_all_buckets()
         self.durability_helper = DurabilityHelper(
@@ -190,7 +217,9 @@ class basic_ops(BaseTestCase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             ryow=self.ryow,
-            check_persistence=self.check_persistence)
+            check_persistence=self.check_persistence,
+            scope=self.scope_name,
+            collection=self.collection_name)
         self.task.jython_task_manager.get_task_result(task)
 
         if self.ryow:
@@ -217,20 +246,21 @@ class basic_ops(BaseTestCase):
 
         # Update ref_val
         verification_dict["ops_create"] += \
-            self.num_items + len(task.fail.keys())
+            self.num_items - len(task.fail.keys())
         # Validate vbucket stats
         if self.durability_level in DurabilityHelper.SupportedDurability:
             verification_dict["sync_write_committed_count"] += self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
         # Verify initial doc load count
         self.log.info("Validating doc_count in buckets")
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.validate_doc_count_as_per_collections(def_bucket)
 
         self.log.info("Creating doc_generator for doc_op")
         num_item_start_for_crud = int(self.num_items / 2)
@@ -259,7 +289,9 @@ class basic_ops(BaseTestCase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
                 ryow=self.ryow,
-                check_persistence=self.check_persistence)
+                check_persistence=self.check_persistence,
+                scope=self.scope_name,
+                collection=self.collection_name)
             self.task.jython_task_manager.get_task_result(task)
             verification_dict["ops_update"] += mutation_doc_count
             if self.durability_level in DurabilityHelper.SupportedDurability:
@@ -273,7 +305,9 @@ class basic_ops(BaseTestCase):
                 self.cluster, def_bucket, doc_update, "read", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                scope=self.scope_name,
+                collection=self.collection_name)
             self.task.jython_task_manager.get_task_result(task)
 
             op_failed_tbl = TableView(self.log.error)
@@ -296,7 +330,9 @@ class basic_ops(BaseTestCase):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                ryow=self.ryow, check_persistence=self.check_persistence)
+                ryow=self.ryow, check_persistence=self.check_persistence,
+                scope=self.scope_name,
+                collection=self.collection_name)
             self.task.jython_task_manager.get_task_result(task)
             expected_num_items = \
                 self.num_items - (self.num_items - num_item_start_for_crud)
@@ -312,7 +348,9 @@ class basic_ops(BaseTestCase):
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, doc_update, "read", 0,
                 batch_size=10, process_concurrency=8,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                scope=self.scope_name,
+                collection=self.collection_name)
             self.task.jython_task_manager.get_task_result(task)
 
             op_failed_tbl = TableView(self.log.error)

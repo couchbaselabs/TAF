@@ -1,4 +1,5 @@
 from basetestcase import BaseTestCase
+from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_tools.cb_cli import CbCli
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
@@ -63,3 +64,65 @@ class CollectionBase(BaseTestCase):
 
         self.bucket_util.print_bucket_stats()
         self.log.info("=== CollectionBase setup complete ===")
+
+    def create_scopes(self, bucket, num_scopes, scope_name=None):
+        """
+        Generic function to create required num_of_scopes.
+
+        :param bucket: Bucket object under which the scopes need
+                       to be created
+        :param num_scopes: Number of scopes to be created under the 'bucket'
+        :param scope_name: Generic name to be used for naming a scope.
+                           'None' results in creating random scope names
+        """
+        created_scopes = 0
+        while created_scopes <= num_scopes:
+            if scope_name is None:
+                name = self.bucket_util.get_random_name()
+            else:
+                name = scope_name + "_%s" % created_scopes
+            self.log.info("Creating scope '%s'" % name)
+            scope_spec = {"name": name}
+            self.bucket_util.create_scope(self.cluster.master,
+                                          bucket,
+                                          scope_spec)
+
+    def create_collections(self, bucket, num_collections, scope_name,
+                           collection_name=None,
+                           create_collection_with_scope_name=False):
+        """
+        Generic function to create required num_of_collections.
+
+        :param bucket:
+            Bucket object under which the scopes need
+            to be created
+        :param num_collections:
+            Number of collections to be created under
+            the given 'scope_name'
+        :param scope_name:
+            Scope under which the collections needs to be created
+        :param collection_name:
+            Generic name to be used for naming a scope.
+            'None' results in creating collection with random names
+        :param create_collection_with_scope_name:
+            Boolean to decide whether to create the first collection
+            with the same 'scope_name'
+        """
+        created_collections = 0
+        while created_collections <= num_collections:
+            if created_collections == 0 \
+                    and create_collection_with_scope_name:
+                col_name = scope_name
+            else:
+                if collection_name is None:
+                    col_name = BucketUtils.get_random_name()
+                else:
+                    col_name = collection_name + "_%s" % created_collections
+
+            self.log.info("Creating collection '%s::%s'"
+                          % (scope_name, col_name))
+            BucketUtils.create_collection(self.cluster.master,
+                                          bucket,
+                                          scope_name,
+                                          {"name": col_name})
+            created_collections += 1
