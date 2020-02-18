@@ -13,14 +13,15 @@ class MagmaBaseTest(BaseTestCase):
         super(MagmaBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
-        self.key_size = self.input.param("key_size", 0)
+        self.key_size = self.input.param("key_size", 8)
         self.replica_to_update = self.input.param("new_replica", None)
-        self.key = 'test_docs'.rjust(self.key_size, '0')
+        self.key = 'test_docs'
         self.random_key=self.input.param("random_key", False)
         if self.random_key:
             self.key="random_keys"      
         self.items = self.num_items
         self.check_temporary_failure_exception = False
+        self.test_with_fragmentation=self.input.param("test_with_fragmentation", False)
         self.dgm_batch = self.input.param("dgm_batch", 5000)
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.cluster.servers)
         info = self.rest.get_nodes_self()
@@ -54,6 +55,7 @@ class MagmaBaseTest(BaseTestCase):
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
                                         vbuckets=self.cluster_util.vbuckets,
+                                        key_size=self.key_size,
                                         randomize_doc_size=self.randomize_doc_size,
                                         randomize_value=self.randomize_value)
         if self.active_resident_threshold < 100:
@@ -71,11 +73,23 @@ class MagmaBaseTest(BaseTestCase):
         self.active_resident_threshold = 100
         self.gen_create = None
         self.gen_delete = None
-        self.gen_update = doc_generator(self.key, 0, self.num_items / 2,
+        self.gen_update = doc_generator(self.key, 0, self.num_items // 2,
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
+                                        mutate=1,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets)
+                                        vbuckets=self.cluster_util.vbuckets,
+                                        key_size=self.key_size)
+        if self.test_with_fragmentation:
+            _ = self._load_all_buckets(self.cluster, self.gen_update,
+                                                  "update", 0, batch_size=self.batch_size,
+                                                  dgm_batch=self.dgm_batch )
+            self.bucket_util._wait_for_stats_all_buckets()
+            for bucket in self.bucket_util.get_all_buckets():
+                data_validation_task = self.task.async_validate_docs(
+                    self.cluster, bucket,
+                    self.gen_update, "update", 0, batch_size=self.batch_size)
+                self.task.jython_task_manager.get_task_result(data_validation_task)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished magma base setup========")
