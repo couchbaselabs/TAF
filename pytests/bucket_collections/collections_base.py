@@ -69,7 +69,7 @@ class CollectionBase(BaseTestCase):
                            'None' results in creating random scope names
         """
         created_scopes = 0
-        while created_scopes <= num_scopes:
+        while created_scopes < num_scopes:
             if scope_name is None:
                 name = self.bucket_util.get_random_name()
             else:
@@ -80,7 +80,7 @@ class CollectionBase(BaseTestCase):
                 and \
                 bucket.scopes[name].is_dropped is False
             scope_created = False
-            while scope_created:
+            while not scope_created:
                 self.log.info("Creating scope '%s'" % name)
                 try:
                     scope_spec = {"name": name}
@@ -124,7 +124,7 @@ class CollectionBase(BaseTestCase):
         """
         created_collections = 0
         target_scope = bucket.scopes[scope_name]
-        while created_collections <= num_collections:
+        while created_collections < num_collections:
             if created_collections == 0 \
                     and create_collection_with_scope_name:
                 col_name = scope_name
@@ -139,7 +139,7 @@ class CollectionBase(BaseTestCase):
                 and target_scope.collections[col_name].is_dropped is False
 
             collection_created = False
-            while collection_created:
+            while not collection_created:
                 self.log.info("Creating collection '%s::%s'"
                               % (scope_name, col_name))
                 try:

@@ -12,3 +12,6 @@ class CbServer(object):
     default_scope = "_default"
     default_collection = "_default"
 
+    max_scope = 100
+    max_collections = 1000
+

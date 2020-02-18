@@ -24,15 +24,17 @@ import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
 from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
-    BucketCreateTask, PrintOpsRate
+    BucketCreateTask, PrintOpsRate, BucketCreateFromSpecTask
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket, Collection, Scope
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
+from collections_helper.collections_spec_constants import MetaConstants
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
+from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
 from membase.api.exception import StatsUnavailableException
 from membase.api.rest_client import Node, RestConnection
@@ -68,6 +70,29 @@ Parameters:
 
 class DocLoaderUtils(object):
     log = logging.getLogger("test")
+
+    @staticmethod
+    def load_initial_items_per_collection_spec(server_task_obj,
+                                               cluster,
+                                               buckets, async_load=False):
+        loader_tasks = list()
+        for bucket in buckets:
+            for _, scope in bucket.scopes.items():
+                for _, collection in scope.collections.items():
+                    doc_gen = doc_generator("test_doc",
+                                            0, collection.num_items)
+                    task = server_task_obj.async_load_gen_docs(
+                        cluster, bucket, doc_gen, "create",
+                        exp=collection.maxTTL,
+                        batch_size=50, process_concurrency=8,
+                        scope=scope.name,
+                        collection=collection.name)
+                    loader_tasks.append(task)
+        if not async_load:
+            for task in loader_tasks:
+                server_task_obj.jython_task_manager.get_task_result(task)
+
+        return loader_tasks
 
 
 class CollectionUtils(DocLoaderUtils):
@@ -547,20 +572,223 @@ class BucketUtils(ScopeUtils):
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
 
+    @staticmethod
+    def expand_collection_spec(buckets_spec, bucket_name, scope_name):
+        scope_spec = \
+            buckets_spec["buckets"][bucket_name]["scopes"][scope_name]
+
+        req_num_collections = \
+            buckets_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE]
+        def_maxttl = buckets_spec["buckets"][bucket_name][Bucket.maxTTL]
+        def_num_docs = \
+            buckets_spec["buckets"][bucket_name][
+                MetaConstants.NUM_ITEMS_PER_COLLECTION]
+
+        if MetaConstants.NUM_COLLECTIONS_PER_SCOPE in scope_spec:
+            req_num_collections = \
+                scope_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE]
+
+        if MetaConstants.NUM_ITEMS_PER_COLLECTION in scope_spec:
+            def_num_docs = scope_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION]
+
+        # Create default collection under default scope if required
+        if scope_name == CbServer.default_scope and (
+                not scope_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION]):
+            scope_spec["collections"][CbServer.default_collection] = dict()
+
+        # Created extra collection specs which are not provided in spec
+        collection_obj_index = len(scope_spec["collections"])
+        while collection_obj_index < req_num_collections:
+            collection_name = BucketUtils.get_random_name()
+            if collection_name in scope_spec["collections"].keys():
+                continue
+            scope_spec["collections"][collection_name] = dict()
+            collection_obj_index += 1
+
+        # Expand spec values within all collection definition specs
+        for _, collection_spec in scope_spec["collections"].items():
+            if Bucket.maxTTL not in collection_spec:
+                collection_spec[Bucket.maxTTL] = def_maxttl
+            if MetaConstants.NUM_ITEMS_PER_COLLECTION not in collection_spec:
+                collection_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                    def_num_docs
+
+    @staticmethod
+    def expand_scope_spec(buckets_spec, bucket_name):
+        scope_spec = buckets_spec["buckets"][bucket_name]["scopes"]
+
+        # Create default scope object under scope_specs
+        if CbServer.default_scope not in scope_spec.keys():
+            scope_spec[CbServer.default_scope] = dict()
+            scope_spec[CbServer.default_scope]["collections"] = dict()
+
+        req_num_scopes = buckets_spec[MetaConstants.NUM_SCOPES_PER_BUCKET]
+        def_remove_default_collection = \
+            buckets_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION]
+
+        if MetaConstants.NUM_SCOPES_PER_BUCKET \
+                in buckets_spec["buckets"][bucket_name]:
+            req_num_scopes = buckets_spec["buckets"][
+                bucket_name][MetaConstants.NUM_SCOPES_PER_BUCKET]
+
+        # Create required Scope specs which are not provided by user
+        for scope_name, spec_val in scope_spec.items():
+            if type(spec_val) is not dict:
+                continue
+
+            if MetaConstants.REMOVE_DEFAULT_COLLECTION not in spec_val:
+                spec_val[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                    def_remove_default_collection
+
+            BucketUtils.expand_collection_spec(buckets_spec,
+                                               bucket_name,
+                                               scope_name)
+
+        scope_obj_index = len(scope_spec)
+        while scope_obj_index < req_num_scopes:
+            scope_name = BucketUtils.get_random_name()
+            if scope_name in \
+                    scope_spec.keys():
+                continue
+
+            scope_spec[scope_name] = dict()
+            scope_spec[scope_name]["collections"] = dict()
+
+            # Expand scopes further within existing bucket definition
+            BucketUtils.expand_collection_spec(buckets_spec,
+                                               bucket_name,
+                                               scope_name)
+            scope_obj_index += 1
+
+    @staticmethod
+    def expand_buckets_spec(rest_conn, buckets_spec):
+        total_ram_requested_explicitly = 0
+
+        # Calculate total RAM explicitly requested in bucket specs
+        if "buckets" not in buckets_spec:
+            buckets_spec["buckets"] = dict()
+
+        for _, bucket_spec in buckets_spec["buckets"].items():
+            if Bucket.ramQuotaMB in bucket_spec:
+                total_ram_requested_explicitly += \
+                    bucket_spec[Bucket.ramQuotaMB]
+
+        req_num_buckets = len(buckets_spec["buckets"])
+        if MetaConstants.NUM_BUCKETS in buckets_spec:
+            req_num_buckets = buckets_spec[MetaConstants.NUM_BUCKETS]
+
+        # Fetch and define RAM quota for buckets
+        node_info = rest_conn.get_nodes_self()
+        if Bucket.ramQuotaMB not in buckets_spec:
+            if node_info.memoryQuota and int(node_info.memoryQuota) > 0:
+                ram_available = node_info.memoryQuota
+                ram_available -= total_ram_requested_explicitly
+                buckets_spec[Bucket.ramQuotaMB] = \
+                    int(ram_available / req_num_buckets)
+
+        # Construct default values to use for all bucket objects
+        bucket_defaults = dict()
+        bucket_level_meta = MetaConstants.get_params()
+        bucket_level_meta.remove(MetaConstants.NUM_BUCKETS)
+        for param_name in bucket_level_meta:
+            if param_name in buckets_spec:
+                bucket_defaults[param_name] = buckets_spec[param_name]
+            else:
+                bucket_defaults[param_name] = 0
+
+        bucket_level_defaults = Bucket.get_params()
+        for param_name in bucket_level_defaults:
+            if param_name in buckets_spec:
+                bucket_defaults[param_name] = buckets_spec[param_name]
+
+        # Create required Bucket specs which are not provided by spec
+        for bucket_name, bucket_spec in buckets_spec["buckets"].items():
+            for param_name, param_value in bucket_defaults.items():
+                if param_name not in bucket_spec:
+                    bucket_spec[param_name] = param_value
+
+            if "scopes" not in bucket_spec:
+                bucket_spec["scopes"] = dict()
+            # Expand scopes further within existing bucket definition
+            BucketUtils.expand_scope_spec(buckets_spec, bucket_name)
+
+        bucket_obj_index = len(buckets_spec["buckets"])
+        while bucket_obj_index < req_num_buckets:
+            bucket_name = BucketUtils.get_random_name()
+            if bucket_name in buckets_spec["buckets"]:
+                continue
+
+            buckets_spec["buckets"][bucket_name] = dict()
+            buckets_spec["buckets"][bucket_name]["scopes"] = dict()
+            for param_name, param_value in bucket_defaults.items():
+                buckets_spec["buckets"][bucket_name][param_name] = param_value
+
+            # Expand scopes further within created bucket definition
+            BucketUtils.expand_scope_spec(buckets_spec, bucket_name)
+            bucket_obj_index += 1
+
+        return buckets_spec["buckets"]
+
+    def create_bucket_from_dict_spec(self, bucket_name, bucket_spec,
+                                     async_create=True):
+        task = BucketCreateFromSpecTask(self.task_manager,
+                                        self.cluster.master,
+                                        bucket_name,
+                                        bucket_spec)
+        self.task_manager.add_new_task(task)
+        if not async_create:
+            self.task_manager.get_task_result(task)
+        return task
+
+    def create_buckets_using_json_data(self, buckets_spec, async_create=True):
+        rest_conn = RestConnection(self.cluster.master)
+        buckets_spec = BucketUtils.expand_buckets_spec(rest_conn,
+                                                       buckets_spec)
+        bucket_creation_tasks = list()
+        for bucket_name, bucket_spec in buckets_spec.items():
+            bucket_creation_tasks.append(
+                self.create_bucket_from_dict_spec(bucket_name, bucket_spec,
+                                                  async_create=async_create))
+
+        for task in bucket_creation_tasks:
+            self.task_manager.get_task_result(task)
+            if task.result is False:
+                self.log.error("Failure in bucket creation task: %s"
+                               % task.thread_name)
+            else:
+                self.buckets.append(task.bucket_obj)
+
+        for bucket in self.buckets:
+            for scope_name, scope_spec \
+                    in buckets_spec[bucket.name]["scopes"].items():
+                if type(scope_spec) is not dict:
+                    continue
+
+                if scope_name != CbServer.default_scope:
+                    self.create_scope_object(bucket, scope_spec)
+
+                for c_name, c_spec in scope_spec["collections"].items():
+                    if type(c_spec) is not dict:
+                        continue
+                    c_spec["name"] = c_name
+                    self.create_collection_object(bucket,
+                                                  scope_name,
+                                                  c_spec)
+
     # Support functions with bucket object
     def get_bucket_object_from_name(self, bucket="", num_attempt=1, timeout=1):
-        bucketInfo = None
+        bucket_info = None
         bucket_helper = BucketHelper(self.cluster.master)
         num = 0
         while num_attempt > num:
             try:
                 content = bucket_helper.get_bucket_json(bucket)
-                bucketInfo = self.parse_get_bucket_json(content)
+                bucket_info = self.parse_get_bucket_json(content)
                 break
             except Exception:
                 self.sleep(timeout)
                 num += 1
-        return bucketInfo
+        return bucket_info
 
     def get_vbuckets(self, bucket='default'):
         b = self.get_bucket_object_from_name(bucket)
@@ -2760,7 +2988,6 @@ class BucketUtils(ScopeUtils):
                     self.log.error("Task '%s' failed" % task.thread_name)
                 result = result and task.result
         except Exception as e:
-            print e
             for task in tasks:
                 task.cancel()
             raise Exception("Failed to get expected results for view query after {0} sec"

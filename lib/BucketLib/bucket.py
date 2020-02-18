@@ -10,6 +10,9 @@ class Scope(object):
         self.is_dropped = False
         self.recreated = 0
 
+    def __str__(self):
+        return self.name
+
     @staticmethod
     def recreated(scope_obj, scope_spec):
         # Update meta fields
@@ -26,6 +29,9 @@ class Collection(object):
         # Meta data for test case validation
         self.is_dropped = False
         self.recreated = 0
+
+    def __str__(self):
+        return self.name
 
     @staticmethod
     def recreated(collection_obj, collection_spec):
@@ -84,6 +90,10 @@ class Bucket(object):
         LOW = 3
         HIGH = 8
 
+    class FlushBucket(object):
+        DISABLED = 0
+        ENABLED = 1
+
     class vBucket:
         def __init__(self):
             self.master = ''
@@ -123,16 +133,11 @@ class Bucket(object):
             new_params.get(Bucket.conflictResolutionType,
                            Bucket.ConflictResolution.SEQ_NO)
         self.maxTTL = new_params.get(Bucket.maxTTL, 0)
-        self.flushEnabled = new_params.get(Bucket.flushEnabled, 0)
+        self.flushEnabled = new_params.get(Bucket.flushEnabled,
+                                           Bucket.FlushBucket.DISABLED)
         self.compressionMode = new_params.get(
             Bucket.compressionMode,
             Bucket.CompressionMode.PASSIVE)
-        self.nodes = None
-        self.stats = Bucket.BucketStats()
-        self.servers = list()
-        self.vbuckets = list()
-        self.forward_map = list()
-        self.scopes = dict()
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
@@ -146,6 +151,13 @@ class Bucket(object):
                 Bucket.evictionPolicy,
                 Bucket.EvictionPolicy.VALUE_ONLY)
 
+        self.nodes = None
+        self.stats = Bucket.BucketStats()
+        self.servers = list()
+        self.vbuckets = list()
+        self.forward_map = list()
+        self.scopes = dict()
+
         # Create default scope-collection association
         scope = Scope({"name": CbServer.default_scope})
         collection = Collection({"name": CbServer.default_collection})
@@ -154,6 +166,15 @@ class Bucket(object):
 
     def __str__(self):
         return self.name
+
+    @staticmethod
+    def get_params():
+        param_list = list()
+        for param in vars(Bucket).keys():
+            if not (param.startswith("_")
+                    or callable(getattr(Bucket, param))):
+                param_list.append(param)
+        return param_list
 
 
 class TravelSample(Bucket):

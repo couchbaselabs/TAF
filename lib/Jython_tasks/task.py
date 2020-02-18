@@ -3,6 +3,7 @@ Created on Sep 14, 2017
 
 @author: riteshagarwal
 """
+import threading
 import zlib
 import copy
 import json as Json
@@ -18,7 +19,8 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
-from Cb_constants import constants
+from Cb_constants import constants, CbServer
+from collections_helper.collections_spec_constants import MetaConstants
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     doc_generator, SubdocDocumentGenerator
@@ -1071,7 +1073,6 @@ class Durability(Task):
 
         def call(self):
             self.start_task()
-            import threading
             if self.check_persistence:
                 persistence = threading.Thread(target=self.Persistence)
                 persistence.start()
@@ -2908,6 +2909,119 @@ class BucketCreateTask(Task):
         self.retries = self.retris + 1
         time.sleep(5)
         self.check()
+
+
+class BucketCreateFromSpecTask(Task):
+    def __init__(self, task_manager, server, bucket_name, bucket_spec):
+        super(BucketCreateFromSpecTask, self) \
+            .__init__("Bucket_create_task_%s" % bucket_name)
+        self.task_manager = task_manager
+        self.server = server
+        self.bucket_spec = bucket_spec
+        self.bucket_spec["name"] = bucket_name
+        self.retries = 0
+        self.rest = RestConnection(self.server)
+        self.bucket_helper = BucketHelper(self.server)
+        # Used to store the Created Bucket() object, for appending into
+        # bucket_utils.buckets list
+        self.bucket_obj = Bucket()
+
+    def call(self):
+        self.result = True
+        self.start_task()
+        bucket_params = Bucket.get_params()
+        for key, value in self.bucket_spec.items():
+            if key in bucket_params:
+                setattr(self.bucket_obj, key, value)
+
+        self.create_bucket()
+        if CbServer.default_collection not in \
+                self.bucket_spec[
+                    "scopes"][CbServer.default_scope][
+                    "collections"].keys():
+            self.bucket_helper.delete_collection(self.bucket_spec["name"],
+                                                 CbServer.default_scope,
+                                                 CbServer.default_collection)
+            self.bucket_obj \
+                .scopes[CbServer.default_scope] \
+                .collections \
+                .pop(CbServer.default_collection, None)
+
+        scope_create_threads = list()
+        for scope_name, scope_spec in self.bucket_spec["scopes"].items():
+            scope_spec["name"] = scope_name
+            scope_create_thread = threading.Thread(
+                target=self.create_scope_from_spec,
+                args=[scope_spec])
+            scope_create_thread.start()
+            scope_create_threads.append(scope_create_thread)
+
+        for scope_create_thread in scope_create_threads:
+            scope_create_thread.join(30)
+
+        self.complete_task()
+
+    def create_bucket(self):
+        self.bucket_obj.threadsNumber = 3
+        if str(self.bucket_obj.priority) == "high" \
+                or str(self.bucket_obj.priority) == str(Bucket.Priority.HIGH):
+            self.bucket_obj.threadsNumber = 8
+
+        try:
+            BucketHelper(self.server).create_bucket(self.bucket_obj.__dict__)
+        except BucketCreationException as e:
+            self.result = False
+            self.test_log.error(str(e))
+            self.set_exception(e)
+        # catch and set all unexpected exceptions
+        except Exception as e:
+            self.result = False
+            self.test_log.error(str(e))
+            self.set_exception(e)
+
+    def create_scope_from_spec(self, scope_spec):
+        if scope_spec["name"] != CbServer.default_scope:
+            status, content = self.bucket_helper.create_scope(
+                self.bucket_obj.name,
+                scope_spec["name"])
+            if status is False:
+                self.set_exception("Create scope failed for %s::%s, "
+                                   "Reason - %s"
+                                   % (self.bucket_obj.name,
+                                      scope_spec["name"],
+                                      content))
+                self.result = False
+                return
+
+        collection_create_threads = list()
+        for collection_name, collection_spec \
+                in scope_spec["collections"].items():
+            if collection_name == CbServer.default_collection:
+                continue
+
+            collection_spec["name"] = collection_name
+            collection_create_thread = threading.Thread(
+                target=self.create_collection_from_spec,
+                args=[scope_spec["name"], collection_spec])
+            collection_create_thread.start()
+            collection_create_threads.append(collection_create_thread)
+
+        for collection_create_thread in collection_create_threads:
+            collection_create_thread.join(30)
+
+    def create_collection_from_spec(self, scope_name, collection_spec):
+        status, content = self.bucket_helper.create_collection(
+            self.bucket_obj.name,
+            scope_name,
+            collection_spec["name"])
+        if status is False:
+            self.result = False
+            self.set_exception("Create collection failed for "
+                               "%s::%s::%s, Reason - %s"
+                               % (self.bucket_obj.name,
+                                  scope_name,
+                                  collection_spec["name"],
+                                  content))
 
 
 class MonitorActiveTask(Task):
