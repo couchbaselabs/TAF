@@ -1,6 +1,8 @@
 import json
 
+from Cb_constants import CbServer
 from basetestcase import BaseTestCase
+from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
@@ -50,6 +52,33 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.change_max_buckets(self.standard_buckets)
         self.create_buckets(self.bucket_size)
 
+        # Create Scope/Collection based on inputs given
+        if self.scope_name != CbServer.default_scope:
+            self.scope_name = BucketUtils.get_random_name()
+            BucketUtils.create_scope(self.cluster.master,
+                                     self.bucket_util.buckets[0],
+                                     {"name": self.scope_name})
+        if self.collection_name is True:
+            self.collection_name = BucketUtils.get_random_name()
+            BucketUtils.create_collection(self.cluster.master,
+                                          self.bucket_util.buckets[0],
+                                          self.scope_name,
+                                          {"name": self.collection_name,
+                                           "num_items": self.num_items})
+            self.log.info("Using scope::collection - '%s::%s'"
+                          % (self.scope_name, self.collection_name))
+        else:
+            # Complete fallback to pre-Cheshire_Cat testing,
+            # collection_name is already 'None'
+            self.scope_name = None
+            self.collection_name = None
+
+            # Update required num_items under default collection
+            for bucket in self.bucket_util.buckets:
+                bucket.scopes[CbServer.default_scope] \
+                    .collections[CbServer.default_collection] \
+                    .num_items = self.num_items
+
         if self.flusher_batch_split_trigger:
             self.bucket_util.set_flusher_batch_split_trigger(
                 self.cluster.master,
@@ -64,7 +93,9 @@ class RebalanceBaseTest(BaseTestCase):
                                        "create", 0, batch_size=self.batch_size)
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            for tem_bucket in self.bucket_util.buckets:
+                self.bucket_util.validate_doc_count_as_per_collections(
+                    tem_bucket)
         else:
             self.transaction_commit = True
             self._load_all_buckets_atomicty(self.gen_create, "create")
@@ -214,7 +245,9 @@ class RebalanceBaseTest(BaseTestCase):
             pause_secs=pause_secs, sdk_compression=compression,
             process_concurrency=self.process_concurrency,
             retry_exceptions=retry_exceptions_local,
-            active_resident_threshold=self.active_resident_threshold)
+            active_resident_threshold=self.active_resident_threshold,
+            scope=self.scope_name,
+            collection=self.collection_name)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
                 self.num_items = task.doc_index
@@ -295,7 +328,8 @@ class RebalanceBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                scope=self.scope_name, collection=self.collection_name)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -305,9 +339,14 @@ class RebalanceBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                scope=self.scope_name, collection=self.collection_name)
             tasks_info.update(tem_tasks_info.items())
-            self.num_items += (self.gen_create.end - self.gen_create.start)
+            for bucket in self.bucket_util.buckets:
+                bucket \
+                    .scopes[self.scope_name] \
+                    .collections[self.collection_name] \
+                    .num_items += (self.gen_create.end - self.gen_create.start)
         if "delete" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_delete, "delete", 0, batch_size=20,
@@ -316,9 +355,14 @@ class RebalanceBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                scope=self.scope_name, collection=self.collection_name)
             tasks_info.update(tem_tasks_info.items())
-            self.num_items -= (self.gen_delete.end - self.gen_delete.start)
+            for bucket in self.bucket_util.buckets:
+                bucket \
+                    .scopes[self.scope_name] \
+                    .collections[self.collection_name] \
+                    .num_items -= (self.gen_delete.end - self.gen_delete.start)
 
         if task_verification:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,

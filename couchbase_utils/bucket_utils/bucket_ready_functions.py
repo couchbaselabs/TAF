@@ -943,10 +943,14 @@ class BucketUtils(ScopeUtils):
     def get_doc_op_info_dict(self, bucket, op_type, exp=0, replicate_to=0,
                              persist_to=0, durability="",
                              timeout=5, time_unit="seconds",
+                             scope=None,
+                             collection=None,
                              ignore_exceptions=[], retry_exceptions=[]):
         info_dict = dict()
         info_dict["ops_failed"] = False
         info_dict["bucket"] = bucket
+        info_dict["scope"] = scope
+        info_dict["collection"] = collection
         info_dict["op_type"] = op_type
         info_dict["exp"] = exp
         info_dict["replicate_to"] = replicate_to
@@ -1039,7 +1043,9 @@ class BucketUtils(ScopeUtils):
             self.task_manager.get_task_result(task)
 
             client = SDKClient([cluster.master],
-                               task_info["bucket"])
+                               task_info["bucket"],
+                               scope=task_info["scope"],
+                               collection=task_info["collection"])
             for key, failed_doc in task.fail.items():
                 found = False
                 exception = failed_doc["error"]
@@ -1104,7 +1110,8 @@ class BucketUtils(ScopeUtils):
                           compression=True, process_concurrency=8, retries=5,
                           active_resident_threshold=100,
                           ryow=False, check_persistence=False,
-                          suppress_error_table=False, dgm_batch=5000):
+                          suppress_error_table=False, dgm_batch=5000,
+                          scope=None, collection=None):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
@@ -1114,7 +1121,8 @@ class BucketUtils(ScopeUtils):
             process_concurrency=process_concurrency, retries=retries,
             active_resident_threshold=active_resident_threshold,
             ryow=ryow, check_persistence=check_persistence,
-            suppress_error_table=suppress_error_table, dgm_batch=dgm_batch)
+            suppress_error_table=suppress_error_table, dgm_batch=dgm_batch,
+            scope=scope, collection=collection)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,
@@ -1125,7 +1133,8 @@ class BucketUtils(ScopeUtils):
                                 ignore_exceptions=[], retry_exceptions=[],
                                 active_resident_threshold=100,
                                 ryow=False, check_persistence=False,
-                                suppress_error_table=False, dgm_batch=5000):
+                                suppress_error_table=False, dgm_batch=5000,
+                                scope=None, collection=None):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -1149,10 +1158,15 @@ class BucketUtils(ScopeUtils):
                 sdk_compression, process_concurrency, retries,
                 active_resident_threshold=active_resident_threshold,
                 ryow=ryow, check_persistence=check_persistence,
-                suppress_error_table=suppress_error_table, dgm_batch=dgm_batch)
+                suppress_error_table=suppress_error_table, dgm_batch=dgm_batch,
+                scope=scope, collection=collection)
             tasks_info[task] = self.get_doc_op_info_dict(
-                bucket, op_type, exp, replicate_to=replicate_to,
-                persist_to=persist_to, durability=durability,
+                bucket, op_type, exp,
+                scope=scope,
+                collection=collection,
+                replicate_to=replicate_to,
+                persist_to=persist_to,
+                durability=durability,
                 timeout=timeout_secs, time_unit="seconds",
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions)
@@ -1167,7 +1181,8 @@ class BucketUtils(ScopeUtils):
                               ignore_exceptions=[], retry_exceptions=[],
                               active_resident_threshold=100,
                               ryow=False, check_persistence=False,
-                              suppress_error_table=False, dgm_batch=5000):
+                              suppress_error_table=False, dgm_batch=5000,
+                              scope=None, collection=None):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -1192,12 +1207,12 @@ class BucketUtils(ScopeUtils):
             ignore_exceptions, retry_exceptions, ryow=ryow,
             active_resident_threshold=active_resident_threshold,
             check_persistence=check_persistence,
-            suppress_error_table=suppress_error_table, dgm_batch=dgm_batch)
+            suppress_error_table=suppress_error_table, dgm_batch=dgm_batch,
+            scope=scope, collection=collection)
 
         # Wait for all doc_loading tasks to complete and populate failures
         self.verify_doc_op_task_exceptions(tasks_info, cluster)
         self.log_doc_ops_task_failures(tasks_info)
-
         return tasks_info
 
     def load_durable_aborts(self, ssh_shell, load_gens, bucket,
