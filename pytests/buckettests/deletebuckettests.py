@@ -59,10 +59,10 @@ class DeleteBucketTests(BaseTestCase):
             bucket = Bucket({"name": name, "replicaNumber": replicaNumber})
             self.bucket_util.create_bucket(bucket)
             msg = 'create_bucket succeeded but bucket {0} does not exist'.format(name)
-            self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket, rest), msg)
+            self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket), msg)
             self.bucket_util.delete_bucket(self.cluster.master, bucket.name)
             msg = 'bucket "{0}" was not deleted even after waiting for two minutes'.format(name)
-            self.assertTrue(self.bucket_util.wait_for_bucket_deletion(bucket, rest), msg)
+            self.assertTrue(self.bucket_util.wait_for_bucket_deletion(bucket), msg)
             msg = 'bucket {0} data files are not deleted after bucket deleted from membase'.format(name)
             self.assertTrue(
                 self.wait_for_data_files_deletion(name,

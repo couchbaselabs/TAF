@@ -56,7 +56,7 @@ class basic_ops(BaseTestCase):
             BucketUtils.create_scope(self.cluster.master,
                                      self.bucket_util.buckets[0],
                                      {"name": self.scope_name})
-        if self.collection_name is not None:
+        if self.collection_name is True:
             self.collection_name = BucketUtils.get_random_name()
             BucketUtils.create_collection(self.cluster.master,
                                           self.bucket_util.buckets[0],
@@ -69,8 +69,14 @@ class basic_ops(BaseTestCase):
             # Complete fallback to pre-Cheshire_Cat testing,
             # collection_name is already 'None'
             self.scope_name = None
+            self.collection_name = None
 
-        self.src_bucket = self.bucket_util.get_all_buckets()
+            # Update required num_items under default collection
+            self.bucket_util.buckets[0] \
+                .scopes[CbServer.default_scope] \
+                .collections[CbServer.default_collection] \
+                .num_items = self.num_items
+
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.nodes_in_cluster),
             durability=self.durability_level,
@@ -334,8 +340,17 @@ class basic_ops(BaseTestCase):
                 scope=self.scope_name,
                 collection=self.collection_name)
             self.task.jython_task_manager.get_task_result(task)
-            expected_num_items = \
-                self.num_items - (self.num_items - num_item_start_for_crud)
+            if self.collection_name is None:
+                target_scope = CbServer.default_scope
+                target_collection = CbServer.default_collection
+            else:
+                target_scope = self.scope_name
+                target_collection = self.collection_name
+
+            def_bucket \
+                .scopes[target_scope] \
+                .collections[target_collection] \
+                .num_items -= (self.num_items - num_item_start_for_crud)
             verification_dict["ops_delete"] += mutation_doc_count
 
             if self.durability_level in DurabilityHelper.SupportedDurability:
@@ -374,7 +389,7 @@ class basic_ops(BaseTestCase):
             self.fail("Cbstat vbucket-details verification failed")
 
         self.log.info("Validating doc_count")
-        self.bucket_util.verify_stats_all_buckets(expected_num_items)
+        self.bucket_util.validate_doc_count_as_per_collections(def_bucket)
 
     def test_large_doc_size(self):
         # bucket size=256MB, when Bucket gets filled 236MB then

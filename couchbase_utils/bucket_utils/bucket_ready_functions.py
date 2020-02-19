@@ -372,6 +372,8 @@ class BucketUtils(ScopeUtils):
         buckets = self.get_all_buckets()
         for bucket in buckets:
             if bucket.name == sample_bucket.name:
+                # Append loaded sample bucket into buckets object list
+                self.buckets.append(bucket)
                 break
         if status is True:
             warmed_up = self._wait_warmup_completed(
@@ -439,12 +441,18 @@ class BucketUtils(ScopeUtils):
                 except Exception as ex:
                     self.log.error("Unable to get timings for bucket: {0}"
                                    .format(ex))
+            else:
+                # Pop bucket object from self.buckets
+                for index, t_bucket in enumerate(self.buckets):
+                    if t_bucket.name == bucket.name:
+                        self.buckets.pop(index)
+
             self.log.debug('Deleted bucket: {0} from {1}'
                            .format(bucket, serverInfo.ip))
         msg = 'Bucket "{0}" not deleted even after waiting for two minutes' \
               .format(bucket)
         if wait_for_bucket_deletion:
-            if not self.wait_for_bucket_deletion(bucket, bucket_conn, 200):
+            if not self.wait_for_bucket_deletion(bucket, 200):
                 try:
                     self.print_dataStorage_content([serverInfo])
                     self.log.debug(StatsCommon.get_stats([serverInfo], bucket,
@@ -457,7 +465,7 @@ class BucketUtils(ScopeUtils):
             else:
                 return True
 
-    def wait_for_bucket_deletion(self, bucket, bucket_conn,
+    def wait_for_bucket_deletion(self, bucket,
                                  timeout_in_seconds=120):
         self.log.debug("Waiting for bucket %s deletion to finish"
                        % bucket.name)
@@ -469,7 +477,7 @@ class BucketUtils(ScopeUtils):
                 self.sleep(2)
         return False
 
-    def wait_for_bucket_creation(self, bucket, bucket_conn,
+    def wait_for_bucket_creation(self, bucket,
                                  timeout_in_seconds=120):
         self.log.debug('Waiting for bucket creation to complete')
         start = time.time()
@@ -481,14 +489,10 @@ class BucketUtils(ScopeUtils):
         return False
 
     def bucket_exists(self, bucket):
-        try:
-            buckets = self.get_all_buckets(self.cluster.master)
-            for item in buckets:
-                if item.name == bucket.name:
-                    return True
-            return False
-        except Exception:
-            return False
+        for item in self.get_all_buckets(self.cluster.master):
+            if item.name == bucket.name:
+                return True
+        return False
 
     def delete_all_buckets(self, servers):
         for serverInfo in servers:
@@ -496,8 +500,7 @@ class BucketUtils(ScopeUtils):
                 buckets = self.get_all_buckets(serverInfo)
             except Exception as e:
                 self.log.error(e)
-                self.log.error('15 secs sleep before get_all_buckets() call')
-                self.sleep(15)
+                self.sleep(15, "Wait to retry get_all_buckets() call")
                 buckets = self.get_all_buckets(serverInfo)
             self.log.debug('Deleting existing buckets {0} on {1}'
                            .format([b.name for b in buckets], serverInfo.ip))
@@ -566,11 +569,11 @@ class BucketUtils(ScopeUtils):
         table.set_headers(["Bucket", "Type", "Replicas",
                            "TTL", "Items", "RAM Quota",
                            "RAM Used", "Disk Used"])
-        self.get_all_buckets()
-        if len(self.buckets) == 0:
+        buckets = self.get_all_buckets()
+        if len(buckets) == 0:
             table.add_row(["No buckets", "", "", "", "", "", "", ""])
         else:
-            for bucket in self.buckets:
+            for bucket in buckets:
                 table.add_row(
                     [bucket.name, bucket.bucketType,
                      str(bucket.replicaNumber),
@@ -715,32 +718,24 @@ class BucketUtils(ScopeUtils):
 
     def flush_all_buckets(self, kv_node):
         status = dict()
-        try:
-            buckets = self.get_all_buckets(kv_node)
-        except Exception as e:
-            self.log.error(e)
-            self.log.error('15 secs sleep before get_all_buckets() call')
-            self.sleep(15)
-            buckets = self.get_all_buckets(kv_node)
-        self.log.debug('Flushing existing buckets {0} on {1}'
-                       .format([b.name for b in buckets], kv_node.ip))
-        for bucket in buckets:
-            self.log.debug("Remove bucket {0} ...".format(bucket.name))
+        self.log.debug("Flushing existing buckets '%s'"
+                       % [bucket.name for bucket in self.buckets])
+        for bucket in self.buckets:
             status[bucket] = self.flush_bucket(kv_node, bucket)
         return status
 
     def update_all_bucket_maxTTL(self, maxttl=0):
         for bucket in self.buckets:
-            self.log.debug("Updating maxTTL for bucket {0} to {1}s"
-                           .format(bucket.name, maxttl))
+            self.log.debug("Updating maxTTL for bucket %s to %ss"
+                           % (bucket.name, maxttl))
             BucketHelper(self.cluster.master).change_bucket_props(
                 bucket, maxTTL=maxttl)
 
     def update_all_bucket_replicas(self, replicas=1):
         helper = BucketHelper(self.cluster.master)
         for bucket in self.buckets:
-            self.log.debug("Updating replica for bucket {0} to {1}s"
-                           .format(bucket.name, replicas))
+            self.log.debug("Updating replica for bucket %s to %ss"
+                           % (bucket.name, replicas))
             helper.change_bucket_props(
                 bucket, replicaNumber=replicas)
 
@@ -1145,7 +1140,6 @@ class BucketUtils(ScopeUtils):
             task_info - dict of dict populated using get_doc_op_info_dict()
         """
         tasks_info = dict()
-        self.buckets = self.get_all_buckets(cluster.master)
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
             task = self.async_load_bucket(
@@ -2260,17 +2254,23 @@ class BucketUtils(ScopeUtils):
     def get_all_buckets(self, server=None):
         if server is None:
             server = self.cluster.master
-        self.buckets = []
         rest = BucketHelper(server)
         json_parsed = rest.get_buckets_json()
+        bucket_list = list()
         for item in json_parsed:
-            bucket_obj = self.parse_get_bucket_json(item)
-            self.buckets.append(bucket_obj)
-        return self.buckets
+            bucket_list.append(self.parse_get_bucket_json(item))
+        return bucket_list
 
     def parse_get_bucket_json(self, parsed):
-        bucket = Bucket()
-        bucket.name = parsed['name']
+        bucket = None
+        for bucket in self.buckets:
+            if bucket.name == parsed['name']:
+                break
+
+        if bucket is None:
+            bucket = Bucket()
+            bucket.name = parsed["name"]
+
         bucket.uuid = parsed['uuid']
         bucket.bucketType = parsed['bucketType']
         bucket.authType = parsed["authType"]

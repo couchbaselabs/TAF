@@ -48,7 +48,7 @@ class RecreateBucketTests(BaseTestCase):
         bucket = Bucket({"name": bucket_name, "replicaNumber": replicaNumber})
         self.bucket_util.create_bucket(bucket)
         msg = 'create_bucket succeeded but bucket {0} does not exist'.format(bucket_name)
-        self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket, rest), msg)
+        self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket), msg)
         self.sleep(5)
         #self.assertTrue(self.bucket_util.wait_for_memcached(self.cluster.master, bucket), "Wait_for_memcached failed")
         try:
@@ -61,10 +61,10 @@ class RecreateBucketTests(BaseTestCase):
             self.fail("Not all values were stored successfully")
         self.bucket_util.delete_bucket(self.cluster.master, bucket)
         msg = 'bucket "{0}" was not deleted even after waiting for two minutes'.format(bucket_name)
-        self.assertTrue(self.bucket_util.wait_for_bucket_deletion(bucket, rest), msg)
+        self.assertTrue(self.bucket_util.wait_for_bucket_deletion(bucket), msg)
         self.bucket_util.create_bucket(bucket)
         msg = 'create_bucket succeeded but bucket {0} does not exist'.format(bucket_name)
-        self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket, rest), msg)
+        self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket), msg)
         self.sleep(5)
         #self.assertTrue(self.bucket_util.wait_for_memcached(self.cluster.master, bucket), "Wait_for_memcached failed")
         # try:

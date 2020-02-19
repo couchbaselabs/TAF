@@ -60,8 +60,6 @@ class BaseTestCase(unittest.TestCase):
                              Bucket.EvictionPolicy.VALUE_ONLY)
         self.bucket_time_sync = self.input.param("bucket_time_sync", False)
         self.standard_buckets = self.input.param("standard_buckets", 1)
-        if self.standard_buckets > 10:
-            self.bucket_util.change_max_buckets(self.standard_buckets)
         self.num_replicas = self.input.param("replicas", 1)
         self.active_resident_threshold = \
             int(self.input.param("active_resident_threshold", 100))
@@ -184,6 +182,9 @@ class BaseTestCase(unittest.TestCase):
             self.bucket_util = BucketUtils(self.cluster, self.cluster_util,
                                            self.task)
 
+        if self.standard_buckets > 10:
+            self.bucket_util.change_max_buckets(self.standard_buckets)
+
         for cluster in self.__cb_clusters:
             shell = RemoteMachineShellConnection(cluster.master)
             self.os_info = shell.extract_remote_info().type.lower()
@@ -200,7 +201,7 @@ class BaseTestCase(unittest.TestCase):
 
         try:
             if self.skip_setup_cleanup:
-                self.buckets = self.bucket_util.get_all_buckets()
+                self.bucket_util.buckets = self.bucket_util.get_all_buckets()
                 return
             if not self.skip_init_check_cbserver:
                 for cluster in self.__cb_clusters:
@@ -515,7 +516,7 @@ class BaseTestCase(unittest.TestCase):
         return: a list (list of servers with crashes or a empty list if no core dump exists)
         Args: list of servers
         """
-        
+
         self.log.info("Initializing core dump check on all the nodes");
         servers_with_crashes = [];
         for server in servers:

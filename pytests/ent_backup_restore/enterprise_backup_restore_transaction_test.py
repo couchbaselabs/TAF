@@ -93,7 +93,7 @@ class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
         bucket = Bucket({"name": self.bucket_name, "replicaNumber": self.num_replicas})
         self.bk_cluster.bucket_util.create_bucket(bucket)
         msg = 'create_bucket succeeded but bucket {0} does not exist'.format(self.bucket_name)
-        self.assertTrue(self.bk_cluster.bucket_util.wait_for_bucket_creation(bucket, bk_rest), msg)
+        self.assertTrue(self.bk_cluster.bucket_util.wait_for_bucket_creation(bucket), msg)
         self.bk_cluster.bucket_util.add_rbac_user()
         self.backup_create()
         self.sleep(5)
@@ -128,7 +128,7 @@ class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
         self.rs_cluster.bucket_util.add_rbac_user()
         rs_rest = RestConnection(self.rs_cluster.master)
         self.rs_cluster.bucket_util.create_bucket(bucket)
-        self.assertTrue(self.rs_cluster.bucket_util.wait_for_bucket_creation(bucket, rs_rest), msg)
+        self.assertTrue(self.rs_cluster.bucket_util.wait_for_bucket_creation(bucket), msg)
         self.backupset.start = start
         self.backupset.end = end
         self.backup_restore()
@@ -150,7 +150,7 @@ class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
         bucket = Bucket({"name": self.bucket_name, "replicaNumber": self.num_replicas})
         self.bk_cluster.bucket_util.create_bucket(bucket)
         msg = 'create_bucket succeeded but bucket {0} does not exist'.format(self.bucket_name)
-        self.assertTrue(self.bk_cluster.bucket_util.wait_for_bucket_creation(bucket, bk_rest), msg)
+        self.assertTrue(self.bk_cluster.bucket_util.wait_for_bucket_creation(bucket), msg)
         self.bk_cluster.bucket_util.add_rbac_user()
         self.backup_create()
 

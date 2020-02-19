@@ -27,7 +27,7 @@ class CreateBucketTests(BaseTestCase):
         bucket = Bucket({"name": bucket_name, "replicaNumber": replicaNumber})
         self.bucket_util.create_bucket(bucket)
         msg = 'create_bucket succeeded but bucket {0} does not exist'.format(bucket_name)
-        self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket, rest), msg)
+        self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket), msg)
 
     def test_two_replica(self):
         bucket_name = 'default'
@@ -36,7 +36,7 @@ class CreateBucketTests(BaseTestCase):
         bucket = Bucket({"name": bucket_name, "replicaNumber": replicaNumber})
         self.bucket_util.create_bucket(bucket)
         msg = 'create_bucket succeeded but bucket {0} does not exist'.format(bucket_name)
-        self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket, rest), msg)
+        self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket), msg)
 
     def test_valid_length(self):
         max_len = 100
@@ -48,7 +48,7 @@ class CreateBucketTests(BaseTestCase):
         try:
             self.bucket_util.create_bucket(bucket)
             msg = 'create_bucket succeeded but bucket {0} does not exist'.format(name)
-            self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket, rest), msg)
+            self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket), msg)
         except BucketCreationException as ex:
             self.log.error(ex)
             self.fail('could not create bucket with valid length')
