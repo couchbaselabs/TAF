@@ -6,6 +6,9 @@ from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
+from remote.remote_util import RemoteMachineShellConnection
+from cb_tools.cbstats import Cbstats
+from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -204,3 +207,20 @@ class MagmaBaseTest(BaseTestCase):
                                             ignore_exceptions,
                                             _sync)
         return loaders
+
+    def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
+        magma_stats_for_all_servers = dict()
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+        for server in servers:
+            result = dict()
+            shell = RemoteMachineShellConnection(server)
+            cbstat_obj = Cbstats(shell)
+            result = cbstat_obj.magma_stats(bucket.name,
+                                            field_to_grep=field_to_grep)
+            shell.disconnect()
+            magma_stats_for_all_servers[server.ip] = result
+        return magma_stats_for_all_servers
+    
