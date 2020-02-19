@@ -41,7 +41,7 @@ class basic_ops(BaseTestCase):
            
         time.sleep(10)
         self.def_bucket= self.bucket_util.get_all_buckets()
-        self.client = VBucketAwareMemcached(RestConnection(self.cluster.master), self.def_bucket[0])
+        self.client = VBucketAwareMemcached(self.cluster.master, self.def_bucket[0])
         self.__durability_level()
         self.create_Transaction()
         self._stop = threading.Event()
@@ -253,7 +253,7 @@ class basic_ops(BaseTestCase):
             self.client.cluster.disconnect() 
             self.transaction.close()
             print "going to create a new transaction"
-            self.client1 = VBucketAwareMemcached(RestConnection(self.cluster.master), self.def_bucket[0])
+            self.client1 = VBucketAwareMemcached(self.cluster.master, self.def_bucket[0])
             self.create_Transaction(self.client1)
             self.sleep(self.transaction_timeout+60)
             exception = Transaction().RunTransaction(self.transaction, [self.client1.collection], self.docs, [], [], self.transaction_commit, self.sync, self.update_count)
@@ -297,7 +297,7 @@ class basic_ops(BaseTestCase):
         self.client.cluster.disconnect()       
         self.transaction.close()
           
-        self.client1 = VBucketAwareMemcached(RestConnection(self.cluster.master), self.def_bucket[0])
+        self.client1 = VBucketAwareMemcached(self.cluster.master, self.def_bucket[0])
         self.create_Transaction(self.client1)
         self.sleep(self.transaction_timeout+60) # sleep for 60 seconds so that transaction cleanup can happen
         
