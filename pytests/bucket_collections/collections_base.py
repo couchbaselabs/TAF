@@ -81,11 +81,32 @@ class CollectionBase(BaseTestCase):
                 name = self.bucket_util.get_random_name()
             else:
                 name = scope_name + "_%s" % created_scopes
-            self.log.info("Creating scope '%s'" % name)
-            scope_spec = {"name": name}
-            self.bucket_util.create_scope(self.cluster.master,
-                                          bucket,
-                                          scope_spec)
+
+            scope_already_exists = \
+                name in bucket.scopes.keys() \
+                and \
+                bucket.scopes[name].is_dropped is False
+            scope_created = False
+            while scope_created:
+                self.log.info("Creating scope '%s'" % name)
+                try:
+                    scope_spec = {"name": name}
+                    self.bucket_util.create_scope(self.cluster.master,
+                                                  bucket,
+                                                  scope_spec)
+                    if scope_already_exists:
+                        raise Exception("Scope with duplicate name is "
+                                        "created under bucket %s" % bucket)
+                    created_scopes += 1
+                    scope_created = True
+                except Exception as e:
+                    if scope_already_exists and scope_name is None:
+                        self.log.info("Scope creation with duplicate name "
+                                      "'%s' failed as expected. Will retry "
+                                      "with different name")
+                    else:
+                        self.log.error("Scope creation failed!")
+                        raise Exception(e)
 
     def create_collections(self, bucket, num_collections, scope_name,
                            collection_name=None,
@@ -109,6 +130,7 @@ class CollectionBase(BaseTestCase):
             with the same 'scope_name'
         """
         created_collections = 0
+        target_scope = bucket.scopes[scope_name]
         while created_collections <= num_collections:
             if created_collections == 0 \
                     and create_collection_with_scope_name:
@@ -119,10 +141,30 @@ class CollectionBase(BaseTestCase):
                 else:
                     col_name = collection_name + "_%s" % created_collections
 
-            self.log.info("Creating collection '%s::%s'"
-                          % (scope_name, col_name))
-            BucketUtils.create_collection(self.cluster.master,
-                                          bucket,
-                                          scope_name,
-                                          {"name": col_name})
-            created_collections += 1
+            collection_already_exists = \
+                col_name in target_scope.collections.keys() \
+                and target_scope.collections[col_name].is_dropped is False
+
+            collection_created = False
+            while collection_created:
+                self.log.info("Creating collection '%s::%s'"
+                              % (scope_name, col_name))
+                try:
+                    BucketUtils.create_collection(self.cluster.master,
+                                                  bucket,
+                                                  scope_name,
+                                                  {"name": col_name})
+                    if collection_already_exists:
+                        raise Exception("Collection with duplicate name "
+                                        "got created under bucket::scope "
+                                        "%s::%s" % (bucket, scope_name))
+                    created_collections += 1
+                    collection_created = True
+                except Exception as e:
+                    if collection_already_exists and collection_name is None:
+                        self.log.info("Collection creation with duplicate "
+                                      "name '%s' failed as expected. Will "
+                                      "retry with different name")
+                    else:
+                        self.log.error("Collection creation failed!")
+                        raise Exception(e)
