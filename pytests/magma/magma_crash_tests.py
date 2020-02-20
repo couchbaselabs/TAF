@@ -115,8 +115,8 @@ class MagmaCrashTests(MagmaBaseTest):
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
+            self.sleep(10, "Not Required, but waiting for 10s after warmup")
             self.bucket_util.verify_stats_all_buckets(items, timeout=300)
-            self.sleep(5, "Not Required, but waiting for 5s after warmup")
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
         shell.disconnect()

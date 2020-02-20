@@ -362,13 +362,13 @@ class Cbstats(CbCmdBase):
                 break
 
         return result
-    
+
     def magma_stats(self, bucket_name, field_to_grep=None, stat_name="kvstore"):
         """
         Get a particular value of "kvstore" stat from the command,
         cbstats localhost:port kvstore
         kvstore stats are the stats for magma
-        
+
         Arguments:
         :bucket_name   - Name of the bucket to get the stats
         :stat_name     - Any valid stat_command accepted by cbstats
@@ -379,9 +379,9 @@ class Cbstats(CbCmdBase):
                   if field_to_grep does not exist or invalid
 
         Raise:
-        :Exception returned from command line execution (if any)    
+        :Exception returned from command line execution (if any)
         """
-        
+
         result = dict()
         output, error = self.get_stats(bucket_name, stat_name,
                                        field_to_grep=field_to_grep)
@@ -398,7 +398,7 @@ class Cbstats(CbCmdBase):
         for ele in output:
             result[re.sub(pattern_for_key, "", re.split(pattern, ele)[0])] = json.loads(re.split(pattern, ele)[1])
         return result
-            
+
     def vbucket_list(self, bucket_name, vbucket_type="active"):
         """
         Get list of vbucket numbers as list.

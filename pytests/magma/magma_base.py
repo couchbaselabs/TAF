@@ -1,6 +1,3 @@
-import json
-import os
-
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
@@ -8,7 +5,6 @@ from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
-from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -19,18 +15,20 @@ class MagmaBaseTest(BaseTestCase):
         self.key_size = self.input.param("key_size", 8)
         self.replica_to_update = self.input.param("new_replica", None)
         self.key = 'test_docs'
-        self.random_key=self.input.param("random_key", False)
+        self.random_key = self.input.param("random_key", False)
         if self.random_key:
-            self.key="random_keys"      
+            self.key = "random_keys"
         self.items = self.num_items
         self.check_temporary_failure_exception = False
-        self.test_with_fragmentation=self.input.param("test_with_fragmentation", False)
+        self.test_with_fragmentation = self.input.param(
+            "test_with_fragmentation",
+            False)
         self.dgm_batch = self.input.param("dgm_batch", 5000)
-        node_ram_ratio = self.bucket_util.base_bucket_ratio(self.cluster.servers)
-        info = self.rest.get_nodes_self()
+        self.info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
-        self.rest.init_cluster_memoryQuota(memoryQuota=int(info.mcdMemoryReserved*node_ram_ratio))
+        self.kv_memory = int(self.info.mcdMemoryReserved) - 100
+        self.rest.init_cluster_memoryQuota(memoryQuota=self.kv_memory)
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         if nodes_init:
             result = self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -49,10 +47,12 @@ class MagmaBaseTest(BaseTestCase):
             self._create_default_bucket()
         else:
             self._create_multiple_buckets()
-        self.disable_magma_commit_points = self.input.param("disable_magma_commit_points", False)
+        self.disable_magma_commit_points = self.input.param(
+            "disable_magma_commit_points", False)
         if self.disable_magma_commit_points:
-            self.bucket_util.update_bucket_props("backend", "magma;magma_max_commit_points=0",
-                                                 self.bucket_util.buckets)
+            self.bucket_util.update_bucket_props(
+                "backend", "magma;magma_max_commit_points=0",
+                self.bucket_util.buckets)
         self.doc_size = self.input.param("doc_size", 1024)
         self.gen_create = doc_generator(self.key, 0, self.num_items,
                                         doc_size=self.doc_size,
@@ -64,12 +64,14 @@ class MagmaBaseTest(BaseTestCase):
                                         randomize_value=self.randomize_value)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
-        self.result_task = self._load_all_buckets(self.cluster, self.gen_create,
-                                                  "create", 0, batch_size=self.batch_size,
-                                                  dgm_batch=self.dgm_batch )
+        self.result_task = self._load_all_buckets(self.cluster,
+                                                  self.gen_create,
+                                                  "create", 0,
+                                                  batch_size=self.batch_size,
+                                                  dgm_batch=self.dgm_batch)
         if self.active_resident_threshold != 100:
             for task in self.result_task.keys():
-                self.num_items = task.doc_index;
+                self.num_items = task.doc_index
         self.log.info("Verifying num_items counts after doc_ops")
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -86,26 +88,23 @@ class MagmaBaseTest(BaseTestCase):
                                         key_size=self.key_size)
         if self.test_with_fragmentation:
             _ = self._load_all_buckets(self.cluster, self.gen_update,
-                                                  "update", 0, batch_size=self.batch_size,
-                                                  dgm_batch=self.dgm_batch )
+                                       "update", 0, batch_size=self.batch_size,
+                                       dgm_batch=self.dgm_batch)
             self.bucket_util._wait_for_stats_all_buckets()
             for bucket in self.bucket_util.get_all_buckets():
-                data_validation_task = self.task.async_validate_docs(
+                data_val_task = self.task.async_validate_docs(
                     self.cluster, bucket,
                     self.gen_update, "update", 0, batch_size=self.batch_size)
-                self.task.jython_task_manager.get_task_result(data_validation_task)
+                self.task.jython_task_manager.get_task_result(data_val_task)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished magma base setup========")
 
     def _create_default_bucket(self):
-        node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
-        info = RestConnection(self.cluster.master).get_nodes_self()
-        available_ram = int(info.memoryQuota * node_ram_ratio)
-        if available_ram < 100:
-            available_ram = 100
+        if self.kv_memory < 100:
+            self.kv_memory = 100
         self.bucket_util.create_default_bucket(
-            ram_quota=available_ram,
+            ram_quota=self.kv_memory,
             bucket_type=self.bucket_type,
             replica=self.num_replicas,
             storage=self.bucket_storage,
@@ -226,4 +225,3 @@ class MagmaBaseTest(BaseTestCase):
             shell.disconnect()
             magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
-    
