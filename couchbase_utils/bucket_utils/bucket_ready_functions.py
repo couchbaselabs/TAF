@@ -2981,7 +2981,7 @@ class BucketUtils(ScopeUtils):
             if collection_data is None:
                 collection_data = tem_collection_data
             else:
-                for key, value in tem_collection_data:
+                for key, value in tem_collection_data.items():
                     if type(value) is dict and "num_items" in value:
                         collection_data[key]["num_items"] += value["num_items"]
 

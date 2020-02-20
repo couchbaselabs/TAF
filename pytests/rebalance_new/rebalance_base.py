@@ -52,6 +52,12 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.change_max_buckets(self.standard_buckets)
         self.create_buckets(self.bucket_size)
 
+        # Scope_name can be '_default', 'random' to create a random scope
+        self.scope_name = self.input.param("scope", CbServer.default_scope)
+        # collection_name will be 'False' to disable collection testing.
+        # else to create collection with random name for testing
+        self.collection_name = self.input.param("collection", False)
+
         # Create Scope/Collection based on inputs given
         if self.scope_name != CbServer.default_scope:
             self.scope_name = BucketUtils.get_random_name()

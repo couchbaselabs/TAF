@@ -190,7 +190,6 @@ class BasicOps(CollectionBase):
         for node in self.cluster_util.get_kv_nodes():
             shell_conn = RemoteMachineShellConnection(node)
             cbstats = Cbstats(shell_conn)
-            scope_data = cbstats.get_scopes(self.def_bucket)
             c_data = cbstats.get_collections(self.def_bucket)
             if c_data["count"] != 1:
                 self.log_failure("%s - Expected scope count is '1'."
