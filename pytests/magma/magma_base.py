@@ -53,6 +53,7 @@ class MagmaBaseTest(BaseTestCase):
         if self.disable_magma_commit_points:
             self.bucket_util.update_bucket_props("backend", "magma;magma_max_commit_points=0",
                                                  self.bucket_util.buckets)
+        self.doc_size = self.input.param("doc_size", 1024)
         self.gen_create = doc_generator(self.key, 0, self.num_items,
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
@@ -134,13 +135,15 @@ class MagmaBaseTest(BaseTestCase):
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True, dgm_batch=5000):
 
+        retry_exceptions = list([SDKException.AmbiguousTimeoutException])
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
             durability=self.durability_level, timeout_secs=timeout_secs,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, sdk_compression=compression,
-            process_concurrency=8,
+            process_concurrency=self.process_concurrency,
+            retry_exceptions=retry_exceptions,
             active_resident_threshold=self.active_resident_threshold,
             dgm_batch=dgm_batch)
         if self.active_resident_threshold < 100:

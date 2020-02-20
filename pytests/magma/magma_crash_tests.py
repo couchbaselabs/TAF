@@ -75,7 +75,8 @@ class MagmaCrashTests(MagmaBaseTest):
             self.fail("Not enough nodes/replicas in the cluster/bucket to test rollback")
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
         shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
-        self.target_vbucket = Cbstats(shell).vbucket_list(self.bucket_util.buckets[0].name)
+        cbstats = Cbstats(shell)
+        self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].name)
         start = self.num_items
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
@@ -107,12 +108,17 @@ class MagmaCrashTests(MagmaBaseTest):
 
             # Kill memcached on NodeA to trigger rollback on other Nodes
             # replica vBuckets
+            for bucket in self.bucket_util.buckets:
+                self.log.debug(cbstats.failover_stats(bucket.name))
             shell.kill_memcached()
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
             self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+            self.sleep(5, "Not Required, but waiting for 5s after warmup")
+            for bucket in self.bucket_util.buckets:
+                self.log.debug(cbstats.failover_stats(bucket.name))
         shell.disconnect()
 
     def test_magma_rollback_to_0(self):
