@@ -9,7 +9,7 @@ from BucketLib.bucket import Bucket
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
 import logging
 from membase.api.rest_client import RestConnection
-from sdk_client3 import SDKClient as VBucketAwareMemcached
+from sdk_client3 import SDKClient
 import threading
 from random import randint
 from error_simulation.cb_error import CouchbaseError
@@ -41,7 +41,7 @@ class basic_ops(BaseTestCase):
            
         time.sleep(10)
         self.def_bucket= self.bucket_util.get_all_buckets()
-        self.client = VBucketAwareMemcached(self.cluster.master, self.def_bucket[0])
+        self.client = SDKClient([self.cluster.master], self.def_bucket[0])
         self.__durability_level()
         self.create_Transaction()
         self._stop = threading.Event()
@@ -253,7 +253,7 @@ class basic_ops(BaseTestCase):
             self.client.cluster.disconnect() 
             self.transaction.close()
             print "going to create a new transaction"
-            self.client1 = VBucketAwareMemcached(self.cluster.master, self.def_bucket[0])
+            self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
             self.create_Transaction(self.client1)
             self.sleep(self.transaction_timeout+60)
             exception = Transaction().RunTransaction(self.transaction, [self.client1.collection], self.docs, [], [], self.transaction_commit, self.sync, self.update_count)
@@ -297,7 +297,7 @@ class basic_ops(BaseTestCase):
         self.client.cluster.disconnect()       
         self.transaction.close()
           
-        self.client1 = VBucketAwareMemcached(self.cluster.master, self.def_bucket[0])
+        self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
         self.create_Transaction(self.client1)
         self.sleep(self.transaction_timeout+60) # sleep for 60 seconds so that transaction cleanup can happen
         
@@ -384,7 +384,3 @@ class basic_ops(BaseTestCase):
         
         self.sleep(60)
         self.verify_doc(self.num_items, self.client) 
-
-        
-                          
-
