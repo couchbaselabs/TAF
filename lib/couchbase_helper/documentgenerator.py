@@ -11,6 +11,10 @@ from string import digits
 from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 
+letters = string.ascii_uppercase + string.digits
+random_string = [''.join(random.choice(letters) for _ in range(128*1024))][0]
+
+
 def doc_generator(key, start, end, doc_size=256, doc_type="json",
                   target_vbucket=None, vbuckets=1024, mutation_type="ADD",
                   mutate=0, key_size=8, randomize_doc_size=False,
@@ -141,6 +145,7 @@ class DocumentGenerator(KVGenerator):
                 size *= len(arg)
 
         KVGenerator.__init__(self, name, 0, size)
+        self.body = [''.rjust(self.doc_size - 10, 'a')][0]
 
         if 'start' in kwargs:
             self.start = kwargs['start']
@@ -157,6 +162,7 @@ class DocumentGenerator(KVGenerator):
 
         if 'doc_size' in kwargs:
             self.doc_size = kwargs['doc_size']
+            self.body = [''.rjust(self.doc_size - 10, 'a')][0]
 
         if 'randomize_doc_size' in kwargs:
             self.randomize_doc_size = kwargs['randomize_doc_size']
@@ -180,19 +186,15 @@ class DocumentGenerator(KVGenerator):
             value = self.random.choice(arg)
             doc_args.append(value)
 
-        body = ""
+        if self.randomize_value:
+            _slice = random.randint(0, 128*1024 - self.doc_size)
+            self.body = random_string[_slice:_slice+self.doc_size]
+
         if self.randomize_doc_size:
             doc_size = random.randint(0, self.doc_size)
-        else:
-            doc_size = self.doc_size
+            self.body = self.body[:doc_size]
 
-        if self.randomize_value:
-            letters = string.ascii_lowercase
-            body = [''.join(random.choice(letters) for _ in range(doc_size - 10))][0]
-        else:
-            body = [''.rjust(doc_size - 10, 'a')][0]
-
-        doc_args.append(body)
+        doc_args.append(self.body)
         doc = self.template.format(*doc_args).replace('\'', '"') \
                                              .replace('True', 'true') \
                                              .replace('False', 'false') \
