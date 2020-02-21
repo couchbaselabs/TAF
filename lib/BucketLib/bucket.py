@@ -39,7 +39,6 @@ class Collection(object):
 
 class Bucket(object):
     name = "name"
-    replicas = "replicas"
     ramQuotaMB = "ramQuotaMB"
     bucketType = "bucketType"
     replicaNumber = "replicaNumber"
@@ -47,7 +46,7 @@ class Bucket(object):
     evictionPolicy = "evictionPolicy"
     priority = "priority"
     flushEnabled = "flushEnabled"
-    lww = "lww"
+    conflictResolutionType = "conflictResolutionType"
     storageBackend = "storageBackend"
     maxTTL = "maxTTL"
     replicaIndex = "replicaIndex"
@@ -60,11 +59,21 @@ class Bucket(object):
         MEMBASE = "membase"
         MEMCACHED = "memcached"
 
+    class ReplicaNum(object):
+        ZERO = 0
+        ONE = 1
+        TWO = 2
+        THREE = 3
+
     class EvictionPolicy(object):
         FULL_EVICTION = "fullEviction"
         NO_EVICTION = "noEviction"
         NRU_EVICTION = "nruEviction"
         VALUE_ONLY = "valueOnly"
+
+    class ConflictResolution(object):
+        SEQ_NO = "seqno"
+        TIMESTAMP_BASED = "lww"
 
     class CompressionMode(object):
         ACTIVE = "active"
@@ -95,12 +104,35 @@ class Bucket(object):
             self.ram = 0
 
     def __init__(self, new_params=dict()):
+        # Default values based on Couchbase document,
+        # docs.couchbase.com/server/current/rest-api/rest-bucket-create.html
+
         self.name = new_params.get(Bucket.name, "default")
         self.bucketType = new_params.get(Bucket.bucketType,
                                          Bucket.Type.MEMBASE)
-        self.replicaNumber = new_params.get(Bucket.replicaNumber, 0)
+        self.replicaNumber = new_params.get(Bucket.replicaNumber,
+                                            Bucket.ReplicaNum.ONE)
         self.replicaServers = new_params.get(Bucket.replicaServers, [])
         self.ramQuotaMB = new_params.get(Bucket.ramQuotaMB, 100)
+        self.replicaIndex = new_params.get(Bucket.replicaIndex, 1)
+        self.storageBackend = new_params.get(Bucket.storageBackend,
+                                             Bucket.StorageBackend.couchstore)
+        self.priority = new_params.get(Bucket.priority, Bucket.Priority.LOW)
+        self.uuid = None
+        self.conflictResolutionType = \
+            new_params.get(Bucket.conflictResolutionType,
+                           Bucket.ConflictResolution.SEQ_NO)
+        self.maxTTL = new_params.get(Bucket.maxTTL, 0)
+        self.flushEnabled = new_params.get(Bucket.flushEnabled, 0)
+        self.compressionMode = new_params.get(
+            Bucket.compressionMode,
+            Bucket.CompressionMode.PASSIVE)
+        self.nodes = None
+        self.stats = Bucket.BucketStats()
+        self.servers = list()
+        self.vbuckets = list()
+        self.forward_map = list()
+        self.scopes = dict()
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
@@ -113,25 +145,6 @@ class Bucket(object):
             self.evictionPolicy = new_params.get(
                 Bucket.evictionPolicy,
                 Bucket.EvictionPolicy.VALUE_ONLY)
-
-        self.replicaIndex = new_params.get(Bucket.replicaIndex, 0)
-        self.storageBackend = new_params.get(Bucket.storageBackend,
-                                             Bucket.StorageBackend.couchstore)
-        self.priority = new_params.get(Bucket.priority, None)
-        self.threadsNumber = new_params.get(Bucket.threadsNumber, 3)
-        self.uuid = None
-        self.lww = new_params.get(Bucket.lww, False)
-        self.maxTTL = new_params.get(Bucket.maxTTL, 0)
-        self.flushEnabled = new_params.get(Bucket.flushEnabled, 1)
-        self.compressionMode = new_params.get(
-            Bucket.compressionMode,
-            Bucket.CompressionMode.PASSIVE)
-        self.nodes = None
-        self.stats = Bucket.BucketStats()
-        self.servers = list()
-        self.vbuckets = list()
-        self.forward_map = list()
-        self.scopes = dict()
 
         # Create default scope-collection association
         scope = Scope({"name": CbServer.default_scope})

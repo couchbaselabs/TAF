@@ -286,19 +286,27 @@ class BucketHelper(RestConnection):
         return status
 
     # figure out the proxy port
-    def create_bucket(self, bucket_params={}):
+    def create_bucket(self, bucket_params=dict()):
         api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets')
-        init_params = {'name': bucket_params.get('name'),
-                       'ramQuotaMB': bucket_params.get('ramQuotaMB'),
-                       'replicaNumber': bucket_params.get('replicaNumber'),
-                       'bucketType': bucket_params.get('bucketType'),
-                       'replicaIndex': bucket_params.get('replicaIndex'),
-                       'threadsNumber': bucket_params.get('threadsNumber'),
-                       'flushEnabled': bucket_params.get('flushEnabled'),
-                       'evictionPolicy': bucket_params.get('evictionPolicy'),
-                       'compressionMode': bucket_params.get('compressionMode'),
-                       'maxTTL': bucket_params.get('maxTTL'),
-                       'storageBackend': bucket_params.get('storageBackend')}
+        init_params = {
+            Bucket.name: bucket_params.get('name'),
+            Bucket.ramQuotaMB: bucket_params.get('ramQuotaMB'),
+            Bucket.replicaNumber: bucket_params.get('replicaNumber'),
+            Bucket.bucketType: bucket_params.get('bucketType'),
+            Bucket.replicaIndex: bucket_params.get('replicaIndex'),
+            Bucket.priority: bucket_params.get('priority'),
+            Bucket.flushEnabled: bucket_params.get('flushEnabled'),
+            Bucket.evictionPolicy: bucket_params.get('evictionPolicy'),
+            Bucket.compressionMode: bucket_params.get('compressionMode'),
+            Bucket.maxTTL: bucket_params.get('maxTTL'),
+            Bucket.storageBackend: bucket_params.get('storageBackend'),
+            Bucket.conflictResolutionType:
+                bucket_params.get('conflictResolutionType'),
+            Bucket.threadsNumber: Bucket.Priority.LOW}
+
+        if init_params[Bucket.priority] == "high":
+            init_params[Bucket.threadsNumber] = Bucket.Priority.HIGH
+        init_params.pop(Bucket.priority)
 
         # Remove 'replicaNumber' in case of MEMCACHED bucket
         if bucket_params.get("bucketType") == Bucket.Type.MEMCACHED:
@@ -307,9 +315,6 @@ class BucketHelper(RestConnection):
         # Remove 'replicaIndex' parameter in case of EPHEMERAL bucket
         if bucket_params.get("bucketType") == Bucket.Type.EPHEMERAL:
             init_params.pop('replicaIndex', None)
-
-        if bucket_params.get('lww'):
-            init_params['conflictResolutionType'] = 'lww'
 
         params = urllib.urlencode(init_params)
 

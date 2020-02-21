@@ -519,7 +519,8 @@ class BucketUtils(ScopeUtils):
             self, bucket_type=Bucket.Type.MEMBASE,
             ram_quota=None, replica=1, maxTTL=0,
             compression_mode="off", wait_for_warmup=True,
-            lww=False, replica_index=1,
+            conflict_resolution=Bucket.ConflictResolution.SEQ_NO,
+            replica_index=1,
             storage=Bucket.StorageBackend.couchstore,
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
@@ -537,7 +538,8 @@ class BucketUtils(ScopeUtils):
                                  Bucket.replicaNumber: replica,
                                  Bucket.compressionMode: compression_mode,
                                  Bucket.maxTTL: maxTTL,
-                                 Bucket.lww: lww,
+                                 Bucket.conflictResolutionType:
+                                     conflict_resolution,
                                  Bucket.replicaIndex: replica_index,
                                  Bucket.storageBackend: storage,
                                  Bucket.evictionPolicy: eviction_policy})

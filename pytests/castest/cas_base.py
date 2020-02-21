@@ -32,10 +32,11 @@ class CasBaseTest(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.add_rbac_user()
-        self.bucket_util.create_default_bucket(ram_quota=self.bucket_size,
-                                               replica=self.num_replicas,
-                                               storage=self.bucket_storage,
-                                               lww=self.bucket_lww)
+        self.bucket_util.create_default_bucket(
+            ram_quota=self.bucket_size,
+            replica=self.num_replicas,
+            storage=self.bucket_storage,
+            conflict_resolution=self.bucket_conflict_resolution_type)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.bucket = self.bucket_util.buckets[0]
@@ -172,25 +173,8 @@ class CasBaseTest(BaseTestCase):
             self.log.info("Warming-up servers ..")
             time.sleep(100)
 
-
-
     def _check_config(self):
         rc = self.rest.get_bucket_json(self.bucket)
         if 'conflictResolution' in rc:
             conflictResolution  = self.rest.get_bucket_json(self.bucket)['conflictResolutionType']
             self.assertTrue(conflictResolution == 'lww','Expected conflict resolution of lww but got {0}'.format(conflictResolution))
-
-
-        """ drift is disabled in 4.6, commenting out for now as it may come back later
-        if self.lww and not self.drift:
-            time_sync = 'enabledWithoutDrift'
-        elif self.lww and self.drift:
-            time_sync = 'enabledWithDrift'
-        elif not self.lww:
-            time_sync = 'disabled'
-        self.assertEqual(result,time_sync, msg='ERROR, Mismatch on expected time synchronization values, ' \
-                                               'expected {0} but got {1}'.format(time_sync, result))
-        self.log.info("Verified results")
-        """
-
-

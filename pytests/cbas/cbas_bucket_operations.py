@@ -38,7 +38,7 @@ class CBASBucketOperations(CBASBaseTest):
             bucket_type=self.bucket_type,
             ram_quota=self.bucket_size,
             replica=self.num_replicas,
-            lww=self.bucket_lww,
+            conflict_resolution=self.bucket_conflict_resolution_type,
             replica_index=self.bucket_replica_index,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
@@ -678,7 +678,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             bucket_type=self.bucket_type,
             ram_quota=self.bucket_size,
             replica=self.num_replicas,
-            lww=self.bucket_lww,
+            conflict_resolution=self.bucket_conflict_resolution_type,
             replica_index=self.bucket_replica_index,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)

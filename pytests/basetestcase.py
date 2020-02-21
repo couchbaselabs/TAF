@@ -24,9 +24,11 @@ class BaseTestCase(unittest.TestCase):
 
         # Framework specific parameters
         self.log_level = self.input.param("log_level", "info").upper()
-        self.infra_log_level = self.input.param("infra_log_level", "error").upper()
+        self.infra_log_level = self.input.param("infra_log_level",
+                                                "error").upper()
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
-        self.tear_down_while_setup = self.input.param("tear_down_while_setup", True)
+        self.tear_down_while_setup = self.input.param("tear_down_while_setup",
+                                                      True)
         self.test_timeout = self.input.param("test_timeout", 3600)
         self.thread_to_use = self.input.param("threads_to_use", 10)
         self.case_number = self.input.param("case_number", 0)
@@ -53,7 +55,9 @@ class BaseTestCase(unittest.TestCase):
         self.bucket_type = self.input.param("bucket_type",
                                             Bucket.Type.MEMBASE)
         self.bucket_size = self.input.param("bucket_size", None)
-        self.bucket_lww = self.input.param("lww", True)
+        self.bucket_conflict_resolution_type = \
+            self.input.param("bucket_conflict_resolution",
+                             Bucket.ConflictResolution.SEQ_NO)
         self.bucket_replica_index = self.input.param("bucket_replica_index",
                                                      1)
         self.bucket_eviction_policy = \
@@ -61,14 +65,16 @@ class BaseTestCase(unittest.TestCase):
                              Bucket.EvictionPolicy.VALUE_ONLY)
         self.bucket_time_sync = self.input.param("bucket_time_sync", False)
         self.standard_buckets = self.input.param("standard_buckets", 1)
-        self.num_replicas = self.input.param("replicas", 1)
+        self.num_replicas = self.input.param("replicas",
+                                             Bucket.ReplicaNum.ONE)
         self.active_resident_threshold = \
             int(self.input.param("active_resident_threshold", 100))
         self.compression_mode = \
             self.input.param("compression_mode",
                              Bucket.CompressionMode.PASSIVE)
-        self.bucket_storage = self.input.param("bucket_storage",
-                                               Bucket.StorageBackend.couchstore)
+        self.bucket_storage = \
+            self.input.param("bucket_storage",
+                             Bucket.StorageBackend.couchstore)
         if self.bucket_storage == Bucket.StorageBackend.magma:
             self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
 
@@ -212,14 +218,15 @@ class BaseTestCase(unittest.TestCase):
             if not self.skip_init_check_cbserver:
                 for cluster in self.__cb_clusters:
                     self.cb_version = None
-                    if RestHelper(RestConnection(cluster.master)).is_ns_server_running():
+                    rest = RestConnection(cluster.master)
+                    if RestHelper(rest).is_ns_server_running():
                         """
                         Since every new couchbase version, there will be new
                         features that test code won't work on previous release.
                         So we need to get couchbase version to filter out
                         those tests.
                         """
-                        self.cb_version = RestConnection(cluster.master).get_nodes_version()
+                        self.cb_version = rest.get_nodes_version()
                     else:
                         self.log.debug("couchbase server does not run yet")
                     # Stopped supporting TAP protocol since 3.x
