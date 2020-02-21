@@ -69,7 +69,9 @@ class SDKClient(object):
     Java SDK Client Implementation for testrunner - master branch
     """
 
-    def __init__(self, servers, bucket, scope=None, collection=None,
+    def __init__(self, servers, bucket,
+                 scope=CbServer.default_scope,
+                 collection=CbServer.default_collection,
                  username="Administrator", password="password",
                  certpath=None, compression=True):
         # Used during Cluster.connect() call
@@ -425,16 +427,11 @@ class SDKClient(object):
     def select_collection(self, scope_name, collection_name):
         """
         Method to select collection. Can be called directly from test case.
-        If scope/collection name is None, 'default' collection is selected
         """
-        if collection_name is not None:
-            if scope_name is None:
-                self.collection = self.bucketObj \
-                    .collection(collection_name)
-            else:
-                self.collection = self.bucketObj \
-                    .scope(scope_name) \
-                    .collection(collection_name)
+        if collection_name != CbServer.default_collection:
+            self.collection = self.bucketObj \
+                .scope(scope_name) \
+                .collection(collection_name)
         else:
             self.collection = self.bucketObj.defaultCollection()
 

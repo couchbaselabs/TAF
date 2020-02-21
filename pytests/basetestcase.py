@@ -8,6 +8,7 @@ import inspect
 
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
+from cb_tools.cb_cli import CbCli
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from membase.api.rest_client import RestHelper, RestConnection
@@ -70,6 +71,10 @@ class BaseTestCase(unittest.TestCase):
                                                Bucket.StorageBackend.couchstore)
         if self.bucket_storage == Bucket.StorageBackend.magma:
             self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
+
+        self.scope_name = self.input.param("scope", CbServer.default_scope)
+        self.collection_name = self.input.param("collection",
+                                                CbServer.default_collection)
         # End of bucket parameters
 
         # Doc specific params
@@ -278,6 +283,13 @@ class BaseTestCase(unittest.TestCase):
                     self.log.info("{0} initialized".format(cluster))
             else:
                 self.quota = ""
+
+            # Enable dp_version since we need collections enabled
+            for server in self.cluster.servers:
+                shell_conn = RemoteMachineShellConnection(server)
+                cb_cli = CbCli(shell_conn)
+                cb_cli.enable_dp()
+                shell_conn.disconnect()
 
             for cluster in self.__cb_clusters:
                 cluster_util = ClusterUtils(cluster, self.task_manager)

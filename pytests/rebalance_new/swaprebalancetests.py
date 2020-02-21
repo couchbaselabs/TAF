@@ -120,7 +120,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def _common_test_body_swap_rebalance(self, do_stop_start=False):
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
@@ -425,7 +425,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.assertTrue(self.rest.monitorRebalance(),
                             msg="Rebalance failed after failover of node {0}"
                             .format(node))
-            
+
         self.rest.rebalance(
             otpNodes=[node.id for node in self.rest.node_statuses()],
             ejectedNodes=opt_nodes_ids)

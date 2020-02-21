@@ -126,7 +126,7 @@ class RebalanceInTests(RebalanceBaseTest):
                     "Doc ops failed for task: {}".format(task.thread_name))
 
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
         else:
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
@@ -205,7 +205,7 @@ class RebalanceInTests(RebalanceBaseTest):
                     "Doc ops failed for task: {}".format(task.thread_name))
 
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
         else:
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
@@ -263,7 +263,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
             self.num_items = current_items
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
@@ -279,7 +279,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
             self.num_items = current_items
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.validate_docs_per_collections_all_buckets(timeout=120)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         new_failover_stats = self.bucket_util.compare_failovers_logs(
             prev_failover_stats, self.cluster.servers[:self.nodes_in + self.nodes_init],
@@ -341,7 +341,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                        self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.validate_docs_per_collections_all_buckets(timeout=120)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.servers[:self.nodes_in + self.nodes_init], self.bucket_util.buckets)
         self.bucket_util.data_analysis_active_replica_all(
@@ -390,7 +390,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
             self.num_items = current_items
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.validate_docs_per_collections_all_buckets(timeout=120)
         self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
@@ -421,7 +421,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.servers, self.cluster.servers[:self.nodes_init],
             [chosen[0]], [self.cluster.servers[self.nodes_init]])
         self.cluster.nodes_in_cluster = new_server_list
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+        self.bucket_util.validate_docs_per_collections_all_buckets(timeout=120)
         self.bucket_util.verify_cluster_stats(self.num_items,
                                               check_ep_items_remaining=True)
         self.bucket_util.compare_failovers_logs(
@@ -481,7 +481,7 @@ class RebalanceInTests(RebalanceBaseTest):
                     "Doc ops failed for task: {}".format(task.thread_name))
 
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
         else:
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
@@ -523,7 +523,7 @@ class RebalanceInTests(RebalanceBaseTest):
             current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
             self.num_items = current_items
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def rebalance_in_get_random_key(self):

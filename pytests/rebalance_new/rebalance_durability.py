@@ -106,7 +106,7 @@ class RebalanceDurability(RebalanceBaseTest):
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_replica_update_with_durability_with_adding_removing_nodes(self):
         tasks_info = self.__load_docs_in_all_buckets()
@@ -179,7 +179,7 @@ class RebalanceDurability(RebalanceBaseTest):
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_rebalance_out_durabilitybreaks_rebalance_in(self):
         self.assertTrue(self.num_replicas >= 1,
@@ -349,7 +349,7 @@ class RebalanceDurability(RebalanceBaseTest):
 
             # Verify doc load count to match the overall CRUDs
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_multiple_scenarios(self):
         """
@@ -424,7 +424,7 @@ class RebalanceDurability(RebalanceBaseTest):
         # Doc count verification
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_auto_retry_of_failed_rebalance_with_rebalance_test_conditions(self):
         sleep_time = self.input.param("sleep_time", 15)
@@ -474,4 +474,4 @@ class RebalanceDurability(RebalanceBaseTest):
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.validate_docs_per_collections_all_buckets()

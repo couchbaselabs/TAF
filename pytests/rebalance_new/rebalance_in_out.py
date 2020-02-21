@@ -3,6 +3,7 @@ from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
 from BucketLib.BucketOperations import BucketHelper
 from rebalance_new import rebalance_base
+from sdk_exceptions import SDKException
 
 
 class RebalanceInOutTests(RebalanceBaseTest):
@@ -47,7 +48,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
         if not self.atomicity:
-            self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                timeout=120)
             self.bucket_util._wait_for_stats_all_buckets()
             self.sleep(20)
             prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
@@ -60,7 +62,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.add_remove_servers_and_rebalance(servs_in, servs_out)
         self.sleep(30)
         if not self.atomicity:
-            self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                timeout=120)
             self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
             new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats, result_nodes, self.bucket_util.buckets)
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(prev_vbucket_stats, result_nodes, self.bucket_util.buckets,
@@ -107,8 +110,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-            self.bucket_util.verify_stats_all_buckets(self.num_items,
-                                                      timeout=120)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                    timeout=120)
             self.bucket_util._wait_for_stats_all_buckets()
 
         # Update replica value before performing rebalance in/out as given in conf file
@@ -185,7 +188,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-            self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=120)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                timeout=120)
             self.bucket_util._wait_for_stats_all_buckets()
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:
@@ -597,14 +601,17 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         msg="rebalance operation failed after adding node {0}"
                         .format(toBeEjectedNodes))
 
-        self.bucket_util.verify_doc_op_task_exceptions(tasks_info, self.cluster)
+        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                       self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         for task, task_info in tasks_info.items():
             self.assertFalse(
                 task_info["ops_failed"],
                 "Doc ops failed for task: {}".format(task.thread_name))
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        for bucket in self.bucket_util.buckets:
+            self.bucket_util.validate_doc_count_as_per_collections(
+                bucket)
 
     def test_rebalance_inout_with_durability_failure(self):
         """
@@ -689,7 +696,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         .format(toBeEjectedNodes))
 
         # CRUDs while durability is broken
-        ignore_exceptions = ["com.couchbase.client.core.error.DurabilityImpossibleException"]
+        ignore_exceptions = [SDKException.DurabilityImpossibleException]
         self.check_temporary_failure_exception = False
         self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + 1000)
@@ -709,7 +716,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         msg="rebalance operation failed after adding node {0}"
                         .format(toBeEjectedNodes))
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items-1000)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
 
         for vb_num in range(0, self.cluster_util.vbuckets, 128):
             self.target_vbucket = [vb_num]

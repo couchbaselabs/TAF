@@ -776,6 +776,7 @@ class BucketUtils(ScopeUtils):
                 items_actual += int(client.stats()["curr_items"])
             if items != items_actual:
                 raise Exception("Items are not correct")
+            return
 
         # TODO: Need to fix the config files to always satisfy the
         #       replica number based on the available number_of_servers
@@ -825,8 +826,6 @@ class BucketUtils(ScopeUtils):
             self.buckets,
             skip_consistency=True)
         for bucket in self.buckets:
-            if bucket.bucketType == Bucket.Type.MEMCACHED:
-                continue
             self.verify_stats_for_bucket(bucket, items, timeout=timeout)
             # Validate seq_no snap_start/stop values with initial load
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
@@ -943,8 +942,8 @@ class BucketUtils(ScopeUtils):
     def get_doc_op_info_dict(self, bucket, op_type, exp=0, replicate_to=0,
                              persist_to=0, durability="",
                              timeout=5, time_unit="seconds",
-                             scope=None,
-                             collection=None,
+                             scope=CbServer.default_scope,
+                             collection=CbServer.default_collection,
                              ignore_exceptions=[], retry_exceptions=[]):
         info_dict = dict()
         info_dict["ops_failed"] = False
@@ -1041,11 +1040,14 @@ class BucketUtils(ScopeUtils):
         """
         for task, task_info in tasks_info.items():
             self.task_manager.get_task_result(task)
+            bucket = task_info["bucket"]
+            scope = task_info["scope"]
+            collection = task_info["collection"]
 
             client = SDKClient([cluster.master],
-                               task_info["bucket"],
-                               scope=task_info["scope"],
-                               collection=task_info["collection"])
+                               bucket,
+                               scope=scope,
+                               collection=collection)
             for key, failed_doc in task.fail.items():
                 found = False
                 exception = failed_doc["error"]
@@ -1053,6 +1055,9 @@ class BucketUtils(ScopeUtils):
 
                 for ex in task_info["ignore_exceptions"]:
                     if str(exception).find(ex) != -1:
+                        bucket \
+                            .scopes[scope] \
+                            .collections[collection].num_items -= 1
                         tasks_info[task]["ignored"].update(key_value)
                         found = True
                         break
@@ -1111,7 +1116,8 @@ class BucketUtils(ScopeUtils):
                           active_resident_threshold=100,
                           ryow=False, check_persistence=False,
                           suppress_error_table=False, dgm_batch=5000,
-                          scope=None, collection=None):
+                          scope=CbServer.default_scope,
+                          collection=CbServer.default_collection):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
@@ -1134,7 +1140,8 @@ class BucketUtils(ScopeUtils):
                                 active_resident_threshold=100,
                                 ryow=False, check_persistence=False,
                                 suppress_error_table=False, dgm_batch=5000,
-                                scope=None, collection=None):
+                                scope=CbServer.default_scope,
+                                collection=CbServer.default_collection):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -1182,7 +1189,8 @@ class BucketUtils(ScopeUtils):
                               active_resident_threshold=100,
                               ryow=False, check_persistence=False,
                               suppress_error_table=False, dgm_batch=5000,
-                              scope=None, collection=None):
+                              scope=CbServer.default_scope,
+                              collection=CbServer.default_collection):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -2953,10 +2961,6 @@ class BucketUtils(ScopeUtils):
         collection_data = None
         cb_stat_objects = list()
 
-        # Validate total expected doc_count matches with the overall bucket
-        total_bucket_doc_count = self.get_expected_total_num_items(bucket)
-        self.verify_stats_all_buckets(total_bucket_doc_count)
-
         # Create required cb_stat objects
         for node in self.cluster_util.get_kv_nodes():
             shell = RemoteMachineShellConnection(node)
@@ -2999,3 +3003,21 @@ class BucketUtils(ScopeUtils):
         # Raise exception if the status is 'False'
         if not status:
             raise Exception("Collections stat validation failed")
+
+    def validate_docs_per_collections_all_buckets(self, timeout=300):
+        vbucket_stats = self.get_vbucket_seqnos(
+            self.cluster_util.get_kv_nodes(),
+            self.buckets,
+            skip_consistency=True)
+
+        # Validate total expected doc_count matches with the overall bucket
+        for bucket in self.buckets:
+            expected_num_items = self.get_expected_total_num_items(bucket)
+            self.verify_stats_for_bucket(bucket, expected_num_items,
+                                         timeout=timeout)
+
+            result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
+            self.assertTrue(result,
+                            "snap_start and snap_end corruption found!!!")
+
+            self.validate_doc_count_as_per_collections(bucket)

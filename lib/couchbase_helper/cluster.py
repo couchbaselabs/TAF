@@ -1,6 +1,7 @@
 import logging
 import tasks.tasks as conc
 import Jython_tasks.task as jython_tasks
+from Cb_constants import CbServer
 
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
@@ -130,8 +131,8 @@ class ServerTasks(object):
                             start_task=True,
                             suppress_error_table=False,
                             dgm_batch=5000,
-                            scope=None,
-                            collection=None):
+                            scope=CbServer.default_scope,
+                            collection=CbServer.default_collection):
         clients = list()
         if active_resident_threshold == 100:
             self.log.debug("Loading documents to {}".format(bucket.name))
@@ -208,7 +209,8 @@ class ServerTasks(object):
                                 durability="",
                                 start_task=True,
                                 task_identifier="",
-                                scope=None, collection=None):
+                                scope=CbServer.default_scope,
+                                collection=CbServer.default_collection):
         self.log.debug("Loading sub documents to {}".format(bucket.name))
         if not isinstance(generator, SubdocDocumentGenerator):
             raise Exception("Document generator needs to be of "
@@ -255,7 +257,8 @@ class ServerTasks(object):
                                      batch_size=10,
                                      timeout_secs=5,
                                      process_concurrency=4,
-                                     scope=None, collection=None):
+                                     scope=CbServer.default_scope,
+                                     collection=CbServer.default_collection):
         clients = list()
         for _ in range(process_concurrency):
             client = SDKClient([cluster.master], bucket,
@@ -283,8 +286,8 @@ class ServerTasks(object):
                                       commit=True, durability=0, sync=True,
                                       num_threads=5, record_fail=False,
                                       defer=False,
-                                      scope=None,
-                                      collection=None):
+                                      scope=CbServer.default_scope,
+                                      collection=CbServer.default_collection):
 
         self.log.info("Loading documents ")
         bucket_list = list()
@@ -355,7 +358,8 @@ class ServerTasks(object):
                             flag=0, only_store_hash=True, batch_size=1,
                             pause_secs=1, timeout_secs=5, compression=True,
                             process_concurrency=4, check_replica=False,
-                            scope=None, collection=None):
+                            scope=CbServer.default_scope,
+                            collection=CbServer.default_collection):
         self.log.debug("Validating documents")
         client = SDKClient([cluster.master], bucket,
                            scope, collection)

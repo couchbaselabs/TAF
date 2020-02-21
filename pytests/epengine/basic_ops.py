@@ -48,13 +48,13 @@ class basic_ops(BaseTestCase):
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
-        # Create Scope/Collection based on inputs given
+        # Create Scope/Collection with random names if not equal to default
         if self.scope_name != CbServer.default_scope:
             self.scope_name = BucketUtils.get_random_name()
             BucketUtils.create_scope(self.cluster.master,
                                      self.bucket_util.buckets[0],
                                      {"name": self.scope_name})
-        if self.collection_name is True:
+        if self.collection_name != CbServer.default_collection:
             self.collection_name = BucketUtils.get_random_name()
             BucketUtils.create_collection(self.cluster.master,
                                           self.bucket_util.buckets[0],
@@ -63,17 +63,12 @@ class basic_ops(BaseTestCase):
                                            "num_items": self.num_items})
             self.log.info("Using scope::collection - '%s::%s'"
                           % (self.scope_name, self.collection_name))
-        else:
-            # Complete fallback to pre-Cheshire_Cat testing,
-            # collection_name is already 'None'
-            self.scope_name = None
-            self.collection_name = None
 
-            # Update required num_items under default collection
-            self.bucket_util.buckets[0] \
-                .scopes[CbServer.default_scope] \
-                .collections[CbServer.default_collection] \
-                .num_items = self.num_items
+        # Update required num_items under default collection
+        self.bucket_util.buckets[0] \
+            .scopes[CbServer.default_scope] \
+            .collections[CbServer.default_collection] \
+            .num_items = self.num_items
 
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.nodes_in_cluster),

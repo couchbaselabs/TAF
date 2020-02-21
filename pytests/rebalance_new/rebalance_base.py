@@ -51,19 +51,13 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.change_max_buckets(self.standard_buckets)
         self.create_buckets(self.bucket_size)
 
-        # Scope_name can be '_default', 'random' to create a random scope
-        self.scope_name = self.input.param("scope", CbServer.default_scope)
-        # collection_name will be 'False' to disable collection testing.
-        # else to create collection with random name for testing
-        self.collection_name = self.input.param("collection", False)
-
         # Create Scope/Collection based on inputs given
         if self.scope_name != CbServer.default_scope:
             self.scope_name = BucketUtils.get_random_name()
             BucketUtils.create_scope(self.cluster.master,
                                      self.bucket_util.buckets[0],
                                      {"name": self.scope_name})
-        if self.collection_name is True:
+        if self.collection_name != CbServer.default_collection:
             self.collection_name = BucketUtils.get_random_name()
             BucketUtils.create_collection(self.cluster.master,
                                           self.bucket_util.buckets[0],
@@ -72,17 +66,12 @@ class RebalanceBaseTest(BaseTestCase):
                                            "num_items": self.num_items})
             self.log.info("Using scope::collection - '%s::%s'"
                           % (self.scope_name, self.collection_name))
-        else:
-            # Complete fallback to pre-Cheshire_Cat testing,
-            # collection_name is already 'None'
-            self.scope_name = None
-            self.collection_name = None
 
-            # Update required num_items under default collection
-            for bucket in self.bucket_util.buckets:
-                bucket.scopes[CbServer.default_scope] \
-                    .collections[CbServer.default_collection] \
-                    .num_items = self.num_items
+        # Update required num_items under default collection
+        for bucket in self.bucket_util.buckets:
+            bucket.scopes[CbServer.default_scope] \
+                .collections[CbServer.default_collection] \
+                .num_items = self.num_items
 
         if self.flusher_batch_split_trigger:
             self.bucket_util.set_flusher_batch_split_trigger(
@@ -98,9 +87,8 @@ class RebalanceBaseTest(BaseTestCase):
                                        "create", 0, batch_size=self.batch_size)
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
-            for tem_bucket in self.bucket_util.buckets:
-                self.bucket_util.validate_doc_count_as_per_collections(
-                    tem_bucket)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                timeout=120)
         else:
             self.transaction_commit = True
             self._load_all_buckets_atomicty(self.gen_create, "create")

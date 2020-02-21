@@ -29,13 +29,6 @@ class CollectionBase(BaseTestCase):
             self.log, len(self.cluster.nodes_in_cluster),
             self.durability_level)
 
-        # Enable Collections using dev-preview options from cb-cli
-        for server in self.cluster.servers:
-            shell_conn = RemoteMachineShellConnection(server)
-            cb_cli = CbCli(shell_conn)
-            cb_cli.enable_dp()
-            shell_conn.disconnect()
-
         # Initialize cluster using given nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []

@@ -278,7 +278,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         for task, _ in tasks.items():
             self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
         self.sleep(20)
 
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
