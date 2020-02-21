@@ -11,6 +11,8 @@ from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import DocumentGenerator
 from reactor.util.function import Tuples
 from sdk_client3 import SDKClient
+import com.couchbase.test.transactions.SimpleTransaction as Transaction
+from reactor.util.function import Tuples
 
 
 class basic_ops(BaseTestCase):
