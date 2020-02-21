@@ -17,7 +17,6 @@ class CrashTest(BaseTestCase):
     def setUp(self):
         super(CrashTest, self).setUp()
 
-        self.key = 'test_docs'.rjust(self.key_size, '0')
         self.doc_ops = self.input.param("doc_ops", None)
         self.process_name = self.input.param("process", None)
         self.service_name = self.input.param("service", "data")
@@ -59,6 +58,7 @@ class CrashTest(BaseTestCase):
         # Load initial documents into the buckets
         gen_create = doc_generator(
             self.key, 0, self.num_items,
+            key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
@@ -138,6 +138,7 @@ class CrashTest(BaseTestCase):
         # present in the target_node
         gen_load = doc_generator(
             self.key, self.num_items, self.new_docs_to_add,
+            key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
@@ -249,6 +250,7 @@ class CrashTest(BaseTestCase):
         # present in the target_node
         gen_load = doc_generator(
             self.key, self.num_items, self.new_docs_to_add,
+            key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,

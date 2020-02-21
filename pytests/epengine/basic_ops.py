@@ -32,8 +32,6 @@ class basic_ops(BaseTestCase):
     def setUp(self):
         super(basic_ops, self).setUp()
 
-        self.key = 'test_docs'.rjust(self.key_size, '0')
-
         # Scope_name can be '_default', 'random' to create a random scope
         self.scope_name = self.input.param("scope", CbServer.default_scope)
         # collection_name will be 'False' to disable collection testing.
@@ -210,7 +208,8 @@ class basic_ops(BaseTestCase):
         self.log.info("Creating doc_generator..")
         # Load basic docs into bucket
         doc_create = doc_generator(
-            self.key, 0, self.num_items, doc_size=self.doc_size,
+            self.key, 0, self.num_items, key_size=self.key_size,
+            doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
             vbuckets=self.cluster_util.vbuckets)
         self.log.info("Loading {0} docs into the bucket: {1}"
@@ -272,6 +271,7 @@ class basic_ops(BaseTestCase):
         num_item_start_for_crud = int(self.num_items / 2)
         doc_update = doc_generator(
             self.key, 0, num_item_start_for_crud,
+            key_size=self.key_size,
             doc_size=self.doc_size, doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
             vbuckets=self.cluster_util.vbuckets,
@@ -541,11 +541,17 @@ class basic_ops(BaseTestCase):
         gen_create = doc_generator("eviction1_",
                                    start=0,
                                    end=self.num_items,
-                                   doc_size=self.doc_size)
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
         gen_create2 = doc_generator("eviction2_",
                                     start=0,
                                     end=self.num_items,
-                                    doc_size=self.doc_size)
+                                    key_size=self.key_size,
+                                    doc_size=self.doc_size,
+                                    doc_type=self.doc_type,
+                                    vbuckets=self.cluster_util.vbuckets)
         def_bucket = self.bucket_util.get_all_buckets()[0]
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create, "create", 0,

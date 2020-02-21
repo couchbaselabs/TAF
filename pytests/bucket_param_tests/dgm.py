@@ -5,7 +5,6 @@ from couchbase_helper.documentgenerator import doc_generator
 class Bucket_DGM_Tests(BaseTestCase):
     def setUp(self):
         super(Bucket_DGM_Tests, self).setUp()
-        self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -18,8 +17,9 @@ class Bucket_DGM_Tests(BaseTestCase):
 
         self.cluster_util.print_cluster_stats()
         doc_create = doc_generator(
-            self.key, 0, self.num_items, doc_size=self.doc_size,
-            doc_type=self.doc_type, vbuckets=self.cluster_util.vbuckets)
+            self.key, 0, self.num_items, key_size=self.key_size,
+            doc_size=self.doc_size, doc_type=self.doc_type,
+            vbuckets=self.cluster_util.vbuckets)
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_create, "create", 0,
@@ -56,9 +56,21 @@ class Bucket_DGM_Tests(BaseTestCase):
         num_items = dgm_task.doc_index
 
         gen_create = doc_generator(self.key, num_items,
-                                   num_items+self.num_items)
-        gen_update = doc_generator(self.key, 0, self.num_items)
-        gen_delete = doc_generator(self.key, self.num_items, num_items)
+                                   num_items+self.num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
+        gen_update = doc_generator(self.key, 0, self.num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
+        gen_delete = doc_generator(self.key, self.num_items, num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
 
         # Perform continuous updates while bucket moves from DGM->non-DGM state
         if not self.atomicity:

@@ -29,7 +29,6 @@ class RebalanceBaseTest(BaseTestCase):
                                  None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-        self.key = 'test_docs'.rjust(self.key_size, '0')
         self.flusher_batch_split_trigger = self.input.param("flusher_batch_split_trigger", None)
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
@@ -231,7 +230,9 @@ class RebalanceBaseTest(BaseTestCase):
             list(set(self.cluster.nodes_in_cluster + to_add) - set(to_remove))
 
     def get_doc_generator(self, start, end):
-        return doc_generator(self.key, start, end, doc_size=self.doc_size,
+        return doc_generator(self.key, start, end,
+                             key_size=self.key_size,
+                             doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
                              vbuckets=self.cluster_util.vbuckets)

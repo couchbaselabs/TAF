@@ -8,7 +8,6 @@ class MultiDurabilityTests(BaseTestCase):
     def setUp(self):
         super(MultiDurabilityTests, self).setUp()
 
-        self.key = 'test_docs'.rjust(self.key_size, '0')
         replica_list = self.input.param("replica_list", list())
         bucket_type_list = self.input.param("bucket_type_list", list())
         self.bucket_dict = dict()
@@ -147,7 +146,11 @@ class MultiDurabilityTests(BaseTestCase):
                 bucket_dict[index]["num_items"] -= int(self.num_items)/2
 
         # Load all buckets without any durability requirements
-        gen_create = doc_generator(self.key, 0, self.num_items)
+        gen_create = doc_generator(self.key, 0, self.num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
         doc_loading_tasks = list()
         for bucket in self.bucket_util.buckets:
             doc_loading_tasks.append(self.task.async_load_gen_docs(
@@ -166,9 +169,21 @@ class MultiDurabilityTests(BaseTestCase):
         half_of_num_items = int(self.num_items/2)
 
         # Create doc_generators for various CRUD operations
-        gen_create = doc_generator(self.key, self.num_items, self.num_items*2)
-        gen_update = doc_generator(self.key, half_of_num_items, self.num_items)
-        gen_delete = doc_generator(self.key, 0, half_of_num_items)
+        gen_create = doc_generator(self.key, self.num_items, self.num_items*2,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
+        gen_update = doc_generator(self.key, half_of_num_items, self.num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
+        gen_delete = doc_generator(self.key, 0, half_of_num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
 
         # replicate_to computation for 4th bucket object
         replica = self.bucket_dict[3]["replica"]

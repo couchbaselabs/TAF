@@ -178,7 +178,12 @@ class CreateDeleteViewTests(BaseTestCase):
         age = range(5)
         first = ['james', 'sharon']
         template = '{{ "mutated" : 0, "age": {0}, "first_name": "{1}" }}'
-        gen_load = DocumentGenerator('test_docs', template, age, first, start=0, end=self.num_items)
+        gen_load = DocumentGenerator('test_docs', template, age, first,
+                                     start=0,
+                                     end=self.num_items,
+                                     key_size=self.key_size,
+                                     doc_size=self.doc_size,
+                                     doc_type=self.doc_type)
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_load, "create", 0,
                                                        batch_size=20, persist_to=self.persist_to,

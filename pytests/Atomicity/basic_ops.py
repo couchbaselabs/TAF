@@ -12,9 +12,6 @@ Basic test cases with commit,rollback scenarios
 class basic_ops(BaseTestCase):
     def setUp(self):
         super(basic_ops, self).setUp()
-
-        self.key = 'test_docs'.rjust(self.key_size, '0')
-
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
@@ -52,8 +49,10 @@ class basic_ops(BaseTestCase):
         body = [''.rjust(self.doc_size - 10, 'a')]
         template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
         generator = DocumentGenerator(self.key, template, age, first, body,
-                                      start=start,
-                                      end=end)
+                                      start=start, end=end,
+                                      key_size=self.key_size,
+                                      doc_size=self.doc_size,
+                                      doc_type=self.doc_type)
         return generator
 
     def generate_docs_bigdata(self, docs_per_day, start=0, document_size=1024000):

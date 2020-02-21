@@ -132,7 +132,7 @@ class DocumentGenerator(KVGenerator):
         self.args = args
         self.template = template
         self.doc_type = "json"
-        self.key_size = 0
+        self.key_size = 8
 
         size = 0
         if not len(self.args) == 0:

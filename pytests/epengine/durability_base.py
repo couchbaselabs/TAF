@@ -10,7 +10,6 @@ class DurabilityTestsBase(BaseTestCase):
     def setUp(self):
         super(DurabilityTestsBase, self).setUp()
 
-        self.key = 'test_docs'.rjust(self.key_size, '0')
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
         self.doc_ops = self.input.param("doc_ops", None)
@@ -58,6 +57,7 @@ class DurabilityTestsBase(BaseTestCase):
                 self.key,
                 0,
                 self.num_items,
+                key_size=self.key_size,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,

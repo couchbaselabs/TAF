@@ -73,7 +73,7 @@ class BaseTestCase(unittest.TestCase):
         # End of bucket parameters
 
         # Doc specific params
-        self.key_size = self.input.param("key_size", 0)
+        self.key_size = self.input.param("key_size", 8)
         self.doc_size = self.input.param("doc_size", 10)
         self.sub_doc_size = self.input.param("sub_doc_size", 10)
         self.doc_type = self.input.param("doc_type", "json")

@@ -25,7 +25,11 @@ class RecreateBucketTests(BaseTestCase):
         age = range(5)
         first = ['james', 'sharon']
         template = '{{ "age": {0}, "first_name": "{1}" }}'
-        gen_create = DocumentGenerator('test_docs', template, age, first, start=0, end=self.num_items)
+        gen_create = DocumentGenerator('test_docs', template, age, first,
+                                       start=0, end=self.num_items,
+                                       key_size=self.key_size,
+                                       doc_size=self.doc_size,
+                                       doc_type=self.doc_type)
         task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
                                              batch_size=20, persist_to=self.persist_to,
                                              replicate_to=self.replicate_to,
@@ -36,7 +40,12 @@ class RecreateBucketTests(BaseTestCase):
         age = range(5)
         first = ['james', 'sharon']
         template = '{{ "age": {0}, "first_name": "{1}" }}'
-        gen_create = DocumentGenerator('test_docs', template, age, first, start=0, end=self.num_items)
+        gen_create = DocumentGenerator('test_docs', template, age, first,
+                                       start=0,
+                                       end=self.num_items,
+                                       key_size=self.key_size,
+                                       doc_size=self.doc_size,
+                                       doc_type=self.doc_type)
         task = self.task.async_validate_docs(self.cluster, bucket, gen_create, "create", 0,
                                              batch_size=10, process_concurrency=8)
         self.task.jython_task_manager.get_task_result(task)

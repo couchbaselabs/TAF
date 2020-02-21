@@ -9,7 +9,6 @@ from couchbase_helper.document import View
 class DocumentKeysTests(BaseTestCase):
     def setUp(self):
         super(DocumentKeysTests, self).setUp()
-        self.key = 'test_docs'.rjust(self.key_size, '0')
         self.key_length = self.input.param("key_length", None)
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
@@ -57,11 +56,17 @@ class DocumentKeysTests(BaseTestCase):
     def _dockey_data_ops(self, dockey="dockey"):
         if self.target_vbucket is None:
             gen_load = doc_generator(dockey, 0, self.num_items,
-                                     doc_type="json")
+                                     key_size=self.key_size,
+                                     doc_size=self.doc_size,
+                                     doc_type=self.doc_type,
+                                     vbuckets=self.cluster_util.vbuckets)
         else:
             gen_load = doc_generator(dockey,
                                      0, self.num_items,
-                                     doc_type="json",
+                                     key_size=self.key_size,
+                                     doc_size=self.doc_size,
+                                     doc_type=self.doc_type,
+                                     vbuckets=self.cluster_util.vbuckets,
                                      target_vbucket=[self.target_vbucket])
 
         bucket = self.bucket_util.get_all_buckets()[0]
@@ -79,7 +84,11 @@ class DocumentKeysTests(BaseTestCase):
 
     """Perform verification with views after loading data"""
     def _dockey_views(self, dockey="dockey"):
-        gen_load = doc_generator(dockey, 0, self.num_items, doc_type="json")
+        gen_load = doc_generator(dockey, 0, self.num_items,
+                                 key_size=self.key_size,
+                                 doc_size=self.doc_size,
+                                 doc_type=self.doc_type,
+                                 vbuckets=self.cluster_util.vbuckets)
         bucket = self.bucket_util.get_all_buckets()[0]
         task = self.task.async_load_gen_docs(self.cluster, bucket,
                                              gen_load, "create", 0,
@@ -99,7 +108,11 @@ class DocumentKeysTests(BaseTestCase):
     data can be retrieved
     """
     def _dockey_dcp(self, dockey="dockey"):
-        gen_load = doc_generator(dockey, 0, self.num_items, doc_type="json")
+        gen_load = doc_generator(dockey, 0, self.num_items,
+                                 key_size=self.key_size,
+                                 doc_size=self.doc_size,
+                                 doc_type=self.doc_type,
+                                 vbuckets=self.cluster_util.vbuckets)
         bucket = self.bucket_util.get_all_buckets()[0]
         task = self.task.async_load_gen_docs(self.cluster, bucket,
                                              gen_load, "create", 0,

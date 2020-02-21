@@ -134,7 +134,10 @@ class AutoFailoverBaseTest(BaseTestCase):
         body = [''.rjust(self.doc_size - 10, 'a')]
         template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
         generator = DocumentGenerator(self.key, template, age, first, body,
-                                      start=start, end=end)
+                                      start=start, end=end,
+                                      key_size=self.key_size,
+                                      doc_size=self.doc_size,
+                                      doc_type=self.doc_type)
         return generator
 
     def async_load_all_buckets_atomicity(self, kv_gen, op_type, exp=0, batch_size=20):
@@ -534,7 +537,6 @@ class AutoFailoverBaseTest(BaseTestCase):
                                                       False)
         self.doc_size = self.input.param("doc_size", 10)
         self.key_size = self.input.param("key_size", 0)
-        self.key = 'test_docs'.rjust(self.key_size, '0')
         self.num_items = self.input.param("num_items", 1000000)
         self.update_items = self.input.param("update_items", 100000)
         self.delete_items = self.input.param("delete_items", 100000)
@@ -746,7 +748,11 @@ class AutoFailoverBaseTest(BaseTestCase):
 
     def data_load_after_autofailover(self):
         gen_create = doc_generator(self.key, self.num_items*2,
-                                   self.num_items * 3)
+                                   self.num_items * 3,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster_util.vbuckets)
         self.bucket = self.bucket_util.buckets[0]
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(

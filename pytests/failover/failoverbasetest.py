@@ -134,7 +134,10 @@ class FailoverBaseTest(BaseTestCase):
         body = [''.rjust(self.doc_size - 10, 'a')]
         template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
         generator = DocumentGenerator(self.key, template, age, first, body,
-                                      start=start, end=end)
+                                      start=start, end=end,
+                                      key_size=self.key_size,
+                                      doc_size=self.doc_size,
+                                      doc_type=self.doc_type)
         return generator
 
     def subsequent_load_gen(self, retry_exceptions=[], ignore_exceptions=[]):

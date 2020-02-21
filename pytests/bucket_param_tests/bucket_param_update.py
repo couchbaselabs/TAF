@@ -9,7 +9,6 @@ class BucketParamTest(BaseTestCase):
     def setUp(self):
         super(BucketParamTest, self).setUp()
         self.new_replica = self.input.param("new_replica", 1)
-        self.key = 'test_docs'.rjust(self.key_size, '0')
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -26,6 +25,7 @@ class BucketParamTest(BaseTestCase):
         self.def_bucket = self.bucket_util.get_all_buckets()[0]
 
         doc_create = doc_generator(self.key, 0, self.num_items,
+                                   key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
                                    vbuckets=self.cluster_util.vbuckets)
@@ -189,6 +189,7 @@ class BucketParamTest(BaseTestCase):
             # Creating doc creator to be used by test cases
             doc_create = doc_generator(self.key, start_doc_for_insert,
                                        start_doc_for_insert + self.num_items,
+                                       key_size=self.key_size,
                                        doc_size=self.doc_size,
                                        doc_type=self.doc_type,
                                        vbuckets=self.cluster_util.vbuckets)
@@ -198,6 +199,7 @@ class BucketParamTest(BaseTestCase):
                 self.key,
                 start_doc_for_insert - (self.num_items/2),
                 start_doc_for_insert,
+                key_size=self.key_size,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 vbuckets=self.cluster_util.vbuckets)
@@ -207,6 +209,7 @@ class BucketParamTest(BaseTestCase):
                 self.key,
                 start_doc_for_insert - self.num_items,
                 start_doc_for_insert - (self.num_items/2),
+                key_size=self.key_size,
                 doc_size=self.doc_size, doc_type=self.doc_type,
                 vbuckets=self.cluster_util.vbuckets)
 
@@ -353,6 +356,7 @@ class BucketParamTest(BaseTestCase):
     def test_MB_34947(self):
         # Update already Created docs with async_writes
         load_gen = doc_generator(self.key, 0, self.num_items,
+                                 key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
                                  vbuckets=self.cluster_util.vbuckets)
