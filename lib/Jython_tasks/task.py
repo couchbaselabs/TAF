@@ -16,6 +16,7 @@ import time
 from httplib import IncompleteRead
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
+from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from Cb_constants import constants
 from couchbase_helper.document import DesignDocument
@@ -2837,10 +2838,10 @@ class BucketCreateTask(Task):
         super(BucketCreateTask, self).__init__("bucket_create_task")
         self.server = server
         self.bucket = bucket
-        if self.bucket.priority is None or self.bucket.priority.lower() is 'low':
+        self.bucket_priority = 8
+        if self.bucket.priority is None \
+                or self.bucket.priority == Bucket.Priority.LOW:
             self.bucket_priority = 3
-        else:
-            self.bucket_priority = 8
         self.retries = 0
 
     def call(self):
