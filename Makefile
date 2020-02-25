@@ -4,7 +4,7 @@ FILES=Makefile README TestInput.py
 SLEEP_TIME=3
 VERBOSE=0
 DEBUG=0
-TESTNAME=conf/py-all-dev.conf
+TESTNAME=conf/sanity.conf
 
 .PHONY: clean TAF test
 
@@ -19,5 +19,13 @@ clean:
 	rm -rf $(DIST_DIR)
 
 test:
-	scripts/start_cluster_and_run_tests.sh b/resources/dev.ini $(TESTNAME)
+	scripts/start_cluster_and_run_tests.sh b/resources/dev-4-nodes.ini $(TESTNAME)
+
+# specify number of nodes and testcase
+any-test:
+	scripts/start_cluster_and_run_tests.sh $(NODES) $(TEST)
+
+# specify number of nodes and test conf
+any-suite:
+	scripts/start_cluster_and_run_tests.sh $(NODES) $(SUITE)
 
