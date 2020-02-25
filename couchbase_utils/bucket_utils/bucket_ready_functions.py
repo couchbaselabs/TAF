@@ -1423,6 +1423,35 @@ class BucketUtils(ScopeUtils):
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions)
         return tasks_info
+    
+    def _async_validate_docs(self, cluster, kv_gen, op_type, exp,
+                            flag=0, only_store_hash=True, batch_size=1,
+                            pause_secs=1, timeout_secs=5, compression=True,
+                            process_concurrency=4, check_replica=False,
+                            ignore_exceptions=[], retry_exceptions=[],
+                            scope=CbServer.default_scope,
+                            collection=CbServer.default_collection):
+        task_info = dict()
+        for bucket in self.buckets:
+            gen = copy.deepcopy(kv_gen)
+            task = self.task.async_validate_docs(cluster,
+                                                bucket, gen,
+                                                op_type, exp,
+                                                flag, only_store_hash,
+                                                batch_size, pause_secs,
+                                                timeout_secs, compression,
+                                                process_concurrency,
+                                                check_replica,
+                                                scope, collection)
+            task_info[task] = self.get_doc_op_info_dict(
+                bucket, op_type, exp,
+                scope=scope,
+                collection=collection,
+                timeout=timeout_secs, time_unit="seconds",
+                ignore_exceptions=ignore_exceptions,
+                retry_exceptions=retry_exceptions)
+            return task_info
+            
 
     def sync_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                               persist_to=0, replicate_to=0,

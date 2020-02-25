@@ -5,6 +5,7 @@ from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
+import copy
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -24,6 +25,10 @@ class MagmaBaseTest(BaseTestCase):
             "test_with_fragmentation",
             False)
         self.dgm_batch = self.input.param("dgm_batch", 5000)
+        self.retry_exceptions = list(set([SDKException.TimeoutException,
+                                     SDKException.AmbiguousTimeoutException,
+                                     SDKException.RequestCanceledException]))
+        self.ignore_exceptions= []
         self.info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
@@ -77,7 +82,8 @@ class MagmaBaseTest(BaseTestCase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         # Initialize doc_generators
         self.active_resident_threshold = 100
-        self.gen_create = None
+        self.gen_read = copy.deepcopy(self.gen_create)
+        self.gen_create = None;
         self.gen_delete = None
         self.gen_update = doc_generator(self.key, 0, self.num_items // 2,
                                         doc_size=self.doc_size,
@@ -176,6 +182,13 @@ class MagmaBaseTest(BaseTestCase):
                 ignore_exceptions=ignore_exceptions)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
+        if "read" in self.doc_ops and self.gen_read is not None:
+            tem_tasks_info = self.bucket_util._async_validate_docs(
+                self.cluster, self.gen_read, "read", 0, batch_size=20,
+                pause_secs=5,timeout_secs=self.sdk_timeout,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions)
+            tasks_info.update(tem_tasks_info.items())
         if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_delete, "delete", 0, batch_size=20,
