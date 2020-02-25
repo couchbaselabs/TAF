@@ -202,7 +202,7 @@ class DocumentGenerator(KVGenerator):
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
             doc_key = ''.join(self.random.choice(
-                ascii_uppercase+ascii_lowercase+digits) for _ in range(12))
+                    ascii_uppercase+ascii_lowercase+digits) for _ in range(self.key_size))
         else:
             doc_key = self.name + '-' + str(abs(self.itr)).zfill(self.key_size)
         self.itr += 1
