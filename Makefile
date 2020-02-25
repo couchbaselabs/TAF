@@ -1,6 +1,6 @@
 DIST_DIR=./dist
 DIRS=b conf connections couchbase_utils lib platform_utils pytests scripts src
-FILES=Makefile README TestInput.py
+FILES=Makefile README.md TestInput.py
 SLEEP_TIME=3
 VERBOSE=0
 DEBUG=0
@@ -29,3 +29,5 @@ any-test:
 any-suite:
 	scripts/start_cluster_and_run_tests.sh $(NODES) $(SUITE)
 
+revision:
+	19

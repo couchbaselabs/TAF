@@ -79,7 +79,7 @@ fi
 COUCHBASE_NUM_VBUCKETS=64 python ./cluster_run --nodes=$servers_count &> $wd/cluster_run.log &
 pid=$!
 popd
-guides/gradlew --refresh-dependencies testrunner -P jython="/opt/jython/bin/jython" -P "-i $ini -c $conf -p $test_params $extra_test_params" 2>&1 -p makefile=True | tee make_test.log
+guides/gradlew --refresh-dependencies testrunner -P jython="/opt/jython/bin/jython" -P "args=-i $ini $conf -m rest" 2>&1  | tee make_test.log
 
 kill $pid
 wait
