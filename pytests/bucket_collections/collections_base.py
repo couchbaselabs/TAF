@@ -1,9 +1,7 @@
 from basetestcase import BaseTestCase
 from bucket_utils.bucket_ready_functions import BucketUtils
-from cb_tools.cb_cli import CbCli
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 
 
 class CollectionBase(BaseTestCase):
@@ -14,6 +12,8 @@ class CollectionBase(BaseTestCase):
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
         self.doc_ops = self.input.param("doc_ops", None)
+        self.spec_name = self.input.param("bucket_spec",
+                                          "single_bucket.default")
 
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
@@ -35,25 +35,24 @@ class CollectionBase(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
 
-        # Disable auto-failover to avaid failover of nodes
+        # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        # Create default bucket and add rbac user
-        self.bucket_util.create_default_bucket(
-            replica=self.num_replicas,
-            compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type,
-            storage=self.bucket_storage)
+        # Create bucket(s) and add rbac user
+        buckets_spec = self.bucket_util.get_spec_from_package(self.spec_name)
+        self.bucket_util.create_buckets_using_json_data(buckets_spec)
+        self.bucket_util.load_initial_items_per_collection_spec(
+            self.task, self.cluster, self.bucket_util.buckets)
+
         self.bucket_util.add_rbac_user()
 
         self.cluster_util.print_cluster_stats()
-        self.bucket = self.bucket_util.buckets[0]
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(0)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
 
         self.bucket_util.print_bucket_stats()
         self.log.info("=== CollectionBase setup complete ===")

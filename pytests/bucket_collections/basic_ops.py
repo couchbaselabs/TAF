@@ -174,7 +174,7 @@ class BasicOps(CollectionBase):
 
         # Perform update mutation
         task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, update_gen, "update", self.maxttl,
+            self.cluster, self.def_bucket, update_gen, "update", self.maxttl,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,

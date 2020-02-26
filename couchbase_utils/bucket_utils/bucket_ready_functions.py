@@ -5,6 +5,7 @@ Created on Sep 26, 2017
 """
 
 import copy
+import importlib
 import logging
 from datetime import datetime
 
@@ -93,6 +94,10 @@ class DocLoaderUtils(object):
                 server_task_obj.jython_task_manager.get_task_result(task)
 
         return loader_tasks
+
+    @staticmethod
+    def perform_ops_from_task_spec():
+        return
 
 
 class CollectionUtils(DocLoaderUtils):
@@ -216,6 +221,13 @@ class CollectionUtils(DocLoaderUtils):
         CollectionUtils.mark_collection_as_dropped(bucket,
                                                    scope_name,
                                                    collection_name)
+
+    @staticmethod
+    def get_spec_from_package(module_name):
+        package = importlib.import_module(
+            'pytests.bucket_collections.collection_json_templates.' +
+            module_name)
+        return package.spec
 
 
 class ScopeUtils(CollectionUtils):
@@ -378,12 +390,15 @@ class BucketUtils(ScopeUtils):
                    + spl_chars
 
         random.seed(datetime.now())
+        rand_name = ""
         name_len = random.randint(1, 30)
-        rand_name = ''.join(random.choice(char_set) for _ in range(name_len))
+        while rand_name == "":
+            rand_name = ''.join(random.choice(char_set)
+                                for _ in range(name_len))
 
-        # Remove if name starts with invalid_start_charset
-        if rand_name[0] in invalid_start_chars:
-            rand_name = rand_name[1:]
+            # Remove if name starts with invalid_start_charset
+            if rand_name[0] in invalid_start_chars:
+                rand_name = ""
         return rand_name
 
     # Fetch/Create/Delete buckets
