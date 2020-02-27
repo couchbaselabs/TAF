@@ -16,9 +16,13 @@ class MagmaBaseTest(BaseTestCase):
         self.key_size = self.input.param("key_size", 8)
         self.replica_to_update = self.input.param("new_replica", None)
         self.key = 'test_docs'
+        self.rev_write = self.input.param("rev_write", False)
+        self.rev_read = self.input.param("rev_read", False)
         self.random_key = self.input.param("random_key", False)
         if self.random_key:
             self.key = "random_keys"
+            self.rev_write = False
+            self.rev_read = False
         self.items = self.num_items
         self.check_temporary_failure_exception = False
         self.test_with_fragmentation = self.input.param(
@@ -59,7 +63,12 @@ class MagmaBaseTest(BaseTestCase):
                 "backend", "magma;magma_max_commit_points=0",
                 self.bucket_util.buckets)
         self.doc_size = self.input.param("doc_size", 1024)
-        self.gen_create = doc_generator(self.key, 0, self.num_items,
+        start = 0
+        end = self.num_items
+        if self.rev_write:
+            start = -int(self.num_items - 1)
+            end = 1
+        self.gen_create = doc_generator(self.key, start, end,
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
@@ -82,7 +91,20 @@ class MagmaBaseTest(BaseTestCase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         # Initialize doc_generators
         self.active_resident_threshold = 100
-        self.gen_read = copy.deepcopy(self.gen_create)
+        #Below start and end var for read generator
+        start = 0
+        end = self.num_items
+        if self.rev_read:
+            start = -int(self.num_items - 1)
+            end = 1
+        self.gen_read = doc_generator(self.key, start, end,
+                                        doc_size=self.doc_size,
+                                        doc_type=self.doc_type,
+                                        target_vbucket=self.target_vbucket,
+                                        vbuckets=self.cluster_util.vbuckets,
+                                        key_size=self.key_size,
+                                        randomize_doc_size=self.randomize_doc_size,
+                                        randomize_value=self.randomize_value)
         self.gen_create = None;
         self.gen_delete = None
         self.gen_update = doc_generator(self.key, 0, self.num_items // 2,

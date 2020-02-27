@@ -35,6 +35,9 @@ class BasicCrudTests(MagmaBaseTest):
                     self.doc_ops = "create:read"
                     start = self.num_items
                     end = self.num_items+self.num_items
+                    if self.rev_write:
+                        start = -int(self.num_items+self.num_items -1)
+                        end = -int(self.num_items - 1)
                     task_info = dict()
                     shell = RemoteMachineShellConnection(node)
                     shell.kill_memcached()
@@ -53,7 +56,7 @@ class BasicCrudTests(MagmaBaseTest):
                         self.task.jython_task_manager.get_task_result(task)
                     self.log.info("Verifying doc counts after create doc_ops")
                     self.bucket_util._wait_for_stats_all_buckets()
-                    self.bucket_util.verify_stats_all_buckets(end)
+                    self.bucket_util.verify_stats_all_buckets(self.num_items)
                     self.gen_delete = copy.deepcopy(self.gen_create)
                     task_info = dict()
                     self.doc_ops = "delete"

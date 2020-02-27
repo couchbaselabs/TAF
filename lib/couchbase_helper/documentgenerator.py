@@ -179,7 +179,7 @@ class DocumentGenerator(KVGenerator):
         if self.itr >= self.end:
             raise StopIteration
 
-        seed_hash = self.name + '-' + str(self.itr)
+        seed_hash = self.name + '-' + str(abs(self.itr))
         self.random.seed(seed_hash)
         doc_args = []
         for arg in self.args:
