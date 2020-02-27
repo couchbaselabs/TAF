@@ -223,11 +223,11 @@ class CollectionUtils(DocLoaderUtils):
                                                    collection_name)
 
     @staticmethod
-    def get_spec_from_package(module_name):
-        package = importlib.import_module(
-            'pytests.bucket_collections.collection_json_templates.' +
+    def get_bucket_template_from_package(module_name):
+        spec_package = importlib.import_module(
+            'pytests.bucket_collections.bucket_templates.' +
             module_name)
-        return package.spec
+        return spec_package.spec
 
 
 class ScopeUtils(CollectionUtils):

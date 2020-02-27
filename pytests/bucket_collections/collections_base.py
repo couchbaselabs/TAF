@@ -41,11 +41,11 @@ class CollectionBase(BaseTestCase):
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         # Create bucket(s) and add rbac user
-        buckets_spec = self.bucket_util.get_spec_from_package(self.spec_name)
+        buckets_spec = self.bucket_util.get_bucket_template_from_package(
+            self.spec_name)
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.load_initial_items_per_collection_spec(
             self.task, self.cluster, self.bucket_util.buckets)
-
         self.bucket_util.add_rbac_user()
 
         self.cluster_util.print_cluster_stats()

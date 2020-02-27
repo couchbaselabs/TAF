@@ -11,9 +11,7 @@ from sdk_exceptions import SDKException
 class BasicOps(CollectionBase):
     def setUp(self):
         super(BasicOps, self).setUp()
-        self.scope_name = "my_scope_%d"
-        self.collection_name = "my_collection_%d"
-        self.def_bucket = self.bucket_util.buckets[0]
+        self.bucket = self.bucket_util.buckets[0]
         # To override default num_items to '0'
         self.num_items = self.input.param("num_items", 0)
 
@@ -26,7 +24,7 @@ class BasicOps(CollectionBase):
         data_load: Load data into default collection based load_during_phase.
                    supports 'disabled / before_drop / during_drop'
         """
-        self.def_bucket \
+        self.bucket \
             .scopes[CbServer.default_scope] \
             .collections[CbServer.default_collection] \
             .num_items = self.num_items
@@ -62,23 +60,23 @@ class BasicOps(CollectionBase):
 
         # Data validation
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_doc_count_as_per_collections(self.def_bucket)
+        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
 
         # Drop collection phase
         self.log.info("Deleting collection '%s::%s'"
                       % (CbServer.default_scope,
                          CbServer.default_collection))
         if client_type == "sdk":
-            client = SDKClient([self.cluster.master], self.def_bucket)
+            client = SDKClient([self.cluster.master], self.bucket)
             client.drop_collection(CbServer.default_scope,
                                    CbServer.default_collection)
             client.close()
-            BucketUtils.mark_collection_as_dropped(self.def_bucket,
+            BucketUtils.mark_collection_as_dropped(self.bucket,
                                                    CbServer.default_scope,
                                                    CbServer.default_collection)
         elif client_type == "rest":
             self.bucket_util.drop_collection(self.cluster.master,
-                                             self.def_bucket,
+                                             self.bucket,
                                              CbServer.default_scope,
                                              CbServer.default_collection)
         else:
@@ -95,7 +93,7 @@ class BasicOps(CollectionBase):
         for node in self.cluster_util.get_kv_nodes():
             shell_conn = RemoteMachineShellConnection(node)
             cbstats = Cbstats(shell_conn)
-            c_data = cbstats.get_collections(self.def_bucket)
+            c_data = cbstats.get_collections(self.bucket)
             if c_data["count"] != 0:
                 self.log_failure("%s - Expected collection count is '0'."
                                  "Actual: %s" % (node.ip, c_data["count"]))
@@ -105,7 +103,7 @@ class BasicOps(CollectionBase):
 
         # SDK connection to default(dropped) collection to validate failure
         try:
-            client = SDKClient([self.cluster.master], self.def_bucket,
+            client = SDKClient([self.cluster.master], self.bucket,
                                scope=CbServer.default_scope,
                                collection=CbServer.default_collection)
             result = client.crud("create", "test_key-1", "TestValue")
@@ -120,7 +118,7 @@ class BasicOps(CollectionBase):
 
         # Validate the bucket doc count is '0' after drop collection
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_doc_count_as_per_collections(self.def_bucket)
+        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
         self.validate_test_failure()
 
     def test_create_scopes(self):
@@ -131,13 +129,13 @@ class BasicOps(CollectionBase):
         4. Validate '_default' collection is intact
         """
         num_scopes = self.input.param("num_scopes", 1)
-        self.def_bucket \
+        self.bucket \
             .scopes[CbServer.default_scope] \
             .collections[CbServer.default_collection] \
             .num_items = self.num_items
 
         if self.action_phase == "before_default_load":
-            self.create_scopes(self.def_bucket, num_scopes)
+            self.create_scopes(self.bucket, num_scopes)
 
         create_gen = doc_generator("scope_create_key",
                                    0, self.num_items,
@@ -157,7 +155,7 @@ class BasicOps(CollectionBase):
                                    key_size=self.key_size)
         self.log.info("Loading %d docs into '_default' collection"
                       % self.num_items)
-        client = SDKClient([self.cluster.master], self.def_bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
         while create_gen.has_next():
             key, val = create_gen.next()
             result = client.crud("create", key, val, exp=self.maxttl,
@@ -170,11 +168,11 @@ class BasicOps(CollectionBase):
 
         # Doc count validation
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_doc_count_as_per_collections(self.def_bucket)
+        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
 
         # Perform update mutation
         task = self.task.async_load_gen_docs(
-            self.cluster, self.def_bucket, update_gen, "update", self.maxttl,
+            self.cluster, self.bucket, update_gen, "update", self.maxttl,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
@@ -184,13 +182,13 @@ class BasicOps(CollectionBase):
 
         # Create scope(s) while CRUDs are running in background
         if self.action_phase == "during_default_load":
-            self.create_scopes(self.def_bucket, num_scopes)
+            self.create_scopes(self.bucket, num_scopes)
 
         # Validate drop collection using cbstats
         for node in self.cluster_util.get_kv_nodes():
             shell_conn = RemoteMachineShellConnection(node)
             cbstats = Cbstats(shell_conn)
-            c_data = cbstats.get_collections(self.def_bucket)
+            c_data = cbstats.get_collections(self.bucket)
             if c_data["count"] != 1:
                 self.log_failure("%s - Expected scope count is '1'."
                                  "Actual: %s" % (node.ip, c_data["count"]))
@@ -215,7 +213,7 @@ class BasicOps(CollectionBase):
         use_scope_name_for_collection = \
             self.input.param("use_scope_name_for_collection", False)
         scope_name = CbServer.default_scope
-        self.def_bucket \
+        self.bucket \
             .scopes[CbServer.default_scope] \
             .collections[CbServer.default_collection] \
             .num_items = self.num_items
@@ -229,12 +227,12 @@ class BasicOps(CollectionBase):
             scope_name = self.bucket_util.get_random_name()
             self.log.info("Creating scope '%s'" % scope_name)
             BucketUtils.create_scope(self.cluster.master,
-                                     self.def_bucket,
+                                     self.bucket,
                                      {"name": scope_name})
 
         if self.action_phase == "before_default_load":
             self.create_collections(
-                self.def_bucket,
+                self.bucket,
                 num_collections,
                 scope_name,
                 create_collection_with_scope_name=collection_with_scope_name)
@@ -252,7 +250,7 @@ class BasicOps(CollectionBase):
         # Create collections(s) while CRUDs are running in background
         if self.action_phase == "during_default_load":
             self.create_collections(
-                self.def_bucket,
+                self.bucket,
                 num_collections,
                 scope_name,
                 create_collection_with_scope_name=collection_with_scope_name)
@@ -261,7 +259,7 @@ class BasicOps(CollectionBase):
 
         # Doc count validation
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_doc_count_as_per_collections(self.def_bucket)
+        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
         self.validate_test_failure()
 
     def create_delete_collections(self):
@@ -287,15 +285,15 @@ class BasicOps(CollectionBase):
         self.log.info("Creating scope::collection '%s::%s'"
                       % (scope_name, collection_name))
         self.bucket_util.create_scope(self.cluster.master,
-                                      self.def_bucket,
+                                      self.bucket,
                                       scope_name)
         self.bucket_util.create_collection(self.cluster.master,
-                                           self.def_bucket,
+                                           self.bucket,
                                            scope_name,
                                            collection_name)
 
         self.bucket_util.create_collection(self.cluster.master,
-                                           self.def_bucket,
+                                           self.bucket,
                                            scope_name,
                                            "my_collection_2")
 
@@ -309,7 +307,7 @@ class BasicOps(CollectionBase):
 
         self.log.info("Load documents into the created collection")
         sdk_client = SDKClient([self.cluster.master],
-                               self.def_bucket,
+                               self.bucket,
                                scope_name,
                                collection_name)
         while gen_add.has_next():
