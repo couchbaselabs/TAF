@@ -30,7 +30,7 @@ class BaseTestCase(unittest.TestCase):
         self.tear_down_while_setup = self.input.param("tear_down_while_setup",
                                                       True)
         self.test_timeout = self.input.param("test_timeout", 3600)
-        self.thread_to_use = self.input.param("threads_to_use", 10)
+        self.thread_to_use = self.input.param("threads_to_use", 30)
         self.case_number = self.input.param("case_number", 0)
         # End of framework parameters
 
@@ -117,8 +117,8 @@ class BaseTestCase(unittest.TestCase):
         self.durability_level = self.input.param("durability", "").upper()
 
         # Doc Loader Params
-        self.process_concurrency = self.input.param("process_concurrency", 8)
-        self.batch_size = self.input.param("batch_size", 20)
+        self.process_concurrency = self.input.param("process_concurrency", 20)
+        self.batch_size = self.input.param("batch_size", 2000)
         self.ryow = self.input.param("ryow", False)
         self.check_persistence = self.input.param("check_persistence", False)
         # End of client specific parameters

@@ -7,7 +7,6 @@ import threading
 import zlib
 import copy
 import json as Json
-import json as pyJson
 import os
 import logging
 import random
@@ -433,11 +432,13 @@ class GenericLoadingTask(Task):
         fail = dict()
         try:
             client = shared_client or self.client
+            start_time = time.time()
             success, fail = client.setMulti(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
+            self.test_log.debug("Time Taken: %s" % (time.time()-start_time))
             if fail:
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
@@ -755,7 +756,9 @@ class LoadDocumentsTask(GenericLoadingTask):
 
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
+        start_time = time.time()
         key_value = doc_gen.next_batch()
+        self.test_log.debug("Time taken by DocGen: %s" % (time.time()-start_time))
         if self.op_type == 'create':
             success, fail = self.batch_create(
                 key_value,
@@ -1877,7 +1880,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
     def next(self, override_generator=None):
 
         doc_gen = override_generator or self.generator
-        key_value = doc_gen.next_batch()
+        key_value = dict(doc_gen.next_batch())
         if self.check_replica:
             # change to getFromReplica
             result_map = dict()
@@ -1934,7 +1937,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
         wrong_values = []
         for key, value in key_value.items():
             if key in map:
-                expected_val = Json.loads(value)
+                expected_val = Json.loads(value.toString())
                 actual_val = {}
                 if map[key]['cas'] != 0:
                     actual_val = Json.loads(map[key][
@@ -3857,30 +3860,27 @@ class Atomicity(Task):
 
             doc_gen = self.generator
             while self.has_next():
-                self.key_value = doc_gen.next_batch()
-                self.all_keys.extend(self.key_value.keys())
-                self.keys_values.update(self.key_value)
+                self.batch = doc_gen.next_batch()
+                self.key_value = {}
+                for item in self.batch:
+                    self.key_value.update({item.getT1(): item.getT2()})
 
                 for op_type in self.op_type:
 
                     if op_type == 'general_create':
                         for client in Atomicity.clients:
                             self.batch_create(
-                                self.key_value, client,
+                                self.batch, client,
                                 persist_to=self.persist_to,
                                 replicate_to=self.replicate_to,
                                 timeout=self.timeout, time_unit=self.time_unit,
                                 doc_type=self.generator.doc_type)
-
-                for key, value in self.key_value.items():
-                    content = self.client.translate_to_json_object(value)
-                    tuple = Tuples.of(key, content)
+                for tuple in self.batch:
                     docs.append(tuple)
-
-                last_batch = self.key_value
+                last_batch = dict(self.batch)
 
             self.list_docs = list(self.__chunks(self.all_keys, Atomicity.num_docs))
-            self.docs = list(self.__chunks(docs, Atomicity.num_docs))
+            self.docs = list(self.__chunks(self.batch, Atomicity.num_docs))
 
             for op_type in self.op_type:
                 self.encoding=[]
@@ -4047,7 +4047,7 @@ class Atomicity(Task):
                     if self.op_type == "time_out":
                         expected_val = {}
                     else:
-                        expected_val = Json.loads(value)
+                        expected_val = Json.loads(value.toString())
                     actual_val = {}
                     if map[key]['cas'] != 0:
                         actual_val = Json.loads(map[key]['value'].toString())
@@ -4060,8 +4060,8 @@ class Atomicity(Task):
                             pass
                     else:
                         wrong_values.append(key)
-                        self.test_log.info("actual value for key {} is {}".format(key,actual_val))
-                        self.test_log.info("expected value for key {} is {}".format(key,expected_val))
+                        self.test_log.info("actual value for key {} is {}".format(key, actual_val))
+                        self.test_log.info("expected value for key {} is {}".format(key, expected_val))
             return wrong_values
 
         def process_values_for_verification(self, key_val):

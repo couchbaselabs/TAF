@@ -8,41 +8,55 @@ from random import choice
 from string import ascii_uppercase
 from string import ascii_lowercase
 from string import digits
+from java.lang import String
+from java.nio.charset import StandardCharsets
 from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
+from com.couchbase.client.java.json import JsonObject
+from reactor.util.function import Tuples
 
 
-letters = string.ascii_uppercase + string.digits
+letters = ascii_uppercase + ascii_lowercase + digits
 random_string = [''.join(random.choice(letters) for _ in range(128*1024))][0]
 
 
-def doc_generator(key, start, end, doc_size=256, doc_type="json",
-                  target_vbucket=None, vbuckets=1024, mutation_type="ADD",
-                  mutate=0, key_size=8, randomize_doc_size=False,
-                  randomize_value=False, mix_key_size=False):
-    age = range(5)
-    first = ['james', 'sharon']
+def doc_generator(key, start, end,
+                  key_size=8, mix_key_size=False,
+                  doc_size=256, doc_type="json",
+                  target_vbucket=None, vbuckets=1024,
+                  mutation_type="ADD", mutate=0,
+                  randomize_doc_size=False, randomize_value=False,
+                  randomize=False):
 
     # Defaults to JSON doc_type
-    template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}", ' \
-               '"mutated": %s, "mutation_type": "%s" }}'\
-               % (mutate, mutation_type)
-    if doc_type in ["string", "binary"]:
-        template = 'age:{0}, first_name: "{1}", body: "{2}", ' \
-                   'mutated:  %s, mutation_type: "%s"' \
-                   % (mutate, mutation_type)
+    template_obj = JsonObject.create()
+    template_obj.put("age", 5)
+    template_obj.put("name", "james")
+    template_obj.put("body", None)
+    template_obj.put("mutated", mutate)
+    template_obj.put("mutation_type", mutation_type)
+
+#     if doc_type in ["string", "binary"]:
+#         template_obj = 'age:{0}, first_name: "{1}", body: "{2}", ' \
+#                    'mutated:  %s, mutation_type: "%s"' \
+#                    % (mutate, mutation_type)
     if target_vbucket:
         return DocumentGeneratorForTargetVbucket(
-            key, template, age, first, doc_size=doc_size, start=start, end=end,
-            doc_type=doc_type, target_vbucket=target_vbucket,
-            vbuckets=vbuckets, key_size=key_size,
+            key, template_obj,
+            start=start, end=end,
+            key_size=key_size, mix_key_size=mix_key_size,
+            doc_size=doc_size, doc_type=doc_type,
+            target_vbucket=target_vbucket, vbuckets=vbuckets,
             randomize_doc_size=randomize_doc_size,
-            randomize_value=randomize_value)
-    return DocumentGenerator(key, template, age, first, doc_size=doc_size,
-                             start=start, end=end, doc_type=doc_type,
-                             key_size=key_size,
+            randomize_value=randomize_value,
+            randomize=randomize)
+    return DocumentGenerator(key, template_obj,
+                             start=start, end=end,
+                             key_size=key_size, mix_key_size=mix_key_size,
+                             doc_size=doc_size, doc_type=doc_type,
+                             target_vbucket=target_vbucket, vbuckets=vbuckets,
                              randomize_doc_size=randomize_doc_size,
                              randomize_value=randomize_value,
-                             mix_key_size=mix_key_size)
+                             randomize=randomize)
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
@@ -86,15 +100,20 @@ def sub_doc_generator_for_edit(key, start, end, template_index=0,
 
 
 class KVGenerator(object):
-    def __init__(self, name, start, end):
+    def __init__(self, name):
         self.name = name
-        self.start = start
-        self.end = end
-        self.itr = start
+        self.itr = 0
+        self.start = 0
+        self.end = 0
         self.random = random.Random()
         self.randomize_doc_size = False
         self.randomize_value = False
+        self.randomize = False
+        self.mix_key_size = False
+        self.doc_type = "json"
+        self.key_size = 8
         self.doc_size = 256
+        self.body = [''.rjust(self.doc_size - 10, 'a')][0]
 
     def has_next(self):
         return self.itr < self.end
@@ -135,17 +154,9 @@ class DocumentGenerator(KVGenerator):
                      currently start and end are supported
         """
         self.args = args
+        self.kwargs = kwargs
         self.template = template
-        self.doc_type = "json"
-        self.key_size = 8
-        size = 0
-        if not len(self.args) == 0:
-            size = 1
-            for arg in self.args:
-                size *= len(arg)
-
-        KVGenerator.__init__(self, name, 0, size)
-        self.body = [''.rjust(self.doc_size - 10, 'a')][0]
+        KVGenerator.__init__(self, name)
 
         if 'start' in kwargs:
             self.start = kwargs['start']
@@ -169,12 +180,15 @@ class DocumentGenerator(KVGenerator):
 
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
-        
+
+        if 'randomize' in self.kwargs:
+            self.randomize = self.kwargs["randomize"]
+
         if 'mix_key_size' in kwargs:
             self.mix_key_size = kwargs['mix_key_size']
 
     """Creates the next generated document and increments the iterator.
-    
+
     Returns:
         The document generated"""
 
@@ -184,35 +198,35 @@ class DocumentGenerator(KVGenerator):
 
         seed_hash = self.name + '-' + str(abs(self.itr))
         self.random.seed(seed_hash)
-        doc_args = []
-        for arg in self.args:
-            value = self.random.choice(arg)
-            doc_args.append(value)
+
+        if self.randomize:
+            for k in self.template.getNames():
+                if k in self.kwargs:
+                    self.template.put(k, self.random.choice(self.kwargs[k]))
+
+        doc_size = self.doc_size
+        if self.randomize_doc_size:
+            doc_size = self.random.randint(0, self.doc_size)
+            self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.randomize_value:
-            _slice = random.randint(0, 128*1024 - self.doc_size)
+            _slice = int(random.random()*128*1024) - self.doc_size
             self.body = random_string[_slice:_slice+self.doc_size]
 
-        if self.randomize_doc_size:
-            doc_size = random.randint(0, self.doc_size)
-            self.body = self.body[:doc_size]
+        self.template.put("body", self.body)
 
-        doc_args.append(self.body)
-        doc = self.template.format(*doc_args).replace('\'', '"') \
-                                             .replace('True', 'true') \
-                                             .replace('False', 'false') \
-                                             .replace('\\', '\\\\')
+        if self.doc_type.find("binary") != -1:
+            self.template = String(self.template).getBytes(StandardCharsets.UTF_8)
+
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
-            doc_key = ''.join(self.random.choice(
-                    ascii_uppercase+ascii_lowercase+digits) for _ in range(self.key_size))
+            doc_key = ''.join(self.random.choice(letters) for _ in range(self.key_size))
         elif self.mix_key_size:
-            doc_key = ''.join(self.random.choice(
-                ascii_uppercase+ascii_lowercase+digits) for _ in range(self.random.randint(self.key_size, 250)))
+            doc_key = ''.join(self.random.choice(letters) for _ in range(self.random.randint(self.key_size, 250)))
         else:
             doc_key = self.name + '-' + str(abs(self.itr)).zfill(self.key_size)
         self.itr += 1
-        return doc_key, doc
+        return doc_key, self.template
 
 
 class SubdocDocumentGenerator(KVGenerator):
@@ -516,12 +530,12 @@ class BatchedDocumentGenerator(object):
         return self._doc_gen.has_next()
 
     def next_batch(self):
-        count = 0
-        key_val = {}
-        while count < self._batch_size and self.has_next():
+        self.count = 0
+        key_val = []
+        while self.count < self._batch_size and self.has_next():
             key, val = self._doc_gen.next()
-            key_val[key] = val
-            count += 1
+            key_val.append(Tuples.of(key, val))
+            self.count += 1
         return key_val
 
 

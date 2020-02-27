@@ -3,6 +3,7 @@ from basetestcase import BaseTestCase
 from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.documentgenerator import DocumentGenerator
+from com.couchbase.client.java.json import JsonObject
 
 """
 Basic test cases with commit,rollback scenarios
@@ -47,8 +48,13 @@ class basic_ops(BaseTestCase):
         age = range(5)
         first = ['james', 'sharon']
         body = [''.rjust(self.doc_size - 10, 'a')]
-        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-        generator = DocumentGenerator(self.key, template, age, first, body,
+        template = JsonObject.create()
+        template.put("age", None)
+        template.put("first_name", None)
+        template.put("body", None)
+        generator = DocumentGenerator(self.key, template, randomize=True,
+                                      age=age,
+                                      first_name=first, body=body,
                                       start=start, end=end,
                                       key_size=self.key_size,
                                       doc_size=self.doc_size,

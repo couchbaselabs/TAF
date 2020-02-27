@@ -7,10 +7,11 @@ Created on Mar 14, 2019
 
 import json as pyJson
 import logging
+import time
 
 from com.couchbase.client.core.env import \
     SeedNode, \
-    TimeoutConfig
+    TimeoutConfig, IoConfig
 from com.couchbase.client.core.error import \
     CasMismatchException, \
     ConfigException, \
@@ -58,6 +59,7 @@ import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 from Cb_constants import ClusterRun, CbServer
+import threading
 
 
 class SDKClient(object):
@@ -119,6 +121,7 @@ class SDKClient(object):
             cluster_env = \
                 ClusterEnvironment \
                 .builder() \
+                .ioConfig(IoConfig.numKvConnections(25)) \
                 .timeoutConfig(TimeoutConfig.builder()
                                .connectTimeout(Duration.ofSeconds(20))
                                .kvTimeout(Duration.ofSeconds(10)))
@@ -882,15 +885,34 @@ class SDKClient(object):
             touch_options, exp_duration)
         return self.__tranlate_delete_multi_results(result)
 
-    def setMulti(self, keys, exp=0, exp_unit="seconds",
+    def setMulti(self, items, exp=0, exp_unit="seconds",
                  persist_to=0, replicate_to=0,
                  timeout=5, time_unit="seconds", retry=5,
                  doc_type="json", durability=""):
 
-        docs = []
-        for key, value in keys.items():
-            content = self.translate_to_json_object(value, doc_type)
-            docs.append(Tuples.of(key, content))
+#         docs = []
+#         translator_threads = []
+#         i = 0
+#         items_batch = len(items)/5
+#         itms_keys = items.keys()
+# 
+#         def translator(keys, items_dict, docs):
+#             for key in keys:
+#                 content = self.translate_to_json_object(items_dict[key], doc_type)
+#                 docs.append(Tuples.of(key, content))
+#         while i < 5:
+#             start = i*items_batch
+#             end = (i+1)*items_batch
+#             if end > len(itms_keys):
+#                 end = len(itms_keys)
+#             th = threading.Thread(target=translator,
+#                                   name="%s-%s" % (itms_keys[start], itms_keys[end-1]),
+#                                   args=(itms_keys[start:end], items, docs))
+#             th.start()
+#             translator_threads.append(th)
+#             i += 1
+#         for th in translator_threads:
+#             th.join()
         options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
                                         persist_to=persist_to,
                                         replicate_to=replicate_to,
@@ -899,18 +921,20 @@ class SDKClient(object):
                                         durability=durability)
         if doc_type == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+        t1 = time.time()
         result = SDKClient.doc_op.bulkInsert(
-            self.collection, docs, options)
+            self.collection, items, options)
+        self.log.debug("SDK Time: %s" % (time.time()-t1))
         return self.__translate_upsert_multi_results(result)
 
-    def upsertMulti(self, keys, exp=0, exp_unit="seconds",
+    def upsertMulti(self, docs, exp=0, exp_unit="seconds",
                     persist_to=0, replicate_to=0,
                     timeout=5, time_unit="seconds", retry=5,
                     doc_type="json", durability=""):
-        docs = []
-        for key, value in keys.items():
-            content = self.translate_to_json_object(value, doc_type)
-            docs.append(Tuples.of(key, content))
+#         docs = []
+#         for key, value in keys.items():
+#             content = self.translate_to_json_object(value, doc_type)
+#             docs.append(Tuples.of(key, content))
         options = self.getUpsertOptions(exp=exp, exp_unit=exp_unit,
                                         persist_to=persist_to,
                                         replicate_to=replicate_to,
@@ -923,14 +947,14 @@ class SDKClient(object):
             self.collection, docs, options)
         return self.__translate_upsert_multi_results(result)
 
-    def replaceMulti(self, keys, exp=0, exp_unit="seconds",
+    def replaceMulti(self, docs, exp=0, exp_unit="seconds",
                      persist_to=0, replicate_to=0,
                      timeout=5, time_unit="seconds",
                      doc_type="json", durability=""):
-        docs = []
-        for key, value in keys.items():
-            content = self.translate_to_json_object(value, doc_type)
-            docs.append(Tuples.of(key, content))
+#         docs = []
+#         for key, value in keys.items():
+#             content = self.translate_to_json_object(value, doc_type)
+#             docs.append(Tuples.of(key, content))
         options = self.getReplaceOptions(persist_to=persist_to,
                                          replicate_to=replicate_to,
                                          timeout=timeout,

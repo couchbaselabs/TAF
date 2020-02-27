@@ -5,9 +5,9 @@ import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-//import java.util.Optional;
 import java.util.function.Function;
-
+import reactor.core.scheduler.Schedulers;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.reactivestreams.Publisher;
 import com.couchbase.client.core.error.DecodingFailureException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
@@ -30,7 +30,39 @@ import reactor.util.function.Tuple2;
 
 public class doc_ops {
 
-	public List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, Object>> documents,
+public static List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection,
+			List<Tuple2<String, Object>> documents,
+			InsertOptions insertOptions) {
+		ReactiveCollection reactiveCollection = collection.reactive();
+		AtomicInteger reqsInFlight = new AtomicInteger(0);
+		final int numberOfThreads = 500;
+		return Flux.fromIterable(documents)
+				// Divide the work into numberOfThreads chunks
+				.parallel(numberOfThreads)
+				// Run on an unlimited thread pool
+				.runOn(Schedulers.elastic())
+				.concatMap(documentToInsert -> {
+					String id = documentToInsert.getT1();
+					Object content = documentToInsert.getT2();
+					final ConcurrentHashMap<String, Object> retValue = new ConcurrentHashMap<>();
+					retValue.put("document", content);
+					retValue.put("error", "");
+					retValue.put("cas", 0);
+					retValue.put("status", true);
+					retValue.put("id", id);
+					return reactiveCollection.insert(id, content, insertOptions)
+							.map(result -> {
+								retValue.put("result", result);
+								retValue.put("cas", result.cas());
+								return retValue;
+							}).onErrorResume(error -> {
+								retValue.put("error", error);
+								retValue.put("status", false);
+								return Mono.just(retValue);
+							});
+				}).sequential().collectList().block();
+	}
+	public List<ConcurrentHashMap<String, Object>> bulkInsert_old(Collection collection, List<Tuple2<String, Object>> documents,
 			InsertOptions insertOptions) {
 		ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
