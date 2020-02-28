@@ -24,10 +24,6 @@ class BasicOps(CollectionBase):
         data_load: Load data into default collection based load_during_phase.
                    supports 'disabled / before_drop / during_drop'
         """
-        self.bucket \
-            .scopes[CbServer.default_scope] \
-            .collections[CbServer.default_collection] \
-            .num_items = self.num_items
         task = None
         client_type = self.input.param("client_type", "sdk").lower()
         data_load = self.input.param("load_data", "disabled")
@@ -94,9 +90,17 @@ class BasicOps(CollectionBase):
             shell_conn = RemoteMachineShellConnection(node)
             cbstats = Cbstats(shell_conn)
             c_data = cbstats.get_collections(self.bucket)
-            if c_data["count"] != 0:
-                self.log_failure("%s - Expected collection count is '0'."
-                                 "Actual: %s" % (node.ip, c_data["count"]))
+            expected_collection_count = \
+                len(self.bucket_util.get_active_collections(
+                        self.bucket,
+                        CbServer.default_scope,
+                        only_names=True))
+            if c_data["count"] != expected_collection_count:
+                self.log_failure("%s - Expected collection count is '%s'. "
+                                 "Actual: %s"
+                                 % (node.ip,
+                                    expected_collection_count,
+                                    c_data["count"]))
             if c_data["default_exists"]:
                 self.log_failure("%s: _default collection exists in cbstats"
                                  % node.ip)
@@ -129,13 +133,8 @@ class BasicOps(CollectionBase):
         4. Validate '_default' collection is intact
         """
         num_scopes = self.input.param("num_scopes", 1)
-        self.bucket \
-            .scopes[CbServer.default_scope] \
-            .collections[CbServer.default_collection] \
-            .num_items = self.num_items
-
         if self.action_phase == "before_default_load":
-            self.create_scopes(self.bucket, num_scopes)
+            BucketUtils.create_scopes(self.cluster, self.bucket, num_scopes)
 
         create_gen = doc_generator("scope_create_key",
                                    0, self.num_items,
@@ -182,7 +181,7 @@ class BasicOps(CollectionBase):
 
         # Create scope(s) while CRUDs are running in background
         if self.action_phase == "during_default_load":
-            self.create_scopes(self.bucket, num_scopes)
+            BucketUtils.create_scopes(self.cluster, self.bucket, num_scopes)
 
         # Validate drop collection using cbstats
         for node in self.cluster_util.get_kv_nodes():
@@ -213,11 +212,6 @@ class BasicOps(CollectionBase):
         use_scope_name_for_collection = \
             self.input.param("use_scope_name_for_collection", False)
         scope_name = CbServer.default_scope
-        self.bucket \
-            .scopes[CbServer.default_scope] \
-            .collections[CbServer.default_collection] \
-            .num_items = self.num_items
-
         collection_with_scope_name = use_scope_name_for_collection
         if use_default_scope:
             collection_with_scope_name = False
@@ -231,7 +225,8 @@ class BasicOps(CollectionBase):
                                      {"name": scope_name})
 
         if self.action_phase == "before_default_load":
-            self.create_collections(
+            BucketUtils.create_collections(
+                self.cluster,
                 self.bucket,
                 num_collections,
                 scope_name,
@@ -249,7 +244,8 @@ class BasicOps(CollectionBase):
 
         # Create collections(s) while CRUDs are running in background
         if self.action_phase == "during_default_load":
-            self.create_collections(
+            BucketUtils.create_collections(
+                self.cluster,
                 self.bucket,
                 num_collections,
                 scope_name,

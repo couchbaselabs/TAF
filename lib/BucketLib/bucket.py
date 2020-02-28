@@ -29,6 +29,8 @@ class Collection(object):
         # Meta data for test case validation
         self.is_dropped = False
         self.recreated = 0
+        # Meta to preserve inserted doc index to support further CRUDs
+        self.doc_index = (0, 0)
 
     def __str__(self):
         return self.name
@@ -41,6 +43,7 @@ class Collection(object):
         # Update meta fields
         collection_obj.is_dropped = False
         collection_obj.recreated += 1
+        collection_obj.doc_index = (0, 0)
 
 
 class Bucket(object):

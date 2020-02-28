@@ -7,6 +7,7 @@ Created on Sep 26, 2017
 import copy
 import importlib
 import logging
+import threading
 from datetime import datetime
 
 import crc32
@@ -31,7 +32,8 @@ from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket, Collection, Scope
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
-from collections_helper.collections_spec_constants import MetaConstants
+from collections_helper.collections_spec_constants import MetaConstants, \
+    MetaCrudParams
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
@@ -71,33 +73,181 @@ Parameters:
 
 class DocLoaderUtils(object):
     log = logging.getLogger("test")
+    doc_op_types = ["delete", "create", "update", "replace", "read"]
+    subdoc_op_types = ["insert", "upsert", "remove", "lookup"]
 
     @staticmethod
-    def load_initial_items_per_collection_spec(server_task_obj,
-                                               cluster,
-                                               buckets, async_load=False):
+    def __get_required_num_from_percentage(collection_obj, target_percent):
+        """
+        To calculate the num_items for mutation for given collection_obj
+        :param collection_obj: Object of Bucket.scope.collection
+        :param target_percent: Percentage as given in spec
+        :return: num_items (int) value derived using percentage value
+        """
+        return int((collection_obj.num_items * target_percent) / 100)
+
+    @staticmethod
+    def get_doc_generator(op_type, collection_obj, num_items,
+                          generic_key, mutation_num=0):
+        """
+        Create doc generators based on op_type provided
+        :param op_type: CRUD type
+        :param collection_obj: Collection object from Bucket.scope.collection
+        :param num_items: Targeted item count under the given collection
+        :param generic_key: Doc_key to be used while doc generation
+        :param mutation_num: Mutation number, used for doc validation task
+        :return: doc_generator object based on given inputs
+        """
+        if op_type == "create":
+            start = collection_obj.doc_index[1]
+            end = start + num_items
+            collection_obj.doc_index = (collection_obj.doc_index[0], end)
+        elif op_type == "delete":
+            start = collection_obj.doc_index[0]
+            end = start + num_items
+            collection_obj.doc_index = (end, collection_obj.doc_index[1])
+        else:
+            start = collection_obj.doc_index[0]
+            end = start + num_items
+        return doc_generator(generic_key, start, end,
+                             mutation_type=op_type,
+                             mutate=mutation_num)
+
+    @staticmethod
+    def perform_doc_loading_for_spec(task_manager,
+                                     cluster,
+                                     buckets,
+                                     crud_spec,
+                                     async_load=False):
+        """
+        Will load(only Creates) all given collections under all bucket objects.
+        :param task_manager: TaskManager object used for task management
+        :param cluster: Cluster object to fetch master node
+                        (To create SDK connections)
+        :param buckets: List of bucket objects considered for doc loading
+        :param crud_spec: Dict for bucket-scope-collections with
+                          appropriate doc_generator objects.
+                          (Returned from create_doc_gens_for_spec function)
+        :param async_load: (Boolean) To wait for doc_loading to finish or not
+        :return: List of doc_loading tasks
+        """
         loader_tasks = list()
-        for bucket in buckets:
-            for _, scope in bucket.scopes.items():
-                for _, collection in scope.collections.items():
-                    doc_gen = doc_generator("test_doc",
-                                            0, collection.num_items)
-                    task = server_task_obj.async_load_gen_docs(
-                        cluster, bucket, doc_gen, "create",
-                        exp=collection.maxTTL,
-                        batch_size=50, process_concurrency=8,
-                        scope=scope.name,
-                        collection=collection.name)
-                    loader_tasks.append(task)
+        tasks_num = 0
+        for bucket_name, scope_dict in crud_spec.items():
+            DocLoaderUtils.log.info("Loading docs into bucket '%s'"
+                                    % bucket_name)
+            scope_dict = scope_dict["scopes"]
+            bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
+            for scope_name, collection_dict in scope_dict.items():
+                scope = bucket.scopes[scope_name]
+                collection_dict = collection_dict["collections"]
+                for c_name, c_data in collection_dict.items():
+                    task_id = "%s:%s:%s" \
+                              % (bucket_name, scope_name, c_name)
+                    collection = scope.collections[c_name]
+                    for op_type, op_data in c_data.items():
+                        DocLoaderUtils.log.debug(
+                            "Loading %s items into %s"
+                            % (op_data["target_items"], task_id))
+                        task = task_manager.async_load_gen_docs(
+                            cluster, bucket, op_data["doc_gen"], op_type,
+                            exp=collection.maxTTL,
+                            batch_size=1, process_concurrency=1,
+                            scope=scope_name,
+                            collection=c_name,
+                            task_identifier=task_id,
+                            print_ops_rate=False)
+
+                        tasks_num += 1
+                        loader_tasks.append(task)
+                        if (tasks_num % 12) == 0:
+                            for task in loader_tasks:
+                                task_manager.jython_task_manager \
+                                    .get_task_result(task)
+                            loader_tasks = list()
+
         if not async_load:
             for task in loader_tasks:
-                server_task_obj.jython_task_manager.get_task_result(task)
+                task_manager.jython_task_manager.get_task_result(task)
 
         return loader_tasks
 
     @staticmethod
-    def perform_ops_from_task_spec():
-        return
+    def create_doc_gens_for_spec(buckets, input_spec, mutation_num=0):
+        """
+        To perform the set of CRUD operations based on the given input spec.
+        :param buckets: List of Bucket objects which needs to be considered
+                        for doc loading
+        :param input_spec: CRUD spec (JSON format)
+        :param mutation_num: Mutation number, used for doc validation task
+        :return crud_spec: Dict for bucket-scope-collections with
+                           appropriate doc_generator objects
+        """
+        spec_percent_data = dict()
+
+        num_collection_to_load = input_spec.get(
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD, 1)
+        num_scopes_to_consider = input_spec.get(
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD, 1)
+        num_buckets_to_consider = input_spec.get(
+            MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD, 1)
+
+        # Fetch CRUD percentage from given spec
+        spec_percent_data["create"] = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION, 0)
+        spec_percent_data["update"] = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION, 0)
+        spec_percent_data["delete"] = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION, 0)
+        spec_percent_data["replace"] = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION, 0)
+        spec_percent_data["read"] = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION, 0)
+
+        crud_spec = BucketUtils.get_random_collections(
+            buckets,
+            num_collection_to_load,
+            num_scopes_to_consider,
+            num_buckets_to_consider)
+        for bucket_name, scope_dict in crud_spec.items():
+            scope_dict = scope_dict["scopes"]
+            bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
+            for scope_name, collection_dict in scope_dict.items():
+                collection_dict = collection_dict["collections"]
+                scope = bucket.scopes[scope_name]
+                for c_name, c_data in collection_dict.items():
+                    collection = scope.collections[c_name]
+                    for op_type in DocLoaderUtils.doc_op_types:
+                        target_num_items = \
+                            DocLoaderUtils.__get_required_num_from_percentage(
+                                collection, spec_percent_data[op_type])
+                        if target_num_items == 0:
+                            continue
+
+                        c_data[op_type] = dict()
+                        c_data[op_type]["target_items"] = target_num_items
+                        c_data[op_type]["doc_gen"] = \
+                            DocLoaderUtils.get_doc_generator(
+                                op_type,
+                                collection,
+                                c_data[op_type]["target_items"],
+                                "test_collection",
+                                mutation_num=mutation_num)
+        return crud_spec
+
+    @staticmethod
+    def run_scenario_from_spec(task_manager, cluster, buckets,
+                               input_spec, mutation_num=1):
+        BucketUtils.perform_tasks_from_spec(cluster,
+                                            buckets,
+                                            input_spec)
+        crud_spec = DocLoaderUtils.create_doc_gens_for_spec(buckets,
+                                                            input_spec,
+                                                            mutation_num)
+        DocLoaderUtils.perform_doc_loading_for_spec(task_manager,
+                                                    cluster,
+                                                    buckets,
+                                                    crud_spec)
 
 
 class CollectionUtils(DocLoaderUtils):
@@ -223,11 +373,107 @@ class CollectionUtils(DocLoaderUtils):
                                                    collection_name)
 
     @staticmethod
+    def flush_collection(node, bucket, scope_name=CbServer.default_scope,
+                         collection_name=CbServer.default_collection):
+        """
+        Function to flush collection under the given scope_name
+
+        :param node: TestInputServer object to create a rest/sdk connection
+        :param bucket: Bucket object under which the scope should be dropped
+        :param scope_name: Scope_name under which the collection to be dropped
+        :param collection_name: Collection name which has to dropped
+        """
+        status, content = BucketHelper(node).flush_collection(bucket,
+                                                              scope_name,
+                                                              collection_name)
+        if status is False:
+            CollectionUtils.log.error(
+                "Collection '%s::%s::%s' flush failed: %s"
+                % (bucket, scope_name, collection_name, content))
+            raise Exception("delete_collection")
+
+        CollectionUtils.mark_collection_as_flushed(bucket,
+                                                   scope_name,
+                                                   collection_name)
+
+    @staticmethod
     def get_bucket_template_from_package(module_name):
         spec_package = importlib.import_module(
             'pytests.bucket_collections.bucket_templates.' +
             module_name)
         return spec_package.spec
+
+    @staticmethod
+    def get_crud_template_from_package(module_name):
+        spec_package = importlib.import_module(
+            'pytests.bucket_collections.collection_ops_specs.' +
+            module_name)
+        return spec_package.spec
+
+    @staticmethod
+    def create_collections(cluster, bucket, num_collections, scope_name,
+                           collection_name=None,
+                           create_collection_with_scope_name=False):
+        """
+        Generic function to create required num_of_collections.
+
+        :param cluster: Cluster object for fetching master/other nodes
+        :param bucket:
+            Bucket object under which the scopes need
+            to be created
+        :param num_collections:
+            Number of collections to be created under
+            the given 'scope_name'
+        :param scope_name:
+            Scope under which the collections needs to be created
+        :param collection_name:
+            Generic name to be used for naming a scope.
+            'None' results in creating collection with random names
+        :param create_collection_with_scope_name:
+            Boolean to decide whether to create the first collection
+            with the same 'scope_name'
+        """
+        created_collections = 0
+        target_scope = bucket.scopes[scope_name]
+        while created_collections < num_collections:
+            if created_collections == 0 \
+                    and create_collection_with_scope_name:
+                col_name = scope_name
+            else:
+                if collection_name is None:
+                    col_name = BucketUtils.get_random_name()
+                else:
+                    col_name = collection_name + "_%s" % created_collections
+
+            collection_already_exists = \
+                col_name in target_scope.collections.keys() \
+                and target_scope.collections[col_name].is_dropped is False
+
+            collection_created = False
+            while not collection_created:
+                CollectionUtils.log.info("Creating collection '%s::%s'"
+                                         % (scope_name, col_name))
+                try:
+                    BucketUtils.create_collection(cluster.master,
+                                                  bucket,
+                                                  scope_name,
+                                                  {"name": col_name})
+                    if collection_already_exists:
+                        raise Exception("Collection with duplicate name "
+                                        "got created under bucket::scope "
+                                        "%s::%s" % (bucket, scope_name))
+                    created_collections += 1
+                    collection_created = True
+                except Exception as e:
+                    if collection_already_exists and collection_name is None:
+                        CollectionUtils.log.info(
+                            "Collection creation with duplicate "
+                            "name '%s' failed as expected. Will "
+                            "retry with different name")
+                    else:
+                        CollectionUtils.log.error(
+                            "Collection creation failed!")
+                        raise Exception(e)
 
 
 class ScopeUtils(CollectionUtils):
@@ -339,6 +585,60 @@ class ScopeUtils(CollectionUtils):
         ScopeUtils.mark_scope_as_dropped(bucket, scope_name)
         ScopeUtils.log.debug("Scope '%s::%s' deleted" % (bucket, scope_name))
 
+    @staticmethod
+    def create_scopes(cluster, bucket, num_scopes, scope_name=None,
+                      collection_count=0):
+        """
+        Generic function to create required num_of_scopes.
+
+        :param cluster: Cluster object for fetching master/other nodes
+        :param bucket: Bucket object under which the scopes need
+                       to be created
+        :param num_scopes: Number of scopes to be created under the 'bucket'
+        :param scope_name: Generic name to be used for naming a scope.
+                           'None' results in creating random scope names
+        :param collection_count: Number for collections to be created
+                                 under each created scope
+        """
+        created_scopes = 0
+        while created_scopes < num_scopes:
+            if scope_name is None:
+                curr_scope_name = BucketUtils.get_random_name()
+            else:
+                curr_scope_name = scope_name + "_%s" % created_scopes
+
+            scope_already_exists = \
+                curr_scope_name in bucket.scopes.keys() \
+                and \
+                bucket.scopes[curr_scope_name].is_dropped is False
+            scope_created = False
+            while not scope_created:
+                ScopeUtils.log.info("Creating scope '%s'" % curr_scope_name)
+                try:
+                    scope_spec = {"name": curr_scope_name}
+                    ScopeUtils.create_scope(cluster.master,
+                                            bucket,
+                                            scope_spec)
+                    if scope_already_exists:
+                        raise Exception("Scope with duplicate name is "
+                                        "created under bucket %s" % bucket)
+                    created_scopes += 1
+                    scope_created = True
+                    CollectionUtils.create_collections(
+                        cluster.master,
+                        bucket,
+                        collection_count,
+                        curr_scope_name)
+                except Exception as e:
+                    if scope_already_exists and scope_name is None:
+                        ScopeUtils.log.info(
+                            "Scope creation with duplicate name "
+                            "'%s' failed as expected. Will retry "
+                            "with different name")
+                    else:
+                        ScopeUtils.log.error("Scope creation failed!")
+                        raise Exception(e)
+
 
 class BucketUtils(ScopeUtils):
     def __init__(self, cluster, cluster_util, server_task):
@@ -353,7 +653,7 @@ class BucketUtils(ScopeUtils):
         self.data_collector = DataCollector()
         self.data_analyzer = DataAnalyzer()
         self.result_analyzer = DataAnalysisResultAnalyzer()
-        self.log = logging.getLogger("test")
+        self.log = ScopeUtils.log
 
     # Supporting APIs
     def sleep(self, timeout=15, message=""):
@@ -400,6 +700,169 @@ class BucketUtils(ScopeUtils):
             if rand_name[0] in invalid_start_chars:
                 rand_name = ""
         return rand_name
+
+    @staticmethod
+    def get_random_buckets(buckets, req_num, exclude_from=dict()):
+        """
+        Function to select random buckets from the given buckets object
+
+        :param buckets: List of bucket objects
+        :param req_num: Required number of buckets to be selected in random
+                        If req_num is >= the given buckets, all are selected
+        :param exclude_from: Dict having bucket names as key to exclude.
+                             This is the same dict returned by this function
+        :return selected_buckets: Dict with keys as bucket_names
+        """
+        selected_bucket_names = list()
+        selected_buckets = dict()
+
+        if req_num == "all" or req_num >= len(buckets):
+            for bucket in buckets:
+                if bucket.name not in exclude_from.keys():
+                    selected_bucket_names.append(bucket.name)
+        else:
+            bucket_len = len(buckets) - 1
+            while len(selected_bucket_names) != req_num:
+                random.seed(datetime.now())
+                bucket = buckets[random.randint(0, bucket_len)]
+                if bucket.name \
+                        not in selected_bucket_names + exclude_from.keys():
+                    selected_bucket_names.append(bucket.name)
+
+        for bucket_name in selected_bucket_names:
+            selected_buckets[bucket_name] = dict()
+            selected_buckets[bucket_name]["scopes"] = dict()
+        return selected_buckets
+
+    @staticmethod
+    def get_random_scopes(buckets, req_num, consider_buckets,
+                          exclude_from=dict()):
+        """
+        Function to select random scopes from the given buckets object
+
+        :param buckets: List of bucket objects
+        :param req_num: Required number of scopes to be selected in random
+                        If req_num is >= the given scopes, all are selected
+        :param consider_buckets: Required number of buckets to be selected
+                                 in random. If req_num is >= the available
+                                 buckets, all are considered for selection
+        :param exclude_from: Dict having scope names as key to exclude.
+                             This is the same dict returned by this function
+        :return selected_buckets: Dict with (key, value) (b_names, scope_dict)
+        """
+        selected_buckets = BucketUtils.get_random_buckets(buckets,
+                                                          consider_buckets,
+                                                          exclude_from)
+        available_scopes = list()
+        selected_scopes = list()
+        known_buckets = dict()
+        exclude_scopes = list()
+
+        for b_name, scope_dict in exclude_from.items():
+            for scope_name in scope_dict["scopes"].keys():
+                exclude_scopes.append("%s:%s" % (b_name, scope_name))
+
+        for bucket_name in selected_buckets.keys():
+            bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
+            known_buckets[bucket_name] = bucket
+            active_scopes = BucketUtils.get_active_scopes(bucket)
+            for scope in active_scopes:
+                available_scopes.append("%s:%s" % (bucket_name,
+                                                   scope.name))
+
+        if req_num == "all" or req_num >= len(available_scopes):
+            selected_scopes = available_scopes
+        else:
+            scopes_len = len(available_scopes) - 1
+            while len(selected_scopes) != req_num:
+                random.seed(datetime.now())
+                t_scope = available_scopes[random.randint(0, scopes_len)]
+                if t_scope not in selected_scopes + exclude_scopes:
+                    selected_scopes.append(t_scope)
+
+        for scope_name in selected_scopes:
+            scope_name = scope_name.split(":")
+            bucket_name = scope_name[0]
+            scope_name = scope_name[1]
+            selected_buckets[bucket_name]["scopes"][scope_name] = dict()
+            selected_buckets[bucket_name][
+                "scopes"][scope_name][
+                "collections"] = dict()
+        return selected_buckets
+
+    @staticmethod
+    def get_random_collections(buckets, req_num,
+                               consider_scopes,
+                               consider_buckets,
+                               exclude_from=dict()):
+        """
+        Function to select random collections from the given buckets object
+
+        :param buckets: List of bucket objects
+        :param req_num: Required number of collections to be selected
+                        in random. If req_num is >= the available collections,
+                        all are selected
+        :param consider_scopes: Required number of scopes to be selected
+                                in random. If req_num is >= the given scopes,
+                                all are selected
+        :param consider_buckets: Required number of buckets to be selected
+                                 in random. If req_num is >= the available
+                                 buckets, all are selecteed
+        :param exclude_from: Dict having scope names as key to exclude.
+                             This is the same dict returned by this function
+        :return selected_buckets: Dict with (key, value) (b_names, scope_dict)
+        """
+        selected_buckets = \
+            BucketUtils.get_random_scopes(buckets,
+                                          consider_scopes,
+                                          consider_buckets,
+                                          exclude_from)
+        available_collections = list()
+        selected_collections = list()
+        exclude_collections = list()
+
+        for b_name, scope_dict in exclude_from.items():
+            for scope_name, collection_dict in scope_dict["scopes"].items():
+                for c_name in collection_dict["collections"].keys():
+                    exclude_collections.append("%s:%s:%s"
+                                               % (b_name, scope_name, c_name))
+
+        for bucket_name in selected_buckets.keys():
+            bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
+            active_scopes = BucketUtils.get_active_scopes(bucket,
+                                                          only_names=True)
+            for scope_name in active_scopes:
+                active_collections = BucketUtils.get_active_collections(
+                    bucket, scope_name)
+                for collection in active_collections:
+                    available_collections.append("%s:%s:%s"
+                                                 % (bucket_name,
+                                                    scope_name,
+                                                    collection.name))
+
+        if req_num == "all" or req_num >= len(available_collections):
+            selected_collections = available_collections
+        else:
+            collection_len = len(available_collections) - 1
+            while len(selected_collections) != req_num:
+                random.seed(datetime.now())
+                collection = available_collections[
+                    random.randint(0, collection_len)]
+
+                if collection \
+                        not in selected_collections + exclude_collections:
+                    selected_collections.append(collection)
+
+        for collection in selected_collections:
+            collection_name = collection.split(":")
+            bucket_name = collection_name[0]
+            scope_name = collection_name[1]
+            collection_name = collection_name[2]
+
+            selected_buckets[bucket_name][
+                "scopes"][scope_name][
+                "collections"][collection_name] = dict()
+        return selected_buckets
 
     # Fetch/Create/Delete buckets
     def load_sample_bucket(self, sample_bucket):
@@ -592,23 +1055,23 @@ class BucketUtils(ScopeUtils):
         scope_spec = \
             buckets_spec["buckets"][bucket_name]["scopes"][scope_name]
 
-        req_num_collections = \
-            buckets_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE]
-        def_maxttl = buckets_spec["buckets"][bucket_name][Bucket.maxTTL]
+        def_maxttl = buckets_spec["buckets"][bucket_name].get(Bucket.maxTTL, 0)
         def_num_docs = \
-            buckets_spec["buckets"][bucket_name][
-                MetaConstants.NUM_ITEMS_PER_COLLECTION]
+            buckets_spec["buckets"][bucket_name].get(
+                MetaConstants.NUM_ITEMS_PER_COLLECTION, 0)
 
-        if MetaConstants.NUM_COLLECTIONS_PER_SCOPE in scope_spec:
-            req_num_collections = \
-                scope_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE]
-
-        if MetaConstants.NUM_ITEMS_PER_COLLECTION in scope_spec:
-            def_num_docs = scope_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION]
+        req_num_collections = \
+            scope_spec.get(
+                MetaConstants.NUM_COLLECTIONS_PER_SCOPE,
+                buckets_spec["buckets"][bucket_name].get(
+                    MetaConstants.NUM_COLLECTIONS_PER_SCOPE, 0))
+        def_num_docs = scope_spec.get(MetaConstants.NUM_ITEMS_PER_COLLECTION,
+                                      def_num_docs)
 
         # Create default collection under default scope if required
         if scope_name == CbServer.default_scope and (
-                not scope_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION]):
+                not scope_spec.get(MetaConstants.REMOVE_DEFAULT_COLLECTION,
+                                   False)):
             scope_spec["collections"][CbServer.default_collection] = dict()
 
         # Created extra collection specs which are not provided in spec
@@ -637,14 +1100,12 @@ class BucketUtils(ScopeUtils):
             scope_spec[CbServer.default_scope] = dict()
             scope_spec[CbServer.default_scope]["collections"] = dict()
 
-        req_num_scopes = buckets_spec[MetaConstants.NUM_SCOPES_PER_BUCKET]
         def_remove_default_collection = \
             buckets_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION]
 
-        if MetaConstants.NUM_SCOPES_PER_BUCKET \
-                in buckets_spec["buckets"][bucket_name]:
-            req_num_scopes = buckets_spec["buckets"][
-                bucket_name][MetaConstants.NUM_SCOPES_PER_BUCKET]
+        req_num_scopes = buckets_spec["buckets"][
+            bucket_name].get(MetaConstants.NUM_SCOPES_PER_BUCKET,
+                             buckets_spec[MetaConstants.NUM_SCOPES_PER_BUCKET])
 
         # Create required Scope specs which are not provided by user
         for scope_name, spec_val in scope_spec.items():
@@ -688,9 +1149,8 @@ class BucketUtils(ScopeUtils):
                 total_ram_requested_explicitly += \
                     bucket_spec[Bucket.ramQuotaMB]
 
-        req_num_buckets = len(buckets_spec["buckets"])
-        if MetaConstants.NUM_BUCKETS in buckets_spec:
-            req_num_buckets = buckets_spec[MetaConstants.NUM_BUCKETS]
+        req_num_buckets = buckets_spec.get(MetaConstants.NUM_BUCKETS,
+                                           len(buckets_spec["buckets"]))
 
         # Fetch and define RAM quota for buckets
         node_info = rest_conn.get_nodes_self()
@@ -756,6 +1216,7 @@ class BucketUtils(ScopeUtils):
         return task
 
     def create_buckets_using_json_data(self, buckets_spec, async_create=True):
+        self.log.info("Creating required buckets from template")
         rest_conn = RestConnection(self.cluster.master)
         buckets_spec = BucketUtils.expand_buckets_spec(rest_conn,
                                                        buckets_spec)
@@ -791,22 +1252,17 @@ class BucketUtils(ScopeUtils):
                                                   c_spec)
 
     # Support functions with bucket object
-    def get_bucket_object_from_name(self, bucket="", num_attempt=1, timeout=1):
-        bucket_info = None
-        bucket_helper = BucketHelper(self.cluster.master)
-        num = 0
-        while num_attempt > num:
-            try:
-                content = bucket_helper.get_bucket_json(bucket)
-                bucket_info = self.parse_get_bucket_json(content)
+    @staticmethod
+    def get_bucket_obj(buckets, bucket_name):
+        bucket_obj = None
+        for bucket in buckets:
+            if bucket.name == bucket_name:
+                bucket_obj = bucket
                 break
-            except Exception:
-                self.sleep(timeout)
-                num += 1
-        return bucket_info
+        return bucket_obj
 
     def get_vbuckets(self, bucket='default'):
-        b = self.get_bucket_object_from_name(bucket)
+        b = self.get_bucket_obj(self.buckets, bucket)
         return None if not b else b.vbuckets
 
     def print_bucket_stats(self):
@@ -1179,6 +1635,42 @@ class BucketUtils(ScopeUtils):
 
         return validation_passed
 
+    def wait_for_collection_creation_to_complete(self, timeout=60):
+        # self.log.critical("WARNING: NEED TO FIX THIS. SERVER ISSUE!!!")
+        # self.sleep(60, "Waiting for all collections to be created")
+        # return
+        self.log.info("Waiting for all collections to be created")
+        shell_conn = RemoteMachineShellConnection(self.cluster.master)
+        cb_stat = Cbstats(shell_conn)
+        for bucket in self.buckets:
+            start_time = time.time()
+            stop_time = start_time + timeout
+            count_matched = False
+            total_collection_as_per_bucket_obj = \
+                BucketUtils.get_total_collections_in_bucket(bucket)
+            total_collection_as_per_stats = 0
+            while time.time() < stop_time:
+                total_collection_as_per_stats = 0
+                scope_stats = cb_stat.get_scopes(bucket)
+                for stat_name in scope_stats.keys():
+                    if type(scope_stats[stat_name]) is dict:
+                        total_collection_as_per_stats += \
+                            scope_stats[stat_name]["collections"]
+                if total_collection_as_per_bucket_obj \
+                        == total_collection_as_per_stats:
+                    count_matched = True
+                    break
+            if not count_matched:
+                self.log.error("Collections count mismatch in %s. %s != %s"
+                               % (bucket.name,
+                                  total_collection_as_per_bucket_obj,
+                                  total_collection_as_per_stats))
+                raise Exception("Collection count mismatch for bucket: %s. "
+                                "Expected: %d, Actual: %d"
+                                % (bucket.name,
+                                   total_collection_as_per_bucket_obj,
+                                   total_collection_as_per_stats))
+
     # Bucket doc_ops support APIs
     @staticmethod
     def key_generator(size=6, chars=string.ascii_uppercase + string.digits):
@@ -1423,7 +1915,7 @@ class BucketUtils(ScopeUtils):
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions)
         return tasks_info
-    
+
     def _async_validate_docs(self, cluster, kv_gen, op_type, exp,
                             flag=0, only_store_hash=True, batch_size=1,
                             pause_secs=1, timeout_secs=5, compression=True,
@@ -1451,7 +1943,6 @@ class BucketUtils(ScopeUtils):
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions)
             return task_info
-            
 
     def sync_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                               persist_to=0, replicate_to=0,
@@ -1459,7 +1950,8 @@ class BucketUtils(ScopeUtils):
                               pause_secs=1, timeout_secs=30,
                               sdk_compression=True, process_concurrency=8,
                               retries=5, durability="",
-                              ignore_exceptions=[], retry_exceptions=[],
+                              ignore_exceptions=list(),
+                              retry_exceptions=list(),
                               active_resident_threshold=100,
                               ryow=False, check_persistence=False,
                               suppress_error_table=False, dgm_batch=5000,
@@ -1523,7 +2015,7 @@ class BucketUtils(ScopeUtils):
             if load_for == "abort":
                 return self.task.async_load_gen_docs(
                     self.cluster, bucket, doc_gen, doc_op, 0,
-                    batch_size=1, process_concurrency=8,
+                    batch_size=10, process_concurrency=8,
                     durability=durability_level,
                     timeout_secs=2, start_task=False,
                     skip_read_on_error=True, suppress_error_table=True)
@@ -3294,3 +3786,147 @@ class BucketUtils(ScopeUtils):
                             "snap_start and snap_end corruption found!!!")
 
             self.validate_doc_count_as_per_collections(bucket)
+
+    @staticmethod
+    def perform_tasks_from_spec(cluster, buckets, input_spec):
+        """
+        Perform Create/Drop/Flush of scopes and collections as specified
+        in the input json spec template.
+
+        :param cluster: Cluster object to fetch master node
+                        (To create REST connections for bucket operations)
+        :param buckets: List of bucket objects considered for bucket ops
+        :param input_spec: CRUD spec (JSON format)
+        :return:
+        """
+        def perform_scope_operation(operation_type, ops_spec):
+            if operation_type == "create":
+                bucket_obj_list = ops_spec["buckets"]
+                scopes_num = ops_spec["scopes_num"]
+                collection_count = \
+                    ops_spec["collection_count_under_each_scope"]
+                for bucket_obj in bucket_obj_list:
+                    ScopeUtils.create_scopes(
+                        cluster, bucket_obj, scopes_num, collection_count)
+            elif operation_type == "drop":
+                for bucket_name, b_data in ops_spec.items():
+                    bucket_obj = BucketUtils.get_bucket_obj(buckets,
+                                                            bucket_name)
+                    for scope_name in b_data["scopes"].keys():
+                        ScopeUtils.drop_scope(cluster.master,
+                                              bucket_obj,
+                                              scope_name)
+
+        def perform_collection_operation(operation_type, ops_spec):
+            if operation_type == "create":
+                created_collections = 0
+                bucket_names = ops_spec.keys()
+                bucket_names.remove("req_collections")
+                buckets_len = len(bucket_names) - 1
+                while created_collections < ops_spec["req_collections"]:
+                    random.seed(datetime.now())
+                    bucket_name = bucket_names[random.randint(0, buckets_len)]
+                    bucket_obj = BucketUtils.get_bucket_obj(buckets,
+                                                            bucket_name)
+                    scopes = ops_spec[bucket_name]["scopes"].keys()
+                    scopes_len = len(scopes) - 1
+                    CollectionUtils.create_collections(
+                        cluster, bucket_obj, 1,
+                        scopes[random.randint(0, scopes_len)])
+            else:
+                for bucket_name, b_data in ops_spec.items():
+                    bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
+                    for scope_name, scope_data in b_data["scopes"].items():
+                        for collection_name in \
+                                scope_data["collections"].keys():
+                            if operation_type == "flush":
+                                CollectionUtils.flush_collection(
+                                    cluster.master, bucket,
+                                    scope_name, collection_name)
+                            elif operation_type == "drop":
+                                CollectionUtils.drop_collection(
+                                    cluster.master, bucket,
+                                    scope_name, collection_name)
+
+        # Fetch random Collections to flush
+        cols_to_flush = dict()
+        # cols_to_flush = BucketUtils.get_random_collections(
+        #     buckets,
+        #     ops_spec[MetaCrudParams.COLLECTIONS_TO_FLUSH],
+        #     ops_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS],
+        #     ops_spec[MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS])
+
+        # Fetch random Collections to drop
+        cols_to_drop = BucketUtils.get_random_collections(
+            buckets,
+            input_spec.get(MetaCrudParams.COLLECTIONS_TO_DROP, 0),
+            input_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, 0),
+            input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1),
+            cols_to_flush)
+
+        # Start threads to drop collections
+        c_flush_thread = threading.Thread(
+            target=perform_collection_operation,
+            args=["flush", cols_to_flush])
+        c_drop_thread = threading.Thread(
+            target=perform_collection_operation,
+            args=["drop", cols_to_drop])
+
+        c_flush_thread.start()
+        c_drop_thread.start()
+
+        c_flush_thread.join()
+        c_drop_thread.join()
+
+        # Fetch scopes to be dropped
+        scopes_to_drop = BucketUtils.get_random_scopes(
+            buckets,
+            input_spec.get(MetaCrudParams.SCOPES_TO_DROP, 0),
+            input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1))
+        scope_drop_thread = threading.Thread(
+            target=perform_scope_operation,
+            args=["drop", scopes_to_drop])
+
+        scope_drop_thread.start()
+        scope_drop_thread.join()
+
+        # Fetch buckets under which scopes will be created
+        create_scope_spec = dict()
+        create_scope_spec["buckets"] = BucketUtils.get_random_buckets(
+            buckets,
+            input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, "all"))
+        create_scope_spec["scopes_num"] = \
+            input_spec.get(MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET, 0)
+        create_scope_spec["collection_count_under_each_scope"] = \
+            input_spec.get(MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES, 0)
+        scope_create_thread = threading.Thread(
+            target=perform_scope_operation,
+            args=["create", create_scope_spec])
+
+        scope_create_thread.start()
+        scope_create_thread.join()
+
+        # Fetch random Scopes under which to create collections
+        scopes_to_create_collections = BucketUtils.get_random_scopes(
+            buckets,
+            input_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, "all"),
+            input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, "all"))
+        scopes_to_create_collections["req_collections"] = \
+            input_spec.get(MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET, 0)
+        collections_create_thread = threading.Thread(
+            target=perform_collection_operation,
+            args=["create", scopes_to_create_collections])
+
+        collections_create_thread.start()
+        collections_create_thread.join()
+
+    @staticmethod
+    def get_total_collections_in_bucket(bucket):
+        collection_count = 0
+        active_scopes = BucketUtils.get_active_scopes(bucket)
+        for scope in active_scopes:
+            if scope.is_dropped:
+                continue
+            collection_count += len(BucketUtils.get_active_collections(
+                bucket, scope.name, only_names=True))
+        return collection_count

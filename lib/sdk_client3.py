@@ -58,7 +58,6 @@ import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 from Cb_constants import ClusterRun, CbServer
-import threading
 
 from couchbase_helper.durability_helper import DurabilityHelper
 

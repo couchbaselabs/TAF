@@ -723,12 +723,12 @@ class LoadDocumentsTask(GenericLoadingTask):
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
             retries=retries, suppress_error_table=suppress_error_table)
-        self.thread_name = "LoadDocumentsTask-{}_{}_{}_{}_{}" \
-            .format(task_identifier,
-                    generator._doc_gen.start,
-                    generator._doc_gen.end,
-                    op_type,
-                    durability)
+        self.thread_name = "LoadDocumentsTask-%s_%s_%s_%s_%s" \
+            % (task_identifier,
+               generator._doc_gen.start,
+               generator._doc_gen.end,
+               op_type,
+               durability)
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
@@ -1342,7 +1342,7 @@ class LoadDocumentsGeneratorsTask(Task):
                  task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False):
         super(LoadDocumentsGeneratorsTask, self).__init__(
-            "DocumentsLoadGenTask_{}_{}".format(task_identifier, time.time()))
+            "DocumentsLoadGenTask_%s_%s" % (task_identifier, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.exp_unit = exp_unit

@@ -13,3 +13,37 @@ class MetaConstants(object):
                     or callable(getattr(MetaConstants, param))):
                 param_list.append(value)
         return param_list
+
+
+class MetaCrudParams(object):
+    COLLECTIONS_TO_FLUSH = "collections_to_flush"
+    COLLECTIONS_TO_DROP = "collections_to_drop"
+
+    SCOPES_TO_DROP = "scopes_to_drop"
+    SCOPES_TO_ADD_PER_BUCKET = "scopes_to_add_per_bucket"
+
+    COLLECTIONS_TO_ADD_FOR_NEW_SCOPES = "collections_to_add_for_new_scopes"
+    COLLECTIONS_TO_ADD_PER_BUCKET = "collections_to_add_per_bucket"
+
+    BUCKET_CONSIDERED_FOR_OPS = "buckets_considered_for_ops"
+    SCOPES_CONSIDERED_FOR_OPS = "scopes_considered_for_ops"
+    COLLECTIONS_CONSIDERED_FOR_OPS = "collections_considered_for_ops"
+
+    class DocCrud(object):
+        NUM_ITEMS_FOR_NEW_COLLECTIONS = "num_items_for_new_collections"
+
+        CREATE_PERCENTAGE_PER_COLLECTION = "create_percentage_per_collection"
+        READ_PERCENTAGE_PER_COLLECTION = "read_percentage_per_collection"
+        UPDATE_PERCENTAGE_PER_COLLECTION = "update_percentage_per_collection"
+        REPLACE_PERCENTAGE_PER_COLLECTION = "replace_percentage_per_collection"
+        DELETE_PERCENTAGE_PER_COLLECTION = "delete_percentage_per_collection"
+
+    class SubDocCrud(object):
+        INSERT_PER_COLLECTION = "insert_per_collection"
+        UPSERT_PER_COLLECTION = "upsert_per_collection"
+        UPDATE_PER_COLLECTION = "update_per_collection"
+        REMOVE_PER_COLLECTION = "remove_per_collection"
+
+    COLLECTIONS_CONSIDERED_FOR_CRUD = "collections_considered_for_crud"
+    SCOPES_CONSIDERED_FOR_CRUD = "scopes_considers_for_crud"
+    BUCKETS_CONSIDERED_FOR_CRUD = "buckets_considered_for_crud"
