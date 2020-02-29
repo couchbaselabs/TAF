@@ -19,6 +19,11 @@ class MagmaBaseTest(BaseTestCase):
         self.rev_write = self.input.param("rev_write", False)
         self.rev_read = self.input.param("rev_read", False)
         self.random_key = self.input.param("random_key", False)
+        self.mix_key_size = self.input.param("mix_key_size", False)
+        if self.mix_key_size:
+            self.random_key = False
+            self.rev_write = False
+            self.rev_read = False
         if self.random_key:
             self.key = "random_keys"
             self.rev_write = False
@@ -31,7 +36,8 @@ class MagmaBaseTest(BaseTestCase):
         self.dgm_batch = self.input.param("dgm_batch", 5000)
         self.retry_exceptions = list(set([SDKException.TimeoutException,
                                      SDKException.AmbiguousTimeoutException,
-                                     SDKException.RequestCanceledException]))
+                                     SDKException.RequestCanceledException,
+                                     SDKException.UnambiguousTimeoutException]))
         self.ignore_exceptions= []
         self.info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
@@ -75,7 +81,8 @@ class MagmaBaseTest(BaseTestCase):
                                         vbuckets=self.cluster_util.vbuckets,
                                         key_size=self.key_size,
                                         randomize_doc_size=self.randomize_doc_size,
-                                        randomize_value=self.randomize_value)
+                                        randomize_value=self.randomize_value,
+                                        mix_key_size=self.mix_key_size)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
         self.result_task = self._load_all_buckets(self.cluster,
@@ -89,7 +96,6 @@ class MagmaBaseTest(BaseTestCase):
         self.log.info("Verifying num_items counts after doc_ops")
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
-        # Initialize doc_generators
         self.active_resident_threshold = 100
         #Below start and end var for read generator
         start = 0
@@ -97,6 +103,7 @@ class MagmaBaseTest(BaseTestCase):
         if self.rev_read:
             start = -int(self.num_items - 1)
             end = 1
+        # Initialize doc_generators
         self.gen_read = doc_generator(self.key, start, end,
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
@@ -104,7 +111,8 @@ class MagmaBaseTest(BaseTestCase):
                                         vbuckets=self.cluster_util.vbuckets,
                                         key_size=self.key_size,
                                         randomize_doc_size=self.randomize_doc_size,
-                                        randomize_value=self.randomize_value)
+                                        randomize_value=self.randomize_value,
+                                        mix_key_size=self.mix_key_size)
         self.gen_create = None;
         self.gen_delete = None
         self.gen_update = doc_generator(self.key, 0, self.num_items // 2,
@@ -183,8 +191,9 @@ class MagmaBaseTest(BaseTestCase):
     def start_parallel_cruds(self,
                              retry_exceptions=[],
                              ignore_exceptions=[],
-                             _sync=False):
+                             _sync=True):
         tasks_info = dict()
+        read_task = False
         if "update" in self.doc_ops and self.gen_update is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0, batch_size=20,
@@ -205,12 +214,12 @@ class MagmaBaseTest(BaseTestCase):
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "read" in self.doc_ops and self.gen_read is not None:
-            tem_tasks_info = self.bucket_util._async_validate_docs(
-                self.cluster, self.gen_read, "read", 0, batch_size=20,
+            read_tasks_info = self.bucket_util._async_validate_docs(
+               self.cluster, self.gen_read, "read", 0, batch_size=20,
                 pause_secs=5,timeout_secs=self.sdk_timeout,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions)
-            tasks_info.update(tem_tasks_info.items())
+            read_task = True
         if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_delete, "delete", 0, batch_size=20,
@@ -221,22 +230,21 @@ class MagmaBaseTest(BaseTestCase):
                 ignore_exceptions=ignore_exceptions)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
-
+        
         if _sync:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-
+            
+        if read_task:
+            tasks_info.update(read_tasks_info.items())
+        
         return tasks_info
 
     def loadgen_docs(self,
                      retry_exceptions=[],
                      ignore_exceptions=[],
-                     _sync=False):
-        retry_exceptions = list(set(retry_exceptions +
-                                    [SDKException.TimeoutException,
-                                     SDKException.AmbiguousTimeoutException,
-                                     SDKException.RequestCanceledException]))
+                     _sync=True):
 
         if self.check_temporary_failure_exception:
             retry_exceptions.append(SDKException.TemporaryFailureException)

@@ -18,7 +18,7 @@ random_string = [''.join(random.choice(letters) for _ in range(128*1024))][0]
 def doc_generator(key, start, end, doc_size=256, doc_type="json",
                   target_vbucket=None, vbuckets=1024, mutation_type="ADD",
                   mutate=0, key_size=8, randomize_doc_size=False,
-                  randomize_value=False):
+                  randomize_value=False, mix_key_size=False):
     age = range(5)
     first = ['james', 'sharon']
 
@@ -41,7 +41,8 @@ def doc_generator(key, start, end, doc_size=256, doc_type="json",
                              start=start, end=end, doc_type=doc_type,
                              key_size=key_size,
                              randomize_doc_size=randomize_doc_size,
-                             randomize_value=randomize_value)
+                             randomize_value=randomize_value,
+                             mix_key_size=mix_key_size)
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
@@ -137,7 +138,6 @@ class DocumentGenerator(KVGenerator):
         self.template = template
         self.doc_type = "json"
         self.key_size = 8
-
         size = 0
         if not len(self.args) == 0:
             size = 1
@@ -169,9 +169,12 @@ class DocumentGenerator(KVGenerator):
 
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
+        
+        if 'mix_key_size' in kwargs:
+            self.mix_key_size = kwargs['mix_key_size']
 
     """Creates the next generated document and increments the iterator.
-
+    
     Returns:
         The document generated"""
 
@@ -203,6 +206,9 @@ class DocumentGenerator(KVGenerator):
             """ This will generate a random ascii key with 12 characters """
             doc_key = ''.join(self.random.choice(
                     ascii_uppercase+ascii_lowercase+digits) for _ in range(self.key_size))
+        elif self.mix_key_size:
+            doc_key = ''.join(self.random.choice(
+                ascii_uppercase+ascii_lowercase+digits) for _ in range(self.random.randint(self.key_size, 250)))
         else:
             doc_key = self.name + '-' + str(abs(self.itr)).zfill(self.key_size)
         self.itr += 1
