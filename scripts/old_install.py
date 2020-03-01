@@ -311,7 +311,7 @@ class Installer(object):
                 print "Version: ", version
                 """
                 moxi repo:
-                   http://172.23.120.24/builds/latestbuilds/moxi/4.6
+                   http://latestbuilds.service.couchbase.com/builds/latestbuilds/moxi/4.6
                    .0/101/moxi-server..
                 """
                 build_repo = CB_REPO.replace("couchbase-server",
