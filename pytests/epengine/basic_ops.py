@@ -36,7 +36,8 @@ class basic_ops(BaseTestCase):
         self.scope_name = self.input.param("scope", CbServer.default_scope)
         # collection_name will be 'False' to disable collection testing.
         # else to create collection with random name for testing
-        self.collection_name = self.input.param("collection", False)
+        self.collection_name = self.input.param("collection",
+                                                CbServer.default_collection)
 
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
