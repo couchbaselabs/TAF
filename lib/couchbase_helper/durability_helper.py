@@ -5,6 +5,8 @@ from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
 
+from com.couchbase.client.core.msg.kv import DurabilityLevel
+
 
 class DurabilityHelper:
 
@@ -14,6 +16,11 @@ class DurabilityHelper:
     SupportedDurability = ["MAJORITY",
                            "MAJORITY_AND_PERSIST_ON_MASTER",
                            "PERSIST_TO_MAJORITY"]
+
+    class SupportedLevel(object):
+        MAJORITY = "MAJORITY",
+        MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
+        PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
 
     def __init__(self, logger, cluster_len, durability="MAJORITY",
                  replicate_to=0, persist_to=0):
@@ -50,6 +57,21 @@ class DurabilityHelper:
         elif comparison == DurabilityHelper.GREATER_THAN_EQ:
             return lhs_val >= rhs_val
         return False
+
+    @staticmethod
+    def getDurabilityLevel(durability_level):
+        durability_level = durability_level.upper()
+        supported_level = DurabilityHelper.SupportedLevel
+        if durability_level == supported_level.MAJORITY:
+            return DurabilityLevel.MAJORITY
+
+        if durability_level == supported_level.MAJORITY_AND_PERSIST_TO_ACTIVE:
+            return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER
+
+        if durability_level == supported_level.PERSIST_TO_MAJORITY:
+            return DurabilityLevel.PERSIST_TO_MAJORITY
+
+        return DurabilityLevel.NONE
 
     def durability_succeeds(self, bucket_name, master,
                             induced_error=None, failed_nodes=[]):
