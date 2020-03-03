@@ -390,6 +390,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                      currently start and end are supported
         """
         self.args = args
+        self.kwargs = kwargs
         self.template = template
         self.doc_type = "json"
         self.doc_keys = dict()
@@ -397,13 +398,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         self.key_size = 0
         self.key_counter = 1
 
-        size = 0
-        if not len(self.args) == 0:
-            size = 1
-            for arg in self.args:
-                size *= len(arg)
-
-        KVGenerator.__init__(self, name, 0, size)
+        KVGenerator.__init__(self, name)
 
         if 'start' in kwargs:
             self.start = kwargs['start']
@@ -433,6 +428,12 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
 
+        if 'randomize' in self.kwargs:
+            self.randomize = self.kwargs["randomize"]
+
+        if 'mix_key_size' in kwargs:
+            self.mix_key_size = kwargs['mix_key_size']
+
         self.key_counter = self.start
         self.create_key_for_vbucket()
 
@@ -459,32 +460,22 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
         rand_hash = self.name + '-' + str(self.itr)
         self.random.seed(rand_hash)
-        doc_args = []
-        for arg in self.args:
-            value = self.random.choice(arg)
-            doc_args.append(value)
+        if self.randomize:
+            for k in self.template.getNames():
+                if k in self.kwargs:
+                    self.template.put(k, self.random.choice(self.kwargs[k]))
 
-        body = ""
+        doc_size = self.doc_size
         if self.randomize_doc_size:
-            doc_size = random.randint(0, self.doc_size)
-        else:
-            doc_size = self.doc_size
+            doc_size = self.random.randint(0, self.doc_size)
+            self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.randomize_value:
-            letters = string.ascii_lowercase
-            body = [''.join(random.choice(letters) for _ in range(doc_size - 10))][0]
-        else:
-            body = [''.rjust(doc_size - 10, 'a')][0]
-
-        doc_args.append(body)
-
-        doc = self.template.format(*doc_args).replace('\'', '"') \
-                                             .replace('True', 'true') \
-                                             .replace('False', 'false') \
-                                             .replace('\\', '\\\\')
+            _slice = int(random.random()*128*1024) - self.doc_size
+            self.body = random_string[_slice:_slice+self.doc_size]
         doc_key = self.doc_keys[self.itr]
         self.itr += 1
-        return doc_key, doc
+        return doc_key, self.template
 
 
 class BlobGenerator(KVGenerator):

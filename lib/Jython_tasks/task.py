@@ -432,13 +432,11 @@ class GenericLoadingTask(Task):
         fail = dict()
         try:
             client = shared_client or self.client
-            start_time = time.time()
             success, fail = client.setMulti(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
-            self.test_log.debug("Time Taken: %s" % (time.time()-start_time))
             if fail:
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
@@ -559,7 +557,7 @@ class GenericLoadingTask(Task):
                      replicate_to=None, timeout=None, timeunit=None,
                      durability=""):
         self.client = self.client or shared_client
-        success, fail = self.client.delete_multi(key_val.keys(),
+        success, fail = self.client.delete_multi(dict(key_val).keys(),
                                                  persist_to=persist_to,
                                                  replicate_to=replicate_to,
                                                  timeout=timeout,
@@ -576,7 +574,7 @@ class GenericLoadingTask(Task):
     def batch_touch(self, key_val, exp=0, shared_client=None,
                     timeout=None, timeunit=None):
         self.client = self.client or shared_client
-        success, fail = self.client.touch_multi(key_val.keys(),
+        success, fail = self.client.touch_multi(dict(key_val).keys(),
                                                 exp=exp,
                                                 timeout=timeout,
                                                 time_unit=timeunit)
@@ -756,9 +754,7 @@ class LoadDocumentsTask(GenericLoadingTask):
 
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
-        start_time = time.time()
         key_value = doc_gen.next_batch()
-        self.test_log.debug("Time taken by DocGen: %s" % (time.time()-start_time))
         if self.op_type == 'create':
             success, fail = self.batch_create(
                 key_value,
@@ -809,7 +805,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == 'read':
-            success, fail = self.batch_read(key_value.keys())
+            success, fail = self.batch_read(dict(key_value).keys())
             self.fail.update(fail)
             self.success.update(success)
         else:

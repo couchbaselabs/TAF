@@ -909,10 +909,8 @@ class SDKClient(object):
                                         durability=durability)
         if doc_type == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
-        t1 = time.time()
         result = SDKClient.doc_op.bulkInsert(
             self.collection, items, options)
-        self.log.debug("SDK Time: %s" % (time.time()-t1))
         return self.__translate_upsert_multi_results(result)
 
     def upsertMulti(self, docs, exp=0, exp_unit="seconds",
