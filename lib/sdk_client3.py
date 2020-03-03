@@ -23,7 +23,6 @@ from com.couchbase.client.core.error import \
     ServerOutOfMemoryException, \
     TemporaryFailureException, \
     TimeoutException
-from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.codec import RawBinaryTranscoder
@@ -60,6 +59,8 @@ import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 from Cb_constants import ClusterRun, CbServer
 import threading
+
+from couchbase_helper.durability_helper import DurabilityHelper
 
 
 class SDKClient(object):
@@ -272,7 +273,7 @@ class SDKClient(object):
             options = InsertOptions.insertOptions() \
                 .timeout(self.getDuration(timeout, time_unit)) \
                 .expiry(self.getDuration(exp, exp_unit)) \
-                .durability(self.getDurabilityLevel(durability))
+                .durability(DurabilityHelper.getDurabilityLevel(durability))
         else:
             options = InsertOptions.insertOptions() \
                 .timeout(self.getDuration(timeout, time_unit)) \
@@ -293,7 +294,7 @@ class SDKClient(object):
             options = UpsertOptions.upsertOptions() \
                 .timeout(self.getDuration(timeout, time_unit)) \
                 .expiry(self.getDuration(exp, exp_unit)) \
-                .durability(self.getDurabilityLevel(durability))
+                .durability(DurabilityHelper.getDurabilityLevel(durability))
         else:
             options = UpsertOptions.upsertOptions() \
                 .timeout(self.getDuration(timeout, time_unit)) \
@@ -313,7 +314,7 @@ class SDKClient(object):
 
         if durability:
             options = options \
-                .durability(self.getDurabilityLevel(durability))
+                .durability(DurabilityHelper.getDurabilityLevel(durability))
         else:
             options = options \
                 .durability(self.getPersistTo(persist_to),
@@ -332,7 +333,7 @@ class SDKClient(object):
 
         if durability:
             options = options \
-                .durability(self.getDurabilityLevel(durability))
+                .durability(DurabilityHelper.getDurabilityLevel(durability))
         else:
             options = options \
                 .durability(self.getPersistTo(persist_to),
@@ -355,7 +356,7 @@ class SDKClient(object):
                 self.getDuration(timeout, time_unit))
         else:
             return MutateInOptions.mutateInOptions().durability(
-                self.getDurabilityLevel(durability)).expiry(
+                DurabilityHelper.getDurabilityLevel(durability)).expiry(
                 self.getDuration(exp, exp_unit)).timeout(
                 self.getDuration(timeout, time_unit))
 
@@ -378,19 +379,6 @@ class SDKClient(object):
             pass
 
         return ReplicateTo.NONE
-
-    def getDurabilityLevel(self, durability_level):
-        durability_level = durability_level.upper()
-        if durability_level == "MAJORITY":
-            return DurabilityLevel.MAJORITY
-
-        if durability_level == "MAJORITY_AND_PERSIST_ON_MASTER":
-            return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER
-
-        if durability_level == "PERSIST_TO_MAJORITY":
-            return DurabilityLevel.PERSIST_TO_MAJORITY
-
-        return DurabilityLevel.NONE
 
     def getDuration(self, time, time_unit):
         time_unit = time_unit.lower()
@@ -895,7 +883,7 @@ class SDKClient(object):
 #         i = 0
 #         items_batch = len(items)/5
 #         itms_keys = items.keys()
-# 
+#
 #         def translator(keys, items_dict, docs):
 #             for key in keys:
 #                 content = self.translate_to_json_object(items_dict[key], doc_type)
