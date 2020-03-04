@@ -14,7 +14,6 @@ class TaskManager:
         self.number_of_threads = number_of_threads
         self.pool = Executors.newFixedThreadPool(self.number_of_threads)
         self.futures = {}
-        self.tasks = []
 
     def sleep(self, time_in_sec, message):
         self.log.info("%s. Sleep for %s seconds.." % (message, time_in_sec))
@@ -23,21 +22,21 @@ class TaskManager:
     def add_new_task(self, task):
         future = self.pool.submit(task)
         self.futures[task.thread_name] = future
-        self.tasks.append(task)
         self.log.info("Added new task: {0}".format(task.thread_name))
-
-    def get_all_result(self):
-        return self.pool.invokeAll(self.tasks)
 
     def get_task_result(self, task):
         self.log.debug("Getting task result for {0}".format(task.thread_name))
         future = self.futures[task.thread_name]
-        return future.get()
+        result = future.get()
+        self.futures.pop(task.thread_name)
+        return result
 
     def schedule(self, task, sleep_time=0):
         self.add_new_task(task)
 
     def stop_task(self, task):
+        if task.thread_name not in self.futures.keys():
+            return
         future = self.futures[task.thread_name]
         i = 0
         while not future.isDone() and i < 30:

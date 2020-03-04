@@ -1894,9 +1894,8 @@ class BucketUtils(ScopeUtils):
         """
         tasks_info = dict()
         for bucket in self.buckets:
-            gen = copy.deepcopy(kv_gen)
             task = self.async_load_bucket(
-                cluster, bucket, gen, op_type, exp, flag, persist_to,
+                cluster, bucket, kv_gen, op_type, exp, flag, persist_to,
                 replicate_to, durability, timeout_secs,
                 only_store_hash, batch_size, pause_secs,
                 sdk_compression, process_concurrency, retries,

@@ -519,7 +519,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         # Wait for all tasks to complete
         for task in tasks:
-            self.task.jython_task_manager.get_all_result(task)
+            self.task.jython_task_manager.get_task_result(task)
 
         # Get the failed docs from the tasks
         doc_errors["create"] = tasks[0].fail

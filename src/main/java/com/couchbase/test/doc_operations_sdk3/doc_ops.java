@@ -30,12 +30,11 @@ import reactor.util.function.Tuple2;
 
 public class doc_ops {
 
-public static List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection,
+public static List<ConcurrentHashMap<String, Object>> bulkInsert_new(Collection collection,
 			List<Tuple2<String, Object>> documents,
 			InsertOptions insertOptions) {
 		ReactiveCollection reactiveCollection = collection.reactive();
-		AtomicInteger reqsInFlight = new AtomicInteger(0);
-		final int numberOfThreads = 500;
+		final int numberOfThreads = 25;
 		return Flux.fromIterable(documents)
 				// Divide the work into numberOfThreads chunks
 				.parallel(numberOfThreads)
@@ -62,7 +61,7 @@ public static List<ConcurrentHashMap<String, Object>> bulkInsert(Collection coll
 							});
 				}).sequential().collectList().block();
 	}
-	public List<ConcurrentHashMap<String, Object>> bulkInsert_old(Collection collection, List<Tuple2<String, Object>> documents,
+	public List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, Object>> documents,
 			InsertOptions insertOptions) {
 		ReactiveCollection reactiveCollection = collection.reactive();
 		List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
