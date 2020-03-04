@@ -67,8 +67,8 @@ class basic_ops(BaseTestCase):
 
         # Update required num_items under default collection
         self.bucket_util.buckets[0] \
-            .scopes[CbServer.default_scope] \
-            .collections[CbServer.default_collection] \
+            .scopes[self.scope_name] \
+            .collections[self.collection_name] \
             .num_items = self.num_items
 
         self.durability_helper = DurabilityHelper(
