@@ -83,6 +83,7 @@ class MagmaCrashTests(MagmaBaseTest):
             mem_client = MemcachedClientHelper.direct_client(
                 self.input.servers[0], self.bucket_util.buckets[0])
             mem_client.stop_persistence()
+            self.log.debug("Start: Create DocGen for targeted vBuckets.")
             self.gen_create = doc_generator(self.key,
                                             start,
                                             mem_only_items,
@@ -92,6 +93,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                             vbuckets=self.cluster_util.vbuckets,
                                             randomize_doc_size=self.randomize_doc_size,
                                             randomize_value=self.randomize_value)
+            self.log.debug("Completed: Create DocGen for targeted vBuckets.")
             self.loadgen_docs(_sync=True)
             start = self.gen_create.key_counter
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]: mem_only_items}
