@@ -69,8 +69,8 @@ class RebalanceBaseTest(BaseTestCase):
 
         # Update required num_items under default collection
         for bucket in self.bucket_util.buckets:
-            bucket.scopes[CbServer.default_scope] \
-                .collections[CbServer.default_collection] \
+            bucket.scopes[self.scope_name] \
+                .collections[self.collection_name] \
                 .num_items = self.num_items
 
         if self.flusher_batch_split_trigger:
