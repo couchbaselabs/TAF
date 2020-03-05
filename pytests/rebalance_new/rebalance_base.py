@@ -339,6 +339,7 @@ class RebalanceBaseTest(BaseTestCase):
                 ignore_exceptions=ignore_exceptions,
                 scope=self.scope_name, collection=self.collection_name)
             tasks_info.update(tem_tasks_info.items())
+            self.num_items += (self.gen_create.end - self.gen_create.start)
             for bucket in self.bucket_util.buckets:
                 bucket \
                     .scopes[self.scope_name] \
@@ -360,6 +361,7 @@ class RebalanceBaseTest(BaseTestCase):
                     .scopes[self.scope_name] \
                     .collections[self.collection_name] \
                     .num_items -= (self.gen_delete.end - self.gen_delete.start)
+            self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
         if task_verification:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
