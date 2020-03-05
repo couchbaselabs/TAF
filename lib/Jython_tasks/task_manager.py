@@ -22,10 +22,10 @@ class TaskManager:
     def add_new_task(self, task):
         future = self.pool.submit(task)
         self.futures[task.thread_name] = future
-        self.log.info("Added new task: {0}".format(task.thread_name))
+        self.log.info("Added new task: %s" % task.thread_name)
 
     def get_task_result(self, task):
-        self.log.debug("Getting task result for {0}".format(task.thread_name))
+        self.log.debug("Getting task result for %s" % task.thread_name)
         future = self.futures[task.thread_name]
         result = future.get()
         self.futures.pop(task.thread_name)

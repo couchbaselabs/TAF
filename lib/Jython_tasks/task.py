@@ -19,7 +19,6 @@ from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from Cb_constants import constants, CbServer
-from collections_helper.collections_spec_constants import MetaConstants
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     doc_generator, SubdocDocumentGenerator
@@ -33,7 +32,6 @@ from membase.api.rest_client import RestConnection
 from java.util.concurrent import Callable
 from java.lang import Thread
 from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
-from reactor.util.function import Tuples
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from Jython_tasks.task_manager import TaskManager
 from sdk_exceptions import SDKException
@@ -386,8 +384,8 @@ class GenericLoadingTask(Task):
                  timeout_secs=60, compression=True,
                  retries=5, transaction=False, commit=False,
                  suppress_error_table=False):
-        super(GenericLoadingTask, self).__init__("Loadgen_task_{}"
-                                                 .format(time.time()))
+        super(GenericLoadingTask, self).__init__("Loadgen_task_%s_%s"
+                                                 % (bucket, time.time()))
         self.batch_size = batch_size
         self.pause = pause_secs
         self.timeout = timeout_secs
@@ -827,12 +825,12 @@ class LoadSubDocumentsTask(GenericLoadingTask):
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
             retries=retries)
-        self.thread_name = "LoadSubDocsTask-{}_{}_{}_{}_{}" \
-            .format(task_identifier,
-                    generator._doc_gen.start,
-                    generator._doc_gen.end,
-                    op_type,
-                    durability)
+        self.thread_name = "LoadSubDocsTask-%s_%s_%s_%s_%s" % (
+            task_identifier,
+            generator._doc_gen.start,
+            generator._doc_gen.end,
+            op_type,
+            durability)
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
@@ -921,8 +919,8 @@ class Durability(Task):
                  print_ops_rate=True, retries=5, durability="",
                  majority_value=0, check_persistence=False):
 
-        super(Durability, self).__init__("DurabilityDocumentsMainTask{}"
-                                         .format(time.time()))
+        super(Durability, self).__init__("DurabilityDocumentsMainTask_%s_%s"
+                                         % (bucket, time.time()))
         self.majority_value = majority_value
         self.fail = dict()
         # self.success = dict()
@@ -1332,7 +1330,6 @@ class Durability(Task):
 
 
 class LoadDocumentsGeneratorsTask(Task):
-
     def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
@@ -1342,7 +1339,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False):
         super(LoadDocumentsGeneratorsTask, self).__init__(
-            "DocumentsLoadGenTask_%s_%s" % (task_identifier, time.time()))
+            "DocumentsLoadGenTask_%s_%s_%s"
+            % (bucket, task_identifier, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.exp_unit = exp_unit
@@ -1485,7 +1483,7 @@ class LoadDocumentsGeneratorsTask(Task):
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression,
                 durability=self.durability,
-                task_identifier=self.task_identifier,
+                task_identifier=self.thread_name,
                 skip_read_on_error=self.skip_read_on_error,
                 suppress_error_table=self.suppress_error_table)
             tasks.append(task)
@@ -1720,6 +1718,7 @@ class ContinuousDocUpdateTask(Task):
                 task = LoadDocumentsTask(
                     self.cluster, bucket, self.clients[index],
                     batch_gen, "update", self.exp,
+                    task_identifier=self.thread_name,
                     persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
                     durability=self.durability,
@@ -1761,7 +1760,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
 
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
-            "create", exp, task_identifier="DGM_%s"%bucket.name)
+            "create", exp,
+            task_identifier="DGM_%s_%s" % (bucket.name, time.time()))
 
         self.cluster = cluster
         self.exp = exp
@@ -1807,6 +1807,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
             task = LoadDocumentsTask(
                 self.cluster, bucket, self.clients[index], batch_gen,
                 "create", self.exp,
+                task_identifier=self.thread_name,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
                 durability=self.durability,
@@ -1849,7 +1850,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression)
-        self.thread_name = "ValidateDocumentsTask-{}_{}_{}_{}".format(
+        self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s" % (
             bucket.name, generator._doc_gen.start, generator._doc_gen.end,
             op_type)
 
@@ -1963,7 +1964,8 @@ class DocumentsValidatorTask(Task):
                  pause_secs=1, timeout_secs=60, compression=True,
                  process_concurrency=4, check_replica=False):
         super(DocumentsValidatorTask, self).__init__(
-            "DocumentsValidatorTask_{}".format(time.time()))
+            "DocumentsValidatorTask_%s_%s_%s" % (
+                bucket.name, op_type, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -2063,10 +2065,10 @@ class StatsWaitTask(Task):
 
     def __init__(self, shell_conn_list, bucket, stat_cmd, stat, comparison,
                  value, timeout=300):
-        super(StatsWaitTask, self).__init__("StatsWaitTask_{}_{}_{}"
-                                            .format(bucket.name,
-                                                    stat,
-                                                    str(time.time())))
+        super(StatsWaitTask, self).__init__("StatsWaitTask_%s_%s_%s"
+                                            % (bucket.name,
+                                               stat,
+                                               str(time.time())))
         self.shellConnList = shell_conn_list
         self.bucket = bucket
         self.statCmd = stat_cmd
@@ -2150,7 +2152,8 @@ class ViewCreateTask(Task):
     def __init__(self, server, design_doc_name, view,
                  bucket="default", with_query=True,
                  check_replication=False, ddoc_options=None):
-        super(ViewCreateTask, self).__init__("ViewCreateTask")
+        super(ViewCreateTask, self).__init__("ViewCreateTask_%s_%s_%s"
+                                             % (bucket, view, time.time()))
         self.server = server
         self.bucket = bucket
         self.view = view
@@ -2345,7 +2348,8 @@ class ViewCreateTask(Task):
 
 class ViewDeleteTask(Task):
     def __init__(self, server, design_doc_name, view, bucket="default"):
-        Task.__init__(self, "delete_view_task")
+        Task.__init__(self, "Delete_view_task_%s_%s_%s"
+                            % (bucket, view, time.time()))
         self.server = server
         self.bucket = bucket
         self.view = view
@@ -2421,8 +2425,8 @@ class ViewQueryTask(Task):
     def __init__(self, server, design_doc_name, view_name,
                  query, expected_rows=None,
                  bucket="default", retry_time=2):
-        Task.__init__(self, "query_view_task_{}_{}".format(design_doc_name,
-                                                           view_name))
+        Task.__init__(self, "Query_view_task_%s_%s_%s"
+                            % (bucket, design_doc_name, view_name))
         self.server = server
         self.bucket = bucket
         self.view_name = view_name
@@ -2519,7 +2523,8 @@ class N1QLQueryTask(Task):
                  expected_result=None, verify_results=True,
                  is_explain_query=False, index_name=None, retry_time=2,
                  scan_consistency=None, scan_vector=None):
-        super(N1QLQueryTask, self).__init__("query_n1ql_task")
+        super(N1QLQueryTask, self).__init__("query_n1ql_task_%s_%s_%s"
+                                            % (bucket, query, time.time()))
         self.server = server
         self.bucket = bucket
         self.query = query
@@ -2603,8 +2608,8 @@ class N1QLQueryTask(Task):
 class CreateIndexTask(Task):
     def __init__(self, server, bucket, index_name, query, n1ql_helper=None,
                  retry_time=2, defer_build=False, timeout=240):
-        super(CreateIndexTask, self).__init__("Task_create_index_%s"
-                                              % index_name)
+        super(CreateIndexTask, self).__init__("Task_create_index_%s_%s"
+                                              % (bucket, index_name))
         self.server = server
         self.bucket = bucket
         self.defer_build = defer_build
@@ -2659,7 +2664,8 @@ class CreateIndexTask(Task):
 class BuildIndexTask(Task):
     def __init__(self, server, bucket, query, n1ql_helper=None,
                  retry_time=2):
-        super(BuildIndexTask, self).__init__("Task_Build_index")
+        super(BuildIndexTask, self).__init__("Task_Build_index_%s_%s"
+                                             % (bucket, query))
         self.server = server
         self.bucket = bucket
         self.query = query
@@ -2702,7 +2708,8 @@ class BuildIndexTask(Task):
 class MonitorIndexTask(Task):
     def __init__(self, server, bucket, index_name, n1ql_helper=None,
                  retry_time=2, timeout=240):
-        super(MonitorIndexTask, self).__init__("build_index_task")
+        super(MonitorIndexTask, self).__init__("build_index_task_%s_%s"
+                                               % (bucket, index_name))
         self.server = server
         self.bucket = bucket
         self.index_name = index_name
@@ -2835,7 +2842,8 @@ class PrintOpsRate(Task):
 
 class BucketCreateTask(Task):
     def __init__(self, server, bucket):
-        super(BucketCreateTask, self).__init__("bucket_create_task")
+        super(BucketCreateTask, self).__init__("bucket_%s_create_task"
+                                               % bucket.name)
         self.server = server
         self.bucket = bucket
         self.bucket_priority = 8
