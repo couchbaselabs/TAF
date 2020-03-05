@@ -52,23 +52,25 @@ class RebalanceBaseTest(BaseTestCase):
         self.create_buckets(self.bucket_size)
 
         # Create Scope/Collection based on inputs given
-        if self.scope_name != CbServer.default_scope:
-            self.scope_name = BucketUtils.get_random_name()
-            BucketUtils.create_scope(self.cluster.master,
-                                     self.bucket_util.buckets[0],
-                                     {"name": self.scope_name})
-        if self.collection_name != CbServer.default_collection:
-            self.collection_name = BucketUtils.get_random_name()
-            BucketUtils.create_collection(self.cluster.master,
-                                          self.bucket_util.buckets[0],
-                                          self.scope_name,
-                                          {"name": self.collection_name,
-                                           "num_items": self.num_items})
-            self.log.info("Using scope::collection - '%s::%s'"
-                          % (self.scope_name, self.collection_name))
-
-        # Update required num_items under default collection
         for bucket in self.bucket_util.buckets:
+            if self.scope_name != CbServer.default_scope:
+                self.scope_name = BucketUtils.get_random_name()
+                BucketUtils.create_scope(self.cluster.master,
+                                         bucket,
+                                         {"name": self.scope_name})
+            if self.collection_name != CbServer.default_collection:
+                self.collection_name = BucketUtils.get_random_name()
+                BucketUtils.create_collection(self.cluster.master,
+                                              bucket,
+                                              self.scope_name,
+                                              {"name": self.collection_name,
+                                               "num_items": self.num_items})
+                self.log.info("Bucket %s using scope::collection - '%s::%s'"
+                              % (bucket.name,
+                                 self.scope_name,
+                                 self.collection_name))
+
+            # Update required num_items under default collection
             bucket.scopes[self.scope_name] \
                 .collections[self.collection_name] \
                 .num_items = self.num_items

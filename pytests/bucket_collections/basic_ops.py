@@ -46,6 +46,9 @@ class BasicOps(CollectionBase):
                 scope=CbServer.default_scope,
                 collection=CbServer.default_collection,
                 suppress_error_table=True)
+            self.bucket.scopes[CbServer.default_scope] \
+                .collections[CbServer.default_collection] \
+                .num_items += self.num_items
 
         # To make sure data_loading done before collection drop
         if data_load == "before_drop":
@@ -164,6 +167,10 @@ class BasicOps(CollectionBase):
                 self.log_failure("Doc create failed for '_default' collection")
                 break
         client.close()
+        # Update num_items for default collection
+        self.bucket.scopes[CbServer.default_scope] \
+            .collections[CbServer.default_collection] \
+            .num_items += self.num_items
 
         # Doc count validation
         self.bucket_util._wait_for_stats_all_buckets()
@@ -242,6 +249,10 @@ class BasicOps(CollectionBase):
             scope=CbServer.default_scope,
             collection=CbServer.default_collection)
 
+        self.bucket.scopes[CbServer.default_scope] \
+            .collections[CbServer.default_collection] \
+            .num_items += self.num_items
+
         # Create collections(s) while CRUDs are running in background
         if self.action_phase == "during_default_load":
             BucketUtils.create_collections(
@@ -319,6 +330,10 @@ class BasicOps(CollectionBase):
                 break
         sdk_client.close()
         self.validate_test_failure()
+
+        self.bucket.scopes[scope_name] \
+            .collections[collection_name] \
+            .num_items += self.num_items
 
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items*2)

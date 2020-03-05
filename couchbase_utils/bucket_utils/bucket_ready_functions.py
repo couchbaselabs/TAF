@@ -751,8 +751,7 @@ class BucketUtils(ScopeUtils):
         :return selected_buckets: Dict with (key, value) (b_names, scope_dict)
         """
         selected_buckets = BucketUtils.get_random_buckets(buckets,
-                                                          consider_buckets,
-                                                          exclude_from)
+                                                          consider_buckets)
         available_scopes = list()
         selected_scopes = list()
         known_buckets = dict()
@@ -815,8 +814,7 @@ class BucketUtils(ScopeUtils):
         selected_buckets = \
             BucketUtils.get_random_scopes(buckets,
                                           consider_scopes,
-                                          consider_buckets,
-                                          exclude_from)
+                                          consider_buckets)
         available_collections = list()
         selected_collections = list()
         exclude_collections = list()
