@@ -700,11 +700,11 @@ class RebalanceInTests(RebalanceBaseTest):
 
             # Wait for rebalance+doc_loading tasks to complete
             self.task_manager.get_task_result(rebalance_task)
-            for task, _ in tasks_info.items():
-                self.task_manager.get_task_result(task)
 
             # Validate rebalance result
             if not rebalance_task.result:
+                for task, _ in tasks_info.items():
+                    self.task_manager.get_task_result(task)
                 self.fail("Rebalance Failed")
 
             # Validate + retry doc_ops outcomes

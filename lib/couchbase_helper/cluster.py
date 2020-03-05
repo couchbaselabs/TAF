@@ -146,6 +146,9 @@ class ServerTasks(object):
                                    scope, collection)
                 clients.append(client)
             if not ryow:
+                task_identifier += "%s_%s_%s" % (op_type,
+                                                 generator.start,
+                                                 generator.end)
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
                     cluster, self.jython_task_manager, bucket, clients,
                     [generator], op_type, exp, exp_unit="seconds", flag=flag,
