@@ -2575,8 +2575,8 @@ class BucketUtils(ScopeUtils):
                     op_type = "update"
                     verify_data = False
                     self.expiry = 3
-                self.sync_load_all_buckets(cluster, docs_gen_map[key][0], op_type, exp)
-                #self.load(docs_gen_map[key], op_type=op_type, exp=self.expiry,verify_data=verify_data, batch_size=batch_size)
+                self.sync_load_all_buckets(cluster, docs_gen_map[key][0],
+                                           op_type, exp)
                 if verify_data:
                     self.verify_cluster_stats(num_items)
         if "expiry" in docs_gen_map.keys():
