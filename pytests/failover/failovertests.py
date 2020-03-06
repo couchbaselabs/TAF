@@ -708,7 +708,9 @@ class FailoverTests(FailoverBaseTest):
             tasks = []
             for bucket in self.bucket_util.buckets:
                 tasks.append(self.task.async_load_gen_docs(
-                    self.cluster, bucket, gen, op, 0, batch_size=20,
+                    self.cluster, bucket, gen, op, 0,
+                    active_resident_threshold=self.active_resident_threshold,
+                    batch_size=20,
                     process_concurrency=1,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout))

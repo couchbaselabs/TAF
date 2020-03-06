@@ -34,7 +34,8 @@ class SubdocBaseTest(BaseTestCase):
         # Create default bucket and add rbac user
         self.bucket_util.create_default_bucket(
             replica=self.num_replicas, compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type)
+            bucket_type=self.bucket_type, storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
         for bucket in self.bucket_util.buckets:
@@ -210,7 +211,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         super(SubdocXattrSdkTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = SDKClient(RestConnection(self.cluster.master),
+        self.client = SDKClient([self.cluster.master],
                                 self.bucket_util.buckets[0])
 
     def tearDown(self):
@@ -267,14 +268,13 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__read_doc_and_validate("{}")
 
         # Using lookup_in
-        _, failed_items = self.client.crud("subdoc_read",
-                                           self.doc_id,
-                                           "my.attr")
-        self.assertTrue(failed_items)
-        sdk_exception = str(failed_items[self.doc_id]["error"])
-        self.assertTrue(
-            SDKException.PathNotFoundException in sdk_exception,
-            "Invalid SDK exception %s" % sdk_exception)
+        result, _ = self.client.crud("subdoc_read",
+                                     self.doc_id,
+                                     "my.attr")
+        self.assertEqual(
+            result["xattrs"]["value"][0],
+            "PATH_NOT_FOUND",
+            "Invalid SDK return value: %s" % result["xattrs"]["value"])
 
         # Finally, use lookup_in with 'xattrs' attribute enabled
         self.__read_doc_and_validate("value", "my.attr")
@@ -347,14 +347,13 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
         self.__read_doc_and_validate("{}")
 
-        _, failed_items = self.client.crud("subdoc_read",
-                                           self.doc_id,
-                                           "my.attr")
-        self.assertTrue(failed_items)
-        sdk_exception = str(failed_items[self.doc_id]["error"])
-        self.assertTrue(
-            SDKException.PathNotFoundException in sdk_exception,
-            "Invalid SDK exception %s" % sdk_exception)
+        result, _ = self.client.crud("subdoc_read",
+                                     self.doc_id,
+                                     "my.attr")
+        self.assertEqual(
+            result["xattrs"]["value"][0],
+            "PATH_NOT_FOUND",
+            "Invalid SDK return value: %s" % result["xattrs"]["value"])
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
         self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",
@@ -565,15 +564,14 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__upsert_document_and_validate("update", {})
 
         # Trying getting non-existing xattr
-        _, failed_items = self.client.crud("subdoc_read",
-                                           self.doc_id,
-                                           "my_attr",
-                                           xattr=True)
-        self.assertTrue(failed_items)
-        sdk_exception = str(failed_items[self.doc_id]["error"])
-        self.assertTrue(
-            SDKException.PathNotFoundException in sdk_exception,
-            "Invalid SDK exception %s" % sdk_exception)
+        result, _ = self.client.crud("subdoc_read",
+                                     self.doc_id,
+                                     "my_attr",
+                                     xattr=True)
+        self.assertEqual(
+            result["xattrs"]["value"][0],
+            "PATH_NOT_FOUND",
+            "Invalid SDK return value: %s" % result["xattrs"]["value"])
 
         # Try to upsert a single xattr
         self.__insert_sub_doc_and_validate("subdoc_insert",
@@ -605,15 +603,14 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                          % (result["value"], "{}"))
 
         # Read deleted xattr to verify
-        _, failed_items = self.client.crud("subdoc_read",
-                                           self.doc_id,
-                                           "my_attr",
-                                           xattr=True)
-        self.assertTrue(failed_items, "Able to read deleted xattr")
-        sdk_exception = str(failed_items[self.doc_id]["error"])
-        self.assertTrue(SDKException.PathNotFoundException
-                        in sdk_exception, "Invalid exception: %s"
-                                          % sdk_exception)
+        result, _ = self.client.crud("subdoc_read",
+                                     self.doc_id,
+                                     "my_attr",
+                                     xattr=True)
+        self.assertEqual(
+            result["xattrs"]["value"][0],
+            "PATH_NOT_FOUND",
+            "Invalid SDK return value: %s" % result["xattrs"]["value"])
 
     def test_cas_changed_upsert(self):
         if self.xattr is False:
@@ -645,14 +642,18 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         if self.xattr:
             self.__read_doc_and_validate("{}")
 
-        _, failed_items = self.client.crud("subdoc_read",
-                                           self.doc_id,
-                                           "my.attr")
-        self.assertTrue(failed_items)
-        sdk_exception = str(failed_items[self.doc_id]["error"])
-        self.assertTrue(
-            SDKException.PathNotFoundException in sdk_exception,
-            "Invalid SDK exception %s" % sdk_exception)
+        result, _ = self.client.crud("subdoc_read",
+                                     self.doc_id,
+                                     "my.attr")
+        if self.xattr:
+            result = result["xattrs"]
+        else:
+            result = result["non_xattrs"]
+
+        self.assertEqual(
+            result["value"][0],
+            "PATH_NOT_FOUND",
+            "Invalid SDK return value: %s" % result["value"])
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
         self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",
@@ -735,15 +736,14 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             self.assertTrue(success[self.doc_id]["cas"] != 0, "CAS is zero")
 
             # Get and validate
-            success, failed_item = self.client.crud("subdoc_read",
-                                                    self.doc_id,
-                                                    "my_attr",
-                                                    xattr=self.xattr)
-            self.assertFalse(success, "Subdoc read succees: %s" % success)
-            self.assertTrue(failed_item, "Subdoc still exists")
-            sdk_error = str(failed_item[self.doc_id]["error"])
-            self.assertTrue(SDKException.PathNotFoundException
-                            in sdk_error, "Invalid exception %s" % sdk_error)
+            success, _ = self.client.crud("subdoc_read",
+                                          self.doc_id,
+                                          "my_attr",
+                                          xattr=self.xattr)
+            self.assertEqual(
+                success["xattrs"]["value"][0],
+                "PATH_NOT_FOUND",
+                "Invalid SDK return value: %s" % success["xattrs"]["value"])
 
     def test_update_xattr(self):
         self.__upsert_document_and_validate("update", {})
@@ -1594,7 +1594,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         super(SubdocXattrDurabilityTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = SDKClient(RestConnection(self.cluster.master),
+        self.client = SDKClient([self.cluster.master],
                                 self.bucket_util.buckets[0])
 
     def tearDown(self):
@@ -1691,9 +1691,12 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                         expected_exception = \
                             SDKException.DocumentNotFoundException
                         retry_reason = None
+                # elif sw_test_op == "create" and op_type != "create":
+                #     expected_exception = SDKException.DocumentExistsException
+                #     retry_reason = None
                 elif sw_test_op not in doc_tasks:
                     expected_exception = \
-                        SDKException.TimeoutException
+                        SDKException.AmbiguousTimeoutException
                     retry_reason = \
                         SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
                 if expected_exception not in sdk_exception:
@@ -1793,9 +1796,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                                               create_path=True,
                                               xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
-            if SDKException.TimeoutException not in sdk_exception:
+            if SDKException.AmbiguousTimeoutException not in sdk_exception:
                 self.log_failure("Invalid exception: %s" % failed_item)
-            elif SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
+            if SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
                     not in sdk_exception:
                 self.log_failure("Retry reason missing: %s" % failed_item)
 

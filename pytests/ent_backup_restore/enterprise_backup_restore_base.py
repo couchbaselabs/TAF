@@ -223,7 +223,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
                                             self.backup_validation_files_location,
                                             self.backups,
                                             self.num_items,
-                                            self.vbuckets)
+                                            self.cluster_util.vbuckets)
         self.number_of_backups_taken = 0
         self.vbucket_seqno = []
         self.expires = self.input.param("expires", 0)

@@ -661,12 +661,12 @@ class BaseSecondaryIndexingTests(QueryTests):
         else:
             for bucket in self.bucket_util.buckets:
                 scan_vector = {}
-                total = int(self.vbuckets*use_percentage)
+                total = int(self.cluster_util.vbuckets*use_percentage)
                 vbuckets_number_list = range(0,total)
                 if use_random:
-                    vbuckets_number_list = random.sample(xrange(0,
-                                                                self.vbuckets),
-                                                         total)
+                    vbuckets_number_list = random.sample(
+                        xrange(0, self.cluster_util.vbuckets),
+                        total)
                 self.log.debug("analyzing for bucket {0}".format(bucket.name))
                 map = sequence_bucket_map[bucket.name]
                 for key in map.keys():

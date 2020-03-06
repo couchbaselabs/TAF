@@ -226,7 +226,7 @@ class E2EUpgrade(UpgradeBase, BaseSecondaryIndexingTests):
                 self.validate_indexed_doc_count(def_bucket, index_item_count)
         failed = durability_helper.verify_vbucket_details_stats(
             def_bucket, kv_nodes,
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed")
         self.validate_test_failure()

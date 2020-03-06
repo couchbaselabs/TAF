@@ -12,6 +12,7 @@ import TestInput
 from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
+from Cb_constants import constants
 from testconstants import VERSION_FILE
 from testconstants import MEMBASE_VERSIONS
 from testconstants import MISSING_UBUNTU_LIB
@@ -173,6 +174,7 @@ class RemoteMachineShellConnection:
         self.password = serverInfo.ssh_password
         self.ssh_key = serverInfo.ssh_key
         self.port = serverInfo.port
+        self.memcached_port = serverInfo.memcached_port
 
         self.bin_path = LINUX_COUCHBASE_BIN_PATH
         self.cmd_ext = ""
@@ -201,6 +203,10 @@ class RemoteMachineShellConnection:
             self.bin_path = WIN_COUCHBASE_BIN_PATH
 
     def connect(self):
+        # For cluster_run case
+        if not self.remote:
+            return
+
         self.log.debug("Connecting to {0} with username: {1}, password: {2}"
                        .format(self.ip, self.username, self.password))
         self.jsch = JSch()
@@ -210,6 +216,10 @@ class RemoteMachineShellConnection:
         self.session.connect()
 
     def disconnect(self):
+        # For cluster_run case
+        if not self.remote:
+            return
+
         self.log.debug("Disconnecting ssh_client for {0}".format(self.ip))
         self.session.disconnect()
         RemoteMachineShellConnection.disconnections += 1
@@ -1584,8 +1594,9 @@ class RemoteMachineShellConnection:
         sftp.close()
         return capture_iss_file
 
-    def compact_vbuckets(self, vbuckets, nodes, upto_seq, cbadmin_user="cbadminbucket",
-                                                          cbadmin_password="password"):
+    def compact_vbuckets(self, vbuckets, nodes, upto_seq,
+                         cbadmin_user="cbadminbucket",
+                         cbadmin_password="password"):
         """
             compact each vbucket with cbcompact tools
         """
@@ -1593,9 +1604,10 @@ class RemoteMachineShellConnection:
             self.log.info("Purge delete keys in %s vbuckets.  It will take times "
                      % vbuckets)
             for vbucket in range(0, vbuckets):
-                self.execute_command("%scbcompact%s %s:11210 compact %s --dropdeletes "
+                self.execute_command("%scbcompact%s %s:%s compact %s --dropdeletes "
                                      " --purge-only-up-to-seq=%s"
                                      % (self.bin_path, self.cmd_ext, node,
+                                        constants.memcached_port,
                                         cbadmin_user, cbadmin_password,
                                         vbucket, upto_seq),
                                      debug=False)
@@ -3325,13 +3337,17 @@ class RemoteMachineShellConnection:
                                         .format(process_name), debug=False)
             self.log_command_output(o, r)
         else:
-            if (force == True):
-                o, r = self.execute_command("kill -9 $(ps aux | grep '{0}' |  awk '{{print $2}}')"
-                                            .format(process_name), debug=False)
+            if force is True:
+                o, r = self.execute_command(
+                    "kill -9 $(ps aux | grep '{0}' |  awk '{{print $2}}')"
+                    .format(process_name),
+                    debug=False)
                 self.log_command_output(o, r)
             else:
-                o, r = self.execute_command("kill $(ps aux | grep '{0}' |  awk '{{print $2}}')"
-                                            .format(process_name), debug=False)
+                o, r = self.execute_command(
+                    "kill $(ps aux | grep '{0}' |  awk '{{print $2}}')"
+                    .format(process_name),
+                    debug=False)
                 self.log_command_output(o, r)
 
 #     def disconnect(self):
@@ -4287,14 +4303,17 @@ class RemoteMachineShellConnection:
         if bucket.saslPassword is None:
             bucket.saslPassword = ''
         if persistence != "":
-            command = "%s %s:11210  -u %s -p %s -b %s %s" \
-                      % (cbepctl_command, self.ip, cbadmin_user,
-                         cbadmin_password, bucket.name, persistence)
+            command = "%s %s:%s  -u %s -p %s -b %s %s" \
+                      % (cbepctl_command, self.ip,
+                         constants.memcached_port,
+                         cbadmin_user, cbadmin_password,
+                         bucket.name, persistence)
         else:
-            command = "%s %s:11210 -u %s -p %s -b %s %s %s %s" \
-                      % (cbepctl_command, self.ip, cbadmin_user,
-                         cbadmin_password, bucket.name, param_type, param,
-                         value)
+            command = "%s %s:%s -u %s -p %s -b %s %s %s %s" \
+                      % (cbepctl_command, self.ip,
+                         constants.memcached_port,
+                         cbadmin_user, cbadmin_password, bucket.name,
+                         param_type, param, value)
         output, error = self.execute_command(command)
         self.log_command_output(output, error)
         return output, error
@@ -4743,7 +4762,7 @@ class RemoteMachineShellConnection:
         if output:
             for x in output:
                 x = x.strip()
-                if x and x[:5] in COUCHBASE_VERSIONS and "-" in x:
+                if x and "-" in x and x.split("-")[0] in COUCHBASE_VERSIONS:
                     fv = x
                     tmp = x.split("-")
                     sv = tmp[0]

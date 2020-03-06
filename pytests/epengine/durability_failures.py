@@ -6,7 +6,6 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
@@ -205,12 +204,12 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+            vbuckets=self.cluster_util.vbuckets, target_vbucket=target_vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
-            target_vbucket=target_vbuckets)
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
+            target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -241,8 +240,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             start_task=False)
 
         # SDK client for performing individual ops
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
 
         # Perform specified action
         for node in target_nodes:
@@ -368,11 +366,11 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items+self.crud_batch_size,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.num_items, vbuckets=self.vbuckets)
+            self.key, 0, self.num_items, vbuckets=self.cluster_util.vbuckets)
         gen_delete = doc_generator(
-            self.key, 0, half_of_num_items, vbuckets=self.vbuckets)
+            self.key, 0, half_of_num_items, vbuckets=self.cluster_util.vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -399,8 +397,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.sleep(20, message="Wait for task_1 ops to reach the server")
 
         # SDK client for performing individual ops
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
         # Perform specified CRUD operation on sync_write docs
         while gen_loader.has_next():
             key, value = gen_loader.next()
@@ -413,8 +410,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                    time_unit="seconds")
 
             # Validate the returned error from the SDK
-            vb_num = self.bucket_util.get_vbucket_num_for_key(key,
-                                                              self.vbuckets)
+            vb_num = self.bucket_util.get_vbucket_num_for_key(
+                key,
+                self.cluster_util.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 if "error" not in fail:
                     self.log_failure("No failure detected for {0}"
@@ -530,7 +528,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["withDiskIssue"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Verify cbstats for the affected vbuckets are not updated during CRUDs
-        for vb in range(self.vbuckets):
+        for vb in range(self.cluster_util.vbuckets):
             if vb in active_vb_numbers:
                 for stat_name in vb_info["withDiskIssue"][vb].keys():
                     stat_before_crud = vb_info["init"][vb][stat_name]
@@ -545,7 +543,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         def validate_doc_errors(crud_type):
             for doc in doc_errors[crud_type]:
                 vb_num = self.bucket_util.get_vbucket_num_for_key(
-                    doc["key"], self.vbuckets)
+                    doc["key"], self.cluster_util.vbuckets)
                 if vb_num in active_vb_numbers:
                     if "durability_not_possible" not in str(doc["error"]):
                         self.log_failure("Invalid exception {0}".format(doc))
@@ -571,8 +569,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         error_sim.revert(self.simulate_error, self.bucket.name)
 
         # SDK client for performing retry operations
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
         # Retry failed docs
         create_failed = self.durability_helper.retry_with_no_error(
             client, doc_errors["create"], "create")
@@ -654,12 +651,12 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+            vbuckets=self.cluster_util.vbuckets, target_vbucket=target_vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
-            target_vbucket=target_vbuckets)
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
+            target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -790,11 +787,11 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items+self.crud_batch_size,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets)
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets)
         gen_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets)
+            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -835,8 +832,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
             key = doc["key"]
             fail = doc["fail"]
             # Validate the returned error from the SDK
-            vb_num = self.bucket_util.get_vbucket_num_for_key(key,
-                                                              self.vbuckets)
+            vb_num = self.bucket_util.get_vbucket_num_for_key(
+                key,
+                self.cluster_util.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 if "error" not in fail:
                     self.log_failure("No failures detected")
@@ -856,8 +854,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
         # Create SDK Client
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         # Retry failed docs
         self.durability_helper.retry_with_no_error(client, error_docs,
@@ -905,15 +902,16 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Validate vbucket stats
         verification_dict["ops_create"] = self.num_items
         verification_dict["ops_update"] = 0
-        verification_dict["ops_delete"] = 0
+        # Uncomment once MB-37153 is resolved
+        # verification_dict["ops_delete"] = 0
         verification_dict["rollback_item_count"] = 0
         if self.durability_level:
             verification_dict["sync_write_aborted_count"] = crud_batch_size * 2
-            verification_dict["sync_write_committed_count"] = 0
+            verification_dict["sync_write_committed_count"] = self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed "
                              "after aborts")
@@ -932,13 +930,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     self.log_failure("Failure seen during doc_op: %s" % doc_op)
 
                 # Update verification dict for validation
-                verification_dict["ops_" + doc_op] += crud_batch_size
+                # Remove 'if' statement once MB-37153 is resolved
+                if doc_op != "delete":
+                    verification_dict["ops_" + doc_op] += crud_batch_size
                 if self.durability_level:
                     verification_dict["sync_write_committed_count"] += \
                         crud_batch_size
                 failed = self.durability_helper.verify_vbucket_details_stats(
                     self.bucket, self.cluster_util.get_kv_nodes(),
-                    vbuckets=self.vbuckets, expected_val=verification_dict)
+                    vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
                 if failed:
                     self.log_failure("Cbstat vbucket-details verification "
                                      "failed after doc_op: %s" % doc_op)
@@ -1001,11 +1001,11 @@ class TimeoutTests(DurabilityTestsBase):
                                         doc_size=self.doc_size)
         doc_gen["update"] = doc_generator(self.key, int(self.num_items/2),
                                           self.num_items,
-                                          doc_size=self.doc_size)
+                                          doc_size=self.doc_size,
+                                          mutate=1)
 
         # Create SDK Client
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         for op_type in ["create", "update", "read", "delete"]:
             self.log.info("Performing '%s' with timeout=%s"
@@ -1158,8 +1158,7 @@ class TimeoutTests(DurabilityTestsBase):
         shell_conn.disconnect()
 
         # Create SDK Client
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         # Wait for document_loader tasks to complete and retry failed docs
         op_type = None
@@ -1224,7 +1223,7 @@ class TimeoutTests(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for vb_num in range(self.vbuckets):
+            for vb_num in range(self.cluster_util.vbuckets):
                 vb_num = str(vb_num)
                 if vb_num not in affected_vbs:
                     if vb_num in vb_info["init"][node.ip].keys() \
@@ -1342,7 +1341,7 @@ class TimeoutTests(DurabilityTestsBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.vbuckets)
+                        doc_id, self.cluster_util.vbuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
@@ -1366,7 +1365,7 @@ class TimeoutTests(DurabilityTestsBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.vbuckets)))
+                        self.cluster_util.vbuckets)))
 
         affected_vbs = list(set(affected_vbs))
         err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"
@@ -1389,8 +1388,7 @@ class TimeoutTests(DurabilityTestsBase):
         self.validate_test_failure()
 
         # SDK client for retrying AMBIGUOUS for unexpected keys
-        sdk_client = SDKClient(RestConnection(self.cluster.master),
-                               self.bucket)
+        sdk_client = SDKClient([self.cluster.master], self.bucket)
 
         # Doc error validation
         for op_type in doc_gen.keys():

@@ -9,12 +9,10 @@ from membase.api.exception import RebalanceFailedException
 from remote.remote_util import RemoteMachineShellConnection
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
+from rebalance_new import rebalance_base
 
-retry_exceptions = [
-    SDKException.TimeoutException,
-    SDKException.RequestCanceledException,
-    SDKException.DurabilityAmbiguousException,
-    SDKException.DurabilityImpossibleException]
+retry_exceptions = rebalance_base.retry_exceptions +\
+                    [SDKException.RequestCanceledException]
 
 
 class SwapRebalanceBase(RebalanceBaseTest):
@@ -108,11 +106,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
             test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
                                       .format(timeout))
 
-    def create_buckets(self):
-        if self.standard_buckets == 1:
-            self._create_default_bucket()
-        else:
-            self._create_multiple_buckets()
 
     def validate_docs(self):
         self.log.info("Validating docs")
@@ -124,7 +117,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 batch_size=10, process_concurrency=8))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-            task.client.close()
 
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets()
@@ -426,8 +418,14 @@ class SwapRebalanceBase(RebalanceBaseTest):
         # Failover selected nodes
         for node in opt_nodes_ids:
             self.log.info("Failover node %s and rebalance afterwards" % node)
-            self.rest.fail_over(node)
-
+            if self.durability_level:
+                self.rest.fail_over(node)
+            else:
+                self.rest.fail_over(node, graceful=True)
+            self.assertTrue(self.rest.monitorRebalance(),
+                            msg="Rebalance failed after failover of node {0}"
+                            .format(node))
+            
         self.rest.rebalance(
             otpNodes=[node.id for node in self.rest.node_statuses()],
             ejectedNodes=opt_nodes_ids)
@@ -493,8 +491,13 @@ class SwapRebalanceBase(RebalanceBaseTest):
         # Failover selected nodes
         for node in opt_nodes_ids:
             self.log.info("Failover node %s and rebalance afterwards" % node)
-            self.rest.fail_over(node)
-            self.rest.monitorRebalance()
+            if self.durability_level:
+                self.rest.fail_over(node)
+            else:
+                self.rest.fail_over(node, graceful=True)
+            self.assertTrue(self.rest.monitorRebalance(),
+                            msg="Rebalance failed after failover of node {0}"
+                            .format(node))
 
         new_swap_servers = \
             self.servers[self.nodes_init:self.nodes_init+self.failover_factor]

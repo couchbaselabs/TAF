@@ -16,8 +16,8 @@ import time
 from httplib import IncompleteRead
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
-from TestInput import TestInputServer
 from cb_tools.cbstats import Cbstats
+from Cb_constants import constants
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     doc_generator, SubdocDocumentGenerator
@@ -572,16 +572,12 @@ class GenericLoadingTask(Task):
         return success, fail
 
     def batch_touch(self, key_val, exp=0, shared_client=None,
-                    persist_to=None, replicate_to=None, durability="",
                     timeout=None, timeunit=None):
         self.client = self.client or shared_client
         success, fail = self.client.touch_multi(key_val.keys(),
                                                 exp=exp,
-                                                persist_to=persist_to,
-                                                replicate_to=replicate_to,
                                                 timeout=timeout,
-                                                time_unit=timeunit,
-                                                durability=durability)
+                                                time_unit=timeunit)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Touch doc_Id", "Exception"])
@@ -716,7 +712,7 @@ class GenericLoadingTask(Task):
         for key, value in key_val.items():
             try:
                 value_json = Json.loads(value)
-                value_json['mutated'] = 0
+                # value_json['mutated'] = 0
                 value = Json.dumps(value_json)
             except ValueError:
                 value = Json.dumps(value)
@@ -736,7 +732,7 @@ class GenericLoadingTask(Task):
                 # new updated value, however it is not their in orginal "LoadDocumentsTask"
                 value = key_val[key]
                 value_json = Json.loads(value)
-                value_json['mutated'] += 1
+                # value_json['mutated'] += 1
                 value = Json.dumps(value_json)
             except ValueError:
                 self.random.seed(key)
@@ -840,11 +836,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         elif self.op_type == 'touch':
             success, fail = self.batch_touch(key_value,
                                              exp=self.exp,
-                                             persist_to=self.persist_to,
-                                             replicate_to=self.replicate_to,
                                              timeout=self.timeout,
-                                             timeunit=self.time_unit,
-                                             durability=self.durability)
+                                             timeunit=self.time_unit)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == 'read':
@@ -1937,7 +1930,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
             for key in key_value.keys():
                 try:
                     result = self.client.getFromAllReplica(key)
-                    if all(_result for _result in result) and len(result) == self.replicas+1:
+                    if all(_result for _result in result) and len(result) == min(self.replicas+1,
+                                                                                 len(self.cluster.nodes_in_cluster)):
                         key = key.decode()
                         if result[0]["status"]:
                             result_map[key] = dict()
@@ -1995,6 +1989,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 else:
                     missing_keys.append(key)
                     continue
+                actual_val["mutated"] = int(actual_val["mutated"])
+                expected_val["mutated"] = int(expected_val["mutated"])
                 if expected_val == actual_val:
                     continue
                 else:
@@ -2589,7 +2585,7 @@ class N1QLQueryTask(Task):
         try:
             # Query and get results
             self.test_log.debug(" <<<<< START Executing Query {0} >>>>>>"
-                      .format(self.query))
+                                .format(self.query))
             if not self.is_explain_query:
                 self.msg, self.isSuccess = self.n1ql_helper.run_query_and_verify_result(
                     query=self.query, server=self.server,
@@ -3579,38 +3575,39 @@ class NodeDownTimerTask(Task):
                         self.set_result(True)
                         break
                 except Exception as e:
-                    self.test_log.warning("Unexpected exception: {}".format(e))
+                    self.test_log.warning("Unexpected exception: %s" % e)
                     self.complete_task()
                     return True
                 try:
                     self.start_time = time.time()
-                    socket.socket().connect(("{}".format(self.node), 8091))
+                    socket.socket().connect(("%s" % self.node,
+                                             constants.port))
                     socket.socket().close()
-                    socket.socket().connect(("{}".format(self.node), 11210))
+                    socket.socket().connect(("%s" % self.node,
+                                             constants.memcached_port))
                     socket.socket().close()
                 except socket.error:
                     self.test_log.debug(
-                        "Injected failure in {}. Caught due to ports"
-                        .format(self.node))
+                        "Injected failure in %s. Caught due to ports"
+                        % self.node)
                     self.complete_task()
                     return True
             else:
                 try:
                     self.start_time = time.time()
-                    socket.socket().connect(("{}".format(self.node),
+                    socket.socket().connect(("%s" % self.node,
                                              int(self.port)))
                     socket.socket().close()
-                    socket.socket().connect(("{}".format(self.node), 11210))
+                    socket.socket().connect(("%s" % self.node,
+                                             constants.memcached_port))
                     socket.socket().close()
                 except socket.error:
-                    self.test_log.debug("Injected failure in {}"
-                                        .format(self.node))
+                    self.test_log.debug("Injected failure in %s" % self.node)
                     self.complete_task()
                     return True
         if time.time() >= end_task:
             self.complete_task()
-            self.test_log.error("Could not inject failure in {}"
-                                .format(self.node))
+            self.test_log.error("Could not inject failure in %s" % self.node)
             return False
 
 
@@ -3849,7 +3846,7 @@ class Atomicity(Task):
                     for client in Atomicity.clients:
                         self.batch_update(last_batch, client, persist_to=self.persist_to, replicate_to=self.replicate_to,
                                   timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
-                    self.update_keys = last_batch.keys()
+
 
                 if op_type == "general_delete":
                     self.test_log.debug("performing delete for keys {}".format(last_batch.keys()))
@@ -3899,8 +3896,8 @@ class Atomicity(Task):
                                         break
                                 else:
                                     exception=err
-                                    self.test_log.info("Sleep for 60 seconds so that the txn gets cleaned up")
-                                    time.sleep(60)
+#                                     self.test_log.info("Sleep for 60 seconds so that the txn gets cleaned up")
+#                                     time.sleep(60)
                                     break
 
                 if exception:
@@ -3911,9 +3908,7 @@ class Atomicity(Task):
                         break
 
             self.test_log.info("Atomicity Load generation thread completed")
-
-
-            self.inserted_keys = {}
+            self.inserted_keys = dict()
             for client in Atomicity.clients:
                 self.inserted_keys[client] = []
                 self.inserted_keys[client].extend(self.all_keys)
@@ -3973,7 +3968,6 @@ class Atomicity(Task):
             elif Atomicity.defer:
                 self.encoding.append(ret.getT1())
 
-
         def __chunks(self, l, n):
             """Yield successive n-sized chunks from l."""
             for i in range(0, len(l), n):
@@ -4009,7 +4003,7 @@ class Atomicity(Task):
                     try:
                         value = key_val[key]  # new updated value, however it is not their in orginal code "LoadDocumentsTask"
                         value_json = Json.loads(value)
-                        value_json['mutated'] += Atomicity.updatecount
+                        value_json['mutated'] = Atomicity.updatecount
                         value = Json.dumps(value_json)
                     except ValueError:
                         self.random.seed(key)
@@ -4333,11 +4327,7 @@ class CompactBucketTask(Task):
 
         for node in nodes:
             current_compaction_count[node.ip] = 0
-            s = TestInputServer()
-            s.ip = node.ip
-            s.ssh_username = self.server.ssh_username
-            s.ssh_password = self.server.ssh_password
-            shell = RemoteMachineShellConnection(s)
+            shell = RemoteMachineShellConnection(self.server)
             res = Cbstats(shell).get_kvtimings()
             shell.disconnect()
             for i in res[0]:

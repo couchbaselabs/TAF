@@ -1,14 +1,15 @@
+import logging
+import time
+import Queue
+from threading import Thread
+
+from Cb_constants import constants
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from mc_bin_client import MemcachedClient
 from membase.helper.rebalance_helper import RebalanceHelper
 import memcacheConstants
-import logging
-import time
-import Queue
-from threading import Thread
-import traceback
 
 
 class ClusterOperationHelper(object):
@@ -172,7 +173,7 @@ class ClusterOperationHelper(object):
     @staticmethod
     def flushctl_start(servers, username=None, password=None):
         for server in servers:
-            c = MemcachedClient(server.ip, 11210)
+            c = MemcachedClient(server.ip, constants.memcached_port)
             if username:
                 c.sasl_auth_plain(username, password)
             c.start_persistence()
@@ -180,7 +181,7 @@ class ClusterOperationHelper(object):
     @staticmethod
     def flushctl_stop(servers, username=None, password=None):
         for server in servers:
-            c = MemcachedClient(server.ip, 11210)
+            c = MemcachedClient(server.ip, constants.memcached_port)
             if username:
                 c.sasl_auth_plain(username, password)
             c.stop_persistence()
@@ -207,7 +208,8 @@ class ClusterOperationHelper(object):
                 _server = {"ip": server.ip, "port": server.port,
                            "username": master.rest_username,
                            "password": master.rest_password}
-                ClusterOperationHelper.flushctl_set_per_node(_server, key, val, bucket)
+                ClusterOperationHelper.flushctl_set_per_node(_server, key, val,
+                                                             bucket)
 
     @staticmethod
     def flushctl_set_per_node(server, key, val, bucket='default'):
@@ -236,13 +238,18 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def _get_engine_param_type(key):
-        tap_params = ['tap_keepalive', 'tap_throttle_queue_cap', 'tap_throttle_threshold']
-        checkpoint_params = ['chk_max_items', 'chk_period', 'inconsistent_slave_chk', 'keep_closed_chks',
+        tap_params = ['tap_keepalive', 'tap_throttle_queue_cap',
+                      'tap_throttle_threshold']
+        checkpoint_params = ['chk_max_items', 'chk_period',
+                             'inconsistent_slave_chk', 'keep_closed_chks',
                              'max_checkpoints', 'item_num_based_new_chk']
-        flush_params = ['bg_fetch_delay', 'couch_response_timeout', 'exp_pager_stime', 'flushall_enabled',
-                        'klog_compactor_queue_cap', 'klog_max_log_size', 'klog_max_entry_ratio',
-                        'queue_age_cap', 'max_size', 'max_txn_size', 'mem_high_wat', 'mem_low_wat',
-                        'min_data_age', 'timing_log', 'alog_sleep_time', 'bfilter_enabled' ]
+        flush_params = ['bg_fetch_delay', 'couch_response_timeout',
+                        'exp_pager_stime', 'flushall_enabled',
+                        'klog_compactor_queue_cap', 'klog_max_log_size',
+                        'klog_max_entry_ratio', 'queue_age_cap', 'max_size',
+                        'max_txn_size', 'mem_high_wat', 'mem_low_wat',
+                        'min_data_age', 'timing_log', 'alog_sleep_time',
+                        'bfilter_enabled' ]
         if key in tap_params:
             return memcacheConstants.ENGINE_PARAM_TAP
         if key in checkpoint_params:
@@ -256,31 +263,37 @@ class ClusterOperationHelper(object):
         rest = RestConnection(master)
         servers = rest.get_nodes()
         for server in servers:
-            # this is not bucket specific so no need to pass in the bucketname
-            log.info("connecting to memcached {0}:{1}".format(server.ip, server.memcached))
+            # Not bucket specific, so no need to pass in the bucket_name
+            log.info("Connecting to memcached %s:%s"
+                     % (server.ip, server.memcached))
             mc = MemcachedClientHelper.direct_client(server, bucket)
-            log.info("Set exp_pager_stime flush param on server {0}:{1}".format(server.ip, server.port))
+            log.info("Set exp_pager_stime flush param on server %s:%s"
+                     % (server.ip, server.port))
             try:
                 mc.set_flush_param("exp_pager_stime", str(value))
-                log.info("Set exp_pager_stime flush param on server {0}:{1}".format(server.ip, server.port))
+                log.info("Set exp_pager_stime flush param on server %s:%s"
+                         % (server.ip, server.port))
             except Exception as ex:
-                traceback.print_exc()
-                log.error("Unable to set exp_pager_stime flush param on memcached {0}:{1}".format(server.ip, server.memcached))
+                log.error("Unable to set exp_pager_stime flush param on %s:%s"
+                          "\n Exception: %s"
+                          % (server.ip, server.memcached, ex))
 
     @staticmethod
     def get_mb_stats(servers, key):
         log = logging.getLogger("infra")
         for server in servers:
-            c = MemcachedClient(server.ip, 11210)
+            c = MemcachedClient(server.ip, constants.memcached_port)
             log.info("Get flush param on server {0}, {1}".format(server, key))
-            value = c.stats().get(key, None)
-            log.info("Get flush param on server {0}, {1}".format(server, value))
+            val = c.stats().get(key, None)
+            log.info("Get flush param on server {0}, {1}".format(server, val))
             c.close()
 
     @staticmethod
-    def change_erlang_threads_values(servers, sync_threads=True, num_threads='16:16'):
+    def change_erlang_threads_values(servers, sync_threads=True,
+                                     num_threads='16:16'):
         """Change the the type of sync erlang threads and its value
-           sync_threads=True means sync threads +S with default threads number equal 16:16
+           sync_threads=True means sync threads +S with default
+                        threads number equal 16:16
            sync_threads=False means async threads: +A 16, for instance
 
         Default: +S 16:16

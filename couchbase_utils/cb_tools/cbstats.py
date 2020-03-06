@@ -1,3 +1,4 @@
+import logging
 import re
 import zlib
 
@@ -5,10 +6,10 @@ from cb_tools.cb_tools_base import CbCmdBase
 
 
 class Cbstats(CbCmdBase):
-    def __init__(self, shell_conn, port=11210, username="Administrator",
+    def __init__(self, shell_conn, username="Administrator",
                  password="password"):
 
-        CbCmdBase.__init__(self, shell_conn, "cbstats", port=port,
+        CbCmdBase.__init__(self, shell_conn, "cbstats",
                            username=username, password=password)
 
     def __calculate_vbucket_num(self, doc_key, total_vbuckets):
@@ -45,7 +46,7 @@ class Cbstats(CbCmdBase):
         """
 
         cmd = "%s localhost:%s -u %s -p %s -b %s %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, stat_name)
 
         if field_to_grep:
@@ -62,7 +63,7 @@ class Cbstats(CbCmdBase):
         :return error:  Buffer containing warnings/errors from the execution
         """
         cmd = "%s localhost:%s %s -u %s -p %s kvtimings" % (self.cbstatCmd,
-                                                            self.port,
+                                                            self.mc_port,
                                                             command,
                                                             self.username,
                                                             self.password)
@@ -95,7 +96,7 @@ class Cbstats(CbCmdBase):
         """
 
         cmd = "%s localhost:%s -u %s -p %s -b %s %s %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, stat_name, vbucket_num)
 
         if field_to_grep:
@@ -130,6 +131,8 @@ class Cbstats(CbCmdBase):
 
         pattern = "[ \t]*{0}[ \t]*:[ \t]+([a-zA-Z0-9]+)".format(field_to_grep)
         regexp = re.compile(pattern)
+        if type(output) is not list:
+            output = [output]
         for line in output:
             match_result = regexp.match(line)
             if match_result:
@@ -159,7 +162,7 @@ class Cbstats(CbCmdBase):
 
         vb_list = list()
         cmd = "%s localhost:%s -u %s -p %s -b %s vbucket" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name)
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
@@ -192,17 +195,22 @@ class Cbstats(CbCmdBase):
 
         stats = dict()
         cmd = "%s localhost:%s -u %s -p %s -b %s vbucket-details" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name)
 
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
+        # In case of cluster_run, output is plain string due to direct exec
+        if type(output) is str:
+            output = output.split("\n")
 
         pattern = "[ \t]*vb_([0-9]+):([0-9a-zA-Z_]*):?[ \t]+([0-9A-Za-z\-\.\:\",_\[\]]+)"
         regexp = re.compile(pattern)
 
         for line in output:
+            if line.strip() == '':
+                continue
             match_result = regexp.match(line)
             vb_num = match_result.group(1)
             stat_name = match_result.group(2)
@@ -247,7 +255,7 @@ class Cbstats(CbCmdBase):
             vbucket_num = self.__calculate_vbucket_num(doc_key, total_vbuckets)
 
         cmd = "%s localhost:%s -u %s -p %s -b %s vkey %s %s | grep %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, doc_key, vbucket_num, field_to_grep)
 
         output, error = self._execute_cmd(cmd)

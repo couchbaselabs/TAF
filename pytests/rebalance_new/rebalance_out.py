@@ -196,7 +196,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
         self.bucket_util.vb_distribution_analysis(
             servers=nodes, buckets=self.bucket_util.buckets, std=1.0,
-            total_vbuckets=self.vbuckets, num_replicas=self.num_replicas)
+            total_vbuckets=self.cluster_util.vbuckets, num_replicas=self.num_replicas)
 
     """Rebalances nodes out with failover and full recovery add back of a node
 
@@ -250,7 +250,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
         self.bucket_util.vb_distribution_analysis(
             servers=nodes, buckets=self.bucket_util.buckets, std=1.0,
-            total_vbuckets=self.vbuckets, num_replicas=self.num_replicas)
+            total_vbuckets=self.cluster_util.vbuckets, num_replicas=self.num_replicas)
 
     """Rebalances nodes out with failover
 
@@ -308,7 +308,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.bucket_util.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets,num_replicas =self.num_replicas,std=1.0, total_vbuckets=self.vbuckets)
+        self.bucket_util.vb_distribution_analysis(servers=nodes, buckets=self.bucket_util.buckets,num_replicas =self.num_replicas,std=1.0, total_vbuckets=self.cluster_util.vbuckets)
 
 
     """Rebalances nodes out of a cluster while doing docs ops:create, delete, update along with compaction.

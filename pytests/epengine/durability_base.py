@@ -43,7 +43,8 @@ class DurabilityTestsBase(BaseTestCase):
         # Create default bucket and add rbac user
         self.bucket_util.create_default_bucket(
             replica=self.num_replicas, compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type)
+            bucket_type=self.bucket_type, storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
         self.cluster_util.print_cluster_stats()
@@ -60,7 +61,7 @@ class DurabilityTestsBase(BaseTestCase):
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.vbuckets)
+                vbuckets=self.cluster_util.vbuckets)
             self.log.info("doc_generator created")
 
             self.log.info("Loading {0} items into bucket"

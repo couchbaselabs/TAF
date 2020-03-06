@@ -10,7 +10,7 @@ import time
 
 import testconstants
 from couchbase_cli import CouchbaseCLI
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from table_view import TableView
@@ -407,10 +407,13 @@ class ClusterUtils:
                 # Start node
                 rest = RestConnection(node)
                 data_path = rest.get_data_path()
+                core_path= str(rest.get_data_path()).split("data")[0] + "crash/"
                 # Stop node
                 self.stop_server(node)
                 # Delete Path
                 shell.cleanup_data_config(data_path)
+                shell.cleanup_data_config(core_path);
+                
                 self.start_server(node)
                 shell.disconnect()
             time.sleep(10)
@@ -445,8 +448,8 @@ class ClusterUtils:
                                        .format(server.ip, hostname))
                         server.ip = hostname
                         shell.disconnect()
-                    if (port != cb_constants.port and port == int(server.port)) \
-                            or (port == cb_constants.port and server.ip == ip):
+                    if (port != constants.port and port == int(server.port)) \
+                            or (port == constants.port and server.ip == ip):
                         node_list.append(server)
             self.log.debug("All nodes in cluster: {0}".format(node_list))
             if get_all_nodes:
@@ -565,19 +568,18 @@ class ClusterUtils:
             master = self.cluster.master
         rest = RestConnection(master)
         versions = rest.get_nodes_versions()
-        for version in versions:
-            if "3.5" > version:
-                return servers
         if servers is None:
             servers = self.cluster.servers
         kv_servers = self.get_nodes_from_services_map(service_type="kv",
-                                                      get_all_nodes=True,servers=servers,
+                                                      get_all_nodes=True,
+                                                      servers=servers,
                                                       master=master)
         new_servers = []
         for server in servers:
             for kv_server in kv_servers:
-                if kv_server.ip == server.ip and kv_server.port == server.port \
-                        and (server not in new_servers):
+                if kv_server.ip == server.ip \
+                        and kv_server.port == server.port \
+                        and server not in new_servers:
                     new_servers.append(server)
         return new_servers
 
@@ -634,7 +636,7 @@ class ClusterUtils:
                     otpNodes.append(self.rest.add_node(
                         user=server.rest_username,
                         password=server.rest_password,
-                        remoteIp=server.ip, port=cb_constants.port,
+                        remoteIp=server.ip, port=constants.port,
                         services=server.services.split(",")))
 
             self.rebalance(wait_for_completion)
@@ -667,7 +669,7 @@ class ClusterUtils:
             services = node.services.split(",")
         otpnode = self.rest.add_node(user=node.rest_username,
                                      password=node.rest_password,
-                                     remoteIp=node.ip, port=cb_constants.port,
+                                     remoteIp=node.ip, port=constants.port,
                                      services=services)
         if rebalance:
             self.rebalance(wait_for_completion=wait_for_rebalance_completion)
@@ -758,28 +760,38 @@ class ClusterUtils:
                 if versions[0][:5] in testconstants.COUCHBASE_VERSION_2:
                     command = "tap"
                     if not info == 'windows':
-                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep :vb_filter: |  awk '{print $1}' \
+                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep :vb_filter: |  awk '{print $1}' \
                             | xargs | sed 's/eq_tapq:replication_ns_1@//g'  | sed 's/:vb_filter://g' \
-                            " % (cbstat_command, node, command, "default", saslpassword)
+                            " % (cbstat_command, node,
+                                 constants.memcached_port,
+                                 command, "default", saslpassword)
                     else:
-                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep.exe :vb_filter: | gawk.exe '{print $1}' \
+                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep.exe :vb_filter: | gawk.exe '{print $1}' \
                                | sed.exe 's/eq_tapq:replication_ns_1@//g'  | sed.exe 's/:vb_filter://g' \
-                               " % (cbstat_command, node, command, "default", saslpassword)
+                               " % (cbstat_command, node,
+                                    constants.memcached_port,
+                                    command, "default", saslpassword)
                     output, error = shell.execute_command(commands)
                 elif versions[0][:5] in testconstants.COUCHBASE_VERSION_3 or \
                         versions[0][:5] in testconstants.COUCHBASE_FROM_VERSION_4:
                     command = "dcp"
                     if not info == 'windows':
-                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep :replication:ns_1@%s |  grep vb_uuid | \
+                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep :replication:ns_1@%s |  grep vb_uuid | \
                                     awk '{print $1}' | sed 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
                                     sed 's/:.*//g' | sort -u | xargs \
-                                   " % (cbstat_command, node, command, "default", saslpassword, node, node)
+                                   " % (cbstat_command, node,
+                                        constants.memcached_port,
+                                        command, "default", saslpassword,
+                                        node, node)
                         output, error = shell.execute_command(commands)
                     else:
-                        commands = "%s %s:11210 %s -b %s -p \"%s\" | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
+                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
                                     gawk.exe '{print $1}' | sed.exe 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
                                     sed.exe 's/:.*//g' \
-                                   " % (cbstat_command, node, command, "default", saslpassword, node, node)
+                                   " % (cbstat_command, node,
+                                        constants.memcached_port,
+                                        command, "default", saslpassword,
+                                        node, node)
                         output, error = shell.execute_command(commands)
                         output = sorted(set(output))
                 shell.log_command_output(output, error)
@@ -788,11 +800,13 @@ class ClusterUtils:
                     self.log.debug("{0}".format(nodes))
                     self.log.debug("replicas of node {0} are in nodes {1}"
                                    .format(node, output))
-                    self.log.debug("replicas of node {0} are not in its zone {1}"
-                                   .format(node, group))
+                    self.log.debug(
+                        "Replicas of node %s are not in its zone %s"
+                        % (node, group))
                 else:
-                    exception_str = "Replica of node {0} are on its own zone {1}" \
-                                    .format(node, group)
+                    exception_str = \
+                        "Replica of node %s are on its own zone %s" \
+                        % (node, group)
                     self.log.error(exception_str)
                     raise Exception(exception_str)
         shell.disconnect()
@@ -846,7 +860,7 @@ class ClusterUtils:
                              .format(node_picked.ip, node_picked.port))
                     break
             else:
-                # temp fix - port numbers of master(machine ip and localhost: 9000 match
+                # temp fix: port numbers of master ip and localhost:9000 match
                 if int(node_picked.port) == int(master.port):
                     log.info("Not picking the master node {0}:{1}..try again.."
                              .format(node_picked.ip, node_picked.port))

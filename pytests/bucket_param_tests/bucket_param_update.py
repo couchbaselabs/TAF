@@ -2,6 +2,7 @@ from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
+from couchbase_helper.durability_helper import DurabilityHelper
 
 
 class BucketParamTest(BaseTestCase):
@@ -15,7 +16,8 @@ class BucketParamTest(BaseTestCase):
         self.cluster.nodes_in_cluster.extend(
             [self.cluster.master] + nodes_init)
         self.bucket_util.create_default_bucket(
-            replica=self.num_replicas, compression_mode=self.compression_mode)
+            replica=self.num_replicas, compression_mode=self.compression_mode,
+            storage=self.bucket_storage)
         self.bucket_util.add_rbac_user()
         self.src_bucket = self.bucket_util.get_all_buckets()
 
@@ -26,7 +28,7 @@ class BucketParamTest(BaseTestCase):
         doc_create = doc_generator(self.key, 0, self.num_items,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.vbuckets)
+                                   vbuckets=self.cluster_util.vbuckets)
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -189,7 +191,7 @@ class BucketParamTest(BaseTestCase):
                                        start_doc_for_insert + self.num_items,
                                        doc_size=self.doc_size,
                                        doc_type=self.doc_type,
-                                       vbuckets=self.vbuckets)
+                                       vbuckets=self.cluster_util.vbuckets)
 
             # Creating doc updater to be used by test cases
             doc_update = doc_generator(
@@ -198,7 +200,7 @@ class BucketParamTest(BaseTestCase):
                 start_doc_for_insert,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                vbuckets=self.vbuckets)
+                vbuckets=self.cluster_util.vbuckets)
 
             # Creating doc updater to be used by test cases
             doc_delete = doc_generator(
@@ -206,7 +208,7 @@ class BucketParamTest(BaseTestCase):
                 start_doc_for_insert - self.num_items,
                 start_doc_for_insert - (self.num_items/2),
                 doc_size=self.doc_size, doc_type=self.doc_type,
-                vbuckets=self.vbuckets)
+                vbuckets=self.cluster_util.vbuckets)
 
             self.log.info("Updating replica count of bucket to {0}"
                           .format(replica_num))
@@ -219,7 +221,7 @@ class BucketParamTest(BaseTestCase):
                 SDKException.DurabilityImpossibleException
             ignore_exceptions = list()
             retry_exceptions = [SDKException.DurabilityAmbiguousException,
-                                SDKException.TimeoutException]
+                                SDKException.AmbiguousTimeoutException]
 
             suppress_error_table = False
             if self.def_bucket.replicaNumber == 3 or replica_num == 3:
@@ -296,9 +298,14 @@ class BucketParamTest(BaseTestCase):
 
                 for task, task_info in tasks.items():
                     if replica_num == 3:
-                        self.assertTrue(
-                            len(task.fail.keys()) == (self.num_items/2),
-                            "Few doc_ops succeeded")
+                        if self.durability_level in DurabilityHelper.SupportedDurability:
+                            self.assertTrue(
+                                len(task.fail.keys()) == (self.num_items/2),
+                                "Few doc_ops succeeded while they should have failed.")
+                        else:
+                            self.assertTrue(
+                                len(task.fail.keys()) == 0,
+                                "Few doc_ops failed while they should have succeeded.")
                     self.assertFalse(
                         task_info["ops_failed"],
                         "Doc update failed after replica update rebalance")
@@ -348,7 +355,7 @@ class BucketParamTest(BaseTestCase):
         load_gen = doc_generator(self.key, 0, self.num_items,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.vbuckets)
+                                 vbuckets=self.cluster_util.vbuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, self.def_bucket, load_gen, "update", 0,
             persist_to=self.persist_to, replicate_to=self.replicate_to,

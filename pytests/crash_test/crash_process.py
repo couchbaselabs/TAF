@@ -1,7 +1,6 @@
 from random import randint
 
 from BucketLib.bucket import Bucket
-from Rest_Connection import RestConnection
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
@@ -44,7 +43,9 @@ class CrashTest(BaseTestCase):
                 persist_to=self.persist_to)
         self.bucket_util.create_default_bucket(
             bucket_type=self.bucket_type, ram_quota=self.bucket_size,
-            replica=self.num_replicas, compression_mode="off")
+            replica=self.num_replicas, compression_mode="off",
+            storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
         verification_dict = dict()
@@ -61,7 +62,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets, gen_create, "create",
@@ -91,7 +92,7 @@ class CrashTest(BaseTestCase):
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
                         bucket, self.cluster_util.get_kv_nodes(),
-                        vbuckets=self.vbuckets,
+                        vbuckets=self.cluster_util.vbuckets,
                         expected_val=verification_dict)
 
                 if stats_failed:
@@ -140,7 +141,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -192,7 +193,7 @@ class CrashTest(BaseTestCase):
                 self.log_failure("Unwanted exception seen during validation")
 
             # Create SDK connection for CRUD retries
-            sdk_client = SDKClient(RestConnection(self.cluster.master),
+            sdk_client = SDKClient([self.cluster.master],
                                    def_bucket)
             for doc_key, crud_result in task.fail.items():
                 result = sdk_client.crud("create",
@@ -229,7 +230,7 @@ class CrashTest(BaseTestCase):
         def_bucket = self.bucket_util.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        target_vbuckets = range(0, self.vbuckets)
+        target_vbuckets = range(0, self.cluster_util.vbuckets)
         retry_exceptions = list()
 
         # If Memcached is killed, we should not perform KV ops on
@@ -251,7 +252,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets, gen_load, "create",
@@ -328,6 +329,6 @@ class CrashTest(BaseTestCase):
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
                         def_bucket, self.cluster_util.get_kv_nodes(),
-                        vbuckets=self.vbuckets, expected_val=verification_dict)
+                        vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
                 if stats_failed:
                     self.fail("Cbstats verification failed")

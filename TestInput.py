@@ -5,13 +5,7 @@ import ConfigParser
 import os
 
 from builds.build_query import BuildQuery
-
-# class to parse the inputs either from command line or from a ini file
-# command line supports a subset of
-# configuration
-# which tests
-# ideally should accept a regular expression
-from couchbase_helper import cb_constants
+from Cb_constants import constants
 
 
 class TestInputSingleton:
@@ -22,6 +16,11 @@ class TestInputSingleton:
 
 
 class TestInput(object):
+    """
+    class to parse the inputs either from command line or from a ini file
+    command line supports a subset of configuration which tests
+    ideally should accept a regular expression
+    """
     def __init__(self):
         self.servers = list()
         self.moxis = list()
@@ -79,6 +78,7 @@ class TestInputServer(object):
         self.rest_password = ''
         self.services = ''
         self.port = ''
+        self.memcached_port = constants.memcached_port
         self.cli_path = ''
         self.data_path = ''
         self.index_path = ''
@@ -270,7 +270,6 @@ class TestInputParser:
 
         # Setting up 'clients' tag
         t_input.clients = client_ips
-
         return t_input
 
     @staticmethod
@@ -309,6 +308,7 @@ class TestInputParser:
                 server.es_username = global_properties['es_username']
             if server.es_password == '' and 'es_password' in global_properties:
                 server.es_password = global_properties['es_password']
+
         return servers
 
     @staticmethod
@@ -388,6 +388,8 @@ class TestInputParser:
                         server.ip = config.get(section, option)
                     if option == 'services':
                         server.services = config.get(section, option)
+                    if option == 'memcached_port':
+                        server.memcached_port = config.get(section, option)
                     if option == 'n1ql_port':
                         server.n1ql_port = config.get(section, option)
                     if option == 'index_port':
@@ -480,10 +482,8 @@ class TestInputParser:
                     server.ssh_username = 'root'
                 if server.ssh_password == '':
                     server.ssh_password = 'northscale!23'
-                if server.cli_path == '':
-                    server.cli_path = '/opt/membase/bin/'
                 if not server.port:
-                    server.port = cb_constants.port
+                    server.port = constants.port
             t_input.servers = servers
             t_input.membase_settings = membase_setting
             return t_input

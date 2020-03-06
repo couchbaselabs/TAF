@@ -61,8 +61,9 @@ class DCPRollBack(DCPBase):
                                                      bucket.name)
         for i in range(self.num_items/100):
             keyname = 'keyname-' + str(i)
-            vbId = self.bucket_util.get_vbucket_num_for_key(keyname,
-                                                            self.vbuckets)
+            vbId = self.bucket_util.get_vbucket_num_for_key(
+                keyname,
+                self.cluster_util.vbuckets)
             if vbucket_client.vBucketMap[vbId].split(':')[0] == cluster.servers[0].ip:
                 rc = client.get(keyname)
                 modified_kvs_active_on_node1[keyname] = rc[2]

@@ -34,6 +34,7 @@ class CasBaseTest(BaseTestCase):
         self.bucket_util.add_rbac_user()
         self.bucket_util.create_default_bucket(ram_quota=self.bucket_size,
                                                replica=self.num_replicas,
+                                               storage=self.bucket_storage,
                                                lww=self.bucket_lww)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()

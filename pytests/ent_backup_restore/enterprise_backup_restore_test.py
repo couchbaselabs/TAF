@@ -4,6 +4,7 @@ import json
 from random import randrange, randint
 from threading import Thread
 
+from Cb_constants import constants
 from couchbase_helper.cluster import Cluster
 from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
@@ -510,10 +511,11 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
         clusters = copy.deepcopy(cluster_nodes)
         shell = RemoteMachineShellConnection(self.backupset.backup_host)
         for node in clusters:
-             shell.execute_command("%scbepctl%s %s:11210 -b %s stop %s" % \
+             shell.execute_command("%scbepctl%s %s:%s -b %s stop %s" % \
                                   (self.cli_command_location,
                                    self.cmd_ext,
                                    node.ip,
+                                   constants.memcached_port,
                                    "bucket0",
                                    authentication))
         shell.disconnect()
@@ -855,7 +857,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
             3. Stop persistence.
             4. Load another 100K docs to bucket.
             5. Kill memcached will generate about 4 failover logs.
-               ./cbstats localhost:11210 -u username -p pass failovers | grep num_entries
+               ./cbstats localhost:mc_port -u username -p pass failovers | grep num_entries
             6. Take backup.
             7. Load another 100K docs
             8. Take backup again.
@@ -884,10 +886,11 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
         shell = RemoteMachineShellConnection(self.backupset.backup_host)
         for bucket in self.buckets:
             for node in clusters:
-                shell.execute_command("%scbepctl%s %s:11210 -b %s stop" % \
+                shell.execute_command("%scbepctl%s %s:%s -b %s stop" % \
                                       (self.cli_command_location,
                                        self.cmd_ext,
                                        node.ip,
+                                       constants.memcached_port,
                                        bucket.name))
         shell.disconnect()
         self.log.info("Load 2nd batch docs")
@@ -910,14 +913,15 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                                 self.sleep(10)
                             else:
                                 ready = True
-                        cmd = "%scbstats%s %s:11210 failovers -u %s -p %s | grep num_entries " \
+                        cmd = "%scbstats%s %s:%s failovers -u %s -p %s | grep num_entries " \
                               "| gawk%s '{printf $2}' | grep -m 5 '4\|5\|6\|7'" \
-                              % (self.cli_command_location, self.cmd_ext, server.ip,
+                              % (self.cli_command_location, self.cmd_ext,
+                                 server.ip, constants.memcached_port,
                                  "cbadminbucket", "password", self.cmd_ext)
                         output, error = shell.execute_command(cmd)
                         shell.disconnect()
                         if output:
-                            self.log.info("number failover logs entries reached. %s " % output)
+                            self.log.info("Number failover logs entries reached. %s" % output)
                             reach_num_entries = True
         self.backup_create()
         self.log.info("Start backup data")
@@ -1482,7 +1486,8 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                 "description": "opened DCP connection",
                 "timestamp": "{0}".format(self.backups[0]),
                 "bucket": "{0}".format(self.buckets[0].name),
-                "sockname": "{0}:11210".format(self.backupset.cluster_host.ip),
+                "sockname": "%s:%s" % (self.backupset.cluster_host.ip,
+                                       constants.memcached_port),
                 "peername": "{0}".format(self.backupset.backup_host.ip)
             }
         elif action == 'restore':
@@ -1494,7 +1499,8 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                 "description": "Authentication to the cluster succeeded",
                 "timestamp": "{0}".format(self.backups[0]),
                 "bucket": "{0}".format(self.buckets[0].name),
-                "sockname": "{0}:11210".format(self.backupset.restore_cluster_host.ip),
+                "sockname": "%s:%s" % (self.backupset.restore_cluster_host.ip,
+                                       constants.memcached_port),
                 "peername": "{0}".format(self.backupset.backup_host.ip)
             }
         return expected_results

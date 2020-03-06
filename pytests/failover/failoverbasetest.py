@@ -88,8 +88,9 @@ class FailoverBaseTest(BaseTestCase):
         self.afterfailover_gen_delete = doc_generator(
             self.key, self.num_items * 0.5, self.num_items * 0.75)
 
-        if self.vbuckets is not None and self.vbuckets != self.total_vbuckets:
-            self.total_vbuckets = self.vbuckets
+        if self.cluster_util.vbuckets is not None \
+                and self.cluster_util.vbuckets != self.total_vbuckets:
+            self.total_vbuckets = self.cluster_util.vbuckets
         self.nodes_init = self.input.param("nodes_init", 1)
         self.nodes_in = self.input.param("nodes_in", 1)
         self.nodes_out = self.input.param("nodes_out", 1)
@@ -98,7 +99,10 @@ class FailoverBaseTest(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.append(self.cluster.master)
         self.bucket_util.create_default_bucket(bucket_type=self.bucket_type,
-                                               replica=self.num_replicas)
+                                               ram_quota=self.bucket_size,
+                                               replica=self.num_replicas,
+                                               storage=self.bucket_storage,
+                                               eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()

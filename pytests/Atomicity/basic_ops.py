@@ -25,12 +25,16 @@ class basic_ops(BaseTestCase):
                 self.cluster.master,
                 self.num_replicas,
                 bucket_count=self.num_buckets,
-                bucket_type=self.bucket_type)
+                bucket_type=self.bucket_type,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy)
         else:
             self.bucket_util.create_default_bucket(
                 replica=self.num_replicas,
                 ram_quota=self.bucket_size,
                 bucket_type=self.bucket_type,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy,
                 compression_mode=self.compression_mode)
 
         time.sleep(20)

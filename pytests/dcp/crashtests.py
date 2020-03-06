@@ -9,7 +9,7 @@ from cb_tools.cbstats import Cbstats
 class DCPCrashTests(DCPBase):
     def test_stream_after_n_crashes(self):
         crashes = self.input.param("crash_num", 5)
-        vbucket = randint(0, self.vbuckets)
+        vbucket = randint(0, self.cluster_util.vbuckets)
         bucket = self.bucket_util.buckets[0]
 
         self.log.info("Chosen vbucket {0} for {1} crashes"
@@ -17,10 +17,10 @@ class DCPCrashTests(DCPBase):
         start = 0
         end = self.num_items
 
-        nodeA = self.cluster.servers[0]
-        shell_conn = RemoteMachineShellConnection(nodeA)
+        node_a = self.cluster.servers[0]
+        shell_conn = RemoteMachineShellConnection(node_a)
         cb_stat_obj = Cbstats(shell_conn)
-        rest = RestHelper(RestConnection(nodeA))
+        rest = RestHelper(RestConnection(node_a))
 
         for _ in xrange(crashes):
             # Load data into the selected vbucket
@@ -34,7 +34,7 @@ class DCPCrashTests(DCPBase):
 
             # Fetch vbucket seqno stats
             vb_stat = cb_stat_obj.vbucket_seqno(bucket.name)
-            dcp_client = self.dcp_client(nodeA, dcp.constants.PRODUCER)
+            dcp_client = self.dcp_client(node_a, dcp.constants.PRODUCER)
             stream = dcp_client.stream_req(vbucket, 0, 0,
                                            vb_stat[vbucket]["high_seqno"],
                                            vb_stat[vbucket]["uuid"])
@@ -55,26 +55,26 @@ class DCPCrashTests(DCPBase):
 
     def test_crash_while_streaming(self):
         bucket = self.bucket_util.buckets[0]
-        vbucket = randint(0, self.vbuckets)
-        nodeA = self.servers[0]
+        vbucket = randint(0, self.cluster_util.vbuckets)
+        node_a = self.servers[0]
         self.load_docs(bucket, vbucket, 0, self.num_items, "create")
 
-        shell_conn = RemoteMachineShellConnection(nodeA)
+        shell_conn = RemoteMachineShellConnection(node_a)
         cb_stat_obj = Cbstats(shell_conn)
 
-        dcp_client = self.dcp_client(nodeA, dcp.constants.PRODUCER)
+        dcp_client = self.dcp_client(node_a, dcp.constants.PRODUCER)
         _ = dcp_client.stream_req(vbucket, 0, 0, 2*self.num_items, 0)
-        self.load_docs(nodeA, vbucket, self.num_items)
+        self.load_docs(node_a, vbucket, 0, self.num_items, "create")
         self.assertTrue(self.stop_node(0), msg="Failed during stop_node")
         self.sleep(2, "Sleep after stop_node")
         self.assertTrue(self.start_node(0), msg="Failed during start_node")
-        rest = RestHelper(RestConnection(nodeA))
+        rest = RestHelper(RestConnection(node_a))
         self.assertTrue(rest.is_ns_server_running(),
                         msg="Failed while is_ns_server_running check")
         self.sleep(30, "Sleep to wait for ns_server to run")
 
         vb_info = cb_stat_obj.vbucket_seqno(bucket.name)
-        dcp_client = self.dcp_client(nodeA, dcp.constants.PRODUCER)
+        dcp_client = self.dcp_client(node_a, dcp.constants.PRODUCER)
         stream = dcp_client.stream_req(vbucket, 0, 0,
                                        vb_info[vbucket]["high_seqno"], 0)
         stream.run()
@@ -87,19 +87,19 @@ class DCPCrashTests(DCPBase):
         shell_conn.disconnect()
 
     def test_crash_entire_cluster(self):
-        self.cluster.rebalance([self.master], self.servers[1:], [])
+        self.cluster.rebalance([self.cluster.master], self.servers[1:], [])
 
         bucket = self.bucket_util.buckets[0]
-        vbucket = randint(0, self.vbuckets)
-        nodeA = self.servers[0]
+        vbucket = randint(0, self.cluster_util.vbuckets)
+        node_a = self.servers[0]
         self.load_docs(bucket, vbucket, 0, self.num_items, "create")
 
-        shell_conn = RemoteMachineShellConnection(nodeA)
+        shell_conn = RemoteMachineShellConnection(node_a)
         cb_stat_obj = Cbstats(shell_conn)
 
-        dcp_client = self.dcp_client(nodeA, dcp.constants.PRODUCER)
+        dcp_client = self.dcp_client(node_a, dcp.constants.PRODUCER)
         _ = dcp_client.stream_req(vbucket, 0, 0, 2*self.num_items, 0)
-        self.load_docs(nodeA, vbucket, self.num_items)
+        self.load_docs(node_a, vbucket, 0, self.num_items, "create")
 
         # stop all nodes
         node_range = range(len(self.servers))
@@ -112,12 +112,12 @@ class DCPCrashTests(DCPBase):
         for i in node_range:
             self.assertTrue(self.start_node(i), msg="Failed during start_node")
 
-        rest = RestHelper(RestConnection(nodeA))
+        rest = RestHelper(RestConnection(node_a))
         self.assertTrue(rest.is_ns_server_running(),
                         msg="Failed while is_ns_server_running check")
 
         vb_info = cb_stat_obj.vbucket_seqno(bucket.name)
-        dcp_client = self.dcp_client(nodeA, dcp.constants.PRODUCER)
+        dcp_client = self.dcp_client(node_a, dcp.constants.PRODUCER)
         stream = dcp_client.stream_req(vbucket, 0, 0,
                                        vb_info[vbucket]["high_seqno"], 0)
         stream.run()

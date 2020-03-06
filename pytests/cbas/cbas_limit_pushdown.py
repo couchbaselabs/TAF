@@ -1,6 +1,6 @@
 from cbas.cbas_base import CBASBaseTest
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_client import SDKClient
+from sdk_client3 import SDKClient
 
 
 class CBASLimitPushdown(CBASBaseTest):
@@ -45,9 +45,9 @@ class CBASLimitPushdown(CBASBaseTest):
             self.log.info("Number of data partitions on cluster %d" % self.partitions)
         else:
             self.fail(msg="Partitions not found. Failing early to avoid unexpected results")
-    
+
     def run_queries_and_assert_results(self):
-        
+
         query_errors = {}
         query_count = 0
         for query_object in CBASLimitQueries.LIMIT_QUERIES:
@@ -65,12 +65,12 @@ class CBASLimitPushdown(CBASBaseTest):
 
                 self.log.info("Assert on query statistics")
                 if query_object['id'] != "limit":
-                    if "skip_processed_count" not in query_object: 
+                    if "skip_processed_count" not in query_object:
                         self.assertTrue(metrics["processedObjects"] <= self.total_documents, msg="Processed object must be <= total documents. Actual %s" % (metrics["processedObjects"]))
                     else:
                         self.log.info("Skipping process object count check.In cases of sub query processed object count can be greater than total document count.")
                 else:
-                    self.assertEqual(self.partitions * query_object["limit_value"], metrics["processedObjects"], 
+                    self.assertEqual(self.partitions * query_object["limit_value"], metrics["processedObjects"],
                                      msg="Processed Object count mismatch. Actual %s Expected %s" %(metrics["processedObjects"], self.partitions * query_object["limit_value"]))
 
                 self.log.info("Assert query result")
@@ -82,22 +82,22 @@ class CBASLimitPushdown(CBASBaseTest):
 
         self.log.info("LIMIT pushdown result summary")
         self.log.info("Total:%d Passed:%d Failed:%d" % (query_count, query_count-len(query_errors), len(query_errors)))
-        
+
         if query_errors:
             for id in query_errors:
                 self.log.info("******************************************** Failure summary ********************************************")
                 self.log.info("%s" % id)
                 self.log.info(query_errors[id])
             self.fail("Failing the test with above errors")
-        
+
     """
     cbas.cbas_limit_pushdown.CBASLimitPushdown.test_cbas_limit_pushdown,default_bucket=True,cb_bucket_name=default,cbas_dataset_name=default
     """
     def test_cbas_limit_pushdown(self):
-                
+
         self.log.info("Execute LIMIT queries")
         self.run_queries_and_assert_results()
-    
+
     """
     cbas.cbas_limit_pushdown.CBASLimitPushdown.test_cbas_limit_pushdown_with_index,default_bucket=True,cb_bucket_name=default,cbas_dataset_name=default
     """
@@ -118,7 +118,7 @@ class CBASLimitPushdown(CBASBaseTest):
 
         self.log.info("Connect to Local link")
         self.cbas_util.connect_link()
-        
+
         self.log.info("Execute LIMIT queries")
         self.run_queries_and_assert_results()
 

@@ -506,7 +506,7 @@ def pre_install_steps():
             if NodeHelpers[0].shell.is_url_live(params["url"]):
                 params["all_nodes_same_os"] = True
                 for node in NodeHelpers:
-                    build_binary = __get_build_binary_name(node)
+                    build_binary = params["url"].split('/')[-1]
                     build_url = params["url"]
                     filepath = __get_download_dir(node.get_os()) + build_binary
                     node.build = build(build_binary, build_url, filepath)

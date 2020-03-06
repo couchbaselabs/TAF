@@ -9,49 +9,42 @@ class Bucket(object):
     priority = "priority"
     flushEnabled = "flushEnabled"
     lww = "lww"
+    storageBackend = "storageBackend"
     maxTTL = "maxTTL"
     replicaIndex = "replicaIndex"
     threadsNumber = "threadsNumber"
     compressionMode = "compressionMode"
     uuid = "uuid"
 
-    class Type:
+    class Type(object):
         EPHEMERAL = "ephemeral"
         MEMBASE = "membase"
         MEMCACHED = "memcached"
 
-        def __init__(self):
-            pass
-
-    class EvictionPolicy:
+    class EvictionPolicy(object):
         FULL_EVICTION = "fullEviction"
         NO_EVICTION = "noEviction"
         NRU_EVICTION = "nruEviction"
         VALUE_ONLY = "valueOnly"
 
-        def __init__(self):
-            pass
-
-    class CompressionMode:
+    class CompressionMode(object):
         ACTIVE = "active"
         PASSIVE = "passive"
         OFF = "off"
 
-        def __init__(self):
-            pass
-
-    class Priority:
+    class Priority(object):
         LOW = 3
         HIGH = 8
-
-        def __init__(self):
-            pass
 
     class vBucket:
         def __init__(self):
             self.master = ''
             self.replica = []
             self.id = -1
+
+    class StorageBackend(object):
+        magma = "magma"
+        couchstore = "couchstore"
 
     class BucketStats:
         def __init__(self):
@@ -83,6 +76,8 @@ class Bucket(object):
                 Bucket.EvictionPolicy.VALUE_ONLY)
 
         self.replicaIndex = new_params.get(Bucket.replicaIndex, 0)
+        self.storageBackend = new_params.get(Bucket.storageBackend,
+                                             Bucket.StorageBackend.couchstore)
         self.priority = new_params.get(Bucket.priority, None)
         self.threadsNumber = new_params.get(Bucket.threadsNumber, 3)
         self.uuid = None

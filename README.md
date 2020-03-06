@@ -120,6 +120,26 @@ port:8091
 services:kv
 ```
 
+## Cluster_run support
+TAF supports cluster_run with following additional params under the specified sections,
+
+```
+[global]:
+cli:<cluster_run_repo>/build/kv_engine/
+
+[_1]
+port:9000
+memcached_port: 12000
+
+[_2]
+port:9001
+memcached_port: 12002
+
+[_3]
+port:9002
+memcached_port: 12004
+```
+
 ## Jython Issues
 If Jython reports `Exception in thread "main" java.lang.NoSuchMethodError: java.nio.ByteBuffer.limit(I)Ljava/nio/ByteBuffer;`
 

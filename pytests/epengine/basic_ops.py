@@ -2,12 +2,12 @@ import time
 import json
 
 from basetestcase import BaseTestCase
+from Cb_constants import constants
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
 from error_simulation.cb_error import CouchbaseError
 
-from membase.api.rest_client import RestConnection
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
@@ -39,7 +39,8 @@ class basic_ops(BaseTestCase):
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.create_default_bucket(
             replica=self.num_replicas, compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type)
+            bucket_type=self.bucket_type, storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
         self.src_bucket = self.bucket_util.get_all_buckets()
@@ -62,9 +63,9 @@ class basic_ops(BaseTestCase):
         KEY_NAME2 = 'key2'
         self.log.info('Starting basic ops')
 
-        rest = RestConnection(self.cluster.master)
         default_bucket = self.bucket_util.get_all_buckets()[0]
-        smart_client = VBucketAwareMemcached(rest, default_bucket)
+        smart_client = SDKClient([self.cluster.master],
+                                 default_bucket)
         sdk_client = smart_client.get_client()
         # mcd = client.memcached(KEY_NAME)
 
@@ -98,7 +99,8 @@ class basic_ops(BaseTestCase):
 
     # Reproduce test case for MB-28078
     def do_setWithMeta_twice(self):
-        mc = MemcachedClient(self.cluster.master.ip, 11210)
+        mc = MemcachedClient(self.cluster.master.ip,
+                             constants.memcached_port)
         mc.sasl_auth_plain(self.cluster.master.rest_username,
                            self.cluster.master.rest_password)
         mc.bucket_select('default')
@@ -162,16 +164,12 @@ class basic_ops(BaseTestCase):
 
         # Stat validation reference variables
         verification_dict = dict()
-        ref_val = dict()
-        ref_val["ops_create"] = 0
-        ref_val["ops_update"] = 0
-        ref_val["ops_delete"] = 0
-        ref_val["rollback_item_count"] = 0
-        ref_val["sync_write_aborted_count"] = 0
-        ref_val["sync_write_committed_count"] = 0
-
-        if self.durability_level:
-            pass
+        verification_dict["ops_create"] = 0
+        verification_dict["ops_update"] = 0
+        verification_dict["ops_delete"] = 0
+        verification_dict["rollback_item_count"] = 0
+        verification_dict["sync_write_aborted_count"] = 0
+        verification_dict["sync_write_committed_count"] = 0
 
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
@@ -181,7 +179,7 @@ class basic_ops(BaseTestCase):
         doc_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("Loading {0} docs into the bucket: {1}"
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_docs(
@@ -218,21 +216,15 @@ class basic_ops(BaseTestCase):
         self.bucket_util._wait_for_stats_all_buckets()
 
         # Update ref_val
-        ref_val["ops_create"] = self.num_items + len(task.fail.keys())
-        ref_val["sync_write_committed_count"] = self.num_items
+        verification_dict["ops_create"] += \
+            self.num_items + len(task.fail.keys())
         # Validate vbucket stats
-        verification_dict["ops_create"] = ref_val["ops_create"]
-        verification_dict["rollback_item_count"] = \
-            ref_val["rollback_item_count"]
-        if self.durability_level:
-            verification_dict["sync_write_aborted_count"] = \
-                ref_val["sync_write_aborted_count"]
-            verification_dict["sync_write_committed_count"] = \
-                ref_val["sync_write_committed_count"]
+        if self.durability_level in DurabilityHelper.SupportedDurability:
+            verification_dict["sync_write_committed_count"] += self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -245,10 +237,11 @@ class basic_ops(BaseTestCase):
         doc_update = doc_generator(
             self.key, 0, num_item_start_for_crud,
             doc_size=self.doc_size, doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket, vbuckets=self.vbuckets)
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            mutate=1)
 
         expected_num_items = self.num_items
-        num_of_mutations = 1
 
         if self.target_vbucket:
             mutation_doc_count = len(doc_update.doc_keys)
@@ -268,9 +261,10 @@ class basic_ops(BaseTestCase):
                 ryow=self.ryow,
                 check_persistence=self.check_persistence)
             self.task.jython_task_manager.get_task_result(task)
-            ref_val["ops_update"] = mutation_doc_count
-            if self.durability_level:
-                ref_val["sync_write_committed_count"] += mutation_doc_count
+            verification_dict["ops_update"] += mutation_doc_count
+            if self.durability_level in DurabilityHelper.SupportedDurability:
+                verification_dict["sync_write_committed_count"] \
+                    += mutation_doc_count
             if self.ryow:
                 check_durability_failures()
 
@@ -286,7 +280,9 @@ class basic_ops(BaseTestCase):
             op_failed_tbl.set_headers(["Update failed key", "CAS", "Value"])
             for key, value in task.success.items():
                 if json.loads(str(value["value"]))["mutated"] != 1:
-                    op_failed_tbl.add_row([key, value["cas"], value["value"]])
+                    op_failed_tbl.add_row([key,
+                                           str(value["cas"]),
+                                           value["value"]])
 
             op_failed_tbl.display("Update failed for keys:")
             if len(op_failed_tbl.rows) != 0:
@@ -304,10 +300,11 @@ class basic_ops(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
             expected_num_items = \
                 self.num_items - (self.num_items - num_item_start_for_crud)
-            ref_val["ops_delete"] = mutation_doc_count
+            verification_dict["ops_delete"] += mutation_doc_count
 
-            if self.durability_level:
-                ref_val["sync_write_committed_count"] += mutation_doc_count
+            if self.durability_level in DurabilityHelper.SupportedDurability:
+                verification_dict["sync_write_committed_count"] \
+                    += mutation_doc_count
             if self.ryow:
                 check_durability_failures()
 
@@ -332,22 +329,9 @@ class basic_ops(BaseTestCase):
         self.log.info("Wait for ep_all_items_remaining to become '0'")
         self.bucket_util._wait_for_stats_all_buckets()
 
-        # Validate vbucket stats
-        verification_dict["ops_create"] = ref_val["ops_create"]
-        verification_dict["ops_update"] = ref_val["ops_update"]
-        verification_dict["ops_delete"] = ref_val["ops_delete"]
-
-        verification_dict["rollback_item_count"] = \
-            ref_val["rollback_item_count"]
-        if self.durability_level:
-            verification_dict["sync_write_aborted_count"] = \
-                ref_val["sync_write_aborted_count"]
-            verification_dict["sync_write_committed_count"] = \
-                ref_val["sync_write_committed_count"]
-
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -477,7 +461,8 @@ class basic_ops(BaseTestCase):
                                      output[0])
 
     def verify_stat(self, items, value="active"):
-        mc = MemcachedClient(self.cluster.master.ip, 11210)
+        mc = MemcachedClient(self.cluster.master.ip,
+                             constants.memcached_port)
         mc.sasl_auth_plain(self.cluster.master.rest_username,
                            self.cluster.master.rest_password)
         mc.bucket_select('default')
@@ -551,7 +536,7 @@ class basic_ops(BaseTestCase):
         self.task.rebalance([self.cluster.master], [self.servers[2]], [],
                             services=["n1ql,index"])
         self.log.info("Creating SDK client connection")
-        client = SDKClient(RestConnection(self.cluster.master),
+        client = SDKClient([self.cluster.master],
                            self.bucket_util.buckets[0])
 
         self.log.info("Stopping memcached on: %s" % node_to_stop)
@@ -585,7 +570,8 @@ class basic_ops(BaseTestCase):
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
-        mc = MemcachedClient(self.cluster.master.ip, 11210)
+        mc = MemcachedClient(self.cluster.master.ip,
+                             constants.memcached_port)
         mc.sasl_auth_plain(self.cluster.master.rest_username,
                            self.cluster.master.rest_password)
         mc.bucket_select('default')

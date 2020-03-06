@@ -1,10 +1,11 @@
 from cb_tools.cb_tools_base import CbCmdBase
+from Cb_constants import constants
 
 
 class Cbepctl(CbCmdBase):
-    def __init__(self, shell_conn, port=11210, username="Administrator",
+    def __init__(self, shell_conn, username="Administrator",
                  password="password"):
-        CbCmdBase.__init__(self, shell_conn, "cbepctl", port=port,
+        CbCmdBase.__init__(self, shell_conn, "cbepctl",
                            username=username, password=password)
 
     def set(self, bucket_name, set_type, key, value):
@@ -23,7 +24,7 @@ class Cbepctl(CbCmdBase):
         :Exception - Warnings/Errors (if any) during the command execution
         """
         cmd = "%s localhost:%s -u %s -p %s -b %s set %s %s %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, set_type, key, value)
         _, error = self._execute_cmd(cmd)
         if len(error) != 0:
@@ -43,7 +44,7 @@ class Cbepctl(CbCmdBase):
         :Exception - Warnings/Errors (if any) during the command execution
         """
         cmd = "%s localhost:%s -u %s -p %s -b %s %s" \
-              % (self.cbstatCmd, self.port, self.username, self.password,
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, action.lower())
         _, error = self._execute_cmd(cmd)
         if len(error) != 0:

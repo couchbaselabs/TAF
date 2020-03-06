@@ -35,7 +35,8 @@ class AutoCompactionTests(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.create_default_bucket(ram_quota=self.bucket_size,
-                                               replica=self.num_replicas)
+                                               replica=self.num_replicas,
+                                               storage=self.bucket_storage)
         self.bucket_util.add_rbac_user()
 
         self.bucket = self.bucket_util.buckets[0]
@@ -124,7 +125,7 @@ class AutoCompactionTests(BaseTestCase):
 
         self.log.info("Creating Rest connection to {0}".format(server_info))
         bucket_helper = BucketHelper(server_info)
-        output, rq_content = self.bucket_util.set_auto_compaction(
+        output, _ = self.bucket_util.set_auto_compaction(
             bucket_helper,
             dbFragmentThresholdPercentage=percent_threshold,
             viewFragmntThresholdPercentage=None)
@@ -139,6 +140,7 @@ class AutoCompactionTests(BaseTestCase):
 
             self.bucket = Bucket({Bucket.name: self.bucket.name,
                                   Bucket.ramQuotaMB: int(available_ram),
+                                  Bucket.storageBackend: self.bucket_storage,
                                   Bucket.replicaNumber: self.num_replicas})
             self.bucket_util.create_bucket(self.bucket)
             self.bucket_util.wait_for_memcached(server_info, self.bucket)

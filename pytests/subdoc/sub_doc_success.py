@@ -4,6 +4,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator,\
     sub_doc_generator_for_edit
+from couchbase_helper.durability_helper import DurabilityHelper
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
@@ -29,15 +30,22 @@ class BasicOps(DurabilityTestsBase):
 
         # Stat validation reference variables
         verification_dict = dict()
-        verification_dict["ops_create"] = 0
+        verification_dict["ops_create"] = self.num_items
         verification_dict["ops_update"] = 0
         verification_dict["ops_delete"] = 0
         verification_dict["rollback_item_count"] = 0
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["sync_write_committed_count"] = 0
 
-        if self.durability_level:
-            pass
+        if self.durability_level in DurabilityHelper.SupportedDurability:
+            verification_dict["sync_write_committed_count"] += self.num_items
+
+        # Initial validation
+        failed = self.durability_helper.verify_vbucket_details_stats(
+            def_bucket, self.cluster_util.get_kv_nodes(),
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+        if failed:
+            self.fail("Cbstat vbucket-details verification failed")
 
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
@@ -47,7 +55,7 @@ class BasicOps(DurabilityTestsBase):
         doc_create = sub_doc_generator(
             self.key, 0, self.num_items, doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("Loading {0} docs into the bucket: {1}"
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_sub_docs(
@@ -63,14 +71,13 @@ class BasicOps(DurabilityTestsBase):
         self.bucket_util._wait_for_stats_all_buckets()
 
         # Update verification_dict and validate
-        verification_dict["ops_create"] = self.num_items+len(task.fail.keys())
-        verification_dict["ops_update"] = self.num_items
-        if self.durability_level:
-            verification_dict["sync_write_committed_count"] = self.num_items*2
+        verification_dict["ops_update"] += self.num_items
+        if self.durability_level in DurabilityHelper.SupportedDurability:
+            verification_dict["sync_write_committed_count"] += self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -104,7 +111,7 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["ops_update"] += \
                 (sub_doc_gen.end - sub_doc_gen.start
                  + len(task.fail.keys()))
-            if self.durability_level:
+            if self.durability_level in DurabilityHelper.SupportedDurability:
                 verification_dict["sync_write_committed_count"] += \
                     num_item_start_for_crud
 
@@ -150,7 +157,7 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["ops_update"] += \
                 (sub_doc_gen.end - sub_doc_gen.start
                  + len(task.fail.keys()))
-            if self.durability_level:
+            if self.durability_level in DurabilityHelper.SupportedDurability:
                 verification_dict["sync_write_committed_count"] += \
                     num_item_start_for_crud
 
@@ -191,7 +198,7 @@ class BasicOps(DurabilityTestsBase):
         # Validate verification_dict and validate
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -227,7 +234,7 @@ class BasicOps(DurabilityTestsBase):
         doc_gen = doc_generator(
             self.key, self.num_items, self.num_items*2, doc_size=self.doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, doc_gen, "create", self.maxttl,
             batch_size=10, process_concurrency=8,
@@ -256,19 +263,19 @@ class BasicOps(DurabilityTestsBase):
                                            half_of_num_items,
                                            doc_size=self.sub_doc_size,
                                            target_vbucket=self.target_vbucket,
-                                           vbuckets=self.vbuckets)
+                                           vbuckets=self.cluster_util.vbuckets)
             doc_gen[1] = sub_doc_generator(self.key, half_of_num_items,
                                            self.num_items,
                                            doc_size=self.sub_doc_size,
                                            target_vbucket=self.target_vbucket,
-                                           vbuckets=self.vbuckets)
+                                           vbuckets=self.cluster_util.vbuckets)
         elif doc_ops in ["upsert", "remove"]:
             self.log.info("Creating sub_docs before upsert/remove operation")
             sub_doc_gen = sub_doc_generator(self.key, 0,
                                             self.num_items,
                                             doc_size=self.sub_doc_size,
                                             target_vbucket=self.target_vbucket,
-                                            vbuckets=self.vbuckets)
+                                            vbuckets=self.cluster_util.vbuckets)
             template_index_1 = 0
             template_index_2 = 1
             if doc_ops == "remove":
@@ -294,14 +301,14 @@ class BasicOps(DurabilityTestsBase):
                 end=half_of_num_items,
                 template_index=template_index_1,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.vbuckets)
+                vbuckets=self.cluster_util.vbuckets)
             doc_gen[1] = sub_doc_generator_for_edit(
                 self.key,
                 start=half_of_num_items,
                 end=self.num_items,
                 template_index=template_index_2,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.vbuckets)
+                vbuckets=self.cluster_util.vbuckets)
         else:
             self.fail("Invalid sub_doc operation '%s'" % doc_ops)
 
@@ -343,7 +350,7 @@ class BasicOps(DurabilityTestsBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -400,7 +407,7 @@ class BasicOps(DurabilityTestsBase):
                                           self.num_items * 2,
                                           doc_size=self.doc_size,
                                           target_vbucket=self.target_vbucket,
-                                          vbuckets=self.vbuckets)
+                                          vbuckets=self.cluster_util.vbuckets)
         doc_gen["read"] = doc_generator(self.key,
                                         0,
                                         self.num_items)
@@ -420,14 +427,14 @@ class BasicOps(DurabilityTestsBase):
                                     end=upsert_end_index,
                                     template_index=0,
                                     target_vbucket=self.target_vbucket,
-                                    vbuckets=self.vbuckets)
+                                    vbuckets=self.cluster_util.vbuckets)
         sub_doc_gen["remove"] = sub_doc_generator_for_edit(
                                     self.key,
                                     start=upsert_end_index,
                                     end=self.num_items,
                                     template_index=2,
                                     target_vbucket=self.target_vbucket,
-                                    vbuckets=self.vbuckets)
+                                    vbuckets=self.cluster_util.vbuckets)
 
         # Start full document mutations before starting sub_doc ops
         tasks.append(self.task.async_load_gen_docs(
@@ -487,7 +494,7 @@ class BasicOps(DurabilityTestsBase):
         # Verify vb-details cbstats
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -547,7 +554,7 @@ class BasicOps(DurabilityTestsBase):
                                         end=self.num_items,
                                         doc_size=self.sub_doc_size,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.vbuckets)
+                                        vbuckets=self.cluster_util.vbuckets)
         task = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, sub_doc_gen, "insert", self.maxttl,
             path_create=True,
@@ -563,7 +570,7 @@ class BasicOps(DurabilityTestsBase):
                                        0,
                                        insert_end_index,
                                        target_vbucket=self.target_vbucket,
-                                       vbuckets=self.vbuckets)
+                                       vbuckets=self.cluster_util.vbuckets)
         gen_update = sub_doc_generator_for_edit(
             self.key,
             insert_end_index,
@@ -667,7 +674,7 @@ class BasicOps(DurabilityTestsBase):
         cbstat_obj = dict()
         failover_info = dict()
         vb_info_info = dict()
-        target_vbuckets = range(0, self.vbuckets)
+        target_vbuckets = range(0, self.cluster_util.vbuckets)
         active_vbs_in_target_nodes = list()
         failover_info["init"] = dict()
         failover_info["afterCrud"] = dict()

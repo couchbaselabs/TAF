@@ -257,6 +257,7 @@ class BucketUtils:
             ram_quota=None, replica=1, maxTTL=0,
             compression_mode="off", wait_for_warmup=True,
             lww=False, replica_index=1,
+            storage=Bucket.StorageBackend.couchstore,
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
@@ -275,6 +276,7 @@ class BucketUtils:
                                  Bucket.maxTTL: maxTTL,
                                  Bucket.lww: lww,
                                  Bucket.replicaIndex: replica_index,
+                                 Bucket.storageBackend: storage,
                                  Bucket.evictionPolicy: eviction_policy})
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
@@ -389,6 +391,7 @@ class BucketUtils:
             bucket_type=Bucket.Type.MEMBASE,
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
             maxttl=0,
+            storage=Bucket.StorageBackend.couchstore,
             compression_mode=Bucket.CompressionMode.ACTIVE):
         success = True
         rest = RestConnection(server)
@@ -412,6 +415,7 @@ class BucketUtils:
                                  Bucket.bucketType: bucket_type,
                                  Bucket.evictionPolicy: eviction_policy,
                                  Bucket.maxTTL: maxttl,
+                                 Bucket.storageBackend: storage,
                                  Bucket.compressionMode: compression_mode})
                 tasks[bucket] = self.async_create_bucket(bucket)
 
@@ -571,6 +575,39 @@ class BucketUtils:
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
             self.assertTrue(result,
                             "snap_start and snap_end corruption found!!!")
+
+    def _wait_for_stat(self, bucket, stat_map=None,
+                       stat_name="ep_queue_size",
+                       stat_cond='==',
+                       timeout=60):
+        """
+        Waits for queues to drain on all servers and buckets in a cluster.
+
+        A utility function that waits for all of the items loaded to be
+        persisted and replicated.
+
+        Args:
+          servers - List of all servers in the cluster ([TestInputServer])
+          ep_queue_size - expected ep_queue_size (int)
+          ep_queue_size_cond - condition for comparing (str)
+          check_ep_dcp_items_remaining - to check if replication is complete
+          timeout - Waiting the end of the thread. (str)
+        """
+        tasks = []
+        stat_cmd = "all"
+        if stat_map:
+            for server, stat_value in stat_map.items():
+                if bucket.bucketType == 'memcached':
+                    continue
+                shell_conn = RemoteMachineShellConnection(server)
+                tasks.append(self.task.async_wait_for_stats(
+                    [shell_conn], bucket, stat_cmd,
+                    stat_name, stat_cond, stat_value,
+                    timeout=timeout))
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+            for shell in task.shellConnList:
+                shell.disconnect()
 
     def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
@@ -744,7 +781,7 @@ class BucketUtils:
         for task, task_info in tasks_info.items():
             self.task_manager.get_task_result(task)
 
-            client = SDKClient(RestConnection(cluster.master),
+            client = SDKClient([cluster.master],
                                task_info["bucket"])
             for key, failed_doc in task.fail.items():
                 found = False
@@ -761,6 +798,8 @@ class BucketUtils:
 
                 ambiguous_state = False
                 if SDKException.DurabilityAmbiguousException \
+                        in str(exception) \
+                        or SDKException.AmbiguousTimeoutException \
                         in str(exception) \
                         or SDKException.TimeoutException \
                         in str(exception) \
@@ -931,7 +970,7 @@ class BucketUtils:
             if load_for == "abort":
                 return self.task.async_load_gen_docs(
                     self.cluster, bucket, doc_gen, doc_op, 0,
-                    batch_size=2, process_concurrency=8,
+                    batch_size=1, process_concurrency=8,
                     durability=durability_level,
                     timeout_secs=2, start_task=False,
                     skip_read_on_error=True, suppress_error_table=True)
@@ -1529,7 +1568,7 @@ class BucketUtils:
 
     def _run_compaction(self, number_of_times=100):
         try:
-            for _ in range(1, number_of_times):
+            for _ in range(0, number_of_times):
                 for bucket in self.buckets:
                     BucketHelper(self.cluster.master).compact_bucket(
                         bucket.name)
@@ -2203,7 +2242,12 @@ class BucketUtils:
             shell = RemoteMachineShellConnection(server)
             cbstat_obj = Cbstats(shell)
             while time.time() - start < wait_time:
-                result = cbstat_obj.all_stats(bucket.name, "ep_warmup_thread")
+                result = None
+                try:
+                    result = cbstat_obj.all_stats(bucket.name,
+                                                  "ep_warmup_thread")
+                except:
+                    pass
                 if result is not None and result == "complete":
                     warmed_up = True
                     break

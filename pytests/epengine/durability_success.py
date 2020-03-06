@@ -4,7 +4,6 @@ from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from error_simulation.disk_error import DiskError
-from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -151,8 +150,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Create a SDK client connection to retry operation
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):
@@ -223,7 +221,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         cbstat_obj = dict()
         failover_info = dict()
         vb_info_info = dict()
-        target_vbuckets = range(0, self.vbuckets)
+        target_vbuckets = range(0, self.cluster_util.vbuckets)
         active_vbs_in_target_nodes = list()
         failover_info["init"] = dict()
         failover_info["afterCrud"] = dict()
@@ -252,7 +250,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Create required doc_generator for target_vbucket list
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
-                                   self.num_items+self.crud_batch_size,
+                                   self.crud_batch_size,
                                    target_vbucket=target_vbuckets)
         gen_delete = doc_generator(self.key, 0, 50,
                                    target_vbucket=target_vbuckets)
@@ -346,8 +344,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Create a SDK client connection to retry operation
-        client = SDKClient(RestConnection(self.cluster.master),
-                           self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket.name)
 
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):

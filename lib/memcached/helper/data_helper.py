@@ -16,6 +16,7 @@ from TestInput import TestInputServer
 from TestInput import TestInputSingleton
 from Queue import Queue
 
+from Cb_constants import constants
 from mc_bin_client import MemcachedClient, MemcachedError
 from mc_ascii_client import MemcachedAsciiClient
 from memcached.helper.old_kvstore import ClientKeyValueStore
@@ -278,21 +279,9 @@ class MemcachedClientHelper(object):
             client.vbucket_count = 0
         # todo raise exception for not bucket_info
 
-        versions = rest.get_nodes_versions(logging=False)
-        pre_spock = False
-        for version in versions:
-            if "5" > version:
-                pre_spock = True
-        if pre_spock:
-            log.info("Atleast 1 of the server is on pre-spock "
-                     "version. Using the old ssl auth to connect to "
-                     "bucket.")
-            client.sasl_auth_plain(bucket.name.encode('ascii'),
-                                   bucket.saslPassword.encode('ascii'))
-        else:
-            bucket_name = bucket.name.encode('ascii')
-            client.sasl_auth_plain(admin_user, admin_pass)
-            client.bucket_select(bucket_name)
+        bucket_name = bucket.name.encode('ascii')
+        client.sasl_auth_plain(admin_user, admin_pass)
+        client.bucket_select(bucket_name)
 
         return client
 
@@ -313,7 +302,7 @@ class MemcachedClientHelper(object):
         for _ in nodes:
             BucketHelper(server).vbucket_map_ready(bucket, 60)
             vBuckets = BucketHelper(server).get_vbuckets(bucket)
-            port_moxi = standalone_moxi_port or 11210
+            port_moxi = standalone_moxi_port or constants.memcached_port
             if ascii:
                 log.info("creating ascii client {0}:{1} {2}"
                          .format(server.ip, port_moxi, bucket))

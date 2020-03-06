@@ -8,6 +8,10 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
+retry_exceptions = list([SDKException.AmbiguousTimeoutException,
+                         SDKException.DurabilityImpossibleException,
+                         SDKException.DurabilityAmbiguousException])
+
 
 class RebalanceBaseTest(BaseTestCase):
     def setUp(self):
@@ -19,7 +23,8 @@ class RebalanceBaseTest(BaseTestCase):
         self.replica_to_update = self.input.param("new_replica", None)
         self.default_view_name = "default_view"
         self.defaul_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
-        self.default_view = View(self.default_view_name, self.defaul_map_func, None)
+        self.default_view = View(self.default_view_name, self.defaul_map_func,
+                                 None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
         self.key = 'test_docs'.rjust(self.key_size, '0')
@@ -43,28 +48,28 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.add_rbac_user()
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
-        self.create_buckets()
-        if self.magma_storage:
-            self.bucket_util.update_bucket_props("backend", "magma")
-        self.sleep(20)
+        self.create_buckets(self.bucket_size)
 
         if self.flusher_batch_split_trigger:
-            self.bucket_util.set_flusher_batch_split_trigger(self.cluster.master,
-                                                             self.flusher_batch_split_trigger,
-                                                             self.bucket_util.buckets)
+            self.bucket_util.set_flusher_batch_split_trigger(
+                self.cluster.master,
+                self.flusher_batch_split_trigger,
+                self.bucket_util.buckets)
 
         self.gen_create = self.get_doc_generator(0, self.num_items)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
         if not self.atomicity:
-            tasks_info = self._load_all_buckets(self.cluster, self.gen_create, "create", 0)
+            _ = self._load_all_buckets(self.cluster, self.gen_create,
+                                       "create", 0)
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
         else:
             self.transaction_commit = True
             self._load_all_buckets_atomicty(self.gen_create, "create")
-            self.transaction_commit = self.input.param("transaction_commit", True)
+            self.transaction_commit = self.input.param("transaction_commit",
+                                                       True)
 
         # Initialize doc_generators
         self.active_resident_threshold = 100
@@ -79,16 +84,19 @@ class RebalanceBaseTest(BaseTestCase):
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished rebalance base setup========")
 
-    def _create_default_bucket(self):
+    def _create_default_bucket(self, bucket_size):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
         info = RestConnection(self.cluster.master).get_nodes_self()
         available_ram = int(info.memoryQuota * node_ram_ratio)
-        if available_ram < 100 or self.active_resident_threshold < 100:
+        if bucket_size is not None:
+            available_ram = bucket_size
+        elif available_ram < 100 or self.active_resident_threshold < 100:
             available_ram = 100
         self.bucket_util.create_default_bucket(
             ram_quota=available_ram,
             bucket_type=self.bucket_type,
             replica=self.num_replicas,
+            storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
 
     def _create_multiple_buckets(self):
@@ -97,6 +105,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.num_replicas,
             bucket_count=self.standard_buckets,
             bucket_type=self.bucket_type,
+            storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
@@ -106,9 +115,9 @@ class RebalanceBaseTest(BaseTestCase):
                 bucket)
             self.assertTrue(ready, msg="Wait_for_memcached failed")
 
-    def create_buckets(self):
+    def create_buckets(self, bucket_size):
         if self.standard_buckets == 1:
-            self._create_default_bucket()
+            self._create_default_bucket(bucket_size)
         else:
             self._create_multiple_buckets()
 
@@ -143,7 +152,8 @@ class RebalanceBaseTest(BaseTestCase):
             nodes_in_cluster = [node.ip for node in self.cluster_util.get_nodes_in_cluster()]
             nodes_to_remove = [node.ip for node in to_remove]
             for i in range(1, len(self.servers)):
-                if self.servers[i].ip in nodes_in_cluster and self.servers[i].ip not in nodes_to_remove:
+                if self.servers[i].ip in nodes_in_cluster \
+                        and self.servers[i].ip not in nodes_to_remove:
                     server_group = i % int(self.zone)
                     nodes_in_zone[zones[server_group]].append(self.servers[i].ip)
             # Shuffle the nodesS
@@ -155,12 +165,15 @@ class RebalanceBaseTest(BaseTestCase):
         nodes_to_remove = [node.id for node in rest.node_statuses()
                            if node.ip in [t.ip for t in to_remove]]
         # Start rebalance and monitor it.
-        started = rest.rebalance(otpNodes=otpnodes, ejectedNodes=nodes_to_remove)
+        started = rest.rebalance(otpNodes=otpnodes,
+                                 ejectedNodes=nodes_to_remove)
         if started:
             result = rest.monitorRebalance()
+            self.assertTrue(result, msg="Rebalance failed{}".format(result))
             msg = "successfully rebalanced cluster {0}"
             self.log.info(msg.format(result))
-        # Verify replicas of one node should not be in the same zone as active vbuckets of the node.
+        # Verify replicas of one node should not be in the same zone
+        # as active vbuckets of the node.
         if self.zone > 1:
             self.cluster_util.verify_replica_distribution_in_zones(nodes_in_zone)
 
@@ -177,22 +190,21 @@ class RebalanceBaseTest(BaseTestCase):
                           password=serverinfo.rest_password,
                           remoteIp=node.ip)
         self.shuffle_nodes_between_zones_and_rebalance(to_remove)
-        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster + to_add) - set(to_remove))
+        self.cluster.nodes_in_cluster = \
+            list(set(self.cluster.nodes_in_cluster + to_add) - set(to_remove))
 
     def get_doc_generator(self, start, end):
         return doc_generator(self.key, start, end, doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.vbuckets)
+                             vbuckets=self.cluster_util.vbuckets)
 
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
 
-        retry_exceptions = list([SDKException.TimeoutException,
-                                 SDKException.RequestCanceledException,
-                                 SDKException.DurabilityImpossibleException,
-                                 SDKException.DurabilityAmbiguousException])
+        retry_exceptions_local = retry_exceptions \
+                                 + [SDKException.RequestCanceledException]
 
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
@@ -200,7 +212,7 @@ class RebalanceBaseTest(BaseTestCase):
             durability=self.durability_level, timeout_secs=timeout_secs,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, sdk_compression=compression,
-            process_concurrency=8, retry_exceptions=retry_exceptions,
+            process_concurrency=8, retry_exceptions=retry_exceptions_local,
             active_resident_threshold=self.active_resident_threshold)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
@@ -211,42 +223,59 @@ class RebalanceBaseTest(BaseTestCase):
 
     def _load_all_buckets_atomicty(self, kv_gen, op_type):
         task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, kv_gen, op_type, 0,
-                    batch_size=10, process_concurrency=8, replicate_to=self.replicate_to,
-                    persist_to=self.persist_to, timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                    transaction_timeout=self.transaction_timeout, commit=self.transaction_commit,
-                    durability=self.durability_level, sync=self.sync)
+            self.cluster, self.bucket_util.buckets, kv_gen, op_type, 0,
+            batch_size=10,
+            process_concurrency=8,
+            replicate_to=self.replicate_to,
+            persist_to=self.persist_to,
+            timeout_secs=self.sdk_timeout,
+            retries=self.sdk_retries,
+            transaction_timeout=self.transaction_timeout,
+            commit=self.transaction_commit,
+            durability=self.durability_level,
+            sync=self.sync)
         self.task.jython_task_manager.get_task_result(task)
 
-    def start_parallel_cruds_atomicity(self, sync=True, task_verification=True):
+    def start_parallel_cruds_atomicity(self, sync=True,
+                                       task_verification=True):
         tasks_info = dict()
-        if("update" in self.doc_ops):
-            tasks_info.update({self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, self.gen_update,
-                         "rebalance_only_update", 0, batch_size=20, process_concurrency=self.process_concurrency,
-                          replicate_to=self.replicate_to, persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout,
-                          update_count=self.update_count, commit=self.transaction_commit,
-                          durability=self.durability_level, sync=sync, defer=self.defer):None})
-        if("create" in self.doc_ops):
-            tasks_info.update({self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, self.gen_create,
-                         "create", 0, batch_size=20, process_concurrency=self.process_concurrency,
-                          replicate_to=self.replicate_to, persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit, durability=self.durability_level,
-                          sync=sync, defer=self.defer):None})
-        if("delete" in self.doc_ops):
-            tasks_info.update({self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, self.gen_delete,
-                         "rebalance_delete", 0, batch_size=20, process_concurrency=self.process_concurrency,
-                          replicate_to=self.replicate_to, persist_to=self.persist_to,
-                          timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                          transaction_timeout=self.transaction_timeout,
-                          commit=self.transaction_commit, durability=self.durability_level,
-                          sync=sync, defer=self.defer):None})
+        if "update" in self.doc_ops:
+            tasks_info.update(
+                {self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets, self.gen_update,
+                    "rebalance_only_update", 0, batch_size=20,
+                    process_concurrency=self.process_concurrency,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                    transaction_timeout=self.transaction_timeout,
+                    update_count=self.update_count,
+                    commit=self.transaction_commit,
+                    durability=self.durability_level, sync=sync,
+                    defer=self.defer): None})
+        if "create" in self.doc_ops:
+            tasks_info.update(
+                {self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets, self.gen_create,
+                    "create", 0, batch_size=20,
+                    process_concurrency=self.process_concurrency,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                    transaction_timeout=self.transaction_timeout,
+                    commit=self.transaction_commit,
+                    durability=self.durability_level,
+                    sync=sync, defer=self.defer): None})
+        if "delete" in self.doc_ops:
+            tasks_info.update(
+                {self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets, self.gen_delete,
+                    "rebalance_delete", 0, batch_size=20,
+                    process_concurrency=self.process_concurrency,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                    transaction_timeout=self.transaction_timeout,
+                    commit=self.transaction_commit,
+                    durability=self.durability_level,
+                    sync=sync, defer=self.defer): None})
 
         if task_verification:
             for task in tasks_info.keys():
@@ -294,22 +323,23 @@ class RebalanceBaseTest(BaseTestCase):
 
         return tasks_info
 
-    def loadgen_docs(self,
-                     retry_exceptions=[],
-                     ignore_exceptions=[],
+    def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[],
                      task_verification=False):
         loaders = []
-        retry_exceptions = list(set(retry_exceptions +
-                                    [SDKException.TimeoutException,
-                                     SDKException.RequestCanceledException,
-                                     SDKException.DurabilityImpossibleException,
-                                     SDKException.DurabilityAmbiguousException]))
+        retry_exceptions = \
+            list(set(retry_exceptions +
+                     [SDKException.AmbiguousTimeoutException,
+                      SDKException.RequestCanceledException,
+                      SDKException.DurabilityImpossibleException,
+                      SDKException.DurabilityAmbiguousException]))
         if self.check_temporary_failure_exception:
             retry_exceptions.append(SDKException.TemporaryFailureException)
         if self.atomicity:
-            loaders = self.start_parallel_cruds_atomicity(self.sync, task_verification)
+            loaders = self.start_parallel_cruds_atomicity(self.sync,
+                                                          task_verification)
         else:
-            loaders = self.start_parallel_cruds(retry_exceptions, ignore_exceptions,
+            loaders = self.start_parallel_cruds(retry_exceptions,
+                                                ignore_exceptions,
                                                 task_verification)
         return loaders
 
@@ -319,30 +349,41 @@ class RebalanceBaseTest(BaseTestCase):
         elif test_failure_condition == "backfill_done":
             set_command = "testconditions:set(backfill_done, {for_vb_move, \"" + "default\", 1 , " + "fail})"
         else:
-            set_command = "testconditions:set({0}, fail)".format(test_failure_condition)
+            set_command = "testconditions:set({0}, fail)" \
+                .format(test_failure_condition)
         for server in self.servers:
             rest = RestConnection(server)
             shell = RemoteMachineShellConnection(server)
             shell.enable_diag_eval_on_non_local_hosts()
             _, content = rest.diag_eval(set_command)
-            self.log.debug("Set Command : {0} Return : {1}".format(set_command, content))
+            self.log.debug("Set Command: {0} Return: {1}"
+                           .format(set_command, content))
             shell.disconnect()
 
     def start_rebalance(self, rebalance_operation):
-        self.log.debug("Starting rebalance operation of type : {0}".format(rebalance_operation))
+        self.log.debug("Starting rebalance operation of type: {0}"
+                       .format(rebalance_operation))
         if rebalance_operation == "rebalance_out":
-            task = self.task.async_rebalance(self.servers[:self.nodes_init], [], [self.servers[self.nodes_init - 1]])
+            task = self.task.async_rebalance(
+                self.servers[:self.nodes_init], [],
+                [self.servers[self.nodes_init - 1]])
         elif rebalance_operation == "rebalance_in":
-            task = self.task.async_rebalance(self.servers[:self.nodes_init],
-                                             [self.servers[self.nodes_init]], [])
+            task = self.task.async_rebalance(
+                self.servers[:self.nodes_init],
+                [self.servers[self.nodes_init]], [])
         elif rebalance_operation == "swap_rebalance":
-            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                               self.servers[self.nodes_init].ip, self.servers[self.nodes_init].port)
-            task = self.task.async_rebalance(self.servers[:self.nodes_init], []
-                                             , [self.servers[self.nodes_init - 1]])
+            self.rest.add_node(self.cluster.master.rest_username,
+                               self.cluster.master.rest_password,
+                               self.servers[self.nodes_init].ip,
+                               self.servers[self.nodes_init].port)
+            task = self.task.async_rebalance(
+                self.servers[:self.nodes_init], [],
+                [self.servers[self.nodes_init - 1]])
         elif rebalance_operation == "graceful_failover":
-            task = self.task.async_failover([self.cluster.master], failover_nodes=[self.servers[1]],
-                                            graceful=True, wait_for_pending=120)
+            task = self.task.async_failover([self.cluster.master],
+                                            failover_nodes=[self.servers[1]],
+                                            graceful=True,
+                                            wait_for_pending=120)
         return task
 
     def delete_rebalance_test_condition(self, test_failure_condition):
@@ -352,19 +393,23 @@ class RebalanceBaseTest(BaseTestCase):
             shell = RemoteMachineShellConnection(server)
             shell.enable_diag_eval_on_non_local_hosts()
             _, content = rest.diag_eval(delete_command)
-            self.log.debug("Delete Command : {0} Return : {1}".format(delete_command, content))
+            self.log.debug("Delete Command: {0} Return: {1}"
+                           .format(delete_command, content))
             shell.disconnect()
 
     def check_retry_rebalance_succeeded(self):
         result = json.loads(self.rest.get_pending_rebalance_info())
-        self.log.debug("Result from get_pending_rebalance_info : {0}".format(result))
+        self.log.debug("Result from get_pending_rebalance_info: {0}"
+                       .format(result))
         retry_after_secs = result["retry_after_secs"]
         attempts_remaining = result["attempts_remaining"]
         retry_rebalance = result["retry_rebalance"]
-        self.log.debug("Attempts remaining : {0}, Retry rebalance : {1}".format(attempts_remaining, retry_rebalance))
+        self.log.debug("Attempts remaining: {0}, Retry rebalance: {1}"
+                       .format(attempts_remaining, retry_rebalance))
         while attempts_remaining:
             # wait for the afterTimePeriod for the failed rebalance to restart
-            self.sleep(retry_after_secs, message="Waiting for the afterTimePeriod to complete")
+            self.sleep(retry_after_secs,
+                       message="Waiting for the afterTimePeriod to complete")
             try:
                 result = self.rest.monitorRebalance()
                 msg = "monitoring rebalance {0}"
@@ -378,14 +423,16 @@ class RebalanceBaseTest(BaseTestCase):
                     retry_rebalance = result["retry_rebalance"]
                     retry_after_secs = result["retry_after_secs"]
                 except KeyError:
-                    self.fail("Retrying of rebalance still did not help. All the retries exhausted...")
-                self.log.debug("Attempts remaining : {0}, Retry rebalance : {1}".format(attempts_remaining,
-                                                                                        retry_rebalance))
+                    self.fail("Retrying of rebalance still did not help. "
+                              "All the retries exhausted...")
+                self.log.debug("Attempts remaining: {0}, Retry rebalance: {1}"
+                               .format(attempts_remaining, retry_rebalance))
             else:
                 self.log.info("Retry rebalanced fixed the rebalance failure")
                 break
 
-    def change_retry_rebalance_settings(self, enabled=True, afterTimePeriod=300, maxAttempts=1):
+    def change_retry_rebalance_settings(self, enabled=True,
+                                        afterTimePeriod=300, maxAttempts=1):
         # build the body
         body = dict()
         if enabled:
@@ -397,7 +444,8 @@ class RebalanceBaseTest(BaseTestCase):
         rest = RestConnection(self.cluster.master)
         rest.set_retry_rebalance_settings(body)
         result = rest.get_retry_rebalance_settings()
-        self.log.debug("Retry Rebalance settings changed to : {0}".format(json.loads(result)))
+        self.log.debug("Retry rebalance settings changed to {0}"
+                       .format(json.loads(result)))
 
     def reset_retry_rebalance_settings(self):
         body = dict()

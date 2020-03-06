@@ -22,7 +22,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.key, 0, self.num_items/2,
             doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.vbuckets)
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("Loading {0} Sub-docs into the bucket: {1}"
                       .format(self.num_items/2, self.bucket))
         task = self.task.async_load_gen_sub_docs(
@@ -202,7 +202,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for vb_id in range(self.vbuckets):
+            for vb_id in range(self.cluster_util.vbuckets):
                 vb_id = str(vb_id)
                 if vb_id not in affected_vbs:
                     if vb_id in vb_info["init"][node.ip].keys() \
@@ -337,7 +337,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.vbuckets)
+                        doc_id, self.cluster_util.vbuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
@@ -361,7 +361,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.vbuckets)))
+                        self.cluster_util.buckets)))
 
         affected_vbs = list(set(affected_vbs))
         err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"
@@ -675,13 +675,16 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
-        gen_update_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.vbuckets,
+            vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets)
+        gen_update_delete = doc_generator(
+            self.key, 0, self.crud_batch_size,
+            vbuckets=self.cluster_util.vbuckets,
+            target_vbucket=target_vbuckets, mutate=1)
         gen_subdoc = sub_doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+            vbuckets=self.cluster_util.vbuckets,
+            target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Start CRUD operation based on the given 'doc_op' type
@@ -704,7 +707,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             if self.doc_ops[1] == "insert" and self.doc_ops[0] == "create":
                 gen_subdoc = sub_doc_generator(
                     self.key, self.num_items, self.crud_batch_size,
-                    vbuckets=self.vbuckets, target_vbucket=target_vbuckets)
+                    vbuckets=self.cluster_util.vbuckets, target_vbucket=target_vbuckets)
                 gen_loader[1] = gen_subdoc
             gen_loader[1] = gen_subdoc
 
@@ -794,7 +797,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure("Exception not seen for few docs: {0}"
                              .format(failed_docs))
 
-        expected_exception = SDKException.TimeoutException
+        expected_exception = SDKException.AmbiguousTimeoutException
         retry_reason = SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
         if self.doc_ops[0] in "create":
             expected_exception = SDKException.DocumentNotFoundException

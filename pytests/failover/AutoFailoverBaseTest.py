@@ -696,7 +696,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                                 .format(failed_docs["read"]))
 
             # Create SDK client for doc CRUD retry
-            client = SDKClient(RestConnection(self.cluster.master), bucket)
+            client = SDKClient([self.cluster.master], bucket)
 
             # Loop over all failed docs as per their op_types
             for op_type in error_expected_ops:

@@ -699,7 +699,7 @@ class EventingBaseTest(BaseTestCase):
         return doc_generator(key, 0, docs_per_day * 2016, doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.vbuckets)
+                             vbuckets=self.cluster_util.vbuckets)
 
     def load(self, load_gen, bucket, operation="create"):
         self.log.info("doc_generator created")

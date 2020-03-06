@@ -7,6 +7,7 @@ import unittest
 import inspect
 
 from BucketLib.bucket import Bucket
+from Cb_constants import ClusterRun, CbServer
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from membase.api.rest_client import RestHelper, RestConnection
@@ -61,14 +62,16 @@ class BaseTestCase(unittest.TestCase):
         self.standard_buckets = self.input.param("standard_buckets", 1)
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
-        self.vbuckets = self.input.param("vbuckets", 1024)
         self.num_replicas = self.input.param("replicas", 1)
         self.active_resident_threshold = \
             int(self.input.param("active_resident_threshold", 100))
         self.compression_mode = \
             self.input.param("compression_mode",
                              Bucket.CompressionMode.PASSIVE)
-        self.magma_storage = self.input.param("magma_storage", False)
+        self.bucket_storage = self.input.param("bucket_storage",
+                                               Bucket.StorageBackend.couchstore)
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
         # End of bucket parameters
 
         # Doc specific params
@@ -99,7 +102,7 @@ class BaseTestCase(unittest.TestCase):
         self.persist_to = self.input.param("persist_to", 0)
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
-        self.durability_level = self.input.param("durability", "")
+        self.durability_level = self.input.param("durability", "").upper()
 
         # Doc Loader Params
         self.process_concurrency = self.input.param("process_concurrency", 8)
@@ -149,6 +152,18 @@ class BaseTestCase(unittest.TestCase):
         self.cleanup = False
         self.nonroot = False
         self.test_failure = None
+
+        # Populate memcached_port in case of cluster_run
+        cluster_run_base_port = ClusterRun.port
+        if int(self.input.servers[0].port) == ClusterRun.port:
+            for server in self.input.servers:
+                server.port = cluster_run_base_port
+                cluster_run_base_port += 1
+                # If not defined in node.ini under 'memcached_port' section
+                if server.memcached_port is CbServer.memcached_port:
+                    server.memcached_port = \
+                        ClusterRun.memcached_port \
+                        + (2 * (int(server.port) - ClusterRun.port))
 
         self.__log_setup_status("started")
         if len(self.input.clusters) > 1:
@@ -284,10 +299,12 @@ class BaseTestCase(unittest.TestCase):
             self.fail(e)
 
     def tearDown(self):
+        server_with_crashes = self.check_coredump_exist(self.servers)
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         self.tearDownEverything()
+        self.assertEqual(len(server_with_crashes), 0, msg="Test failed, Coredump found on servers {}".format(server_with_crashes));
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
@@ -490,3 +507,35 @@ class BaseTestCase(unittest.TestCase):
 
     def get_task_mgr(self):
         return self.task_manager
+
+    def check_coredump_exist(self, servers):
+        """checks coredump on the given nodes/node
+        return: a list (list of servers with crashes or a empty list if no core dump exists)
+        Args: list of servers
+        """
+        
+        self.log.info("Initializing core dump check on all the nodes");
+        servers_with_crashes = [];
+        for server in servers:
+            shell = RemoteMachineShellConnection(server);
+            shell.extract_remote_info();
+            if shell.info.type.lower() == "linux":
+                rest = RestConnection(server)
+                core_path = str(rest.get_data_path()).split("data")[0] + "crash/"
+
+            elif shell.info.type.lower() == "windows":
+                core_path = 'c://CrashDumps'
+            o, e = shell.execute_command("ls -l {} | grep '.dmp' | wc -l".format(core_path));
+            output = o[0].split('\n')[0];
+            if int(output) == 0:
+                print("=== No core exists on node {}".format(server.ip));
+                shell.disconnect();
+                pass;
+            else:
+                self.log.error(" === CORE DUMPS SEEN ON SERVER {} : {} crashes seen === ".format(server.ip, output));
+                if TestInputSingleton.input.param("get-cbcollect-info", True):
+                    servers_with_crashes.append(server.ip);
+                shell.disconnect();
+        if servers_with_crashes:
+            self.fetch_cb_collect_logs();
+        return (servers_with_crashes);
