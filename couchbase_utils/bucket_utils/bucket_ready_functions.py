@@ -2100,6 +2100,7 @@ class BucketUtils(ScopeUtils):
                 tasks.append(task)
                 num_items[task] = get_num_items(load_gen)
 
+            self.sleep(10, "Wait to avoid BUCKET_OPEN_IN_PROGRESS from SDK")
             cb_err.create(CouchbaseError.STOP_MEMCACHED)
             for task in tasks:
                 self.task_manager.add_new_task(task)
