@@ -276,7 +276,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     expected_exception = \
                         SDKException.RequestCanceledException
                     retry_reason = \
-                        SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
+                        SDKException \
+                        .RetryReason \
+                        .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
 
                 # Validate the returned error from the SDK
                 if expected_exception not in str(fail["error"]):
@@ -371,9 +373,11 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.key, self.num_items, self.num_items+self.crud_batch_size,
             vbuckets=self.cluster_util.vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.num_items, vbuckets=self.cluster_util.vbuckets)
+            self.key, 0, self.num_items,
+            vbuckets=self.cluster_util.vbuckets)
         gen_delete = doc_generator(
-            self.key, 0, half_of_num_items, vbuckets=self.cluster_util.vbuckets)
+            self.key, 0, half_of_num_items,
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -654,12 +658,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets, target_vbucket=target_vbuckets)
+            vbuckets=self.cluster_util.vbuckets,
+            target_vbucket=target_vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
+            self.key, 0, self.crud_batch_size,
+            vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets,
+            self.key, 0, self.crud_batch_size,
+            vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -792,9 +799,11 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.key, self.num_items, self.num_items+self.crud_batch_size,
             vbuckets=self.cluster_util.vbuckets)
         gen_update = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets)
+            self.key, 0, self.crud_batch_size,
+            vbuckets=self.cluster_util.vbuckets)
         gen_delete = doc_generator(
-            self.key, 0, self.crud_batch_size, vbuckets=self.cluster_util.vbuckets)
+            self.key, 0, self.crud_batch_size,
+            vbuckets=self.cluster_util.vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -883,7 +892,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         load_gen = dict()
 
         self.log.info("Loading docs such that all sync_writes will be aborted")
-        for server in self.cluster_util.get_kv_nodes():
+        kv_nodes = self.cluster_util.get_kv_nodes()
+        for server in kv_nodes:
             ssh_shell = RemoteMachineShellConnection(server)
             cbstats = Cbstats(ssh_shell)
             replica_vbs[server] = cbstats.vbucket_list(self.bucket.name,
@@ -905,23 +915,26 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Validate vbucket stats
         verification_dict["ops_create"] = self.num_items
         verification_dict["ops_update"] = 0
-        # Uncomment once MB-37153 is resolved
-        # verification_dict["ops_delete"] = 0
+        verification_dict["ops_delete"] = 0
         verification_dict["rollback_item_count"] = 0
         if self.durability_level:
-            verification_dict["sync_write_aborted_count"] = crud_batch_size * 2
+            verification_dict["sync_write_aborted_count"] = \
+                crud_batch_size * len(kv_nodes)
             verification_dict["sync_write_committed_count"] = self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
-            self.bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            self.bucket, kv_nodes,
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed "
                              "after aborts")
+        self.validate_test_failure()
 
         # Retry aborted keys with healthy cluster
+        self.log.info("Performing CRUDs on healthy cluster")
         for doc_op in ["create", "update", "delete", "create"]:
-            for server in self.cluster_util.get_kv_nodes():
+            for server in kv_nodes:
                 task = self.task.async_load_gen_docs(
                     self.cluster, self.bucket, load_gen[server], doc_op, 0,
                     batch_size=20, process_concurrency=8,
@@ -933,15 +946,14 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     self.log_failure("Failure seen during doc_op: %s" % doc_op)
 
                 # Update verification dict for validation
-                # Remove 'if' statement once MB-37153 is resolved
-                if doc_op != "delete":
-                    verification_dict["ops_" + doc_op] += crud_batch_size
+                verification_dict["ops_" + doc_op] += crud_batch_size
                 if self.durability_level:
                     verification_dict["sync_write_committed_count"] += \
                         crud_batch_size
                 failed = self.durability_helper.verify_vbucket_details_stats(
                     self.bucket, self.cluster_util.get_kv_nodes(),
-                    vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+                    vbuckets=self.cluster_util.vbuckets,
+                    expected_val=verification_dict)
                 if failed:
                     self.log_failure("Cbstat vbucket-details verification "
                                      "failed after doc_op: %s" % doc_op)
@@ -1226,40 +1238,40 @@ class TimeoutTests(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for vb_num in range(self.cluster_util.vbuckets):
-                vb_num = str(vb_num)
-                if vb_num not in affected_vbs:
-                    if vb_num in vb_info["init"][node.ip].keys() \
-                            and vb_info["init"][node.ip][vb_num] \
-                            != vb_info["post_timeout"][node.ip][vb_num]:
+            for tem_vb_num in range(self.cluster_util.vbuckets):
+                tem_vb_num = str(tem_vb_num)
+                if tem_vb_num not in affected_vbs:
+                    if tem_vb_num in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][tem_vb_num] \
+                            != vb_info["post_timeout"][node.ip][tem_vb_num]:
                         self.log_failure(
                             "Unaffected vb-%s stat updated: %s != %s"
-                            % (vb_num,
-                               vb_info["init"][node.ip][vb_num],
-                               vb_info["post_timeout"][node.ip][vb_num]))
-                elif int(vb_num) in target_nodes_vbuckets["active"]:
-                    if vb_num in vb_info["init"][node.ip].keys() \
-                            and vb_info["init"][node.ip][vb_num] \
-                            != vb_info["post_timeout"][node.ip][vb_num]:
+                            % (tem_vb_num,
+                               vb_info["init"][node.ip][tem_vb_num],
+                               vb_info["post_timeout"][node.ip][tem_vb_num]))
+                elif int(tem_vb_num) in target_nodes_vbuckets["active"]:
+                    if tem_vb_num in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][tem_vb_num] \
+                            != vb_info["post_timeout"][node.ip][tem_vb_num]:
                         self.log.warning(
                             err_msg
                             % (node.ip,
                                "active",
-                               vb_num,
-                               vb_info["init"][node.ip][vb_num],
-                               vb_info["post_timeout"][node.ip][vb_num]))
-                elif int(vb_num) in target_nodes_vbuckets["replica"]:
-                    if vb_num in vb_info["init"][node.ip].keys() \
-                            and vb_info["init"][node.ip][vb_num] \
-                            == vb_info["post_timeout"][node.ip][vb_num]:
+                               tem_vb_num,
+                               vb_info["init"][node.ip][tem_vb_num],
+                               vb_info["post_timeout"][node.ip][tem_vb_num]))
+                elif int(tem_vb_num) in target_nodes_vbuckets["replica"]:
+                    if tem_vb_num in vb_info["init"][node.ip].keys() \
+                            and vb_info["init"][node.ip][tem_vb_num] \
+                            == vb_info["post_timeout"][node.ip][tem_vb_num]:
                         retry_validation = True
                         self.log.warning(
                             err_msg
                             % (node.ip,
                                "replica",
-                               vb_num,
-                               vb_info["init"][node.ip][vb_num],
-                               vb_info["post_timeout"][node.ip][vb_num]))
+                               tem_vb_num,
+                               vb_info["init"][node.ip][tem_vb_num],
+                               vb_info["post_timeout"][node.ip][tem_vb_num]))
             return retry_validation
 
         shell_conn = dict()
