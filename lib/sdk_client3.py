@@ -22,6 +22,7 @@ from com.couchbase.client.core.error import \
     ServerOutOfMemoryException, \
     TemporaryFailureException, \
     TimeoutException
+from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.env import ClusterEnvironment
@@ -55,7 +56,6 @@ import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 from Cb_constants import ClusterRun
-
 from couchbase_helper.durability_helper import DurabilityHelper
 
 
@@ -344,15 +344,15 @@ class SDKClient(object):
                 self.getDuration(exp, exp_unit)).timeout(
                 self.getDuration(timeout, time_unit))
         else:
-            return MutateInOptions.mutateInOptions().durability(
-                DurabilityHelper.getDurabilityLevel(durability)).expiry(
-                self.getDuration(exp, exp_unit)).timeout(
-                self.getDuration(timeout, time_unit))
+            return MutateInOptions.mutateInOptions()\
+                .durability(DurabilityHelper.getDurabilityLevel(durability))\
+                .expiry(self.getDuration(exp, exp_unit))\
+                .timeout(self.getDuration(timeout, time_unit))
 
     def getPersistTo(self, persist_to):
         try:
             persist_list = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO,
-                           PersistTo.THREE, PersistTo.FOUR]
+                            PersistTo.THREE, PersistTo.FOUR]
             return persist_list[persist_to]
         except Exception as e:
             pass
@@ -362,7 +362,7 @@ class SDKClient(object):
     def getReplicateTo(self, replicate_to):
         try:
             replicate_list = [ReplicateTo.NONE, ReplicateTo.ONE,
-                             ReplicateTo.TWO, ReplicateTo.THREE]
+                              ReplicateTo.TWO, ReplicateTo.THREE]
             return replicate_list[replicate_to]
         except Exception:
             pass
@@ -750,7 +750,8 @@ class SDKClient(object):
                 mutate_in_specs.append(
                     SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
+            options = self.getMutateInOptions(exp, time_unit,
+                                              persist_to, replicate_to,
                                               timeout, time_unit, durability)
             if cas > 0:
                 options = options.cas(cas)
@@ -785,7 +786,7 @@ class SDKClient(object):
     def touch_multi(self, keys, exp=0,
                     timeout=5, time_unit="seconds"):
         touch_options = self.getTouchOptions(timeout, time_unit)
-        exp_duration = self.getDuration(exp, "seconds");
+        exp_duration = self.getDuration(exp, "seconds")
         result = SDKClient.doc_op.bulkTouch(
             self.collection, keys, exp,
             touch_options, exp_duration)
@@ -795,7 +796,7 @@ class SDKClient(object):
                  persist_to=0, replicate_to=0,
                  timeout=5, time_unit="seconds", retry=5,
                  doc_type="json", durability=""):
-
+        self.log.info("SETMULTI %s" % durability)
         docs = []
         for key, value in keys.items():
             content = value
@@ -844,8 +845,7 @@ class SDKClient(object):
                                          time_unit=time_unit,
                                          durability=durability)
         result = SDKClient.doc_op.bulkReplace(
-            self.collection, docs, exp, exp_unit,
-            options)
+            self.collection, docs, exp, exp_unit, options)
         return self.__translate_upsert_multi_results(result)
 
     def getMulti(self, keys, timeout=5, time_unit="seconds"):
