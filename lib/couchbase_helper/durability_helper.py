@@ -18,7 +18,7 @@ class DurabilityHelper:
                            "PERSIST_TO_MAJORITY"]
 
     class SupportedLevel(object):
-        MAJORITY = "MAJORITY",
+        MAJORITY = "MAJORITY"
         MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
         PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
 
@@ -61,14 +61,15 @@ class DurabilityHelper:
     @staticmethod
     def getDurabilityLevel(durability_level):
         durability_level = durability_level.upper()
-        supported_level = DurabilityHelper.SupportedLevel
-        if durability_level == supported_level.MAJORITY:
+        if durability_level == DurabilityHelper.SupportedLevel.MAJORITY:
             return DurabilityLevel.MAJORITY
 
-        if durability_level == supported_level.MAJORITY_AND_PERSIST_TO_ACTIVE:
+        if durability_level == \
+                DurabilityHelper.SupportedLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER
 
-        if durability_level == supported_level.PERSIST_TO_MAJORITY:
+        if durability_level == \
+                DurabilityHelper.SupportedLevel.PERSIST_TO_MAJORITY:
             return DurabilityLevel.PERSIST_TO_MAJORITY
 
         return DurabilityLevel.NONE

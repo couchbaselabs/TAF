@@ -7,7 +7,6 @@ Created on Mar 14, 2019
 
 import json as pyJson
 import logging
-import time
 
 from com.couchbase.client.core.env import \
     SeedNode, \
@@ -23,6 +22,7 @@ from com.couchbase.client.core.error import \
     ServerOutOfMemoryException, \
     TemporaryFailureException, \
     TimeoutException
+from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.codec import RawBinaryTranscoder
@@ -58,7 +58,6 @@ import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 from Cb_constants import ClusterRun, CbServer
-
 from couchbase_helper.durability_helper import DurabilityHelper
 
 
@@ -354,15 +353,15 @@ class SDKClient(object):
                 self.getDuration(exp, exp_unit)).timeout(
                 self.getDuration(timeout, time_unit))
         else:
-            return MutateInOptions.mutateInOptions().durability(
-                DurabilityHelper.getDurabilityLevel(durability)).expiry(
-                self.getDuration(exp, exp_unit)).timeout(
-                self.getDuration(timeout, time_unit))
+            return MutateInOptions.mutateInOptions()\
+                .durability(DurabilityHelper.getDurabilityLevel(durability))\
+                .expiry(self.getDuration(exp, exp_unit))\
+                .timeout(self.getDuration(timeout, time_unit))
 
     def getPersistTo(self, persist_to):
         try:
             persist_list = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO,
-                           PersistTo.THREE, PersistTo.FOUR]
+                            PersistTo.THREE, PersistTo.FOUR]
             return persist_list[persist_to]
         except Exception as e:
             pass
@@ -372,7 +371,7 @@ class SDKClient(object):
     def getReplicateTo(self, replicate_to):
         try:
             replicate_list = [ReplicateTo.NONE, ReplicateTo.ONE,
-                             ReplicateTo.TWO, ReplicateTo.THREE]
+                              ReplicateTo.TWO, ReplicateTo.THREE]
             return replicate_list[replicate_to]
         except Exception:
             pass
@@ -877,29 +876,6 @@ class SDKClient(object):
                  timeout=5, time_unit="seconds", retry=5,
                  doc_type="json", durability=""):
 
-#         docs = []
-#         translator_threads = []
-#         i = 0
-#         items_batch = len(items)/5
-#         itms_keys = items.keys()
-#
-#         def translator(keys, items_dict, docs):
-#             for key in keys:
-#                 content = self.translate_to_json_object(items_dict[key], doc_type)
-#                 docs.append(Tuples.of(key, content))
-#         while i < 5:
-#             start = i*items_batch
-#             end = (i+1)*items_batch
-#             if end > len(itms_keys):
-#                 end = len(itms_keys)
-#             th = threading.Thread(target=translator,
-#                                   name="%s-%s" % (itms_keys[start], itms_keys[end-1]),
-#                                   args=(itms_keys[start:end], items, docs))
-#             th.start()
-#             translator_threads.append(th)
-#             i += 1
-#         for th in translator_threads:
-#             th.join()
         options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
                                         persist_to=persist_to,
                                         replicate_to=replicate_to,
@@ -916,10 +892,6 @@ class SDKClient(object):
                     persist_to=0, replicate_to=0,
                     timeout=5, time_unit="seconds", retry=5,
                     doc_type="json", durability=""):
-#         docs = []
-#         for key, value in keys.items():
-#             content = self.translate_to_json_object(value, doc_type)
-#             docs.append(Tuples.of(key, content))
         options = self.getUpsertOptions(exp=exp, exp_unit=exp_unit,
                                         persist_to=persist_to,
                                         replicate_to=replicate_to,
@@ -936,10 +908,6 @@ class SDKClient(object):
                      persist_to=0, replicate_to=0,
                      timeout=5, time_unit="seconds",
                      doc_type="json", durability=""):
-#         docs = []
-#         for key, value in keys.items():
-#             content = self.translate_to_json_object(value, doc_type)
-#             docs.append(Tuples.of(key, content))
         options = self.getReplaceOptions(persist_to=persist_to,
                                          replicate_to=replicate_to,
                                          timeout=timeout,
