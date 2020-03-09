@@ -2801,8 +2801,9 @@ class DropIndexTask(Task):
 
 class PrintOpsRate(Task):
     def __init__(self, cluster, bucket, sleep=1):
-        super(PrintOpsRate, self).__init__("print_ops_rate_{}"
-                                           .format(bucket.name))
+        super(PrintOpsRate, self).__init__("print_ops_rate_{}_{}"
+                                           .format(bucket.name,
+                                                   time.time()))
         self.cluster = cluster
         self.bucket = bucket
         self.bucket_helper = BucketHelper(self.cluster.master)
@@ -3057,7 +3058,8 @@ class MonitorActiveTask(Task):
 
     def __init__(self, server, type, target_value, wait_progress=100,
                  num_iterations=100, wait_task=True):
-        super(MonitorActiveTask, self).__init__("MonitorActiveTask")
+        super(MonitorActiveTask, self).__init__("MonitorActiveTask_%s"
+                                                % server.ip)
         self.server = server
         self.type = type  # indexer or bucket_compaction
         self.target_key = ""
