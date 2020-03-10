@@ -5,6 +5,7 @@ from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
+from testconstants import INDEX_QUOTA, MIN_KV_QUOTA, CBAS_QUOTA, FTS_QUOTA
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -42,6 +43,12 @@ class MagmaBaseTest(BaseTestCase):
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
         self.kv_memory = int(self.info.mcdMemoryReserved) - 100
+        if "index" in self.cluster.master.services:
+            self.kv_memory -= INDEX_QUOTA
+        if "fts" in self.cluster.master.services:
+            self.kv_memory -= FTS_QUOTA
+        if "cbas" in self.cluster.master.services:
+            self.kv_memory -= CBAS_QUOTA
         self.rest.init_cluster_memoryQuota(memoryQuota=self.kv_memory)
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         if nodes_init:
