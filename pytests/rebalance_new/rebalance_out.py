@@ -89,11 +89,13 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.cluster.servers[:self.nodes_init], [], servs_out)
         tasks_info = self.loadgen_docs()
         self.sleep(15, "Wait for rebalance to start")
+
+        # Wait for rebalance + doc_loading tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
 
         if not rebalance_task.result:
-            for task, _ in tasks_info.items():
-                self.task_manager.get_task_result(task)
             self.fail("Rebalance Failed")
 
         if not self.atomicity:
@@ -103,10 +105,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             for task, task_info in tasks_info.items():
                 self.assertFalse(
                     task_info["ops_failed"],
-                    "Doc ops failed for task: {}".format(task.thread_name))
-        else:
-            for task, task_info in tasks_info.items():
-                self.task_manager.get_task_result(task)
+                    "Doc ops failed for task: %s" % task.thread_name)
 
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         self.sleep(20)
@@ -233,6 +232,9 @@ class RebalanceOutTests(RebalanceBaseTest):
         if success_failed_over:
             self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="full")
         self.add_remove_servers_and_rebalance([], servs_out)
+
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
@@ -241,10 +243,9 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-        else:
-            for task, task_info in tasks_info.items():
-                self.task_manager.get_task_result(task)
-        self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
+
+        self.bucket_util.verify_cluster_stats(self.num_items,
+                                              check_ep_items_remaining=True)
         self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets)
         self.sleep(30)
         self.bucket_util.data_analysis_all(record_data_set, self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets)
@@ -294,6 +295,9 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[chosen[0].id])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
         self.cluster.nodes_in_cluster = new_server_list
+
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
@@ -303,9 +307,6 @@ class RebalanceOutTests(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
             self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
-        else:
-            for task, task_info in tasks_info.items():
-                self.task_manager.get_task_result(task)
 
         self.sleep(30)
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.bucket_util.buckets)
@@ -344,6 +345,8 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.task_manager.get_task_result(task)
             self.fail("Rebalance Failed")
 
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
@@ -352,9 +355,6 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-        else:
-            for task, task_info in tasks_info.items():
-                self.task_manager.get_task_result(task)
 
         for task in compaction_task:
             self.task_manager.get_task_result(task)
@@ -430,9 +430,11 @@ class RebalanceOutTests(RebalanceBaseTest):
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
             tasks_info = self.loadgen_docs()
             self.task.jython_task_manager.get_task_result(rebalance_task)
+
+            # Wait for rebalance+doc_loading tasks to complete
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
             if not rebalance_task.result:
-                for task, _ in tasks_info.items():
-                    self.task_manager.get_task_result(task)
                 self.fail("Rebalance Failed")
 
             if not self.atomicity:
@@ -446,9 +448,6 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(self.cluster.servers[i:i + 2]))
                 self.bucket_util.verify_cluster_stats(self.num_items)
                 self.bucket_util.verify_unacked_bytes_all_buckets()
-            else:
-                for task, task_info in tasks_info.items():
-                    self.task_manager.get_task_result(task)
 
     """Rebalances nodes out of a cluster during view queries.
 

@@ -252,10 +252,9 @@ class BucketParamTest(BaseTestCase):
 
             # Wait for all tasks to complete
             self.task.jython_task_manager.get_task_result(rebalance)
-            if self.atomicity:
-                for task in tasks:
-                    self.task.jython_task_manager.get_task_result(task)
-            else:
+            for task in tasks:
+                self.task.jython_task_manager.get_task_result(task)
+            if not self.atomicity:
                 # Wait for doc_ops to complete and retry & validate failures
                 self.bucket_util.verify_doc_op_task_exceptions(tasks,
                                                                self.cluster)
@@ -290,10 +289,9 @@ class BucketParamTest(BaseTestCase):
                 suppress_error_table=suppress_error_table,
                 ignore_exceptions=ignore_exceptions)
 
-            if self.atomicity:
-                for task in tasks:
-                    self.task.jython_task_manager.get_task_result(task)
-            else:
+            for task in tasks:
+                self.task.jython_task_manager.get_task_result(task)
+            if not self.atomicity:
                 # Wait for doc_ops to complete and retry & validate failures
                 self.bucket_util.verify_doc_op_task_exceptions(tasks,
                                                                self.cluster)

@@ -231,6 +231,8 @@ class MagmaBaseTest(BaseTestCase):
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
         if _sync:
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)

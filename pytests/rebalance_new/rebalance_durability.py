@@ -47,61 +47,58 @@ class RebalanceDurability(RebalanceBaseTest):
         rebalance = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, [])
         self.task.jython_task_manager.get_task_result(rebalance)
-        if self.atomicity:
-            for task, task_info in tasks_info.items():
-                self.task_manager.get_task_result(task)
-        else:
+
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+
+        if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
                     task_info["ops_failed"],
-                    "Doc ops failed for task: {}".format(task.thread_name))
+                    "Doc ops failed for task: %s" % task.thread_name)
 
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
 
         self.sleep(10, "Wait for cluster to be ready after rebalance")
         for replicas in [1, 2]:
-            self.log.info("Updating the bucket replicas to {0}"
-                          .format(replicas))
+            self.log.info("Updating the bucket replicas to %s" % replicas)
             tasks_info = self.__load_docs_in_all_buckets()
             self.bucket_util.update_all_bucket_replicas(replicas=replicas)
             rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
             self.assertTrue(rebalance_result)
-            if self.atomicity:
-                for task, task_info in tasks_info.items():
-                    self.task_manager.get_task_result(task)
-            else:
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
                     tasks_info, self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
                         task_info["ops_failed"],
-                        "Doc ops failed for task: {}".format(task.thread_name))
+                        "Doc ops failed for task: %s" % task.thread_name)
 
         for replicas in [1, 0]:
-            self.log.info("Updating the bucket replicas to {0}"
-                          .format(replicas))
+            self.log.info("Updating the bucket replicas to %s" % replicas)
             tasks_info = self.__load_docs_in_all_buckets()
             self.bucket_util.update_all_bucket_replicas(replicas=replicas)
             rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
             self.assertTrue(rebalance_result)
-            if self.atomicity:
-                for task, task_info in tasks_info.items():
-                    self.task_manager.get_task_result(task)
-            else:
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
                     tasks_info, self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
                         task_info["ops_failed"],
-                        "Doc ops failed for task: {}".format(task.thread_name))
+                        "Doc ops failed for task: %s" % task.thread_name)
 
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
@@ -110,17 +107,16 @@ class RebalanceDurability(RebalanceBaseTest):
 
     def test_replica_update_with_durability_with_adding_removing_nodes(self):
         tasks_info = self.__load_docs_in_all_buckets()
-        if self.atomicity:
-                for task, task_info in tasks_info.items():
-                    self.task_manager.get_task_result(task)
-        else:
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
                     task_info["ops_failed"],
-                    "Doc ops failed for task: {}".format(task.thread_name))
+                    "Doc ops failed for task: %s" % task.thread_name)
 
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
@@ -140,18 +136,18 @@ class RebalanceDurability(RebalanceBaseTest):
             self.assertTrue(rebalance_result)
             self.cluster.nodes_in_cluster.extend(
                 [self.cluster.servers[replicas]])
+
             # Wait for all doc_load tasks to complete and validate
-            if self.atomicity:
-                for task, task_info in tasks_info.items():
-                    self.task_manager.get_task_result(task)
-            else:
+            for task, task_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
                     tasks_info, self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
                         task_info["ops_failed"],
-                        "Doc ops failed for task: {}".format(task.thread_name))
+                        "Doc ops failed for task: %s" % task.thread_name)
 
         self.log.info("Decreasing the replicas and rebalancing out the nodes")
         for replicas in [1, 0]:
@@ -164,17 +160,16 @@ class RebalanceDurability(RebalanceBaseTest):
                 [self.cluster.servers[replicas+1]])
             self.assertTrue(rebalance_result)
             # Wait for all doc_load tasks to complete and validate
-            if self.atomicity:
-                for task, task_info in tasks_info.items():
-                    self.task_manager.get_task_result(task)
-            else:
+            for task, task_info in tasks_info.items():
+                self.task_manager.get_task_result(task)
+            if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
                     tasks_info, self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
                         task_info["ops_failed"],
-                        "Doc ops failed for task: {}".format(task.thread_name))
+                        "Doc ops failed for task: %s" % task.thread_name)
 
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
@@ -363,6 +358,8 @@ class RebalanceDurability(RebalanceBaseTest):
         """
         # Local function to wait for all crud task to complete
         def wait_for_crud_task_and_verify_for_no_errors(tasks_info):
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
             if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
                     tasks_info, self.cluster)
@@ -370,7 +367,7 @@ class RebalanceDurability(RebalanceBaseTest):
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
                         task_info["ops_failed"],
-                        "Doc ops failed for task: {}".format(task.thread_name))
+                        "Doc ops failed for task: %s" % task.thread_name)
 
         self.assertTrue(self.replica_to_update is not None)
         def_bucket = self.bucket_util.buckets[0]
@@ -447,11 +444,13 @@ class RebalanceDurability(RebalanceBaseTest):
             self.task.jython_task_manager.get_task_result(rebalance)
             if rebalance.result:
                 self.fail("Rebalance succeeded when it should have failed")
-            # Ensure there are no failures
-            if self.atomicity:
-                for task, task_info in task_update.items():
-                    self.task_manager.get_task_result(task)
-            else:
+
+            # Wait for all doc_ops to complete
+            for task in task_update:
+                self.task_manager.get_task_result(task)
+
+            if not self.atomicity:
+                # Ensure there are no failures
                 self.bucket_util.verify_doc_op_task_exceptions(task_update,
                                                                self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(task_update)
@@ -462,10 +461,9 @@ class RebalanceDurability(RebalanceBaseTest):
             task_update = self.loadgen_docs()
             self.check_retry_rebalance_succeeded()
             # Ensure there are no failures
-            if self.atomicity:
-                for task, task_info in task_update.items():
-                    self.task_manager.get_task_result(task)
-            else:
+            for task in task_update:
+                self.task_manager.get_task_result(task)
+            if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(task_update,
                                                                self.cluster)
                 self.bucket_util.log_doc_ops_task_failures(task_update)

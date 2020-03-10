@@ -1774,7 +1774,6 @@ class BucketUtils(ScopeUtils):
         :return: tasks_info dictionary updated with retried/unwanted docs
         """
         for task, task_info in tasks_info.items():
-            self.task_manager.get_task_result(task)
             bucket = task_info["bucket"]
             scope = task_info["scope"]
             collection = task_info["collection"]
@@ -1980,6 +1979,9 @@ class BucketUtils(ScopeUtils):
             check_persistence=check_persistence,
             suppress_error_table=suppress_error_table, dgm_batch=dgm_batch,
             scope=scope, collection=collection)
+
+        for task in tasks_info.keys():
+            self.task_manager.get_task_result(task)
 
         # Wait for all doc_loading tasks to complete and populate failures
         self.verify_doc_op_task_exceptions(tasks_info, cluster)

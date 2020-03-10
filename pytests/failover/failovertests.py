@@ -240,6 +240,8 @@ class FailoverTests(FailoverBaseTest):
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                             ejectedNodes=[node.id for node in chosen])
         if not self.atomicity:
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
@@ -282,7 +284,7 @@ class FailoverTests(FailoverBaseTest):
             # Retry of failed keys after rebalance
             tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                            task_verification=True)
-            for task, task_info in tasks_info.items():
+            for task in tasks_info:
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
@@ -338,6 +340,7 @@ class FailoverTests(FailoverBaseTest):
         It also verifies if the operations are correct with data
         verification steps
         """
+        tasks_info = dict()
         _servers_ = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
@@ -360,6 +363,8 @@ class FailoverTests(FailoverBaseTest):
             self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.sleep(30, "After rebalance completes")
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
         self.assertTrue(rebalance.result)
 
         if not self.atomicity:
@@ -425,6 +430,8 @@ class FailoverTests(FailoverBaseTest):
                 [self.servers[self.nodes_init - 1]])
 
         if not self.atomicity:
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
@@ -453,7 +460,7 @@ class FailoverTests(FailoverBaseTest):
         # Drain ep_queue & make sure that intra-cluster replication is complete
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
-            check_ep_items_remaining=False)
+                check_ep_items_remaining=False)
 
         self.log.info("Begin VERIFICATION for Add-back and rebalance")
 

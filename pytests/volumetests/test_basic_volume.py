@@ -2,31 +2,28 @@ from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
 from membase.api.rest_client import RestConnection, RestHelper
-from membase.helper.rebalance_helper import RebalanceHelper
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
-#from couchbase_helper.durability_helper import DurableExceptions
-#from couchbase_helper.documentgenerator import GleamBookUsersDocumentGenerator
-#from couchbase_helper.documentgenerator import GleamBookMessagesDocumentGenerator
 import random
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
 from couchbase_helper.documentgenerator import doc_generator
-from sdk_client3 import SDKClient
 from table_view import TableView
 from sdk_exceptions import SDKException
 
-class volume(BaseTestCase):  # will add the __init__ functions after the test has been stabilised
+
+class volume(BaseTestCase):
+    # will add the __init__ functions after the test has been stabilised
     def setUp(self):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket":False})
         BaseTestCase.setUp(self)
         self.rest = RestConnection(self.servers[0])
-        self.op_type= self.input.param("op_type", "create")
+        self.op_type = self.input.param("op_type", "create")
         self.tasks = []         # To have all tasks running in parallel.
-        self._iter_count = 0 # To keep a check of how many items are deleted
+        self._iter_count = 0    # To keep a check of how many items are deleted
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.num_buckets = self.input.param("num_buckets", 1)
@@ -36,8 +33,10 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
             self.doc_ops = self.doc_ops.split(';')
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
-        self.new_num_writer_threads = self.input.param("new_num_writer_threads", 6)
-        self.new_num_reader_threads = self.input.param("new_num_reader_threads", 8)
+        self.new_num_writer_threads = self.input.param(
+            "new_num_writer_threads", 6)
+        self.new_num_reader_threads = self.input.param(
+            "new_num_reader_threads", 8)
 
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
@@ -48,7 +47,8 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
         total_available_memory_in_mb = total_memory_in_mb
         active_service = self.info.services
 
-        # If the mentioned service is already present, we remove that much memory from available memory quota
+        # If the mentioned service is already present,
+        # we remove that much memory from available memory quota
         if "index" in active_service:
             total_available_memory_in_mb -= self.info.indexMemoryQuota
         if "fts" in active_service:
@@ -58,10 +58,10 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
         if "eventing" in active_service:
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
 
-
-        available_memory =  total_available_memory_in_mb - threshold_memory
+        available_memory = total_available_memory_in_mb - threshold_memory
         # available_memory =  total_available_memory_in_mb - threshold_memory_vagrant
-        self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=available_memory)
+        self.rest.set_service_memoryQuota(service='memoryQuota',
+                                          memoryQuota=available_memory)
 
         # Creating buckets for data loading purpose
         self.log.info("Create CB buckets")
@@ -279,7 +279,10 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
 
     def data_validation(self, tasks_info):
         if not self.atomicity:
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info, self.cluster)
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
             self.sleep(10)
@@ -298,14 +301,17 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
         for bucket in self.bucket_util.buckets:
             tasks = list()
             if self.gen_update_users is not None:
-                tasks.append(self.task.async_validate_docs(self.cluster, bucket, self.gen_update_users, "update", 0,
-                                                       batch_size=10, check_replica=self.check_replica))
+                tasks.append(self.task.async_validate_docs(
+                    self.cluster, bucket, self.gen_update_users, "update", 0,
+                    batch_size=10, check_replica=self.check_replica))
             if self.gen_create_users is not None:
-                tasks.append(self.task.async_validate_docs(self.cluster, bucket, self.gen_create_users, "create", 0,
-                                                       batch_size=10, check_replica=self.check_replica))
+                tasks.append(self.task.async_validate_docs(
+                    self.cluster, bucket, self.gen_create_users, "create", 0,
+                    batch_size=10, check_replica=self.check_replica))
             if self.gen_delete_users is not  None:
-                tasks.append(self.task.async_validate_docs(self.cluster, bucket, self.gen_delete_users, "delete", 0,
-                                                       batch_size=10, check_replica=self.check_replica))
+                tasks.append(self.task.async_validate_docs(
+                    self.cluster, bucket, self.gen_delete_users, "delete", 0,
+                    batch_size=10, check_replica=self.check_replica))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
             self.sleep(20)

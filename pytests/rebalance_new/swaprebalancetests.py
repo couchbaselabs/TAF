@@ -106,7 +106,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
             test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
                                       .format(timeout))
 
-
     def validate_docs(self):
         self.log.info("Validating docs")
         self.gen_create = self.get_doc_generator(0, self.num_items)
@@ -240,6 +239,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.cluster.update_master(self.master)
 
         # Wait till load phase is over
+        for task in self.loaders:
+            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 self.loaders, self.cluster)
@@ -248,9 +249,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-        else:
-            for task, task_info in self.loaders.items():
-                self.task_manager.get_task_result(task)
 
         self.validate_docs()
 
@@ -363,6 +361,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.log.info("Rebalance completed successfully")
 
         # Wait till load phase is over
+        for task in self.loaders:
+            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 self.loaders, self.cluster)
@@ -371,9 +371,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: %s" % task.thread_name)
-        else:
-            for task, task_info in self.loaders.items():
-                self.task_manager.get_task_result(task)
 
         self.validate_docs()
 
@@ -458,6 +455,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                         .format(to_eject_nodes))
 
         # Wait till load phase is over
+        for task in self.loaders:
+            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 self.loaders, self.cluster)
@@ -466,9 +465,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: %s" % task.thread_name)
-        else:
-            for task, task_info in self.loaders.items():
-                self.task_manager.get_task_result(task)
 
         self.validate_docs()
 
@@ -522,6 +518,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                         .format(new_swap_servers))
 
         # Wait till load phase is over
+        for task in self.loaders:
+            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 self.loaders, self.cluster)
@@ -530,9 +528,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-        else:
-            for task, task_info in self.loaders.items():
-                self.task_manager.get_task_result(task)
 
         self.validate_docs()
 
