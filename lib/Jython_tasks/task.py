@@ -2962,10 +2962,11 @@ class BucketCreateFromSpecTask(Task):
                 target=self.create_scope_from_spec,
                 args=[scope_spec])
             scope_create_thread.start()
-            scope_create_threads.append(scope_create_thread)
+            scope_create_thread.join()
+            # scope_create_threads.append(scope_create_thread)
 
-        for scope_create_thread in scope_create_threads:
-            scope_create_thread.join(30)
+        # for scope_create_thread in scope_create_threads:
+        #     scope_create_thread.join(30)
 
         self.complete_task()
 
@@ -3012,10 +3013,11 @@ class BucketCreateFromSpecTask(Task):
                 target=self.create_collection_from_spec,
                 args=[scope_spec["name"], collection_spec])
             collection_create_thread.start()
-            collection_create_threads.append(collection_create_thread)
-
-        for collection_create_thread in collection_create_threads:
             collection_create_thread.join(30)
+            # collection_create_threads.append(collection_create_thread)
+
+        # for collection_create_thread in collection_create_threads:
+        #     collection_create_thread.join(30)
 
     def create_collection_from_spec(self, scope_name, collection_spec):
         status, content = self.bucket_helper.create_collection(
