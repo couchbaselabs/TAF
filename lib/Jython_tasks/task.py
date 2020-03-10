@@ -3738,7 +3738,7 @@ class Atomicity(Task):
         Atomicity.updatecount = update_count
         if durability == "MAJORITY":
             Atomicity.durability = 1
-        elif durability == "MAJORITY_AND_PERSIST_ON_MASTER":
+        elif durability == "MAJORITY_AND_PERSIST_TO_ACTIVE":
             Atomicity.durability = 2
         elif durability == "PERSIST_TO_MAJORITY":
             Atomicity.durability = 3

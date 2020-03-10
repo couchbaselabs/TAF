@@ -506,7 +506,7 @@ class BasicOps(DurabilityTestsBase):
         4. Validate all mutations met the durability condition
         """
 
-        if self.durability_level.upper() in ["MAJORITY_AND_PERSIST_ON_MASTER",
+        if self.durability_level.upper() in ["MAJORITY_AND_PERSIST_TO_ACTIVE",
                                              "PERSIST_TO_MAJORITY"]:
             self.log.critical("Test not valid for persistence durability")
             return

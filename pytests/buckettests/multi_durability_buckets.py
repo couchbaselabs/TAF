@@ -192,7 +192,7 @@ class MultiDurabilityTests(BaseTestCase):
         dict_updater(0, self.bucket_dict, gen_create, "create",
                      durability="MAJORITY", sdk_timeout=30)
         dict_updater(1, self.bucket_dict, gen_update, "update",
-                     durability="MAJORITY_AND_PERSIST_ON_MASTER",
+                     durability="MAJORITY_AND_PERSIST_TO_ACTIVE",
                      sdk_timeout=30)
         dict_updater(2, self.bucket_dict, gen_delete, "delete",
                      durability="PERSIST_TO_MAJORITY", sdk_timeout=60)
@@ -215,7 +215,7 @@ class MultiDurabilityTests(BaseTestCase):
                      persist_to=persist_to, replicate_to=replicate_to,
                      sdk_timeout=30)
         dict_updater(1, self.bucket_dict, gen_delete, "delete",
-                     durability="MAJORITY_AND_PERSIST_ON_MASTER",
+                     durability="MAJORITY_AND_PERSIST_TO_ACTIVE",
                      sdk_timeout=30)
         dict_updater(2, self.bucket_dict, gen_create, "create",
                      durability="PERSIST_TO_MAJORITY", sdk_timeout=60)

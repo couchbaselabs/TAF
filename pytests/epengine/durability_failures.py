@@ -340,7 +340,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
     def test_sync_write_in_progress_for_persist_active(self):
         """
         This test validates sync_write_in_progress error scenario with
-        durability=MAJORITY_AND_PERSIST_ON_MASTER
+        durability=MAJORITY_AND_PERSIST_TO_ACTIVE
 
         1. Select a random node from cluster
         2. Get active & replica vbucket numbers from the target_node
@@ -356,7 +356,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         cbstat_obj = Cbstats(shell_conn)
         error_sim = CouchbaseError(self.log, shell_conn)
 
-        self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
+        self.durability_level = "MAJORITY_AND_PERSIST_TO_ACTIVE"
 
         half_of_num_items = max(int(self.num_items/2), 1)
         # Override the crud_batch_size
@@ -767,7 +767,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
     def test_bulk_sync_write_in_progress_for_persist_active(self):
         """
         This test validates sync_write_in_progress error scenario with
-        durability=MAJORITY_AND_PERSIST_ON_MASTER
+        durability=MAJORITY_AND_PERSIST_TO_ACTIVE
 
         1. Select a random node from cluster
         2. Get active & replica vbucket numbers from the target_node
@@ -783,7 +783,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         cbstat_obj = Cbstats(shell_conn)
         error_sim = CouchbaseError(self.log, shell_conn)
 
-        self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
+        self.durability_level = "MAJORITY_AND_PERSIST_TO_ACTIVE"
 
         # Override the crud_batch_size
         self.crud_batch_size = 5
@@ -1093,7 +1093,7 @@ class TimeoutTests(DurabilityTestsBase):
     def test_timeout_with_successful_crud_for_persist_active(self):
         """
         Test to validate timeouts during CRUDs with
-        durability=MAJORITY_AND_PERSIST_ON_MASTER
+        durability=MAJORITY_AND_PERSIST_TO_ACTIVE
 
         1. Select a random node from cluster
         2. Get active & replica vbucket numbers from the target_node
@@ -1110,7 +1110,7 @@ class TimeoutTests(DurabilityTestsBase):
         error_sim = CouchbaseError(self.log, shell_conn)
         vb_info = dict()
 
-        self.durability_level = "MAJORITY_AND_PERSIST_ON_MASTER"
+        self.durability_level = "MAJORITY_AND_PERSIST_TO_ACTIVE"
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.sdk_timeout

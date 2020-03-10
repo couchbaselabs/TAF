@@ -55,7 +55,7 @@ class basic_ops(BaseTestCase):
     def __durability_level(self):
         if self.durability_level == "MAJORITY":
             self.durability = 1
-        elif self.durability_level == "MAJORITY_AND_PERSIST_ON_MASTER":
+        elif self.durability_level == "MAJORITY_AND_PERSIST_TO_ACTIVE":
             self.durability = 2
         elif self.durability_level == "PERSIST_TO_MAJORITY":
             self.durability = 3
@@ -71,18 +71,18 @@ class basic_ops(BaseTestCase):
         self.verify = self.input.param("verify", True)
         # transaction load
         if "Atr" in self.operation:
-            exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config, 
+            exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config,
                                 self.client.collection, self.docs, self.transaction_commit, self.operation, self.fail)
 
         else:
             if "Replace" in self.operation:
-                exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config, 
-                                self.client.collection, self.docs, self.keys, [], self.transaction_commit, self.operation, self.keys[-1], self.fail) 
+                exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config,
+                                self.client.collection, self.docs, self.keys, [], self.transaction_commit, self.operation, self.keys[-1], self.fail)
                 self.value = {'mutated':1, 'value':'value1'}
                 self.content = self.client.translate_to_json_object(self.value)
             else:
-                exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config, 
-                                self.client.collection, self.docs, [], [], self.transaction_commit, self.operation, self.keys[-1], self.fail) 
+                exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config,
+                                self.client.collection, self.docs, [], [], self.transaction_commit, self.operation, self.keys[-1], self.fail)
 
             if "Remove" in self.operation:
                 exception = Transaction().MockRunTransaction(self.client.cluster, self.transaction_config,
@@ -103,7 +103,7 @@ class basic_ops(BaseTestCase):
                     self.test_log.info("actual value for key {} is {}".format(key,actual_val))
                     self.test_log.info("expected value for key {} is {}".format(key,self.content))
                     self.set_exception("actual and expected value does not match")
-        
+
 
         if exception and self.fail != True:
             self.set_exception(exception)
