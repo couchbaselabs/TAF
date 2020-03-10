@@ -4,7 +4,7 @@ from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_cli import CouchbaseCLI
-from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
+from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -96,7 +96,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init] \
                      if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         if self.auto_reprovision:
             self.bucket_util.create_default_bucket(
                 replica=self.num_replicas,
@@ -129,18 +129,11 @@ class AutoFailoverBaseTest(BaseTestCase):
             shell_conn.disconnect()
 
     def get_doc_generator(self, start, end):
-        age = range(5)
-        first = ['james', 'sharon']
-        body = [''.rjust(self.doc_size - 10, 'a')]
-        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-        generator = DocumentGenerator(self.key, template, age, first, body,
-                                      start=start, end=end,
-                                      key_size=self.key_size,
-                                      doc_size=self.doc_size,
-                                      doc_type=self.doc_type)
-        return generator
+        return doc_generator(self.key, start, end, key_size=self.key_size,
+                             doc_size=self.doc_size, doc_type=self.doc_type)
 
-    def async_load_all_buckets_atomicity(self, kv_gen, op_type, exp=0, batch_size=20):
+    def async_load_all_buckets_atomicity(self, kv_gen, op_type, exp=0,
+                                         batch_size=20):
 
         task = self.task.async_load_gen_docs_atomicity(
             self.cluster,self.bucket_util.buckets, kv_gen, op_type,exp,

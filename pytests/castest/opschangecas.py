@@ -99,8 +99,7 @@ class OpsChangeCasTests(CasBaseTest):
                                 self.log_failure("CAS old (%s) == new (%s)"
                                                  % (old_cas, new_cas))
 
-                            if json.loads(str(result["value"])) \
-                                    != json.loads(value):
+                            if result["value"] != value:
                                 self.log_failure("Value mismatch. "
                                                  "%s != %s"
                                                  % (result["value"], value))
