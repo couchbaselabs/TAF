@@ -3567,12 +3567,12 @@ class BucketUtils(ScopeUtils):
             ratio = 2.0 / 3.0
         return ratio
 
-    def set_flusher_batch_split_trigger(self, node=None,
-                                        flusher_batch_split_trigger=3,
+    def set_flusher_total_batch_limit(self, node=None,
+                                        flusher_total_batch_limit=3,
                                         buckets=None):
         self.log.debug("Changing the bucket properties by changing "
-                       "flusher_batch_split_trigger to {0}"
-                       .format(flusher_batch_split_trigger))
+                       "flusher_total_batch_limit to {0}"
+                       .format(flusher_total_batch_limit))
         if node is None:
             node = self.cluster.master
         rest = RestConnection(node)
@@ -3585,8 +3585,8 @@ class BucketUtils(ScopeUtils):
         for bucket in buckets:
             code = "ns_bucket:update_bucket_props(\"" + bucket.name \
                + "\", [{extra_config_string, " \
-               + "\"flusher_batch_split_trigger=" \
-               + str(flusher_batch_split_trigger) + "\"}])."
+               + "\"flusher_total_batch_limit=" \
+               + str(flusher_total_batch_limit) + "\"}])."
             rest.diag_eval(code)
 
         # Restart Memcached in all cluster nodes to reflect the settings
@@ -3603,8 +3603,8 @@ class BucketUtils(ScopeUtils):
             for bucket in buckets:
                 mc = MemcachedClientHelper.direct_client(server, bucket)
                 stats = mc.stats()
-                self.assertTrue(int(stats['ep_flusher_batch_split_trigger']) \
-                                == flusher_batch_split_trigger)
+                self.assertTrue(int(stats['ep_flusher_total_batch_limit']) \
+                                == flusher_total_batch_limit)
 
     def update_bucket_props(self, command, value, buckets=[], node=None):
         self.log.info("Changing the bucket properties by changing {0} to {1}".

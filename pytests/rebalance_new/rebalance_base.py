@@ -29,7 +29,7 @@ class RebalanceBaseTest(BaseTestCase):
                                  None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-        self.flusher_batch_split_trigger = self.input.param("flusher_batch_split_trigger", None)
+        self.flusher_total_batch_limit = self.input.param("flusher_total_batch_limit", None)
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
         self.items = self.num_items
@@ -75,10 +75,10 @@ class RebalanceBaseTest(BaseTestCase):
                 .collections[self.collection_name] \
                 .num_items = self.num_items
 
-        if self.flusher_batch_split_trigger:
-            self.bucket_util.set_flusher_batch_split_trigger(
+        if self.flusher_total_batch_limit:
+            self.bucket_util.set_flusher_total_batch_limit(
                 self.cluster.master,
-                self.flusher_batch_split_trigger,
+                self.flusher_total_batch_limit,
                 self.bucket_util.buckets)
 
         self.gen_create = self.get_doc_generator(0, self.num_items)
