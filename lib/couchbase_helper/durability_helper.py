@@ -66,7 +66,7 @@ class DurabilityHelper:
 
         if durability_level == \
                 DurabilityHelper.SupportedLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
-            return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER
+            return DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         if durability_level == \
                 DurabilityHelper.SupportedLevel.PERSIST_TO_MAJORITY:

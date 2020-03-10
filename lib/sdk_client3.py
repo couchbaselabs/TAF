@@ -796,7 +796,7 @@ class SDKClient(object):
                  persist_to=0, replicate_to=0,
                  timeout=5, time_unit="seconds", retry=5,
                  doc_type="json", durability=""):
-        self.log.info("SETMULTI %s" % durability)
+
         docs = []
         for key, value in keys.items():
             content = value
