@@ -167,9 +167,12 @@ class basic_ops(BaseTestCase):
 
     def generate_docs_bigdata(self, docs_per_day, start=0,
                               document_size=1024000):
-        json_generator = JsonGenerator()
-        return json_generator.generate_docs_bigdata(
-            start=start, end=docs_per_day, value_size=document_size)
+        return doc_generator(self.key, start, docs_per_day,
+                             key_size=self.key_size,
+                             doc_size=document_size,
+                             doc_type=self.doc_type,
+                             target_vbucket=self.target_vbucket,
+                             vbuckets=self.cluster_util.vbuckets)
 
     def test_doc_size(self):
         def check_durability_failures():
