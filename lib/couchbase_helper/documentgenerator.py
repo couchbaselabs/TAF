@@ -258,13 +258,7 @@ class SubdocDocumentGenerator(KVGenerator):
         self.target_vbucket = None
         self.vbuckets = None
 
-        size = 0
-        if not len(self.args) == 0:
-            size = 1
-            for arg in self.args:
-                size *= len(arg)
-
-        KVGenerator.__init__(self, name, 0, size)
+        KVGenerator.__init__(self, name)
 
         if 'start' in kwargs:
             self.start = kwargs['start']

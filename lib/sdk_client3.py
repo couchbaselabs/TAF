@@ -951,7 +951,9 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
-        for key, value in keys.items():
+        for item in keys:
+            key = item.getT1()
+            value = item.getT2()
             mutate_in_spec = []
             for _tuple in value:
                 _path = _tuple[0]
