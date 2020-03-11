@@ -1,14 +1,29 @@
+from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import DiskAutoFailoverBasetest
-from membase.api.exception import RebalanceFailedException, ServerUnavailableException
+from membase.api.exception import \
+    RebalanceFailedException, \
+    ServerUnavailableException
 
 
 class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def setUp(self):
         super(DiskAutofailoverTests, self).setUp()
         if self.atomicity:
-            self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 2)
+            self.run_time_create_load_gen = doc_generator(
+                self.key,
+                self.num_items,
+                self.num_items*2,
+                key_size=self.key_size,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type)
         else:
-            self.run_time_create_load_gen = self.get_doc_generator(self.num_items, self.num_items * 10)
+            self.run_time_create_load_gen = doc_generator(
+                self.key,
+                self.num_items,
+                self.num_items*10,
+                key_size=self.key_size,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type)
 
     def tearDown(self):
         super(DiskAutofailoverTests, self).tearDown()

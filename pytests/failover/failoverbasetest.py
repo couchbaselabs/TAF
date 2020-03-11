@@ -2,7 +2,7 @@ from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
 from remote.remote_util import RemoteUtilHelper
-from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
+from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
 
 retry_exceptions = [
@@ -128,31 +128,20 @@ class FailoverBaseTest(BaseTestCase):
             finally:
                 super(FailoverBaseTest, self).tearDown()
 
-    def get_doc_generator(self, start, end):
-        age = range(5)
-        first = ['james', 'sharon']
-        body = [''.rjust(self.doc_size - 10, 'a')]
-        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-        generator = DocumentGenerator(self.key, template, age, first, body,
-                                      start=start, end=end,
-                                      key_size=self.key_size,
-                                      doc_size=self.doc_size,
-                                      doc_type=self.doc_type)
-        return generator
-
     def subsequent_load_gen(self, retry_exceptions=[], ignore_exceptions=[]):
-        subsequent_load_gen = self.get_doc_generator(self.num_items, self.num_items*2)
-        tasks_info = dict()
-        for bucket in self.bucket_util.buckets:
-            tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, subsequent_load_gen, "create", 0, batch_size=20,
-                persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, pause_secs=5,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
-            tasks_info.update(tem_tasks_info.items())
-        return tasks_info
+        subsequent_load_gen = doc_generator(self.key,
+                                            self.num_items,
+                                            self.num_items*2,
+                                            key_size=self.key_size,
+                                            doc_size=self.doc_size,
+                                            doc_type=self.doc_type)
+        return self.bucket_util._async_load_all_buckets(
+            self.cluster, subsequent_load_gen, "create", 0, batch_size=20,
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            durability=self.durability_level, pause_secs=5,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            retry_exceptions=retry_exceptions,
+            ignore_exceptions=ignore_exceptions)
 
     def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
         tasks = []

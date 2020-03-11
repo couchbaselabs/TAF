@@ -21,10 +21,24 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self._get_params()
         self.rest = RestConnection(self.orchestrator)
-        self.initial_load_gen = self.get_doc_generator(0, self.num_items)
-        self.update_load_gen = self.get_doc_generator(0, self.update_items)
-        self.delete_load_gen = self.get_doc_generator(self.update_items,
-                                                      self.delete_items)
+        self.initial_load_gen = doc_generator(self.key,
+                                              0,
+                                              self.num_items,
+                                              key_size=self.key_size,
+                                              doc_size=self.doc_size,
+                                              doc_type=self.doc_type)
+        self.update_load_gen = doc_generator(self.key,
+                                             0,
+                                             self.update_items,
+                                             key_size=self.key_size,
+                                             doc_size=self.doc_size,
+                                             doc_type=self.doc_type)
+        self.delete_load_gen = doc_generator(self.key,
+                                             self.update_items,
+                                             self.delete_items,
+                                             key_size=self.key_size,
+                                             doc_size=self.doc_size,
+                                             doc_type=self.doc_type)
         self.set_up_cluster()
         self.load_all_buckets(self.initial_load_gen, "create", 0)
         self.server_index_to_fail = self.input.param("server_index_to_fail",
@@ -53,10 +67,24 @@ class AutoFailoverBaseTest(BaseTestCase):
         super(AutoFailoverBaseTest, self).setUp()
         self._get_params()
         self.rest = RestConnection(self.orchestrator)
-        self.initial_load_gen = self.get_doc_generator(0, self.num_items)
-        self.update_load_gen = self.get_doc_generator(0, self.update_items)
-        self.delete_load_gen = self.get_doc_generator(self.update_items,
-                                                      self.delete_items)
+        self.initial_load_gen = doc_generator(self.key,
+                                              0,
+                                              self.num_items,
+                                              key_size=self.key_size,
+                                              doc_size=self.doc_size,
+                                              doc_type=self.doc_type)
+        self.update_load_gen = doc_generator(self.key,
+                                             0,
+                                             self.update_items,
+                                             key_size=self.key_size,
+                                             doc_size=self.doc_size,
+                                             doc_type=self.doc_type)
+        self.delete_load_gen = doc_generator(self.key,
+                                             self.update_items,
+                                             self.delete_items,
+                                             key_size=self.key_size,
+                                             doc_size=self.doc_size,
+                                             doc_type=self.doc_type)
         self.server_to_fail = self._servers_to_fail()
         self.servers_to_add = self.cluster.servers[self.nodes_init:self.nodes_init +
                                                    self.nodes_in]
@@ -86,8 +114,12 @@ class AutoFailoverBaseTest(BaseTestCase):
                 self.run_time_create_load_gen, "create", 0))
 
         else:
-            subsequent_load_gen = self.get_doc_generator(self.num_items,
-                                                         self.num_items * 2)
+            subsequent_load_gen = doc_generator(self.key,
+                                                self.num_items,
+                                                self.num_items*2,
+                                                key_size=self.key_size,
+                                                doc_size=self.doc_size,
+                                                doc_type=self.doc_type)
             tasks = self.async_load_all_buckets(subsequent_load_gen,
                                                 "create", 0)
         return tasks
@@ -127,10 +159,6 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.replica_vb_in_failover_nodes += cbstat.vbucket_list(
                 bucket.name, "replica")
             shell_conn.disconnect()
-
-    def get_doc_generator(self, start, end):
-        return doc_generator(self.key, start, end, key_size=self.key_size,
-                             doc_size=self.doc_size, doc_type=self.doc_type)
 
     def async_load_all_buckets_atomicity(self, kv_gen, op_type, exp=0,
                                          batch_size=20):

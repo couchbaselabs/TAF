@@ -1,3 +1,4 @@
+from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.exception import RebalanceFailedException, \
     ServerUnavailableException
@@ -232,6 +233,11 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         return False, None
 
     def subsequent_load_gen(self):
-        subsequent_load_gen = self.get_doc_generator(self.num_items, self.num_items*2)
+        subsequent_load_gen = doc_generator(self.key,
+                                            self.num_items,
+                                            self.num_items*2,
+                                            key_size=self.key_size,
+                                            doc_size=self.doc_size,
+                                            doc_type=self.doc_type)
         tasks = self.async_load_all_buckets(subsequent_load_gen, "create", 0)
         return tasks

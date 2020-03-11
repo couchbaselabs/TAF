@@ -14,8 +14,13 @@ GRACEFUL = "graceful"
 class FailoverTests(FailoverBaseTest):
     def setUp(self):
         super(FailoverTests, self).setUp()
-        self.run_time_create_load_gen = self.gen_create = \
-            self.get_doc_generator(self.num_items, self.num_items * 2)
+        self.run_time_create_load_gen = self.gen_create = doc_generator(
+            self.key,
+            self.num_items,
+            self.num_items*2,
+            key_size=self.key_size,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type)
         self.server_map = self.get_server_map()
 
     def tearDown(self):
