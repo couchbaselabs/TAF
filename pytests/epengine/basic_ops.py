@@ -238,8 +238,6 @@ class basic_ops(BaseTestCase):
             timeout=self.sdk_timeout, time_unit="seconds",
             ignore_exceptions=ignore_exceptions,
             retry_exceptions=retry_exceptions)
-        for task in doc_op_info_dict:
-            self.task_manager.get_task_result(task)
         self.bucket_util.verify_doc_op_task_exceptions(doc_op_info_dict,
                                                        self.cluster)
 
