@@ -3787,6 +3787,22 @@ class BucketUtils(ScopeUtils):
 
             self.validate_doc_count_as_per_collections(bucket)
 
+    def remove_scope_collections_and_validate(self):
+        """
+        Delete all created scope-collection and validate the stats
+        """
+        for bucket in self.buckets:
+            for scope in bucket.scopes:
+                for collection in scope.collections:
+                    self.drop_collection(self.cluster.master,
+                                         bucket,
+                                         scope_name=scope.name,
+                                         collection_name=collection.name)
+                self.drop_scope(self.cluster.master,
+                                bucket,
+                                scope_name=scope.name)
+        self.validate_docs_per_collections_all_buckets()
+
     @staticmethod
     def perform_tasks_from_spec(cluster, buckets, input_spec):
         """

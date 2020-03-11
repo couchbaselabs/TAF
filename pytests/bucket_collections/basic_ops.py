@@ -351,3 +351,163 @@ class BasicOps(CollectionBase):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items*2)
         self.validate_test_failure()
+
+    def test_similar_keys_in_all_collections(self):
+        """
+        Use single client to select collections on the fly and insert
+        docs under each available collection and validate the results.
+        :return:
+        """
+        doc_gen = doc_generator("test_same_key", 0, self.num_items,
+                                key_size=self.key_size,
+                                doc_size=self.doc_size,
+                                mix_key_size=False,
+                                randomize_doc_size=False)
+        # Set to keep track of all inserted CAS values
+        known_cas = set()
+
+        # Client to insert docs under different collections
+        client = SDKClient([self.cluster.master], self.bucket)
+
+        while doc_gen.has_next():
+            key, value = doc_gen.next()
+            for scope in self.bucket.scopes:
+                for collection in scope.collections:
+                    client.select_collection(scope.name, collection.name)
+                    result = client.crud("create", key, value, self.maxttl,
+                                         durability=self.durability_level,
+                                         timeout=self.sdk_timeout,
+                                         time_unit="seconds")
+                    if result["status"] is False:
+                        self.log_failure("Doc create failed for key '%s' "
+                                         "collection::scope %s::%s - %s"
+                                         % (key, scope.name, collection.name,
+                                            result))
+                    else:
+                        if result["cas"] in known_cas:
+                            self.log_failure("Same CAS exists under different "
+                                             "collection: %s" % result)
+                        collection.num_items += 1
+                        known_cas.add(result["cas"])
+
+        # Close SDK connection
+        client.close()
+
+        # Validate doc count as per bucket collections
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.validate_test_failure()
+
+    def test_doc_key_size(self):
+        """
+        Insert document key with min and max key size on each available
+        collection and validate
+        :return:
+        """
+        min_doc_gen = doc_generator("test_min_key_size", 0, self.num_items,
+                                    key_size=1,
+                                    doc_size=self.doc_size,
+                                    mix_key_size=False,
+                                    randomize_doc_size=False)
+        max_doc_gen = doc_generator("test_max_key_size", 0, self.num_items,
+                                    key_size=250,
+                                    doc_size=self.doc_size,
+                                    mix_key_size=False,
+                                    randomize_doc_size=False)
+        # Set to keep track of all inserted CAS values
+        known_cas = set()
+
+        # Client to insert docs under different collections
+        client = SDKClient([self.cluster.master], self.bucket)
+
+        for doc_gen in [min_doc_gen, max_doc_gen]:
+            while doc_gen.has_next():
+                key, value = doc_gen.next()
+                for scope in self.bucket.scopes:
+                    for collection in scope.collections:
+                        client.select_collection(scope.name, collection.name)
+                        result = client.crud("create", key, value, self.maxttl,
+                                             durability=self.durability_level,
+                                             timeout=self.sdk_timeout,
+                                             time_unit="seconds")
+                        if result["status"] is False:
+                            self.log_failure("Doc create failed for key '%s' "
+                                             "collection::scope %s::%s - %s"
+                                             % (key,
+                                                scope.name,
+                                                collection.name,
+                                                result))
+                        else:
+                            if result["cas"] in known_cas:
+                                self.log_failure(
+                                    "Same CAS exists under different "
+                                    "collection: %s" % result)
+                            collection.num_items += 1
+                            known_cas.add(result["cas"])
+
+        # Close SDK connection
+        client.close()
+
+        # Validate doc count as per bucket collections
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.validate_test_failure()
+
+    def test_doc_size(self):
+        """
+        Insert document with empty content and max size on each available
+        collection and validate
+        :return:
+        """
+        # Empty docs
+        min_doc_size_gen = doc_generator("test_min_doc_size",
+                                         0, self.num_items,
+                                         key_size=self.key_size,
+                                         doc_size=0,
+                                         mix_key_size=False,
+                                         randomize_doc_size=False)
+        # 20 MB docs
+        max_doc_size_gen = doc_generator("test_max_doc_size",
+                                         0, self.num_items,
+                                         key_size=self.key_size,
+                                         doc_size=1024*1024*1024*20,
+                                         mix_key_size=False,
+                                         randomize_doc_size=False)
+        # Set to keep track of all inserted CAS values
+        known_cas = set()
+
+        # Client to insert docs under different collections
+        client = SDKClient([self.cluster.master], self.bucket)
+
+        for doc_gen in [min_doc_size_gen, max_doc_size_gen]:
+            while doc_gen.has_next():
+                key, value = doc_gen.next()
+                for scope in self.bucket.scopes:
+                    for collection in scope.collections:
+                        client.select_collection(scope.name, collection.name)
+                        result = client.crud("create", key, value, self.maxttl,
+                                             durability=self.durability_level,
+                                             timeout=self.sdk_timeout,
+                                             time_unit="seconds")
+                        if result["status"] is False:
+                            self.log_failure("Doc create failed for key '%s' "
+                                             "collection::scope %s::%s - %s"
+                                             % (key,
+                                                scope.name,
+                                                collection.name,
+                                                result))
+                        else:
+                            if result["cas"] in known_cas:
+                                self.log_failure(
+                                    "Same CAS exists under different "
+                                    "collection: %s" % result)
+                            collection.num_items += 1
+                            known_cas.add(result["cas"])
+
+        # Close SDK connection
+        client.close()
+
+        # Validate doc count as per bucket collections
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.validate_test_failure()
+
+    def test_sub_doc_size(self):
+        pass

@@ -62,3 +62,7 @@ class CollectionBase(BaseTestCase):
 
         self.bucket_util.print_bucket_stats()
         self.log.info("=== CollectionBase setup complete ===")
+
+    def tearDown(self):
+        self.bucket_util.remove_scope_collections_and_validate()
+        super(CollectionBase, self).tearDown()
