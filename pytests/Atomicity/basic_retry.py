@@ -2,7 +2,6 @@
 Basic test cases with commit,rollback scenarios
 """
 
-from __builtin__ import True
 import logging
 import threading
 import time
@@ -18,9 +17,10 @@ class basic_ops(BaseTestCase):
     def setUp(self):
         super(basic_ops, self).setUp()
         self.test_log = logging.getLogger("test")
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.add_rbac_user()
         if self.default_bucket:
             self.bucket_util.create_default_bucket(
@@ -75,27 +75,37 @@ class basic_ops(BaseTestCase):
     def create_Transaction(self, client=None):
         if not client:
             client = self.client
-        transaction_config = Transaction().createTransactionConfig(self.transaction_timeout, self.durability)
+        transaction_config = Transaction().createTransactionConfig(
+            self.transaction_timeout, self.durability)
         try:
-            self.transaction = Transaction().createTansaction(client.cluster, transaction_config)
+            self.transaction = Transaction().createTansaction(
+                client.cluster, transaction_config)
         except Exception as e:
             self.set_exception(e)
 
-    def __thread_to_transaction(self, transaction, op_type, doc, txn_commit, update_count=1, sync=True, set_exception=True, client=None):
+    def __thread_to_transaction(self, transaction, op_type, doc, txn_commit,
+                                update_count=1, sync=True,
+                                set_exception=True, client=None):
         if not client:
             client = self.client
         if op_type == "create":
-            exception = Transaction().RunTransaction(transaction, [client.collection], doc, [], [], txn_commit, sync, update_count)
+            exception = Transaction().RunTransaction(
+                transaction, [client.collection], doc, [], [],
+                txn_commit, sync, update_count)
         elif op_type == "update":
             self.test_log.info("updating all the keys through threads")
-            exception = Transaction().RunTransaction(transaction, [client.collection], [], doc, [], txn_commit, sync, update_count)
+            exception = Transaction().RunTransaction(
+                transaction, [client.collection], [], doc, [],
+                txn_commit, sync, update_count)
         elif op_type == "delete":
-            exception = Transaction().RunTransaction(transaction, [client.collection], [], [], doc, txn_commit, sync, update_count)
+            exception = Transaction().RunTransaction(
+                transaction, [client.collection], [], [], doc,
+                txn_commit, sync, update_count)
         if set_exception:
             if exception:
                 self.set_exception("Failed")
 
-    def doc_gen(self, num_items, start=0, value={'value':'value1'}):
+    def doc_gen(self, num_items, start=0, value={'value': 'value1'}):
         self.docs = []
         self.keys = []
         self.content = self.client.translate_to_json_object(value)
@@ -113,10 +123,12 @@ class basic_ops(BaseTestCase):
             self.assertEquals(self.content, actual_val)
 
     def test_MultiThreadTxnLoad(self):
-        # Atomicity.basic_retry.basic_ops.test_MultiThreadTxnLoad,num_items=1000
-        ''' Load data through txn, update half the items through different threads
-        and delete half the items through different threads. if update_retry then update and delete
-        the same key in two different transaction and make sure update fails '''
+        """
+        Load data through txn, update half the items through different threads
+        and delete half the items through different threads. if update_retry
+        then update and delete the same key in two different transaction
+        and make sure update fails
+        """
 
         self.num_txn = self.input.param("num_txn", 9)
         self.update_retry = self.input.param("update_retry", False)
@@ -125,23 +137,39 @@ class basic_ops(BaseTestCase):
         threads = []
 
         # create the docs
-        exception = Transaction().RunTransaction(self.transaction, [self.client.collection], self.docs, [], [], self.transaction_commit, True, self.update_count)
+        exception = Transaction().RunTransaction(
+            self.transaction, [self.client.collection], self.docs, [], [],
+            self.transaction_commit, True, self.update_count)
         if exception:
             self.set_exception("Failed")
 
         if self.update_retry:
-            threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "delete", self.keys, self.transaction_commit, self.update_count)))
-            threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "update", self.keys, 10, self.update_count)))
+            threads.append(threading.Thread(
+                target=self.__thread_to_transaction,
+                args=(self.transaction, "delete", self.keys,
+                      self.transaction_commit, self.update_count)))
+            threads.append(threading.Thread(
+                target=self.__thread_to_transaction,
+                args=(self.transaction, "update", self.keys, 10,
+                      self.update_count)))
 
         else:
-            update_docs = self.__chunks(self.keys[:self.num_items/2], self.num_txn)
-            delete_docs = self.__chunks(self.keys[self.num_items/2:], self.num_txn)
+            update_docs = self.__chunks(self.keys[:self.num_items/2],
+                                        self.num_txn)
+            delete_docs = self.__chunks(self.keys[self.num_items/2:],
+                                        self.num_txn)
 
             for keys in update_docs:
-                threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "update", keys, self.transaction_commit, self.update_count)))
+                threads.append(threading.Thread(
+                    target=self.__thread_to_transaction,
+                    args=(self.transaction, "update", keys,
+                          self.transaction_commit, self.update_count)))
 
             for keys in delete_docs:
-                threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "delete", keys, self.transaction_commit, self.update_count)))
+                threads.append(threading.Thread(
+                    target=self.__thread_to_transaction,
+                    args=(self.transaction, "delete", keys,
+                          self.transaction_commit, self.update_count)))
 
         for thread in threads:
             thread.start()
@@ -156,7 +184,7 @@ class basic_ops(BaseTestCase):
                 self.assertEquals(result['status'], False)
 
         else:
-            self.value = {'mutated':1, 'value':'value1'}
+            self.value = {'mutated': 1, 'value': 'value1'}
             self.content = self.client.translate_to_json_object(self.value)
 
             self.verify_doc(self.num_items/2, self.client)
@@ -166,26 +194,35 @@ class basic_ops(BaseTestCase):
                 self.assertEquals(result['status'], False)
 
     def test_basic_retry(self):
-        ''' Load set of data to the cluster, update through 2 different threads, make sure transaction maintains the order of update'''
+        """
+        Load set of data to the cluster, update through 2 different threads,
+        make sure transaction maintains the order of update
+        :return:
+        """
         self.write_conflict = self.input.param("write_conflict", 2)
 
         self.test_log.info("going to create and execute the task")
         self.gen_create = self.get_doc_generator(0, self.num_items)
-        task = self.task.async_load_gen_docs_atomicity(self.cluster, self.def_bucket,
-                                             self.gen_create, "create" , exp=0,
-                                             batch_size=10,
-                                             process_concurrency=8,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries,update_count=self.update_count, transaction_timeout=self.transaction_timeout,
-                                             commit=True,durability=self.durability_level,sync=self.sync)
+        task = self.task.async_load_gen_docs_atomicity(
+            self.cluster, self.def_bucket,
+            self.gen_create, "create", exp=0,
+            batch_size=10,
+            process_concurrency=8,
+            replicate_to=self.replicate_to,
+            persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+            retries=self.sdk_retries, update_count=self.update_count,
+            transaction_timeout=self.transaction_timeout,
+            commit=True, durability=self.durability_level, sync=self.sync)
         self.task.jython_task_manager.get_task_result(task)
         self.test_log.info("get all the keys in the cluster")
         self.doc_gen(self.num_items)
 
         threads = []
         for update_count in [2, 4, 6]:
-            threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "update", self.keys, self.transaction_commit, update_count)))
+            threads.append(threading.Thread(
+                target=self.__thread_to_transaction,
+                args=(self.transaction, "update", self.keys,
+                      self.transaction_commit, update_count)))
         # Add verification task
         if self.transaction_commit:
             self.update_count = 6
@@ -202,19 +239,24 @@ class basic_ops(BaseTestCase):
     def test_basic_retry_async(self):
         self.test_log.info("going to create and execute the task")
         self.gen_create = self.get_doc_generator(0, self.num_items)
-        task = self.task.async_load_gen_docs_atomicity(self.cluster, self.def_bucket,
-                                             self.gen_create, "create" , exp=0,
-                                             batch_size=10,
-                                             process_concurrency=1,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries,update_count=self.update_count, transaction_timeout=self.transaction_timeout,
-                                             commit=True,durability=self.durability_level,sync=True,num_threads=1)
+        task = self.task.async_load_gen_docs_atomicity(
+            self.cluster, self.def_bucket,
+            self.gen_create, "create", exp=0,
+            batch_size=10,
+            process_concurrency=1,
+            replicate_to=self.replicate_to,
+            persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+            retries=self.sdk_retries, update_count=self.update_count,
+            transaction_timeout=self.transaction_timeout,
+            commit=True, durability=self.durability_level,
+            sync=True, num_threads=1)
         self.task.jython_task_manager.get_task_result(task)
         self.test_log.info("get all the keys in the cluster")
         keys = ["test_docs-0"]*2
 
-        exception = Transaction().RunTransaction(self.transaction, [self.client.collection], [], keys, [], self.transaction_commit, False, 0)
+        exception = Transaction().RunTransaction(
+            self.transaction, [self.client.collection], [], keys, [],
+            self.transaction_commit, False, 0)
         if exception:
             self.set_exception(Exception(exception))
 
@@ -224,7 +266,10 @@ class basic_ops(BaseTestCase):
         self.doc_gen(self.num_items)
 
         # run transaction
-        thread = threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "create", self.docs, self.transaction_commit, self.update_count, True, False))
+        thread = threading.Thread(target=self.__thread_to_transaction,
+                                  args=(self.transaction, "create", self.docs,
+                                        self.transaction_commit,
+                                        self.update_count, True, False))
         thread.start()
         self.sleep(1)
 
@@ -235,7 +280,9 @@ class basic_ops(BaseTestCase):
             self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
             self.create_Transaction(self.client1)
             self.sleep(self.transaction_timeout+60)
-            exception = Transaction().RunTransaction(self.transaction, [self.client1.collection], self.docs, [], [], self.transaction_commit, self.sync, self.update_count)
+            exception = Transaction().RunTransaction(
+                self.transaction, [self.client1.collection], self.docs, [], [],
+                self.transaction_commit, self.sync, self.update_count)
             if exception:
                 time.sleep(60)
 
@@ -249,7 +296,7 @@ class basic_ops(BaseTestCase):
             self.assertEqual(result["status"], False)
 
             # Update should pass
-            result = self.client.upsert(key,"value")
+            result = self.client.upsert(key, "value")
             self.assertEqual(result["status"], True)
 
             # delete should pass
@@ -259,8 +306,11 @@ class basic_ops(BaseTestCase):
         thread.join()
 
     def test_stop_loading(self):
-        ''' Load through transactions and close the transaction abruptly, create a new transaction sleep for 60 seconds and
-        perform create on the same set of docs '''
+        """
+        Load through transactions and close the transaction abruptly,
+        create a new transaction sleep for 60 seconds and
+        perform create on the same set of docs
+        """
         self.num_txn = self.input.param("num_txn", 9)
         self.doc_gen(self.num_items)
         threads = []
@@ -268,7 +318,11 @@ class basic_ops(BaseTestCase):
         docs = list(self.__chunks(self.docs, len(self.docs)/self.num_txn))
 
         for doc in docs:
-            threads.append(threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "create", doc, self.transaction_commit, self.update_count, True, False)))
+            threads.append(threading.Thread(
+                target=self.__thread_to_transaction,
+                args=(self.transaction, "create", doc,
+                      self.transaction_commit, self.update_count,
+                      True, False)))
 
         for thread in threads:
             thread.start()
@@ -278,11 +332,14 @@ class basic_ops(BaseTestCase):
 
         self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
         self.create_Transaction(self.client1)
-        self.sleep(self.transaction_timeout+60) # sleep for 60 seconds so that transaction cleanup can happen
+        self.sleep(self.transaction_timeout+60,
+                   "Wait for trasaction cleanup to happen")
 
         self.test_log.info("going to start the load")
         for doc in docs:
-            exception = Transaction().RunTransaction(self.transaction, [self.client1.collection], doc, [], [], self.transaction_commit, self.sync, self.update_count)
+            exception = Transaction().RunTransaction(
+                self.transaction, [self.client1.collection], doc, [], [],
+                self.transaction_commit, self.sync, self.update_count)
             if exception:
                 time.sleep(60)
 
@@ -319,10 +376,13 @@ class basic_ops(BaseTestCase):
         if self.system_xattr:
             xattr_key = "my._attr"
         else:
-            xattr_key="my.attr"
+            xattr_key = "my.attr"
         val = "v" * self.doc_size
         self.doc_gen(self.num_items)
-        threads = threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "create", self.docs, self.transaction_commit, self.update_count))
+        threads = threading.Thread(target=self.__thread_to_transaction,
+                                   args=(self.transaction, "create",
+                                         self.docs, self.transaction_commit,
+                                         self.update_count))
         threads.start()
         self.sleep(1)
         self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
@@ -338,12 +398,15 @@ class basic_ops(BaseTestCase):
                             ["new_my.attr", "new_value"]]
 
         self.doc_gen(self.num_items)
-        threads = threading.Thread(target=self.__thread_to_transaction, args=(self.transaction, "create", self.docs, self.transaction_commit, self.update_count))
+        threads = threading.Thread(target=self.__thread_to_transaction,
+                                   args=(self.transaction, "create",
+                                         self.docs, self.transaction_commit,
+                                         self.update_count))
         threads.start()
         self.sleep(1)
         for key, val in xattrs_to_insert:
             self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
-                                           key, val)
+                                               key, val)
         threads.join()
         if self.transaction_commit:
             for key, val in xattrs_to_insert:
