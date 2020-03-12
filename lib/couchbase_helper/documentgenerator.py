@@ -65,7 +65,7 @@ def sub_doc_generator(key, start, end, doc_size=256,
     city = ["Chicago", "Dallas", "Seattle", "Aurora", "Columbia"]
     state = ["AL", "CA", "IN", "NV", "NY"]
     pin_code = [135, 246, 396, 837, 007]
-    template = '{{ "name.first": "{0}", "name.last": "{1}", \
+    template = '{{ "full_name.first": "{0}", "full_name.last": "{1}", \
                    "addr.city": "{2}", "addr.state": "{3}", \
                    "addr.pincode": {4} }}'
     return SubdocDocumentGenerator(key, template,
@@ -81,16 +81,16 @@ def sub_doc_generator_for_edit(key, start, end, template_index=0,
                                target_vbucket=None, vbuckets=1024,
                                key_size=8):
     template = list()
-    template.append('{{ "name.last": "LastNameUpdate", \
+    template.append('{{ "full_name.last": "LastNameUpdate", \
                         "addr.city": "CityUpdate", \
                         "addr.pincode": "TypeChange", \
                         "todo.morning": [\"get\", \"up\"] }}')
-    template.append('{{ "name.first": "FirstNameUpdate", \
+    template.append('{{ "full_name.first": "FirstNameUpdate", \
                         "addr.state": "NewState", \
                         "todo.night": [1, \"nothing\", 3] }}')
-    template.append('{{ "name.first": "", \
+    template.append('{{ "full_name.first": "", \
                         "addr": "", \
-                        "name.last": "" }}')
+                        "full_name.last": "" }}')
     return SubdocDocumentGenerator(key, template[template_index],
                                    start=start, end=end,
                                    target_vbucket=target_vbucket,
@@ -116,6 +116,12 @@ class KVGenerator(object):
 
     def has_next(self):
         return self.itr < self.end
+
+    def next_key(self):
+        return "%s-%s" % (self.name,
+                          str(abs(self.itr)).zfill(self.key_size
+                                                   - len(self.name)
+                                                   - 1))
 
     def next(self):
         raise NotImplementedError
@@ -205,7 +211,6 @@ class DocumentGenerator(KVGenerator):
                 if k in self.kwargs:
                     self.template.put(k, self.random.choice(self.kwargs[k]))
 
-        doc_size = self.doc_size
         if self.randomize_doc_size:
             doc_size = self.random.randint(0, self.doc_size)
             self.body = [''.rjust(doc_size - 10, 'a')][0]
@@ -228,11 +233,7 @@ class DocumentGenerator(KVGenerator):
                               for _ in range(self.random.randint(self.key_size,
                                                                  250)))
         else:
-            doc_key = self.name \
-                      + '-' \
-                      + str(abs(self.itr)).zfill(self.key_size
-                                                 - len(self.name)
-                                                 - 1)
+            doc_key = self.next_key()
         self.itr += 1
         return doc_key, self.template
 
@@ -259,7 +260,7 @@ class SubdocDocumentGenerator(KVGenerator):
         self.args = args
         self.template = template
         self.doc_type = "json"
-        self.doc_keys = list()
+        self.doc_keys = dict()
         self.doc_keys_len = 0
         self.key_counter = 0
         self.key_size = 0
@@ -298,23 +299,10 @@ class SubdocDocumentGenerator(KVGenerator):
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                      (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
-                self.doc_keys.append(doc_key)
+                self.doc_keys.update({self.start+self.doc_keys_len: doc_key})
                 self.doc_keys_len += 1
             self.key_counter += 1
-        self.end = self.key_counter
-
-    def has_next(self):
-        if self.target_vbucket is None:
-            return self.itr < self.end
-        else:
-            for doc_key in self.doc_keys:
-                doc_index = int(doc_key.split("-")[-1])
-                if doc_index >= self.end:
-                    break
-                if self.start <= doc_index:
-                    return True
-            self.start = self.end
-            return False
+        self.end = self.start + self.doc_keys_len
 
     """Creates the next generated document and increments the iterator.
     Returns:
@@ -323,8 +311,6 @@ class SubdocDocumentGenerator(KVGenerator):
         if self.itr >= self.end:
             raise StopIteration
 
-        doc_key = None
-        doc_index = None
         doc_args = list()
         rand_hash = self.name + '-' + str(self.itr)
         self.random.seed(rand_hash)
@@ -341,31 +327,18 @@ class SubdocDocumentGenerator(KVGenerator):
             return_val.append((path, value))
 
         if self.target_vbucket is not None:
-            doc_found = False
-            for doc_key in self.doc_keys:
-                doc_index = int(doc_key.split("-")[-1])
-                if doc_index >= self.end:
-                    break
-                if self.start <= doc_index:
-                    doc_found = True
-                    self.doc_keys.remove(doc_key)
-                    break
-
-            if not doc_found:
-                raise StopIteration
-
-            self.itr = doc_index
+            doc_key = self.doc_keys[self.itr]
         elif self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
             seed_hash = self.name + '-' + str(self.itr)
             self.random.seed(seed_hash)
             doc_key = ''.join(self.random.choice(
-                ascii_uppercase + ascii_lowercase + digits) for _ in
-                              range(12))
-            self.itr += 1
+                              ascii_uppercase + ascii_lowercase + digits)
+                              for _ in range(12))
         else:
-            doc_key = "%s-%s" % (self.name, str(self.itr).zfill(self.key_size))
-            self.itr += 1
+            doc_key = self.next_key()
+
+        self.itr += 1
         return doc_key, return_val
 
 
@@ -469,7 +442,6 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                 if k in self.kwargs:
                     self.template.put(k, self.random.choice(self.kwargs[k]))
 
-        doc_size = self.doc_size
         if self.randomize_doc_size:
             doc_size = self.random.randint(0, self.doc_size)
             self.body = [''.rjust(doc_size - 10, 'a')][0]
