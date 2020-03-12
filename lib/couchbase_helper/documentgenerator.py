@@ -16,7 +16,6 @@ from reactor.util.function import Tuples
 
 
 letters = ascii_uppercase + ascii_lowercase + digits
-random_string = [''.join(random.choice(letters) for _ in range(128*1024))][0]
 
 
 def doc_generator(key, start, end,
@@ -180,6 +179,8 @@ class DocumentGenerator(KVGenerator):
 
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
+            self.random_string = [''.join(random.choice(letters)
+                                          for _ in range(self.doc_size*4))][0]
 
         if 'randomize' in self.kwargs:
             self.randomize = self.kwargs["randomize"]
@@ -210,8 +211,8 @@ class DocumentGenerator(KVGenerator):
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.randomize_value:
-            _slice = int(random.random()*128*1024) - self.doc_size
-            self.body = random_string[_slice:_slice+self.doc_size]
+            _slice = int(random.random()*3*self.doc_size)
+            self.body = self.random_string[_slice:_slice+self.doc_size]
 
         self.template.put("body", self.body)
 
@@ -428,6 +429,8 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
+            self.random_string = [''.join(random.choice(letters)
+                                          for _ in range(self.doc_size*4))][0]
 
         if 'randomize' in self.kwargs:
             self.randomize = self.kwargs["randomize"]
@@ -472,8 +475,8 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.randomize_value:
-            _slice = int(random.random()*128*1024) - self.doc_size
-            self.body = random_string[_slice:_slice+self.doc_size]
+            _slice = int(random.random()*3*self.doc_size)
+            self.body = self.random_string[_slice:_slice+self.doc_size]
         doc_key = self.doc_keys[self.itr]
         self.itr += 1
         return doc_key, self.template
