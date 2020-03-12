@@ -86,7 +86,8 @@ class basic_ops(BaseTestCase):
     def __thread_to_transaction(self, transaction, op_type, doc, txn_commit,
                                 update_count=1, sync=True,
                                 set_exception=True, client=None):
-        if not client:
+        exception = None
+        if client is None:
             client = self.client
         if op_type == "create":
             exception = Transaction().RunTransaction(
@@ -101,9 +102,8 @@ class basic_ops(BaseTestCase):
             exception = Transaction().RunTransaction(
                 transaction, [client.collection], [], [], doc,
                 txn_commit, sync, update_count)
-        if set_exception:
-            if exception:
-                self.set_exception("Failed")
+        if set_exception and exception:
+            self.set_exception("Failed")
 
     def doc_gen(self, num_items, start=0, value={'value': 'value1'}):
         self.docs = []
