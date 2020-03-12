@@ -49,6 +49,7 @@ class BaseTestCase(unittest.TestCase):
         self.gsi_type = self.input.param("gsi_type", 'plasma')
         # CBAS setting
         self.jre_path = self.input.param("jre_path", None)
+        self.enable_dp = self.input.param("enable_dp", False)
         # End of cluster info parameters
 
         # Bucket specific params
@@ -292,11 +293,12 @@ class BaseTestCase(unittest.TestCase):
                 self.quota = ""
 
             # Enable dp_version since we need collections enabled
-            for server in self.cluster.servers:
-                shell_conn = RemoteMachineShellConnection(server)
-                cb_cli = CbCli(shell_conn)
-                cb_cli.enable_dp()
-                shell_conn.disconnect()
+            if self.enable_dp:
+                for server in self.cluster.servers:
+                    shell_conn = RemoteMachineShellConnection(server)
+                    cb_cli = CbCli(shell_conn)
+                    cb_cli.enable_dp()
+                    shell_conn.disconnect()
 
             for cluster in self.__cb_clusters:
                 cluster_util = ClusterUtils(cluster, self.task_manager)

@@ -145,25 +145,16 @@ class TestInputParser:
                                                               argument)[1:]]
                 pairs = dict(zip(argument_split[::2], argument_split[1::2]))
                 for pair in pairs.iteritems():
-                    if pair[0] == "vbuckets":
-                        # takes in a string of the form "1-100,140,150-160"
-                        # converts to an array with all those values inclusive
-                        vbuckets = set()
-                        for v in pair[1].split(","):
-                            r = v.split("-")
-                            vbuckets.update(range(int(r[0]), int(r[-1]) + 1))
-                        params[pair[0]] = sorted(vbuckets)
+                    argument_list = [a.strip() for a in pair[1].split(",")]
+                    if len(argument_list) > 1:
+                        # if the parameter had multiple entries separated
+                        # by comma then store as a list
+                        # ex. {'vbuckets':[1,2,3,4,100]}
+                        params[pair[0]] = argument_list
                     else:
-                        argument_list = [a.strip() for a in pair[1].split(",")]
-                        if len(argument_list) > 1:
-                            # if the parameter had multiple entries separated
-                            # by comma then store as a list
-                            # ex. {'vbuckets':[1,2,3,4,100]}
-                            params[pair[0]] = argument_list
-                        else:
-                            # if parameter only had one entry then store
-                            # as a string. ex. {'product':'cb'}
-                            params[pair[0]] = argument_list[0]
+                        # if parameter only had one entry then store
+                        # as a string. ex. {'product':'cb'}
+                        params[pair[0]] = argument_list[0]
 
         if has_ini:
             t_input = TestInputParser.parse_from_file(ini_file)

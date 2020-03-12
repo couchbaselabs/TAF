@@ -172,7 +172,9 @@ class basic_ops(BaseTestCase):
                              doc_size=document_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.cluster_util.vbuckets)
+                             vbuckets=self.cluster_util.vbuckets,
+                             randomize_doc_size=self.randomize_doc_size,
+                             randomize_value=self.randomize_value)
 
     def test_doc_size(self):
         def check_durability_failures():
@@ -210,7 +212,9 @@ class basic_ops(BaseTestCase):
             self.key, 0, self.num_items, key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster_util.vbuckets,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value)
         self.log.info("Loading {0} docs into the bucket: {1}"
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_docs(
@@ -274,7 +278,9 @@ class basic_ops(BaseTestCase):
             doc_size=self.doc_size, doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
             vbuckets=self.cluster_util.vbuckets,
-            mutate=1)
+            mutate=1,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value)
 
         expected_num_items = self.num_items
 
@@ -306,26 +312,11 @@ class basic_ops(BaseTestCase):
                 check_durability_failures()
 
             # Read all the values to validate update operation
-            task = self.task.async_load_gen_docs(
-                self.cluster, def_bucket, doc_update, "read", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout,
-                scope=self.scope_name,
-                collection=self.collection_name)
-            self.task.jython_task_manager.get_task_result(task)
+            data_validation = self.task.async_validate_docs(
+                    self.cluster, def_bucket,
+                    doc_update, "update", 0, batch_size=10)
+            self.task.jython_task_manager.get_task_result(data_validation)
 
-            op_failed_tbl = TableView(self.log.error)
-            op_failed_tbl.set_headers(["Update failed key", "CAS", "Value"])
-            for key, value in task.success.items():
-                if json.loads(str(value["value"]))["mutated"] != 1:
-                    op_failed_tbl.add_row([key,
-                                           str(value["cas"]),
-                                           value["value"]])
-
-            op_failed_tbl.display("Update failed for keys:")
-            if len(op_failed_tbl.rows) != 0:
-                self.fail("Update failed for few keys")
         elif doc_op == "delete":
             self.log.info("Performing 'delete' mutation over the docs")
             task = self.task.async_load_gen_docs(
@@ -358,23 +349,12 @@ class basic_ops(BaseTestCase):
             if self.ryow:
                 check_durability_failures()
 
-            # Read all the values to validate update operation
-            task = self.task.async_load_gen_docs(
-                self.cluster, def_bucket, doc_update, "read", 0,
-                batch_size=10, process_concurrency=8,
-                timeout_secs=self.sdk_timeout,
-                scope=self.scope_name,
-                collection=self.collection_name)
-            self.task.jython_task_manager.get_task_result(task)
+            # Read all the values to validate delete operation
+            data_validation = self.task.async_validate_docs(
+                    self.cluster, def_bucket,
+                    doc_update, "delete", 0, batch_size=10)
+            self.task.jython_task_manager.get_task_result(data_validation)
 
-            op_failed_tbl = TableView(self.log.error)
-            op_failed_tbl.set_headers(["Delete failed key", "CAS", "Value"])
-            for key, value in task.success.items():
-                op_failed_tbl.add_row([key, value["cas"], value["value"]])
-
-            op_failed_tbl.display("Delete failed for keys:")
-            if len(op_failed_tbl.rows) != 0:
-                self.fail("Delete failed for few keys")
         else:
             self.log.warning("Unsupported doc_operation")
 
@@ -395,7 +375,7 @@ class basic_ops(BaseTestCase):
         # test starts failing document size=2MB, No of docs = 221,
         # load 250 docs generate docs with size >= 1MB , See MB-29333
 
-        self.doc_size *= 1024000
+        self.doc_size *= 1024*1024
         gens_load = self.generate_docs_bigdata(
             docs_per_day=self.num_items, document_size=self.doc_size)
         for bucket in self.bucket_util.buckets:
@@ -543,14 +523,18 @@ class basic_ops(BaseTestCase):
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster_util.vbuckets,
+                                   randomize_doc_size=self.randomize_doc_size,
+                                   randomize_value=self.randomize_value)
         gen_create2 = doc_generator("eviction2_",
                                     start=0,
                                     end=self.num_items,
                                     key_size=self.key_size,
                                     doc_size=self.doc_size,
                                     doc_type=self.doc_type,
-                                    vbuckets=self.cluster_util.vbuckets)
+                                    vbuckets=self.cluster_util.vbuckets,
+                                    randomize_doc_size=self.randomize_doc_size,
+                                    randomize_value=self.randomize_value)
         def_bucket = self.bucket_util.get_all_buckets()[0]
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create, "create", 0,
