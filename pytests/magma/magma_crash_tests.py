@@ -78,6 +78,7 @@ class MagmaCrashTests(MagmaBaseTest):
         cbstats = Cbstats(shell)
         self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].name)
         start = self.num_items
+        self.gen_validate = self.gen_create
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
@@ -121,6 +122,12 @@ class MagmaCrashTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(items, timeout=300)
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
+
+            data_validation = self.task.async_validate_docs(
+                    self.cluster, self.bucket_util.buckets[0],
+                    self.gen_validate, "create", 0, batch_size=10)
+            self.task.jython_task_manager.get_task_result(data_validation)
+
         shell.disconnect()
 
     def test_magma_rollback_to_0(self):
