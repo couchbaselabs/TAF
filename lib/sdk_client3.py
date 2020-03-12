@@ -999,7 +999,9 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
-        for key, value in keys.items():
+        for kv in keys:
+            key = kv.getT1()
+            value = kv.getT2()
             mutate_in_spec = []
             for _tuple in value:
                 _path = _tuple[0]
@@ -1024,20 +1026,15 @@ class SDKClient(object):
     def sub_doc_read_multi(self, keys, timeout=5, time_unit="seconds",
                            xattr=False):
         """
-        :param keys: Documents to perform sub_doc operations on.
-                     Must be a dictionary with Keys and List of tuples for
-                     path.
+        :param keys: List of tuples (key,value)
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
-        :param xattr: Boolean. If 'True', perform xattr operation
-        :param cas: CAS for the document to use
         :return:
         """
         mutate_in_specs = []
-        keys_to_loop = keys.keys()
-        keys_to_loop.sort()
-        for key in keys_to_loop:
-            value = keys[key]
+        for kv in keys:
+            key = kv.getT1()
+            value = kv.getT2()
             mutate_in_spec = []
             for _tuple in value:
                 _path = _tuple[0]
@@ -1048,8 +1045,8 @@ class SDKClient(object):
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
         result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
+            # timeout, time_unit,
             self.collection, mutate_in_specs)
-            # timeout, time_unit)
         return self.__translate_get_multi_results(result)
 
     def sub_doc_remove_multi(self, keys, exp=0, exp_unit="seconds",
@@ -1074,8 +1071,10 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
-        for key, value in keys.items():
+        for kv in keys:
             mutate_in_spec = []
+            key = kv.getT1()
+            value = kv.getT2()
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
@@ -1119,8 +1118,10 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
-        for key, value in keys.items():
+        for kv in keys:
             mutate_in_spec = []
+            key = kv.getT1()
+            value = kv.getT2()
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
