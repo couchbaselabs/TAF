@@ -677,27 +677,32 @@ class BucketUtils(ScopeUtils):
             raise(Exception(msg))
 
     @staticmethod
-    def get_random_name():
+    def get_random_name(invalid_name=False):
         """
         API to generate random name which can be used to name
         a bucket/scope/collection
         """
         invalid_start_chars = "_%"
         spl_chars = "-"
+        invalid_chars = "!@#$^&*()~`:;?/>.,<{}|\]["
         char_set = string.ascii_letters \
                    + string.digits \
                    + invalid_start_chars \
                    + spl_chars
-
+        if invalid_name:
+            char_set += invalid_chars
         random.seed(datetime.now())
         rand_name = ""
         name_len = random.randint(1, 30)
         while rand_name == "":
             rand_name = ''.join(random.choice(char_set)
                                 for _ in range(name_len))
-
+            if invalid_name:
+                if rand_name[0] not in invalid_start_chars \
+                    and not set(invalid_chars).intersection(set(rand_name)):
+                        rand_name = ""
             # Remove if name starts with invalid_start_charset
-            if rand_name[0] in invalid_start_chars:
+            elif rand_name[0] in invalid_start_chars:
                 rand_name = ""
         return rand_name
 
@@ -3680,6 +3685,7 @@ class BucketUtils(ScopeUtils):
             self.log.error("No scope data to process")
 
         active_scopes = ScopeUtils.get_active_scopes(bucket)
+
         # Validate scope count
         if len(active_scopes) != scope_data["count"]:
             status = False
@@ -3699,7 +3705,7 @@ class BucketUtils(ScopeUtils):
                                % (scope.name,
                                   len(active_collections),
                                   scope_data[scope.name]["collections"]))
-
+            
             # Validate expected collection values
             for collection in active_collections:
                 if collection_data[collection.name]["num_items"] \
