@@ -5,6 +5,8 @@ from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 
 from membase.api.rest_client import RestHelper, RestConnection
 
+from com.couchbase.client.java.json import JsonObject
+
 
 class CBASBaseTest(BaseTestCase):
     def setUp(self, add_default_cbas_node=True):
@@ -185,14 +187,21 @@ class CBASBaseTest(BaseTestCase):
         :param durability: Durability level to use for doc operation
         :return:
         """
-        age = range(70)
         first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
         profession = ['doctor', 'lawyer']
-        template = '{{"number": {0}, "first_name": "{1}", ' \
-                   + '"profession": "{2}", "mutated": 0}}'
 
-        doc_gen = DocumentGenerator('test_docs', template, age, first,
-                                    profession, start=start_key, end=end_key)
+        template_obj = JsonObject.create()
+        template_obj.put("number", 0)
+        template_obj.put("first_name", "")
+        template_obj.put("profession", "")
+        template_obj.put("mutated", 0)
+        template_obj.put("mutation_type", "ADD")
+
+        doc_gen = DocumentGenerator('test_docs', template_obj,
+                                    start=start_key, end=end_key,
+                                    randomize=True,
+                                    first_name=first, profession=profession,
+                                    number=range(70))
         try:
             if _async:
                 return self.bucket_util._async_load_all_buckets(
