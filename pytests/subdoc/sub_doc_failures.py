@@ -20,6 +20,7 @@ class SubDocTimeouts(DurabilityTestsBase):
         # Load basic docs into bucket
         doc_create = sub_doc_generator(
             self.key, 0, self.num_items/2,
+            key_size=self.key_size,
             doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
             vbuckets=self.cluster_util.vbuckets)
@@ -76,20 +77,24 @@ class SubDocTimeouts(DurabilityTestsBase):
 
         doc_gen["insert"] = sub_doc_generator(
             self.key, self.num_items/2, self.num_items,
+            key_size=self.key_size,
             doc_size=self.sub_doc_size)
         doc_gen["read"] = sub_doc_generator(
             self.key,
             self.num_items/4,
-            self.num_items/2)
+            self.num_items/2,
+            key_size=self.key_size)
         doc_gen["upsert"] = sub_doc_generator_for_edit(
             self.key,
             self.num_items/4,
             self.num_items/2,
+            key_size=self.key_size,
             template_index=2)
         doc_gen["remove"] = sub_doc_generator_for_edit(
             self.key,
             0,
             self.num_items/4,
+            key_size=self.key_size,
             template_index=2)
 
         for op_type in doc_gen.keys():
@@ -149,7 +154,8 @@ class SubDocTimeouts(DurabilityTestsBase):
             shell_conn[node.ip].disconnect()
 
         # Read mutation field from all docs for validation
-        gen_read = sub_doc_generator_for_edit(self.key, 0, self.num_items)
+        gen_read = sub_doc_generator_for_edit(self.key, 0, self.num_items,
+                                              key_size=self.key_size)
         gen_read.template = '{{ "mutated": "" }}'
         reader_task = self.task.async_load_gen_sub_docs(
             self.cluster, self.bucket, gen_read, "read",
@@ -284,23 +290,27 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.key,
             self.num_items/2,
             self.crud_batch_size,
-            target_vbucket=target_vbs)
+            target_vbucket=target_vbs,
+            key_size=self.key_size)
         doc_gen["remove"] = sub_doc_generator_for_edit(
             self.key,
             0,
             self.crud_batch_size,
+            key_size=self.key_size,
             template_index=2,
             target_vbucket=target_vbs)
         doc_gen["read"] = sub_doc_generator_for_edit(
             self.key,
             0,
             self.crud_batch_size,
+            key_size=self.key_size,
             template_index=0,
             target_vbucket=target_vbs)
         doc_gen["upsert"] = sub_doc_generator_for_edit(
             self.key,
             int(self.num_items/4),
             self.crud_batch_size,
+            key_size=self.key_size,
             template_index=1,
             target_vbucket=target_vbs)
 
@@ -488,8 +498,10 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["create_stat"] = dict()
         nodes_in_cluster = self.cluster_util.get_kv_nodes()
         gen_load = doc_generator(self.key, 0, self.num_items)
-        gen_subdoc_load = sub_doc_generator(self.key, 0, self.num_items)
-        subdoc_reader_gen = sub_doc_generator(self.key, 0, self.num_items)
+        gen_subdoc_load = sub_doc_generator(self.key, 0, self.num_items,
+                                            key_size=self.key_size)
+        subdoc_reader_gen = sub_doc_generator(self.key, 0, self.num_items,
+                                              key_size=self.key_size)
         subdoc_reader_gen.template = '{{ "mutated": "" }}'
         err_msg = "Doc mutation succeeded with, " \
                   "cluster size: {0}, replica: {1}" \
@@ -683,6 +695,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             target_vbucket=target_vbuckets, mutate=1)
         gen_subdoc = sub_doc_generator(
             self.key, 0, self.crud_batch_size,
+            key_size=self.key_size,
             vbuckets=self.cluster_util.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
@@ -707,7 +720,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
             if self.doc_ops[1] == "insert" and self.doc_ops[0] == "create":
                 gen_subdoc = sub_doc_generator(
                     self.key, self.num_items, self.crud_batch_size,
-                    vbuckets=self.cluster_util.vbuckets, target_vbucket=target_vbuckets)
+                    key_size=self.key_size,
+                    vbuckets=self.cluster_util.vbuckets,
+                    target_vbucket=target_vbuckets)
                 gen_loader[1] = gen_subdoc
             gen_loader[1] = gen_subdoc
 

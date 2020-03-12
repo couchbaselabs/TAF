@@ -2,8 +2,6 @@ import copy
 import json
 import sys
 
-# import crc32
-# from clitest.importexporttest import ImportExportTests
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
@@ -14,8 +12,6 @@ from error_simulation.cb_error import CouchbaseError
 from membase.api.exception import DesignDocCreationException
 from couchbase_helper.document import View
 from membase.api.rest_client import RestConnection
-# from membase.helper.bucket_helper import BucketOperationHelper
-# from newupgradebasetest import NewUpgradeBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -1759,7 +1755,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         sub_doc_op_dict["remove"] = "subdoc_delete"
 
         for op_type in sub_doc_op_dict.keys():
-            doc_gen[op_type] = sub_doc_generator(self.doc_id, 0, 1)
+            doc_gen[op_type] = sub_doc_generator(self.doc_id, 0, 1,
+                                                 key_size=self.key_size)
             doc_gen[op_type].template = '{{ "new_value": "value" }}'
 
         for op_type in sub_doc_op_dict.keys():
