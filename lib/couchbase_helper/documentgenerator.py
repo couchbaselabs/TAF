@@ -117,11 +117,11 @@ class KVGenerator(object):
     def has_next(self):
         return self.itr < self.end
 
-    def next_key(self):
+    def next_key(self, doc_index):
         return "%s-%s" % (self.name,
-                          str(abs(self.itr)).zfill(self.key_size
-                                                   - len(self.name)
-                                                   - 1))
+                          str(abs(doc_index)).zfill(self.key_size
+                                                    - len(self.name)
+                                                    - 1))
 
     def next(self):
         raise NotImplementedError
@@ -233,7 +233,7 @@ class DocumentGenerator(KVGenerator):
                               for _ in range(self.random.randint(self.key_size,
                                                                  250)))
         else:
-            doc_key = self.next_key()
+            doc_key = self.next_key(self.itr)
         self.itr += 1
         return doc_key, self.template
 
@@ -288,14 +288,13 @@ class SubdocDocumentGenerator(KVGenerator):
         if 'key_size' in kwargs:
             self.key_size = kwargs['key_size']
 
-        if self.target_vbucket is not None:
+        if self.target_vbucket:
             self.key_counter = self.start
             self.create_key_for_vbucket()
 
     def create_key_for_vbucket(self):
         while self.doc_keys_len < self.end:
-            doc_key = "%s-%s" % (self.name,
-                                 str(self.key_counter).zfill(self.key_size))
+            doc_key = self.next_key(self.key_counter)
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                      (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
@@ -336,7 +335,7 @@ class SubdocDocumentGenerator(KVGenerator):
                               ascii_uppercase + ascii_lowercase + digits)
                               for _ in range(12))
         else:
-            doc_key = self.next_key()
+            doc_key = self.next_key(self.itr)
 
         self.itr += 1
         return doc_key, return_val
@@ -416,8 +415,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
     def create_key_for_vbucket(self):
         while self.doc_keys_len < self.end:
-            doc_key = "%s-%s" % (self.name,
-                                 str(self.key_counter).zfill(self.key_size))
+            doc_key = self.next_key(self.key_counter)
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                 (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
