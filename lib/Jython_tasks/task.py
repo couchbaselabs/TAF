@@ -1377,6 +1377,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.num_loaded = 0
         self.fail = dict()
         self.success = dict()
+        self.print_ops_rate_tasks = list()
 
     def call(self):
         self.start_task()
@@ -1391,7 +1392,7 @@ class LoadDocumentsGeneratorsTask(Task):
                     Exception("Not all generators have bucket specified!"))
                 self.complete_task()
         iterator = 0
-        tasks = []
+        tasks = list()
         for generator in self.generators:
             if self.op_types:
                 self.op_type = self.op_types[iterator]
@@ -1400,14 +1401,15 @@ class LoadDocumentsGeneratorsTask(Task):
             tasks.extend(self.get_tasks(generator))
             iterator += 1
         if self.print_ops_rate:
-            self.print_ops_rate_tasks = list()
             if self.buckets:
                 for bucket in self.buckets:
-                    print_ops_rate_task = PrintOpsRate(self.cluster, bucket)
+                    print_ops_rate_task = PrintOpsRate(self.cluster, bucket,
+                                                       self.op_type)
                     self.print_ops_rate_tasks.append(print_ops_rate_task)
                     self.task_manager.add_new_task(print_ops_rate_task)
             else:
-                print_ops_rate_task = PrintOpsRate(self.cluster, self.bucket)
+                print_ops_rate_task = PrintOpsRate(self.cluster, self.bucket,
+                                                   self.op_type)
                 self.print_ops_rate_tasks.append(print_ops_rate_task)
                 self.task_manager.add_new_task(print_ops_rate_task)
         try:
@@ -1419,7 +1421,9 @@ class LoadDocumentsGeneratorsTask(Task):
                     self.log.debug("Items loaded in task {} are {}"
                                    .format(task.thread_name, task.docs_loaded))
                     i = 0
-                    while task.docs_loaded < task.generator._doc_gen.end - task.generator._doc_gen.start and i < 60:
+                    while task.docs_loaded < (task.generator._doc_gen.end -
+                                              task.generator._doc_gen.start) \
+                            and i < 60:
                         self.sleep(1, "Bug in java futures task. "
                                       "Items loaded in task %s is %s"
                                       % (task.thread_name, task.docs_loaded))
@@ -2800,12 +2804,14 @@ class DropIndexTask(Task):
 
 
 class PrintOpsRate(Task):
-    def __init__(self, cluster, bucket, sleep=1):
-        super(PrintOpsRate, self).__init__("print_ops_rate_{}_{}"
+    def __init__(self, cluster, bucket, op_type, sleep=1):
+        super(PrintOpsRate, self).__init__("print_ops_rate_%s_%s_%s"
                                            .format(bucket.name,
+                                                   op_type,
                                                    time.time()))
         self.cluster = cluster
         self.bucket = bucket
+        self.op_type = op_type
         self.bucket_helper = BucketHelper(self.cluster.master)
         self.sleep = sleep
         self.stop_task = False
@@ -2816,7 +2822,8 @@ class PrintOpsRate(Task):
         self.start_task()
         while not self.stop_task:
             try:
-                bucket_stats = self.bucket_helper.fetch_bucket_stats(self.bucket)
+                bucket_stats = \
+                    self.bucket_helper.fetch_bucket_stats(self.bucket)
                 if 'op' in bucket_stats and \
                         'samples' in bucket_stats['op'] and \
                         'ops' in bucket_stats['op']['samples']:
@@ -2829,12 +2836,13 @@ class PrintOpsRate(Task):
                     t_ops_rate.append(ops)
                     time.sleep(self.sleep)
             except:
-                #Case when cluster.master is rebalance out of the cluster
+                # Case when cluster.master is rebalance out of the cluster
                 self.bucket_helper = BucketHelper(self.cluster.master)
                 time.sleep(20)
         if t_ops_rate:
             ops_rate_trend.append(t_ops_rate)
-        plot_graph(self.test_log, self.bucket.name, ops_rate_trend)
+        plot_graph(self.test_log, self.bucket.name, self.op_type,
+                   ops_rate_trend)
         self.complete_task()
 
     def end_task(self):
