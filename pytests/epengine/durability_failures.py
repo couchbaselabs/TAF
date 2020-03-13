@@ -228,6 +228,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         if self.doc_ops[1] == "create":
             gen_loader_2 = gen_create
+        elif self.doc_ops[0] == "create" \
+                and self.doc_ops[1] in ["delete", "replace"]:
+            gen_loader_2 = gen_create
         elif self.doc_ops[1] in ["update", "replace", "touch"]:
             gen_loader_2 = gen_update
         elif self.doc_ops[1] == "delete":
@@ -279,12 +282,16 @@ class DurabilityFailureTests(DurabilityTestsBase):
                         SDKException \
                         .RetryReason \
                         .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
+                if self.doc_ops[0] == "create" \
+                        and self.doc_ops[1] in ["delete", "replace"]:
+                    expected_exception = SDKException.DocumentNotFoundException
+                    retry_reason = None
 
                 # Validate the returned error from the SDK
                 if expected_exception not in str(fail["error"]):
                     self.log_failure("Invalid exception for {0}: {1}"
                                      .format(key, fail["error"]))
-                if retry_reason not in str(fail["error"]):
+                if retry_reason and retry_reason not in str(fail["error"]):
                     self.log_failure("Invalid retry reason for {0}: {1}"
                                      .format(key, fail["error"]))
 
