@@ -1576,13 +1576,15 @@ class LoadSubDocumentsGeneratorsTask(Task):
             if self.buckets:
                 for bucket in self.buckets:
                     print_ops_rate_task = PrintOpsRate(self.cluster,
-                                                       bucket)
+                                                       bucket,
+                                                       self.op_type)
                     self.print_ops_rate_tasks.append(
                         print_ops_rate_task)
                     self.task_manager.add_new_task(print_ops_rate_task)
             else:
                 print_ops_rate_task = PrintOpsRate(self.cluster,
-                                                   self.bucket)
+                                                   self.bucket,
+                                                   self.op_type)
                 self.print_ops_rate_tasks.append(print_ops_rate_task)
                 self.task_manager.add_new_task(print_ops_rate_task)
         try:
