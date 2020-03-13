@@ -185,6 +185,7 @@ class DocumentGenerator(KVGenerator):
 
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
+            random.seed(name)
             self.random_string = [''.join(random.choice(letters)
                                           for _ in range(self.doc_size*4))][0]
 
