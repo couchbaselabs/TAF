@@ -2808,9 +2808,9 @@ class DropIndexTask(Task):
 class PrintOpsRate(Task):
     def __init__(self, cluster, bucket, op_type, sleep=1):
         super(PrintOpsRate, self).__init__("print_ops_rate_%s_%s_%s"
-                                           .format(bucket.name,
-                                                   op_type,
-                                                   time.time()))
+                                           % (bucket.name,
+                                              op_type,
+                                              time.time()))
         self.cluster = cluster
         self.bucket = bucket
         self.op_type = op_type
