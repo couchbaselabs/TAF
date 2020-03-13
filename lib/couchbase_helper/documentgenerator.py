@@ -206,7 +206,6 @@ class DocumentGenerator(KVGenerator):
 
         seed_hash = self.name + '-' + str(abs(self.itr))
         self.random.seed(seed_hash)
-
         if self.randomize:
             for k in self.template.getNames():
                 if k in self.kwargs:
@@ -217,7 +216,7 @@ class DocumentGenerator(KVGenerator):
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.randomize_value:
-            _slice = int(random.random()*3*self.doc_size)
+            _slice = int(self.random.random()*3*self.doc_size)
             self.body = self.random_string[_slice:_slice+self.doc_size]
 
         self.template.put("body", self.body)
