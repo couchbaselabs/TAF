@@ -187,7 +187,7 @@ class DocumentGenerator(KVGenerator):
             self.randomize_value = kwargs['randomize_value']
             random.seed(name)
             self.random_string = [''.join(random.choice(letters)
-                                          for _ in range(self.doc_size*4))][0]
+                                          for _ in range(self.doc_size*100))][0]
 
         if 'randomize' in self.kwargs:
             self.randomize = self.kwargs["randomize"]
@@ -203,26 +203,26 @@ class DocumentGenerator(KVGenerator):
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
-
+        template = self.template
         seed_hash = self.name + '-' + str(abs(self.itr))
         self.random.seed(seed_hash)
         if self.randomize:
-            for k in self.template.getNames():
+            for k in template.getNames():
                 if k in self.kwargs:
-                    self.template.put(k, self.random.choice(self.kwargs[k]))
+                    template.put(k, self.random.choice(self.kwargs[k]))
 
         if self.randomize_doc_size:
             doc_size = self.random.randint(0, self.doc_size)
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.randomize_value:
-            _slice = int(self.random.random()*3*self.doc_size)
+            _slice = int(self.random.random()*99*self.doc_size)
             self.body = self.random_string[_slice:_slice+self.doc_size]
 
-        self.template.put("body", self.body)
+        template.put("body", self.body)
 
         if self.doc_type.find("binary") != -1:
-            self.template = String(self.template).getBytes(StandardCharsets.UTF_8)
+            template = String(template).getBytes(StandardCharsets.UTF_8)
 
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
@@ -235,7 +235,7 @@ class DocumentGenerator(KVGenerator):
         else:
             doc_key = self.next_key(self.itr)
         self.itr += 1
-        return doc_key, self.template
+        return doc_key, template
 
 
 class SubdocDocumentGenerator(KVGenerator):

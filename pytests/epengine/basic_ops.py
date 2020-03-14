@@ -312,10 +312,12 @@ class basic_ops(BaseTestCase):
                 check_durability_failures()
 
             # Read all the values to validate update operation
-            data_validation = self.task.async_validate_docs(
+            task = self.task.async_validate_docs(
                     self.cluster, def_bucket,
-                    doc_update, "update", 0, batch_size=10)
-            self.task.jython_task_manager.get_task_result(data_validation)
+                    doc_update, "update", 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,)
+            self.task.jython_task_manager.get_task_result(task)
 
         elif doc_op == "delete":
             self.log.info("Performing 'delete' mutation over the docs")
@@ -350,10 +352,12 @@ class basic_ops(BaseTestCase):
                 check_durability_failures()
 
             # Read all the values to validate delete operation
-            data_validation = self.task.async_validate_docs(
+            task = self.task.async_validate_docs(
                     self.cluster, def_bucket,
-                    doc_update, "delete", 0, batch_size=10)
-            self.task.jython_task_manager.get_task_result(data_validation)
+                    doc_update, "delete", 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,)
+            self.task.jython_task_manager.get_task_result(task)
 
         else:
             self.log.warning("Unsupported doc_operation")
