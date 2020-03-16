@@ -203,7 +203,9 @@ class MagmaBaseTest(BaseTestCase):
         read_task = False
         if "update" in self.doc_ops and self.gen_update is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_update, "update", 0, batch_size=20,
+                self.cluster, self.gen_update, "update", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
@@ -212,7 +214,9 @@ class MagmaBaseTest(BaseTestCase):
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_create, "create", 0, batch_size=20,
+                self.cluster, self.gen_create, "create", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
@@ -222,14 +226,18 @@ class MagmaBaseTest(BaseTestCase):
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "read" in self.doc_ops and self.gen_read is not None:
             read_tasks_info = self.bucket_util._async_validate_docs(
-               self.cluster, self.gen_read, "read", 0, batch_size=20,
+               self.cluster, self.gen_read, "read", 0,
+               batch_size=self.batch_size,
+               process_concurrency=self.process_concurrency,
                pause_secs=5, timeout_secs=self.sdk_timeout,
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions)
             read_task = True
         if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_delete, "delete", 0, batch_size=20,
+                self.cluster, self.gen_delete, "delete", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
