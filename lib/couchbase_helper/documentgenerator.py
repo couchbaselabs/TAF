@@ -13,6 +13,7 @@ from java.nio.charset import StandardCharsets
 from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 from com.couchbase.client.java.json import JsonObject
 from reactor.util.function import Tuples
+import copy
 
 
 letters = ascii_uppercase + ascii_lowercase + digits
@@ -187,7 +188,8 @@ class DocumentGenerator(KVGenerator):
             self.randomize_value = kwargs['randomize_value']
             random.seed(name)
             self.random_string = [''.join(random.choice(letters)
-                                          for _ in range(self.doc_size*100))][0]
+                                          for _ in range(4*1024))][0]
+            self.len_randon_string = len(self.random_string)
 
         if 'randomize' in self.kwargs:
             self.randomize = self.kwargs["randomize"]
@@ -204,6 +206,7 @@ class DocumentGenerator(KVGenerator):
         if self.itr >= self.end:
             raise StopIteration
         template = self.template
+#         template = copy.deepcopy(self.template)
         seed_hash = self.name + '-' + str(abs(self.itr))
         self.random.seed(seed_hash)
         if self.randomize:
@@ -216,8 +219,9 @@ class DocumentGenerator(KVGenerator):
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.randomize_value:
-            _slice = int(self.random.random()*99*self.doc_size)
-            self.body = self.random_string[_slice:_slice+self.doc_size]
+            _slice = int(self.random.random()*4*1024) % self.doc_size
+            self.body = self.random_string[:_slice] + \
+                (self.random_string * (self.doc_size/self.len_randon_string+1))[_slice:self.doc_size]
 
         template.put("body", self.body)
 
