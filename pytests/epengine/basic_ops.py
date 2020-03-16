@@ -6,14 +6,12 @@ from Cb_constants import constants, CbServer
 from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
-from couchbase_helper.tuq_generators import JsonGenerator
 from error_simulation.cb_error import CouchbaseError
 
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
-from table_view import TableView
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -32,10 +30,8 @@ class basic_ops(BaseTestCase):
     def setUp(self):
         super(basic_ops, self).setUp()
 
-        # Scope_name can be '_default', 'random' to create a random scope
+        # Scope/collection name can be default or create a random one to test
         self.scope_name = self.input.param("scope", CbServer.default_scope)
-        # collection_name will be 'False' to disable collection testing.
-        # else to create collection with random name for testing
         self.collection_name = self.input.param("collection",
                                                 CbServer.default_collection)
 
@@ -282,8 +278,6 @@ class basic_ops(BaseTestCase):
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value)
 
-        expected_num_items = self.num_items
-
         if self.target_vbucket:
             mutation_doc_count = len(doc_update.doc_keys)
         else:
@@ -316,7 +310,9 @@ class basic_ops(BaseTestCase):
                     self.cluster, def_bucket,
                     doc_update, "update", 0,
                     batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency,)
+                    process_concurrency=self.process_concurrency,
+                    scope=self.scope_name,
+                    collection=self.collection_name)
             self.task.jython_task_manager.get_task_result(task)
 
         elif doc_op == "delete":
@@ -367,7 +363,8 @@ class basic_ops(BaseTestCase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -476,7 +473,8 @@ class basic_ops(BaseTestCase):
             command = cmd_base + '-X POST -d \'ns_config:set(allow_nonlocal_eval, true).\''
             _, _ = shell.execute_command(command)
 
-        # Check ip address on diag/eval will not work fine when allow_nonlocal_eval is disabled
+        # Check ip address on diag/eval will not work fine
+        # when allow_nonlocal_eval is disabled
         cmd = []
         cmd_base = 'curl http://{0}:{1}@{2}:{3}/diag/eval ' \
             .format(self.cluster.master.rest_username,
