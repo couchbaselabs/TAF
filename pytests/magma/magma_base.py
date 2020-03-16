@@ -199,6 +199,7 @@ class MagmaBaseTest(BaseTestCase):
                              ignore_exceptions=[],
                              _sync=True):
         tasks_info = dict()
+        read_tasks_info = dict()
         read_task = False
         if "update" in self.doc_ops and self.gen_update is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -240,12 +241,18 @@ class MagmaBaseTest(BaseTestCase):
         if _sync:
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
+
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         if read_task:
+            # TODO: Need to converge read_tasks_info into tasks_info before
+            #       itself to avoid confusions during _sync=False case
             tasks_info.update(read_tasks_info.items())
+            if _sync:
+                for task in read_tasks_info:
+                    self.task_manager.get_task_result(task)
 
         return tasks_info
 
