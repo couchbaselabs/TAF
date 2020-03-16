@@ -218,7 +218,7 @@ class DocumentGenerator(KVGenerator):
             doc_size = self.random.randint(0, self.doc_size)
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
-        if self.randomize_value:
+        if self.doc_size and self.randomize_value:
             _slice = int(self.random.random()*4*1024) % self.doc_size
             self.body = self.random_string[:_slice] + \
                 (self.random_string * (self.doc_size/self.len_randon_string+1))[_slice:self.doc_size]

@@ -1761,8 +1761,6 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  active_resident_threshold=99,
                  dgm_batch=5000,
                  task_identifier=""):
-#         super(LoadDocumentsForDgmTask, self).__init__(
-#             "LoadDocumentsForDgmTask_{}_{}".format(bucket.name, time.time()))
 
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
@@ -1832,7 +1830,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                            % (bucket.name, self.active_resident_threshold))
         while dgm_value > self.active_resident_threshold:
             self.test_log.info("Active_resident_items_ratio for {0} is {1}"
-                                .format(bucket.name, dgm_value))
+                               .format(bucket.name, dgm_value))
             self._load_next_batch_of_docs(bucket)
             dgm_value = self._get_bucket_dgm(bucket)
         self.test_log.info("DGM %s%% achieved for '%s'"
@@ -1921,7 +1919,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                                            key_value)
         if self.op_type == 'delete':
             not_missing = []
-            if missing_keys.__len__() == key_value.keys().__len__():
+            if missing_keys.__len__() != key_value.keys().__len__():
                 for key in key_value.keys():
                     if key not in missing_keys:
                         not_missing.append(key)
@@ -1931,8 +1929,12 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                                  .format(','.join(not_missing))))
         else:
             if missing_keys:
+                self.set_exception(Exception("Keys missing: {}"
+                                             .format(','.join(missing_keys))))
                 self.missing_keys.extend(missing_keys)
             if wrong_values:
+                self.set_exception(Exception("Keys with wrong values: {}"
+                                             .format(','.join(wrong_values))))
                 self.wrong_values.extend(wrong_values)
 
     def validate_key_val(self, map, key_value):
