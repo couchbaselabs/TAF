@@ -575,8 +575,8 @@ class ScopeUtils(CollectionUtils):
         :param bucket: Bucket object under which the scope should be dropped
         :param scope_name: Scope_name to be dropped
         """
-        status, content = BucketHelper(node).delete_collection(bucket,
-                                                               scope_name)
+        status, content = BucketHelper(node).delete_scope(bucket,
+                                                          scope_name)
         if status is False:
             ScopeUtils.log.error("Scope '%s::%s' deletion failed: %s"
                                  % (bucket, scope_name, content))
@@ -3705,7 +3705,7 @@ class BucketUtils(ScopeUtils):
                                % (scope.name,
                                   len(active_collections),
                                   scope_data[scope.name]["collections"]))
-            
+
             # Validate expected collection values
             for collection in active_collections:
                 if collection_data[collection.name]["num_items"] \
