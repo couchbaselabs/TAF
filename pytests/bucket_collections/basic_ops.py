@@ -1,8 +1,10 @@
+from random import sample
+
 from Cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
-from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -518,41 +520,45 @@ class BasicOps(CollectionBase):
                                     self.bucket_util.buckets, 10, 10, 1)
         # delete collection
         for bucket_name, scope_dict in collections.iteritems():
+            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+                                                bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
                 collection_dict = collection_dict["collections"]
                 for c_name, c_data in collection_dict.items():
                     BucketUtils.drop_collection(self.cluster.master,
-                                                BucketUtils.get_bucket_obj(
-                                                self.bucket_util.buckets, bucket_name),
+                                                bucket,
                                                 scope_name, c_name)
         # recreate collection
         for bucket_name, scope_dict in collections.iteritems():
+            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+                                                bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
                 BucketUtils.create_collection(self.cluster.master,
-                                              BucketUtils.get_bucket_obj(
-                                              self.bucket_util.buckets, bucket_name),
+                                              bucket,
                                               scope_name, collection_dict)
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
 
     def test_create_delete_recreate_scope(self):
-        scope_dict = BucketUtils.get_random_scopes(
+        bucket_dict = BucketUtils.get_random_scopes(
                                     self.bucket_util.buckets, "all", 1)
-        # delete scope
-        for scope_name, _ in scope_dict.items():
-            BucketUtils.drop_scope(self.cluster.master,
-                                   BucketUtils.get_bucket_obj(
-                                   self.bucket_util.buckets, bucket_name),
-                                   scope_name)
-        # recreate scope
-        for scope_name, _ in scope_dict.items():
-            BucketUtils.create_scope(self.cluster.master,
-                                   BucketUtils.get_bucket_obj(
-                                   self.bucket_util.buckets, bucket_name),
-                                   scope_name)
+        # Delete scopes
+        for bucket_name, scope_dict in bucket_dict.items():
+            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+                                                bucket_name)
+            for scope_name, _ in scope_dict["scopes"].items():
+                BucketUtils.drop_scope(self.cluster.master, bucket, scope_name)
+
+        # Recreate scopes
+        for bucket_name, scope_dict in bucket_dict.items():
+            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+                                                bucket_name)
+            for scope_name, _ in scope_dict["scopes"].items():
+                BucketUtils.create_scope(self.cluster.master, bucket,
+                                         scope_name)
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
@@ -560,29 +566,30 @@ class BasicOps(CollectionBase):
     def test_drop_collection_compaction(self):
         collections = BucketUtils.get_random_collections(
                                     self.bucket_util.buckets, 10, 10, 1)
-        # delete collection
+        # Delete collection
         for self.bucket_name, scope_dict in collections.iteritems():
+            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+                                                self.bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
                 collection_dict = collection_dict["collections"]
                 for c_name, c_data in collection_dict.items():
-                    BucketUtils.drop_collection(self.cluster.master,
-                                                BucketUtils.get_bucket_obj(
-                                                self.bucket_util.buckets, self.bucket_name),
-                                                scope_name, c_name )
-        # trigger compaction
+                    BucketUtils.drop_collection(self.cluster.master, bucket,
+                                                scope_name, c_name)
+        # Trigger compaction
         remote_client = RemoteMachineShellConnection(self.cluster.master)
-        compact_run = remote_client.wait_till_compaction_end(
-                                RestConnection(self.cluster.master), self.bucket_name,
-                                timeout_in_seconds=(self.wait_timeout * 10))
+        _ = remote_client.wait_till_compaction_end(
+            RestConnection(self.cluster.master),
+            self.bucket_name,
+            timeout_in_seconds=(self.wait_timeout * 10))
         remote_client.disconnect()
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
 
     def test_create_collection(self):
-        #create collection in increasing order
-        collection_list = []
+        # Create collection in increasing order
+        collection_list = list()
         self.bucket = self.bucket_util.buckets[0]
         while len(collection_list) < 1000:
             num = 1
@@ -590,15 +597,15 @@ class BasicOps(CollectionBase):
                 collection_name = BucketUtils.get_random_name()
                 if collection_name not in collection_list:
                     collection_list.append(collection_name)
-                    num +=1
-                    status, content = BucketHelper(self.cluster.master).create_collection(
-                                                self.bucket,CbServer.default_scope,
-                                                collection_name)
+                    num += 1
+                    status, content = BucketHelper(self.cluster.master) \
+                        .create_collection(self.bucket, CbServer.default_scope,
+                                           collection_name)
                     if status is False:
                         self.log_failure(
                             "Collection '%s::%s::%s' creation failed: %s"
-                            % (self.bucket,
-                               CbServer.default_scope, collection_name, content))
+                            % (self.bucket, CbServer.default_scope,
+                               collection_name, content))
 
         self.log.info("collections created")
         shell_conn = RemoteMachineShellConnection(self.cluster.master)
@@ -610,24 +617,25 @@ class BasicOps(CollectionBase):
             if type(scope_stats[stat_name]) is dict:
                 total_collection_as_per_stats += \
                     scope_stats[stat_name]["collections"]
-        self.log.info("count of collections is {}".format(total_collection_as_per_stats))
+        self.log.info("Collections count: %s" % total_collection_as_per_stats)
 
-        #drop collection in the same order
+        # Drop collection in the same order
         while len(collection_list) > 0:
-             from random import sample
-             drop_list = sample(collection_list, 9)
-             for collection_name in drop_list:
-                 status, content = BucketHelper(self.cluster.master).delete_collection(
-                                                 self.bucket,
-                                                 CbServer.default_scope,collection_name)
+            drop_list = sample(collection_list, 9)
+            for collection_name in drop_list:
+                status, content = BucketHelper(self.cluster.master) \
+                    .delete_collection(self.bucket,
+                                       CbServer.default_scope,
+                                       collection_name)
 
-                 if status is False:
-                     self.log_failure(
-                         "Collection '%s::%s::%s' creation failed: %s"
-                         % (self.bucket, CbServer.default_scope, collection_name, content))
-                 else:
-                     self.log.info("collection name is {}".format(collection_name))
-                     collection_list.remove(collection_name)
+                if status is False:
+                    self.log_failure(
+                        "Collection '%s::%s::%s' creation failed: %s"
+                        % (self.bucket, CbServer.default_scope,
+                           collection_name, content))
+                else:
+                    # Removing collection_name from collection_list
+                    collection_list.remove(collection_name)
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
@@ -635,8 +643,7 @@ class BasicOps(CollectionBase):
     def test_load_default_collection(self):
         self.delete_default_collection = \
                     self.input.param("delete_default_collection", False)
-        self.perform_ops = \
-                    self.input.param("perform_ops", False)
+        self.perform_ops = self.input.param("perform_ops", False)
         load_gen = doc_generator('test_drop_default',
                                  0, self.num_items,
                                  mutate=0,
@@ -659,7 +666,7 @@ class BasicOps(CollectionBase):
         # perform some collection operation
         if self.perform_ops:
             doc_loading_spec = \
-                self.bucket_util.get_crud_template_from_package("intial_load")
+                self.bucket_util.get_crud_template_from_package("initial_load")
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
                                                     self.bucket_util.buckets,
@@ -668,14 +675,14 @@ class BasicOps(CollectionBase):
         self.task_manager.get_task_result(task)
         # Data validation
         self.bucket_util._wait_for_stats_all_buckets()
-        task = self.task.async_validate_docs(self.cluster, self.bucket
-                                             ,load_gen, "create", self.maxttl,
-                                            batch_size=10, process_concurrency=2)
+        task = self.task.async_validate_docs(
+            self.cluster, self.bucket, load_gen, "create", self.maxttl,
+            batch_size=10, process_concurrency=2)
         self.task_manager.get_task_result(task)
 
         if self.delete_default_collection:
             for bucket in self.bucket_util.buckets:
-                BucketUtils.drop_collection(self.cluster.master, self.bucket)
+                BucketUtils.drop_collection(self.cluster.master, bucket)
 
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
@@ -684,28 +691,31 @@ class BasicOps(CollectionBase):
     def test_invalid_name_collection(self):
         self.bucket = self.bucket_util.buckets[0]
         for _ in range(1000):
-            scope_name = BucketUtils.get_random_name(True) # invalid names
+            scope_name = BucketUtils.get_random_name(invalid_name=True)
             try:
                 status, content = BucketHelper(
                                         self.cluster.master).create_scope(
                                         self.bucket, scope_name)
-                if status is not False:
+                if status is True:
                     self.log_failure("Scope '%s::%s' creation not failed: %s"
-                                         % (self.bucket, scope_name, content))
-            except:
-                pass
+                                     % (self.bucket, scope_name, content))
+            except Exception as e:
+                self.log.debug(e)
 
         for _ in range(1000):
-            collection_name = BucketUtils.get_random_name(True) # invalid names
+            collection_name = BucketUtils.get_random_name(invalid_name=True)
             try:
-                status, content = BucketHelper(
-                                        self.cluster.master).create_collection(
-                                         self.bucket,CbServer.default_scope,collection_name)
-                if status is not False:
-                    self.log_failure("Collection '%s::%s::%s' creation not failed: %s"
-                                        % (self.bucket, scope_name, collection, content))
-            except:
-                pass
+                status, content = BucketHelper(self.cluster.master) \
+                    .create_collection(self.bucket, CbServer.default_scope,
+                                       collection_name)
+                if status is True:
+                    self.log_failure(
+                        "Collection '%s::%s::%s' creation not failed: %s"
+                        % (self.bucket, CbServer.default_scope,
+                           collection_name, content))
+            except Exception as e:
+                self.log.debug(e)
+
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
@@ -714,7 +724,7 @@ class BasicOps(CollectionBase):
         """ Initial load collections,
         update and delete docs randomly in collection"""
         doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("intial_load")
+            self.bucket_util.get_crud_template_from_package("initial_load")
         self.bucket_util.run_scenario_from_spec(self.task,
                                                 self.cluster,
                                                 self.bucket_util.buckets,
