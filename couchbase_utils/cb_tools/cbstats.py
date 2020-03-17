@@ -444,7 +444,6 @@ class Cbstats(CbCmdBase):
           cbstats localhost:port vbucket-details
 
         :param bucket_name:   - Name of the bucket to get the stats
-        :param field_to_grep: - Target stat name string to grep
         :returns vb_details:  - Dictionary of format dict[vb][stat_name]=value
 
         Raise:
