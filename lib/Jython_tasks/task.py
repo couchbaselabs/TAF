@@ -1013,7 +1013,6 @@ class Durability(Task):
             self.task_manager.print_tasks_in_pool()
             self.log.debug("=================================================")
             for task in self.tasks:
-                self.task_manager.get_task_result(task)
                 self.task_manager.stop_task(task)
             for client in self.clients:
                 client.close()

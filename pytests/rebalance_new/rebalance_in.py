@@ -101,9 +101,6 @@ class RebalanceInTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
-        else:
-            for task, task_info in tasks_info.items():
-                self.task_manager.get_task_result(task)
 
         if self.doc_ops == "delete":
             return
@@ -116,8 +113,6 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  delete_from + items/2)
         tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                        task_verification=True)
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
@@ -172,9 +167,6 @@ class RebalanceInTests(RebalanceBaseTest):
             self.fail("Rebalance Failed")
 
         self.cluster.nodes_in_cluster.extend(servs_in)
-
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
 
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
