@@ -5,6 +5,7 @@ from Cb_constants import CbServer
 
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
+from couchbase_helper.durability_helper import DurabilityHelper
 from sdk_client3 import SDKClient
 from BucketLib.BucketOperations import BucketHelper
 
@@ -167,7 +168,8 @@ class ServerTasks(object):
                 if durability.lower() == "none":
                     check_persistence = False
                     majority_value = 1
-                elif durability.lower() == "majority":
+                elif durability.upper() \
+                        == DurabilityHelper.SupportedLevel.MAJORITY:
                     check_persistence = False
 
                 _task = jython_tasks.Durability(

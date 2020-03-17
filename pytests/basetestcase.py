@@ -178,7 +178,7 @@ class BaseTestCase(unittest.TestCase):
                         ClusterRun.memcached_port \
                         + (2 * (int(server.port) - ClusterRun.port))
 
-        self.__log_setup_status("started")
+        self.__log_setup_status("BaseTestCase", "started")
         if len(self.input.clusters) > 1:
             # Multi cluster setup
             counter = 1
@@ -235,7 +235,7 @@ class BaseTestCase(unittest.TestCase):
                     self.protocol = "dcp"
             self.services_map = None
 
-            self.__log_setup_status("started")
+            self.__log_setup_status("BaseTestCase", "started")
             for cluster in self.__cb_clusters:
                 if not self.skip_buckets_handle \
                         and not self.skip_init_check_cbserver:
@@ -253,7 +253,7 @@ class BaseTestCase(unittest.TestCase):
                     self.skip_buckets_handle:
                 self.log.warning("any cluster operation in setup will be skipped")
                 self.primary_index_created = True
-                self.__log_setup_status("finished")
+                self.__log_setup_status("BaseTestCase", "finished")
                 return
             # avoid clean up if the previous test has been tear down
             if self.case_number == 1 or self.case_number > 1000:
@@ -313,7 +313,7 @@ class BaseTestCase(unittest.TestCase):
                 if self.port:
                     self.port = str(self.port)
 
-            self.__log_setup_status("finished")
+            self.__log_setup_status("BaseTestCase", "finished")
 
             if not self.skip_init_check_cbserver:
                 self.__log("started")
@@ -407,10 +407,10 @@ class BaseTestCase(unittest.TestCase):
         except:
             pass
 
-    def __log_setup_status(self, status):
-        msg = "========= basetestcase setup {0} for test #{1} {2} =========" \
-            .format(status, self.case_number, self._testMethodName)
-        self.log.info(msg)
+    def __log_setup_status(self, class_name, status):
+        self.log.info(
+            "========= %s setup %s for test #%d %s ========="
+            % (class_name, status, self.case_number, self._testMethodName))
 
     def _initialize_nodes(self, task, cluster, disabled_consistent_view=None,
                           rebalanceIndexWaitingDisabled=None,
@@ -492,7 +492,8 @@ class BaseTestCase(unittest.TestCase):
 
                 self.log.info("Copying cbcollect ZIP file to Client")
                 remote_client = RemoteMachineShellConnection(node)
-                cb_collect_path = cb_collect_response['perNode'][params['nodes']]['path']
+                cb_collect_path = \
+                    cb_collect_response['perNode'][params['nodes']]['path']
                 zip_file_copied = remote_client.get_file(
                     os.path.dirname(cb_collect_path),
                     os.path.basename(cb_collect_path),
@@ -534,33 +535,37 @@ class BaseTestCase(unittest.TestCase):
         return self.task_manager
 
     def check_coredump_exist(self, servers):
-        """checks coredump on the given nodes/node
-        return: a list (list of servers with crashes or a empty list if no core dump exists)
+        """
+        Checks coredump on the given nodes/node
+        return: List of servers with crashes or a empty list if no core exists
         Args: list of servers
         """
 
-        self.log.info("Initializing core dump check on all the nodes");
-        servers_with_crashes = [];
+        self.log.info("Initializing core dump check on all the nodes")
+        servers_with_crashes = list()
         for server in servers:
-            shell = RemoteMachineShellConnection(server);
-            shell.extract_remote_info();
+            shell = RemoteMachineShellConnection(server)
+            shell.extract_remote_info()
+            core_path = None
             if shell.info.type.lower() == "linux":
                 rest = RestConnection(server)
-                core_path = str(rest.get_data_path()).split("data")[0] + "crash/"
+                core_path = str(rest.get_data_path()).split("data")[0] \
+                            + "crash/"
 
             elif shell.info.type.lower() == "windows":
                 core_path = 'c://CrashDumps'
-            o, e = shell.execute_command("ls -l {} | grep '.dmp' | wc -l".format(core_path));
-            output = o[0].split('\n')[0];
+            o, e = shell.execute_command("ls -l %s | grep '.dmp' | wc -l"
+                                         % core_path)
+            output = o[0].split('\n')[0]
             if int(output) == 0:
-                print("=== No core exists on node {}".format(server.ip));
-                shell.disconnect();
-                pass;
+                self.log.info("Node %s - no core exists" % server.ip)
+                shell.disconnect()
             else:
-                self.log.error(" === CORE DUMPS SEEN ON SERVER {} : {} crashes seen === ".format(server.ip, output));
+                self.log.error("Node %s - Core dump seen: %s"
+                               % (server.ip, output))
                 if TestInputSingleton.input.param("get-cbcollect-info", True):
-                    servers_with_crashes.append(server.ip);
-                shell.disconnect();
+                    servers_with_crashes.append(server.ip)
+                shell.disconnect()
         if servers_with_crashes:
-            self.fetch_cb_collect_logs();
-        return (servers_with_crashes);
+            self.fetch_cb_collect_logs()
+        return servers_with_crashes

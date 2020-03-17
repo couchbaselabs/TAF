@@ -910,7 +910,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
 
 
 class Durability(Task):
-
     def __init__(self, cluster, task_manager, bucket, clients, generator,
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
@@ -1018,12 +1017,12 @@ class Durability(Task):
                 client.close()
 
     class Loader(GenericLoadingTask):
-        '''
+        """
         1. Start inserting data into buckets
         2. Keep updating the write offset
         3. Start the reader thread
         4. Keep track of non durable documents
-        '''
+        """
 
         def __init__(self, cluster, bucket, client, generator, op_type,
                      exp, exp_unit,
@@ -1037,7 +1036,11 @@ class Durability(Task):
                 pause_secs=pause_secs, timeout_secs=timeout_secs,
                 compression=compression,
                 retries=retries)
-            self.thread_name = "DurabilityDocumentLoaderTask" + str(instance_num)
+            self.thread_name = "DurableDocLoaderTask_%d_%s_%d_%d_%s" \
+                               % (instance_num, bucket,
+                                  generator._doc_gen.start,
+                                  generator._doc_gen.end,
+                                  op_type)
             self.generator = generator
             self.op_type = op_type
             self.exp = exp
@@ -1062,9 +1065,8 @@ class Durability(Task):
             self.sdk_exception_crud_succeed = {}
             self.sdk_acked_pers_failed = {}
             self.sdk_exception_pers_succeed = {}
-            self.test_log.debug("Docs start loading from {0}"
-                                .format(generator._doc_gen.start))
-            self.log.debug("Instance num {0}".format(self.instance))
+            self.test_log.debug("Instance %s: doc loading starts from %s"
+                                % (self.instance, generator._doc_gen.start))
             self.task_manager = TaskManager()
 
         def call(self):
@@ -1107,8 +1109,11 @@ class Durability(Task):
                 if len(f_docs) > 0:
                     self.create_failed.update(f_docs)
             elif self.op_type == 'update':
+                keys_for_update = list()
+                for item in key_value:
+                    keys_for_update.append(item.getT1())
                 self.docs_to_be_updated.update(
-                    self.batch_read(key_value.keys())[0])
+                    self.batch_read(keys_for_update)[0])
                 _, f_docs = self.batch_update(
                     key_value, persist_to=self.persist_to,
                     replicate_to=self.replicate_to, timeout=self.timeout,
@@ -1117,8 +1122,11 @@ class Durability(Task):
                     doc_type=self.generator.doc_type)
                 self.update_failed.update(f_docs)
             elif self.op_type == 'delete':
+                keys_for_update = list()
+                for item in key_value:
+                    keys_for_update.append(item.getT1())
                 self.docs_to_be_deleted.update(
-                    self.batch_read(key_value.keys())[0])
+                    self.batch_read(keys_for_update)[0])
                 success, fail = self.batch_delete(
                     key_value,
                     persist_to=self.persist_to,
