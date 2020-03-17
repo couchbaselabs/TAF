@@ -43,10 +43,11 @@ class MetaCrudParams(object):
         DOC_SIZE = "doc_size"
 
     class SubDocCrud(object):
+        XATTR_TEST = "xattr_test"
         INSERT_PER_COLLECTION = "insert_per_collection"
         UPSERT_PER_COLLECTION = "upsert_per_collection"
-        UPDATE_PER_COLLECTION = "update_per_collection"
         REMOVE_PER_COLLECTION = "remove_per_collection"
+        LOOKUP_PER_COLLECTION = "lookup_per_collection"
 
         SUB_DOC_SIZE = "sub_doc_size"
 

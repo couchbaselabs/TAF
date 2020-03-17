@@ -898,7 +898,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 xattr=self.xattr)
             self.fail.update(fail)
             # self.success.update(success)
-        elif self.op_type == 'read':
+        elif self.op_type in ['read', 'lookup']:
             success, fail = self.batch_sub_doc_read(key_value,
                                                     timeout=self.timeout,
                                                     time_unit=self.time_unit)
@@ -1513,12 +1513,12 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier=""):
-        thread_name = "SubDocumentsLoadGenTask_{}_{}_{}_{}_{}" \
-                      .format(task_identifier,
-                              bucket.name,
-                              op_type,
-                              durability,
-                              time.time())
+        thread_name = "SubDocumentsLoadGenTask_%s_%s_%s_%s_%s" \
+                      % (task_identifier,
+                         bucket.name,
+                         op_type,
+                         durability,
+                         time.time())
         super(LoadSubDocumentsGeneratorsTask, self).__init__(thread_name)
         self.cluster = cluster
         self.exp = exp

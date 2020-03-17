@@ -26,10 +26,12 @@ spec = {
     },
 
     "subdoc_crud": {
+        MetaCrudParams.SubDocCrud.XATTR_TEST: False,
+
         MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION: 0,
         MetaCrudParams.SubDocCrud.UPSERT_PER_COLLECTION: 0,
-        MetaCrudParams.SubDocCrud.UPDATE_PER_COLLECTION: 0,
         MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION: 0,
+        MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION: 0,
     },
 
     MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",

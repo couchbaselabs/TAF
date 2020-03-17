@@ -9,6 +9,7 @@ import importlib
 import logging
 import threading
 from datetime import datetime
+from random import sample
 
 import crc32
 import exceptions
@@ -37,7 +38,8 @@ from collections_helper.collections_spec_constants import MetaConstants, \
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
                                                   DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
-from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.documentgenerator import doc_generator, \
+    sub_doc_generator, sub_doc_generator_for_edit
 from error_simulation.cb_error import CouchbaseError
 from membase.api.exception import StatsUnavailableException
 from membase.api.rest_client import Node, RestConnection
@@ -114,6 +116,28 @@ class DocLoaderUtils(object):
                              mutate=mutation_num)
 
     @staticmethod
+    def get_subdoc_generator(op_type, collection_obj, num_items,
+                             generic_key):
+        if op_type == "insert":
+            start = collection_obj.sub_doc_index[1]
+            end = start + num_items
+            collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
+                                            end)
+            return sub_doc_generator(generic_key, start, end)
+        elif op_type == "delete":
+            start = collection_obj.sub_doc_index[0]
+            end = start + num_items
+            collection_obj.sub_doc_index = (end,
+                                            collection_obj.sub_doc_index[1])
+            subdoc_gen_template_num = 2
+        else:
+            start = collection_obj.sub_doc_index[0]
+            end = start + num_items
+            subdoc_gen_template_num = sample([0, 1], 1)
+        return sub_doc_generator_for_edit(generic_key, start, end,
+                                          subdoc_gen_template_num)
+
+    @staticmethod
     def perform_doc_loading_for_spec(task_manager,
                                      cluster,
                                      buckets,
@@ -147,16 +171,26 @@ class DocLoaderUtils(object):
                     collection = scope.collections[c_name]
                     for op_type, op_data in c_data.items():
                         DocLoaderUtils.log.debug(
-                            "Loading %s items into %s"
-                            % (op_data["target_items"], task_id))
-                        task = task_manager.async_load_gen_docs(
-                            cluster, bucket, op_data["doc_gen"], op_type,
-                            exp=collection.maxTTL,
-                            batch_size=1, process_concurrency=1,
-                            scope=scope_name,
-                            collection=c_name,
-                            task_identifier=task_id,
-                            print_ops_rate=False)
+                            "Performing %s for %s items in %s"
+                            % (op_type, op_data["target_items"], task_id))
+                        if op_type in DocLoaderUtils.doc_op_types:
+                            task = task_manager.async_load_gen_docs(
+                                cluster, bucket, op_data["doc_gen"], op_type,
+                                exp=collection.maxTTL,
+                                batch_size=200, process_concurrency=1,
+                                scope=scope_name,
+                                collection=c_name,
+                                task_identifier=task_id,
+                                print_ops_rate=True)
+                        else:
+                            task = task_manager.async_load_gen_sub_docs(
+                                cluster, bucket, op_data["doc_gen"], op_type,
+                                exp=collection.maxTTL,
+                                path_create=True, xattr=op_data["xattr_test"],
+                                batch_size=200, process_concurrency=1,
+                                scope=scope_name, collection=c_name,
+                                task_identifier=task_id,
+                                print_ops_rate=True)
 
                         tasks_num += 1
                         loader_tasks.append(task)
@@ -208,6 +242,18 @@ class DocLoaderUtils(object):
         spec_percent_data["read"] = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION, 0)
 
+        # Fetch sub_doc CRUD percentage from given spec
+        xattr_test = input_spec["subdoc_crud"].get(
+            MetaCrudParams.SubDocCrud.XATTR_TEST, False)
+        spec_percent_data["insert"] = input_spec["subdoc_crud"].get(
+            MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION, 0)
+        spec_percent_data["upsert"] = input_spec["subdoc_crud"].get(
+            MetaCrudParams.SubDocCrud.UPSERT_PER_COLLECTION, 0)
+        spec_percent_data["remove"] = input_spec["subdoc_crud"].get(
+            MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION, 0)
+        spec_percent_data["lookup"] = input_spec["subdoc_crud"].get(
+            MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION, 0)
+
         crud_spec = BucketUtils.get_random_collections(
             buckets,
             num_collection_to_load,
@@ -237,6 +283,36 @@ class DocLoaderUtils(object):
                                 c_data[op_type]["target_items"],
                                 doc_key,
                                 mutation_num=mutation_num)
+
+        crud_spec = BucketUtils.get_random_collections(
+            buckets,
+            num_collection_to_load,
+            num_scopes_to_consider,
+            num_buckets_to_consider)
+        for bucket_name, scope_dict in crud_spec.items():
+            scope_dict = scope_dict["scopes"]
+            bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
+            for scope_name, collection_dict in scope_dict.items():
+                collection_dict = collection_dict["collections"]
+                scope = bucket.scopes[scope_name]
+                for c_name, c_data in collection_dict.items():
+                    collection = scope.collections[c_name]
+                    for op_type in DocLoaderUtils.doc_op_types:
+                        target_num_items = \
+                            DocLoaderUtils.__get_required_num_from_percentage(
+                                collection, spec_percent_data[op_type])
+                        if target_num_items == 0:
+                            continue
+
+                        c_data[op_type] = dict()
+                        c_data[op_type]["target_items"] = target_num_items
+                        c_data[op_type]["xattr_test"] = xattr_test
+                        c_data[op_type]["doc_gen"] = \
+                            DocLoaderUtils.get_subdoc_generator(
+                                op_type,
+                                collection,
+                                c_data[op_type]["target_items"],
+                                doc_key)
         return crud_spec
 
     @staticmethod
