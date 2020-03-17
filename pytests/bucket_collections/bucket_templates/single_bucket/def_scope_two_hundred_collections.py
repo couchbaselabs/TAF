@@ -1,4 +1,3 @@
-from BucketLib.bucket import Bucket
 from collections_helper.collections_spec_constants import MetaConstants
 
 spec = {

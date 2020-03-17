@@ -38,11 +38,17 @@ class MetaCrudParams(object):
         REPLACE_PERCENTAGE_PER_COLLECTION = "replace_percentage_per_collection"
         DELETE_PERCENTAGE_PER_COLLECTION = "delete_percentage_per_collection"
 
+        COMMON_DOC_KEY = "doc_key"
+        DOC_KEY_SIZE = "doc_key_size"
+        DOC_SIZE = "doc_size"
+
     class SubDocCrud(object):
         INSERT_PER_COLLECTION = "insert_per_collection"
         UPSERT_PER_COLLECTION = "upsert_per_collection"
         UPDATE_PER_COLLECTION = "update_per_collection"
         REMOVE_PER_COLLECTION = "remove_per_collection"
+
+        SUB_DOC_SIZE = "sub_doc_size"
 
     COLLECTIONS_CONSIDERED_FOR_CRUD = "collections_considered_for_crud"
     SCOPES_CONSIDERED_FOR_CRUD = "scopes_considers_for_crud"

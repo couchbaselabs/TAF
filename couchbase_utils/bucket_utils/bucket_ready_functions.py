@@ -192,6 +192,10 @@ class DocLoaderUtils(object):
         num_buckets_to_consider = input_spec.get(
             MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD, 1)
 
+        # Fetch common doc_key to use while doc_loading
+        doc_key = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_collections")
+
         # Fetch CRUD percentage from given spec
         spec_percent_data["create"] = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION, 0)
@@ -231,7 +235,7 @@ class DocLoaderUtils(object):
                                 op_type,
                                 collection,
                                 c_data[op_type]["target_items"],
-                                "test_collection",
+                                doc_key,
                                 mutation_num=mutation_num)
         return crud_spec
 
