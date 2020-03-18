@@ -29,23 +29,17 @@ class BasicCrudTests(MagmaBaseTest):
         """
         self.log.info("Loading and Reading docs parallel")
         count = 0
-        init_items = self.num_items
-        while count < 4:
+        while count < 3:
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
                 shell.disconnect()
             self.doc_ops = "create:read"
             start = self.num_items
-            end = self.num_items+init_items
-            start_read = self.num_items
-            end_read = self.num_items+init_items
+            end = self.num_items+self.num_items
             if self.rev_write:
-                start = -int(self.num_items+init_items - 1)
+                start = -int(self.num_items+self.num_items - 1)
                 end = -int(self.num_items - 1)
-            if self.rev_read:
-                start_read = -int(self.num_items+init_items - 1)
-                end_read =  -int(self.num_items - 1)
             self.gen_create = doc_generator(
                 self.key, start, end,
                 doc_size=self.doc_size,
@@ -62,15 +56,10 @@ class BasicCrudTests(MagmaBaseTest):
             self.log.info("Verifying doc counts after create doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
-            self.gen_read = doc_generator(
-                self.key, start_read, end_read,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
+            self.gen_delete = copy.deepcopy(self.gen_create)
+            self.doc_ops = "delete"
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions)
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
             count += 1
         self.log.info("====test_read_create_docs_parallelly ends====")
