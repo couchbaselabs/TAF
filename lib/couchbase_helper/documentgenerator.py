@@ -405,8 +405,10 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
+            random.seed(name)
             self.random_string = [''.join(random.choice(letters)
-                                          for _ in range(self.doc_size*4))][0]
+                                          for _ in range(4*1024))][0]
+            self.len_randon_string = len(self.random_string)
 
         if 'randomize' in self.kwargs:
             self.randomize = self.kwargs["randomize"]
@@ -448,9 +450,10 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
             doc_size = self.random.randint(0, self.doc_size)
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
-        if self.randomize_value:
-            _slice = int(random.random()*3*self.doc_size)
-            self.body = self.random_string[_slice:_slice+self.doc_size]
+        if self.doc_size and self.randomize_value:
+            _slice = int(self.random.random()*4*1024) % self.doc_size
+            self.body = self.random_string[:_slice] + \
+                (self.random_string * (self.doc_size/self.len_randon_string+1))[_slice:self.doc_size]
         doc_key = self.doc_keys[self.itr]
         self.itr += 1
         return doc_key, self.template
