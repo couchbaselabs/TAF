@@ -721,12 +721,13 @@ class LoadDocumentsTask(GenericLoadingTask):
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
             retries=retries, suppress_error_table=suppress_error_table)
-        self.thread_name = "LoadDocumentsTask-%s_%s_%s_%s_%s" \
+        self.thread_name = "LoadDocumentsTask-%s_%s_%s_%s_%s_%s" \
             % (task_identifier,
                generator._doc_gen.start,
                generator._doc_gen.end,
                op_type,
-               durability)
+               durability,
+               time.time())
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
@@ -1681,7 +1682,7 @@ class ContinuousDocUpdateTask(Task):
                  pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=4, print_ops_rate=True):
         super(ContinuousDocUpdateTask, self).__init__(
-            "ContinuousDocUpdateTask_{}_{}".format(bucket.name, time.time()))
+            "ContinuousDocUpdateTask_%s_%s" % (bucket.name, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -1722,6 +1723,7 @@ class ContinuousDocUpdateTask(Task):
         while not self.__stop_updates:
             doc_gens = list()
             doc_tasks = list()
+            task_instance = 1
             for _ in self.clients:
                 doc_gens.append(copy.deepcopy(self.generator))
 
@@ -1731,7 +1733,8 @@ class ContinuousDocUpdateTask(Task):
                 task = LoadDocumentsTask(
                     self.cluster, bucket, self.clients[index],
                     batch_gen, "update", self.exp,
-                    task_identifier=self.thread_name,
+                    task_identifier="%s_%s" % (self.thread_name,
+                                               task_instance),
                     persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
                     durability=self.durability,
@@ -1740,6 +1743,7 @@ class ContinuousDocUpdateTask(Task):
                 self.task_manager.add_new_task(task)
                 doc_tasks.append(task)
                 self.fail.update(task.fail)
+                task_instance += 1
 
             for task in doc_tasks:
                 self.task_manager.get_task_result(task)
@@ -3189,7 +3193,8 @@ class MonitorDBFragmentationTask(Task):
 
     def __init__(self, server, fragmentation_value=10, bucket_name="default",
                  get_view_frag=False):
-        Task.__init__(self, "monitor_frag_db_task")
+        Task.__init__(self, "monitor_frag_db_task_%s_%s"
+                            % (bucket_name, time.time()))
         self.server = server
         self.bucket_name = bucket_name
         self.fragmentation_value = fragmentation_value

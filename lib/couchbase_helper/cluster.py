@@ -29,36 +29,6 @@ class ServerTasks(object):
         self.test_log = logging.getLogger("test")
         self.log.debug("Initiating ServerTasks")
 
-    def async_create_bucket(self, server, bucket):
-        """
-        Asynchronously creates the default bucket
-
-        Parameters:
-          bucket_params - a dictionary containing bucket creation parameters.
-        Returns:
-          BucketCreateTask - Task future that is a handle to the scheduled task
-        """
-#         bucket_params['bucket_name'] = 'default'
-        _task = conc.BucketCreateTask(server, bucket,
-                                      task_manager=self.jython_task_manager)
-        self.jython_task_manager.schedule(_task)
-        return _task
-
-    def sync_create_bucket(self, server, bucket):
-        """
-        Synchronously creates the default bucket
-
-        Parameters:
-          bucket_params - a dictionary containing bucket creation parameters.
-        Returns:
-          BucketCreateTask - Task future that is a handle to the scheduled task
-        """
-#         bucket_params['bucket_name'] = 'default'
-        _task = conc.BucketCreateTask(server, bucket,
-                                      task_manager=self.jython_task_manager)
-        self.jython_task_manager.schedule(_task)
-        return _task.get_result()
-
     def async_failover(self, servers=[], failover_nodes=[], graceful=False,
                        use_hostnames=False, wait_for_pending=0):
         """
@@ -259,7 +229,7 @@ class ServerTasks(object):
     def async_continuous_update_docs(self, cluster, bucket, generator, exp=0,
                                      persist_to=0, replicate_to=0,
                                      durability="",
-                                     batch_size=10,
+                                     batch_size=200,
                                      timeout_secs=5,
                                      process_concurrency=4,
                                      scope=CbServer.default_scope,

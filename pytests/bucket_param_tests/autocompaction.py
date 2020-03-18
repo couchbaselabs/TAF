@@ -625,7 +625,7 @@ class AutoCompactionTests(BaseTestCase):
             self.cluster, bucket, self.gen_update,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            batch_size=10,
+            batch_size=300,
             process_concurrency=4)
         while monitor_fragm.completed is False:
             if end_time < time.time():
