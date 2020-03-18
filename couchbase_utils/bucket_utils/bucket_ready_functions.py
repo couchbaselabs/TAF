@@ -3884,9 +3884,10 @@ class BucketUtils(ScopeUtils):
                                          bucket,
                                          scope_name=scope.name,
                                          collection_name=collection.name)
-                self.drop_scope(self.cluster.master,
-                                bucket,
-                                scope_name=scope.name)
+                if scope.name != CbServer.default_scope:
+                    self.drop_scope(self.cluster.master,
+                                    bucket,
+                                    scope_name=scope.name)
         self.validate_docs_per_collections_all_buckets()
 
     @staticmethod

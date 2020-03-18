@@ -92,7 +92,7 @@ class ServerTasks(object):
     def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
                             flag=0, persist_to=0, replicate_to=0,
                             only_store_hash=True, batch_size=1, pause_secs=1,
-                            timeout_secs=5, compression=True,
+                            timeout_secs=5, compression=None,
                             process_concurrency=8, retries=5,
                             active_resident_threshold=100,
                             durability="", print_ops_rate=True,
@@ -111,7 +111,8 @@ class ServerTasks(object):
                 task_identifier = bucket.name
             gen_start = int(generator.start)
             gen_end = max(int(generator.end), 1)
-            gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
+            gen_range = max(int((generator.end - generator.start)
+                                / process_concurrency), 1)
             for _ in range(gen_start, gen_end, gen_range):
                 client = SDKClient([cluster.master], bucket,
                                    scope, collection)
@@ -179,7 +180,7 @@ class ServerTasks(object):
                                 flag=0, persist_to=0, replicate_to=0,
                                 only_store_hash=True, batch_size=1,
                                 pause_secs=1,
-                                timeout_secs=5, compression=True,
+                                timeout_secs=5, compression=None,
                                 process_concurrency=8, print_ops_rate=True,
                                 durability="",
                                 start_task=True,
@@ -255,7 +256,7 @@ class ServerTasks(object):
                                       persist_to=0, replicate_to=0,
                                       only_store_hash=True, batch_size=1,
                                       pause_secs=1, timeout_secs=5,
-                                      compression=True,
+                                      compression=None,
                                       process_concurrency=8, retries=5,
                                       update_count=1, transaction_timeout=5,
                                       commit=True, durability=0, sync=True,
@@ -269,7 +270,8 @@ class ServerTasks(object):
         client_list = list()
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
-        gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
+        gen_range = max(int((generator.end - generator.start)
+                            / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
             temp_bucket_list = []
             temp_client_list = []
@@ -331,7 +333,7 @@ class ServerTasks(object):
 
     def async_validate_docs(self, cluster, bucket, generator, opt_type, exp=0,
                             flag=0, only_store_hash=True, batch_size=1,
-                            pause_secs=1, timeout_secs=5, compression=True,
+                            pause_secs=1, timeout_secs=5, compression=None,
                             process_concurrency=4, check_replica=False,
                             scope=CbServer.default_scope,
                             collection=CbServer.default_collection):
@@ -343,7 +345,8 @@ class ServerTasks(object):
             opt_type, exp, flag=flag, only_store_hash=only_store_hash,
             batch_size=batch_size, pause_secs=pause_secs,
             timeout_secs=timeout_secs, compression=compression,
-            process_concurrency=process_concurrency, check_replica=check_replica)
+            process_concurrency=process_concurrency,
+            check_replica=check_replica)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -356,23 +359,28 @@ class ServerTasks(object):
            index file for <design_doc_name> this method
            will return.
         Parameters:
-            server - The server to handle fragmentation config task. (TestInputServer)
-            design_doc_name - design doc with views represented in index file. (String)
+            server - TestInputServer to handle fragmentation config task.
+            design_doc_name - design doc with views represented in index file.
             fragmentation_value - target amount of fragmentation within index file to detect. (String)
             bucket - The name of the bucket design_doc belongs to. (String)
         Returns:
-            MonitorViewFragmentationTask - A task future that is a handle to the scheduled task."""
+            MonitorViewFragmentationTask - A task future handle to the task.
+        """
 
-        _task = jython_tasks.MonitorViewFragmentationTask(server, design_doc_name,
-                                             fragmentation_value, bucket)
+        _task = jython_tasks.MonitorViewFragmentationTask(
+            server,
+            design_doc_name,
+            fragmentation_value,
+            bucket)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_compact_view(self, server, design_doc_name, bucket="default", with_rebalance=False):
+    def async_compact_view(self, server, design_doc_name, bucket="default",
+                           with_rebalance=False):
         """Asynchronously run view compaction.
         Compacts index file represented by views within the specified <design_doc_name>
         Parameters:
-            server - The server to handle fragmentation config task. (TestInputServer)
+            server - TestInputServer to handle fragmentation config task.
             design_doc_name - design doc with views represented in index file. (String)
             bucket - The name of the bucket design_doc belongs to. (String)
             with_rebalance - there are two cases that process this parameter:
@@ -383,7 +391,10 @@ class ServerTasks(object):
         Returns:
             ViewCompactionTask - A task future that is a handle to the scheduled task."""
 
-        _task = jython_tasks.ViewCompactionTask(server, design_doc_name, bucket, with_rebalance)
+        _task = jython_tasks.ViewCompactionTask(server,
+                                                design_doc_name,
+                                                bucket,
+                                                with_rebalance)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -432,7 +443,8 @@ class ServerTasks(object):
         Returns:
           RebalanceTask - Task future that is a handle to the scheduled task
         """
-        self.log.debug("Starting StatsWaitTask for %s on bucket %s" % (stat, bucket.name))
+        self.log.debug("Starting StatsWaitTask for %s on bucket %s"
+                       % (stat, bucket.name))
         _task = jython_tasks.StatsWaitTask(shell_conn_list, bucket, stat_cmd,
                                            stat, comparison, value,
                                            timeout=timeout)
@@ -522,14 +534,15 @@ class ServerTasks(object):
         Returns:
           boolean - Whether or not the rebalance was successful
         """
-        _task = self.async_rebalance(servers, to_add, to_remove, use_hostnames=use_hostnames,
+        _task = self.async_rebalance(servers, to_add, to_remove,
+                                     use_hostnames=use_hostnames,
                                      services=services)
         self.jython_task_manager.get_task_result(_task)
         return _task.result
 
     def load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0,
                       persist_to=0, replicate_to=0, only_store_hash=True,
-                      batch_size=1, compression=True, process_concurrency=8,
+                      batch_size=1, compression=None, process_concurrency=8,
                       retries=5):
         _task = self.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp, flag,
@@ -540,7 +553,7 @@ class ServerTasks(object):
         return self.jython_task_manager.get_task_result(_task)
 
     def verify_data(self, server, bucket, kv_store, timeout=None,
-                    compression=True):
+                    compression=None):
         _task = self.async_verify_data(server, bucket, kv_store,
                                        compression=compression)
         return _task.result(timeout)
@@ -548,7 +561,7 @@ class ServerTasks(object):
     def async_verify_data(self, server, bucket, kv_store, max_verify=None,
                           only_store_hash=True, batch_size=1,
                           replica_to_read=None, timeout_sec=5,
-                          compression=True):
+                          compression=None):
         if batch_size > 1:
             _task = conc.BatchedValidateDataTask(
                 server, bucket, kv_store, max_verify, only_store_hash,
@@ -557,7 +570,8 @@ class ServerTasks(object):
         else:
             _task = conc.ValidateDataTask(
                 server, bucket, kv_store, max_verify, only_store_hash,
-                replica_to_read, self.jython_task_manager, compression=compression)
+                replica_to_read, self.jython_task_manager,
+                compression=compression)
         self.jython_task_manager.schedule(_task)
         return _task
 

@@ -9,6 +9,7 @@ import json as pyJson
 import logging
 
 from com.couchbase.client.core.env import \
+    CompressionConfig, \
     SeedNode, \
     TimeoutConfig, IoConfig
 from com.couchbase.client.core.error import \
@@ -22,7 +23,6 @@ from com.couchbase.client.core.error import \
     ServerOutOfMemoryException, \
     TemporaryFailureException, \
     TimeoutException
-from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.codec import RawBinaryTranscoder
@@ -74,7 +74,25 @@ class SDKClient(object):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  username="Administrator", password="password",
-                 certpath=None, compression=True):
+                 compression_settings=None, cert_path=None):
+        """
+        :param servers: List of servers for SDK to establish initial
+                        connections with
+        :param bucket: Bucket object to which the SDK connection will happen
+        :param scope:  Name of the scope to connect.
+                       Default: '_default'
+        :param collection: Name of the collection to connect.
+                           Default: _default
+        :param username: User name using which to establish the connection
+        :param password: Password for username authentication
+        :param compression_settings: Dict of compression settings. Format:
+                                     {
+                                      "enabled": Bool,
+                                      "minRatio": Double int (None to default),
+                                      "minSize": int (None to default)
+                                     }
+        :param cert_path: Path of certificate file to establish connection
+        """
         # Used during Cluster.connect() call
         self.hosts = list()
 
@@ -91,6 +109,8 @@ class SDKClient(object):
         self.bucket_name = bucket
         self.bucketObj = None
         self.collection = None
+        self.compression = compression_settings
+        self.cert_path = cert_path
         self.log = logging.getLogger("test")
 
         if hasattr(bucket, 'name'):
@@ -124,6 +144,20 @@ class SDKClient(object):
                 .timeoutConfig(TimeoutConfig.builder()
                                .connectTimeout(Duration.ofSeconds(20))
                                .kvTimeout(Duration.ofSeconds(10)))
+
+            # Having 'None' will enable us to test without sending any
+            # compression settings and explicitly setting to 'False' as well
+            if self.compression is not None:
+                compression_config = CompressionConfig.enable(
+                    getattr(self.compression, "enabled", False))
+                if "minSize" in self.compression:
+                    compression_config = compression_config.minSize(
+                        self.compression["minSize"])
+                if "minRatio" in self.compression:
+                    compression_config = compression_config.minRatio(
+                        self.compression["minRatio"])
+
+                cluster_env = cluster_env.compressionConfig(compression_config)
 
             cluster_options = \
                 ClusterOptions \
