@@ -589,7 +589,7 @@ class GenericLoadingTask(Task):
         fail = dict()
         self.client = self.client or shared_client
         try:
-            success, fail = self.client.getMulti(keys)
+            success, fail = self.client.getMulti(keys, self.timeout)
         except Exception as error:
             self.set_exception(error)
         return success, fail
