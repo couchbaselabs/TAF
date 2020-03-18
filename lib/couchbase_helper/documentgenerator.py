@@ -189,7 +189,7 @@ class DocumentGenerator(KVGenerator):
             random.seed(name)
             self.random_string = [''.join(random.choice(letters)
                                           for _ in range(4*1024))][0]
-            self.len_randon_string = len(self.random_string)
+            self.len_random_string = len(self.random_string)
 
         if 'randomize' in self.kwargs:
             self.randomize = self.kwargs["randomize"]
@@ -219,9 +219,10 @@ class DocumentGenerator(KVGenerator):
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.doc_size and self.randomize_value:
-            _slice = int(self.random.random()*4*1024) % self.doc_size
-            self.body = self.random_string[:_slice] + \
-                (self.random_string * (self.doc_size/self.len_randon_string+1))[_slice:self.doc_size]
+            _slice = int(self.random.random()*self.len_random_string)
+            self.body = (self.random_string *
+                         (self.doc_size/self.len_random_string+2)
+                         )[_slice:self.doc_size + _slice]
 
         template.put("body", self.body)
 
@@ -408,7 +409,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
             random.seed(name)
             self.random_string = [''.join(random.choice(letters)
                                           for _ in range(4*1024))][0]
-            self.len_randon_string = len(self.random_string)
+            self.len_random_string = len(self.random_string)
 
         if 'randomize' in self.kwargs:
             self.randomize = self.kwargs["randomize"]
@@ -451,9 +452,10 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
         if self.doc_size and self.randomize_value:
-            _slice = int(self.random.random()*4*1024) % self.doc_size
-            self.body = self.random_string[:_slice] + \
-                (self.random_string * (self.doc_size/self.len_randon_string+1))[_slice:self.doc_size]
+            _slice = int(self.random.random()*self.len_random_string)
+            self.body = (self.random_string *
+                         (self.doc_size/self.len_random_string+2)
+                         )[_slice:self.doc_size + _slice]
         doc_key = self.doc_keys[self.itr]
         self.itr += 1
         return doc_key, self.template
