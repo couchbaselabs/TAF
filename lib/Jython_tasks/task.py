@@ -3046,7 +3046,7 @@ class BucketCreateFromSpecTask(Task):
         status, content = self.bucket_helper.create_collection(
             self.bucket_obj.name,
             scope_name,
-            collection_spec["name"])
+            collection_spec)
         if status is False:
             self.result = False
             self.set_exception("Create collection failed for "

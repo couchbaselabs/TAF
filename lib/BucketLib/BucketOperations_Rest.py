@@ -604,10 +604,13 @@ class BucketHelper(RestConnection):
         return json.loads(content)
 
     # Collection/Scope specific APIs
-    def create_collection(self, bucket, scope, collection):
+    def create_collection(self, bucket, scope, collection_spec):
         api = self.baseUrl + 'pools/default/buckets/%s/collections/%s' \
                              % (bucket, scope)
-        params = {'name': collection}
+        params = dict()
+        for key, value in collection_spec.items():
+            if key in ['name', 'maxTTL']:
+                params[key] = value
         params = urllib.urlencode(params)
         headers = self._create_headers()
         status, content, _ = self._http_request(api,
