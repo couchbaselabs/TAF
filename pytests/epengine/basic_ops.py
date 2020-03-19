@@ -440,6 +440,11 @@ class basic_ops(BaseTestCase):
                                      % task.fail.keys())
                 if len(task.fail.keys()) == 0:
                     self.log_failure("No failures during large doc insert")
+                for key, crud_result in task.fail.items():
+                    if SDKException.ValueTooLargeException \
+                            not in str(crud_result["error"]):
+                        self.log_failure("Unexpected error for key %s: %s"
+                                         % (key, crud_result["error"]))
                 for doc_id, doc_result in task.fail.items():
                     if val_error not in str(doc_result["error"]):
                         self.log_failure("Invalid exception for key %s: %s"
