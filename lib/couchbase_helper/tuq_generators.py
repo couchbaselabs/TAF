@@ -9,6 +9,8 @@ import string
 from documentgenerator import DocumentGenerator
 from data import COUNTRIES, COUNTRY_CODE, FIRST_NAMES, LAST_NAMES
 
+from com.couchbase.client.java.json import JsonObject
+
 
 class TuqGenerators(object):
     def __init__(self, log, full_set):
@@ -878,23 +880,35 @@ class JsonGenerator:
         if end is None:
             end = docs_per_day
         age = range(start, end)
-        name = ['a' * value_size,]
-        template = '{{ "age": {0}, "name": "{1}" }}'
+        name = ['a' * value_size]
+        template = JsonObject.create()
+        template.put("age", age)
+        template.put("name", name)
 
-        gen_load = DocumentGenerator(key_prefix, template, age, name,
-                                     start=start, end=end)
+        gen_load = DocumentGenerator(key_prefix, template,
+                                     start=start, end=end,
+                                     randomize=True,
+                                     age=age)
         return gen_load
 
     def generate_docs_simple(self, key_prefix="simple_dataset", start=0,
                              docs_per_day=1000, isShuffle=False):
         end = docs_per_day
         age = self._shuffle(range(start, end), isShuffle)
-        name = [key_prefix + '-' + str(i) for i in self._shuffle(xrange(start, end), isShuffle)]
-        template = '{{ "age": {0}, "name": "{1}" }}'
-        gen_load = DocumentGenerator(key_prefix, template, age, name, start=start, end=end)
+        name = [key_prefix + '-' + str(i)
+                for i in self._shuffle(xrange(start, end), isShuffle)]
+        template = JsonObject.create()
+        template.put("age", age)
+        template.put("name", name)
+        gen_load = DocumentGenerator(key_prefix, template, age, name,
+                                     start=start, end=end,
+                                     randomize=True,
+                                     name=name,
+                                     age=age)
         return gen_load
 
-    def generate_docs_array(self, key_prefix="array_dataset", start=0, docs_per_day=1, isShuffle=False):
+    def generate_docs_array(self, key_prefix="array_dataset", start=0,
+                            docs_per_day=1, isShuffle=False):
         COUNTRIES = ["India", "US", "UK", "Japan", "France", "Germany", "China", "Korea", "Canada", "Cuba",
              "West Indies", "Australia", "New Zealand", "Nepal", "Sri Lanka", "Pakistan", "Mexico",
              "belgium", "Netherlands", "Brazil", "Costa Rica", "Cambodia", "Fiji", "Finland", "haiti",
