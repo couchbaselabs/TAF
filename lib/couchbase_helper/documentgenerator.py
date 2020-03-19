@@ -214,15 +214,16 @@ class DocumentGenerator(KVGenerator):
                 if k in self.kwargs:
                     template.put(k, self.random.choice(self.kwargs[k]))
 
+        doc_size = self.doc_size
         if self.randomize_doc_size:
             doc_size = self.random.randint(0, self.doc_size)
             self.body = [''.rjust(doc_size - 10, 'a')][0]
 
-        if self.doc_size and self.randomize_value:
+        if doc_size and self.randomize_value:
             _slice = int(self.random.random()*self.len_random_string)
             self.body = (self.random_string *
-                         (self.doc_size/self.len_random_string+2)
-                         )[_slice:self.doc_size + _slice]
+                         (doc_size/self.len_random_string+2)
+                         )[_slice:doc_size + _slice]
 
         template.put("body", self.body)
 
