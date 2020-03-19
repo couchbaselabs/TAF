@@ -6,6 +6,7 @@ from sdk_exceptions import SDKException
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
 from testconstants import INDEX_QUOTA, MIN_KV_QUOTA, CBAS_QUOTA, FTS_QUOTA
+import copy
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -30,9 +31,7 @@ class MagmaBaseTest(BaseTestCase):
             self.rev_read = False
         self.items = self.num_items
         self.check_temporary_failure_exception = False
-        self.test_with_fragmentation = self.input.param(
-            "test_with_fragmentation",
-            False)
+        self.fragmentation = self.input.param("fragmentation", 0)
         self.dgm_batch = self.input.param("dgm_batch", 5000)
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
@@ -128,16 +127,27 @@ class MagmaBaseTest(BaseTestCase):
                                         target_vbucket=self.target_vbucket,
                                         vbuckets=self.cluster_util.vbuckets,
                                         key_size=self.key_size)
-        if self.test_with_fragmentation:
-            _ = self._load_all_buckets(self.cluster, self.gen_update,
+        if self.fragmentation:
+            g_update = doc_generator(self.key, 0, self.num_items *
+                                        self.fragmentation // 100,
+                                        doc_size=self.doc_size,
+                                        doc_type=self.doc_type,
+                                        mutate=1,
+                                        target_vbucket=self.target_vbucket,
+                                        vbuckets=self.cluster_util.vbuckets,
+                                        key_size=self.key_size)
+            _ = self._load_all_buckets(self.cluster, g_update,
                                        "update", 0, batch_size=self.batch_size,
                                        dgm_batch=self.dgm_batch)
             self.bucket_util._wait_for_stats_all_buckets()
             for bucket in self.bucket_util.get_all_buckets():
                 data_val_task = self.task.async_validate_docs(
                     self.cluster, bucket,
-                    self.gen_update, "update", 0, batch_size=self.batch_size)
+                    g_update, "update", 0, batch_size=self.batch_size)
                 self.task.jython_task_manager.get_task_result(data_val_task)
+            #In case of fragmentation, first read operation in test case will
+            #be only of items that we updated, and in the same order we updated
+            self.gen_read = copy.deepcopy(g_update)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished magma base setup========")
