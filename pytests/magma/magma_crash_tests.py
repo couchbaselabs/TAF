@@ -46,8 +46,6 @@ class MagmaCrashTests(MagmaBaseTest):
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
-            if self.doc_size_randomize:
-                self.doc_size = random.randint(0, self.doc_size)
             self.gen_create = doc_generator(self.key,
                                             start,
                                             end,
@@ -59,11 +57,12 @@ class MagmaCrashTests(MagmaBaseTest):
                                             randomize_value=self.randomize_value)
             self.loadgen_docs(_sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
-            if not (self.randomize_doc_size or self.randomize_value):
-                data_validation = self.task.async_validate_docs(
-                    self.cluster, self.bucket_util.buckets[0],
-                    self.gen_create, "create", 0, batch_size=10)
-                self.task.jython_task_manager.get_task_result(data_validation)
+            data_validation = self.task.async_validate_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                self.gen_create, "create", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency)
+            self.task.jython_task_manager.get_task_result(data_validation)
             start = end
             self.bucket_util.verify_stats_all_buckets(end, timeout=300)
             self.gen_update = self.gen_create
@@ -78,7 +77,6 @@ class MagmaCrashTests(MagmaBaseTest):
         cbstats = Cbstats(shell)
         self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].name)
         start = self.num_items
-        self.gen_validate = self.gen_create
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
@@ -125,7 +123,10 @@ class MagmaCrashTests(MagmaBaseTest):
 
             data_validation = self.task.async_validate_docs(
                     self.cluster, self.bucket_util.buckets[0],
-                    self.gen_validate, "create", 0, batch_size=10)
+                    self.gen_read, "create", 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    pause_secs=5, timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(data_validation)
 
         shell.disconnect()
