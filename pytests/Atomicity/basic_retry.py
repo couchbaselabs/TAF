@@ -8,9 +8,11 @@ import time
 
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import DocumentGenerator
-from reactor.util.function import Tuples
 from sdk_client3 import SDKClient
-import com.couchbase.test.transactions.SimpleTransaction as Transaction
+
+from com.couchbase.client.java.json import JsonObject
+from com.couchbase.test.transactions import SimpleTransaction as Transaction
+from reactor.util.function import Tuples
 
 
 class basic_ops(BaseTestCase):
@@ -52,20 +54,25 @@ class basic_ops(BaseTestCase):
 
     def get_doc_generator(self, start, end):
         age = range(5)
-        first = ['james', 'sharon']
+        name = ['james', 'sharon']
         body = [''.rjust(self.doc_size - 10, 'a')]
-        template = '{{ "age": {0}, "first_name": "{1}", "body": "{2}"}}'
-        generator = DocumentGenerator(self.key, template, age, first, body,
+        template = JsonObject.create()
+        template.put("age", age)
+        template.put("first_name", name)
+        template.put("body", body)
+        generator = DocumentGenerator(self.key, template,
                                       start=start,
                                       end=end,
                                       key_size=self.key_size,
                                       doc_size=self.doc_size,
-                                      doc_type=self.doc_type)
+                                      doc_type=self.doc_type,
+                                      randomize=True,
+                                      age=age, first_name=name)
         return generator
 
     def set_exception(self, exception):
         self.exception = exception
-        raise BaseException("Got an exception {}".format(self.exception))
+        raise BaseException("Got an exception %s" % self.exception)
 
     def __chunks(self, l, n):
         """Yield successive n-sized chunks from l."""
