@@ -86,10 +86,12 @@ class RebalanceInTests(RebalanceBaseTest):
         create_from += items
         # Waif for rebalance and doc mutation tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
+        if not rebalance_task.result:
+            self.task_manager.abort_all_tasks()
+            self.fail("Rebalance Failed")
+
         for task in tasks_info:
             self.task_manager.get_task_result(task)
-        if not rebalance_task.result:
-            self.fail("Rebalance Failed")
 
         self.cluster.nodes_in_cluster.extend(servs_in)
 
@@ -161,10 +163,13 @@ class RebalanceInTests(RebalanceBaseTest):
         create_from += items
         # Waif for rebalance and doc mutation tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
+        if not rebalance_task.result:
+            for task, _ in tasks_info.items():
+                self.task_manager.abort_all_tasks()
+            self.fail("Rebalance Failed")
+
         for task in tasks_info:
             self.task_manager.get_task_result(task)
-        if not rebalance_task.result:
-            self.fail("Rebalance Failed")
 
         self.cluster.nodes_in_cluster.extend(servs_in)
 
@@ -460,7 +465,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             for task, _ in tasks_info.items():
-                self.task_manager.get_task_result(task)
+                self.task_manager.abort_all_tasks()
             self.fail("Rebalance Failed")
 
         for task in tasks_info:
@@ -691,12 +696,12 @@ class RebalanceInTests(RebalanceBaseTest):
 
             # Wait for rebalance+doc_loading tasks to complete
             self.task_manager.get_task_result(rebalance_task)
-            for task in tasks_info:
-                self.task_manager.get_task_result(task)
-
             # Validate rebalance result
             if not rebalance_task.result:
+                self.task_manager.abort_all_tasks()
                 self.fail("Rebalance Failed")
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
 
             # Validate + retry doc_ops outcomes
             if not self.atomicity:
