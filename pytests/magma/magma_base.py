@@ -123,19 +123,25 @@ class MagmaBaseTest(BaseTestCase):
         self.gen_update = doc_generator(self.key, 0, self.num_items // 2,
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
-                                        mutate=1,
                                         target_vbucket=self.target_vbucket,
                                         vbuckets=self.cluster_util.vbuckets,
-                                        key_size=self.key_size)
+                                        key_size=self.key_size,
+                                        mutate=1,
+                                        randomize_doc_size=self.randomize_doc_size,
+                                        randomize_value=self.randomize_value,
+                                        mix_key_size=self.mix_key_size)
         if self.fragmentation:
             g_update = doc_generator(self.key, 0, self.num_items *
                                         self.fragmentation // 100,
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
-                                        mutate=1,
                                         target_vbucket=self.target_vbucket,
                                         vbuckets=self.cluster_util.vbuckets,
-                                        key_size=self.key_size)
+                                        key_size=self.key_size,
+                                        mutate=1,
+                                        randomize_doc_size=self.randomize_doc_size,
+                                        randomize_value=self.randomize_value,
+                                        mix_key_size=self.mix_key_size)
             _ = self._load_all_buckets(self.cluster, g_update,
                                        "update", 0, batch_size=self.batch_size,
                                        dgm_batch=self.dgm_batch)

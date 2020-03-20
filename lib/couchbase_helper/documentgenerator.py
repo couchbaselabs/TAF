@@ -196,6 +196,7 @@ class DocumentGenerator(KVGenerator):
 
         if 'mix_key_size' in kwargs:
             self.mix_key_size = kwargs['mix_key_size']
+            self.key_len = len(self.name)
 
     """Creates the next generated document and increments the iterator.
 
@@ -235,9 +236,9 @@ class DocumentGenerator(KVGenerator):
             doc_key = ''.join(self.random.choice(letters)
                               for _ in range(self.key_size))
         elif self.mix_key_size:
-            doc_key = ''.join(self.random.choice(letters)
-                              for _ in range(self.random.randint(self.key_size,
-                                                                 250)))
+            doc_key = "{}-{}".format(self.name,str(abs(self.itr)).zfill(self.random.randint(self.key_size, 250)
+                                                    - self.key_len
+                                                    - 1))
         else:
             doc_key = self.next_key(self.itr)
         self.itr += 1
