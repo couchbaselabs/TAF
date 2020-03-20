@@ -133,7 +133,7 @@ class DocLoaderUtils(object):
         else:
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
-            subdoc_gen_template_num = sample([0, 1], 1)
+            subdoc_gen_template_num = (sample([0, 1], 1))[0]
         return sub_doc_generator_for_edit(generic_key, start, end,
                                           subdoc_gen_template_num)
 
