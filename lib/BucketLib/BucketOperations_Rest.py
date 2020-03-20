@@ -606,7 +606,7 @@ class BucketHelper(RestConnection):
     # Collection/Scope specific APIs
     def create_collection(self, bucket, scope, collection_spec):
         api = self.baseUrl + 'pools/default/buckets/%s/collections/%s' \
-                             % (bucket, scope)
+                             % (urllib.quote_plus(bucket), urllib.quote_plus(scope))
         params = dict()
         for key, value in collection_spec.items():
             if key in ['name', 'maxTTL']:
@@ -620,7 +620,7 @@ class BucketHelper(RestConnection):
         return status, content
 
     def create_scope(self, bucket, scope):
-        api = self.baseUrl + 'pools/default/buckets/%s/collections' % bucket
+        api = self.baseUrl + 'pools/default/buckets/%s/collections' % urllib.quote_plus(bucket)
         params = urllib.urlencode({'name': scope})
         headers = self._create_headers()
         status, content, _ = self._http_request(api,
@@ -631,7 +631,7 @@ class BucketHelper(RestConnection):
 
     def delete_scope(self, bucket, scope):
         api = self.baseUrl + 'pools/default/buckets/%s/collections/%s' \
-                             % (bucket, scope)
+                             % (urllib.quote_plus(bucket), urllib.quote_plus(scope))
         headers = self._create_headers()
         status, content, _ = self._http_request(api,
                                                 'DELETE',
@@ -640,7 +640,7 @@ class BucketHelper(RestConnection):
 
     def delete_collection(self, bucket, scope, collection):
         api = self.baseUrl + 'pools/default/buckets/%s/collections/%s/%s' \
-                             % (bucket, scope, collection)
+                             % (urllib.quote_plus(bucket), urllib.quote_plus(scope), urllib.quote_plus(collection))
         headers = self._create_headers()
         status, content, _ = self._http_request(api,
                                                 'DELETE',
