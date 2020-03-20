@@ -540,16 +540,37 @@ class ServerTasks(object):
         self.jython_task_manager.get_task_result(_task)
         return _task.result
 
-    def load_gen_docs(self, cluster, bucket, generator, op_type, exp=0, flag=0,
-                      persist_to=0, replicate_to=0, only_store_hash=True,
-                      batch_size=1, compression=None, process_concurrency=8,
-                      retries=5):
+    def load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
+                      flag=0, persist_to=0, replicate_to=0,
+                      only_store_hash=True, batch_size=1, pause_secs=1,
+                      timeout_secs=5, compression=None,
+                      process_concurrency=8, retries=5,
+                      active_resident_threshold=100,
+                      durability="", print_ops_rate=True,
+                      task_identifier="",
+                      skip_read_on_error=False,
+                      ryow=False, check_persistence=False,
+                      start_task=True,
+                      suppress_error_table=False,
+                      dgm_batch=5000,
+                      scope=CbServer.default_scope,
+                      collection=CbServer.default_collection):
         _task = self.async_load_gen_docs(
-            cluster, bucket, generator, op_type, exp, flag,
-            persist_to=persist_to, replicate_to=replicate_to,
-            only_store_hash=only_store_hash, batch_size=batch_size,
-            compression=compression, process_concurrency=process_concurrency,
-            retries=retries)
+            cluster, bucket, generator, op_type, exp=exp,
+            flag=flag, persist_to=persist_to, replicate_to=replicate_to,
+            only_store_hash=only_store_hash, batch_size=batch_size, pause_secs=pause_secs,
+            timeout_secs=timeout_secs, compression=compression,
+            process_concurrency=process_concurrency, retries=retries,
+            active_resident_threshold=active_resident_threshold,
+            durability=durability, print_ops_rate=print_ops_rate,
+            task_identifier=task_identifier,
+            skip_read_on_error=skip_read_on_error,
+            ryow=ryow, check_persistence=check_persistence,
+            start_task=start_task,
+            suppress_error_table=suppress_error_table,
+            dgm_batch=dgm_batch,
+            scope=scope,
+            collection=collection)
         return self.jython_task_manager.get_task_result(_task)
 
     def verify_data(self, server, bucket, kv_store, timeout=None,
