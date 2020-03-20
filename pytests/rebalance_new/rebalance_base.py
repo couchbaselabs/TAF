@@ -221,11 +221,14 @@ class RebalanceBaseTest(BaseTestCase):
 
     def get_doc_generator(self, start, end):
         return doc_generator(self.key, start, end,
-                             key_size=self.key_size,
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.cluster_util.vbuckets)
+                             vbuckets=self.cluster_util.vbuckets,
+                             key_size=self.key_size,
+                             randomize_doc_size=self.randomize_doc_size,
+                             randomize_value=self.randomize_value,
+                             mix_key_size=self.mix_key_size)
 
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
