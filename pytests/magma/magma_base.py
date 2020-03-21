@@ -17,10 +17,6 @@ class MagmaBaseTest(BaseTestCase):
         self.key_size = self.input.param("key_size", 8)
         self.replica_to_update = self.input.param("new_replica", None)
         self.key = 'test_docs'
-        self.rev_write = self.input.param("rev_write", False)
-        self.rev_read = self.input.param("rev_read", False)
-        self.random_key = self.input.param("random_key", False)
-        self.mix_key_size = self.input.param("mix_key_size", False)
         if self.mix_key_size:
             self.random_key = False
             self.rev_write = False
