@@ -38,54 +38,47 @@ class Cbstats(CbCmdBase):
         :scope_data - Dict containing the scopes stat values
         """
         scope_data = dict()
-        id_scope_dict = dict()
         cmd = "%s localhost:%s -u %s -p %s -b %s scopes" \
               % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket.name)
 
         output, error = self._execute_cmd(cmd)
+
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        pattern = "[ \t]*manifest:scopes:([0-9xa-f]+):name:" \
-                  "[ \t]+([a-zA-Z_0-9%-]+)"
-        scope_name_pattern = re.compile(pattern)
-        scope_names = scope_name_pattern.findall(str(output))
-        for scope in scope_names:
-            scope_data[scope[1]] = dict()
-            scope_data[scope[1]]["id"] = scope[0]
-            id_scope_dict[scope[0]] = scope[1]
+        scope_count_pattern = "[ \t]*scopes:[ \t]+([0-9]+)"
+        scope_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
+        scope_count_pattern = re.compile(scope_count_pattern)
+        scope_uid_pattern = re.compile(scope_uid_pattern)
+        scope_count = scope_count_pattern.findall(str(output))[0]
+        scope_uid = scope_uid_pattern.findall(str(output))[0]
+        scope_data["count"] = int(scope_count)
+        scope_data["uid"] = scope_uid
+
+        scope_id_pattern = "[\t ]*([0-9xa-z_%-]+):id:[ \t]+([0-9a-fx]+)"
+        collection_count_pattern = "[ \t]*([0-9xa-z_%-]+):collections:" \
+                                   "[ \t]+([0-9]+)"
+
+        scope_id_pattern = re.compile(scope_id_pattern)
+        collection_count_pattern = re.compile(collection_count_pattern)
 
         # Cluster_run case
         if type(output) is str:
             output = output.split("\n")
 
-        scope_count_pattern = "[ \t]*manifest:scopes:[ \t]+([0-9]+)"
-        scope_uid_pattern = "[ \t]*manifest:uid:[ \t]+([0-9]+)"
-        collection_count_pattern = "[ \t]*manifest:scopes:([0-9xa-z]+):" \
-                                   "collections:[ \t]+([0-9]+)"
-
-        scope_count_pattern = re.compile(scope_count_pattern)
-        scope_uid_pattern = re.compile(scope_uid_pattern)
-        collection_count_pattern = re.compile(collection_count_pattern)
-
         for line in output:
             collection_count = collection_count_pattern.match(line)
-            scope_count = scope_count_pattern.match(line)
-            scope_uid = scope_uid_pattern.match(line)
+            scope_id = scope_id_pattern.match(line)
 
             if collection_count:
-                curr_scope_name = id_scope_dict[
-                    collection_count.group(1)]
+                curr_scope_name = collection_count.group(1)
+                scope_data[curr_scope_name] = dict()
                 scope_data[curr_scope_name]["collections"] = \
                     int(collection_count.group(2))
-            elif scope_count:
-                scope_data["count"] = int(scope_count.group(1))
-            elif scope_uid:
-                scope_data["uid"] = scope_uid.group(1)
-            elif not scope_name_pattern.match(line):
-                raise Exception("Unexpected pattern in scopes stats")
-
+            elif scope_id:
+                curr_scope_name = scope_id.group(1)
+                scope_data[curr_scope_name]["id"] = scope_id.group(2)
         return scope_data
 
     def get_scope_details(self, bucket_name):
@@ -156,53 +149,51 @@ class Cbstats(CbCmdBase):
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        pattern = "[ \t]*manifest:collection:([0-9xa-f]+):name:" \
-                  "[ \t]+([a-zA-Z_0-9%-]+)"
-        collection_name_pattern = re.compile(pattern)
-        collection_names = collection_name_pattern.findall(str(output))
-        for collection in collection_names:
-            collection_data[collection[1]] = dict()
-            collection_data[collection[1]]["id"] = collection[0]
-            id_collection_dict[collection[0]] = collection[1]
-
-        # Cluster_run case
-        if type(output) is str:
-            output = output.split("\n")
-
+        collection_count_pattern = "[ \t]*collections:[ \t]+([0-9]+)"
+        default_collection_exist_pattern = "[ \t]*default_exists:" \
+                                           "[ \t]+([truefals]+)"
+        collection_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
+        c_id_pattern = "[ \t]*([0-9A-Za-z_%-]+):([0-9A-Za-z_%-]+):id:" \
+                       "[ \t]+([a-zA-Z_0-9%-]+)"
         collection_items_pattern = \
             "[ \t]*collection:([0-9xa-f]+):items:[ \t]+([0-9]+)"
-        collection_count_pattern = "[ \t]*manifest:collections:[ \t]+([0-9]+)"
-        default_collection_exist_pattern = "[ \t]*manifest:default_exists:" \
-                                           "[ \t]+([truefals]+)"
-        collection_uid_pattern = "[ \t]*manifest:uid:[ \t]+([0-9]+)"
 
-        collection_items_pattern = re.compile(collection_items_pattern)
         collection_count_pattern = re.compile(collection_count_pattern)
         default_collection_exist_pattern = re.compile(
             default_collection_exist_pattern)
         collection_uid_pattern = re.compile(collection_uid_pattern)
+        collection_items_pattern = re.compile(collection_items_pattern)
+        c_id_pattern = re.compile(c_id_pattern)
 
-        for line in output:
-            collection_items = collection_items_pattern.match(line)
-            collection_count = collection_count_pattern.match(line)
-            default_collection_exist = \
-                default_collection_exist_pattern.match(line)
-            collection_uid = collection_uid_pattern.match(line)
-            if default_collection_exist:
-                if default_collection_exist.group(1) == "true":
-                    collection_data["default_exists"] = True
-                elif default_collection_exist.group(1) == "false":
-                    collection_data["default_exists"] = False
-                else:
-                    raise Exception("Invalid output '%s'" % line)
-            elif collection_uid:
-                collection_data["uid"] = int(collection_uid.group(1))
-            elif collection_count:
-                collection_data["count"] = int(collection_count.group(1))
-            elif collection_items:
-                num_items = int(collection_items.group(2))
-                collection_data[id_collection_dict[
-                    collection_items.group(1)]]["num_items"] = num_items
+        # Populate generic manifest stats
+        collection_count = collection_count_pattern.findall(str(output))[0]
+        default_collection_exist = \
+            default_collection_exist_pattern.findall(str(output))[0]
+        collection_uid = collection_uid_pattern.findall(str(output))[0]
+        collection_data["default_exists"] = True
+        if default_collection_exist == "false":
+            collection_data["default_exists"] = False
+        collection_data["uid"] = int(collection_uid)
+        collection_data["count"] = int(collection_count)
+
+        # Fetch all available collections with scope map and id
+        collection_names = c_id_pattern.findall(str(output))
+        for collection in collection_names:
+            scope_name = collection[0]
+            collection_name = collection[1]
+            if scope_name not in collection_data:
+                collection_data[scope_name] = dict()
+            collection_data[scope_name][collection_name] = dict()
+            collection_data[scope_name][collection_name]["id"] = collection[2]
+            id_collection_dict[collection[2]] = (scope_name, collection_name)
+
+        # Fetch all items count for each collection
+        collection_items = collection_items_pattern.findall(str(output))
+        for c_data in collection_items:
+            c_id = c_data[0]
+            scope_name = id_collection_dict[c_id][0]
+            c_name = id_collection_dict[c_id][1]
+            collection_data[scope_name][c_name]["num_items"] = int(c_data[1])
         return collection_data
 
     def get_collection_details(self, bucket_name):
@@ -363,7 +354,8 @@ class Cbstats(CbCmdBase):
 
         return result
 
-    def magma_stats(self, bucket_name, field_to_grep=None, stat_name="kvstore"):
+    def magma_stats(self, bucket_name, field_to_grep=None,
+                    stat_name="kvstore"):
         """
         Get a particular value of "kvstore" stat from the command,
         cbstats localhost:port kvstore
@@ -389,14 +381,15 @@ class Cbstats(CbCmdBase):
             raise Exception("\n".join(error))
         pattern = ":[ \t]+"
         pattern_for_key = "^[ \s]+"
-        bucket_absent_error = "No access to bucket:{0} - permission \
-                               denied or bucket does not exist" .format(bucket_name)
+        bucket_absent_error = "No access to bucket:%s - permission \
+                               denied or bucket does not exist" % bucket_name
         if type(output) is not list:
             output = [output]
         if field_to_grep is None and bucket_absent_error in output[0]:
             raise Exception("\n", bucket_absent_error)
         for ele in output:
-            result[re.sub(pattern_for_key, "", re.split(pattern, ele)[0])] = json.loads(re.split(pattern, ele)[1])
+            result[re.sub(pattern_for_key, "", re.split(pattern, ele)[0])] = \
+                json.loads(re.split(pattern, ele)[1])
         return result
 
     def vbucket_list(self, bucket_name, vbucket_type="active"):
