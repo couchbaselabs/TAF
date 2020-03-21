@@ -3904,21 +3904,23 @@ class BucketUtils(ScopeUtils):
         :return:
         """
         def perform_scope_operation(operation_type, ops_spec):
+            buckets_spec = ops_spec
+            if "buckets" in buckets_spec:
+                buckets_spec = ops_spec["buckets"]
+
             if operation_type == "create":
-                bucket_obj_list = list()
-                for bucket_name in ops_spec["buckets"]:
-                    bucket_obj_list.append(
-                        BucketUtils.get_bucket_obj(buckets, bucket_name))
                 scopes_num = ops_spec["scopes_num"]
                 collection_count = \
                     ops_spec["collection_count_under_each_scope"]
-                for bucket_obj in bucket_obj_list:
+                for bucket_name in buckets_spec:
+                    bucket_obj = BucketUtils.get_bucket_obj(buckets,
+                                                            bucket_name)
                     ScopeUtils.create_scopes(
                         cluster, bucket_obj, scopes_num,
                         scope_name=None,
                         collection_count=collection_count)
             elif operation_type == "drop":
-                for bucket_name, b_data in ops_spec.items():
+                for bucket_name, b_data in buckets_spec.items():
                     bucket_obj = BucketUtils.get_bucket_obj(buckets,
                                                             bucket_name)
                     for scope_name in b_data["scopes"].keys():
