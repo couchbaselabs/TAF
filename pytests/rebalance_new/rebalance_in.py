@@ -164,8 +164,7 @@ class RebalanceInTests(RebalanceBaseTest):
         # Waif for rebalance and doc mutation tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
-            for task, _ in tasks_info.items():
-                self.task_manager.abort_all_tasks()
+            self.task_manager.abort_all_tasks()
             self.fail("Rebalance Failed")
 
         for task in tasks_info:
@@ -464,9 +463,15 @@ class RebalanceInTests(RebalanceBaseTest):
 
         self.task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
-            for task, _ in tasks_info.items():
-                self.task_manager.abort_all_tasks()
+            self.task_manager.abort_all_tasks()
             self.fail("Rebalance Failed")
+
+        for task in compaction_tasks:
+            self.task_manager.get_task_result(task)
+            if not task.result:
+                self.task_manager.abort_all_tasks()
+            self.assertTrue(task.result, "Compaction failed for bukcet: %s" %
+                            task.bucket.name)
 
         for task in tasks_info:
             self.task_manager.get_task_result(task)
