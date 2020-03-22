@@ -115,12 +115,21 @@ class BaseTestCase(unittest.TestCase):
 
         # Client specific params
         self.sdk_client_type = self.input.param("sdk_client_type", "java")
-        self.sdk_compression = self.input.param("sdk_compression", True)
         self.replicate_to = self.input.param("replicate_to", 0)
         self.persist_to = self.input.param("persist_to", 0)
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
         self.durability_level = self.input.param("durability", "").upper()
+        # Client compression settings
+        self.sdk_compression = self.input.param("sdk_compression", None)
+        compression_min_ratio = self.input.param("min_ratio", None)
+        compression_min_size = self.input.param("min_size", None)
+        if type(self.sdk_compression) is bool:
+            self.sdk_compression = {"enabled": self.sdk_compression}
+            if compression_min_size:
+                self.sdk_compression["minSize"] = compression_min_size
+            if compression_min_ratio:
+                self.sdk_compression["minRatio"] = compression_min_ratio
 
         # Doc Loader Params
         self.process_concurrency = self.input.param("process_concurrency", 20)

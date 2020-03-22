@@ -88,7 +88,8 @@ class basic_ops(BaseTestCase):
 
         default_bucket = self.bucket_util.get_all_buckets()[0]
         smart_client = SDKClient([self.cluster.master],
-                                 default_bucket)
+                                 default_bucket,
+                                 compression_settings=self.sdk_compression)
         sdk_client = smart_client.get_client()
         # mcd = client.memcached(KEY_NAME)
 
@@ -219,6 +220,7 @@ class basic_ops(BaseTestCase):
             process_concurrency=self.process_concurrency,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             ryow=self.ryow,
             check_persistence=self.check_persistence,
@@ -292,6 +294,7 @@ class basic_ops(BaseTestCase):
                 process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
+                compression=self.sdk_compression,
                 timeout_secs=self.sdk_timeout,
                 ryow=self.ryow,
                 check_persistence=self.check_persistence,
@@ -323,6 +326,7 @@ class basic_ops(BaseTestCase):
                 process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
+                compression=self.sdk_compression,
                 timeout_secs=self.sdk_timeout,
                 ryow=self.ryow, check_persistence=self.check_persistence,
                 scope=self.scope_name,
@@ -352,7 +356,7 @@ class basic_ops(BaseTestCase):
                     self.cluster, def_bucket,
                     doc_update, "delete", 0,
                     batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency,)
+                    process_concurrency=self.process_concurrency)
             self.task.jython_task_manager.get_task_result(task)
 
         else:
@@ -385,6 +389,7 @@ class basic_ops(BaseTestCase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
+                compression=self.sdk_compression,
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
@@ -405,6 +410,7 @@ class basic_ops(BaseTestCase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
+                compression=self.sdk_compression,
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
             if self.doc_size > 20:
@@ -433,6 +439,7 @@ class basic_ops(BaseTestCase):
                     replicate_to=self.replicate_to,
                     persist_to=self.persist_to,
                     durability=self.durability_level,
+                    compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(task)
                 if len(task.fail.keys()) != 1:
@@ -548,6 +555,7 @@ class basic_ops(BaseTestCase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
@@ -574,6 +582,7 @@ class basic_ops(BaseTestCase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
@@ -586,7 +595,8 @@ class basic_ops(BaseTestCase):
                             services=["n1ql,index"])
         self.log.info("Creating SDK client connection")
         client = SDKClient([self.cluster.master],
-                           self.bucket_util.buckets[0])
+                           self.bucket_util.buckets[0],
+                           compression_settings=self.sdk_compression)
 
         self.log.info("Stopping memcached on: %s" % node_to_stop)
         ssh_conn = RemoteMachineShellConnection(node_to_stop)

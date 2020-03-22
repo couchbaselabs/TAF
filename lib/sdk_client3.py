@@ -148,8 +148,8 @@ class SDKClient(object):
             # Having 'None' will enable us to test without sending any
             # compression settings and explicitly setting to 'False' as well
             if self.compression is not None:
-                compression_config = CompressionConfig.enable(
-                    getattr(self.compression, "enabled", False))
+                is_compression = self.compression.get("enabled", False)
+                compression_config = CompressionConfig.enable(is_compression)
                 if "minSize" in self.compression:
                     compression_config = compression_config.minSize(
                         self.compression["minSize"])

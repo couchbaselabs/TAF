@@ -44,6 +44,7 @@ class BasicOps(CollectionBase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
+                compression=self.sdk_compression,
                 timeout_secs=self.sdk_timeout,
                 scope=CbServer.default_scope,
                 collection=CbServer.default_collection,
@@ -68,7 +69,8 @@ class BasicOps(CollectionBase):
                       % (CbServer.default_scope,
                          CbServer.default_collection))
         if client_type == "sdk":
-            client = SDKClient([self.cluster.master], self.bucket)
+            client = SDKClient([self.cluster.master], self.bucket,
+                               compression_settings=self.sdk_compression)
             client.drop_collection(CbServer.default_scope,
                                    CbServer.default_collection)
             client.close()
@@ -114,7 +116,8 @@ class BasicOps(CollectionBase):
         try:
             client = SDKClient([self.cluster.master], self.bucket,
                                scope=CbServer.default_scope,
-                               collection=CbServer.default_collection)
+                               collection=CbServer.default_collection,
+                               compression_settings=self.sdk_compression)
             result = client.crud("create", "test_key-1", "TestValue")
             if result["status"] is True:
                 self.log_failure("CRUD succeeded on deleted collection")
@@ -159,7 +162,8 @@ class BasicOps(CollectionBase):
                                    key_size=self.key_size)
         self.log.info("Loading %d docs into '_default' collection"
                       % self.num_items)
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket,
+                           compression_settings=self.sdk_compression)
         while create_gen.has_next():
             key, val = create_gen.next()
             result = client.crud("create", key, val, exp=self.maxttl,
@@ -184,6 +188,7 @@ class BasicOps(CollectionBase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             scope=CbServer.default_scope,
             collection=CbServer.default_collection)
@@ -247,6 +252,7 @@ class BasicOps(CollectionBase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             scope=CbServer.default_scope,
             collection=CbServer.default_collection)
@@ -317,8 +323,9 @@ class BasicOps(CollectionBase):
         self.log.info("Load documents into the created collection")
         sdk_client = SDKClient([self.cluster.master],
                                self.bucket,
-                               scope_name,
-                               collection_name)
+                               scope=scope_name,
+                               collection=collection_name,
+                               compression_settings=self.sdk_compression)
         while gen_add.has_next():
             key, value = gen_add.next()
             result = sdk_client.crud("create", key, value,
@@ -344,6 +351,7 @@ class BasicOps(CollectionBase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             scope=scope_name,
             collection=collection_name)
@@ -368,7 +376,8 @@ class BasicOps(CollectionBase):
         known_cas = set()
 
         # Client to insert docs under different collections
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket,
+                           compression_settings=self.sdk_compression)
 
         while doc_gen.has_next():
             key, value = doc_gen.next()
@@ -418,7 +427,8 @@ class BasicOps(CollectionBase):
         known_cas = set()
 
         # Client to insert docs under different collections
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket,
+                           compression_settings=self.sdk_compression)
 
         for doc_gen in [min_doc_gen, max_doc_gen]:
             while doc_gen.has_next():
@@ -476,7 +486,8 @@ class BasicOps(CollectionBase):
         known_cas = set()
 
         # Client to insert docs under different collections
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket,
+                           compression_settings=self.sdk_compression)
 
         for doc_gen in [min_doc_size_gen, max_doc_size_gen]:
             while doc_gen.has_next():
@@ -539,6 +550,7 @@ class BasicOps(CollectionBase):
                         "create", self.maxttl,
                         batch_size=200, process_concurrency=1,
                         durability=self.durability_level,
+                        compression=self.sdk_compression,
                         timeout_secs=self.sdk_timeout,
                         scope=scope.name,
                         collection=collection.name,
@@ -673,6 +685,7 @@ class BasicOps(CollectionBase):
             batch_size=10, process_concurrency=2,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
+            compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             scope=CbServer.default_scope,
             collection=CbServer.default_collection,
