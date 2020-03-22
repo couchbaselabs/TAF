@@ -3839,9 +3839,10 @@ class BucketUtils(ScopeUtils):
             else:
                 for key, value in tem_collection_data.items():
                     if type(value) is dict:
-                        for collection, c_data in value.items():
-                            c_data["num_items"] += value["num_items"]
-
+                        for col_name, c_data in value.items():
+                            collection_data[key][col_name]['num_items'] \
+                                += c_data['num_items']
+        print(collection_data)
         # Validate scope-collection hierarchy with doc_count
         status = \
             status \
