@@ -106,7 +106,7 @@ class ServerTasks(object):
                             collection=CbServer.default_collection):
         clients = list()
         if active_resident_threshold == 100:
-            self.log.debug("Loading documents to {}".format(bucket.name))
+            self.log.debug("Loading documents to %s" % bucket.name)
             if not task_identifier:
                 task_identifier = bucket.name
             gen_start = int(generator.start)
@@ -118,9 +118,10 @@ class ServerTasks(object):
                                    scope, collection)
                 clients.append(client)
             if not ryow:
-                task_identifier += "%s_%s_%s" % (op_type,
-                                                 generator.start,
-                                                 generator.end)
+                if not task_identifier:
+                    task_identifier += "%s_%s_%s" % (op_type,
+                                                     generator.start,
+                                                     generator.end)
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
                     cluster, self.jython_task_manager, bucket, clients,
                     [generator], op_type, exp, exp_unit="seconds", flag=flag,

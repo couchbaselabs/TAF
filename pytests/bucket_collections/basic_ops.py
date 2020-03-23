@@ -374,8 +374,8 @@ class BasicOps(CollectionBase):
 
         while doc_gen.has_next():
             key, value = doc_gen.next()
-            for scope in self.bucket.scopes:
-                for collection in scope.collections:
+            for _, scope in self.bucket.scopes.items():
+                for _, collection in scope.collections.items():
                     client.select_collection(scope.name, collection.name)
                     result = client.crud("create", key, value, self.maxttl,
                                          durability=self.durability_level,
@@ -425,8 +425,8 @@ class BasicOps(CollectionBase):
         for doc_gen in [min_doc_gen, max_doc_gen]:
             while doc_gen.has_next():
                 key, value = doc_gen.next()
-                for scope in self.bucket.scopes:
-                    for collection in scope.collections:
+                for _, scope in self.bucket.scopes.items():
+                    for _, collection in scope.collections.items():
                         client.select_collection(scope.name, collection.name)
                         result = client.crud("create", key, value, self.maxttl,
                                              durability=self.durability_level,
@@ -483,8 +483,8 @@ class BasicOps(CollectionBase):
         for doc_gen in [min_doc_size_gen, max_doc_size_gen]:
             while doc_gen.has_next():
                 key, value = doc_gen.next()
-                for scope in self.bucket.scopes:
-                    for collection in scope.collections:
+                for _, scope in self.bucket.scopes.items():
+                    for _, collection in scope.collections.items():
                         client.select_collection(scope.name, collection.name)
                         result = client.crud("create", key, value, self.maxttl,
                                              durability=self.durability_level,
@@ -513,7 +513,43 @@ class BasicOps(CollectionBase):
         self.validate_test_failure()
 
     def test_sub_doc_size(self):
-        pass
+        """
+        Insert sub-documents into multiple collections and validate.
+        Tests with variable sub_doc size and content
+        :return:
+        """
+        # Empty docs
+        min_doc_size_gen = doc_generator("test_min_doc_size",
+                                         0, self.num_items,
+                                         key_size=self.key_size,
+                                         doc_size=0,
+                                         mix_key_size=False,
+                                         randomize_doc_size=False)
+        # 20 MB docs
+        max_doc_size_gen = doc_generator("test_max_doc_size",
+                                         0, self.num_items,
+                                         key_size=self.key_size,
+                                         doc_size=1024*1024*1024*20,
+                                         mix_key_size=False,
+                                         randomize_doc_size=False)
+        for _, scope in self.bucket.scopes.items():
+            for _, collection in scope.collections.items():
+                tasks = list()
+                for doc_gen in [min_doc_size_gen, max_doc_size_gen]:
+                    tasks.append(self.task.async_load_gen_docs(
+                        self.cluster, self.bucket, doc_gen,
+                        "create", self.maxttl,
+                        batch_size=200, process_concurrency=1,
+                        durability=self.durability_level,
+                        timeout_secs=self.sdk_timeout,
+                        scope=scope.name,
+                        collection=collection.name,
+                        suppress_error_table=True))
+
+                for task in tasks:
+                    self.task_manager.get_task_result(task)
+
+        self.log.info("Loading sub_docs into the collections")
 
     def test_create_delete_recreate_collection(self):
         collections = BucketUtils.get_random_collections(
