@@ -88,6 +88,12 @@ class RebalanceInTests(RebalanceBaseTest):
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.task_manager.abort_all_tasks()
+            for task in tasks_info:
+                try:
+                    for client in task.clients:
+                        client.close()
+                except:
+                    pass
             self.fail("Rebalance Failed")
 
         for task in tasks_info:
@@ -165,6 +171,12 @@ class RebalanceInTests(RebalanceBaseTest):
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.task_manager.abort_all_tasks()
+            for task in tasks_info:
+                try:
+                    for client in task.clients:
+                        client.close()
+                except:
+                    pass
             self.fail("Rebalance Failed")
 
         for task in tasks_info:
@@ -464,12 +476,24 @@ class RebalanceInTests(RebalanceBaseTest):
         self.task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.task_manager.abort_all_tasks()
+            for task in tasks_info:
+                try:
+                    for client in task.clients:
+                        client.close()
+                except:
+                    pass
             self.fail("Rebalance Failed")
-
+        print "Rebalance fisihed successfully in testcase: %s" % rebalance_task.result
         for task in compaction_tasks:
             self.task_manager.get_task_result(task)
             if not task.result:
                 self.task_manager.abort_all_tasks()
+                for task in tasks_info:
+                    try:
+                        for client in task.clients:
+                            client.close()
+                    except:
+                        pass
             self.assertTrue(task.result, "Compaction failed for bukcet: %s" %
                             task.bucket.name)
 
@@ -704,6 +728,12 @@ class RebalanceInTests(RebalanceBaseTest):
             # Validate rebalance result
             if not rebalance_task.result:
                 self.task_manager.abort_all_tasks()
+                for task in tasks_info:
+                    try:
+                        for client in task.clients:
+                            client.close()
+                    except:
+                        pass
                 self.fail("Rebalance Failed")
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
