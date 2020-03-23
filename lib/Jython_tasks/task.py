@@ -436,6 +436,7 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
             if fail:
+                key_val = dict(key_val)
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
                     failed_item_table.set_headers(["Create doc_Id",
@@ -447,7 +448,7 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
-                    read_map = self.batch_read(fail.keys())
+                    read_map, _ = self.batch_read(fail.keys())
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0:
                             success[key] = value
@@ -477,7 +478,9 @@ class GenericLoadingTask(Task):
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
                 doc_type=doc_type, durability=durability)
+
             if fail:
+                key_val = dict(key_val)
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
                     failed_item_table.set_headers(["Update doc_Id",
@@ -489,7 +492,7 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
-                    read_map = self.batch_read(fail.keys())
+                    read_map, _ = self.batch_read(fail.keys())
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0 \
                            and value == key_val[key]:
@@ -515,13 +518,13 @@ class GenericLoadingTask(Task):
         fail = dict()
         try:
             client = self.client or shared_client
-            retry_docs = key_val
             success, fail = client.replaceMulti(
-                retry_docs, self.exp, exp_unit=self.exp_unit,
+                key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
                 doc_type=doc_type, durability=durability)
             if fail:
+                key_val = dict(key_val)
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
                     failed_item_table.set_headers(["Replace doc_Id",
@@ -533,7 +536,7 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
-                    read_map = self.batch_read(fail.keys())
+                    read_map, _ = self.batch_read(fail.keys())
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0:
                             success[key] = value
