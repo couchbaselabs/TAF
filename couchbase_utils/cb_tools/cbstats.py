@@ -56,8 +56,8 @@ class Cbstats(CbCmdBase):
         scope_data["count"] = int(scope_count)
         scope_data["uid"] = scope_uid
 
-        scope_id_pattern = "[\t ]*([0-9xa-z_%-]+):id:[ \t]+([0-9a-fx]+)"
-        collection_count_pattern = "[ \t]*([0-9xa-z_%-]+):collections:" \
+        scope_id_pattern = "[\t ]*([0-9A-Za-z_%-]+):id:[ \t]+([0-9a-fx]+)"
+        collection_count_pattern = "[ \t]*([0-9A-Za-z_%-]+):collections:" \
                                    "[ \t]+([0-9]+)"
 
         scope_id_pattern = re.compile(scope_id_pattern)
