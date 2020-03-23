@@ -3774,7 +3774,7 @@ class BucketUtils(ScopeUtils):
                            "Expected: %s, Actual: %s"
                            % (len(active_scopes), scope_data["count"]))
 
-        for _, scope in bucket.scopes.items():
+        for scope in BucketUtils.get_active_scopes(bucket):
             active_collections = \
                 CollectionUtils.get_active_collections(bucket, scope.name)
             # Validate collection count under current scope
@@ -3842,7 +3842,6 @@ class BucketUtils(ScopeUtils):
                         for col_name, c_data in value.items():
                             collection_data[key][col_name]['num_items'] \
                                 += c_data['num_items']
-        print(collection_data)
         # Validate scope-collection hierarchy with doc_count
         status = \
             status \
@@ -3891,7 +3890,7 @@ class BucketUtils(ScopeUtils):
                     self.drop_scope(self.cluster.master,
                                     bucket,
                                     scope_name=scope.name)
-        self.validate_docs_per_collections_all_buckets()
+        # self.validate_docs_per_collections_all_buckets()
 
     @staticmethod
     def perform_tasks_from_spec(cluster, buckets, input_spec):

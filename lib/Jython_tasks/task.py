@@ -3015,6 +3015,8 @@ class BucketCreateFromSpecTask(Task):
             self.set_exception(e)
 
     def create_scope_from_spec(self, scope_spec):
+        self.test_log.debug("Creating scope for '%s' - %s"
+                            % (self.bucket_obj.name, scope_spec["name"]))
         if scope_spec["name"] != CbServer.default_scope:
             status, content = self.bucket_helper.create_scope(
                 self.bucket_obj.name,
@@ -3046,6 +3048,9 @@ class BucketCreateFromSpecTask(Task):
         #     collection_create_thread.join(30)
 
     def create_collection_from_spec(self, scope_name, collection_spec):
+        self.test_log.debug("Creating collection for '%s::%s' - %s"
+                            % (self.bucket_obj.name, scope_name,
+                               collection_spec["name"]))
         status, content = self.bucket_helper.create_collection(
             self.bucket_obj.name,
             scope_name,
