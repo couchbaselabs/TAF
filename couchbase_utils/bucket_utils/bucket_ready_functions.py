@@ -1872,7 +1872,6 @@ class BucketUtils(ScopeUtils):
                 found = False
                 exception = failed_doc["error"]
                 key_value = {key: failed_doc}
-
                 for ex in task_info["ignore_exceptions"]:
                     if str(exception).find(ex) != -1:
                         bucket \

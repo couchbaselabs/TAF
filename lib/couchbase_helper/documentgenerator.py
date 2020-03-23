@@ -206,8 +206,8 @@ class DocumentGenerator(KVGenerator):
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
-        #template = self.template
-        template = copy.deepcopy(self.template)
+        template = self.template
+#         template = copy.deepcopy(self.template)
         seed_hash = self.name + '-' + str(abs(self.itr))
         self.random.seed(seed_hash)
         if self.randomize:

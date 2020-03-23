@@ -462,10 +462,10 @@ class GenericLoadingTask(Task):
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
                     failed_item_table.display("Failed items:")
-            return success, fail
+            return success, copy.deepcopy(fail)
         except Exception as error:
             self.test_log.error(error)
-        return success, fail
+        return success, copy.deepcopy(fail)
 
     def batch_update(self, key_val, shared_client=None, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
@@ -507,10 +507,10 @@ class GenericLoadingTask(Task):
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
                     failed_item_table.display("Failed items after reads:")
-            return success, fail
+            return success, copy.deepcopy(fail)
         except Exception as error:
             self.test_log.error(error)
-        return success, fail
+        return success, copy.deepcopy(fail)
 
     def batch_replace(self, key_val, shared_client=None, persist_to=0,
                       replicate_to=0, timeout=5, time_unit="seconds",
@@ -550,10 +550,10 @@ class GenericLoadingTask(Task):
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
                     failed_item_table.display("Failed items after reads:")
-            return success, fail
+            return success, copy.deepcopy(fail)
         except Exception as error:
             self.test_log.error(error)
-        return success, fail
+        return success, copy.deepcopy(fail)
 
     def batch_delete(self, key_val, shared_client=None, persist_to=None,
                      replicate_to=None, timeout=None, timeunit=None,

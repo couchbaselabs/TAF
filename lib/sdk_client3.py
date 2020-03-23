@@ -237,7 +237,7 @@ class SDKClient(object):
                 fail[key] = dict()
                 fail[key]['cas'] = item['cas']
                 fail[key]['value'] = json_object
-                fail[key]['error'] = item['error']
+                fail[key]['error'] = str(item['error'])
         return success, fail
 
     def __tranlate_delete_multi_results(self, data):

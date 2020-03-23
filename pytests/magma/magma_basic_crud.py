@@ -1,14 +1,6 @@
-import os
-import random
-
-from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
-from membase.api.rest_client import RestConnection
-from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import SDKException
-import copy
 
 
 class BasicCrudTests(MagmaBaseTest):
@@ -45,7 +37,7 @@ class BasicCrudTests(MagmaBaseTest):
                 end = -int(self.num_items - 1)
             if self.rev_read:
                 start_read = -int(self.num_items+init_items - 1)
-                end_read =  -int(self.num_items - 1)
+                end_read = -int(self.num_items - 1)
             self.gen_create = doc_generator(
                 self.key, start, end,
                 doc_size=self.doc_size,
@@ -92,9 +84,9 @@ class BasicCrudTests(MagmaBaseTest):
                 shell.kill_memcached()
                 shell.disconnect()
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
-                self.bucket_util.buckets[0],
-                wait_time=self.wait_timeout * 10))
+                                [self.cluster_util.cluster.master],
+                                self.bucket_util.buckets[0],
+                                wait_time=self.wait_timeout * 10))
             self.doc_ops = "update"
             start = 0
             end = self.num_items//2
@@ -102,15 +94,15 @@ class BasicCrudTests(MagmaBaseTest):
                 start = -int(self.num_items//2 - 1)
                 end = 1
             self.gen_update = doc_generator(self.key, start, end,
-                                        doc_size=self.doc_size,
-                                        doc_type=self.doc_type,
-                                        target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets,
-                                        key_size=self.key_size,
-                                        mutate=count+1,
-                                        randomize_doc_size=self.randomize_doc_size,
-                                        randomize_value=self.randomize_value,
-                                        mix_key_size=self.mix_key_size)
+                                            doc_size=self.doc_size,
+                                            doc_type=self.doc_type,
+                                            target_vbucket=self.target_vbucket,
+                                            vbuckets=self.cluster_util.vbuckets,
+                                            key_size=self.key_size,
+                                            mutate=count+1,
+                                            randomize_doc_size=self.randomize_doc_size,
+                                            randomize_value=self.randomize_value,
+                                            mix_key_size=self.mix_key_size)
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
@@ -121,10 +113,10 @@ class BasicCrudTests(MagmaBaseTest):
                 self.gen_update, "update", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-               pause_secs=5, timeout_secs=self.sdk_timeout)
+                pause_secs=5, timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(data_validation)
             disk_usage = self.get_disk_usage(self.bucket_util.get_all_buckets()[0], self.servers)
-            self.log.info("disk usage after update count {} is {}".format(count+1, disk_usage))
+            self.log.info("disk usage after update count {} is {}".format(count + 1, disk_usage))
             self.assertIs(
                 disk_usage > 4 * self.disk_usage, False,
                 "Disk Usage {} After Update Count {} exceeds Actual \
