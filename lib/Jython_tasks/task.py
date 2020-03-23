@@ -496,7 +496,7 @@ class GenericLoadingTask(Task):
                             success[key] = value
                             success[key].pop("error")
                             fail.pop(key)
-                        elif self.suppress_error_table:
+                        elif not self.suppress_error_table:
                             failed_item_table.add_row([key, value['error']])
                 elif not self.suppress_error_table:
                     for key, value in fail.items():
