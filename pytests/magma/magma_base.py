@@ -1,3 +1,6 @@
+import os
+import copy
+
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
@@ -6,7 +9,8 @@ from sdk_exceptions import SDKException
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
 from testconstants import INDEX_QUOTA, MIN_KV_QUOTA, CBAS_QUOTA, FTS_QUOTA
-import copy
+
+
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -21,10 +25,12 @@ class MagmaBaseTest(BaseTestCase):
             self.random_key = False
             self.rev_write = False
             self.rev_read = False
+            self.rev_update = False
         if self.random_key:
             self.key = "random_keys"
             self.rev_write = False
             self.rev_read = False
+            self.rev_update = False
         self.items = self.num_items
         self.check_temporary_failure_exception = False
         self.fragmentation = self.input.param("fragmentation", 0)
@@ -114,6 +120,8 @@ class MagmaBaseTest(BaseTestCase):
                                       randomize_doc_size=self.randomize_doc_size,
                                       randomize_value=self.randomize_value,
                                       mix_key_size=self.mix_key_size)
+        self.disk_usage = self.get_disk_usage(self.bucket_util.get_all_buckets()[0], self.servers)
+        self.log.info("Disk usage after Creation of docs is {}".format(self.disk_usage))
         self.gen_create = None;
         self.gen_delete = None
         self.gen_update = doc_generator(self.key, 0, self.num_items // 2,
@@ -145,7 +153,9 @@ class MagmaBaseTest(BaseTestCase):
             for bucket in self.bucket_util.get_all_buckets():
                 data_val_task = self.task.async_validate_docs(
                     self.cluster, bucket,
-                    g_update, "update", 0, batch_size=self.batch_size)
+                    g_update, "update", 0, batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    pause_secs=5, timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(data_val_task)
             #In case of fragmentation, first read operation in test case will
             #be only of items that we updated, and in the same order we updated
@@ -303,3 +313,25 @@ class MagmaBaseTest(BaseTestCase):
             shell.disconnect()
             magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
+
+    def get_disk_usage(self, bucket, servers = None):
+        total_usage = 0
+        wal_size = 0
+        result = 0
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            path = os.path.join(RestConnection(server).get_data_path(), bucket.name)
+            total_usage += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'" % os.path.join(
+                                RestConnection(server).get_data_path(),
+                                bucket.name, "magma.*"))[0][0].split('\n')[0])
+            wal_size += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'" % os.path.join(
+                                RestConnection(server).get_data_path(),
+                                bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
+            self.log.debug("total disk usage(including wal size) and wal size is {} and {}".format(total_usage, wal_size ))
+        result = total_usage - wal_size
+        self.log.debug("disk usage without wal size is {}".format(result))
+        return result
