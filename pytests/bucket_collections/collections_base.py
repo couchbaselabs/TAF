@@ -1,12 +1,12 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
+from BucketLib.BucketOperations import BucketHelper
 
 
 class CollectionBase(BaseTestCase):
     def setUp(self):
         super(CollectionBase, self).setUp()
-
         self.key = 'test_collection'.rjust(self.key_size, '0')
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
@@ -61,6 +61,7 @@ class CollectionBase(BaseTestCase):
         self.bucket_util.validate_docs_per_collections_all_buckets()
 
         self.bucket_util.print_bucket_stats()
+        self.bucket_helper_obj = BucketHelper(self.cluster.master)
         self.log.info("=== CollectionBase setup complete ===")
 
     def tearDown(self):
