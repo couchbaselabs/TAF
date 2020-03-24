@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from Cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
@@ -16,6 +18,46 @@ class BasicOps(CollectionBase):
         self.bucket = self.bucket_util.buckets[0]
         # To override default num_items to '0'
         self.num_items = self.input.param("num_items", 0)
+
+    def __dockey_data_ops(self, dockey="dockey"):
+        target_vb = None
+        if self.target_vbucket is not None:
+            target_vb = [self.target_vbucket]
+
+        gen_load = doc_generator(dockey, 0, self.num_items,
+                                 key_size=self.key_size,
+                                 doc_size=self.doc_size,
+                                 doc_type=self.doc_type,
+                                 vbuckets=self.cluster_util.vbuckets,
+                                 target_vbucket=target_vb)
+
+        bucket = self.bucket_util.get_all_buckets()[0]
+        for op_type in ["create", "update", "delete"]:
+            for _, scope in bucket.scopes.items():
+                for _, collection in scope.collections.items():
+                    task = self.task.async_load_gen_docs(
+                        self.cluster, bucket, gen_load, op_type, self.maxttl,
+                        batch_size=20,
+                        persist_to=self.persist_to,
+                        replicate_to=self.replicate_to,
+                        durability=self.durability_level,
+                        pause_secs=5, timeout_secs=self.sdk_timeout,
+                        retries=self.sdk_retries,
+                        scope=scope.name,
+                        collection=collection.name)
+                    self.task.jython_task_manager.get_task_result(task)
+                    if op_type == "create":
+                        bucket.scopes[scope.name] \
+                            .collections[collection.name]["num_items"] \
+                            += self.num_items
+                    elif op_type == "delete":
+                        bucket.scopes[scope.name] \
+                            .collections[collection.name]["num_items"] \
+                            -= self.num_items
+                    # Doc count validation
+                    self.bucket_util._wait_for_stats_all_buckets()
+                    self.bucket_util \
+                        .validate_docs_per_collections_all_buckets()
 
     def test_delete_default_collection(self):
         """
@@ -406,6 +448,27 @@ class BasicOps(CollectionBase):
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
+
+    def test_dockey_whitespace_data_ops(self):
+        generic_key = "d o c k e y"
+        if self.key_length:
+            self.key_length = self.key_length-len(generic_key)
+            generic_key = generic_key + "_" * self.key_length
+        self.__dockey_data_ops(generic_key)
+
+    def test_dockey_binary_data_ops(self):
+        generic_key = "d\ro\nckey"
+        if self.key_length:
+            self.key_length = self.key_length-len(generic_key)
+            generic_key = generic_key + "\n" * self.key_length
+        self.__dockey_data_ops(generic_key)
+
+    def test_dockey_unicode_data_ops(self):
+        generic_key = "\u00CA"
+        if self.key_length:
+            self.key_length = self.key_length-len(generic_key)
+            generic_key = generic_key + "é" * self.key_length
+        self.__dockey_data_ops(generic_key)
 
     def test_doc_key_size(self):
         """
