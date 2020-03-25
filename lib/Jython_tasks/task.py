@@ -1393,6 +1393,7 @@ class LoadDocumentsGeneratorsTask(Task):
 
     def call(self):
         self.start_task()
+        buckets_for_ops_rate_task = list()
         if self.op_types:
             if len(self.op_types) != len(self.generators):
                 self.set_exception(
@@ -1414,16 +1415,16 @@ class LoadDocumentsGeneratorsTask(Task):
             iterator += 1
         if self.print_ops_rate:
             if self.buckets:
-                for bucket in self.buckets:
-                    print_ops_rate_task = PrintOpsRate(self.cluster, bucket,
-                                                       self.op_type)
-                    self.print_ops_rate_tasks.append(print_ops_rate_task)
-                    self.task_manager.add_new_task(print_ops_rate_task)
+                buckets_for_ops_rate_task = self.buckets
             else:
-                print_ops_rate_task = PrintOpsRate(self.cluster, self.bucket,
-                                                   self.op_type)
-                self.print_ops_rate_tasks.append(print_ops_rate_task)
-                self.task_manager.add_new_task(print_ops_rate_task)
+                buckets_for_ops_rate_task = [self.bucket]
+            for bucket in buckets_for_ops_rate_task:
+                bucket.stats.manage_task(
+                    "start", self.task_manager,
+                    cluster=self.cluster,
+                    bucket=bucket,
+                    monitor_stats=["doc_ops"],
+                    sleep=1)
         try:
             for task in tasks:
                 self.task_manager.add_new_task(task)
@@ -1457,10 +1458,9 @@ class LoadDocumentsGeneratorsTask(Task):
             self.test_log.error(e)
             self.set_exception(e)
         finally:
-            if self.print_ops_rate and hasattr(self, "print_ops_rate_tasks"):
-                for print_ops_rate_task in self.print_ops_rate_tasks:
-                    print_ops_rate_task.end_task()
-                    self.task_manager.get_task_result(print_ops_rate_task)
+            if self.print_ops_rate:
+                for bucket in buckets_for_ops_rate_task:
+                    bucket.stats.manage_task("stop", self.task_manager)
             self.log.debug("========= Tasks in loadgen pool=======")
             self.task_manager.print_tasks_in_pool()
             self.log.debug("======================================")
@@ -1564,6 +1564,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
 
     def call(self):
         self.start_task()
+        buckets_for_ops_rate_task = list()
         if self.op_types:
             if len(self.op_types) != len(self.generators):
                 self.set_exception(
@@ -1576,7 +1577,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                         "Not all generators have bucket specified!"))
                 self.complete_task()
         iterator = 0
-        tasks = []
+        tasks = list()
         for generator in self.generators:
             if self.op_types:
                 self.op_type = self.op_types[iterator]
@@ -1586,19 +1587,16 @@ class LoadSubDocumentsGeneratorsTask(Task):
             iterator += 1
         if self.print_ops_rate:
             if self.buckets:
-                for bucket in self.buckets:
-                    print_ops_rate_task = PrintOpsRate(self.cluster,
-                                                       bucket,
-                                                       self.op_type)
-                    self.print_ops_rate_tasks.append(
-                        print_ops_rate_task)
-                    self.task_manager.add_new_task(print_ops_rate_task)
+                buckets_for_ops_rate_task = self.buckets
             else:
-                print_ops_rate_task = PrintOpsRate(self.cluster,
-                                                   self.bucket,
-                                                   self.op_type)
-                self.print_ops_rate_tasks.append(print_ops_rate_task)
-                self.task_manager.add_new_task(print_ops_rate_task)
+                buckets_for_ops_rate_task = [self.bucket]
+            for bucket in buckets_for_ops_rate_task:
+                bucket.stats.manage_task(
+                    "start", self.task_manager,
+                    cluster=self.cluster,
+                    bucket=bucket,
+                    monitor_stats=["doc_ops"],
+                    sleep=1)
         try:
             for task in tasks:
                 self.task_manager.add_new_task(task)
@@ -1619,12 +1617,9 @@ class LoadSubDocumentsGeneratorsTask(Task):
             self.log.error(e)
             self.set_exception(e)
         finally:
-            if self.print_ops_rate and hasattr(self,
-                                               "print_ops_rate_tasks"):
-                for print_ops_rate_task in self.print_ops_rate_tasks:
-                    print_ops_rate_task.end_task()
-                    self.task_manager.get_task_result(
-                        print_ops_rate_task)
+            if self.print_ops_rate:
+                for bucket in buckets_for_ops_rate_task:
+                    bucket.stats.manage_task("stop", self.task_manager)
             self.log.debug("===========Tasks in loadgen pool=======")
             self.task_manager.print_tasks_in_pool()
             self.log.debug("=======================================")
@@ -1636,8 +1631,8 @@ class LoadSubDocumentsGeneratorsTask(Task):
         return self.fail
 
     def get_tasks(self, generator):
-        generators = []
-        tasks = []
+        generators = list()
+        tasks = list()
         gen_start = int(generator.start)
         gen_end = max(int(generator.end), 1)
         gen_range = max(int((generator.end - generator.start) /
@@ -2822,50 +2817,71 @@ class DropIndexTask(Task):
             self.set_exception(e)
 
 
-class PrintOpsRate(Task):
-    def __init__(self, cluster, bucket, op_type, sleep=1):
-        super(PrintOpsRate, self).__init__("print_ops_rate_%s_%s_%s"
-                                           % (bucket.name,
-                                              op_type,
-                                              time.time()))
+class PrintBucketStats(Task):
+    def __init__(self, cluster, bucket, monitor_stats=list(), sleep=1):
+        super(PrintBucketStats, self).__init__("PrintBucketStats_%s_%s"
+                                               % (bucket.name, time.time()))
         self.cluster = cluster
         self.bucket = bucket
-        self.op_type = op_type
         self.bucket_helper = BucketHelper(self.cluster.master)
         self.sleep = sleep
+        self.monitor_stats = monitor_stats
         self.stop_task = False
 
+        # To avoid running a dummy task
+        if len(monitor_stats) == 0:
+            self.stop_task = True
+
+        # List of stats to track / plot
+        self.ops_rate_trend = list()
+        self.drain_rate_trend = list()
+
+    def record_bucket_ops(self, bucket_stats, ops_rate):
+        if 'op' in bucket_stats and \
+                'samples' in bucket_stats['op'] and \
+                'ops' in bucket_stats['op']['samples']:
+            ops = bucket_stats['op']['samples']['ops'][-1]
+            self.test_log.debug("Ops rate for '%s': %f"
+                                % (self.bucket.name, ops))
+            if ops_rate and ops_rate[-1] > ops:
+                self.ops_rate_trend.append(ops_rate)
+                ops_rate = list()
+            ops_rate.append(ops)
+        return ops_rate
+
+    def plot_all_graphs(self):
+        plot_graph(self.test_log, self.bucket.name, self.ops_rate_trend)
+
+    def end_task(self):
+        self.stop_task = True
+
     def call(self):
-        ops_rate_trend = list()
-        t_ops_rate = list()
         self.start_task()
+        ops_rate = list()
         while not self.stop_task:
             try:
                 bucket_stats = \
                     self.bucket_helper.fetch_bucket_stats(self.bucket)
-                if 'op' in bucket_stats and \
-                        'samples' in bucket_stats['op'] and \
-                        'ops' in bucket_stats['op']['samples']:
-                    ops = bucket_stats['op']['samples']['ops'][-1]
-                    self.test_log.debug("Ops rate for '%s': %f"
-                                        % (self.bucket.name, ops))
-                    if t_ops_rate and t_ops_rate[-1] > ops:
-                        ops_rate_trend.append(t_ops_rate)
-                        t_ops_rate = list()
-                    t_ops_rate.append(ops)
-                    time.sleep(self.sleep)
-            except:
+            except Exception as e:
+                self.log.warning("Exception while fetching bucket stats: %s"
+                                 % e)
                 # Case when cluster.master is rebalance out of the cluster
+                time.sleep(2)
                 self.bucket_helper = BucketHelper(self.cluster.master)
-                time.sleep(20)
-        if t_ops_rate:
-            ops_rate_trend.append(t_ops_rate)
-        plot_graph(self.test_log, self.bucket.name, self.op_type,
-                   ops_rate_trend)
-        self.complete_task()
+                continue
 
-    def end_task(self):
-        self.stop_task = True
+            if "doc_ops" in self.monitor_stats:
+                ops_rate = self.record_bucket_ops(bucket_stats, ops_rate)
+            elif "drain_rate" in self.monitor_stats:
+                self.record_drain_rate(bucket_stats)
+
+            time.sleep(self.sleep)
+
+        if ops_rate:
+            self.ops_rate_trend.append(ops_rate)
+
+        self.plot_all_graphs()
+        self.complete_task()
 
 
 class BucketCreateTask(Task):

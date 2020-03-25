@@ -1,4 +1,43 @@
+from _threading import Lock
+
+import Jython_tasks
 from Cb_constants import CbServer
+
+
+class BucketStats(object):
+    def __init__(self):
+        # Used for plotting Bucket status table
+        self.itemCount = 0
+        self.diskUsed = 0
+        self.memUsed = 0
+        self.ram = 0
+        # Used to manage Bucket stats task
+        self.stats_task = {"count": 0,
+                           "object": None,
+                           "lock": Lock()}
+
+    def manage_task(self, operation, task_manager,
+                    cluster=None, bucket=None,
+                    monitor_stats=list(), sleep=1):
+        task_pkg = Jython_tasks.task
+        if operation == "start":
+            self.stats_task["lock"].acquire()
+            if self.stats_task["object"] is None:
+                self.stats_task["object"] = task_pkg.PrintBucketStats(
+                    cluster, bucket,
+                    monitor_stats=monitor_stats,
+                    sleep=sleep)
+                task_manager.add_new_task(self.stats_task["object"])
+            self.stats_task["count"] += 1
+            self.stats_task["lock"].release()
+        elif operation == "stop":
+            self.stats_task["lock"].acquire()
+            if self.stats_task["count"] == 1:
+                self.stats_task["object"].end_task()
+                task_manager.get_task_result(self.stats_task["object"])
+                self.stats_task["object"] = None
+            self.stats_task["count"] -= 1
+            self.stats_task["lock"].release()
 
 
 class Scope(object):
@@ -114,15 +153,6 @@ class Bucket(object):
         magma = "magma"
         couchstore = "couchstore"
 
-    class BucketStats:
-        def __init__(self):
-            self.opsPerSec = 0
-            self.itemCount = 0
-            self.expected_item_count = 0
-            self.diskUsed = 0
-            self.memUsed = 0
-            self.ram = 0
-
     def __init__(self, new_params=dict()):
         # Default values based on Couchbase document,
         # docs.couchbase.com/server/current/rest-api/rest-bucket-create.html
@@ -162,7 +192,7 @@ class Bucket(object):
                 Bucket.EvictionPolicy.VALUE_ONLY)
 
         self.nodes = None
-        self.stats = Bucket.BucketStats()
+        self.stats = BucketStats()
         self.servers = list()
         self.vbuckets = list()
         self.forward_map = list()

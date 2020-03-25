@@ -26,8 +26,12 @@ import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
-from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
-    BucketCreateTask, PrintOpsRate, BucketCreateFromSpecTask
+from Jython_tasks.task import \
+    BucketCreateTask, \
+    BucketCreateFromSpecTask, \
+    ViewCreateTask, \
+    ViewDeleteTask, \
+    ViewQueryTask
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket, Collection, Scope
@@ -3206,12 +3210,7 @@ class BucketUtils(ScopeUtils):
                 vbucketInfo.id = counter
                 counter += 1
                 bucket.vbuckets.append(vbucketInfo)
-                # now go through each vbucket and populate the info
-            # who is master , who is replica
-        # get the 'storageTotals'
-        self.log.debug('read {0} vbuckets'.format(len(bucket.vbuckets)))
         stats = parsed['basicStats']
-        # vBucketServerMap
         self.log.debug('Stats: {0}'.format(stats))
         bucket.stats.opsPerSec = stats['opsPerSec']
         bucket.stats.itemCount = stats['itemCount']
@@ -3650,11 +3649,6 @@ class BucketUtils(ScopeUtils):
                      ref_view.map_func, None, is_dev_ddoc)
                 for i in xrange(count)
                 ]
-
-    def async_print_bucket_ops(self, bucket, sleep=1):
-        task = PrintOpsRate(self.cluster, bucket, sleep)
-        self.task_manager.add_new_task(task)
-        return task
 
     def base_bucket_ratio(self, servers):
         ratio = 1.0

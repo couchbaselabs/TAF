@@ -72,7 +72,7 @@ class TableView:
         self.log(table_data_buffer)
 
 
-def plot_graph(logger, bucket_name, op_type, ops_trend):
+def plot_graph(logger, bucket_name, ops_trend):
     max_width = 100
     max_ops = max([ops_list[-1] for ops_list in ops_trend]) if ops_trend else 1
     if max_ops == 0:
@@ -95,6 +95,4 @@ def plot_graph(logger, bucket_name, op_type, ops_trend):
         table_view.add_row([str("%.3f" % ops_list[0]),
                             curr_line,
                             str("%.3f" % ops_list[-1])])
-    table_view.display("Ops trend for bucket '%s' for %s"
-                       % (bucket_name, op_type))
-
+    table_view.display("Ops trend for bucket '%s'" % bucket_name)
