@@ -284,26 +284,40 @@ class DocLoaderUtils(object):
                                 doc_key,
                                 mutation_num=mutation_num)
 
-        crud_spec = BucketUtils.get_random_collections(
+        subdoc_crud_spec = BucketUtils.get_random_collections(
             buckets,
             num_collection_to_load,
             num_scopes_to_consider,
             num_buckets_to_consider)
-        for bucket_name, scope_dict in crud_spec.items():
+        for bucket_name, scope_dict in subdoc_crud_spec.items():
             scope_dict = scope_dict["scopes"]
+            if bucket_name not in crud_spec:
+                crud_spec[bucket_name] = dict()
+                crud_spec[bucket_name]["scopes"] = dict()
             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
             for scope_name, collection_dict in scope_dict.items():
+                if scope_name not in crud_spec[bucket_name]["scopes"]:
+                    crud_spec[bucket_name]["scopes"][scope_name] = dict()
+                    crud_spec[bucket_name]["scopes"][
+                        scope_name]["collections"] = dict()
+
                 collection_dict = collection_dict["collections"]
                 scope = bucket.scopes[scope_name]
-                for c_name, c_data in collection_dict.items():
+                for c_name, _ in collection_dict.items():
+                    if c_name not in crud_spec[bucket_name]["scopes"][
+                            scope_name]["collections"]:
+                        crud_spec[bucket_name]["scopes"][
+                            scope_name]["collections"][c_name] = dict()
                     collection = scope.collections[c_name]
-                    for op_type in DocLoaderUtils.doc_op_types:
+                    for op_type in DocLoaderUtils.subdoc_op_types:
                         target_num_items = \
                             DocLoaderUtils.__get_required_num_from_percentage(
                                 collection, spec_percent_data[op_type])
                         if target_num_items == 0:
                             continue
 
+                        c_data = crud_spec[bucket_name]["scopes"][
+                            scope_name]["collections"][c_name]
                         c_data[op_type] = dict()
                         c_data[op_type]["target_items"] = target_num_items
                         c_data[op_type]["xattr_test"] = xattr_test
