@@ -370,6 +370,19 @@ class volume(BaseTestCase):
                                 str(self.start + (self.initial_load_count*self.delete_perc/100) - self.initial_load_count*self.create_perc/100)])
         self.table.display("Docs statistics")
 
+    def initial_data_load_collection(self):
+        doc_loading_spec = \
+            self.bucket_util.get_crud_template_from_package("intial_load")
+        self.bucket_util.run_scenario_from_spec(self.task,
+                                                self.cluster,
+                                                self.bucket_util.buckets,
+                                                doc_loading_spec,
+                                                mutation_num=0)
+
+    def data_validation_collection(self):
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+
     def test_volume_taf(self):
         ########################################################################################################################
         self.log.info("Step1: Create a n node cluster")
@@ -384,11 +397,9 @@ class volume(BaseTestCase):
         #######################################################################################################################
         while self.loop<self.iterations:
             self.log.info("Step 4: Pre-Requisites for Loading of docs")
-            self.start = 0
             self.bucket_util.add_rbac_user()
-            self.end = self.initial_load_count = self.input.param("initial_load", 1000)
-            initial_load = doc_generator("Users", self.start, self.start + self.initial_load_count, doc_size=self.doc_size)
-            self.initial_data_load(initial_load)
+            self.initial_data_load_collection()
+            self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
