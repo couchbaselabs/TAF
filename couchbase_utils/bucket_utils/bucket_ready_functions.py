@@ -103,11 +103,14 @@ class DocLoaderUtils(object):
         if op_type == "create":
             start = collection_obj.doc_index[1]
             end = start + num_items
+            if collection_obj.doc_index != (0, 0):
+                collection_obj.num_items += (end - start)
             collection_obj.doc_index = (collection_obj.doc_index[0], end)
         elif op_type == "delete":
             start = collection_obj.doc_index[0]
             end = start + num_items
             collection_obj.doc_index = (end, collection_obj.doc_index[1])
+            collection_obj.num_items -= (end - start)
         else:
             start = collection_obj.doc_index[0]
             end = start + num_items
