@@ -379,6 +379,15 @@ class volume(BaseTestCase):
                                                 doc_loading_spec,
                                                 mutation_num=0)
 
+    def data_load_collection(self):
+        doc_loading_spec = \
+            self.bucket_util.get_crud_template_from_package("volume_test_load")
+        self.bucket_util.run_scenario_from_spec(self.task,
+                                                self.cluster,
+                                                self.bucket_util.buckets,
+                                                doc_loading_spec,
+                                                mutation_num=0)
+
     def data_validation_collection(self):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.validate_docs_per_collections_all_buckets()
@@ -404,14 +413,13 @@ class volume(BaseTestCase):
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
             self.log.info("Step 5: Rebalance in with Loading of docs")
-            self.generate_docs()
             self.gen_delete_users=None
             self._iter_count = 0
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in = 1, nodes_out = 0)
-            tasks_info = self.data_load()
+            self.data_load_collection()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
@@ -419,18 +427,16 @@ class volume(BaseTestCase):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
             #########################################################################################################################
             self.log.info("Step 6: Rebalance Out with Loading of docs")
-            self.generate_docs()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in = 0, nodes_out = 1)
-            tasks_info = self.data_load()
+            self.data_load_collection()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
@@ -438,18 +444,17 @@ class volume(BaseTestCase):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             self.print_crud_stats()
             #######################################################################################################################
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
-            self.generate_docs()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in = 2, nodes_out = 1)
-            tasks_info = self.data_load()
+            self.data_load_collection()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
@@ -457,18 +462,17 @@ class volume(BaseTestCase):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             self.print_crud_stats()
             ########################################################################################################################
             self.log.info("Step 8: Swap with Loading of docs")
-            self.generate_docs()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
-            tasks_info = self.data_load()
+            self.data_load_collection()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
@@ -476,7 +480,7 @@ class volume(BaseTestCase):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             self.print_crud_stats()
@@ -486,12 +490,11 @@ class volume(BaseTestCase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=2)
-            self.generate_docs()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in =1, nodes_out= 0)
-            tasks_info = self.data_load()
+            self.data_load_collection()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
@@ -499,7 +502,7 @@ class volume(BaseTestCase):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             self.print_crud_stats()
@@ -508,12 +511,11 @@ class volume(BaseTestCase):
                 self.log.info("No Memcached kill for epehemral bucket")
             else:
                 self.log.info("Step 10: Stopping and restarting memcached process")
-                self.generate_docs()
                 if not self.atomicity:
                     self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                            num_reader_threads=self.new_num_reader_threads)
                 rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
-                tasks_info = self.data_load()
+                self.data_load_collection()
                 if not self.atomicity:
                     self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                            num_reader_threads="disk_io_optimized")
@@ -522,7 +524,7 @@ class volume(BaseTestCase):
                 reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
                 self.assertTrue(reached, "rebalance failed, stuck or did not complete")
                 self.stop_process()
-                self.data_validation_mode(tasks_info)
+                self.data_validation_collection()
                 self.tasks = []
                 self.bucket_util.print_bucket_stats()
                 self.print_crud_stats()
@@ -543,8 +545,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
             # Mark Node for failover
-            self.generate_docs()
-            tasks_info = self.data_load()
+            self.data_load_collection()
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
             self.sleep(300)
@@ -561,7 +562,7 @@ class volume(BaseTestCase):
             self.available_servers += servs_out
             self.sleep(10)
 
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
 
             self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
             self.sleep(10)
@@ -601,8 +602,7 @@ class volume(BaseTestCase):
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
-            self.generate_docs()
-            tasks_info = self.data_load()
+            self.data_load_collection()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
@@ -627,7 +627,7 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
 
             self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
             self.sleep(10)
@@ -662,8 +662,7 @@ class volume(BaseTestCase):
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
-            self.generate_docs()
-            tasks_info = self.data_load()
+            self.data_load_collection()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
@@ -685,7 +684,7 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
 
             self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
             self.sleep(10)
@@ -707,12 +706,11 @@ class volume(BaseTestCase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
-            self.generate_docs()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
             rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
-            tasks_info = self.data_load()
+            self.data_load_collection()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
@@ -720,7 +718,7 @@ class volume(BaseTestCase):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-            self.data_validation_mode(tasks_info)
+            self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             self.print_crud_stats()
