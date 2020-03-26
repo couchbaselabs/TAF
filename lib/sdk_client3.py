@@ -141,6 +141,7 @@ class SDKClient(object):
                     i += 1
 
             self.bucketObj = self.cluster.bucket(self.bucket)
+            self.bucketObj.waitUntilReady(self.getDuration(60, "seconds"))
             self.collection = self.bucketObj.defaultCollection()
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))
