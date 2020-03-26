@@ -29,11 +29,26 @@ def doc_generator(key, start, end,
 
     # Defaults to JSON doc_type
     template_obj = JsonObject.create()
-    template_obj.put("age", 5)
-    template_obj.put("name", "james")
-    template_obj.put("body", None)
     template_obj.put("mutated", mutate)
-    template_obj.put("mutation_type", mutation_type)
+    _l = len('''{ "mutated": %s
+    }''' % (mutate))
+    doc_size -= _l
+    _l = len('"age    ": 5,')
+    if doc_size > _l:
+        template_obj.put("age", 5)
+        doc_size -= _l
+    _l = len('"name    ": "james",')
+    if doc_size > _l:
+        template_obj.put("name", "james")
+        doc_size -= _l
+    _l = len('"mutation_type      ": {},'.format(mutation_type))
+    if doc_size > _l:
+        template_obj.put("mutation_type", mutation_type)
+        doc_size -= _l
+    _l = len('"body      ": ')
+    if doc_size > _l:
+        template_obj.put("body", "b")
+        doc_size -= _l
 
 #     if doc_type in ["string", "binary"]:
 #         template_obj = 'age:{0}, first_name: "{1}", body: "{2}", ' \
@@ -113,7 +128,7 @@ class KVGenerator(object):
         self.doc_type = "json"
         self.key_size = 8
         self.doc_size = 256
-        self.body = [''.rjust(self.doc_size - 10, 'a')][0]
+        self.body = [''.rjust(self.doc_size, 'a')][0]
 
     def has_next(self):
         return self.itr < self.end
@@ -179,7 +194,7 @@ class DocumentGenerator(KVGenerator):
 
         if 'doc_size' in kwargs:
             self.doc_size = kwargs['doc_size']
-            self.body = [''.rjust(self.doc_size - 10, 'a')][0]
+            self.body = [''.rjust(self.doc_size, 'a')][0]
 
         if 'randomize_doc_size' in kwargs:
             self.randomize_doc_size = kwargs['randomize_doc_size']
@@ -218,15 +233,15 @@ class DocumentGenerator(KVGenerator):
         doc_size = self.doc_size
         if self.randomize_doc_size:
             doc_size = self.random.randint(0, self.doc_size)
-            self.body = [''.rjust(doc_size - 10, 'a')][0]
+            self.body = [''.rjust(doc_size, 'a')][0]
 
         if doc_size and self.randomize_value:
             _slice = int(self.random.random()*self.len_random_string)
             self.body = (self.random_string *
                          (doc_size/self.len_random_string+2)
                          )[_slice:doc_size + _slice]
-
-        template.put("body", self.body)
+        if template.get("body"):
+            template.put("body", self.body)
 
         if self.doc_type.find("binary") != -1:
             template = String(template).getBytes(StandardCharsets.UTF_8)
@@ -402,6 +417,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
         if 'doc_size' in kwargs:
             self.doc_size = kwargs['doc_size']
+            self.body = [''.rjust(self.doc_size, 'a')][0]
 
         if 'randomize_doc_size' in kwargs:
             self.randomize_doc_size = kwargs['randomize_doc_size']
@@ -441,7 +457,6 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
     def next(self):
         if self.itr > self.end:
             raise StopIteration
-
         rand_hash = self.name + '-' + str(self.itr)
         self.random.seed(rand_hash)
         if self.randomize:
@@ -451,13 +466,15 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
         if self.randomize_doc_size:
             doc_size = self.random.randint(0, self.doc_size)
-            self.body = [''.rjust(doc_size - 10, 'a')][0]
+            self.body = [''.rjust(doc_size, 'a')][0]
 
         if self.doc_size and self.randomize_value:
             _slice = int(self.random.random()*self.len_random_string)
             self.body = (self.random_string *
                          (self.doc_size/self.len_random_string+2)
                          )[_slice:self.doc_size + _slice]
+        if self.template.get("body"):
+            self.template.put("body", self.body)
         doc_key = self.doc_keys[self.itr]
         self.itr += 1
         return doc_key, self.template
