@@ -18,15 +18,33 @@ class RollbackTests(CollectionBase):
                                         self.num_items+self.rollback_size)
         self.update_gen = doc_generator(self.key, 0, self.num_items)
 
+        # Open shell connections to kv nodes and create cbstat objects
+        self.node_shells = dict()
+        for node in self.cluster_util.get_kv_nodes():
+            shell_conn = RemoteMachineShellConnection(node)
+            self.node_shells[node] = dict()
+            self.node_shells[node]["shell"] = shell_conn
+            self.node_shells[node]["cbstat"] = Cbstats(shell_conn)
+
     def tearDown(self):
+        # Close all shell_connections before cluster tearDown
+        for node in self.node_shells.keys():
+            self.node_shells[node]["shell"].disconnect()
+
         super(RollbackTests, self).tearDown()
 
-    def validate_seq_no_post_rollback(self, init_stat, post_stat):
-        status = False
-        # TODO: Need to implement this comparison function
-        if status is False:
-            self.log_failure("Seqno validation failed")
-        return status
+    def get_vb_details_cbstats_for_all_nodes(self, stat_key):
+        for _, node_dict in self.node_shells.items():
+            node_dict[stat_key] = \
+                node_dict["cbstat"].vbucket_details(self.bucket.name)
+
+    def validate_seq_no_post_rollback(self, init_stat_key, post_stat_key):
+        for node, node_dict in self.node_shells.items():
+            if node_dict[init_stat_key] != node_dict[post_stat_key]:
+                self.log_failure("%s vb stat mismatch. %s != %s"
+                                 % (node.ip,
+                                    node_dict[init_stat_key],
+                                    node_dict[post_stat_key]))
 
     def load_docs(self):
         if self.doc_ops == "create":
@@ -53,12 +71,16 @@ class RollbackTests(CollectionBase):
         mem_only_items = self.input.param("rollback_items", 100)
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas to test rollback")
-        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
-        cbstats = Cbstats(shell)
+
+        # Fetch vbucket stats for validation
+        self.get_vb_details_cbstats_for_all_nodes("pre_rollback")
+
+        shell = self.node_shells[self.cluster.master]["shell"]
+        cbstats = self.node_shells[self.cluster.master]["cbstat"]
         self.target_vbucket = cbstats.vbucket_list(self.bucket.name)
         start = self.num_items
         self.gen_validate = self.gen_create
-        init_vb_stat = cbstats.vbucket_details(self.bucket.name)
+
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
             cbepctl = Cbepctl(shell)
@@ -73,6 +95,7 @@ class RollbackTests(CollectionBase):
                 vbuckets=self.cluster_util.vbuckets,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
+
             self.load_docs()
             start = self.gen_create.key_counter
             ep_queue_size_map = {
@@ -107,10 +130,9 @@ class RollbackTests(CollectionBase):
                 self.cluster, self.bucket,
                 self.gen_validate, "create", 0, batch_size=10)
             self.task.jython_task_manager.get_task_result(data_validation)
-            post_vb_stat = cbstats.vbucket_details(self.bucket.name)
-            self.validate_seq_no_post_rollback(init_vb_stat, post_vb_stat)
+            self.get_vb_details_cbstats_for_all_nodes("post_rollback")
+            self.validate_seq_no_post_rollback("pre_rollback", "post_rollback")
 
-        shell.disconnect()
         self.validate_test_failure()
 
     def test_rollback_to_zero(self):
@@ -118,13 +140,14 @@ class RollbackTests(CollectionBase):
         mem_only_items = self.input.param("rollback_items", 10000)
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas to test rollback")
-        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
-        self.target_vbucket = Cbstats(shell).vbucket_list(self.bucket.name)
-        start = self.num_items
 
         # Fetch vbucket stats for validation
-        cbstats = Cbstats(shell)
-        init_vb_stat = cbstats.vbucket_details(self.bucket.name)
+        self.get_vb_details_cbstats_for_all_nodes("pre_rollback")
+
+        start = self.num_items
+        shell = self.node_shells[self.cluster.master]["shell"]
+        cbstats = self.node_shells[self.cluster.master]["cbstat"]
+        self.target_vbucket = cbstats.vbucket_list(self.bucket.name)
 
         # Stopping persistence on NodeA
         cbepctl = Cbepctl(shell)
@@ -150,8 +173,8 @@ class RollbackTests(CollectionBase):
             for bucket in self.bucket_util.buckets:
                 self.bucket_util._wait_for_stat(bucket, stat_map)
             self.sleep(60)
-            post_vb_stat = cbstats.vbucket_details(self.bucket.name)
-            self.validate_seq_no_post_rollback(init_vb_stat, post_vb_stat)
+            self.get_vb_details_cbstats_for_all_nodes("post_rollback")
+            self.validate_seq_no_post_rollback("pre_rollback", "post_rollback")
 
         shell.kill_memcached()
         self.assertTrue(self.bucket_util._wait_warmup_completed(
