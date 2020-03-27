@@ -11,7 +11,7 @@ spec = {
     Bucket.bucketType: Bucket.Type.EPHEMERAL,
     Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
     Bucket.ramQuotaMB: 100,
-    Bucket.replicaIndex: 3,
+    Bucket.replicaIndex: 0,
     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
     Bucket.priority: Bucket.Priority.LOW,
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,

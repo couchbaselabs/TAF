@@ -48,6 +48,30 @@ class CollectionsTTL(CollectionBase):
         if items != 0:
             self.fail("collections_ttl value was considered instead of the doc_ttl. Num docs : {0}".format(items))
 
+    def test_collections_ttl_with_update_docs_and_doc_expiry_set(self):
+        self.task.load_gen_docs(
+            self.cluster, self.bucket, self.load_gen, "create", exp=0,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            scope="scope1",
+            collection="collection_1")
+        self.task.load_gen_docs(
+            self.cluster, self.bucket, self.load_gen, "update", exp=100,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            scope="scope1",
+            collection="collection_1")
+        self.bucket_util._expiry_pager()
+        # Validate the bucket doc count is '0' after drop collection
+        self.sleep(120, "waiting for doc_expiry to complete")
+        items = self.bucket_helper_obj.get_active_key_count("default")
+        if items != self.remaining_docs:
+            self.fail("collections_ttl value was considered instead of the doc_ttl. Num docs : {0}".format(items))
+
     def test_collections_ttl_greater_than_doc_expiry(self):
         self.task.load_gen_docs(
             self.cluster, self.bucket, self.load_gen, "create", exp=2,
@@ -208,6 +232,43 @@ class CollectionsTTL(CollectionBase):
         if items != self.remaining_docs:
             self.fail("bucket_ttl had priority than collection_ttl when it was larger. Num docs : {0}".format(items))
 
+    def test_collections_ttl_with_doc_update_sets_expiry_to_0(self):
+        self.task.load_gen_docs(
+            self.cluster, self.bucket, self.load_gen, "create", exp=0,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            scope="scope1",
+            collection="collection_1")
+        self.bucket_util._expiry_pager()
+        self.sleep(60, "Sleep for sometime before we update")
+        for i in xrange(1, 5):
+            update_load_gen = copy.deepcopy(self.load_gen)
+            self.task.load_gen_docs(
+                self.cluster, self.bucket, update_load_gen, "update", exp=200,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                scope="scope1",
+                collection="collection_1")
+            update_load_gen1 = copy.deepcopy(self.load_gen)
+            self.task.load_gen_docs(
+                self.cluster, self.bucket, update_load_gen1, "update", exp=0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                scope="scope1",
+                collection="collection_1")
+            self.sleep(100, "Sleep for sometime before we update")
+        # Validate the bucket doc count is '0' after drop collection
+        self.sleep(100, "waiting for collections_ttl to complete")
+        items = self.bucket_helper_obj.get_active_key_count("default")
+        if items != self.remaining_docs:
+            self.fail("update of the docs to had no effect on collections_ttl. Num docs : {0}".format(items))
+
     def test_collections_ttl_max_possible_values(self):
         self.bucket = self.bucket_util.buckets[0]
         self.bucket_util.create_collection(self.cluster.master,
@@ -232,6 +293,34 @@ class CollectionsTTL(CollectionBase):
             self.log.info("collection creation failed as expected as maxTTL was < 0")
         else:
             self.fail("collection creation did not fail even when maxTTL was < 0")
+
+    def test_collections_ttl_delete_recreate_collections(self):
+        self.bucket = self.bucket_util.buckets[0]
+        for scope in ["scope1", "scope2"]:
+            for collection in ["collection_1","collection_2"]:
+                self.bucket_util.drop_collection(self.cluster.master,
+                                                   self.bucket,
+                                                   scope, collection)
+
+        for scope in ["scope1", "scope2"]:
+            for collection in ["collection_1", "collection_2"]:
+                self.bucket_util.create_collection(self.cluster.master,
+                                                   self.bucket,
+                                                   scope,
+                                                   {"name": collection})
+
+        self.task.load_gen_docs(
+            self.cluster, self.bucket, self.load_gen, "create", exp=0,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            scope="scope1",
+            collection="collection_1")
+        self.sleep(150, "sleep until old collection_ttl")
+        items = self.bucket_helper_obj.get_active_key_count("default")
+        if items != self.num_items:
+            self.fail("old collection_ttl value was inherited. Num docs : {0}".format(items))
 
     def test_collections_ttl_after_initially_setting_as_0(self):
         # TODO: Rest api to modify the maxTTL for collections is not yet in
