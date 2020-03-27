@@ -43,7 +43,7 @@ class CollectionBase(BaseTestCase):
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
         doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("intial_load")
+            self.bucket_util.get_crud_template_from_package("initial_load")
 
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()

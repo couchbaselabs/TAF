@@ -634,7 +634,7 @@ class BasicOps(CollectionBase):
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
                 collection_dict = collection_dict["collections"]
-                for c_name, c_data in collection_dict.items():
+                for c_name, _ in collection_dict.items():
                     BucketUtils.drop_collection(self.cluster.master,
                                                 bucket,
                                                 scope_name, c_name)
@@ -644,9 +644,17 @@ class BasicOps(CollectionBase):
                                                 bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
-                BucketUtils.create_collection(self.cluster.master,
-                                              bucket,
-                                              scope_name, collection_dict)
+                collection_dict = collection_dict["collections"]
+                for c_name, _ in collection_dict.items():
+                    # Cannot create a _default collection
+                    if c_name == CbServer.default_collection:
+                        continue
+                    col_obj = \
+                        bucket.scopes[scope_name].collections[c_name]
+                    BucketUtils.create_collection(self.cluster.master,
+                                                  bucket,
+                                                  scope_name,
+                                                  col_obj.get_dict_object())
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()

@@ -13,6 +13,9 @@ class Scope(object):
     def __str__(self):
         return self.name
 
+    def get_dict_object(self):
+        return {"name": self.name}
+
     @staticmethod
     def recreated(scope_obj, scope_spec):
         # Update meta fields
@@ -35,6 +38,9 @@ class Collection(object):
 
     def __str__(self):
         return self.name
+
+    def get_dict_object(self):
+        return {"name": self.name, "maxTTL": self.maxTTL}
 
     @staticmethod
     def recreated(collection_obj, collection_spec):

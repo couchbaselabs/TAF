@@ -3896,8 +3896,9 @@ class BucketUtils(ScopeUtils):
         Delete all created scope-collection and validate the stats
         """
         for bucket in self.buckets:
-            for _, scope in bucket.scopes.items():
-                for _, collection in scope.collections.items():
+            for scope in BucketUtils.get_active_scopes(bucket):
+                for collection in BucketUtils.get_active_collections(
+                        bucket, scope.name):
                     self.drop_collection(self.cluster.master,
                                          bucket,
                                          scope_name=scope.name,
