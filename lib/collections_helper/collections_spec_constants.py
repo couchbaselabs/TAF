@@ -18,6 +18,7 @@ class MetaConstants(object):
 class MetaCrudParams(object):
     COLLECTIONS_TO_FLUSH = "collections_to_flush"
     COLLECTIONS_TO_DROP = "collections_to_drop"
+    COLLECTIONS_TO_DROP_AND_RECREATE = "collections_to_drop_and_recreate"
 
     SCOPES_TO_DROP = "scopes_to_drop"
     SCOPES_TO_ADD_PER_BUCKET = "scopes_to_add_per_bucket"
