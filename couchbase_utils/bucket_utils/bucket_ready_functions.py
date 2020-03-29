@@ -1874,22 +1874,32 @@ class BucketUtils(ScopeUtils):
                                "after retry: {0}"
                                .format(task_info["unwanted"]["fail"]))
 
-    def verify_doc_op_task_exceptions(self, tasks_info, cluster):
+    def verify_doc_op_task_exceptions(self, tasks_info, cluster,
+                                      sdk_client_pool=None):
         """
         :param tasks_info:  dict() of dict() of form,
                             tasks_info[task_obj] = get_doc_op_info_dict()
         :param cluster:     Cluster object
+        :param sdk_client_pool: Instance of SDKClientPool
         :return: tasks_info dictionary updated with retried/unwanted docs
         """
         for task, task_info in tasks_info.items():
+            client = None
             bucket = task_info["bucket"]
             scope = task_info["scope"]
             collection = task_info["collection"]
 
-            client = SDKClient([cluster.master],
-                               bucket,
-                               scope=scope,
-                               collection=collection)
+            if sdk_client_pool:
+                client = sdk_client_pool.get_client_for_bucket(bucket,
+                                                               scope,
+                                                               collection)
+
+            if client is None:
+                client = SDKClient([cluster.master],
+                                   bucket,
+                                   scope=scope,
+                                   collection=collection)
+
             for key, failed_doc in task.fail.items():
                 found = False
                 exception = failed_doc["error"]
@@ -1944,8 +1954,11 @@ class BucketUtils(ScopeUtils):
                     tasks_info[task][dict_key]["success"].update(key_value)
                 else:
                     tasks_info[task][dict_key]["fail"].update(key_value)
-            # Close client for this task
-            client.close()
+            if sdk_client_pool:
+                sdk_client_pool.release_client(client)
+            else:
+                # Close client for this task
+                client.close()
 
         return tasks_info
 

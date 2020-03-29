@@ -67,6 +67,13 @@ class basic_ops(BaseTestCase):
             .collections[self.collection_name] \
             .num_items = self.num_items
 
+        self.log.info("Creating SDK client pool")
+        self.sdk_client_pool.create_clients(
+            self.bucket_util.buckets[0],
+            self.servers,
+            req_clients=self.task_manager.number_of_threads,
+            compression_settings=self.sdk_compression)
+
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.nodes_in_cluster),
             durability=self.durability_level,
@@ -225,7 +232,8 @@ class basic_ops(BaseTestCase):
             ryow=self.ryow,
             check_persistence=self.check_persistence,
             scope=self.scope_name,
-            collection=self.collection_name)
+            collection=self.collection_name,
+            sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(task)
 
         if self.ryow:
@@ -241,7 +249,8 @@ class basic_ops(BaseTestCase):
             ignore_exceptions=ignore_exceptions,
             retry_exceptions=retry_exceptions)
         self.bucket_util.verify_doc_op_task_exceptions(doc_op_info_dict,
-                                                       self.cluster)
+                                                       self.cluster,
+                                                       self.sdk_client_pool)
 
         if len(doc_op_info_dict[task]["unwanted"]["fail"].keys()) != 0:
             self.fail("Failures in retry doc CRUDs: {0}"
@@ -299,7 +308,8 @@ class basic_ops(BaseTestCase):
                 ryow=self.ryow,
                 check_persistence=self.check_persistence,
                 scope=self.scope_name,
-                collection=self.collection_name)
+                collection=self.collection_name,
+                sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
             verification_dict["ops_update"] += mutation_doc_count
             if self.durability_level in DurabilityHelper.SupportedDurability:
@@ -315,7 +325,8 @@ class basic_ops(BaseTestCase):
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     scope=self.scope_name,
-                    collection=self.collection_name)
+                    collection=self.collection_name,
+                    sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
 
         elif doc_op == "delete":
@@ -330,7 +341,8 @@ class basic_ops(BaseTestCase):
                 timeout_secs=self.sdk_timeout,
                 ryow=self.ryow, check_persistence=self.check_persistence,
                 scope=self.scope_name,
-                collection=self.collection_name)
+                collection=self.collection_name,
+                sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
             if self.collection_name is None:
                 target_scope = CbServer.default_scope
@@ -356,7 +368,8 @@ class basic_ops(BaseTestCase):
                     self.cluster, def_bucket,
                     doc_update, "delete", 0,
                     batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency)
+                    process_concurrency=self.process_concurrency,
+                    sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
 
         else:

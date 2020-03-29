@@ -103,10 +103,10 @@ class ServerTasks(object):
                             suppress_error_table=False,
                             dgm_batch=5000,
                             scope=CbServer.default_scope,
-                            collection=CbServer.default_collection):
+                            collection=CbServer.default_collection,
+                            sdk_client_pool=None):
         clients = list()
         if active_resident_threshold == 100:
-            self.log.debug("Loading documents to %s" % bucket.name)
             if not task_identifier:
                 task_identifier = bucket.name
             gen_start = int(generator.start)
@@ -114,9 +114,12 @@ class ServerTasks(object):
             gen_range = max(int((generator.end - generator.start)
                                 / process_concurrency), 1)
             for _ in range(gen_start, gen_end, gen_range):
-                client = SDKClient([cluster.master], bucket,
-                                   scope, collection)
+                client = None
+                if sdk_client_pool is None:
+                    client = SDKClient([cluster.master], bucket,
+                                       scope, collection)
                 clients.append(client)
+            self.log.debug("Loading documents to %s" % bucket.name)
             if not ryow:
                 if not task_identifier:
                     task_identifier += "%s_%s_%s" % (op_type,
@@ -133,7 +136,8 @@ class ServerTasks(object):
                     print_ops_rate=print_ops_rate, retries=retries,
                     durability=durability, task_identifier=task_identifier,
                     skip_read_on_error=skip_read_on_error,
-                    suppress_error_table=suppress_error_table)
+                    suppress_error_table=suppress_error_table,
+                    sdk_client_pool=sdk_client_pool)
             else:
                 majority_value = (bucket.replicaNumber + 1)/2 + 1
 
@@ -337,17 +341,21 @@ class ServerTasks(object):
                             pause_secs=1, timeout_secs=5, compression=None,
                             process_concurrency=4, check_replica=False,
                             scope=CbServer.default_scope,
-                            collection=CbServer.default_collection):
+                            collection=CbServer.default_collection,
+                            sdk_client_pool=None):
         self.log.debug("Validating documents")
-        client = SDKClient([cluster.master], bucket,
-                           scope, collection)
+        client = None
+        if sdk_client_pool is None:
+            client = SDKClient([cluster.master], bucket,
+                               scope, collection)
         _task = jython_tasks.DocumentsValidatorTask(
             cluster, self.jython_task_manager, bucket, client, [generator],
             opt_type, exp, flag=flag, only_store_hash=only_store_hash,
             batch_size=batch_size, pause_secs=pause_secs,
             timeout_secs=timeout_secs, compression=compression,
             process_concurrency=process_concurrency,
-            check_replica=check_replica)
+            check_replica=check_replica,
+            sdk_client_pool=sdk_client_pool)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

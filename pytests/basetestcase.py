@@ -16,6 +16,7 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
+from sdk_client3 import SDKClientPool
 
 
 class BaseTestCase(unittest.TestCase):
@@ -176,6 +177,9 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager = TaskManager(self.thread_to_use)
         self.task = ServerTasks(self.task_manager)
         # End of library object creation
+
+        # SDKClientPool object for creating generic clients across tasks
+        self.sdk_client_pool = SDKClientPool()
 
         self.cleanup = False
         self.nonroot = False
@@ -343,6 +347,7 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
+        self.sdk_client_pool.shutdown()
         self.tearDownEverything()
         self.assertEqual(len(server_with_crashes), 0, msg="Test failed, Coredump found on servers {}".format(server_with_crashes));
 

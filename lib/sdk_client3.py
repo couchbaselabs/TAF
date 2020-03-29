@@ -8,6 +8,7 @@ Created on Mar 14, 2019
 import json as pyJson
 import logging
 
+from _threading import Lock
 from com.couchbase.client.core.env import \
     CompressionConfig, \
     SeedNode, \
@@ -59,6 +60,99 @@ import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 from Cb_constants import ClusterRun, CbServer
 from couchbase_helper.durability_helper import DurabilityHelper
+
+
+class SDKClientPool(object):
+    """
+    Client pool manager for list of SDKClients per bucket which can be
+    reused / shared across multiple tasks
+    """
+    def __init__(self):
+        self.log = logging.getLogger("infra")
+        self.clients = dict()
+
+    def shutdown(self):
+        """
+        Shutdown all active clients managed by this ClientPool Object
+        :return None:
+        """
+        self.log.debug("Closing clients from SDKClientPool")
+        for bucket_name, bucket_dict in self.clients.items():
+            for client in bucket_dict["idle_clients"] \
+                          + bucket_dict["busy_clients"]:
+                client.close()
+
+    def create_clients(self, bucket, servers,
+                       req_clients=1,
+                       username="Administrator", password="password",
+                       compression_settings=None):
+        """
+        Create set of clients for the specified bucket and client settings.
+        All created clients will be saved under the respective bucket key.
+
+        :param bucket: Bucket object for which the clients will be created
+        :param servers: List of servers for SDK to establish initial
+                        connections with
+        :param req_clients: Required number of clients to be created for the
+                            given bucket and client settings
+        :param username: User name using which to establish the connection
+        :param password: Password for username authentication
+        :param compression_settings: Same as expected by SDKClient class
+        :return:
+        """
+        if bucket.name not in self.clients:
+            self.clients[bucket.name] = dict()
+            self.clients[bucket.name]["lock"] = Lock()
+            self.clients[bucket.name]["idle_clients"] = list()
+            self.clients[bucket.name]["busy_clients"] = list()
+
+        for _ in range(req_clients):
+            self.clients[bucket.name]["idle_clients"].append(SDKClient(
+                servers, bucket,
+                username=username, password=password,
+                compression_settings=compression_settings))
+
+    def get_client_for_bucket(self, bucket, scope=CbServer.default_scope,
+                              collection=CbServer.default_collection):
+        """
+        API to get a client which can be used for SDK operations further
+        by a callee.
+        Note: Callee has to choose the scope/collection to work on
+              later by itself.
+        :param bucket: Bucket object for which the client has to selected
+        :param scope: Scope name to select for client operation
+        :param collection: Collection name to select for client operation
+        :return client: Instance of SDKClient object
+        """
+        self.log.debug("Fetching client for %s" % bucket.name)
+        client = None
+        if bucket.name not in self.clients:
+            return client
+        while client is None:
+            self.clients[bucket.name]["lock"].acquire()
+            if self.clients[bucket.name]["idle_clients"]:
+                client = self.clients[bucket.name]["idle_clients"].pop()
+                self.clients[bucket.name]["busy_clients"].append(client)
+            self.clients[bucket.name]["lock"].release()
+        client.select_collection(scope, collection)
+        self.log.debug("Client fetched for %s" % bucket.name)
+        return client
+
+    def release_client(self, client):
+        """
+        Release the acquired SDKClient object back into the pool
+        :param client: Instance of SDKClient object
+        :return None:
+        """
+        bucket = client.bucket
+        if bucket.name not in self.clients:
+            return
+        self.log.debug("Releasing client for %s" % bucket.name)
+        self.clients[bucket.name]["lock"].acquire()
+        self.clients[bucket.name]["busy_clients"].remove(client)
+        self.clients[bucket.name]["idle_clients"].append(client)
+        self.clients[bucket.name]["lock"].release()
+        self.log.debug("Released client for %s" % bucket.name)
 
 
 class SDKClient(object):
@@ -130,7 +224,8 @@ class SDKClient(object):
 
     def __create_conn(self):
         try:
-            self.log.debug("Creating cluster connection")
+            self.log.debug("Creating SDK connection for '%s'" %
+                           self.bucket.name)
             System.setProperty("com.couchbase.forceIPv4", "false")
             logger = Logger.getLogger("com.couchbase.client")
             logger.setLevel(Level.SEVERE)
@@ -192,7 +287,7 @@ class SDKClient(object):
             raise Exception("SDK Connection error: " + str(e))
 
     def close(self):
-        self.log.debug("Closing down the cluster")
+        self.log.debug("Closing SDK for bucket '%s'" % self.bucket.name)
         if self.cluster:
             self.cluster.disconnect()
             self.cluster.environment().shutdown()
@@ -452,6 +547,8 @@ class SDKClient(object):
         """
         Method to select collection. Can be called directly from test case.
         """
+        self.log.debug("Selecting scope::collection %s::%s"
+                       % (scope_name, collection_name))
         if collection_name != CbServer.default_collection:
             self.collection = self.bucketObj \
                 .scope(scope_name) \
