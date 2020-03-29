@@ -88,6 +88,7 @@ class CrashTest(BaseTestCase):
                     batch_size=10, process_concurrency=8)
                 self.task.jython_task_manager.get_task_result(task)
 
+                self.bucket_util._wait_for_stats_all_buckets()
                 # Verify cbstats vbucket-details
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
@@ -98,7 +99,6 @@ class CrashTest(BaseTestCase):
                 if stats_failed:
                     self.fail("Cbstats verification failed")
 
-            self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.log.info("==========Finished CrashTest setup========")
 
