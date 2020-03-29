@@ -108,11 +108,15 @@ class ServerTasks(object):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
-                task_identifier = bucket.name
+                task_identifier = "%s_%s_%s" % (op_type,
+                                                generator.start,
+                                                generator.end)
             gen_start = int(generator.start)
             gen_end = max(int(generator.end), 1)
             gen_range = max(int((generator.end - generator.start)
                                 / process_concurrency), 1)
+            if gen_range < batch_size:
+                gen_range = batch_size
             for _ in range(gen_start, gen_end, gen_range):
                 client = None
                 if sdk_client_pool is None:
@@ -121,10 +125,6 @@ class ServerTasks(object):
                 clients.append(client)
             self.log.debug("Loading documents to %s" % bucket.name)
             if not ryow:
-                if not task_identifier:
-                    task_identifier += "%s_%s_%s" % (op_type,
-                                                     generator.start,
-                                                     generator.end)
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
                     cluster, self.jython_task_manager, bucket, clients,
                     [generator], op_type, exp, exp_unit="seconds", flag=flag,
@@ -409,7 +409,7 @@ class ServerTasks(object):
 
     def async_rebalance(self, servers, to_add, to_remove, use_hostnames=False,
                         services=None, check_vbucket_shuffling=True,
-                        sleep_before_rebalance=0):
+                        sleep_before_rebalance=0, retry_get_process_num=25):
         """
         Asynchronously rebalances a cluster
 
@@ -425,7 +425,8 @@ class ServerTasks(object):
         _task = jython_tasks.RebalanceTask(
             servers, to_add, to_remove, use_hostnames=use_hostnames,
             services=services, check_vbucket_shuffling=check_vbucket_shuffling,
-            sleep_before_rebalance=sleep_before_rebalance)
+            sleep_before_rebalance=sleep_before_rebalance,
+            retry_get_process_num=retry_get_process_num)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

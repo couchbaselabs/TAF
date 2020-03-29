@@ -343,11 +343,11 @@ class BaseTestCase(unittest.TestCase):
             self.fail(e)
 
     def tearDown(self):
-        server_with_crashes = self.check_coredump_exist(self.servers)
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         self.sdk_client_pool.shutdown()
+        server_with_crashes = self.check_coredump_exist(self.servers)
         self.tearDownEverything()
         self.assertEqual(len(server_with_crashes), 0, msg="Test failed, Coredump found on servers {}".format(server_with_crashes));
 

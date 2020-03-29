@@ -136,7 +136,8 @@ class RebalanceTask(Task):
 
     def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
                  progress=30, use_hostnames=False, services=None,
-                 check_vbucket_shuffling=True, sleep_before_rebalance=0):
+                 check_vbucket_shuffling=True, sleep_before_rebalance=0,
+                 retry_get_process_num=25):
         super(RebalanceTask, self).__init__(
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
             .format(",".join([node.ip for node in to_add]),
@@ -150,6 +151,7 @@ class RebalanceTask(Task):
         self.monitor_vbuckets_shuffling = False
         self.check_vbucket_shuffling = check_vbucket_shuffling
         self.result = False
+        self.retry_get_process_num = retry_get_process_num
         try:
             self.rest = RestConnection(self.servers[0])
         except ServerUnavailableException, e:
@@ -331,16 +333,15 @@ class RebalanceTask(Task):
         except Exception as e:
             self.result = False
             raise e
-        retry_get_process_num = 25
         if self.rest.is_cluster_mixed():
             """ for mix cluster, rebalance takes longer """
             self.test_log.debug("Rebalance in mix cluster")
-            retry_get_process_num = 40
+            self.retry_get_process_num = 40
         # we need to wait for status to be 'none'
         # (i.e. rebalance actually finished and not just 'running' and at 100%)
         # before we declare ourselves done
         if progress != -1 and status != 'none':
-            if self.retry_get_progress < retry_get_process_num:
+            if self.retry_get_progress < self.retry_get_process_num:
                 time.sleep(10)
                 self.check()
             else:
@@ -1900,8 +1901,11 @@ class ValidateDocumentsTask(GenericLoadingTask):
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression, sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection)
-        self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s" % (
-            bucket.name, generator._doc_gen.start, generator._doc_gen.end,
+        self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s_%s_%s" % (
+            bucket.name,
+            self.client.scope_name,
+            self.client.collection_name,
+            generator._doc_gen.start, generator._doc_gen.end,
             op_type)
 
         self.generator = generator
