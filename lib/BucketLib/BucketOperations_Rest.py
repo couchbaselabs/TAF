@@ -651,3 +651,12 @@ class BucketHelper(RestConnection):
                                                 'DELETE',
                                                 headers=headers)
         return status, content
+
+    def list_collections(self, bucket):
+        api = self.baseUrl + 'pools/default/buckets/%s/collections' \
+                             % (urllib.quote_plus("%s" % bucket))
+        headers = self._create_headers()
+        status, content, _ = self._http_request(api,
+                                                'GET',
+                                                headers=headers)
+        return status, content
