@@ -9,6 +9,8 @@ class RollbackTests(CollectionBase):
     def setUp(self):
         super(RollbackTests, self).setUp()
         self.num_rollbacks = self.input.param("num_rollbacks", 5)
+        self.rollback_with_multiple_mutation = self.input.param(
+            "rollback_with_multiple_mutation", False)
         self.rollback_size = 100
         self.bucket = self.bucket_util.buckets[0]
 
@@ -97,6 +99,9 @@ class RollbackTests(CollectionBase):
                 randomize_value=self.randomize_value)
 
             self.load_docs()
+            if self.rollback_with_multiple_mutation:
+                self.doc_ops = "update"
+                self.load_docs()
             start = self.gen_create.key_counter
             ep_queue_size_map = {
                 self.cluster.nodes_in_cluster[0]: mem_only_items}
@@ -165,6 +170,9 @@ class RollbackTests(CollectionBase):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
             self.load_docs()
+            if self.rollback_with_multiple_mutation:
+                self.doc_ops = "update"
+                self.load_docs()
             start = self.gen_create.key_counter
             stat_map = {self.cluster.nodes_in_cluster[0]: mem_only_items*i}
             for node in self.cluster.nodes_in_cluster[1:]:
