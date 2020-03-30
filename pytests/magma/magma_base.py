@@ -8,9 +8,7 @@ from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
-from testconstants import INDEX_QUOTA, MIN_KV_QUOTA, CBAS_QUOTA, FTS_QUOTA
-
-
+from testconstants import INDEX_QUOTA, CBAS_QUOTA, FTS_QUOTA
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -55,7 +53,8 @@ class MagmaBaseTest(BaseTestCase):
         if nodes_init:
             result = self.task.rebalance([self.cluster.master], nodes_init, [])
             self.assertTrue(result, "Initial rebalance failed")
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.cluster.nodes_in_cluster.extend(
+            [self.cluster.master] + nodes_init)
         self.check_replica = self.input.param("check_replica", False)
         self.bucket_storage = self.input.param("bucket_storage",
                                                Bucket.StorageBackend.magma)
@@ -76,27 +75,30 @@ class MagmaBaseTest(BaseTestCase):
                 "backend", "magma;magma_max_commit_points=0",
                 self.bucket_util.buckets)
         self.doc_size = self.input.param("doc_size", 1024)
+        self.test_itr = self.input.param("test_itr", 4)
+        self.update_count = self.input.param("update_count", 10)
         start = 0
         end = self.num_items
         if self.rev_write:
             start = -int(self.num_items - 1)
             end = 1
-        self.gen_create = doc_generator(self.key, start, end,
-                                        doc_size=self.doc_size,
-                                        doc_type=self.doc_type,
-                                        target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets,
-                                        key_size=self.key_size,
-                                        randomize_doc_size=self.randomize_doc_size,
-                                        randomize_value=self.randomize_value,
-                                        mix_key_size=self.mix_key_size)
+        self.gen_create = doc_generator(
+            self.key, start, end,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            key_size=self.key_size,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value,
+            mix_key_size=self.mix_key_size)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
-        self.result_task = self._load_all_buckets(self.cluster,
-                                                  self.gen_create,
-                                                  "create", 0,
-                                                  batch_size=self.batch_size,
-                                                  dgm_batch=self.dgm_batch)
+        self.result_task = self._load_all_buckets(
+            self.cluster, self.gen_create,
+            "create", 0,
+            batch_size=self.batch_size,
+            dgm_batch=self.dgm_batch)
         if self.active_resident_threshold != 100:
             for task in self.result_task.keys():
                 self.num_items = task.doc_index
@@ -111,44 +113,51 @@ class MagmaBaseTest(BaseTestCase):
             start = -int(self.num_items - 1)
             end = 1
         # Initialize doc_generators
-        self.gen_read = doc_generator(self.key, start, end,
-                                      doc_size=self.doc_size,
-                                      doc_type=self.doc_type,
-                                      target_vbucket=self.target_vbucket,
-                                      vbuckets=self.cluster_util.vbuckets,
-                                      key_size=self.key_size,
-                                      randomize_doc_size=self.randomize_doc_size,
-                                      randomize_value=self.randomize_value,
-                                      mix_key_size=self.mix_key_size)
-        self.disk_usage = self.get_disk_usage(self.bucket_util.get_all_buckets()[0], self.servers)
-        self.log.info("Disk usage after Creation of docs is {}".format(self.disk_usage))
-        self.gen_create = None;
+        self.gen_read = doc_generator(
+            self.key, start, end,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            key_size=self.key_size,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value,
+            mix_key_size=self.mix_key_size)
+        self.disk_usage = self.get_disk_usage(
+            self.bucket_util.get_all_buckets()[0], self.servers)
+        self.log.info("Disk usage after Creation of \
+        docs is {}".format(self.disk_usage))
+        self.gen_create = None
         self.gen_delete = None
-        self.gen_update = doc_generator(self.key, 0, self.num_items // 2,
-                                        doc_size=self.doc_size,
-                                        doc_type=self.doc_type,
-                                        target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets,
-                                        key_size=self.key_size,
-                                        mutate=1,
-                                        randomize_doc_size=self.randomize_doc_size,
-                                        randomize_value=self.randomize_value,
-                                        mix_key_size=self.mix_key_size)
+        self.gen_update = doc_generator(
+            self.key, 0, self.num_items // 2,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            key_size=self.key_size,
+            mutate=1,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value,
+            mix_key_size=self.mix_key_size)
         if self.fragmentation:
-            g_update = doc_generator(self.key, 0, self.num_items *
-                                        self.fragmentation // 100,
-                                        doc_size=self.doc_size,
-                                        doc_type=self.doc_type,
-                                        target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets,
-                                        key_size=self.key_size,
-                                        mutate=1,
-                                        randomize_doc_size=self.randomize_doc_size,
-                                        randomize_value=self.randomize_value,
-                                        mix_key_size=self.mix_key_size)
-            _ = self._load_all_buckets(self.cluster, g_update,
-                                       "update", 0, batch_size=self.batch_size,
-                                       dgm_batch=self.dgm_batch)
+            g_update = doc_generator(
+                self.key, 0,
+                self.num_items * self.fragmentation // 100,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                mutate=1,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size)
+            _ = self._load_all_buckets(
+                self.cluster, g_update,
+                "update", 0,
+                batch_size=self.batch_size,
+                dgm_batch=self.dgm_batch)
             self.bucket_util._wait_for_stats_all_buckets()
             for bucket in self.bucket_util.get_all_buckets():
                 data_val_task = self.task.async_validate_docs(
@@ -157,8 +166,9 @@ class MagmaBaseTest(BaseTestCase):
                     process_concurrency=self.process_concurrency,
                     pause_secs=5, timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(data_val_task)
-            #In case of fragmentation, first read operation in test case will
-            #be only of items that we updated, and in the same order we updated
+            # In case of fragmentation, first read operation in test case will
+            # be only of items that we updated
+            # and in the same order we updated
             self.gen_read = copy.deepcopy(g_update)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
@@ -314,24 +324,23 @@ class MagmaBaseTest(BaseTestCase):
             magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 
-    def get_disk_usage(self, bucket, servers = None):
+    def get_disk_usage(self, bucket, servers=None):
         total_usage = 0
         wal_size = 0
-        result = 0
         if servers is None:
             servers = self.cluster.nodes_in_cluster
         if type(servers) is not list:
             servers = [servers]
         for server in servers:
             shell = RemoteMachineShellConnection(server)
-            path = os.path.join(RestConnection(server).get_data_path(), bucket.name)
-            total_usage += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'" % os.path.join(
-                                RestConnection(server).get_data_path(),
-                                bucket.name, "magma.*"))[0][0].split('\n')[0])
-            wal_size += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'" % os.path.join(
-                                RestConnection(server).get_data_path(),
-                                bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
-            self.log.debug("total disk usage(including wal size) and wal size is {} and {}".format(total_usage, wal_size ))
+            total_usage += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
+            " % os.path.join(RestConnection(server).get_data_path(),
+                             bucket.name, "magma.*"))[0][0].split('\n')[0])
+            wal_size += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
+            " % os.path.join(RestConnection(server).get_data_path(),
+                             bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
+            self.log.debug("total disk usage(including wal size) \
+            and wal size is {} and {}".format(total_usage, wal_size))
         result = total_usage - wal_size
         self.log.debug("disk usage without wal size is {}".format(result))
         return result
