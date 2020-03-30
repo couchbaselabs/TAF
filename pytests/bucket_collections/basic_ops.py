@@ -11,13 +11,12 @@ from sdk_exceptions import SDKException
 from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 
-
 class BasicOps(CollectionBase):
     def setUp(self):
         super(BasicOps, self).setUp()
         self.bucket = self.bucket_util.buckets[0]
         # To override default num_items to '0'
-        self.num_items = self.input.param("num_items", 0)
+        self.num_items = self.input.param("num_items", 10000)
 
     def __dockey_data_ops(self, dockey="dockey"):
         target_vb = None
@@ -831,6 +830,63 @@ class BasicOps(CollectionBase):
                                                 self.bucket_util.buckets,
                                                 doc_loading_spec,
                                                 mutation_num=0)
+        # Validate doc count as per bucket collections
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.validate_test_failure()
+
+    def test_delete_collection_during_load(self):
+        """ Get a random collection/scope ,
+            delete collection/scope while loading"""
+        delete_scope = self.input.param("delete_scope", False)
+        retry = 5
+
+        while retry > 0:
+            collections = BucketUtils.get_random_collections(
+                                        [self.bucket], 1, 1, 1)
+            scope_dict = collections[self.bucket.name]["scopes"]
+            scope_name = scope_dict.keys()[0]
+            if not delete_scope or (scope_name != CbServer.default_scope):
+                break
+            retry -= 1
+        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+
+        self.num_items = self.bucket.scopes[scope_name] \
+                .collections[collection_name] \
+                .num_items
+        load_gen = \
+            doc_generator(self.key, self.num_items, self.num_items*20)
+
+        self.log.info("delete collection while load %s: %s"
+                                  % (scope_name, collection_name))
+        task = self.task.async_load_gen_docs(
+                            self.cluster, self.bucket, load_gen, "create",
+                            exp=self.maxttl,
+                            batch_size=200, process_concurrency=1,
+                            scope=scope_name,
+                            compression=self.sdk_compression,
+                            collection=collection_name,
+                            print_ops_rate=True, retries=0)
+
+        self.sleep(5)
+        self.bucket_util.print_bucket_stats()
+
+        if delete_scope:
+            self.bucket_util.drop_scope(self.cluster.master,
+                                         self.bucket,
+                                         scope_name)
+            del self.bucket.scopes[scope_name]
+
+        else:
+            self.bucket_util.drop_collection(self.cluster.master,
+                                             self.bucket,
+                                             scope_name,
+                                             collection_name)
+            del self.bucket.scopes[scope_name] \
+                               .collections[collection_name]
+
+        # validate task failure
+        self.task_manager.stop_task(task)
+
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
