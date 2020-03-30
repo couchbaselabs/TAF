@@ -1,13 +1,5 @@
-from Cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
-from bucket_utils.bucket_ready_functions import BucketUtils
-from cb_tools.cbstats import Cbstats
-from couchbase_helper.documentgenerator import doc_generator
-from remote.remote_util import RemoteMachineShellConnection
-from sdk_client3 import SDKClient
-from sdk_exceptions import SDKException
-from BucketLib.BucketOperations import BucketHelper
-from cb_tools.cbstats import Cbstats
+
 
 class BucketParams(CollectionBase):
     def setUp(self):
@@ -35,7 +27,8 @@ class BucketParams(CollectionBase):
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec, mutation_num=0)
 
-        for new_replica in range(min(self.replica_count, self.nodes_init)-1, -1, -1):
+        for new_replica in range(min(self.replica_count,
+                                     self.nodes_init)-1, -1, -1):
             self.log.info("new replica is %s" % new_replica)
             self.bucket_util.update_all_bucket_replicas(new_replica)
             self.load_docs(self.task, self.cluster, self.buckets,
@@ -45,7 +38,7 @@ class BucketParams(CollectionBase):
         """ update replica, add/remove node verify docs"""
         for new_replica in range(1, self.replica_count):
             # Change replica and perform doc loading
-            self.log.info("new replica is %s" % new_replica)
+            self.log.info("Setting replica = %s" % new_replica)
             servs_in = [self.cluster.servers[1 + self.nodes_init]]
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], servs_in, [])
@@ -53,21 +46,29 @@ class BucketParams(CollectionBase):
             self.bucket_util.update_all_bucket_replicas(new_replica)
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec, mutation_num=0)
+            if rebalance_task.result is False:
+                self.fail("Rebalance failed with replica: %s" % new_replica)
 
-        for new_replica in range(min(self.replica_count, self.nodes_init)-1, -1, -1):
-            self.log.info("new replica is %s" % new_replica)
-            servs_out = [self.cluster.servers[len(self.cluster.nodes_in_cluster) - 2]]
+        for new_replica in range(min(self.replica_count,
+                                     self.nodes_init)-1, -1, -1):
+            self.log.info("Setting replica = %s" % new_replica)
+            servs_out = \
+                [self.cluster.servers[len(self.cluster.nodes_in_cluster) - 2]]
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], servs_out)
-            self.sleep(10)
+            self.sleep(10, "Wait for rebalance to start")
             self.bucket_util.update_all_bucket_replicas(new_replica)
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec, mutation_num=0)
+            self.task_manager.get_task_result(rebalance_task)
+            if rebalance_task.result is False:
+                self.fail("Rebalance failed with replica: %s" % new_replica)
 
-    def load_docs(self, task, cluster, buckets, load_spec, mutation_num ):
+    def load_docs(self, task, cluster, buckets, load_spec, mutation_num):
         # Load docs
         self.bucket_util.run_scenario_from_spec(task, cluster,
-                                                buckets, load_spec, mutation_num)
+                                                buckets, load_spec,
+                                                mutation_num)
         # Validate doc count as per bucket collections
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.validate_doc_count_as_per_collections(buckets)
