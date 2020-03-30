@@ -123,8 +123,11 @@ class MagmaBaseTest(BaseTestCase):
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value,
             mix_key_size=self.mix_key_size)
-        self.disk_usage = self.get_disk_usage(
-            self.bucket_util.get_all_buckets()[0], self.servers)
+        disk_usage = self.get_disk_usage(
+            self.bucket_util.get_all_buckets()[0],
+            self.servers,
+            paths=["magma.*", "magma.*/wal"])
+        self.disk_usage = disk_usage[0] - disk_usage[1]
         self.log.info("Disk usage after Creation of \
         docs is {}".format(self.disk_usage))
         self.gen_create = None
@@ -324,23 +327,25 @@ class MagmaBaseTest(BaseTestCase):
             magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 
-    def get_disk_usage(self, bucket, servers=None):
-        total_usage = 0
-        wal_size = 0
+    def get_disk_usage(self, bucket, servers=None, paths=None):
+        disk_usage = []
         if servers is None:
             servers = self.cluster.nodes_in_cluster
         if type(servers) is not list:
             servers = [servers]
-        for server in servers:
-            shell = RemoteMachineShellConnection(server)
-            total_usage += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
-                             bucket.name, "magma.*"))[0][0].split('\n')[0])
-            wal_size += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
-                             bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
-            self.log.debug("total disk usage(including wal size) \
-            and wal size is {} and {}".format(total_usage, wal_size))
-        result = total_usage - wal_size
-        self.log.debug("disk usage without wal size is {}".format(result))
-        return result
+        if type(paths) is not list:
+            paths = [paths]
+        for path in paths:
+            usage = 0
+            for server in servers:
+                shell = RemoteMachineShellConnection(server)
+                usage += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
+                " % os.path.join(RestConnection(server).get_data_path(),
+                                 bucket.name, path))[0][0].split('\n')[0])
+                shell.disconnect()
+            self.log.debug("Total Disk usage for \
+            path {} is {}".format(path, usage))
+            disk_usage.append(usage)
+        self.log.debug("disk usage for all \
+        the paths {} is {}".format(paths, disk_usage))
+        return disk_usage

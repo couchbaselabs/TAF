@@ -114,6 +114,16 @@ class BasicCrudTests(MagmaBaseTest):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
                 mix_key_size=self.mix_key_size)
+            if self.doc_size <= 32:
+                disk_usage = self.get_disk_usage(
+                    self.bucket_util.get_all_buckets()[0],
+                    self.servers,
+                    paths=["magma*/kvstore*/rev-000000001/keyIndex",
+                           "magma*/kvstore*/rev-000000001/seqIndex"]
+                    )
+                self.assertIs(disk_usage[0] > disk_usage[1], True,
+                              "Disk Usage for seqIndex After new Creates count {} \
+                               exceeds keyIndex disk usage".format(count+1))
             count += 1
         self.log.info("====test_basic_create_read ends====")
 
@@ -164,14 +174,16 @@ class BasicCrudTests(MagmaBaseTest):
             self.task.jython_task_manager.get_task_result(data_validation)
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
-                self.servers)
+                self.servers,
+                paths=["magma.*", "magma.*/wal"])
+            _res = disk_usage[0] - disk_usage[1]
             self.log.info("disk usage after update count {} \
-            is {}".format(count + 1, disk_usage))
+            is {}".format(count + 1, _res))
             self.assertIs(
-                disk_usage > 4 * self.disk_usage, False,
+                _res > 4 * self.disk_usage, False,
                 "Disk Usage {} After Update Count {} exceeds Actual \
                 disk usage {} by four times"
-                .format(disk_usage, count, self.disk_usage)
+                .format(_res, count, self.disk_usage)
                 )
             count += 1
         self.log.info("====test_update_multi ends====")
@@ -226,13 +238,16 @@ class BasicCrudTests(MagmaBaseTest):
                 self.task.jython_task_manager.get_task_result(data_validation)
                 disk_usage = self.get_disk_usage(
                     self.bucket_util.get_all_buckets()[0],
-                    self.servers)
+                    self.servers,
+                    paths=["magma.*", "magma.*/wal"]
+                    )
+                _res = disk_usage[0] - disk_usage[1]
                 self.log.info("disk usage after update count {}\
-                is {}".format(count+1, disk_usage))
-                self.assertIs(disk_usage > 4 * self.disk_usage, False,
+                is {}".format(count+1, _res))
+                self.assertIs(_res > 4 * self.disk_usage, False,
                               "Disk Usage {} After Update Count {} exceeds Actual \
                               disk usage {} by four times"
-                              .format(disk_usage, count, self.disk_usage))
+                              .format(_res, count, self.disk_usage))
                 count += 1
             self.update_count += self.update_count
             self.gen_update = doc_generator(
@@ -247,7 +262,7 @@ class BasicCrudTests(MagmaBaseTest):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
                 mix_key_size=self.mix_key_size)
-            start_del = 0;
+            start_del = 0
             end_del = self.num_items//2
             if self.rev_del:
                 start_del = -int(self.num_items//2 - 1)
@@ -271,12 +286,14 @@ class BasicCrudTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
-                self.servers)
-            self.log.info("disk usage after delete is {}".format(disk_usage))
-            self.assertIs(disk_usage > 4 * self.disk_usage, False,
+                self.servers,
+                paths=["magma.*", "magma.*/wal"])
+            _res = disk_usage[0] - disk_usage[1]
+            self.log.info("disk usage after delete is {}".format(_res))
+            self.assertIs(_res > 4 * self.disk_usage, False,
                           "Disk Usage {} After Delete count {} exceeds Actual \
                           disk usage {} by four times"
-                          .format(disk_usage, i+1, self.disk_usage))
+                          .format(_res, i+1, self.disk_usage))
             self.gen_create = copy.deepcopy(self.gen_delete)
             self.log.info("Recreating num_items//2 docs")
             self.doc_ops = "create"
@@ -302,11 +319,13 @@ class BasicCrudTests(MagmaBaseTest):
                 self.task.jython_task_manager.get_task_result(task)
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
-                self.servers)
+                self.servers,
+                paths=["magma.*", "magma.*/wal"])
+            _res = disk_usage[0] - disk_usage[1]
             self.log.info("disk usage after new create \
-            is {}".format(disk_usage))
-            self.assertIs(disk_usage > 4 * self.disk_usage, False,
+            is {}".format(_res))
+            self.assertIs(_res > 4 * self.disk_usage, False,
                           "Disk Usage {} After new Creates count {} exceeds Actual \
                           disk usage {} by four times"
-                          .format(disk_usage, i+1, self.disk_usage))
+                          .format(_res, i+1, self.disk_usage))
         self.log.info("====test_multiUpdate_delete ends====")
