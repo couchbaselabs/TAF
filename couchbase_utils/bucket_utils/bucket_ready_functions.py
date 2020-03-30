@@ -338,7 +338,7 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def run_scenario_from_spec(task_manager, cluster, buckets,
-                               input_spec, mutation_num=1):
+                               input_spec, mutation_num=1, async_load=False):
         BucketUtils.perform_tasks_from_spec(cluster,
                                             buckets,
                                             input_spec)
@@ -348,7 +348,8 @@ class DocLoaderUtils(object):
         DocLoaderUtils.perform_doc_loading_for_spec(task_manager,
                                                     cluster,
                                                     buckets,
-                                                    crud_spec)
+                                                    crud_spec,
+                                                    async_load=async_load)
 
 
 class CollectionUtils(DocLoaderUtils):
