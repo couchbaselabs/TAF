@@ -472,8 +472,7 @@ class volume(BaseTestCase):
                                                        num_reader_threads=self.new_num_reader_threads)
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
@@ -489,12 +488,10 @@ class volume(BaseTestCase):
                                                        num_reader_threads=self.new_num_reader_threads)
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
             #######################################################################################################################
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
             if not self.atomicity:
@@ -507,12 +504,10 @@ class volume(BaseTestCase):
                                                        num_reader_threads=self.new_num_reader_threads)
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
             ########################################################################################################################
             self.log.info("Step 8: Swap with Loading of docs")
             if not self.atomicity:
@@ -525,12 +520,10 @@ class volume(BaseTestCase):
                                                        num_reader_threads=self.new_num_reader_threads)
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
             ########################################################################################################################
             self.log.info("Step 9: Updating the bucket replica to 2")
             bucket_helper = BucketHelper(self.cluster.master)
@@ -547,12 +540,10 @@ class volume(BaseTestCase):
                                                        num_reader_threads=self.new_num_reader_threads)
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
             ########################################################################################################################
             if "ephemeral" in self.bucket_type:
                 self.log.info("No Memcached kill for epehemral bucket")
@@ -568,13 +559,11 @@ class volume(BaseTestCase):
                                                            num_reader_threads="disk_io_optimized")
                 # self.sleep(600, "Wait for Rebalance to start")
                 self.task.jython_task_manager.get_task_result(rebalance_task)
-                reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-                self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+                self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
                 self.stop_process()
                 self.data_validation_collection()
                 self.tasks = []
                 self.bucket_util.print_bucket_stats()
-                self.print_crud_stats()
             ########################################################################################################################
             self.log.info("Step 11: Failover a node and RebalanceOut that node with loading in parallel")
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
@@ -628,10 +617,8 @@ class volume(BaseTestCase):
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
             ########################################################################################################################
             self.log.info("Step 12: Failover a node and FullRecovery that node")
 
@@ -670,8 +657,7 @@ class volume(BaseTestCase):
                                                        num_reader_threads="disk_io_optimized")
             # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
             self.data_validation_collection()
@@ -691,7 +677,6 @@ class volume(BaseTestCase):
             self.sleep(10)
             self.tasks = []
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
             ########################################################################################################################
             self.log.info("Step 13: Failover a node and DeltaRecovery that node with loading in parallel")
 
@@ -727,8 +712,7 @@ class volume(BaseTestCase):
                                                        num_reader_threads="disk_io_optimized")
             # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
             self.data_validation_collection()
@@ -746,7 +730,6 @@ class volume(BaseTestCase):
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
         ########################################################################################################################
             self.log.info("Step 14: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
@@ -763,12 +746,10 @@ class volume(BaseTestCase):
                                                        num_reader_threads="disk_io_optimized")
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
         ########################################################################################################################
             self.log.info("Step 15: Flush the bucket and start the entire process again")
             self.loop += 1
@@ -786,9 +767,7 @@ class volume(BaseTestCase):
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-                    reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-                    self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-                    self.get_bucket_dgm(bucket)
+                    self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
                 self._iter_count = 0
             else:
                 self.log.info("Volume Test Run Complete")
