@@ -3,6 +3,11 @@ import copy
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
+from Cb_constants.CBServer import CbServer
+from com.couchbase.client.java.kv import GetAllReplicasOptions,\
+    GetAnyReplicaOptions
+from com.couchbase.client.core.error import DocumentUnretrievableException
 
 
 class BasicCrudTests(MagmaBaseTest):
@@ -11,6 +16,49 @@ class BasicCrudTests(MagmaBaseTest):
 
     def tearDown(self):
         super(BasicCrudTests, self).tearDown()
+
+    def test_expiry(self):
+        result = True
+        self.gen_create = doc_generator(
+            self.key, 0, 10,
+            doc_size=20,
+            doc_type=self.doc_type,
+            key_size=self.key_size)
+
+        tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_create, "create", 10,
+                batch_size=10,
+                process_concurrency=1,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, pause_secs=5,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                )
+        self.task.jython_task_manager.get_task_result(tasks_info.keys()[0])
+        self.sleep(20)
+        self.client = SDKClient([self.cluster.master],
+                                self.bucket_util.buckets[0],
+                                scope=CbServer.default_scope,
+                                collection=CbServer.default_collection)
+        for i in range(10):
+            key = (self.key + "-" + str(i).zfill(self.key_size-len(self.key)))
+            try:
+                getReplicaResult = self.client.collection.getAnyReplica(
+                    key, GetAnyReplicaOptions.getAnyReplicaOptions())
+                if getReplicaResult:
+                    result = False
+                    try:
+                        self.log.info("Able to retreive: %s" %
+                                      {"key": key,
+                                       "value": getReplicaResult.contentAsObject(),
+                                       "cas": getReplicaResult.cas()})
+                    except Exception as e:
+                        print str(e)
+            except DocumentUnretrievableException as e:
+                pass
+            if len(self.client.getFromAllReplica(key)) > 0:
+                result = False
+        self.client.close()
+        self.assertTrue(result, "SDK is able to retrieve expired documents")
 
     def test_basic_create_read(self):
         """
