@@ -541,7 +541,7 @@ class BasicOps(CollectionBase):
         max_doc_size_gen = doc_generator("test_max_doc_size",
                                          0, self.num_items,
                                          key_size=self.key_size,
-                                         doc_size=1024*1024*1024*20,
+                                         doc_size=1024*1024*20,
                                          mix_key_size=False,
                                          randomize_doc_size=False)
         # Set to keep track of all inserted CAS values
