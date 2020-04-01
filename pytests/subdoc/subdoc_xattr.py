@@ -1618,15 +1618,19 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
     def test_doc_sync_write_in_progress(self):
         shell = None
-        doc_key = self.doc_id + "-0"
         doc_tasks = ["create", "update", "replace", "delete"]
         basic_ops = ["create", "update",
                      "subdoc_insert", "subdoc_upsert",
                      "subdoc_replace", "subdoc_delete",
                      "delete"]
-        target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
         doc_gen = dict()
         doc_gen["doc_crud"] = doc_generator(self.doc_id, 0, 1)
+
+        doc_key = doc_gen["doc_crud"].next()[0]
+        target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
+
+        # Reset it back to start index
+        doc_gen["doc_crud"].reset()
 
         for node in self.cluster_util.get_kv_nodes():
             shell = RemoteMachineShellConnection(node)
@@ -1680,16 +1684,14 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 sdk_exception = str(result["error"])
                 expected_exception = \
                     SDKException.RequestCanceledException
-                retry_reason = \
-                    SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
+                retry_reason = SDKException.RetryReason \
+                    .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
                 if op_type == "create":
-                    if sw_test_op == "delete" or sw_test_op not in doc_tasks:
+                    if sw_test_op in ["delete", "replace"] \
+                            or (sw_test_op not in doc_tasks):
                         expected_exception = \
                             SDKException.DocumentNotFoundException
                         retry_reason = None
-                # elif sw_test_op == "create" and op_type != "create":
-                #     expected_exception = SDKException.DocumentExistsException
-                #     retry_reason = None
                 elif sw_test_op not in doc_tasks:
                     expected_exception = \
                         SDKException.AmbiguousTimeoutException
@@ -1722,9 +1724,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
     def test_subdoc_sync_write_in_progress(self):
         shell = None
-        doc_key = self.doc_id + "-0"
-        target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
         doc_gen = dict()
+        doc_key = doc_generator(self.doc_id, 0, 1).next()[0]
+        target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
 
         for node in self.cluster_util.get_kv_nodes():
             shell = RemoteMachineShellConnection(node)
