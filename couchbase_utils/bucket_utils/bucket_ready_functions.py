@@ -1311,11 +1311,13 @@ class BucketUtils(ScopeUtils):
         return buckets_spec["buckets"]
 
     def create_bucket_from_dict_spec(self, bucket_name, bucket_spec,
-                                     async_create=True):
+                                     async_create=True,
+                                     wait_for_collection=2):
         task = BucketCreateFromSpecTask(self.task_manager,
                                         self.cluster.master,
                                         bucket_name,
-                                        bucket_spec)
+                                        bucket_spec,
+                                        wait_for_collection)
         self.task_manager.add_new_task(task)
         if not async_create:
             self.task_manager.get_task_result(task)
@@ -1746,36 +1748,37 @@ class BucketUtils(ScopeUtils):
         # self.sleep(60, "Waiting for all collections to be created")
         # return
         self.log.info("Waiting for all collections to be created")
-        shell_conn = RemoteMachineShellConnection(self.cluster.master)
-        cb_stat = Cbstats(shell_conn)
         for bucket in self.buckets:
-            start_time = time.time()
-            stop_time = start_time + timeout
-            count_matched = False
-            total_collection_as_per_bucket_obj = \
-                BucketUtils.get_total_collections_in_bucket(bucket)
-            total_collection_as_per_stats = 0
-            while time.time() < stop_time:
+            for server in self.cluster.nodes_in_cluster:
+                shell_conn = RemoteMachineShellConnection(server)
+                cb_stat = Cbstats(shell_conn)
+                start_time = time.time()
+                stop_time = start_time + timeout
+                count_matched = False
+                total_collection_as_per_bucket_obj = \
+                    BucketUtils.get_total_collections_in_bucket(bucket)
                 total_collection_as_per_stats = 0
-                scope_stats = cb_stat.get_scopes(bucket)
-                for stat_name in scope_stats.keys():
-                    if type(scope_stats[stat_name]) is dict:
-                        total_collection_as_per_stats += \
-                            scope_stats[stat_name]["collections"]
-                if total_collection_as_per_bucket_obj \
-                        == total_collection_as_per_stats:
-                    count_matched = True
-                    break
-            if not count_matched:
-                self.log.error("Collections count mismatch in %s. %s != %s"
-                               % (bucket.name,
-                                  total_collection_as_per_bucket_obj,
-                                  total_collection_as_per_stats))
-                raise Exception("Collection count mismatch for bucket: %s. "
-                                "Expected: %d, Actual: %d"
-                                % (bucket.name,
-                                   total_collection_as_per_bucket_obj,
-                                   total_collection_as_per_stats))
+                while time.time() < stop_time:
+                    total_collection_as_per_stats = 0
+                    scope_stats = cb_stat.get_scopes(bucket)
+                    for stat_name in scope_stats.keys():
+                        if type(scope_stats[stat_name]) is dict:
+                            total_collection_as_per_stats += \
+                                scope_stats[stat_name]["collections"]
+                    if total_collection_as_per_bucket_obj \
+                            == total_collection_as_per_stats:
+                        count_matched = True
+                        break
+                if not count_matched:
+                    self.log.error("Collections count mismatch in %s. %s != %s"
+                                   % (bucket.name,
+                                      total_collection_as_per_bucket_obj,
+                                      total_collection_as_per_stats))
+                    raise Exception("Collection count mismatch for bucket: %s. "
+                                    "Expected: %d, Actual: %d"
+                                    % (bucket.name,
+                                       total_collection_as_per_bucket_obj,
+                                       total_collection_as_per_stats))
 
     # Bucket doc_ops support APIs
     @staticmethod
