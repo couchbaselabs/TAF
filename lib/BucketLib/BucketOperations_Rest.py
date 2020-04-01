@@ -660,3 +660,13 @@ class BucketHelper(RestConnection):
                                                 'GET',
                                                 headers=headers)
         return status, content
+
+    def get_total_collections_in_bucket(self, bucket):
+        status, content = self.list_collections(bucket)
+        json_parsed = json.loads(content)
+        scopes = json_parsed["scopes"]
+        collection_count = 0
+        for scope in scopes:
+            collections = len(scope["collections"])
+            collection_count += collections
+        return collection_count

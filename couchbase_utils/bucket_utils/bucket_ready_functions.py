@@ -1749,26 +1749,16 @@ class BucketUtils(ScopeUtils):
         # return
         self.log.info("Waiting for all collections to be created")
         for bucket in self.buckets:
-            for server in self.cluster.nodes_in_cluster:
-                shell_conn = RemoteMachineShellConnection(server)
-                cb_stat = Cbstats(shell_conn)
-                start_time = time.time()
-                stop_time = start_time + timeout
-                count_matched = False
-                total_collection_as_per_bucket_obj = \
-                    BucketUtils.get_total_collections_in_bucket(bucket)
-                total_collection_as_per_stats = 0
-                while time.time() < stop_time:
-                    total_collection_as_per_stats = 0
-                    scope_stats = cb_stat.get_scopes(bucket)
-                    for stat_name in scope_stats.keys():
-                        if type(scope_stats[stat_name]) is dict:
-                            total_collection_as_per_stats += \
-                                scope_stats[stat_name]["collections"]
-                    if total_collection_as_per_bucket_obj \
-                            == total_collection_as_per_stats:
-                        count_matched = True
-                        break
+            start_time = time.time()
+            stop_time = start_time + timeout
+            count_matched = False
+            total_collection_as_per_bucket_obj = BucketUtils.get_total_collections_in_bucket(bucket)
+            total_collection_as_per_stats = BucketHelper(self.cluster.master).get_total_collections_in_bucket(bucket)
+            while time.time() < stop_time and total_collection_as_per_stats != total_collection_as_per_bucket_obj:
+                total_collection_as_per_stats = BucketHelper(self.cluster.master).get_total_collections_in_bucket(bucket)
+                if total_collection_as_per_bucket_obj == total_collection_as_per_stats:
+                    count_matched = True
+                    break
                 if not count_matched:
                     self.log.error("Collections count mismatch in %s. %s != %s"
                                    % (bucket.name,
