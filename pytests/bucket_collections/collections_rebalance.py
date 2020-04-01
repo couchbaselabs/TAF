@@ -12,6 +12,7 @@ class CollectionsRebalance(CollectionBase):
         self.data_load_stage = self.input.param("data_load_stage", "before")
         self.data_load_type = self.input.param("data_load_type", "sync")
         self.nodes_swap = self.input.param("nodes_swap", 1)
+        self.step_count = self.input.param("step_count", -1)
 
     def tearDown(self):
         super(CollectionsRebalance, self).tearDown()
@@ -20,7 +21,30 @@ class CollectionsRebalance(CollectionBase):
                             failover_nodes=None, wait_for_pending=120):
         self.log.info("Starting rebalance operation of type : {0}".format(rebalance_operation))
         if rebalance_operation == "rebalance_out":
-            operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+            step_count = self.step_count
+            if rebalance_operation == "rebalance_out":
+                if step_count == -1:
+                    # all at once
+                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                else:
+                    # list of lists each of length step_count
+                    remove_list = []
+                    for i in range(0, len(remove_nodes), step_count):
+                        if i + step_count >= len(remove_nodes):
+                            remove_list.append(remove_nodes[i:])
+                        else:
+                            remove_list.append(remove_nodes[i:i + step_count])
+                    iter_count = 0
+                    # start each intermediate rebalance and wait for it to finish before
+                    # starting new one
+                    for new_remove_nodes in remove_list:
+                        operation = self.task.async_rebalance(known_nodes, [], new_remove_nodes)
+                        known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
+                        iter_count = iter_count + 1
+                        # if this is last intermediate rebalance, don't wait
+                        if iter_count == len(remove_list):
+                            continue
+                        self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "rebalance_in":
             operation = self.task.async_rebalance(known_nodes, add_nodes, [])
         elif rebalance_operation == "swap_rebalance":
