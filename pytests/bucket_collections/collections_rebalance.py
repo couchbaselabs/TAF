@@ -20,38 +20,82 @@ class CollectionsRebalance(CollectionBase):
     def rebalance_operation(self, rebalance_operation, known_nodes=None, add_nodes=None, remove_nodes=None,
                             failover_nodes=None, wait_for_pending=120):
         self.log.info("Starting rebalance operation of type : {0}".format(rebalance_operation))
+        step_count = self.step_count
         if rebalance_operation == "rebalance_out":
-            step_count = self.step_count
-            if rebalance_operation == "rebalance_out":
-                if step_count == -1:
-                    # all at once
-                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
-                else:
-                    # list of lists each of length step_count
-                    remove_list = []
-                    for i in range(0, len(remove_nodes), step_count):
-                        if i + step_count >= len(remove_nodes):
-                            remove_list.append(remove_nodes[i:])
-                        else:
-                            remove_list.append(remove_nodes[i:i + step_count])
-                    iter_count = 0
-                    # start each intermediate rebalance and wait for it to finish before
-                    # starting new one
-                    for new_remove_nodes in remove_list:
-                        operation = self.task.async_rebalance(known_nodes, [], new_remove_nodes)
-                        known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
-                        iter_count = iter_count + 1
-                        # if this is last intermediate rebalance, don't wait
-                        if iter_count == len(remove_list):
-                            continue
-                        self.wait_for_rebalance_to_complete(operation)
+            if step_count == -1:
+                # all at once
+                operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+            else:
+                # list of lists each of length step_count
+                remove_list = []
+                for i in range(0, len(remove_nodes), step_count):
+                    if i + step_count >= len(remove_nodes):
+                        remove_list.append(remove_nodes[i:])
+                    else:
+                        remove_list.append(remove_nodes[i:i + step_count])
+                iter_count = 0
+                # start each intermediate rebalance and wait for it to finish before
+                # starting new one
+                for new_remove_nodes in remove_list:
+                    operation = self.task.async_rebalance(known_nodes, [], new_remove_nodes)
+                    known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
+                    iter_count = iter_count + 1
+                    # if this is last intermediate rebalance, don't wait
+                    if iter_count == len(remove_list):
+                        continue
+                    self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "rebalance_in":
-            operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+            if step_count == -1:
+                # all at once
+                operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+            else:
+                # list of lists each of length step_count
+                add_list = []
+                for i in range(0, len(add_nodes), step_count):
+                    if i + step_count >= len(add_nodes):
+                        add_list.append(add_nodes[i:])
+                    else:
+                        add_list.append(add_nodes[i:i + step_count])
+                iter_count = 0
+                # start each intermediate rebalance and wait for it to finish before
+                # starting new one
+                for new_add_nodes in add_list:
+                    operation = self.task.async_rebalance(known_nodes, new_add_nodes, [])
+                    known_nodes.append(new_add_nodes)
+                    iter_count = iter_count + 1
+                    # if this is last intermediate rebalance, don't wait
+                    if iter_count == len(add_list):
+                        continue
+                    self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "swap_rebalance":
-            for node in add_nodes:
-                self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                   node.ip, self.cluster.servers[self.nodes_init].port)
-            operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+            if(step_count == -1):
+                for node in add_nodes:
+                    self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                                       node.ip, self.cluster.servers[self.nodes_init].port)
+                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+            else:
+                #list of lists each of length step_count
+                add_list = []
+                remove_list = []
+                for i in range(0, len(add_nodes), step_count):
+                    if i + step_count >= len(add_nodes):
+                        add_list.append(add_nodes[i:])
+                        remove_list.append(remove_nodes[i:])
+                    else:
+                        add_list.append(add_nodes[i:i + step_count])
+                        remove_list.append(remove_nodes[i:i + step_count])
+                iter_count = 0
+                # start each intermediate rebalance and wait for it to finish before
+                # starting new one
+                for new_add_nodes, new_remove_nodes in zip(add_list, remove_list):
+                    operation = self.task.async_rebalance(known_nodes, new_add_nodes, new_remove_nodes)
+                    known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
+                    known_nodes.extend(new_add_nodes)
+                    iter_count = iter_count + 1
+                    # if this is last intermediate rebalance, don't wait
+                    if iter_count == len(add_list):
+                        continue
+                    self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "rebalance_in_out":
             for node in add_nodes:
                 self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
