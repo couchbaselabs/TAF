@@ -3093,7 +3093,7 @@ class BucketCreateFromSpecTask(Task):
                 self.bucket_obj.name,
                 scope_spec["name"])
             if status is False:
-                self.set_exception("Create scope failed for %s::%s, "
+                self.set_exception("Create scope failed for %s:%s, "
                                    "Reason - %s"
                                    % (self.bucket_obj.name,
                                       scope_spec["name"],
@@ -3117,7 +3117,7 @@ class BucketCreateFromSpecTask(Task):
                        collection_name)
 
     def create_collection_from_spec(self, scope_name, collection_spec):
-        self.test_log.debug("Creating collection for '%s::%s' - %s"
+        self.test_log.debug("Creating collection for '%s:%s' - %s"
                             % (self.bucket_obj.name, scope_name,
                                collection_spec["name"]))
         status, content = self.bucket_helper.create_collection(
@@ -3127,7 +3127,7 @@ class BucketCreateFromSpecTask(Task):
         if status is False:
             self.result = False
             self.set_exception("Create collection failed for "
-                               "%s::%s::%s, Reason - %s"
+                               "%s:%s:%s, Reason - %s"
                                % (self.bucket_obj.name,
                                   scope_name,
                                   collection_spec["name"],

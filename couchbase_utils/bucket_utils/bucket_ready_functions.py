@@ -8,7 +8,6 @@ import copy
 import importlib
 import logging
 import threading
-from datetime import datetime
 from random import sample
 
 import crc32
@@ -214,13 +213,15 @@ class DocLoaderUtils(object):
         return loader_tasks
 
     @staticmethod
-    def create_doc_gens_for_spec(buckets, input_spec, mutation_num=0):
+    def create_doc_gens_for_spec(buckets, input_spec, mutation_num=0,
+                                 op_details=dict()):
         """
         To perform the set of CRUD operations based on the given input spec.
         :param buckets: List of Bucket objects which needs to be considered
                         for doc loading
         :param input_spec: CRUD spec (JSON format)
         :param mutation_num: Mutation number, used for doc validation task
+        :param op_details: Dict object returned from perform_tasks_from_spec()
         :return crud_spec: Dict for bucket-scope-collections with
                            appropriate doc_generator objects
         """
@@ -337,19 +338,50 @@ class DocLoaderUtils(object):
         return crud_spec
 
     @staticmethod
+    def validate_doc_loading_results(doc_loading_task):
+        """
+        :param doc_loading_task: Task object returned from
+                                 DocLoaderUtils.create_doc_gens_for_spec call
+        :return:
+        """
+
+    @staticmethod
     def run_scenario_from_spec(task_manager, cluster, buckets,
-                               input_spec, mutation_num=1, async_load=False):
-        BucketUtils.perform_tasks_from_spec(cluster,
-                                            buckets,
-                                            input_spec)
+                               input_spec, mutation_num=1,
+                               async_load=False,
+                               validate_task=True):
+        """
+        :param task_manager: TaskManager object used for task management
+        :param cluster: Cluster object to fetch master node
+                        To create SDK connections / REST client
+        :param buckets: List of bucket objects considered for doc loading
+        :param input_spec: CRUD spec (JSON format)
+        :param mutation_num: Mutation field value to be used in doc_generator
+        :param async_load: (Bool) To wait for doc_loading to finish or not
+        :param validate_task: (Bool) To validate doc_loading results or not
+        :return doc_loading_task: Task object returned from
+                                  DocLoaderUtils.create_doc_gens_for_spec call
+        """
+        op_details = BucketUtils.perform_tasks_from_spec(cluster,
+                                                         buckets,
+                                                         input_spec)
         crud_spec = DocLoaderUtils.create_doc_gens_for_spec(buckets,
                                                             input_spec,
-                                                            mutation_num)
-        DocLoaderUtils.perform_doc_loading_for_spec(task_manager,
-                                                    cluster,
-                                                    buckets,
-                                                    crud_spec,
-                                                    async_load=async_load)
+                                                            mutation_num,
+                                                            op_details)
+        doc_loading_task = DocLoaderUtils.perform_doc_loading_for_spec(
+            task_manager,
+            cluster,
+            buckets,
+            crud_spec,
+            async_load=async_load)
+        if not async_load:
+            # task_manager.jython_task_manager.get_task_result(doc_loading_task)
+            for task in doc_loading_task:
+                task_manager.jython_task_manager.get_task_result(task)
+                if validate_task:
+                    DocLoaderUtils.validate_doc_loading_results(task)
+        return doc_loading_task
 
 
 class CollectionUtils(DocLoaderUtils):
@@ -369,7 +401,7 @@ class CollectionUtils(DocLoaderUtils):
     @staticmethod
     def get_active_collections(bucket, scope_name, only_names=False):
         """
-        Fetches collections which are active under the given bucket::scope
+        Fetches collections which are active under the given bucket:scope
 
         :param bucket: Bucket object under which to fetch the collections
         :param scope_name: Scope name under which to fetch the collections
@@ -423,7 +455,8 @@ class CollectionUtils(DocLoaderUtils):
         collection.is_dropped = True
 
     @staticmethod
-    def create_collection(node, bucket, scope_name="scope0",
+    def create_collection(node, bucket,
+                          scope_name=CbServer.default_collection,
                           collection_spec=dict()):
         """
         Function to create collection under the given scope_name
@@ -435,20 +468,20 @@ class CollectionUtils(DocLoaderUtils):
                                 bucket.Collection class
         """
         collection_name = collection_spec.get("name")
+        CollectionUtils.log.debug("Creating Collection %s:%s:%s"
+                                  % (bucket.name, scope_name, collection_name))
         status, content = BucketHelper(node).create_collection(bucket,
                                                                scope_name,
                                                                collection_spec)
         if status is False:
             CollectionUtils.log.error(
-                "Collection '%s::%s::%s' creation failed: %s"
+                "Collection '%s:%s:%s' creation failed: %s"
                 % (bucket, scope_name, collection_name, content))
             raise Exception("create_collection failed")
 
         CollectionUtils.create_collection_object(bucket,
                                                  scope_name,
                                                  collection_spec)
-        CollectionUtils.log.debug("Collection '%s' creation successful"
-                                  % collection_name)
 
     @staticmethod
     def drop_collection(node, bucket, scope_name=CbServer.default_scope,
@@ -461,12 +494,14 @@ class CollectionUtils(DocLoaderUtils):
         :param scope_name: Scope_name under which the collection to be dropped
         :param collection_name: Collection name which has to dropped
         """
+        CollectionUtils.log.debug("Dropping Collection %s:%s:%s"
+                                  % (bucket.name, scope_name, collection_name))
         status, content = BucketHelper(node).delete_collection(bucket,
                                                                scope_name,
                                                                collection_name)
         if status is False:
             CollectionUtils.log.error(
-                "Collection '%s::%s::%s' delete failed: %s"
+                "Collection '%s:%s:%s' delete failed: %s"
                 % (bucket, scope_name, collection_name, content))
             raise Exception("delete_collection")
 
@@ -485,12 +520,14 @@ class CollectionUtils(DocLoaderUtils):
         :param scope_name: Scope_name under which the collection to be dropped
         :param collection_name: Collection name which has to dropped
         """
+        CollectionUtils.log.debug("Flushing Collection %s:%s:%s"
+                                  % (bucket.name, scope_name, collection_name))
         status, content = BucketHelper(node).flush_collection(bucket,
                                                               scope_name,
                                                               collection_name)
         if status is False:
             CollectionUtils.log.error(
-                "Collection '%s::%s::%s' flush failed: %s"
+                "Collection '%s:%s:%s' flush failed: %s"
                 % (bucket, scope_name, collection_name, content))
             raise Exception("delete_collection")
 
@@ -534,8 +571,10 @@ class CollectionUtils(DocLoaderUtils):
         :param create_collection_with_scope_name:
             Boolean to decide whether to create the first collection
             with the same 'scope_name'
+        :return created_collection_names: Dict of all created collection names
         """
         created_collections = 0
+        created_collections_dict = dict()
         target_scope = bucket.scopes[scope_name]
         while created_collections < num_collections:
             collection_created = False
@@ -554,19 +593,19 @@ class CollectionUtils(DocLoaderUtils):
                     col_name in target_scope.collections.keys() \
                     and target_scope.collections[col_name].is_dropped is False
 
-                CollectionUtils.log.info("Creating collection '%s::%s'"
-                                         % (scope_name, col_name))
                 try:
                     BucketUtils.create_collection(cluster.master,
                                                   bucket,
                                                   scope_name,
                                                   {"name": col_name})
                     if collection_already_exists:
-                        raise Exception("Collection with duplicate name "
-                                        "got created under bucket::scope "
-                                        "%s::%s" % (bucket, scope_name))
+                        raise Exception("Collection with duplicate name '%s'"
+                                        "got created under bucket:scope "
+                                        "%s:%s"
+                                        % (col_name, bucket, scope_name))
                     created_collections += 1
                     collection_created = True
+                    created_collections_dict[col_name] = dict()
                 except Exception as e:
                     if collection_already_exists and collection_name is None:
                         CollectionUtils.log.info(
@@ -577,6 +616,7 @@ class CollectionUtils(DocLoaderUtils):
                         CollectionUtils.log.error(
                             "Collection creation failed!")
                         raise Exception(e)
+        return created_collections_dict
 
 
 class ScopeUtils(CollectionUtils):
@@ -659,15 +699,15 @@ class ScopeUtils(CollectionUtils):
         :param scope_spec: Scope_spec as expected by the bucket.Scope class
         """
         scope_name = scope_spec.get("name")
+        ScopeUtils.log.debug("Creating Scope %s:%s"
+                             % (bucket, scope_name))
         status, content = BucketHelper(node).create_scope(bucket, scope_name)
         if status is False:
-            ScopeUtils.log.error("Scope '%s::%s' creation failed: %s"
+            ScopeUtils.log.error("Scope '%s:%s' creation failed: %s"
                                  % (bucket, scope_name, content))
             raise Exception("create_scope failed")
 
         ScopeUtils.create_scope_object(bucket, scope_spec)
-        ScopeUtils.log.debug("Scope '%s::%s' creation successful"
-                             % (bucket, scope_name))
 
     @staticmethod
     def drop_scope(node, bucket, scope_name):
@@ -678,15 +718,17 @@ class ScopeUtils(CollectionUtils):
         :param bucket: Bucket object under which the scope should be dropped
         :param scope_name: Scope_name to be dropped
         """
+        ScopeUtils.log.debug("Dropping Scope %s:%s"
+                             % (bucket, scope_name))
         status, content = BucketHelper(node).delete_scope(bucket,
                                                           scope_name)
         if status is False:
-            ScopeUtils.log.error("Scope '%s::%s' deletion failed: %s"
+            ScopeUtils.log.error("Scope '%s:%s' deletion failed: %s"
                                  % (bucket, scope_name, content))
             raise Exception("delete_scope failed")
 
         ScopeUtils.mark_scope_as_dropped(bucket, scope_name)
-        ScopeUtils.log.debug("Scope '%s::%s' deleted" % (bucket, scope_name))
+        ScopeUtils.log.debug("Scope '%s:%s' deleted" % (bucket, scope_name))
 
     @staticmethod
     def create_scopes(cluster, bucket, num_scopes, scope_name=None,
@@ -702,8 +744,10 @@ class ScopeUtils(CollectionUtils):
                            'None' results in creating random scope names
         :param collection_count: Number for collections to be created
                                  under each created scope
+        :return created_scopes_dict: List of all created scope names
         """
         created_scopes = 0
+        created_scopes_dict = dict()
         while created_scopes < num_scopes:
             curr_scope_name = "%s_%s" % (scope_name, created_scopes)
 
@@ -715,7 +759,6 @@ class ScopeUtils(CollectionUtils):
                     curr_scope_name in bucket.scopes.keys() \
                     and \
                     bucket.scopes[curr_scope_name].is_dropped is False
-                ScopeUtils.log.info("Creating scope '%s'" % curr_scope_name)
                 try:
                     scope_spec = {"name": curr_scope_name}
                     ScopeUtils.create_scope(cluster.master,
@@ -726,11 +769,13 @@ class ScopeUtils(CollectionUtils):
                                         "created under bucket %s" % bucket)
                     created_scopes += 1
                     scope_created = True
-                    CollectionUtils.create_collections(
-                        cluster.master,
-                        bucket,
-                        collection_count,
-                        curr_scope_name)
+                    created_scopes_dict[curr_scope_name] = dict()
+                    created_scopes_dict[curr_scope_name]["collections"] = \
+                        CollectionUtils.create_collections(
+                            cluster,
+                            bucket,
+                            collection_count,
+                            curr_scope_name)
                 except Exception as e:
                     if scope_already_exists and scope_name is None:
                         ScopeUtils.log.info(
@@ -740,6 +785,7 @@ class ScopeUtils(CollectionUtils):
                     else:
                         ScopeUtils.log.error("Scope creation failed!")
                         raise Exception(e)
+        return created_scopes_dict
 
 
 class BucketUtils(ScopeUtils):
@@ -829,10 +875,8 @@ class BucketUtils(ScopeUtils):
                 if bucket.name not in exclude_from.keys():
                     selected_bucket_names.append(bucket.name)
         else:
-            bucket_len = len(buckets) - 1
             while len(selected_bucket_names) != req_num:
-                random.seed(datetime.now())
-                bucket = buckets[random.randint(0, bucket_len)]
+                bucket = sample(buckets, 1)[0]
                 if bucket.name \
                         not in selected_bucket_names + exclude_from.keys():
                     selected_bucket_names.append(bucket.name)
@@ -844,6 +888,8 @@ class BucketUtils(ScopeUtils):
 
     @staticmethod
     def get_random_scopes(buckets, req_num, consider_buckets,
+                          avoid_default=False,
+                          consider_only_dropped=False,
                           exclude_from=dict()):
         """
         Function to select random scopes from the given buckets object
@@ -854,6 +900,9 @@ class BucketUtils(ScopeUtils):
         :param consider_buckets: Required number of buckets to be selected
                                  in random. If req_num is >= the available
                                  buckets, all are considered for selection
+        :param avoid_default: (Bool) To avoid selecting default scope.
+                              Useful while selecting scopes to drop
+        :param consider_only_dropped: Enables selecting dropped scopes
         :param exclude_from: Dict having scope names as key to exclude.
                              This is the same dict returned by this function
         :return selected_buckets: Dict with (key, value) (b_names, scope_dict)
@@ -872,18 +921,22 @@ class BucketUtils(ScopeUtils):
         for bucket_name in selected_buckets.keys():
             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
             known_buckets[bucket_name] = bucket
-            active_scopes = BucketUtils.get_active_scopes(bucket)
+            active_scopes = BucketUtils.get_active_scopes(bucket,
+                                                          only_names=True)
+            if consider_only_dropped:
+                active_scopes = list(set(bucket.scopes.keys())
+                                     .difference(set(active_scopes)))
             for scope in active_scopes:
+                if scope == CbServer.default_scope and avoid_default:
+                    continue
                 available_scopes.append("%s:%s" % (bucket_name,
-                                                   scope.name))
+                                                   scope))
 
         if req_num == "all" or req_num >= len(available_scopes):
             selected_scopes = available_scopes
         else:
-            scopes_len = len(available_scopes) - 1
             while len(selected_scopes) != req_num:
-                random.seed(datetime.now())
-                t_scope = available_scopes[random.randint(0, scopes_len)]
+                t_scope = sample(available_scopes, 1)[0]
                 if t_scope not in selected_scopes + exclude_scopes:
                     selected_scopes.append(t_scope)
 
@@ -901,6 +954,7 @@ class BucketUtils(ScopeUtils):
     def get_random_collections(buckets, req_num,
                                consider_scopes,
                                consider_buckets,
+                               consider_only_dropped=False,
                                exclude_from=dict()):
         """
         Function to select random collections from the given buckets object
@@ -915,6 +969,7 @@ class BucketUtils(ScopeUtils):
         :param consider_buckets: Required number of buckets to be selected
                                  in random. If req_num is >= the available
                                  buckets, all are selecteed
+        :param consider_only_dropped: Enables selecting dropped collections
         :param exclude_from: Dict having scope names as key to exclude.
                              This is the same dict returned by this function
         :return selected_buckets: Dict with (key, value) (b_names, scope_dict)
@@ -939,22 +994,22 @@ class BucketUtils(ScopeUtils):
                                                           only_names=True)
             for scope_name in active_scopes:
                 active_collections = BucketUtils.get_active_collections(
-                    bucket, scope_name)
+                    bucket, scope_name, only_names=True)
+                if consider_only_dropped:
+                    active_collections = \
+                        list(set(bucket.scopes[scope_name].collections.keys())
+                             .difference(set(active_collections)))
                 for collection in active_collections:
                     available_collections.append("%s:%s:%s"
                                                  % (bucket_name,
                                                     scope_name,
-                                                    collection.name))
+                                                    collection))
 
         if req_num == "all" or req_num >= len(available_collections):
             selected_collections = available_collections
         else:
-            collection_len = len(available_collections) - 1
             while len(selected_collections) != req_num:
-                random.seed(datetime.now())
-                collection = available_collections[
-                    random.randint(0, collection_len)]
-
+                collection = sample(available_collections, 1)[0]
                 if collection \
                         not in selected_collections + exclude_collections:
                     selected_collections.append(collection)
@@ -3920,8 +3975,25 @@ class BucketUtils(ScopeUtils):
                         (To create REST connections for bucket operations)
         :param buckets: List of bucket objects considered for bucket ops
         :param input_spec: CRUD spec (JSON format)
-        :return:
+        :return ops_details: Dict describing the actions taken during the
+                             execution using input_spec
         """
+
+        def update_ops_details_dict(target_key, bucket_data_to_update):
+            dict_to_update = ops_details[target_key]
+            for bucket_name, b_data in bucket_data_to_update.items():
+                if bucket_name not in dict_to_update:
+                    dict_to_update[bucket_name] = dict()
+                    dict_to_update[bucket_name]["scopes"] = dict()
+                scope_dict = dict_to_update[bucket_name]["scopes"]
+                for scope_name, scope_data in b_data["scopes"].items():
+                    if scope_name not in scope_dict:
+                        scope_dict[scope_name] = dict()
+                        scope_dict[scope_name]["collections"] = dict()
+                    collection_dict = scope_dict[scope_name]["collections"]
+                    for collection_name in scope_data["collections"].keys():
+                        collection_dict[collection_name] = dict()
+
         def perform_scope_operation(operation_type, ops_spec):
             buckets_spec = ops_spec
             if "buckets" in buckets_spec:
@@ -3932,39 +4004,81 @@ class BucketUtils(ScopeUtils):
                 collection_count = \
                     ops_spec["collection_count_under_each_scope"]
                 for bucket_name in buckets_spec:
-                    bucket_obj = BucketUtils.get_bucket_obj(buckets,
-                                                            bucket_name)
-                    ScopeUtils.create_scopes(
-                        cluster, bucket_obj, scopes_num,
-                        scope_name=None,
-                        collection_count=collection_count)
+                    bucket = BucketUtils.get_bucket_obj(buckets,
+                                                        bucket_name)
+                    if bucket_name not in ops_details["scopes_added"]:
+                        ops_details["scopes_added"][bucket_name] = dict()
+                        ops_details["scopes_added"][bucket_name][
+                            "scopes"] = dict()
+                    if bucket_name not in ops_details["collections_added"]:
+                        ops_details["collections_added"][bucket_name] = dict()
+                        ops_details["collections_added"][bucket_name][
+                            "scopes"] = dict()
+                    created_scope_collection_details = \
+                        ScopeUtils.create_scopes(
+                            cluster, bucket, scopes_num,
+                            scope_name=None,
+                            collection_count=collection_count)
+                    ops_details["scopes_added"][bucket_name][
+                        "scopes"].update(created_scope_collection_details)
+                    ops_details["collections_added"][bucket_name][
+                        "scopes"].update(created_scope_collection_details)
             elif operation_type == "drop":
+                update_ops_details_dict("scopes_dropped", ops_spec)
                 for bucket_name, b_data in buckets_spec.items():
-                    bucket_obj = BucketUtils.get_bucket_obj(buckets,
-                                                            bucket_name)
+                    bucket = BucketUtils.get_bucket_obj(buckets,
+                                                        bucket_name)
                     for scope_name in b_data["scopes"].keys():
                         ScopeUtils.drop_scope(cluster.master,
-                                              bucket_obj,
+                                              bucket,
                                               scope_name)
+            elif operation_type == "recreate":
+                DocLoaderUtils.log.debug("Recreating scopes")
+                update_ops_details_dict("scopes_added", ops_spec)
+                update_ops_details_dict("collections_added", ops_spec)
+                for bucket_name, b_data in buckets_spec.items():
+                    bucket = BucketUtils.get_bucket_obj(buckets,
+                                                        bucket_name)
+                    for scope_name in b_data["scopes"].keys():
+                        scope_obj = bucket.scopes[scope_name]
+                        BucketUtils.create_scope(cluster.master,
+                                                 bucket,
+                                                 scope_obj.get_dict_object())
+                        for _, collection in scope_obj.collections.items():
+                            ScopeUtils.create_collection(
+                                cluster.master,
+                                bucket,
+                                scope_name,
+                                collection.get_dict_object())
 
         def perform_collection_operation(operation_type, ops_spec):
             if operation_type == "create":
                 created_collections = 0
                 bucket_names = ops_spec.keys()
                 bucket_names.remove("req_collections")
-                buckets_len = len(bucket_names) - 1
                 while created_collections < ops_spec["req_collections"]:
-                    random.seed(datetime.now())
-                    bucket_name = bucket_names[random.randint(0, buckets_len)]
-                    bucket_obj = BucketUtils.get_bucket_obj(buckets,
-                                                            bucket_name)
-                    scopes = ops_spec[bucket_name]["scopes"].keys()
-                    scopes_len = len(scopes) - 1
-                    CollectionUtils.create_collections(
-                        cluster, bucket_obj, 1,
-                        scopes[random.randint(0, scopes_len)])
+                    bucket_name = sample(bucket_names, 1)[0]
+                    bucket = BucketUtils.get_bucket_obj(buckets,
+                                                        bucket_name)
+                    scope = sample(ops_spec[bucket_name]["scopes"].keys(),
+                                   1)[0]
+                    created_names = CollectionUtils.create_collections(
+                        cluster, bucket, 1,
+                        sample(scope, 1)[0])
                     created_collections += 1
-            else:
+                    update_ops_details_dict(
+                        "collections_added",
+                        {bucket_name:
+                            {"scopes": {scope:
+                                {"collections": {
+                                    created_names[0]: dict()
+                                }}}}})
+            elif operation_type in ["flush", "drop"]:
+                if operation_type == "drop":
+                    update_ops_details_dict("collections_dropped", ops_spec)
+                else:
+                    update_ops_details_dict("collections_flushed", ops_spec)
+
                 for bucket_name, b_data in ops_spec.items():
                     bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
                     for scope_name, scope_data in b_data["scopes"].items():
@@ -3978,6 +4092,31 @@ class BucketUtils(ScopeUtils):
                                 CollectionUtils.drop_collection(
                                     cluster.master, bucket,
                                     scope_name, collection_name)
+            elif operation_type == "recreate":
+                DocLoaderUtils.log.debug("Recreating collections")
+                update_ops_details_dict("collections_added", ops_spec)
+                for bucket_name, b_data in ops_spec.items():
+                    bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
+                    for scope_name, scope_data in b_data["scopes"].items():
+                        for col_name in scope_data["collections"].keys():
+                            collection = bucket.scopes[scope_name] \
+                                .collections[col_name]
+                            ScopeUtils.create_collection(
+                                cluster.master,
+                                bucket,
+                                scope_name,
+                                collection.get_dict_object())
+
+        DocLoaderUtils.log.info("Performing scope/collection specific "
+                                "operations")
+
+        # To store the actions wrt bucket/scope/collection
+        ops_details = dict()
+        ops_details["scopes_added"] = dict()
+        ops_details["scopes_dropped"] = dict()
+        ops_details["collections_added"] = dict()
+        ops_details["collections_dropped"] = dict()
+        ops_details["collections_flushed"] = dict()
 
         # Fetch random Collections to flush
         cols_to_flush = dict()
@@ -3993,7 +4132,7 @@ class BucketUtils(ScopeUtils):
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_DROP, 0),
             input_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, 0),
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1),
-            cols_to_flush)
+            exclude_from=cols_to_flush)
 
         # Start threads to drop collections
         c_flush_thread = threading.Thread(
@@ -4013,7 +4152,8 @@ class BucketUtils(ScopeUtils):
         scopes_to_drop = BucketUtils.get_random_scopes(
             buckets,
             input_spec.get(MetaCrudParams.SCOPES_TO_DROP, 0),
-            input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1))
+            input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1),
+            avoid_default=True)
         scope_drop_thread = threading.Thread(
             target=perform_scope_operation,
             args=["drop", scopes_to_drop])
@@ -4050,6 +4190,34 @@ class BucketUtils(ScopeUtils):
 
         collections_create_thread.start()
         collections_create_thread.join()
+
+        # Fetch random scopes to recreate
+        scopes_to_recreate = BucketUtils.get_random_scopes(
+            buckets,
+            input_spec.get(MetaCrudParams.SCOPES_TO_RECREATE, 0),
+            input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, "all"),
+            consider_only_dropped=True)
+        scope_recreate_thread = threading.Thread(
+            target=perform_scope_operation,
+            args=["recreate", scopes_to_recreate])
+
+        scope_recreate_thread.start()
+        scope_recreate_thread.join()
+
+        # Fetch random collections to recreate
+        collections_to_recreate = BucketUtils.get_random_collections(
+            buckets,
+            input_spec.get(MetaCrudParams.COLLECTIONS_TO_RECREATE, 0),
+            input_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, "all"),
+            input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, "all"),
+            consider_only_dropped=True)
+        collection_recreate_thread = threading.Thread(
+            target=perform_collection_operation,
+            args=["recreate", collections_to_recreate])
+
+        collection_recreate_thread.start()
+        collection_recreate_thread.join()
+        return ops_details
 
     @staticmethod
     def get_total_collections_in_bucket(bucket):

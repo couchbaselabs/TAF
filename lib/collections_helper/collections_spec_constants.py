@@ -26,6 +26,9 @@ class MetaCrudParams(object):
     COLLECTIONS_TO_ADD_FOR_NEW_SCOPES = "collections_to_add_for_new_scopes"
     COLLECTIONS_TO_ADD_PER_BUCKET = "collections_to_add_per_bucket"
 
+    SCOPES_TO_RECREATE = "scopes_to_recreate"
+    COLLECTIONS_TO_RECREATE = "collections_to_recreate"
+
     BUCKET_CONSIDERED_FOR_OPS = "buckets_considered_for_ops"
     SCOPES_CONSIDERED_FOR_OPS = "scopes_considered_for_ops"
     COLLECTIONS_CONSIDERED_FOR_OPS = "collections_considered_for_ops"
@@ -39,6 +42,7 @@ class MetaCrudParams(object):
         REPLACE_PERCENTAGE_PER_COLLECTION = "replace_percentage_per_collection"
         DELETE_PERCENTAGE_PER_COLLECTION = "delete_percentage_per_collection"
 
+        # Doc loading options supported
         COMMON_DOC_KEY = "doc_key"
         DOC_KEY_SIZE = "doc_key_size"
         DOC_SIZE = "doc_size"
@@ -50,6 +54,7 @@ class MetaCrudParams(object):
         REMOVE_PER_COLLECTION = "remove_per_collection"
         LOOKUP_PER_COLLECTION = "lookup_per_collection"
 
+        # Sub-doc loading option supported
         SUB_DOC_SIZE = "sub_doc_size"
 
     COLLECTIONS_CONSIDERED_FOR_CRUD = "collections_considered_for_crud"
