@@ -115,8 +115,6 @@ class ServerTasks(object):
             gen_end = max(int(generator.end), 1)
             gen_range = max(int((generator.end - generator.start)
                                 / process_concurrency), 1)
-            if gen_range < batch_size:
-                gen_range = batch_size
             for _ in range(gen_start, gen_end, gen_range):
                 client = None
                 if sdk_client_pool is None:
