@@ -1363,7 +1363,7 @@ class Durability(Task):
                             elif len(result) == self.bucket.replicaNumber + 1:
                                 self.test_log.warn(
                                     "Document is rolled back to original during delete -> %s:%s"
-                                    %(key, result))
+                                    % (key, result))
                     if self.read_offset == self.end:
                         self.test_log.fatal("BREAKING!!")
                         break

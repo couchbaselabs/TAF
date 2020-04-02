@@ -24,7 +24,7 @@ from collections import defaultdict
 import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from Jython_tasks.task import \
     BucketCreateTask, \
     BucketCreateFromSpecTask, \
@@ -78,8 +78,6 @@ Parameters:
 
 class DocLoaderUtils(object):
     log = logging.getLogger("test")
-    doc_op_types = ["delete", "create", "update", "replace", "read"]
-    subdoc_op_types = ["insert", "upsert", "remove", "lookup"]
 
     @staticmethod
     def __get_required_num_from_percentage(collection_obj, target_percent):
@@ -179,7 +177,7 @@ class DocLoaderUtils(object):
                         DocLoaderUtils.log.debug(
                             "Performing %s for %s items in %s"
                             % (op_type, op_data["target_items"], task_id))
-                        if op_type in DocLoaderUtils.doc_op_types:
+                        if op_type in DocLoading.Bucket.DOC_OPS:
                             task = task_manager.async_load_gen_docs(
                                 cluster, bucket, op_data["doc_gen"], op_type,
                                 exp=collection.maxTTL,
@@ -225,6 +223,70 @@ class DocLoaderUtils(object):
         :return crud_spec: Dict for bucket-scope-collections with
                            appropriate doc_generator objects
         """
+        def create_load_gens(spec, is_xattr_test=False,
+                             collection_recreated=False):
+            for b_name, s_dict in spec.items():
+                s_dict = s_dict["scopes"]
+                if b_name not in crud_spec:
+                    crud_spec[b_name] = dict()
+                    crud_spec[b_name]["scopes"] = dict()
+                bucket = BucketUtils.get_bucket_obj(buckets, b_name)
+                for s_name, c_dict in s_dict.items():
+                    if s_name not in crud_spec[b_name]["scopes"]:
+                        crud_spec[b_name]["scopes"][s_name] = dict()
+                        crud_spec[b_name]["scopes"][
+                            s_name]["collections"] = dict()
+
+                    c_dict = c_dict["collections"]
+                    scope = bucket.scopes[s_name]
+                    for c_name, _ in c_dict.items():
+                        if c_name not in crud_spec[b_name]["scopes"][
+                                s_name]["collections"]:
+                            crud_spec[b_name]["scopes"][
+                                s_name]["collections"][c_name] = dict()
+                        c_crud_data = crud_spec[b_name]["scopes"][
+                            s_name]["collections"][c_name]
+                        collection = scope.collections[c_name]
+                        target_ops = DocLoading.Bucket.DOC_OPS \
+                            + DocLoading.Bucket.SUB_DOC_OPS
+                        if collection_recreated:
+                            target_ops = [DocLoading.Bucket.DocOps.CREATE]
+                        for op_type in target_ops:
+                            if collection_recreated:
+                                num_items = \
+                                    DocLoaderUtils \
+                                    .__get_required_num_from_percentage(
+                                        collection,
+                                        100)
+                            else:
+                                num_items = \
+                                    DocLoaderUtils \
+                                    .__get_required_num_from_percentage(
+                                        collection,
+                                        spec_percent_data[op_type])
+
+                            if num_items == 0:
+                                continue
+
+                            c_crud_data[op_type] = dict()
+                            c_crud_data[op_type]["target_items"] = num_items
+                            if op_type in DocLoading.Bucket.DOC_OPS:
+                                c_crud_data[op_type]["doc_gen"] = \
+                                    DocLoaderUtils.get_doc_generator(
+                                        op_type,
+                                        collection,
+                                        num_items,
+                                        doc_key,
+                                        mutation_num=mutation_num)
+                            else:
+                                c_crud_data[op_type]["xattr_test"] = \
+                                    is_xattr_test
+                                c_crud_data[op_type]["doc_gen"] = \
+                                    DocLoaderUtils.get_subdoc_generator(
+                                        op_type,
+                                        collection,
+                                        num_items,
+                                        doc_key)
         spec_percent_data = dict()
 
         num_collection_to_load = input_spec.get(
@@ -238,6 +300,9 @@ class DocLoaderUtils(object):
         doc_key = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_collections")
 
+        # Fetch  number of items to be loaded for newly created collections
+        num_items_for_new_collections = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS, 0)
         # Fetch CRUD percentage from given spec
         spec_percent_data["create"] = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION, 0)
@@ -262,79 +327,33 @@ class DocLoaderUtils(object):
         spec_percent_data["lookup"] = input_spec["subdoc_crud"].get(
             MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION, 0)
 
-        crud_spec = BucketUtils.get_random_collections(
+        crud_spec = dict()
+        doc_crud_spec = BucketUtils.get_random_collections(
             buckets,
             num_collection_to_load,
             num_scopes_to_consider,
             num_buckets_to_consider)
-        for bucket_name, scope_dict in crud_spec.items():
-            scope_dict = scope_dict["scopes"]
-            bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
-            for scope_name, collection_dict in scope_dict.items():
-                collection_dict = collection_dict["collections"]
-                scope = bucket.scopes[scope_name]
-                for c_name, c_data in collection_dict.items():
-                    collection = scope.collections[c_name]
-                    for op_type in DocLoaderUtils.doc_op_types:
-                        target_num_items = \
-                            DocLoaderUtils.__get_required_num_from_percentage(
-                                collection, spec_percent_data[op_type])
-                        if target_num_items == 0:
-                            continue
-
-                        c_data[op_type] = dict()
-                        c_data[op_type]["target_items"] = target_num_items
-                        c_data[op_type]["doc_gen"] = \
-                            DocLoaderUtils.get_doc_generator(
-                                op_type,
-                                collection,
-                                c_data[op_type]["target_items"],
-                                doc_key,
-                                mutation_num=mutation_num)
-
-        subdoc_crud_spec = BucketUtils.get_random_collections(
+        sub_doc_crud_spec = BucketUtils.get_random_collections(
             buckets,
             num_collection_to_load,
             num_scopes_to_consider,
             num_buckets_to_consider)
-        for bucket_name, scope_dict in subdoc_crud_spec.items():
-            scope_dict = scope_dict["scopes"]
-            if bucket_name not in crud_spec:
-                crud_spec[bucket_name] = dict()
-                crud_spec[bucket_name]["scopes"] = dict()
-            bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
-            for scope_name, collection_dict in scope_dict.items():
-                if scope_name not in crud_spec[bucket_name]["scopes"]:
-                    crud_spec[bucket_name]["scopes"][scope_name] = dict()
-                    crud_spec[bucket_name]["scopes"][
-                        scope_name]["collections"] = dict()
 
-                collection_dict = collection_dict["collections"]
-                scope = bucket.scopes[scope_name]
-                for c_name, _ in collection_dict.items():
-                    if c_name not in crud_spec[bucket_name]["scopes"][
-                            scope_name]["collections"]:
-                        crud_spec[bucket_name]["scopes"][
-                            scope_name]["collections"][c_name] = dict()
-                    collection = scope.collections[c_name]
-                    for op_type in DocLoaderUtils.subdoc_op_types:
-                        target_num_items = \
-                            DocLoaderUtils.__get_required_num_from_percentage(
-                                collection, spec_percent_data[op_type])
-                        if target_num_items == 0:
-                            continue
+        # Add new num_items for newly added collections
+        for b_name, s_dict in op_details["collections_added"].items():
+            bucket = BucketUtils.get_bucket_obj(buckets, b_name)
+            for s_name, c_dict in s_dict["scopes"].items():
+                for c_name, _ in c_dict["collections"].items():
+                    bucket.scopes[s_name].collections[c_name].num_items = \
+                        num_items_for_new_collections
 
-                        c_data = crud_spec[bucket_name]["scopes"][
-                            scope_name]["collections"][c_name]
-                        c_data[op_type] = dict()
-                        c_data[op_type]["target_items"] = target_num_items
-                        c_data[op_type]["xattr_test"] = xattr_test
-                        c_data[op_type]["doc_gen"] = \
-                            DocLoaderUtils.get_subdoc_generator(
-                                op_type,
-                                collection,
-                                c_data[op_type]["target_items"],
-                                doc_key)
+        create_load_gens(doc_crud_spec,
+                         is_xattr_test=xattr_test)
+        create_load_gens(op_details["collections_added"],
+                         is_xattr_test=xattr_test,
+                         collection_recreated=True)
+        create_load_gens(sub_doc_crud_spec,
+                         is_xattr_test=xattr_test)
         return crud_spec
 
     @staticmethod
@@ -728,7 +747,6 @@ class ScopeUtils(CollectionUtils):
             raise Exception("delete_scope failed")
 
         ScopeUtils.mark_scope_as_dropped(bucket, scope_name)
-        ScopeUtils.log.debug("Scope '%s:%s' deleted" % (bucket, scope_name))
 
     @staticmethod
     def create_scopes(cluster, bucket, num_scopes, scope_name=None,
@@ -3979,7 +3997,8 @@ class BucketUtils(ScopeUtils):
                              execution using input_spec
         """
 
-        def update_ops_details_dict(target_key, bucket_data_to_update):
+        def update_ops_details_dict(target_key, bucket_data_to_update,
+                                    fetch_collections=False):
             dict_to_update = ops_details[target_key]
             for bucket_name, b_data in bucket_data_to_update.items():
                 if bucket_name not in dict_to_update:
@@ -3991,6 +4010,12 @@ class BucketUtils(ScopeUtils):
                         scope_dict[scope_name] = dict()
                         scope_dict[scope_name]["collections"] = dict()
                     collection_dict = scope_dict[scope_name]["collections"]
+                    if fetch_collections:
+                        bucket = BucketUtils.get_bucket_obj(buckets,
+                                                            bucket_name)
+                        scope_data["collections"] = \
+                            bucket.scopes[scope_name].collections
+
                     for collection_name in scope_data["collections"].keys():
                         collection_dict[collection_name] = dict()
 
@@ -4024,7 +4049,10 @@ class BucketUtils(ScopeUtils):
                     ops_details["collections_added"][bucket_name][
                         "scopes"].update(created_scope_collection_details)
             elif operation_type == "drop":
-                update_ops_details_dict("scopes_dropped", ops_spec)
+                update_ops_details_dict("scopes_dropped", buckets_spec,
+                                        fetch_collections=True)
+                update_ops_details_dict("collections_dropped", buckets_spec,
+                                        fetch_collections=True)
                 for bucket_name, b_data in buckets_spec.items():
                     bucket = BucketUtils.get_bucket_obj(buckets,
                                                         bucket_name)
@@ -4034,8 +4062,9 @@ class BucketUtils(ScopeUtils):
                                               scope_name)
             elif operation_type == "recreate":
                 DocLoaderUtils.log.debug("Recreating scopes")
-                update_ops_details_dict("scopes_added", ops_spec)
-                update_ops_details_dict("collections_added", ops_spec)
+                update_ops_details_dict("scopes_added", buckets_spec)
+                update_ops_details_dict("collections_added", buckets_spec,
+                                        fetch_collections=True)
                 for bucket_name, b_data in buckets_spec.items():
                     bucket = BucketUtils.get_bucket_obj(buckets,
                                                         bucket_name)

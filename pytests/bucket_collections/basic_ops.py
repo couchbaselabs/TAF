@@ -11,6 +11,7 @@ from sdk_exceptions import SDKException
 from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 
+
 class BasicOps(CollectionBase):
     def setUp(self):
         super(BasicOps, self).setUp()
