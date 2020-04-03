@@ -1,6 +1,7 @@
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection, RestHelper
+from BucketLib.BucketOperations import BucketHelper
 
 
 class CollectionsRebalance(CollectionBase):
@@ -12,7 +13,9 @@ class CollectionsRebalance(CollectionBase):
         self.data_load_stage = self.input.param("data_load_stage", "before")
         self.data_load_type = self.input.param("data_load_type", "sync")
         self.nodes_swap = self.input.param("nodes_swap", 1)
+        self.nodes_failover = self.input.param("nodes_failover", 1)
         self.step_count = self.input.param("step_count", -1)
+        self.replicas_for_failover = self.input.param("replicas_for_failover", 3)
 
     def tearDown(self):
         super(CollectionsRebalance, self).tearDown()
@@ -101,12 +104,35 @@ class CollectionsRebalance(CollectionBase):
                 self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                    node.ip, self.cluster.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
-        elif rebalance_operation == "graceful_failover":
-            operation = self.task.async_failover(known_nodes, failover_nodes=failover_nodes,
-                                                  graceful=True, wait_for_pending=wait_for_pending)
-        elif rebalance_operation == "hard_failover":
-            operation = self.task.async_failover(known_nodes, failover_nodes=failover_nodes,
-                                                  graceful=False, wait_for_pending=wait_for_pending)
+        elif rebalance_operation == "graceful_failover_rebalance_out":
+            self.log.info("Updating all the bucket replicas to {0}" .format(self.replicas_for_failover))
+            for i in range(len(self.bucket_util.buckets)):
+                bucket_helper = BucketHelper(self.cluster.master)
+                bucket_helper.change_bucket_props(
+                    self.bucket_util.buckets[i], replicaNumber=self.replicas_for_failover)
+            task = self.task.async_rebalance(known_nodes, [], [])
+            self.task.jython_task_manager.get_task_result(task)
+            self.log.info("Bucket stats before failover")
+            self.bucket_util.print_bucket_stats()
+            for failover_node in failover_nodes:
+                failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                     graceful=True, wait_for_pending=wait_for_pending)
+                self.task.jython_task_manager.get_task_result(failover_operation)
+            operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+        elif rebalance_operation == "hard_failover_rebalance_out":
+            self.log.info("Updating all the bucket replicas to {0}".format(self.replicas_for_failover))
+            for i in range(len(self.bucket_util.buckets)):
+                bucket_helper = BucketHelper(self.cluster.master)
+                bucket_helper.change_bucket_props(
+                    self.bucket_util.buckets[i], replicaNumber=self.replicas_for_failover)
+            task = self.task.async_rebalance(known_nodes, [], [])
+            self.task.jython_task_manager.get_task_result(task)
+            self.log.info("Bucket stats before failover")
+            for failover_node in failover_nodes:
+                failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                     graceful=False, wait_for_pending=wait_for_pending)
+                self.task.jython_task_manager.get_task_result(failover_operation)
+            operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
         else:
             self.fail("rebalance_operation is not defined")
         return operation
@@ -176,6 +202,18 @@ class CollectionsRebalance(CollectionBase):
                                                            self.nodes_init:self.nodes_init + self.nodes_in],
                                                  remove_nodes=self.cluster.servers[:self.nodes_init][-self.nodes_out:],
                                                  )
+        elif rebalance_operation == "graceful_failover_rebalance_out":
+            rebalance = self.rebalance_operation(rebalance_operation="graceful_failover_rebalance_out",
+                                                 known_nodes=self.cluster.servers[:self.nodes_init],
+                                                 failover_nodes=self.cluster.servers[:self.nodes_init]
+                                                 [-self.nodes_failover:],
+                                                 )
+        elif rebalance_operation == "hard_failover_rebalance_out":
+            rebalance = self.rebalance_operation(rebalance_operation="hard_failover_rebalance_out",
+                                                 known_nodes=self.cluster.servers[:self.nodes_init],
+                                                 failover_nodes=self.cluster.servers[:self.nodes_init]
+                                                 [-self.nodes_failover:],
+                                                 )
         if self.data_load_stage == "during":
             if self.data_load_type == "async":
                 tasks = self.async_data_load()
@@ -205,3 +243,9 @@ class CollectionsRebalance(CollectionBase):
 
     def test_data_load_collections_with_rebalance_in_out(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in_out")
+
+    def test_data_load_collections_with_graceful_failover_rebalance_out(self):
+        self.load_collections_with_rebalance(rebalance_operation="graceful_failover_rebalance_out")
+
+    def test_data_load_collections_with_hard_failover_rebalance_out(self):
+        self.load_collections_with_rebalance(rebalance_operation="hard_failover_rebalance_out")
