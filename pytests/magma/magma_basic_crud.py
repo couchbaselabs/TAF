@@ -329,3 +329,207 @@ class BasicCrudTests(MagmaBaseTest):
                           disk usage {} by four times"
                           .format(_res, i+1, self.disk_usage))
         self.log.info("====test_multiUpdate_delete ends====")
+
+    def test_update_rev_update(self):
+        count = 0
+        mutated = 1
+        for i in range(self.test_itr):
+            while count < self.update_count:
+                for node in self.cluster.nodes_in_cluster:
+                    shell = RemoteMachineShellConnection(node)
+                    shell.kill_memcached()
+                    shell.disconnect()
+                    self.assertTrue(self.bucket_util._wait_warmup_completed(
+                                    [self.cluster_util.cluster.master],
+                                    self.bucket_util.buckets[0],
+                                    wait_time=self.wait_timeout * 10))
+                tasks_info = dict()
+                data_validation = []
+                g_update = doc_generator(
+                    self.key, 0, self.num_items//2,
+                    doc_size=self.doc_size,
+                    doc_type=self.doc_type,
+                    target_vbucket=self.target_vbucket,
+                    vbuckets=self.cluster_util.vbuckets,
+                    key_size=self.key_size,
+                    mutate=mutated,
+                    randomize_doc_size=self.randomize_doc_size,
+                    randomize_value=self.randomize_value,
+                    mix_key_size=self.mix_key_size)
+                mutated += 1
+                tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                    self.cluster, g_update, "update", 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level, pause_secs=5,
+                    timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                    retry_exceptions=self.retry_exceptions,
+                    ignore_exceptions=self.ignore_exceptions)
+                tasks_info.update(tem_tasks_info.items())
+                start = - (self.num_items // 2 - 1)
+                end = 1
+                r_update = doc_generator(
+                    self.key, start, end,
+                    doc_size=self.doc_size,
+                    doc_type=self.doc_type,
+                    target_vbucket=self.target_vbucket,
+                    vbuckets=self.cluster_util.vbuckets,
+                    key_size=self.key_size,
+                    mutate=mutated,
+                    randomize_doc_size=self.randomize_doc_size,
+                    randomize_value=self.randomize_value,
+                    mix_key_size=self.mix_key_size)
+                mutated += 1
+                if self.next_half:
+                    mutated -= 2
+                    start = - (self.num_items - 1)
+                    end = - (self.num_items // 2 - 1)
+                    r_update = doc_generator(
+                        self.key, start, end,
+                        doc_size=self.doc_size,
+                        doc_type=self.doc_type,
+                        target_vbucket=self.target_vbucket,
+                        vbuckets=self.cluster_util.vbuckets,
+                        key_size=self.key_size,
+                        mutate=mutated,
+                        randomize_doc_size=self.randomize_doc_size,
+                        randomize_value=self.randomize_value,
+                        mix_key_size=self.mix_key_size)
+                    mutated += 1
+                    tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                        self.cluster, r_update, "update", 0,
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency,
+                        persist_to=self.persist_to,
+                        replicate_to=self.replicate_to,
+                        durability=self.durability_level,
+                        pause_secs=5,
+                        timeout_secs=self.sdk_timeout,
+                        retries=self.sdk_retries,
+                        retry_exceptions=self.retry_exceptions,
+                        ignore_exceptions=self.ignore_exceptions)
+                    tasks_info.update(tem_tasks_info.items())
+                for task in tasks_info:
+                    self.task_manager.get_task_result(task)
+                self.bucket_util.verify_doc_op_task_exceptions(
+                    tasks_info, self.cluster)
+                self.bucket_util.log_doc_ops_task_failures(tasks_info)
+                if not self.next_half:
+                    tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                        self.cluster, r_update, "update", 0,
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency,
+                        persist_to=self.persist_to,
+                        replicate_to=self.replicate_to,
+                        durability=self.durability_level,
+                        pause_secs=5,
+                        timeout_secs=self.sdk_timeout,
+                        retries=self.sdk_retries,
+                        retry_exceptions=self.retry_exceptions,
+                        ignore_exceptions=self.ignore_exceptions)
+                    for task in tem_tasks_info:
+                        self.task_manager.get_task_result(task)
+                    self.bucket_util.verify_doc_op_task_exceptions(
+                            tem_tasks_info, self.cluster)
+                    self.bucket_util.log_doc_ops_task_failures(tem_tasks_info)
+                self.log.info("Waiting for ep-queues to get drained")
+                self.bucket_util._wait_for_stats_all_buckets()
+                if self.next_half:
+                    data_validation.extend([self.task.async_validate_docs(
+                        self.cluster, self.bucket_util.buckets[0],
+                        g_update, "update", 0,
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency,
+                        pause_secs=5,
+                        timeout_secs=self.sdk_timeout),
+                        self.task.async_validate_docs(
+                            self.cluster,
+                            self.bucket_util.buckets[0],
+                            r_update, "update", 0,
+                            batch_size=self.batch_size,
+                            process_concurrency=self.process_concurrency,
+                            pause_secs=5, timeout_secs=self.sdk_timeout)])
+                else:
+                    data_validation.append(self.task.async_validate_docs(
+                        self.cluster, self.bucket_util.buckets[0],
+                        r_update, "update", 0,
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency,
+                        pause_secs=5,
+                        timeout_secs=self.sdk_timeout))
+                for task in data_validation:
+                    self.task.jython_task_manager.get_task_result(task)
+                disk_usage = self.get_disk_usage(
+                    self.bucket_util.get_all_buckets()[0],
+                    self.servers,
+                    paths=["magma.*", "magma.*/wal"]
+                    )
+                _res = disk_usage[0] - disk_usage[1]
+                self.log.info("disk usage after update count {}\
+                is {}".format(count+1, _res))
+                self.assertIs(_res > 4 * self.disk_usage, False,
+                              "Disk Usage {} After Update Count {} exceeds Actual \
+                              disk usage {} by four times"
+                              .format(_res, count, self.disk_usage))
+                count += 1
+            self.update_count += self.update_count
+            start_del = 0
+            end_del = self.num_items//2
+            if self.rev_del:
+                start_del = -int(self.num_items//2 - 1)
+                end_del = 1
+            self.gen_delete = doc_generator(
+                self.key, start_del, end_del,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size)
+            self.log.info("Deleting num_items//2 docs")
+            self.doc_ops = "delete"
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            disk_usage = self.get_disk_usage(
+                self.bucket_util.get_all_buckets()[0],
+                self.servers,
+                paths=["magma.*", "magma.*/wal"])
+            _res = disk_usage[0] - disk_usage[1]
+            self.log.info("disk usage after delete is {}".format(_res))
+            self.assertIs(_res > 4 * self.disk_usage, False,
+                          "Disk Usage {} After Delete count {} exceeds Actual \
+                          disk usage {} by four times"
+                          .format(_res, i+1, self.disk_usage))
+            self.gen_create = copy.deepcopy(self.gen_delete)
+            self.log.info("Recreating num_items//2 docs")
+            self.doc_ops = "create"
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            d_validation = self.task.async_validate_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                self.gen_create, "create", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                pause_secs=5, timeout_secs=self.sdk_timeout)
+            self.task.jython_task_manager.get_task_result(d_validation)
+            disk_usage = self.get_disk_usage(
+                self.bucket_util.get_all_buckets()[0],
+                self.servers,
+                paths=["magma.*", "magma.*/wal"])
+            _res = disk_usage[0] - disk_usage[1]
+            self.log.info("disk usage after new create \
+            is {}".format(_res))
+            self.assertIs(_res > 4 * self.disk_usage, False,
+                          "Disk Usage {} After new Creates count {} exceeds Actual \
+                          disk usage {} by four times"
+                          .format(_res, i+1, self.disk_usage))
+        self.log.info("====test_update_rev_update ends====")

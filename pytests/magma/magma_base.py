@@ -77,6 +77,7 @@ class MagmaBaseTest(BaseTestCase):
         self.doc_size = self.input.param("doc_size", 1024)
         self.test_itr = self.input.param("test_itr", 4)
         self.update_count = self.input.param("update_count", 10)
+        self.next_half = self.input.param("next_half", False)
         start = 0
         end = self.num_items
         if self.rev_write:
