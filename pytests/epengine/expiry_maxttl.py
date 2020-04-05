@@ -465,16 +465,7 @@ class ExpiryMaxTTL(BaseTestCase):
         def_bucket = self.bucket_util.buckets[0]
         self.maxttl = self.input.param("doc_ttl", self.maxttl)
 
-        # Open shell_conn and create Memcached error for testing MaxTTL
-        self.log.info("1. Stopping Memcached on target_nodes")
-        for node in target_nodes:
-            shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstats = Cbstats(shell_conn[node.ip])
-            target_vbuckets += cbstats.vbucket_list(def_bucket.name, "replica")
-            cb_error = CouchbaseError(self.log, shell_conn[node.ip])
-            cb_error.create(CouchbaseError.STOP_MEMCACHED, def_bucket.name)
-
-        self.log.info("2. Initiating the doc_ops with doc TTL")
+        # Open required SDK connections before error_simulation
         gen_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=target_vbuckets,
@@ -485,7 +476,20 @@ class ExpiryMaxTTL(BaseTestCase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            compression=self.sdk_compression)
+            compression=self.sdk_compression,
+            start_task=False)
+
+        # Open shell_conn and create Memcached error for testing MaxTTL
+        self.log.info("1. Stopping Memcached on target_nodes")
+        for node in target_nodes:
+            shell_conn[node.ip] = RemoteMachineShellConnection(node)
+            cbstats = Cbstats(shell_conn[node.ip])
+            target_vbuckets += cbstats.vbucket_list(def_bucket.name, "replica")
+            cb_error = CouchbaseError(self.log, shell_conn[node.ip])
+            cb_error.create(CouchbaseError.STOP_MEMCACHED, def_bucket.name)
+
+        self.log.info("2. Initiating the doc_ops with doc TTL")
+        self.task_manager.add_new_task(doc_op_task)
 
         self.sleep(self.maxttl, "3. Sleep for max_ttl time")
 
