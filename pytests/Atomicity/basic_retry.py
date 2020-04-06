@@ -262,6 +262,7 @@ class basic_ops(BaseTestCase):
         if exception:
             self.set_exception(Exception(exception))
 
+    def basic_concurrency(self):
         self.crash = self.input.param("crash", False)
 
         self.doc_gen(self.num_items)
