@@ -217,25 +217,11 @@ class Cbstats(CbCmdBase):
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        pattern = "[ \t]*manifest:scopes:([0-9xa-h]+):collections:" \
-                  "[ \t]+(a-zA-Z_0-9%-)+"
-        regexp = re.compile(pattern)
-        scope_name_match = regexp.findall(str(output))
-        for scope in scope_name_match:
-            scope_name = scope.group(1)
-            collection_data[scope_name] = dict()
-            collection_data[scope_name]["id"] = scope.group(0)
-
-        # Cluster_run case
-        if type(output) is str:
-            output = output.split("\n")
-
-        for line in output:
-            match_result = regexp.match(line)
-            if match_result:
-                scope_data = match_result.group(1)
-                break
-
+        output = str(output)
+        bucket_uid_pattern = "[ \t]*uid[ \t:]+([0-9]+)"
+        bucket_uid_pattern = re.compile(bucket_uid_pattern)
+        bucket_uid = bucket_uid_pattern.findall(output)
+        collection_data["uid"] = int(bucket_uid[0])
         return collection_data
 
     def get_stats(self, bucket_name, stat_name, field_to_grep=None):

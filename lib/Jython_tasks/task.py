@@ -3100,6 +3100,7 @@ class BucketCreateFromSpecTask(Task):
                                       content))
                 self.result = False
                 return
+            self.bucket_obj.stats.increment_manifest_uid()
 
         for collection_name, collection_spec \
                 in scope_spec["collections"].items():
@@ -3132,6 +3133,7 @@ class BucketCreateFromSpecTask(Task):
                                   scope_name,
                                   collection_spec["name"],
                                   content))
+        self.bucket_obj.stats.increment_manifest_uid()
 
 
 class MonitorActiveTask(Task):

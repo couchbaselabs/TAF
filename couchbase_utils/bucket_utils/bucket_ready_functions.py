@@ -498,6 +498,7 @@ class CollectionUtils(DocLoaderUtils):
                 % (bucket, scope_name, collection_name, content))
             raise Exception("create_collection failed")
 
+        bucket.stats.increment_manifest_uid()
         CollectionUtils.create_collection_object(bucket,
                                                  scope_name,
                                                  collection_spec)
@@ -524,6 +525,7 @@ class CollectionUtils(DocLoaderUtils):
                 % (bucket, scope_name, collection_name, content))
             raise Exception("delete_collection")
 
+        bucket.stats.increment_manifest_uid()
         CollectionUtils.mark_collection_as_dropped(bucket,
                                                    scope_name,
                                                    collection_name)
@@ -726,6 +728,7 @@ class ScopeUtils(CollectionUtils):
                                  % (bucket, scope_name, content))
             raise Exception("create_scope failed")
 
+        bucket.stats.increment_manifest_uid()
         ScopeUtils.create_scope_object(bucket, scope_spec)
 
     @staticmethod
@@ -746,6 +749,7 @@ class ScopeUtils(CollectionUtils):
                                  % (bucket, scope_name, content))
             raise Exception("delete_scope failed")
 
+        bucket.stats.increment_manifest_uid()
         ScopeUtils.mark_scope_as_dropped(bucket, scope_name)
 
     @staticmethod
@@ -3810,6 +3814,22 @@ class BucketUtils(ScopeUtils):
         # TODO: See _warmup_check in WarmUpTests class
         self.sleep(60)
 
+    def validate_manifest_uid(self, bucket):
+        status = True
+        for node in self.cluster_util.get_kv_nodes():
+            shell = RemoteMachineShellConnection(node)
+            cbstats = Cbstats(shell)
+            col_details = cbstats.get_collection_details(bucket.name)
+            if col_details["uid"] != bucket.stats.manifest_uid:
+                BucketUtils.log.error("%s - Bucket UID mismatch. "
+                                      "Expected: %s, Actual: %s"
+                                      % (node.ip,
+                                         bucket.stats.manifest_uid,
+                                         col_details["uid"]))
+                status = False
+            shell.disconnect()
+        return status
+
     def get_expected_total_num_items(self, bucket):
         """
         Function to calculate the expected num_items under the given bucket.
@@ -3955,6 +3975,9 @@ class BucketUtils(ScopeUtils):
 
         # Validate total expected doc_count matches with the overall bucket
         for bucket in self.buckets:
+            status = self.validate_manifest_uid(bucket)
+            self.assertTrue(status, "Bucket manifest UID mismatch!")
+
             expected_num_items = self.get_expected_total_num_items(bucket)
             self.verify_stats_for_bucket(bucket, expected_num_items,
                                          timeout=timeout)

@@ -11,10 +11,22 @@ class BucketStats(object):
         self.diskUsed = 0
         self.memUsed = 0
         self.ram = 0
+        self.manifest_uid = 0
+        self.mutex = Lock()
         # Used to manage Bucket stats task
         self.stats_task = {"count": 0,
                            "object": None,
                            "lock": Lock()}
+
+    def increment_manifest_uid(self):
+        """
+        Increments the manifest UID of bucket object.
+        :return: None
+        """
+        # Uses Lock to safely update the uid during threaded execution
+        self.mutex.acquire()
+        self.manifest_uid += 1
+        self.mutex.release()
 
     def manage_task(self, operation, task_manager,
                     cluster=None, bucket=None,
