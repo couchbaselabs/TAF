@@ -822,6 +822,7 @@ class BasicOps(CollectionBase):
     def test_load_collection(self):
         """ Initial load collections,
         update and delete docs randomly in collection"""
+        run_compaction = self.input.param("compaction", False)
         load_spec = self.input.param("load_spec", "initial_load")
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(load_spec)
@@ -831,6 +832,14 @@ class BasicOps(CollectionBase):
                                                 self.bucket_util.buckets,
                                                 doc_loading_spec,
                                                 mutation_num=0)
+
+        if run_compaction:
+            compaction_task = self.task.async_compact_bucket(
+                                self.cluster.master, self.bucket)
+            self.task.jython_task_manager.get_task_result(compaction_task)
+            if compaction_task.result is False:
+                self.fail("compaction failed")
+
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
