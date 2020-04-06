@@ -1509,7 +1509,7 @@ class LoadDocumentsGeneratorsTask(Task):
         generators = []
         tasks = []
         gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
+        gen_end = int(generator.end)
         gen_range = max(int((generator.end - generator.start) / self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
@@ -1667,7 +1667,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
         generators = list()
         tasks = list()
         gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
+        gen_end = int(generator.end)
         gen_range = max(int((generator.end - generator.start) /
                             self.process_concurrency),
                         1)
@@ -2101,7 +2101,7 @@ class DocumentsValidatorTask(Task):
         generators = []
         tasks = []
         gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
+        gen_end = int(generator.end)
         gen_range = max(int((generator.end - generator.start) / self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(generator)
@@ -3892,7 +3892,7 @@ class Atomicity(Task):
         generators = []
         tasks = []
         gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
+        gen_end = int(generator.end)
 
         gen_range = max(int((generator.end - generator.start)/self.process_concurrency), 1)
         for pos in range(gen_start, gen_end, gen_range):

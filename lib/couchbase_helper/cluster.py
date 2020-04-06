@@ -112,7 +112,7 @@ class ServerTasks(object):
                                                 generator.start,
                                                 generator.end)
             gen_start = int(generator.start)
-            gen_end = max(int(generator.end), 1)
+            gen_end = int(generator.end)
             gen_range = max(int((generator.end - generator.start)
                                 / process_concurrency), 1)
             for _ in range(gen_start, gen_end, gen_range):
@@ -196,7 +196,7 @@ class ServerTasks(object):
                             "type SubdocDocumentGenerator")
         clients = []
         gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
+        gen_end = int(generator.end)
         gen_range = max(int(
             (generator.end - generator.start) / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
@@ -272,7 +272,7 @@ class ServerTasks(object):
         bucket_list = list()
         client_list = list()
         gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
+        gen_end = int(generator.end)
         gen_range = max(int((generator.end - generator.start)
                             / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
