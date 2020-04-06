@@ -115,11 +115,35 @@ class CollectionsRebalance(CollectionBase):
             self.task.jython_task_manager.get_task_result(task)
             self.log.info("Bucket stats before failover")
             self.bucket_util.print_bucket_stats()
-            for failover_node in failover_nodes:
-                failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                     graceful=True, wait_for_pending=wait_for_pending)
-                self.task.jython_task_manager.get_task_result(failover_operation)
-            operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+            if step_count == -1:
+                for failover_node in failover_nodes:
+                    failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                         graceful=True, wait_for_pending=wait_for_pending)
+                    self.task.jython_task_manager.get_task_result(failover_operation)
+                    self.assertTrue(failover_operation.result, "Failover Failed")
+                operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+            else:
+                # list of lists each of length step_count
+                failover_list = []
+                for i in range(0, len(failover_nodes), step_count):
+                    if i + step_count >= len(failover_nodes):
+                        failover_list.append(failover_nodes[i:])
+                    else:
+                        failover_list.append(failover_nodes[i:i + step_count])
+                # For each set of step_count number of failover nodes we failover and rebalance them out
+                iter_count = 0
+                for new_failover_nodes in failover_list:
+                    for failover_node in new_failover_nodes:
+                        failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                                      graceful=True, wait_for_pending=wait_for_pending)
+                        self.task.jython_task_manager.get_task_result(failover_operation)
+                        self.assertTrue(failover_operation.result, "Failover Failed")
+                    operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes)
+                    iter_count = iter_count + 1
+                    known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
+                    if iter_count == len(failover_list):
+                        continue
+                    self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "hard_failover_rebalance_out":
             self.log.info("Updating all the bucket replicas to {0}".format(self.replicas_for_failover))
             for i in range(len(self.bucket_util.buckets)):
@@ -129,11 +153,36 @@ class CollectionsRebalance(CollectionBase):
             task = self.task.async_rebalance(known_nodes, [], [])
             self.task.jython_task_manager.get_task_result(task)
             self.log.info("Bucket stats before failover")
-            for failover_node in failover_nodes:
-                failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                     graceful=False, wait_for_pending=wait_for_pending)
-                self.task.jython_task_manager.get_task_result(failover_operation)
-            operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+            self.bucket_util.print_bucket_stats()
+            if step_count == -1:
+                for failover_node in failover_nodes:
+                    failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                                  graceful=False, wait_for_pending=wait_for_pending)
+                    self.task.jython_task_manager.get_task_result(failover_operation)
+                    self.assertTrue(failover_operation.result, "Failover Failed")
+                operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+            else:
+                # list of lists each of length step_count
+                failover_list = []
+                for i in range(0, len(failover_nodes), step_count):
+                    if i + step_count >= len(failover_nodes):
+                        failover_list.append(failover_nodes[i:])
+                    else:
+                        failover_list.append(failover_nodes[i:i + step_count])
+                # For each set of step_count number of failover nodes we failover and rebalance them out
+                iter_count = 0
+                for new_failover_nodes in failover_list:
+                    for failover_node in new_failover_nodes:
+                        failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                                      graceful=False, wait_for_pending=wait_for_pending)
+                        self.task.jython_task_manager.get_task_result(failover_operation)
+                        self.assertTrue(failover_operation.result, "Failover Failed")
+                    operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes)
+                    iter_count = iter_count + 1
+                    known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
+                    if iter_count == len(failover_list):
+                        continue
+                    self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "graceful_failover_recovery":
             self.log.info("Updating all the bucket replicas to {0}" .format(self.replicas_for_failover))
             for i in range(len(self.bucket_util.buckets)):
@@ -144,15 +193,43 @@ class CollectionsRebalance(CollectionBase):
             self.task.jython_task_manager.get_task_result(task)
             self.log.info("Bucket stats before failover")
             self.bucket_util.print_bucket_stats()
-            for failover_node in failover_nodes:
-                failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                     graceful=True, wait_for_pending=wait_for_pending)
-                self.task.jython_task_manager.get_task_result(failover_operation)
-            # Mark the failover nodes for recovery
-            for failover_node in failover_nodes:
-                self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
-            # Rebalance all the nodes
-            operation = self.task.async_rebalance(known_nodes, [], [])
+            if(step_count == -1):
+                for failover_node in failover_nodes:
+                    failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                         graceful=True, wait_for_pending=wait_for_pending)
+                    self.task.jython_task_manager.get_task_result(failover_operation)
+                    self.assertTrue(failover_operation.result, "Failover Failed")
+                # Mark the failover nodes for recovery
+                for failover_node in failover_nodes:
+                    self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
+                # Rebalance all the nodes
+                operation = self.task.async_rebalance(known_nodes, [], [])
+            else:
+                # list of lists each of length step_count
+                failover_list = []
+                for i in range(0, len(failover_nodes), step_count):
+                    if i + step_count >= len(failover_nodes):
+                        failover_list.append(failover_nodes[i:])
+                    else:
+                        failover_list.append(failover_nodes[i:i + step_count])
+                # For each set of step_count number of failover nodes we failover and recover
+                iter_count = 0
+                for new_failover_nodes in failover_list:
+                    for failover_node in new_failover_nodes:
+                        failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                                      graceful=True, wait_for_pending=wait_for_pending)
+
+                        self.task.jython_task_manager.get_task_result(failover_operation)
+                        self.assertTrue(failover_operation.result, "Failover Failed")
+                    # Mark the failover nodes for recovery
+                    for failover_node in new_failover_nodes:
+                        self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
+                                                    recoveryType=self.recovery_type)
+                    operation = self.task.async_rebalance(known_nodes, [], [])
+                    iter_count = iter_count + 1
+                    if iter_count == len(failover_list):
+                        continue
+                    self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "hard_failover_recovery":
             self.log.info("Updating all the bucket replicas to {0}" .format(self.replicas_for_failover))
             for i in range(len(self.bucket_util.buckets)):
@@ -163,15 +240,43 @@ class CollectionsRebalance(CollectionBase):
             self.task.jython_task_manager.get_task_result(task)
             self.log.info("Bucket stats before failover")
             self.bucket_util.print_bucket_stats()
-            for failover_node in failover_nodes:
-                failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                     graceful=False, wait_for_pending=wait_for_pending)
-                self.task.jython_task_manager.get_task_result(failover_operation)
-            # Mark the failover nodes for recovery
-            for failover_node in failover_nodes:
-                self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
-            # Rebalance all the nodes
-            operation = self.task.async_rebalance(known_nodes, [], [])
+            if (step_count == -1):
+                for failover_node in failover_nodes:
+                    failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                                  graceful=False, wait_for_pending=wait_for_pending)
+                    self.task.jython_task_manager.get_task_result(failover_operation)
+                    self.assertTrue(failover_operation.result, "Failover Failed")
+                # Mark the failover nodes for recovery
+                for failover_node in failover_nodes:
+                    self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
+                # Rebalance all the nodes
+                operation = self.task.async_rebalance(known_nodes, [], [])
+            else:
+                # list of lists each of length step_count
+                failover_list = []
+                for i in range(0, len(failover_nodes), step_count):
+                    if i + step_count >= len(failover_nodes):
+                        failover_list.append(failover_nodes[i:])
+                    else:
+                        failover_list.append(failover_nodes[i:i + step_count])
+                # For each set of step_count number of failover nodes we failover and recover
+                iter_count = 0
+                for new_failover_nodes in failover_list:
+                    for failover_node in new_failover_nodes:
+                        failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                                      graceful=False, wait_for_pending=wait_for_pending)
+
+                        self.task.jython_task_manager.get_task_result(failover_operation)
+                        self.assertTrue(failover_operation.result, "Failover Failed")
+                    # Mark the failover nodes for recovery
+                    for failover_node in new_failover_nodes:
+                        self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
+                                                    recoveryType=self.recovery_type)
+                    operation = self.task.async_rebalance(known_nodes, [], [])
+                    iter_count = iter_count + 1
+                    if iter_count == len(failover_list):
+                        continue
+                    self.wait_for_rebalance_to_complete(operation)
         else:
             self.fail("rebalance_operation is not defined")
         return operation
