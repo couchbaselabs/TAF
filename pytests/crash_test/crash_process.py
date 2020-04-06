@@ -316,6 +316,7 @@ class CrashTest(BaseTestCase):
 
         if self.bucket_type == Bucket.Type.EPHEMERAL \
                 and self.process_name == "memcached":
+            self.sleep(10, "Wait for memcached to recover from the crash")
             result = self.task.rebalance(self.servers[:self.nodes_init],
                                          [], [])
             self.assertTrue(result, "Rebalance failed")
