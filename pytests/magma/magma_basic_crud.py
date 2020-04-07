@@ -115,15 +115,29 @@ class BasicCrudTests(MagmaBaseTest):
                 randomize_value=self.randomize_value,
                 mix_key_size=self.mix_key_size)
             if self.doc_size <= 32:
-                disk_usage = self.get_disk_usage(
-                    self.bucket_util.get_all_buckets()[0],
-                    self.servers,
-                    paths=["magma*/kvstore*/rev-000000001/keyIndex",
-                           "magma*/kvstore*/rev-000000001/seqIndex"]
-                    )
-                self.assertIs(disk_usage[0] > disk_usage[1], True,
-                              "Disk Usage for seqIndex After new Creates count {} \
-                               exceeds keyIndex disk usage".format(count+1))
+                for bucket in self.bucket_util.get_all_buckets():
+                    disk_usage = self.get_disk_usage(
+                        bucket, self.servers,
+                        paths=["magma*/kvstore*/rev-000000001/keyIndex",
+                               "magma*/kvstore*/rev-000000001/seqIndex"])
+                    self.assertIs(disk_usage[0] > disk_usage[1], True,
+                                  "For Bucket {} , Disk Usage for seqIndex \
+                                  After new Creates count {} \
+                                  exceeds keyIndex disk \
+                                  usage".format(bucket.name, count+1))
+            if self.standard_buckets > 1:
+                disk_usage = dict()
+                if self.standard_buckets == self.magma_buckets:
+                    for bucket in self.bucket_util.get_all_buckets():
+                        usage = self.get_disk_usage(
+                            bucket, self.servers,
+                            paths=["magma.*", "magma.*/wal"])
+                        disk_usage[bucket.name] = usage[0] - usage[1]
+                    self.assertTrue(
+                        all([disk_usage[disk_usage.keys()[0]] == disk_usage[
+                            key] for key in disk_usage.keys()]),
+                        '''Disk Usage for both the magma buckets
+                        is not equal for same number of docs ''')
             count += 1
         self.log.info("====test_basic_create_read ends====")
 
@@ -180,11 +194,12 @@ class BasicCrudTests(MagmaBaseTest):
             self.log.info("disk usage after update count {} \
             is {}".format(count + 1, _res))
             self.assertIs(
-                _res > 4 * self.disk_usage, False,
-                "Disk Usage {} After Update Count {} exceeds Actual \
-                disk usage {} by four times"
-                .format(_res, count, self.disk_usage)
-                )
+                _res > 4 * self.disk_usage[self.disk_usage.keys()[0]],
+                False, "Disk Usage {} After Update \
+                Count {} exceeds Actual \
+                disk usage {} by four \
+                times".format(_res, count,
+                              self.disk_usage[self.disk_usage.keys()[0]]))
             count += 1
         self.log.info("====test_update_multi ends====")
 
@@ -244,10 +259,13 @@ class BasicCrudTests(MagmaBaseTest):
                 _res = disk_usage[0] - disk_usage[1]
                 self.log.info("disk usage after update count {}\
                 is {}".format(count+1, _res))
-                self.assertIs(_res > 4 * self.disk_usage, False,
-                              "Disk Usage {} After Update Count {} exceeds Actual \
-                              disk usage {} by four times"
-                              .format(_res, count, self.disk_usage))
+                self.assertIs(
+                    _res > 4 * self.disk_usage[self.disk_usage.keys()[0]],
+                    False, "Disk Usage {} After \
+                    Update Count {} exceeds Actual \
+                    disk usage {} by four \
+                    times".format(_res, count,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
                 count += 1
             self.update_count += self.update_count
             self.gen_update = doc_generator(
@@ -290,10 +308,14 @@ class BasicCrudTests(MagmaBaseTest):
                 paths=["magma.*", "magma.*/wal"])
             _res = disk_usage[0] - disk_usage[1]
             self.log.info("disk usage after delete is {}".format(_res))
-            self.assertIs(_res > 4 * self.disk_usage, False,
-                          "Disk Usage {} After Delete count {} exceeds Actual \
-                          disk usage {} by four times"
-                          .format(_res, i+1, self.disk_usage))
+            self.assertIs(
+                _res > 4 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                False, "Disk Usage {} After \
+                Delete count {} exceeds Actual \
+                disk usage {} by four \
+                times".format(_res, i+1,
+                              self.disk_usage[self.disk_usage.keys()[0]]))
             self.gen_create = copy.deepcopy(self.gen_delete)
             self.log.info("Recreating num_items//2 docs")
             self.doc_ops = "create"
@@ -324,10 +346,14 @@ class BasicCrudTests(MagmaBaseTest):
             _res = disk_usage[0] - disk_usage[1]
             self.log.info("disk usage after new create \
             is {}".format(_res))
-            self.assertIs(_res > 4 * self.disk_usage, False,
-                          "Disk Usage {} After new Creates count {} exceeds Actual \
-                          disk usage {} by four times"
-                          .format(_res, i+1, self.disk_usage))
+            self.assertIs(
+                _res > 4 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                False, "Disk Usage {} After \
+                new Creates count {} exceeds \
+                Actual disk usage {} by \
+                four times".format(_res, i+1,
+                                   self.disk_usage[self.disk_usage.keys()[0]]))
         self.log.info("====test_multiUpdate_delete ends====")
 
     def test_update_rev_update(self):
@@ -468,10 +494,13 @@ class BasicCrudTests(MagmaBaseTest):
                 _res = disk_usage[0] - disk_usage[1]
                 self.log.info("disk usage after update count {}\
                 is {}".format(count+1, _res))
-                self.assertIs(_res > 4 * self.disk_usage, False,
-                              "Disk Usage {} After Update Count {} exceeds Actual \
-                              disk usage {} by four times"
-                              .format(_res, count, self.disk_usage))
+                self.assertIs(
+                    _res > 4 * self.disk_usage[self.disk_usage.keys()[0]],
+                    False, "Disk Usage {} After \
+                    Update Count {} exceeds \
+                    Actual disk usage {} by four \
+                    times".format(_res, count,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
                 count += 1
             self.update_count += self.update_count
             start_del = 0
@@ -502,10 +531,13 @@ class BasicCrudTests(MagmaBaseTest):
                 paths=["magma.*", "magma.*/wal"])
             _res = disk_usage[0] - disk_usage[1]
             self.log.info("disk usage after delete is {}".format(_res))
-            self.assertIs(_res > 4 * self.disk_usage, False,
-                          "Disk Usage {} After Delete count {} exceeds Actual \
-                          disk usage {} by four times"
-                          .format(_res, i+1, self.disk_usage))
+            self.assertIs(
+                _res > 4 * self.disk_usage[self.disk_usage.keys()[0]],
+                False, "Disk Usage {} After \
+                Delete count {} exceeds Actual \
+                disk usage {} by four \
+                times".format(_res, i+1,
+                              self.disk_usage[self.disk_usage.keys()[0]]))
             self.gen_create = copy.deepcopy(self.gen_delete)
             self.log.info("Recreating num_items//2 docs")
             self.doc_ops = "create"
@@ -528,8 +560,11 @@ class BasicCrudTests(MagmaBaseTest):
             _res = disk_usage[0] - disk_usage[1]
             self.log.info("disk usage after new create \
             is {}".format(_res))
-            self.assertIs(_res > 4 * self.disk_usage, False,
-                          "Disk Usage {} After new Creates count {} exceeds Actual \
-                          disk usage {} by four times"
-                          .format(_res, i+1, self.disk_usage))
+            self.assertIs(
+                _res > 4 * self.disk_usage[self.disk_usage.keys()[0]],
+                False, "Disk Usage {} After \
+                new Creates count {} exceeds \
+                Actual disk usage {} by four \
+                times".format(_res, i+1,
+                              self.disk_usage[self.disk_usage.keys()[0]]))
         self.log.info("====test_update_rev_update ends====")

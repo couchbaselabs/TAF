@@ -49,7 +49,8 @@ class MagmaBaseTest(BaseTestCase):
         if "cbas" in self.cluster.master.services:
             self.kv_memory -= CBAS_QUOTA
         self.rest.init_cluster_memoryQuota(memoryQuota=self.kv_memory)
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
+        nodes_init = self.cluster.servers[
+            1:self.nodes_init] if self.nodes_init != 1 else []
         if nodes_init:
             result = self.task.rebalance([self.cluster.master], nodes_init, [])
             self.assertTrue(result, "Initial rebalance failed")
@@ -62,6 +63,8 @@ class MagmaBaseTest(BaseTestCase):
             "bucket_eviction_policy",
             Bucket.EvictionPolicy.FULL_EVICTION)
         self.bucket_util.add_rbac_user()
+        # below will come in to picture if we'll have standard_buckets > 1
+        self.magma_buckets = self.input.param("magma_buckets", 0)
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
         if self.standard_buckets == 1:
@@ -108,6 +111,16 @@ class MagmaBaseTest(BaseTestCase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.active_resident_threshold = 100
         # Below start and end var for read generator
+        self.disk_usage = dict()
+        if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
+            for bucket in self.bucket_util.get_all_buckets():
+                disk_usage = self.get_disk_usage(
+                    bucket, self.servers,
+                    paths=["magma.*", "magma.*/wal"])
+                self.disk_usage[bucket.name] = disk_usage[0] - disk_usage[1]
+                self.log.info("Disk usage after Creation of \
+                docs for bucket {} is \
+                 {}".format(bucket.name, self.disk_usage[bucket.name]))
         start = 0
         end = self.num_items
         if self.rev_read:
@@ -124,13 +137,6 @@ class MagmaBaseTest(BaseTestCase):
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value,
             mix_key_size=self.mix_key_size)
-        disk_usage = self.get_disk_usage(
-            self.bucket_util.get_all_buckets()[0],
-            self.servers,
-            paths=["magma.*", "magma.*/wal"])
-        self.disk_usage = disk_usage[0] - disk_usage[1]
-        self.log.info("Disk usage after Creation of \
-        docs is {}".format(self.disk_usage))
         self.gen_create = None
         self.gen_delete = None
         self.gen_update = doc_generator(
@@ -194,7 +200,8 @@ class MagmaBaseTest(BaseTestCase):
             self.num_replicas,
             bucket_count=self.standard_buckets,
             bucket_type=self.bucket_type,
-            storage=self.bucket_storage,
+            storage={"couchstore": self.standard_buckets - self.magma_buckets,
+                     "magma": self.magma_buckets},
             eviction_policy=self.bucket_eviction_policy)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
@@ -344,9 +351,9 @@ class MagmaBaseTest(BaseTestCase):
                 " % os.path.join(RestConnection(server).get_data_path(),
                                  bucket.name, path))[0][0].split('\n')[0])
                 shell.disconnect()
-            self.log.debug("Total Disk usage for \
-            path {} is {}".format(path, usage))
+            self.log.debug("Total Disk usage for bucket with \
+            path {} is {}".format(bucket.name, path, usage))
             disk_usage.append(usage)
-        self.log.debug("disk usage for all \
-        the paths {} is {}".format(paths, disk_usage))
+        self.log.debug("disk usage for bucket {}'s all \
+        paths {} is {}".format(bucket.name, paths, disk_usage))
         return disk_usage

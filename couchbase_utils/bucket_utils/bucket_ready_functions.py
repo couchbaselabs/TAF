@@ -1540,7 +1540,8 @@ class BucketUtils(ScopeUtils):
             bucket_type=Bucket.Type.MEMBASE,
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
             maxttl=0,
-            storage=Bucket.StorageBackend.couchstore,
+            storage={Bucket.StorageBackend.couchstore: 3,
+                     Bucket.StorageBackend.magma: 0},
             compression_mode=Bucket.CompressionMode.ACTIVE):
         success = True
         rest = RestConnection(server)
@@ -1556,18 +1557,22 @@ class BucketUtils(ScopeUtils):
             else:
                 bucket_ram = 100
                 # choose a port that is not taken by this ns server
-            for i in range(0, bucket_count):
-                name = "bucket-{0}".format(i)
-                bucket = Bucket({Bucket.name: name,
-                                 Bucket.ramQuotaMB: bucket_ram,
-                                 Bucket.replicaNumber: replica,
-                                 Bucket.bucketType: bucket_type,
-                                 Bucket.evictionPolicy: eviction_policy,
-                                 Bucket.maxTTL: maxttl,
-                                 Bucket.storageBackend: storage,
-                                 Bucket.compressionMode: compression_mode})
-                tasks[bucket] = self.async_create_bucket(bucket)
-
+            if type(storage) is not dict:
+                storage = {storage: bucket_count}
+            for key in storage.keys():
+                count = 0
+                while count < storage[key]:
+                    name = "{0}-{1}".format(key, count)
+                    bucket = Bucket({Bucket.name: name,
+                                     Bucket.ramQuotaMB: bucket_ram,
+                                     Bucket.replicaNumber: replica,
+                                     Bucket.bucketType: bucket_type,
+                                     Bucket.evictionPolicy: eviction_policy,
+                                     Bucket.maxTTL: maxttl,
+                                     Bucket.storageBackend: key,
+                                     Bucket.compressionMode: compression_mode})
+                    tasks[bucket] = self.async_create_bucket(bucket)
+                    count += 1
             # Wait before checking for warmup
             self.sleep(10)
 
