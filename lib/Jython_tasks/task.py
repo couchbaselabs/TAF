@@ -14,6 +14,9 @@ import socket
 import string
 import time
 from httplib import IncompleteRead
+
+from _threading import Lock
+
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket
@@ -738,8 +741,11 @@ class LoadDocumentsTask(GenericLoadingTask):
             retries=retries, suppress_error_table=suppress_error_table,
             sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection)
-        self.thread_name = "LoadDocumentsTask-%s_%s_%s_%s_%s_%s" \
+        self.thread_name = "LoadDocumentsTask-%s_%s_%s_%s_%s_%s_%s_%s_%s" \
             % (task_identifier,
+               bucket.name,
+               scope,
+               collection,
                generator._doc_gen.start,
                generator._doc_gen.end,
                op_type,
@@ -3143,6 +3149,168 @@ class BucketCreateFromSpecTask(Task):
                                   collection_spec["name"],
                                   content))
         self.bucket_obj.stats.increment_manifest_uid()
+
+
+class MutateDocsFromSpecTask(Task):
+    def __init__(self, cluster, task_manager, loader_spec,
+                 sdk_client_pool,
+                 batch_size=500,
+                 process_concurrency=1,
+                 print_ops_rate=True,
+                 suppress_error_table=False):
+        super(MutateDocsFromSpecTask, self).__init__(
+            "MutateDocsFromSpecTask_%s" % time.time())
+        self.cluster = cluster
+        self.task_manager = task_manager
+        self.loader_spec = loader_spec
+        self.process_concurrency = process_concurrency
+        self.batch_size = batch_size
+        self.print_ops_rate = print_ops_rate
+        self.suppress_error_table = suppress_error_table
+
+        self.fail = dict()
+        self.success = dict()
+        self.load_gen_tasks = list()
+        self.print_ops_rate_tasks = list()
+
+        self.load_gen_task_lock = Lock()
+        self.sdk_client_pool = sdk_client_pool
+
+    def call(self):
+        self.start_task()
+        self.get_tasks()
+        if self.print_ops_rate:
+            for bucket in self.loader_spec.keys():
+                bucket.stats.manage_task(
+                    "start", self.task_manager,
+                    cluster=self.cluster,
+                    bucket=bucket,
+                    monitor_stats=["doc_ops"],
+                    sleep=1)
+        try:
+            for task in self.load_gen_tasks:
+                self.task_manager.add_new_task(task)
+            for task in self.load_gen_tasks:
+                try:
+                    self.task_manager.get_task_result(task)
+                    self.log.debug("Items loaded in task %s are %s"
+                                   % (task.thread_name, task.docs_loaded))
+                    i = 0
+                    while task.docs_loaded < (task.generator._doc_gen.end -
+                                              task.generator._doc_gen.start) \
+                            and i < 60:
+                        self.sleep(1, "Bug in java futures task. "
+                                      "Items loaded in task %s is %s"
+                                   % (task.thread_name, task.docs_loaded))
+                        i += 1
+                except Exception as e:
+                    self.test_log.error(e)
+                finally:
+                    self.fail.update(task.fail)
+                    self.success.update(task.success)
+                    if task.fail.__len__() != 0:
+                        target_log = self.test_log.error
+                    else:
+                        target_log = self.test_log.debug
+                    target_log("Failed to load %d docs from %d to %d"
+                               % (task.fail.__len__(),
+                                  task.generator._doc_gen.start,
+                                  task.generator._doc_gen.end))
+        except Exception as e:
+            self.test_log.error(e)
+            self.set_exception(e)
+        finally:
+            if self.print_ops_rate:
+                for bucket in self.loader_spec.keys():
+                    bucket.stats.manage_task(
+                        "stop", self.task_manager,
+                        cluster=self.cluster,
+                        bucket=bucket,
+                        monitor_stats=["doc_ops"],
+                        sleep=1)
+            self.log.debug("========= Tasks in loadgen pool=======")
+            self.task_manager.print_tasks_in_pool()
+            self.log.debug("======================================")
+            for task in self.load_gen_tasks:
+                self.task_manager.stop_task(task)
+                self.log.debug("Task '%s' complete. Loaded %s items"
+                               % (task.thread_name, task.docs_loaded))
+        self.complete_task()
+        return self.fail
+
+    def create_tasks_for_bucket(self, bucket, scope_dict):
+        load_gen_for_scopes_create_threads = list()
+        for scope_name, collection_dict in scope_dict.items():
+            scope_thread = threading.Thread(
+                target=self.create_tasks_for_scope,
+                args=[bucket, scope_name, collection_dict["collections"]])
+            scope_thread.start()
+            load_gen_for_scopes_create_threads.append(scope_thread)
+        for scope_thread in load_gen_for_scopes_create_threads:
+            scope_thread.join(120)
+
+    def create_tasks_for_scope(self, bucket, scope_name, collection_dict):
+        load_gen_for_collection_create_threads = list()
+        for c_name, c_data in collection_dict.items():
+            collection_thread = threading.Thread(
+                target=self.create_tasks_for_collections,
+                args=[bucket, scope_name, c_name, c_data])
+            collection_thread.start()
+            load_gen_for_collection_create_threads.append(collection_thread)
+
+        for collection_thread in load_gen_for_collection_create_threads:
+            collection_thread.join(60)
+
+    def create_tasks_for_collections(self, bucket, scope_name,
+                                     col_name, col_meta):
+        for op_type, op_data in col_meta.items():
+            generators = list()
+            generator = op_data["doc_gen"]
+            gen_start = int(generator.start)
+            gen_end = int(generator.end)
+            gen_range = max(int((generator.end - generator.start)
+                                / self.process_concurrency),
+                            1)
+            for pos in range(gen_start, gen_end, gen_range):
+                partition_gen = copy.deepcopy(generator)
+                partition_gen.start = pos
+                partition_gen.itr = pos
+                partition_gen.end = pos + gen_range
+                if partition_gen.end > generator.end:
+                    partition_gen.end = generator.end
+                batch_gen = BatchedDocumentGenerator(
+                    partition_gen,
+                    self.batch_size)
+                generators.append(batch_gen)
+            for doc_gen in generators:
+                doc_load_task = LoadDocumentsTask(
+                    self.cluster, bucket, None, doc_gen,
+                    op_type, op_data["doc_ttl"],
+                    scope=scope_name, collection=col_name,
+                    task_identifier=self.thread_name,
+                    sdk_client_pool=self.sdk_client_pool,
+                    batch_size=self.batch_size,
+                    durability=op_data["durability_level"],
+                    timeout_secs=op_data["sdk_timeout"],
+                    time_unit=op_data["sdk_timeout_unit"],
+                    skip_read_on_error=op_data["skip_read_on_error"],
+                    suppress_error_table=self.suppress_error_table)
+                self.load_gen_tasks.append(doc_load_task)
+
+    def get_tasks(self):
+        tasks = list()
+        load_gen_for_bucket_create_threads = list()
+
+        for bucket, scope_dict in self.loader_spec.items():
+            bucket_thread = threading.Thread(
+                target=self.create_tasks_for_bucket,
+                args=[bucket, scope_dict["scopes"]])
+            bucket_thread.start()
+            load_gen_for_bucket_create_threads.append(bucket_thread)
+
+        for bucket_thread in load_gen_for_bucket_create_threads:
+            bucket_thread.join(timeout=180)
+        return tasks
 
 
 class MonitorActiveTask(Task):

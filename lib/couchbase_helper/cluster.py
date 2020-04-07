@@ -2,6 +2,7 @@ import logging
 import tasks.tasks as conc
 import Jython_tasks.task as jython_tasks
 from Cb_constants import CbServer
+from Jython_tasks.task import MutateDocsFromSpecTask
 
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
@@ -88,6 +89,25 @@ class ServerTasks(object):
 
         self.jython_task_manager.schedule(_task)
         return _task
+
+    def async_load_gen_docs_from_spec(self, cluster, task_manager, loader_spec,
+                                      sdk_client_pool,
+                                      batch_size=200,
+                                      process_concurrency=1,
+                                      print_ops_rate=True,
+                                      start_task=True,
+                                      suppress_error_table=False):
+        self.log.debug("Initializing mutation task for given spec")
+        task = MutateDocsFromSpecTask(
+            cluster, task_manager, loader_spec,
+            sdk_client_pool,
+            batch_size=batch_size,
+            process_concurrency=process_concurrency,
+            print_ops_rate=print_ops_rate,
+            suppress_error_table=suppress_error_table)
+        if start_task:
+            self.jython_task_manager.add_new_task(task)
+        return task
 
     def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
                             flag=0, persist_to=0, replicate_to=0,

@@ -57,6 +57,13 @@ class MetaCrudParams(object):
         # Sub-doc loading option supported
         SUB_DOC_SIZE = "sub_doc_size"
 
+    # Doc_loading task options
+    DOC_TTL = "doc_ttl"
+    SDK_TIMEOUT = "sdk_timeout"
+    SDK_TIMEOUT_UNIT = "sdk_timeout_unit"
+    DURABILITY_LEVEL = "durability_level"
+    SKIP_READ_ON_ERROR = "skip_read_on_error"
+
     COLLECTIONS_CONSIDERED_FOR_CRUD = "collections_considered_for_crud"
     SCOPES_CONSIDERED_FOR_CRUD = "scopes_considers_for_crud"
     BUCKETS_CONSIDERED_FOR_CRUD = "buckets_considered_for_crud"

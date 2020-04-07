@@ -160,56 +160,21 @@ class DocLoaderUtils(object):
         :param async_load: (Boolean) To wait for doc_loading to finish or not
         :return: List of doc_loading tasks
         """
-        loader_tasks = list()
-        tasks_num = 0
+        loader_spec = dict()
         for bucket_name, scope_dict in crud_spec.items():
-            DocLoaderUtils.log.info("Loading docs into bucket '%s'"
-                                    % bucket_name)
-            scope_dict = scope_dict["scopes"]
             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
-            for scope_name, collection_dict in scope_dict.items():
-                scope = bucket.scopes[scope_name]
-                collection_dict = collection_dict["collections"]
-                for c_name, c_data in collection_dict.items():
-                    task_id = "%s:%s:%s" \
-                              % (bucket_name, scope_name, c_name)
-                    collection = scope.collections[c_name]
-                    for op_type, op_data in c_data.items():
-                        DocLoaderUtils.log.debug(
-                            "Performing %s for %s items in %s"
-                            % (op_type, op_data["target_items"], task_id))
-                        if op_type in DocLoading.Bucket.DOC_OPS:
-                            task = task_manager.async_load_gen_docs(
-                                cluster, bucket, op_data["doc_gen"], op_type,
-                                exp=collection.maxTTL,
-                                batch_size=200, process_concurrency=1,
-                                scope=scope_name,
-                                collection=c_name,
-                                task_identifier=task_id,
-                                print_ops_rate=True)
-                        else:
-                            task = task_manager.async_load_gen_sub_docs(
-                                cluster, bucket, op_data["doc_gen"], op_type,
-                                exp=collection.maxTTL,
-                                path_create=True, xattr=op_data["xattr_test"],
-                                batch_size=200, process_concurrency=1,
-                                scope=scope_name, collection=c_name,
-                                task_identifier=task_id,
-                                print_ops_rate=True)
-
-                        tasks_num += 1
-                        loader_tasks.append(task)
-                        if (tasks_num % 12) == 0:
-                            for task in loader_tasks:
-                                task_manager.jython_task_manager \
-                                    .get_task_result(task)
-                            loader_tasks = list()
-
+            loader_spec[bucket] = scope_dict
+        task = task_manager.async_load_gen_docs_from_spec(
+            cluster, task_manager.jython_task_manager, loader_spec,
+            DocLoaderUtils.sdk_client_pool,
+            batch_size=200,
+            process_concurrency=1,
+            print_ops_rate=True,
+            start_task=True,
+            suppress_error_table=False)
         if not async_load:
-            for task in loader_tasks:
-                task_manager.jython_task_manager.get_task_result(task)
-
-        return loader_tasks
+            task_manager.jython_task_manager.get_task_result(task)
+        return task
 
     @staticmethod
     def create_doc_gens_for_spec(buckets, input_spec, mutation_num=0,
@@ -273,7 +238,15 @@ class DocLoaderUtils(object):
                                 continue
 
                             c_crud_data[op_type] = dict()
+                            c_crud_data[op_type]["doc_ttl"] = doc_ttl
                             c_crud_data[op_type]["target_items"] = num_items
+                            c_crud_data[op_type]["sdk_timeout"] = sdk_timeout
+                            c_crud_data[op_type]["sdk_timeout_unit"] = \
+                                sdk_timeout_unit
+                            c_crud_data[op_type]["durability_level"] = \
+                                durability_level
+                            c_crud_data[op_type]["skip_read_on_error"] = \
+                                skip_read_on_error
                             if op_type in DocLoading.Bucket.DOC_OPS:
                                 c_crud_data[op_type]["doc_gen"] = \
                                     DocLoaderUtils.get_doc_generator(
@@ -304,6 +277,17 @@ class DocLoaderUtils(object):
         # Fetch common doc_key to use while doc_loading
         doc_key = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_collections")
+
+        # Fetch doc_loading options to use while doc_loading
+        doc_ttl = input_spec.get(MetaCrudParams.DOC_TTL, 0)
+        sdk_timeout = input_spec.get(
+            MetaCrudParams.SDK_TIMEOUT, 60)
+        sdk_timeout_unit = input_spec.get(
+            MetaCrudParams.SDK_TIMEOUT_UNIT, "seconds")
+        durability_level = input_spec.get(
+            MetaCrudParams.DURABILITY_LEVEL, "")
+        skip_read_on_error = input_spec.get(
+            MetaCrudParams.SKIP_READ_ON_ERROR, False)
 
         # Fetch  number of items to be loaded for newly created collections
         num_items_for_new_collections = input_spec["doc_crud"].get(

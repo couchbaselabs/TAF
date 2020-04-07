@@ -57,6 +57,13 @@ spec = {
         # Sub-doc loading option supported (None as of now)
     },
 
+    # Doc_loading task options
+    MetaCrudParams.DOC_TTL: 0,
+    MetaCrudParams.DURABILITY_LEVEL: "",
+    MetaCrudParams.SDK_TIMEOUT: 60,
+    MetaCrudParams.SDK_TIMEOUT_UNIT: "seconds",
+    MetaCrudParams.SKIP_READ_ON_ERROR: False,
+
     # Applies only for DocCrud / SubDocCrud operation
     MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
     MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
