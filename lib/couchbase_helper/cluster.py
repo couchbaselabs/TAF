@@ -353,6 +353,7 @@ class ServerTasks(object):
             timeout_secs=timeout_secs, compression=compression,
             process_concurrency=process_concurrency,
             check_replica=check_replica,
+            scope=scope, collection=collection,
             sdk_client_pool=sdk_client_pool)
         self.jython_task_manager.add_new_task(_task)
         return _task

@@ -9,11 +9,11 @@ from threading import InterruptedException
 class TaskManager:
     def __init__(self, number_of_threads=10):
         self.log = logging.getLogger("infra")
-        self.log.info("Initiating TaskManager with {0} threads"
-                      .format(number_of_threads))
+        self.log.info("Initiating TaskManager with %d threads"
+                      % number_of_threads)
         self.number_of_threads = number_of_threads
         self.pool = Executors.newFixedThreadPool(self.number_of_threads)
-        self.futures = {}
+        self.futures = dict()
 
     def sleep(self, time_in_sec, message):
         self.log.info("%s. Sleep for %s seconds.." % (message, time_in_sec))
@@ -32,6 +32,9 @@ class TaskManager:
         return result
 
     def schedule(self, task, sleep_time=0):
+        if sleep_time > 0:
+            self.sleep(sleep_time, "Wait before scheduling task %s"
+                                   % task.thread_name)
         self.add_new_task(task)
 
     def stop_task(self, task):
@@ -44,10 +47,10 @@ class TaskManager:
                           % (task.thread_name, future.isDone()))
             i += 1
         else:
-            self.log.debug("Task {0} in already finished. No need to stop task"
-                           .format(task.thread_name))
+            self.log.debug("Task %s in already finished. No need to stop task"
+                           % task.thread_name)
         if not future.isDone():
-            self.log.debug("Stopping task {0}".format(task.thread_name))
+            self.log.debug("Stopping task %s" % task.thread_name)
             future.cancel(True)
 
     def shutdown_task_manager(self, timeout=5):
@@ -72,7 +75,7 @@ class TaskManager:
     def print_tasks_in_pool(self):
         for task_name, future in self.futures.items():
             if not future.isDone():
-                self.log.warning("Task '{0}' not completed".format(task_name))
+                self.log.warning("Task '%s' not completed" % task_name)
 
     def abort_all_tasks(self):
         for task_name, future in self.futures.items():

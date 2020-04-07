@@ -12,7 +12,7 @@ from cb_tools.cb_cli import CbCli
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from membase.api.rest_client import RestHelper, RestConnection
-from bucket_utils.bucket_ready_functions import BucketUtils
+from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
@@ -122,6 +122,7 @@ class BaseTestCase(unittest.TestCase):
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
         self.durability_level = self.input.param("durability", "").upper()
+        self.sdk_client_pool = self.input.param("sdk_client_pool", None)
         # Client compression settings
         self.sdk_compression = self.input.param("sdk_compression", None)
         compression_min_ratio = self.input.param("min_ratio", None)
@@ -165,6 +166,11 @@ class BaseTestCase(unittest.TestCase):
         self.skip_buckets_handle = self.input.param("skip_buckets_handle",
                                                     False)
 
+        # SDKClientPool object for creating generic clients across tasks
+        if self.sdk_client_pool is True:
+            self.sdk_client_pool = SDKClientPool()
+            DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
+
         # Initiate logging variables
         self.log = logging.getLogger("test")
         self.infra_log = logging.getLogger("infra")
@@ -177,9 +183,6 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager = TaskManager(self.thread_to_use)
         self.task = ServerTasks(self.task_manager)
         # End of library object creation
-
-        # SDKClientPool object for creating generic clients across tasks
-        self.sdk_client_pool = SDKClientPool()
 
         self.cleanup = False
         self.nonroot = False
@@ -197,7 +200,7 @@ class BaseTestCase(unittest.TestCase):
                         ClusterRun.memcached_port \
                         + (2 * (int(server.port) - ClusterRun.port))
 
-        self.__log_setup_status("BaseTestCase", "started")
+        self.log_setup_status("BaseTestCase", "started")
         if len(self.input.clusters) > 1:
             # Multi cluster setup
             counter = 1
@@ -254,7 +257,7 @@ class BaseTestCase(unittest.TestCase):
                     self.protocol = "dcp"
             self.services_map = None
 
-            self.__log_setup_status("BaseTestCase", "started")
+            self.log_setup_status("BaseTestCase", "started")
             for cluster in self.__cb_clusters:
                 if not self.skip_buckets_handle \
                         and not self.skip_init_check_cbserver:
@@ -270,14 +273,14 @@ class BaseTestCase(unittest.TestCase):
                     str(self.__class__).find('upgradeXDCR') != -1 or \
                     str(self.__class__).find('Upgrade_EpTests') != -1 or \
                     self.skip_buckets_handle:
-                self.log.warning("any cluster operation in setup will be skipped")
+                self.log.warning("Cluster operation in setup will be skipped")
                 self.primary_index_created = True
-                self.__log_setup_status("BaseTestCase", "finished")
+                self.log_setup_status("BaseTestCase", "finished")
                 return
             # avoid clean up if the previous test has been tear down
             if self.case_number == 1 or self.case_number > 1000:
                 if self.case_number > 1000:
-                    self.log.warn("TearDown for previous test failed. will retry..")
+                    self.log.warn("TearDown for prev test failed. Will retry")
                     self.case_number -= 1000
                 self.cleanup = True
                 if not self.skip_init_check_cbserver:
@@ -332,7 +335,7 @@ class BaseTestCase(unittest.TestCase):
                 if self.port:
                     self.port = str(self.port)
 
-            self.__log_setup_status("BaseTestCase", "finished")
+            self.log_setup_status("BaseTestCase", "finished")
 
             if not self.skip_init_check_cbserver:
                 self.__log("started")
@@ -346,10 +349,13 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
-        self.sdk_client_pool.shutdown()
+        if self.sdk_client_pool:
+            self.sdk_client_pool.shutdown()
         server_with_crashes = self.check_coredump_exist(self.servers)
         self.tearDownEverything()
-        self.assertEqual(len(server_with_crashes), 0, msg="Test failed, Coredump found on servers {}".format(server_with_crashes));
+        self.assertEqual(len(server_with_crashes), 0,
+                         msg="Test failed, Coredump found on servers {}"
+                         .format(server_with_crashes))
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
@@ -364,10 +370,12 @@ class BaseTestCase(unittest.TestCase):
                 test_failed = (hasattr(self, '_resultForDoCleanups') and
                                len(self._resultForDoCleanups.failures or
                                    self._resultForDoCleanups.errors)) or \
-                              (hasattr(self, '_exc_info') and \
+                              (hasattr(self, '_exc_info') and
                                self._exc_info()[1] is not None)
 
-                if test_failed and TestInputSingleton.input.param("stop-on-failure", False) \
+                if test_failed \
+                        and TestInputSingleton.input.param("stop-on-failure",
+                                                           False) \
                         or self.input.param("skip_cleanup", False):
                     self.log.warn("CLEANUP WAS SKIPPED")
                 else:
@@ -377,13 +385,18 @@ class BaseTestCase(unittest.TestCase):
                                                           False):
                             self.fetch_cb_collect_logs()
 
-                        if TestInputSingleton.input.param('get_trace', None):
+                        get_trace = \
+                            TestInputSingleton.input.param("get_trace", None)
+                        if get_trace:
                             for server in cluster.servers:
                                 try:
-                                    shell = RemoteMachineShellConnection(server)
-                                    output, _ = shell.execute_command("ps -aef|grep %s" %
-                                                                      TestInputSingleton.input.param('get_trace', None))
-                                    output = shell.execute_command("pstack %s" % output[0].split()[1].strip())
+                                    shell = \
+                                        RemoteMachineShellConnection(server)
+                                    output, _ = shell.execute_command(
+                                        "ps -aef|grep %s" % get_trace)
+                                    output = shell.execute_command(
+                                        "pstack %s"
+                                        % output[0].split()[1].strip())
                                     self.infra_log.debug(output[0])
                                     shell.disconnect()
                                 except:
@@ -427,7 +440,7 @@ class BaseTestCase(unittest.TestCase):
         except:
             pass
 
-    def __log_setup_status(self, class_name, status):
+    def log_setup_status(self, class_name, status):
         self.log.info(
             "========= %s setup %s for test #%d %s ========="
             % (class_name, status, self.case_number, self._testMethodName))
@@ -570,7 +583,7 @@ class BaseTestCase(unittest.TestCase):
             if shell.info.type.lower() == "linux":
                 rest = RestConnection(server)
                 core_path = str(rest.get_data_path()).split("data")[0] \
-                            + "crash/"
+                    + "crash/"
 
             elif shell.info.type.lower() == "windows":
                 core_path = 'c://CrashDumps'

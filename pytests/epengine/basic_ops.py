@@ -67,12 +67,13 @@ class basic_ops(BaseTestCase):
             .collections[self.collection_name] \
             .num_items = self.num_items
 
-        self.log.info("Creating SDK client pool")
-        self.sdk_client_pool.create_clients(
-            self.bucket_util.buckets[0],
-            self.servers,
-            req_clients=self.task_manager.number_of_threads,
-            compression_settings=self.sdk_compression)
+        if self.sdk_client_pool:
+            self.log.info("Creating SDK client pool")
+            self.sdk_client_pool.create_clients(
+                self.bucket_util.buckets[0],
+                self.cluster.nodes_in_cluster,
+                req_clients=self.task_manager.number_of_threads,
+                compression_settings=self.sdk_compression)
 
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.nodes_in_cluster),

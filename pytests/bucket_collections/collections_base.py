@@ -1,3 +1,5 @@
+from math import ceil
+
 from basetestcase import BaseTestCase
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
@@ -47,6 +49,20 @@ class CollectionBase(BaseTestCase):
 
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
+
+        # Create clients in SDK client pool
+        if self.sdk_client_pool:
+            self.log.info("Creating required SDK clients for client_pool")
+            bucket_count = len(self.bucket_util.buckets)
+            max_clients = self.task_manager.number_of_threads
+            clients_per_bucket = int(ceil(max_clients / bucket_count))
+            for bucket in self.bucket_util.buckets:
+                self.sdk_client_pool.create_clients(
+                    bucket,
+                    [self.cluster.master],
+                    clients_per_bucket,
+                    compression_settings=self.sdk_compression)
+
         self.bucket_util.run_scenario_from_spec(self.task,
                                                 self.cluster,
                                                 self.bucket_util.buckets,

@@ -78,6 +78,7 @@ Parameters:
 
 class DocLoaderUtils(object):
     log = logging.getLogger("test")
+    sdk_client_pool = None
 
     @staticmethod
     def __get_required_num_from_percentage(collection_obj, target_percent):
@@ -223,7 +224,9 @@ class DocLoaderUtils(object):
         :return crud_spec: Dict for bucket-scope-collections with
                            appropriate doc_generator objects
         """
-        def create_load_gens(spec, is_xattr_test=False,
+        def create_load_gens(spec,
+                             sub_doc_gen=False,
+                             is_xattr_test=False,
                              collection_recreated=False):
             for b_name, s_dict in spec.items():
                 s_dict = s_dict["scopes"]
@@ -247,8 +250,9 @@ class DocLoaderUtils(object):
                         c_crud_data = crud_spec[b_name]["scopes"][
                             s_name]["collections"][c_name]
                         collection = scope.collections[c_name]
-                        target_ops = DocLoading.Bucket.DOC_OPS \
-                            + DocLoading.Bucket.SUB_DOC_OPS
+                        target_ops = DocLoading.Bucket.DOC_OPS
+                        if sub_doc_gen:
+                            target_ops = DocLoading.Bucket.SUB_DOC_OPS
                         if collection_recreated:
                             target_ops = [DocLoading.Bucket.DocOps.CREATE]
                         for op_type in target_ops:
@@ -287,6 +291,7 @@ class DocLoaderUtils(object):
                                         collection,
                                         num_items,
                                         doc_key)
+        crud_spec = dict()
         spec_percent_data = dict()
 
         num_collection_to_load = input_spec.get(
@@ -327,7 +332,6 @@ class DocLoaderUtils(object):
         spec_percent_data["lookup"] = input_spec["subdoc_crud"].get(
             MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION, 0)
 
-        crud_spec = dict()
         doc_crud_spec = BucketUtils.get_random_collections(
             buckets,
             num_collection_to_load,
@@ -347,12 +351,11 @@ class DocLoaderUtils(object):
                     bucket.scopes[s_name].collections[c_name].num_items = \
                         num_items_for_new_collections
 
-        create_load_gens(doc_crud_spec,
-                         is_xattr_test=xattr_test)
+        create_load_gens(doc_crud_spec)
         create_load_gens(op_details["collections_added"],
-                         is_xattr_test=xattr_test,
                          collection_recreated=True)
         create_load_gens(sub_doc_crud_spec,
+                         sub_doc_gen=True,
                          is_xattr_test=xattr_test)
         return crud_spec
 
@@ -3969,6 +3972,7 @@ class BucketUtils(ScopeUtils):
             raise Exception("Collections stat validation failed")
 
     def validate_docs_per_collections_all_buckets(self, timeout=300):
+        self.log.info("Validating collection stats and item counts")
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(),
             self.buckets,

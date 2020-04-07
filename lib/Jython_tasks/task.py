@@ -521,7 +521,8 @@ class GenericLoadingTask(Task):
 
     def batch_replace(self, key_val, shared_client=None, persist_to=0,
                       replicate_to=0, timeout=5, time_unit="seconds",
-                      doc_type="json", durability="", skip_read_on_error=False):
+                      doc_type="json", durability="",
+                      skip_read_on_error=False):
         success = dict()
         fail = dict()
         try:
@@ -723,7 +724,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                  exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True, retries=5,
+                 compression=None, retries=5,
                  durability="", task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False, sdk_client_pool=None,
                  scope=CbServer.default_scope,
@@ -844,7 +845,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  batch_size=1, pause_secs=1, timeout_secs=5,
-                 compression=True, retries=5,
+                 compression=None, retries=5,
                  durability="", task_identifier="",
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
@@ -944,7 +945,7 @@ class Durability(Task):
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1,
-                 timeout_secs=5, compression=True, process_concurrency=8,
+                 timeout_secs=5, compression=None, process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
                  majority_value=0, check_persistence=False):
 
@@ -1059,7 +1060,7 @@ class Durability(Task):
                      flag=0, majority_value=0, persist_to=0, replicate_to=0,
                      time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
-                     compression=True, retries=5,
+                     compression=None, retries=5,
                      instance_num=0, durability="", check_persistence=False,
                      sdk_client_pool=None,
                      scope=CbServer.default_scope,
@@ -1375,7 +1376,7 @@ class LoadDocumentsGeneratorsTask(Task):
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1,
-                 timeout_secs=5, compression=True, process_concurrency=8,
+                 timeout_secs=5, compression=None, process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False,
@@ -1547,7 +1548,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  xattr=False, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1,
-                 timeout_secs=5, compression=True,
+                 timeout_secs=5, compression=None,
                  process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier=""):
@@ -1711,7 +1712,7 @@ class ContinuousDocUpdateTask(Task):
                  exp, flag=0, persist_to=0, replicate_to=0,
                  durability="", time_unit="seconds",
                  only_store_hash=True, batch_size=1,
-                 pause_secs=1, timeout_secs=5, compression=True,
+                 pause_secs=1, timeout_secs=5, compression=None,
                  process_concurrency=4, print_ops_rate=True):
         super(ContinuousDocUpdateTask, self).__init__(
             "ContinuousDocUpdateTask_%s_%s" % (bucket.name, time.time()))
@@ -1892,7 +1893,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
 
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  flag=0, proxy_client=None, batch_size=1, pause_secs=1,
-                 timeout_secs=30, compression=True, check_replica=False,
+                 timeout_secs=30, compression=None, check_replica=False,
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection):
@@ -1903,8 +1904,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
             scope=scope, collection=collection)
         self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s_%s_%s" % (
             bucket.name,
-            self.client.scope_name,
-            self.client.collection_name,
+            self.scope,
+            self.collection,
             generator._doc_gen.start, generator._doc_gen.end,
             op_type)
 
@@ -2027,8 +2028,10 @@ class ValidateDocumentsTask(GenericLoadingTask):
 class DocumentsValidatorTask(Task):
     def __init__(self, cluster, task_manager, bucket, client, generators,
                  op_type, exp, flag=0, only_store_hash=True, batch_size=1,
-                 pause_secs=1, timeout_secs=60, compression=True,
+                 pause_secs=1, timeout_secs=60, compression=None,
                  process_concurrency=4, check_replica=False,
+                 scope=CbServer.default_scope,
+                 collection=CbServer.default_collection,
                  sdk_client_pool=None):
         super(DocumentsValidatorTask, self).__init__(
             "DocumentsValidatorTask_%s_%s_%s" % (
@@ -2057,6 +2060,8 @@ class DocumentsValidatorTask(Task):
             self.buckets = bucket
         else:
             self.bucket = bucket
+        self.scope = scope
+        self.collection = collection
         self.check_replica = check_replica
 
     def call(self):
@@ -2120,6 +2125,7 @@ class DocumentsValidatorTask(Task):
                 self.op_type, self.exp, self.flag, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression, check_replica=self.check_replica,
+                scope=self.scope, collection=self.collection,
                 sdk_client_pool=self.sdk_client_pool)
             tasks.append(task)
         return tasks
@@ -2190,13 +2196,15 @@ class StatsWaitTask(Task):
             self.stop = True
             return False
         if not self._compare(self.comparison, str(stat_result), self.value):
-            self.test_log.warn("Not Ready: %s %s %s %s. Received: %s for bucket '%s'"
-                               % (self.stat, stat_result, self.comparison,
-                                  self.value, val_dict, self.bucket.name))
+            self.test_log.debug("Not Ready: %s %s %s %s. "
+                                "Received: %s for bucket '%s'"
+                                % (self.stat, stat_result, self.comparison,
+                                   self.value, val_dict, self.bucket.name))
             time.sleep(5)
             return False
         else:
-            self.test_log.debug("Ready: %s %s %s %s. Received: %s for bucket '%s'"
+            self.test_log.debug("Ready: %s %s %s %s. "
+                                "Received: %s for bucket '%s'"
                                 % (self.stat, stat_result, self.comparison,
                                    self.value, val_dict, self.bucket.name))
             self.stop = True
@@ -3809,7 +3817,7 @@ class Atomicity(Task):
                  generator, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1,
-                 timeout_secs=5, compression=True,
+                 timeout_secs=5, compression=None,
                  process_concurrency=8, print_ops_rate=True, retries=5,
                  update_count=1, transaction_timeout=5,
                  commit=True, durability=None, sync=True, num_threads=5,
