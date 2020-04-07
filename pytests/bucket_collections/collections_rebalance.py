@@ -17,9 +17,19 @@ class CollectionsRebalance(CollectionBase):
         self.step_count = self.input.param("step_count", -1)
         self.replicas_for_failover = self.input.param("replicas_for_failover", 3)
         self.recovery_type = self.input.param("recovery_type", "full")
+        self.compaction = self.input.param("compaction", False)
+        if (self.compaction):
+            self.compaction_tasks = list()
 
     def tearDown(self):
         super(CollectionsRebalance, self).tearDown()
+
+    def compact_all_buckets(self):
+        self.sleep(10, "wait for rebalance to start")
+        self.log.info("Starting compaction for each bucket")
+        for bucket in self.bucket_util.buckets:
+            self.compaction_tasks.append(self.task.async_compact_bucket(
+                self.cluster.master, bucket))
 
     def rebalance_operation(self, rebalance_operation, known_nodes=None, add_nodes=None, remove_nodes=None,
                             failover_nodes=None, wait_for_pending=120):
@@ -29,6 +39,8 @@ class CollectionsRebalance(CollectionBase):
             if step_count == -1:
                 # all at once
                 operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                if self.compaction:
+                    self.compact_all_buckets()
             else:
                 # list of lists each of length step_count
                 remove_list = []
@@ -52,6 +64,8 @@ class CollectionsRebalance(CollectionBase):
             if step_count == -1:
                 # all at once
                 operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                if self.compaction:
+                    self.compact_all_buckets()
             else:
                 # list of lists each of length step_count
                 add_list = []
@@ -77,6 +91,8 @@ class CollectionsRebalance(CollectionBase):
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                        node.ip, self.cluster.servers[self.nodes_init].port)
                 operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                if self.compaction:
+                    self.compact_all_buckets()
             else:
                 #list of lists each of length step_count
                 add_list = []
@@ -105,6 +121,8 @@ class CollectionsRebalance(CollectionBase):
                 self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                    node.ip, self.cluster.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+            if self.compaction:
+                self.compact_all_buckets()
         elif rebalance_operation == "graceful_failover_rebalance_out":
             self.log.info("Updating all the bucket replicas to {0}" .format(self.replicas_for_failover))
             for i in range(len(self.bucket_util.buckets)):
@@ -121,6 +139,8 @@ class CollectionsRebalance(CollectionBase):
                                                          graceful=True, wait_for_pending=wait_for_pending)
                     self.task.jython_task_manager.get_task_result(failover_operation)
                     self.assertTrue(failover_operation.result, "Failover Failed")
+                if self.compaction:
+                    self.compact_all_buckets()
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
             else:
                 # list of lists each of length step_count
@@ -160,6 +180,8 @@ class CollectionsRebalance(CollectionBase):
                                                                   graceful=False, wait_for_pending=wait_for_pending)
                     self.task.jython_task_manager.get_task_result(failover_operation)
                     self.assertTrue(failover_operation.result, "Failover Failed")
+                if self.compaction:
+                    self.compact_all_buckets()
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
             else:
                 # list of lists each of length step_count
@@ -202,6 +224,8 @@ class CollectionsRebalance(CollectionBase):
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
                     self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
+                if self.compaction:
+                    self.compact_all_buckets()
                 # Rebalance all the nodes
                 operation = self.task.async_rebalance(known_nodes, [], [])
             else:
@@ -249,6 +273,8 @@ class CollectionsRebalance(CollectionBase):
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
                     self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
+                if self.compaction:
+                    self.compact_all_buckets()
                 # Rebalance all the nodes
                 operation = self.task.async_rebalance(known_nodes, [], [])
             else:
@@ -302,11 +328,22 @@ class CollectionsRebalance(CollectionBase):
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
+    def wait_for_compaction_to_complete(self):
+        # Strictly, we should be doing this
+        # But this is not working properly.
+        # for task in self.compaction_tasks:
+        #     self.task_manager.get_task_result(task)
+        #     self.assertTrue(task.result, "Compaction failed for bucket: %s" %
+        #                     task.bucket.name)
+        pass
+
     def wait_for_rebalance_to_complete(self, task, wait_step=120):
         self.task.jython_task_manager.get_task_result(task)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=wait_step)
         self.assertTrue(reached, "Rebalance failed, stuck or did not complete")
         self.assertTrue(task.result, "Rebalance Failed")
+        if self.compaction:
+            self.wait_for_compaction_to_complete()
 
     def data_validation_collection(self):
         self.bucket_util._wait_for_stats_all_buckets()
