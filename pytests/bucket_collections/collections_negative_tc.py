@@ -6,6 +6,9 @@ class CollectionsNegativeTc(CollectionBase):
     def setUp(self):
         super(CollectionsNegativeTc, self).setUp()
         self.bucket = self.bucket_util.buckets[0]
+        self.invalid = ["_a", "%%", "a~", "a`", "a!", "a@", "a#", "a$", "a^", "a&", "a*", "a(", "a)", "a=", "a+", "a{"
+                        "a}", "a|", "a:", "a;", "a'", "a,", "a<", "a.", "a>", "a?", "a/"
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
 
     def tearDown(self):
         super(CollectionsNegativeTc, self).tearDown()
@@ -61,3 +64,29 @@ class CollectionsNegativeTc(CollectionBase):
             self.log.info("Non existant collection deletion failed as expected")
         else:
             self.fail("deletion of non existing scope did not fail")
+
+    def test_illegal_collection_name(self):
+        BucketUtils.create_scope(self.cluster.master, self.bucket,
+                                 {"name": "scope1"})
+        for name in self.invalid:
+            try:
+                BucketUtils.create_collection(self.cluster.master,
+                                              self.bucket,
+                                              "scope1",
+                                              {"name": name})
+            except Exception as e:
+                self.log.info("Illegal collection name as expected")
+            else:
+                self.fail("Illegal collection name did not fail")
+
+    def test_illegal_scope_name(self):
+        for name in self.invalid:
+            try:
+                BucketUtils.create_scope(self.cluster.master, self.bucket,
+                                         {"name": name})
+            except Exception as e:
+                self.log.info("Illegal scope name as expected")
+            else:
+                self.fail("Illegal scope name did not fail")
+
+
