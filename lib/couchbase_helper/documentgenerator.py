@@ -288,7 +288,6 @@ class DocumentGenerator(KVGenerator):
             template = String(str(template))
 
         doc_key = self.next_key()
-
         return doc_key, template
 
 

@@ -455,6 +455,16 @@ class BaseTestCase(unittest.TestCase):
         quota = 0
         init_tasks = []
         for server in cluster.servers:
+            # Make sure that data_and index_path are writable by couchbase user
+            for path in set([_f for _f in [server.data_path, server.index_path] if _f]):
+                shell = RemoteMachineShellConnection(server)
+                for cmd in ("rm -rf {0}/*".format(path),
+                            "chown -R couchbase:couchbase {0}".format(path)):
+                    shell.execute_command(cmd)
+                shell.disconnect()
+                rest = RestConnection(server)
+                rest.set_data_path(data_path=server.data_path,
+                                   index_path=server.index_path)
             init_port = port or server.port or '8091'
             assigned_services = services
             if cluster.master != server:

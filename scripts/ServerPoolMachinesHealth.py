@@ -64,19 +64,65 @@ servers = [
     "172.23.123.21",
     "172.23.123.22"
     ]
+servers += [
+    "172.23.120.61",
+    "172.23.120.62",
+    "172.23.120.63",
+    "172.23.120.64",
+    "172.23.120.65",
+    "172.23.120.66",
+    "172.23.120.67",
+    "172.23.120.68",
+    "172.23.120.69",
+    "172.23.120.70"
+    ]
+
+servers = [
+    "172.23.105.220",
+    "172.23.105.221",
+    "172.23.105.223",
+    "172.23.105.225",
+    "172.23.105.226",
+    "172.23.105.227",
+    "172.23.105.208"]
+
+magma_vol = [
+    "172.23.122.84",
+    "172.23.122.85",
+    "172.23.122.89",
+    "172.23.122.184",
+    "172.23.122.186",
+    "172.23.122.202",
+    "172.23.122.203",
+    "172.23.122.204",
+    "172.23.122.205",
+    "172.23.122.209",
+    "172.23.122.210",
+    "172.23.122.211",
+    "172.23.122.212",
+    "172.23.122.213",
+    "172.23.122.214",
+    "172.23.122.215",
+    "172.23.122.216",
+    "172.23.122.217",
+    "172.23.122.218",
+    "172.23.122.219"
+    ]
 
 failed = []
-i = 1
-for index, server in enumerate(servers):
+
+
+def run(command, server):
+    output = []
+    error = []
     jsch = JSch()
     session = jsch.getSession("root", server, 22)
     session.setPassword("couchbase")
     session.setConfig("StrictHostKeyChecking", "no")
     try:
-        session.connect(5000)
+        session.connect(10000)
     except JSchException:
         failed.append(server)
-        continue
     try:
         _ssh_client = session.openChannel("exec")
         _ssh_client.setInputStream(None)
@@ -84,28 +130,59 @@ for index, server in enumerate(servers):
 
         instream = _ssh_client.getInputStream()
         errstream = _ssh_client.getErrStream()
-        _ssh_client.setCommand("free -m")
+        _ssh_client.setCommand(command)
         _ssh_client.connect()
-        output = []
-        error = []
-        fu = FileUtil.wrap(instream)
-        for line in fu.readlines():
-            output.append(line)
-        fu.close()
-
-        fu1 = FileUtil.wrap(errstream)
+        fu1 = FileUtil.wrap(instream)
         for line in fu1.readlines():
-            error.append(line)
+            output.append(line)
         fu1.close()
-        try:
-            print "{}) {}:{}".format(i, server, output[1].split()[1])
-        except:
-            print "{}: Not a linux machine".format(server)
-        i += 1
+
+        fu2 = FileUtil.wrap(errstream)
+        for line in fu2.readlines():
+            error.append(line)
+        fu2.close()
         _ssh_client.disconnect()
         session.disconnect()
     except JSchException as e:
         print("JSch exception on %s: %s" % (server, str(e)))
+    return output, error
+
+
+def crash_check():
+    while True:
+        print "#######################"
+        for server in servers:
+#             output, error = run("ls -l /opt/couchbase/var/lib/couchbase/crash/ | grep '.dmp' | wc -l", server)
+            output, error = run("ls -l /data/kv", server)
+            try:
+                crashes = int(output[0].split("\n")[0])
+            except:
+                crashes = 0
+                print error
+            print server, crashes
+            if crashes > 0:
+                run("service couchbase-server stop", server)
+                for _, server in enumerate(servers):
+                    run("service couchbase-server stop", server)
+                break
+
+
+def iptables(nodes=None):
+    print "#######################"
+    if nodes:
+        servers = nodes
+    for server in servers:
+        print server
+        output, error = run("iptables -F", server)
+        if output:
+            print output
+        if error:
+            print error
+
+
+crash_check()
+#iptables(magma_vol)
 
 if failed:
-    print "ssh failed for: {}".format(failed)
+    for server in failed:
+        print "ssh failed: %s" % server
