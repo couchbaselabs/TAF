@@ -136,7 +136,6 @@ class Cbstats(CbCmdBase):
         :collection_data - Dict containing the collections stat values
         """
         collection_data = dict()
-        id_collection_dict = dict()
 
         # Fetch scope_data before fetching collections
         # scope_data = self.get_scopes(bucket)
@@ -156,7 +155,7 @@ class Cbstats(CbCmdBase):
         c_id_pattern = "[ \t]*([0-9A-Za-z_%-]+):([0-9A-Za-z_%-]+):id:" \
                        "[ \t]+([a-zA-Z_0-9%-]+)"
         collection_items_pattern = \
-            "[ \t]*collection:([0-9xa-f]+):items:[ \t]+([0-9]+)"
+            "[ \t]*([0-9A-Za-z_%-]+):([0-9A-Za-z_%-]+):items:[ \t]+([0-9]+)"
 
         collection_count_pattern = re.compile(collection_count_pattern)
         default_collection_exist_pattern = re.compile(
@@ -185,15 +184,13 @@ class Cbstats(CbCmdBase):
                 collection_data[scope_name] = dict()
             collection_data[scope_name][collection_name] = dict()
             collection_data[scope_name][collection_name]["id"] = collection[2]
-            id_collection_dict[collection[2]] = (scope_name, collection_name)
 
         # Fetch all items count for each collection
         collection_items = collection_items_pattern.findall(str(output))
         for c_data in collection_items:
-            c_id = c_data[0]
-            scope_name = id_collection_dict[c_id][0]
-            c_name = id_collection_dict[c_id][1]
-            collection_data[scope_name][c_name]["num_items"] = int(c_data[1])
+            scope_name = c_data[0]
+            c_name = c_data[1]
+            collection_data[scope_name][c_name]["num_items"] = int(c_data[2])
         return collection_data
 
     def get_collection_details(self, bucket_name):
