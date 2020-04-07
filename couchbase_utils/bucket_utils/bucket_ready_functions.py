@@ -394,12 +394,8 @@ class DocLoaderUtils(object):
             buckets,
             crud_spec,
             async_load=async_load)
-        if not async_load:
-            # task_manager.jython_task_manager.get_task_result(doc_loading_task)
-            for task in doc_loading_task:
-                task_manager.jython_task_manager.get_task_result(task)
-                if validate_task:
-                    DocLoaderUtils.validate_doc_loading_results(task)
+        if not async_load and validate_task:
+            DocLoaderUtils.validate_doc_loading_results(doc_loading_task)
         return doc_loading_task
 
 
