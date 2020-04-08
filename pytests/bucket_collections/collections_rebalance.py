@@ -14,6 +14,8 @@ class CollectionsRebalance(CollectionBase):
         self.data_load_type = self.input.param("data_load_type", "sync")
         self.nodes_swap = self.input.param("nodes_swap", 1)
         self.nodes_failover = self.input.param("nodes_failover", 1)
+        self.failover_ops = ["graceful_failover_rebalance_out", "hard_failover_rebalance_out"
+                             "graceful_failover_recovery", "hard_failover_recovery"]
         self.step_count = self.input.param("step_count", -1)
         self.replicas_for_failover = self.input.param("replicas_for_failover", 3)
         self.recovery_type = self.input.param("recovery_type", "full")
@@ -30,6 +32,17 @@ class CollectionsRebalance(CollectionBase):
         for bucket in self.bucket_util.buckets:
             self.compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
+
+    def update_bucket_replica(self):
+        self.log.info("Updating all the bucket replicas to {0}".format(self.replicas_for_failover))
+        for i in range(len(self.bucket_util.buckets)):
+            bucket_helper = BucketHelper(self.cluster.master)
+            bucket_helper.change_bucket_props(
+                self.bucket_util.buckets[i], replicaNumber=self.replicas_for_failover)
+        task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        self.task.jython_task_manager.get_task_result(task)
+        self.log.info("Bucket stats before failover")
+        self.bucket_util.print_bucket_stats()
 
     def rebalance_operation(self, rebalance_operation, known_nodes=None, add_nodes=None, remove_nodes=None,
                             failover_nodes=None, wait_for_pending=120):
@@ -124,15 +137,6 @@ class CollectionsRebalance(CollectionBase):
             if self.compaction:
                 self.compact_all_buckets()
         elif rebalance_operation == "graceful_failover_rebalance_out":
-            self.log.info("Updating all the bucket replicas to {0}" .format(self.replicas_for_failover))
-            for i in range(len(self.bucket_util.buckets)):
-                bucket_helper = BucketHelper(self.cluster.master)
-                bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=self.replicas_for_failover)
-            task = self.task.async_rebalance(known_nodes, [], [])
-            self.task.jython_task_manager.get_task_result(task)
-            self.log.info("Bucket stats before failover")
-            self.bucket_util.print_bucket_stats()
             if step_count == -1:
                 for failover_node in failover_nodes:
                     failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
@@ -165,15 +169,6 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "hard_failover_rebalance_out":
-            self.log.info("Updating all the bucket replicas to {0}".format(self.replicas_for_failover))
-            for i in range(len(self.bucket_util.buckets)):
-                bucket_helper = BucketHelper(self.cluster.master)
-                bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=self.replicas_for_failover)
-            task = self.task.async_rebalance(known_nodes, [], [])
-            self.task.jython_task_manager.get_task_result(task)
-            self.log.info("Bucket stats before failover")
-            self.bucket_util.print_bucket_stats()
             if step_count == -1:
                 for failover_node in failover_nodes:
                     failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
@@ -206,15 +201,6 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "graceful_failover_recovery":
-            self.log.info("Updating all the bucket replicas to {0}" .format(self.replicas_for_failover))
-            for i in range(len(self.bucket_util.buckets)):
-                bucket_helper = BucketHelper(self.cluster.master)
-                bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=self.replicas_for_failover)
-            task = self.task.async_rebalance(known_nodes, [], [])
-            self.task.jython_task_manager.get_task_result(task)
-            self.log.info("Bucket stats before failover")
-            self.bucket_util.print_bucket_stats()
             if(step_count == -1):
                 for failover_node in failover_nodes:
                     failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
@@ -255,15 +241,6 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "hard_failover_recovery":
-            self.log.info("Updating all the bucket replicas to {0}" .format(self.replicas_for_failover))
-            for i in range(len(self.bucket_util.buckets)):
-                bucket_helper = BucketHelper(self.cluster.master)
-                bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=self.replicas_for_failover)
-            task = self.task.async_rebalance(known_nodes, [], [])
-            self.task.jython_task_manager.get_task_result(task)
-            self.log.info("Bucket stats before failover")
-            self.bucket_util.print_bucket_stats()
             if (step_count == -1):
                 for failover_node in failover_nodes:
                     failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
@@ -352,6 +329,8 @@ class CollectionsRebalance(CollectionBase):
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None
         rebalance = None
+        if rebalance_operation in self.failover_ops:
+            self.update_bucket_replica()
         self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
         if self.data_load_stage == "before":
             if self.data_load_type == "async":
