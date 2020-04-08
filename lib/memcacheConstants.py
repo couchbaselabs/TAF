@@ -356,8 +356,8 @@ EXTRA_HDR_FMTS = {
     CMD_COMPACT_DB: COMPACT_DB_PKT_FMT
 }
 
-EXTRA_HDR_SIZES = dict(
-    [(k, struct.calcsize(v)) for (k, v) in EXTRA_HDR_FMTS.items()])
+# EXTRA_HDR_SIZES = dict(
+#     [(k, struct.calcsize(v)) for (k, v) in EXTRA_HDR_FMTS.items()])
 
 # Kept for backwards compatibility with existing mc_bin_client users.
 SUCCESS             = 0x00
