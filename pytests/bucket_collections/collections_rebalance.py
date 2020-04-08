@@ -56,6 +56,11 @@ class CollectionsRebalance(CollectionBase):
         self.log.info("Bucket stats before failover")
         self.bucket_util.print_bucket_stats()
 
+    def data_load_after_failover(self):
+        self.log.info("Starting a sync data load after failover")
+        self.subsequent_data_load()  # sync data load
+        self.data_validation_collection()
+
     def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
         time_start = time.time()
         time_max_end = time_start + timeout
@@ -251,6 +256,7 @@ class CollectionsRebalance(CollectionBase):
                     self.wait_for_failover_or_assert(failover_count)
                 if self.compaction:
                     self.compact_all_buckets()
+                self.data_load_after_failover()
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
             else:
                 # list of lists each of length step_count
@@ -269,6 +275,7 @@ class CollectionsRebalance(CollectionBase):
                                                                       graceful=True, wait_for_pending=wait_for_pending)
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
+                    self.data_load_after_failover()
                     operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes)
                     iter_count = iter_count + 1
                     known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
@@ -285,6 +292,7 @@ class CollectionsRebalance(CollectionBase):
                     self.wait_for_failover_or_assert(failover_count)
                 if self.compaction:
                     self.compact_all_buckets()
+                self.data_load_after_failover()
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
             else:
                 # list of lists each of length step_count
@@ -303,6 +311,7 @@ class CollectionsRebalance(CollectionBase):
                                                                       graceful=False, wait_for_pending=wait_for_pending)
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
+                    self.data_load_after_failover()
                     operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes)
                     iter_count = iter_count + 1
                     known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
@@ -317,6 +326,7 @@ class CollectionsRebalance(CollectionBase):
                                                          graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
+                self.data_load_after_failover()
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
                     self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
@@ -342,6 +352,7 @@ class CollectionsRebalance(CollectionBase):
 
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
+                    self.data_load_after_failover()
                     # Mark the failover nodes for recovery
                     for failover_node in new_failover_nodes:
                         self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
@@ -359,6 +370,7 @@ class CollectionsRebalance(CollectionBase):
                                                                   graceful=False, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
+                self.data_load_after_failover()
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
                     self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
@@ -384,6 +396,7 @@ class CollectionsRebalance(CollectionBase):
 
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
+                    self.data_load_after_failover()
                     # Mark the failover nodes for recovery
                     for failover_node in new_failover_nodes:
                         self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
