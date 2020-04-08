@@ -86,6 +86,7 @@ class MagmaBaseTest(BaseTestCase):
         if self.rev_write:
             start = -int(self.num_items - 1)
             end = 1
+        self.deep_copy = self.input.param("deep_copy", False)
         self.gen_create = doc_generator(
             self.key, start, end,
             doc_size=self.doc_size,
@@ -95,7 +96,8 @@ class MagmaBaseTest(BaseTestCase):
             key_size=self.key_size,
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size)
+            mix_key_size=self.mix_key_size,
+            deep_copy=self.deep_copy)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
         self.result_task = self._load_all_buckets(
@@ -136,7 +138,8 @@ class MagmaBaseTest(BaseTestCase):
             key_size=self.key_size,
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size)
+            mix_key_size=self.mix_key_size,
+            deep_copy=self.deep_copy)
         self.gen_create = None
         self.gen_delete = None
         self.gen_update = doc_generator(
@@ -149,7 +152,8 @@ class MagmaBaseTest(BaseTestCase):
             mutate=1,
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size)
+            mix_key_size=self.mix_key_size,
+            deep_copy=self.deep_copy)
         if self.fragmentation:
             g_update = doc_generator(
                 self.key, 0,
@@ -162,7 +166,8 @@ class MagmaBaseTest(BaseTestCase):
                 mutate=1,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
             _ = self._load_all_buckets(
                 self.cluster, g_update,
                 "update", 0,

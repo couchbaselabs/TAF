@@ -97,7 +97,8 @@ class BasicCrudTests(MagmaBaseTest):
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
@@ -113,7 +114,8 @@ class BasicCrudTests(MagmaBaseTest):
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
             if self.doc_size <= 32:
                 for bucket in self.bucket_util.get_all_buckets():
                     disk_usage = self.get_disk_usage(
@@ -173,7 +175,8 @@ class BasicCrudTests(MagmaBaseTest):
                 mutate=count+1,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
@@ -238,7 +241,8 @@ class BasicCrudTests(MagmaBaseTest):
                     mutate=count+1,
                     randomize_doc_size=self.randomize_doc_size,
                     randomize_value=self.randomize_value,
-                    mix_key_size=self.mix_key_size)
+                    mix_key_size=self.mix_key_size,
+                    deep_copy=self.deep_copy)
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
                                       _sync=True)
@@ -279,7 +283,8 @@ class BasicCrudTests(MagmaBaseTest):
                 mutate=count,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
             start_del = 0
             end_del = self.num_items//2
             if self.rev_del:
@@ -294,7 +299,8 @@ class BasicCrudTests(MagmaBaseTest):
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
             self.log.info("Deleting num_items//2 docs")
             self.doc_ops = "delete"
             _ = self.loadgen_docs(self.retry_exceptions,
@@ -381,7 +387,8 @@ class BasicCrudTests(MagmaBaseTest):
                     mutate=mutated,
                     randomize_doc_size=self.randomize_doc_size,
                     randomize_value=self.randomize_value,
-                    mix_key_size=self.mix_key_size)
+                    mix_key_size=self.mix_key_size,
+                    deep_copy=self.deep_copy)
                 mutated += 1
                 tem_tasks_info = self.bucket_util._async_load_all_buckets(
                     self.cluster, g_update, "update", 0,
@@ -405,7 +412,8 @@ class BasicCrudTests(MagmaBaseTest):
                     mutate=mutated,
                     randomize_doc_size=self.randomize_doc_size,
                     randomize_value=self.randomize_value,
-                    mix_key_size=self.mix_key_size)
+                    mix_key_size=self.mix_key_size,
+                    deep_copy=self.deep_copy)
                 mutated += 1
                 if self.next_half:
                     mutated -= 2
@@ -421,7 +429,8 @@ class BasicCrudTests(MagmaBaseTest):
                         mutate=mutated,
                         randomize_doc_size=self.randomize_doc_size,
                         randomize_value=self.randomize_value,
-                        mix_key_size=self.mix_key_size)
+                        mix_key_size=self.mix_key_size,
+                        deep_copy=self.deep_copy)
                     mutated += 1
                     tem_tasks_info = self.bucket_util._async_load_all_buckets(
                         self.cluster, r_update, "update", 0,
@@ -517,7 +526,8 @@ class BasicCrudTests(MagmaBaseTest):
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
             self.log.info("Deleting num_items//2 docs")
             self.doc_ops = "delete"
             _ = self.loadgen_docs(self.retry_exceptions,

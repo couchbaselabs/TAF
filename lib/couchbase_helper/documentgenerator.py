@@ -25,7 +25,8 @@ def doc_generator(key, start, end,
                   target_vbucket=None, vbuckets=1024,
                   mutation_type="ADD", mutate=0,
                   randomize_doc_size=False, randomize_value=False,
-                  randomize=False):
+                  randomize=False,
+                  deep_copy=False):
 
     # Defaults to JSON doc_type
     template_obj = JsonObject.create()
@@ -63,7 +64,8 @@ def doc_generator(key, start, end,
             target_vbucket=target_vbucket, vbuckets=vbuckets,
             randomize_doc_size=randomize_doc_size,
             randomize_value=randomize_value,
-            randomize=randomize)
+            randomize=randomize,
+            deep_copy=deep_copy)
     return DocumentGenerator(key, template_obj,
                              start=start, end=end,
                              key_size=key_size, mix_key_size=mix_key_size,
@@ -71,7 +73,8 @@ def doc_generator(key, start, end,
                              target_vbucket=target_vbucket, vbuckets=vbuckets,
                              randomize_doc_size=randomize_doc_size,
                              randomize_value=randomize_value,
-                             randomize=randomize)
+                             randomize=randomize,
+                             deep_copy=deep_copy)
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
@@ -213,6 +216,9 @@ class DocumentGenerator(KVGenerator):
             self.mix_key_size = kwargs['mix_key_size']
             self.key_len = len(self.name)
 
+        if 'deep_copy' in kwargs:
+            self.deep_copy = kwargs['deep_copy']
+
     """Creates the next generated document and increments the iterator.
 
     Returns:
@@ -222,7 +228,15 @@ class DocumentGenerator(KVGenerator):
         if self.itr >= self.end:
             raise StopIteration
         template = self.template
-#         template = copy.deepcopy(self.template)
+        # Assigning  self.template to template without
+        # using deep copy  will result in documents in same batch
+        #(BatchedDocumentGenerator)
+        # will have same value/template, and value of all
+        # keys in batch will have value generated for last key
+        # in batch(because of python reference concept)
+        # TO avoid above , we can use deep_copy
+        if self.deep_copy:
+            template = copy.deepcopy(self.template)
         seed_hash = self.name + '-' + str(abs(self.itr))
         self.random.seed(seed_hash)
         if self.randomize:
@@ -435,6 +449,9 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         if 'mix_key_size' in kwargs:
             self.mix_key_size = kwargs['mix_key_size']
 
+        if 'deep_copy' in kwargs:
+            self.deep_copy = kwargs['deep_copy']
+
         self.key_counter = self.start
         self.create_key_for_vbucket()
 
@@ -457,12 +474,15 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
     def next(self):
         if self.itr > self.end:
             raise StopIteration
+        template = self.template
+        if self.deep_copy:
+            template = copy.deepcopy(self.template)
         rand_hash = self.name + '-' + str(self.itr)
         self.random.seed(rand_hash)
         if self.randomize:
-            for k in self.template.getNames():
+            for k in template.getNames():
                 if k in self.kwargs:
-                    self.template.put(k, self.random.choice(self.kwargs[k]))
+                    template.put(k, self.random.choice(self.kwargs[k]))
 
         if self.randomize_doc_size:
             doc_size = self.random.randint(0, self.doc_size)
@@ -473,11 +493,11 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
             self.body = (self.random_string *
                          (self.doc_size/self.len_random_string+2)
                          )[_slice:self.doc_size + _slice]
-        if self.template.get("body"):
-            self.template.put("body", self.body)
+        if template.get("body"):
+            template.put("body", self.body)
         doc_key = self.doc_keys[self.itr]
         self.itr += 1
-        return doc_key, self.template
+        return doc_key, template
 
 
 class BlobGenerator(KVGenerator):
