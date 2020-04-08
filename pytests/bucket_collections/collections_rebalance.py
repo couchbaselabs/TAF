@@ -3,6 +3,7 @@ from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection, RestHelper
 from BucketLib.BucketOperations import BucketHelper
 import time
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class CollectionsRebalance(CollectionBase):
@@ -21,6 +22,7 @@ class CollectionsRebalance(CollectionBase):
         self.replicas_for_failover = self.input.param("replicas_for_failover", 3)
         self.recovery_type = self.input.param("recovery_type", "full")
         self.compaction = self.input.param("compaction", False)
+        self.warmup = self.input.param("warmup", False)
         if (self.compaction):
             self.compaction_tasks = list()
 
@@ -33,6 +35,15 @@ class CollectionsRebalance(CollectionBase):
         for bucket in self.bucket_util.buckets:
             self.compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
+
+    def warmup_node(self, node):
+        self.log.info("Warmuping up node...")
+        shell = RemoteMachineShellConnection(node)
+        shell.stop_couchbase()
+        self.sleep(30)
+        shell.start_couchbase()
+        shell.disconnect()
+        self.log.info("Done warming up...")
 
     def update_bucket_replica(self):
         self.log.info("Updating all the bucket replicas to {0}".format(self.replicas_for_failover))
@@ -78,10 +89,25 @@ class CollectionsRebalance(CollectionBase):
         step_count = self.step_count
         if rebalance_operation == "rebalance_out":
             if step_count == -1:
-                # all at once
-                operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
-                if self.compaction:
-                    self.compact_all_buckets()
+                if self.warmup:
+                    node = known_nodes[-1]
+                    self.warmup_node(node)
+                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                    self.task.jython_task_manager.get_task_result(operation)
+                    if not operation.result:
+                        self.log.info("rebalance was failed as expected")
+                        for bucket in self.bucket_util.buckets:
+                            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                                            [node], bucket))
+                        self.log.info("second attempt to rebalance")
+                        operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                        self.wait_for_rebalance_to_complete(operation)
+                    self.sleep(60)
+                else:
+                    # all at once
+                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                    if self.compaction:
+                        self.compact_all_buckets()
             else:
                 # list of lists each of length step_count
                 remove_list = []
@@ -103,10 +129,25 @@ class CollectionsRebalance(CollectionBase):
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "rebalance_in":
             if step_count == -1:
-                # all at once
-                operation = self.task.async_rebalance(known_nodes, add_nodes, [])
-                if self.compaction:
-                    self.compact_all_buckets()
+                if self.warmup:
+                    node = known_nodes[-1]
+                    self.warmup_node(node)
+                    operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                    self.task.jython_task_manager.get_task_result(operation)
+                    if not operation.result:
+                        self.log.info("rebalance was failed as expected")
+                        for bucket in self.bucket_util.buckets:
+                            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                                            [node], bucket))
+                        self.log.info("second attempt to rebalance")
+                        operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                        self.wait_for_rebalance_to_complete(operation)
+                    self.sleep(60)
+                else:
+                    # all at once
+                    operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                    if self.compaction:
+                        self.compact_all_buckets()
             else:
                 # list of lists each of length step_count
                 add_list = []
@@ -128,12 +169,30 @@ class CollectionsRebalance(CollectionBase):
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "swap_rebalance":
             if(step_count == -1):
-                for node in add_nodes:
-                    self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                       node.ip, self.cluster.servers[self.nodes_init].port)
-                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
-                if self.compaction:
-                    self.compact_all_buckets()
+                if self.warmup:
+                    for node in add_nodes:
+                        self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                                           node.ip, self.cluster.servers[self.nodes_init].port)
+                    node = known_nodes[-1]
+                    self.warmup_node(node)
+                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                    self.task.jython_task_manager.get_task_result(operation)
+                    if not operation.result:
+                        self.log.info("rebalance was failed as expected")
+                        for bucket in self.bucket_util.buckets:
+                            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                                [node], bucket))
+                        self.log.info("second attempt to rebalance")
+                        operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                        self.wait_for_rebalance_to_complete(operation)
+                    self.sleep(60)
+                else:
+                    for node in add_nodes:
+                        self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                                           node.ip, self.cluster.servers[self.nodes_init].port)
+                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                    if self.compaction:
+                        self.compact_all_buckets()
             else:
                 #list of lists each of length step_count
                 add_list = []
@@ -158,12 +217,30 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "rebalance_in_out":
-            for node in add_nodes:
-                self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                   node.ip, self.cluster.servers[self.nodes_init].port)
-            operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
-            if self.compaction:
-                self.compact_all_buckets()
+            if self.warmup:
+                for node in add_nodes:
+                    self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                                       node.ip, self.cluster.servers[self.nodes_init].port)
+                node = known_nodes[-1]
+                self.warmup_node(node)
+                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                self.task.jython_task_manager.get_task_result(operation)
+                if not operation.result:
+                    self.log.info("rebalance was failed as expected")
+                    for bucket in self.bucket_util.buckets:
+                        self.assertTrue(self.bucket_util._wait_warmup_completed(
+                            [node], bucket))
+                    self.log.info("second attempt to rebalance")
+                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                    self.wait_for_rebalance_to_complete(operation)
+                self.sleep(60)
+            else:
+                for node in add_nodes:
+                    self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                                       node.ip, self.cluster.servers[self.nodes_init].port)
+                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                if self.compaction:
+                    self.compact_all_buckets()
         elif rebalance_operation == "graceful_failover_rebalance_out":
             if step_count == -1:
                 failover_count = 0
@@ -431,7 +508,8 @@ class CollectionsRebalance(CollectionBase):
             if self.data_load_type == "async":
                 self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
-        self.wait_for_rebalance_to_complete(rebalance)
+        if not self.warmup:
+            self.wait_for_rebalance_to_complete(rebalance)
         if self.data_load_stage == "during":
             if self.data_load_type == "async":
                 self.wait_for_async_data_load_to_complete(tasks)
