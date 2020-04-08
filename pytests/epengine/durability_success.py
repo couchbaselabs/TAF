@@ -150,7 +150,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Create a SDK client connection to retry operation
-        client = SDKClient([self.cluster.master], self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket)
 
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):
@@ -344,7 +344,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Create a SDK client connection to retry operation
-        client = SDKClient([self.cluster.master], self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket)
 
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):
