@@ -123,7 +123,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             timeout_secs=self.sdk_timeout))
 
         # Wait for document_loader tasks to complete
-        for task in tasks:
+        for task in tasks[2:]:
             self.task.jython_task_manager.get_task_result(task)
             # Verify there is not failed docs in the task
             if len(task.fail.keys()) != 0:
