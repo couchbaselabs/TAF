@@ -12,7 +12,7 @@ class CollectionsRebalance(CollectionBase):
         self.bucket = self.bucket_util.buckets[0]
         self.rest = RestConnection(self.cluster.master)
         self.data_load_stage = self.input.param("data_load_stage", "before")
-        self.data_load_type = self.input.param("data_load_type", "sync")
+        self.data_load_type = self.input.param("data_load_type", "async")
         self.nodes_swap = self.input.param("nodes_swap", 1)
         self.nodes_failover = self.input.param("nodes_failover", 1)
         self.failover_ops = ["graceful_failover_rebalance_out", "hard_failover_rebalance_out",
@@ -365,8 +365,8 @@ class CollectionsRebalance(CollectionBase):
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None
         rebalance = None
-        if rebalance_operation in self.failover_ops:
-            self.update_bucket_replica()
+        # if rebalance_operation in self.failover_ops:
+        #     self.update_bucket_replica()
         self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
         if self.data_load_stage == "before":
             if self.data_load_type == "async":
