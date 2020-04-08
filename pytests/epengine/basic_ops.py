@@ -447,7 +447,7 @@ class basic_ops(BaseTestCase):
                 gens_update = self.generate_docs_bigdata(
                     docs_per_day=1, document_size=(21 * 1024000))
                 task = self.task.async_load_gen_docs(
-                    self.cluster, bucket, gens_update, "create", 0,
+                    self.cluster, bucket, gens_update, "update", 0,
                     batch_size=10,
                     process_concurrency=8,
                     replicate_to=self.replicate_to,
