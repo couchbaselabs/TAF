@@ -283,7 +283,6 @@ class basic_ops(BaseTestCase):
         if self.crash:
             self.client.cluster.disconnect()
             self.transaction.close()
-            print "going to create a new transaction"
             self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
             self.create_Transaction(self.client1)
             self.sleep(self.transaction_timeout+60)
