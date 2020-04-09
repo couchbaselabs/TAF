@@ -64,6 +64,9 @@ class MetaCrudParams(object):
     DURABILITY_LEVEL = "durability_level"
     SKIP_READ_ON_ERROR = "skip_read_on_error"
 
+    RETRY_EXCEPTIONS = "retry_exceptions"
+    IGNORE_EXCEPTIONS = "ignore_exceptions"
+
     COLLECTIONS_CONSIDERED_FOR_CRUD = "collections_considered_for_crud"
     SCOPES_CONSIDERED_FOR_CRUD = "scopes_considers_for_crud"
     BUCKETS_CONSIDERED_FOR_CRUD = "buckets_considered_for_crud"

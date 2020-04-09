@@ -9,6 +9,7 @@ from BucketLib.BucketOperations import BucketHelper
 class CollectionBase(BaseTestCase):
     def setUp(self):
         super(CollectionBase, self).setUp()
+        self.log_setup_status("CollectionBase", "started")
         self.key = 'test_collection'.rjust(self.key_size, '0')
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
@@ -42,6 +43,7 @@ class CollectionBase(BaseTestCase):
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         # Create bucket(s) and add rbac user
+        self.bucket_util.add_rbac_user()
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
         doc_loading_spec = \
@@ -63,12 +65,15 @@ class CollectionBase(BaseTestCase):
                     clients_per_bucket,
                     compression_settings=self.sdk_compression)
 
-        self.bucket_util.run_scenario_from_spec(self.task,
-                                                self.cluster,
-                                                self.bucket_util.buckets,
-                                                doc_loading_spec,
-                                                mutation_num=0)
-        self.bucket_util.add_rbac_user()
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.bucket_util.buckets,
+                doc_loading_spec,
+                mutation_num=0)
+        if doc_loading_task.result is False:
+            self.fail("Initial doc_loading failed")
 
         self.cluster_util.print_cluster_stats()
 
@@ -78,7 +83,7 @@ class CollectionBase(BaseTestCase):
 
         self.bucket_util.print_bucket_stats()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
-        self.log.info("=== CollectionBase setup complete ===")
+        self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
         self.bucket_util.remove_scope_collections_and_validate()

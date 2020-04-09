@@ -3168,8 +3168,7 @@ class MutateDocsFromSpecTask(Task):
         self.print_ops_rate = print_ops_rate
         self.suppress_error_table = suppress_error_table
 
-        self.fail = dict()
-        self.success = dict()
+        self.result = True
         self.load_gen_tasks = list()
         self.print_ops_rate_tasks = list()
 
@@ -3206,10 +3205,19 @@ class MutateDocsFromSpecTask(Task):
                 except Exception as e:
                     self.test_log.error(e)
                 finally:
-                    self.fail.update(task.fail)
-                    self.success.update(task.success)
+                    self.loader_spec[
+                        task.bucket]["scopes"][
+                        task.scope]["collections"][
+                        task.collection][
+                        task.op_type]["success"].update(task.success)
+                    self.loader_spec[
+                        task.bucket]["scopes"][
+                        task.scope]["collections"][
+                        task.collection][
+                        task.op_type]["fail"].update(task.fail)
                     if task.fail.__len__() != 0:
                         target_log = self.test_log.error
+                        self.result = False
                     else:
                         target_log = self.test_log.debug
                     target_log("Failed to load %d docs from %d to %d"
@@ -3236,7 +3244,7 @@ class MutateDocsFromSpecTask(Task):
                 self.log.debug("Task '%s' complete. Loaded %s items"
                                % (task.thread_name, task.docs_loaded))
         self.complete_task()
-        return self.fail
+        return self.result
 
     def create_tasks_for_bucket(self, bucket, scope_dict):
         load_gen_for_scopes_create_threads = list()
@@ -3264,6 +3272,10 @@ class MutateDocsFromSpecTask(Task):
     def create_tasks_for_collections(self, bucket, scope_name,
                                      col_name, col_meta):
         for op_type, op_data in col_meta.items():
+            # Create success, fail dict per load_gen task
+            op_data["success"] = dict()
+            op_data["fail"] = dict()
+
             generators = list()
             generator = op_data["doc_gen"]
             gen_start = int(generator.start)
@@ -3429,8 +3441,9 @@ class MonitorActiveTask(Task):
                             self.result = False
                             return
                     else:
-                        self.test_log.error("Progress for task %s:%s changed direction!"
-                                            % (self.type, self.target_value))
+                        self.test_log.error(
+                            "Progress for task %s:%s changed direction!"
+                            % (self.type, self.target_value))
                         self.result = False
                         return
         else:
@@ -3605,8 +3618,8 @@ class AutoFailoverNodesFailureTask(Task):
         else:
             if autofailover_initiated:
                 message = "Node {0} was autofailed over but no autofailover " \
-                          "of the node was expected".format(
-                    self.current_failure_node.ip)
+                          "of the node was expected" \
+                          .format(self.current_failure_node.ip)
                 rest.print_UI_logs(10)
                 self.test_log.error(message)
                 if self.get_failover_count() == 1:

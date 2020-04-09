@@ -1,3 +1,5 @@
+import copy
+import datetime
 import gzip
 import json
 import random
@@ -5,15 +7,14 @@ import string
 import zlib
 
 from random import choice
-from string import ascii_uppercase
-from string import ascii_lowercase
-from string import digits
+from string import ascii_uppercase, ascii_lowercase, digits
+
+from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
+
+from com.couchbase.client.java.json import JsonObject
 from java.lang import String
 from java.nio.charset import StandardCharsets
-from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
-from com.couchbase.client.java.json import JsonObject
 from reactor.util.function import Tuples
-import copy
 
 
 letters = ascii_uppercase + ascii_lowercase + digits
@@ -32,7 +33,7 @@ def doc_generator(key, start, end,
     template_obj = JsonObject.create()
     template_obj.put("mutated", mutate)
     _l = len('''{ "mutated": %s
-    }''' % (mutate))
+    }''' % mutate)
     doc_size -= _l
     _l = len('"age    ": 5,')
     if doc_size > _l:
@@ -231,7 +232,7 @@ class DocumentGenerator(KVGenerator):
         template = self.template
         # Assigning  self.template to template without
         # using deep copy  will result in documents in same batch
-        #(BatchedDocumentGenerator)
+        # (BatchedDocumentGenerator)
         # will have same value/template, and value of all
         # keys in batch will have value generated for last key
         # in batch(because of python reference concept)
@@ -266,9 +267,10 @@ class DocumentGenerator(KVGenerator):
             doc_key = ''.join(self.random.choice(letters)
                               for _ in range(self.key_size))
         elif self.mix_key_size:
-            doc_key = "{}-{}".format(self.name,str(abs(self.itr)).zfill(self.random.randint(self.key_size, 250)
-                                                    - self.key_len
-                                                    - 1))
+            doc_key = "{}-{}".format(self.name, str(abs(self.itr)).zfill(
+                self.random.randint(self.key_size, 250)
+                - self.key_len
+                - 1))
         else:
             doc_key = self.next_key(self.itr)
         self.itr += 1
@@ -503,7 +505,9 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
 class BlobGenerator(KVGenerator):
     def __init__(self, name, seed, value_size, start=0, end=10000):
-        KVGenerator.__init__(self, name, start, end)
+        KVGenerator.__init__(self, name)
+        self.start = start
+        self.end = end
         self.seed = seed
         self.value_size = value_size
         self.itr = self.start
@@ -536,6 +540,7 @@ class BatchedDocumentGenerator(object):
         self._batch_size = batch_size_int
         self._doc_gen.random = random.Random()
         self.doc_type = document_generator.doc_type
+        self.count = 0
 
         if self._batch_size <= 0:
             raise ValueError("Invalid Batch size {0}".format(self._batch_size))
@@ -558,7 +563,9 @@ class JSONNonDocGenerator(KVGenerator):
     Values can be arrays, integers, strings
     """
     def __init__(self, name, values, start=0, end=10000):
-        KVGenerator.__init__(self, name, start, end)
+        KVGenerator.__init__(self, name)
+        self.start = start
+        self.end = end
         self.values = values
         self.itr = self.start
 
@@ -577,7 +584,9 @@ class JSONNonDocGenerator(KVGenerator):
 
 class Base64Generator(KVGenerator):
     def __init__(self, name, values, start=0, end=10000):
-        KVGenerator.__init__(self, name, start, end)
+        KVGenerator.__init__(self, name)
+        self.start = start
+        self.end = end
         self.values = values
         self.itr = self.start
 
@@ -595,7 +604,6 @@ class Base64Generator(KVGenerator):
 
 
 class JsonDocGenerator(KVGenerator):
-
     def __init__(self, name, op_type="create", encoding="utf-8",
                  *args, **kwargs):
         """Initializes the JSON document generator
@@ -647,7 +655,9 @@ class JsonDocGenerator(KVGenerator):
             for arg in self.args:
                 size *= len(arg)
 
-        KVGenerator.__init__(self, name, 0, size)
+        KVGenerator.__init__(self, name)
+        self.start = 0
+        self.end = size
         random.seed(0)
 
         if 'start' in kwargs:
@@ -676,7 +686,8 @@ class JsonDocGenerator(KVGenerator):
                     doc_dict['manages'] = {'team_size': random.randint(5, 10)}
                     doc_dict['manages']['reports'] = []
                     for _ in xrange(0, doc_dict['manages']['team_size']):
-                        doc_dict['manages']['reports'].append(self.generate_name())
+                        doc_dict['manages']['reports'] \
+                            .append(self.generate_name())
                 self.gen_docs[count-1] = doc_dict
         elif op_type == "delete":
             # for deletes, just keep/return empty docs with just type field
@@ -706,20 +717,23 @@ class JsonDocGenerator(KVGenerator):
                         doc_dict['manages'] = {'team_size': random.randint(5, 10)}
                         doc_dict['manages']['reports'] = []
                         for _ in xrange(0, doc_dict['manages']['team_size']):
-                            doc_dict['manages']['reports'].append(self.generate_name())
+                            doc_dict['manages']['reports'] \
+                                .append(self.generate_name())
                 if 'languages_known' in fields_to_update:
                     doc_dict['languages_known'] = self.generate_lang_known()
                 if 'email' in fields_to_update:
-                    doc_dict['email'] = "%s_%s@mcdiabetes.com" % \
-                                        (doc_dict['name'].split(' ')[0].lower(),
-                                         str(random.randint(0, 99)))
-                if 'manages.team_size' in fields_to_update or\
-                        'manages.reports' in fields_to_update:
+                    doc_dict['email'] = \
+                        "%s_%s@mcdiabetes.com"\
+                        % (doc_dict['name'].split(' ')[0].lower(),
+                           str(random.randint(0, 99)))
+                if 'manages.team_size' in fields_to_update \
+                        or 'manages.reports' in fields_to_update:
                     doc_dict['manages'] = {}
                     doc_dict['manages']['team_size'] = random.randint(5, 10)
                     doc_dict['manages']['reports'] = []
                     for _ in xrange(0, doc_dict['manages']['team_size']):
-                        doc_dict['manages']['reports'].append(self.generate_name())
+                        doc_dict['manages']['reports'] \
+                            .append(self.generate_name())
             self.gen_docs[count] = doc_dict
 
     def next(self):
@@ -731,7 +745,6 @@ class JsonDocGenerator(KVGenerator):
             json.dumps(doc).encode(self.encoding, "ignore")
 
     def generate_join_date(self):
-        import datetime
         year = random.randint(1950, 2016)
         month = random.randint(1, 12)
         day = random.randint(1, 28)

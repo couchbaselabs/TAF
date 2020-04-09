@@ -247,6 +247,10 @@ class DocLoaderUtils(object):
                                 durability_level
                             c_crud_data[op_type]["skip_read_on_error"] = \
                                 skip_read_on_error
+                            c_crud_data[op_type]["ignore_exceptions"] = \
+                                ignore_exceptions
+                            c_crud_data[op_type]["retry_exceptions"] = \
+                                retry_exceptions
                             if op_type in DocLoading.Bucket.DOC_OPS:
                                 c_crud_data[op_type]["doc_gen"] = \
                                     DocLoaderUtils.get_doc_generator(
@@ -276,7 +280,12 @@ class DocLoaderUtils(object):
 
         # Fetch common doc_key to use while doc_loading
         doc_key = input_spec["doc_crud"].get(
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_collections")
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_docs")
+
+        ignore_exceptions = input_spec.get(
+            MetaCrudParams.IGNORE_EXCEPTIONS, [])
+        retry_exceptions = input_spec.get(
+            MetaCrudParams.RETRY_EXCEPTIONS, [])
 
         # Fetch doc_loading options to use while doc_loading
         doc_ttl = input_spec.get(MetaCrudParams.DOC_TTL, 0)
@@ -344,12 +353,146 @@ class DocLoaderUtils(object):
         return crud_spec
 
     @staticmethod
+    def validate_crud_task_per_collection(bucket, scope_name,
+                                          collection_name, c_data):
+        # Fetch client for retry operations
+        client = \
+            DocLoaderUtils.sdk_client_pool.get_client_for_bucket(
+                bucket, scope_name, collection_name)
+        for op_type, op_data in c_data.items():
+            ignored_keys = list()
+            failed_keys = op_data["fail"].keys()
+
+            # New dicts to filter failures based on retry strategy
+            op_data["unwanted"] = dict()
+            op_data["retried"] = dict()
+            op_data["unwanted"]["fail"] = dict()
+            op_data["unwanted"]["success"] = dict()
+            op_data["retried"]["fail"] = dict()
+            op_data["retried"]["success"] = dict()
+
+            if failed_keys:
+                DocLoaderUtils.log.warning(
+                    "%s:%s:%s %s failed keys: %s"
+                    % (bucket.name, scope_name, collection_name,
+                       op_type, failed_keys))
+                for key, failed_doc in op_data["fail"].items():
+                    is_key_to_ignore = False
+                    exception = failed_doc["error"]
+                    for tem_exception in op_data["ignore_exceptions"]:
+                        if str(exception).find(tem_exception) != -1:
+                            bucket.scopes[scope_name] \
+                                .collections[collection_name].num_items -= 1
+                            is_key_to_ignore = True
+                            break
+                    if is_key_to_ignore:
+                        op_data["fail"].pop(key)
+                        ignored_keys.append(key)
+                        continue
+
+                    ambiguous_state = False
+                    if SDKException.DurabilityAmbiguousException \
+                            in str(exception) \
+                            or SDKException.AmbiguousTimeoutException \
+                            in str(exception) \
+                            or SDKException.TimeoutException \
+                            in str(exception) \
+                            or (SDKException.RequestCanceledException
+                                in str(exception) and
+                                "CHANNEL_CLOSED_WHILE_IN_FLIGHT"
+                                in str(exception)):
+                        ambiguous_state = True
+
+                    result = client.crud(
+                        op_type, key, failed_doc["value"],
+                        exp=op_data["doc_ttl"],
+                        durability=op_data["durability_level"],
+                        timeout=op_data["sdk_timeout"],
+                        time_unit=op_data["sdk_timeout_unit"])
+
+                    retry_strategy = "unwanted"
+                    for ex in op_data["retry_exceptions"]:
+                        if str(exception).find(ex) != -1:
+                            retry_strategy = "retried"
+                            break
+
+                    if result["status"] \
+                            or (ambiguous_state
+                                and SDKException.DocumentExistsException
+                                in result["error"]
+                                and op_type in ["create", "update"]) \
+                            or (ambiguous_state
+                                and SDKException.DocumentNotFoundException
+                                in result["error"]
+                                and op_type == "delete"):
+                        op_data[retry_strategy]["success"][key] = \
+                            result
+                        if retry_strategy == "retried":
+                            op_data["fail"].pop(key)
+                    else:
+                        bucket.scopes[scope_name] \
+                            .collections[collection_name].num_items -= 1
+                        op_data[retry_strategy]["fail"][key] = result
+
+                generic_string = "%s:%s:%s %s" \
+                                 % (bucket.name, scope_name, collection_name,
+                                    op_type)
+                if ignored_keys:
+                    DocLoaderUtils.log.debug(
+                        "%s ignored keys from retry: %s"
+                        % (generic_string, ignored_keys))
+                if op_data["retried"]["success"]:
+                    DocLoaderUtils.log.debug(
+                        "%s expected retry succeeded for keys: %s"
+                        % (generic_string, op_data["retried"]["success"]))
+                if op_data["retried"]["fail"]:
+                    DocLoaderUtils.log.error(
+                        "%s expected retry failed for keys: %s"
+                        % (generic_string, op_data["retried"]["fail"]))
+                if op_data["unwanted"]["success"]:
+                    DocLoaderUtils.log.error(
+                        "%s unexpected failed keys succeeded in retry: %s"
+                        % (generic_string, op_data["unwanted"]["success"]))
+                if op_data["unwanted"]["fail"]:
+                    DocLoaderUtils.log.error(
+                        "%s unexpected failures failed even in retry: %s"
+                        % (generic_string, op_data["unwanted"]["fail"]))
+
+        # Release the acquired client
+        DocLoaderUtils.sdk_client_pool.release_client(client)
+
+    @staticmethod
     def validate_doc_loading_results(doc_loading_task):
         """
         :param doc_loading_task: Task object returned from
                                  DocLoaderUtils.create_doc_gens_for_spec call
         :return:
         """
+        c_validation_threads = list()
+        crud_validation_function = \
+            DocLoaderUtils.validate_crud_task_per_collection
+        for bucket_obj, scope_dict in doc_loading_task.loader_spec.items():
+            for s_name, collection_dict in scope_dict["scopes"].items():
+                for c_name, c_dict in collection_dict["collections"].items():
+                    c_thread = threading.Thread(
+                        target=crud_validation_function,
+                        args=[bucket_obj, s_name, c_name, c_dict])
+                    c_thread.start()
+                    c_validation_threads.append(c_thread)
+
+        # Wait for all threads to complete
+        for c_thread in c_validation_threads:
+            c_thread.join(60)
+
+        # Set doc_loading result based on the retry outcome
+        doc_loading_task.result = True
+        for _, scope_dict in doc_loading_task.loader_spec.items():
+            for _, collection_dict in scope_dict["scopes"].items():
+                for _, c_dict in collection_dict["collections"].items():
+                    for op_type, op_data in c_dict.items():
+                        if op_data["fail"]:
+                            doc_loading_task.result = False
+                            break
 
     @staticmethod
     def run_scenario_from_spec(task_manager, cluster, buckets,

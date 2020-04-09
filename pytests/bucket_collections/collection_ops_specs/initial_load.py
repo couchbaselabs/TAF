@@ -35,6 +35,7 @@ spec = {
         # Applies to all active collections selected as per the
         # COLLECTIONS_CONSIDERED_FOR_CRUD value
         MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+
         MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 100,
         MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
         MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 0,
@@ -63,6 +64,9 @@ spec = {
     MetaCrudParams.SDK_TIMEOUT: 60,
     MetaCrudParams.SDK_TIMEOUT_UNIT: "seconds",
     MetaCrudParams.SKIP_READ_ON_ERROR: False,
+
+    MetaCrudParams.RETRY_EXCEPTIONS: [],
+    MetaCrudParams.IGNORE_EXCEPTIONS: [],
 
     # Applies only for DocCrud / SubDocCrud operation
     MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
