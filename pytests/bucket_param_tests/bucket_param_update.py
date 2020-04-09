@@ -252,6 +252,15 @@ class BucketParamTest(BaseTestCase):
 
             # Wait for all tasks to complete
             self.task.jython_task_manager.get_task_result(rebalance)
+            if not rebalance.result:
+                self.task_manager.abort_all_tasks()
+                for task in tasks:
+                    try:
+                        for client in task.clients:
+                            client.close()
+                    except:
+                        pass
+                self.fail("Rebalance Failed")
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
             if not self.atomicity:
