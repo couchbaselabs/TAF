@@ -81,112 +81,13 @@ class MagmaBaseTest(BaseTestCase):
         self.test_itr = self.input.param("test_itr", 4)
         self.update_count = self.input.param("update_count", 10)
         self.next_half = self.input.param("next_half", False)
-        start = 0
-        end = self.num_items
-        if self.rev_write:
-            start = -int(self.num_items - 1)
-            end = 1
         self.deep_copy = self.input.param("deep_copy", False)
-        self.gen_create = doc_generator(
-            self.key, start, end,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            key_size=self.key_size,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size,
-            deep_copy=self.deep_copy)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
-        self.result_task = self._load_all_buckets(
-            self.cluster, self.gen_create,
-            "create", 0,
-            batch_size=self.batch_size,
-            dgm_batch=self.dgm_batch)
-        if self.active_resident_threshold != 100:
-            for task in self.result_task.keys():
-                self.num_items = task.doc_index
-        self.log.info("Verifying num_items counts after doc_ops")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
-        self.active_resident_threshold = 100
-        # Below start and end var for read generator
-        self.disk_usage = dict()
-        if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
-            for bucket in self.bucket_util.get_all_buckets():
-                disk_usage = self.get_disk_usage(
-                    bucket, self.servers,
-                    paths=["magma.*", "magma.*/wal"])
-                self.disk_usage[bucket.name] = disk_usage[0] - disk_usage[1]
-                self.log.info("Disk usage after Creation of \
-                docs for bucket {} is \
-                 {}".format(bucket.name, self.disk_usage[bucket.name]))
-        start = 0
-        end = self.num_items
-        if self.rev_read:
-            start = -int(self.num_items - 1)
-            end = 1
-        # Initialize doc_generators
-        self.gen_read = doc_generator(
-            self.key, start, end,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            key_size=self.key_size,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size,
-            deep_copy=self.deep_copy)
         self.gen_create = None
         self.gen_delete = None
-        self.gen_update = doc_generator(
-            self.key, 0, self.num_items // 2,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            key_size=self.key_size,
-            mutate=1,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size,
-            deep_copy=self.deep_copy)
-        if self.fragmentation:
-            g_update = doc_generator(
-                self.key, 0,
-                self.num_items * self.fragmentation // 100,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                mutate=1,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
-            _ = self._load_all_buckets(
-                self.cluster, g_update,
-                "update", 0,
-                batch_size=self.batch_size,
-                dgm_batch=self.dgm_batch)
-            self.bucket_util._wait_for_stats_all_buckets()
-            for bucket in self.bucket_util.get_all_buckets():
-                data_val_task = self.task.async_validate_docs(
-                    self.cluster, bucket,
-                    g_update, "update", 0, batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency,
-                    pause_secs=5, timeout_secs=self.sdk_timeout)
-                self.task.jython_task_manager.get_task_result(data_val_task)
-            # In case of fragmentation, first read operation in test case will
-            # be only of items that we updated
-            # and in the same order we updated
-            self.gen_read = copy.deepcopy(g_update)
-        self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.gen_read = None
+        self.gen_update = None
         self.log.info("==========Finished magma base setup========")
 
     def _create_default_bucket(self):
