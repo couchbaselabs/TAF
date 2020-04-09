@@ -9,6 +9,8 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from BucketLib.BucketOperations import BucketHelper
+from math import ceil
 
 retry_exceptions = list([SDKException.AmbiguousTimeoutException,
                          SDKException.DurabilityImpossibleException,
@@ -45,70 +47,113 @@ class RebalanceBaseTest(BaseTestCase):
             self.assertTrue(result, "Initial rebalance failed")
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.check_replica = self.input.param("check_replica", False)
+        self.spec_name = self.input.param("bucket_spec", None)
 
-        self.bucket_util.add_rbac_user()
-        if self.standard_buckets > 10:
-            self.bucket_util.change_max_buckets(self.standard_buckets)
-        self.create_buckets(self.bucket_size)
+        # If buckets creation and initial data load is to be done by bucket_spec
+        if self.spec_name is not None:
+            self.log.info("Creating buckets from spec")
+            # Create bucket(s) and add rbac user
+            buckets_spec = self.bucket_util.get_bucket_template_from_package(
+                self.spec_name)
+            doc_loading_spec = \
+                self.bucket_util.get_crud_template_from_package("initial_load")
 
-        # Create Scope/Collection based on inputs given
-        for bucket in self.bucket_util.buckets:
-            if self.scope_name != CbServer.default_scope:
-                self.scope_name = BucketUtils.get_random_name()
-                BucketUtils.create_scope(self.cluster.master,
-                                         bucket,
-                                         {"name": self.scope_name})
-            if self.collection_name != CbServer.default_collection:
-                self.collection_name = BucketUtils.get_random_name()
-                BucketUtils.create_collection(self.cluster.master,
-                                              bucket,
-                                              self.scope_name,
-                                              {"name": self.collection_name,
-                                               "num_items": self.num_items})
-                self.log.info("Bucket %s using scope::collection - '%s::%s'"
-                              % (bucket.name,
-                                 self.scope_name,
-                                 self.collection_name))
+            self.bucket_util.create_buckets_using_json_data(buckets_spec)
+            self.bucket_util.wait_for_collection_creation_to_complete()
+            # Create clients in SDK client pool
+            if self.sdk_client_pool:
+                self.log.info("Creating required SDK clients for client_pool")
+                bucket_count = len(self.bucket_util.buckets)
+                max_clients = self.task_manager.number_of_threads
+                clients_per_bucket = int(ceil(max_clients / bucket_count))
+                for bucket in self.bucket_util.buckets:
+                    self.sdk_client_pool.create_clients(
+                        bucket,
+                        [self.cluster.master],
+                        clients_per_bucket,
+                        compression_settings=self.sdk_compression)
 
-            # Update required num_items under default collection
-            bucket.scopes[self.scope_name] \
-                .collections[self.collection_name] \
-                .num_items = self.num_items
+            self.bucket_util.run_scenario_from_spec(self.task,
+                                                    self.cluster,
+                                                    self.bucket_util.buckets,
+                                                    doc_loading_spec,
+                                                    mutation_num=0)
+            self.bucket_util.add_rbac_user()
 
-        if self.flusher_total_batch_limit:
-            self.bucket_util.set_flusher_total_batch_limit(
-                self.cluster.master,
-                self.flusher_total_batch_limit,
-                self.bucket_util.buckets)
+            self.cluster_util.print_cluster_stats()
 
-        self.gen_create = self.get_doc_generator(0, self.num_items)
-        if self.active_resident_threshold < 100:
-            self.check_temporary_failure_exception = True
-        if not self.atomicity:
-            _ = self._load_all_buckets(self.cluster, self.gen_create,
-                                       "create", 0, batch_size=self.batch_size)
-            self.log.info("Verifying num_items counts after doc_ops")
+            # Verify initial doc load count
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets(
-                timeout=120)
-        else:
-            self.transaction_commit = True
-            self._load_all_buckets_atomicty(self.gen_create, "create")
-            self.transaction_commit = self.input.param("transaction_commit",
-                                                       True)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
-        # Initialize doc_generators
-        self.active_resident_threshold = 100
-        self.gen_create = None
-        self.gen_delete = None
-        self.gen_update = self.get_doc_generator(0, (self.items / 2))
-        self.durability_helper = DurabilityHelper(
-            self.log, len(self.cluster.nodes_in_cluster),
-            durability=self.durability_level,
-            replicate_to=self.replicate_to, persist_to=self.persist_to)
-        self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
-        self.log.info("==========Finished rebalance base setup========")
+            self.cluster_util.print_cluster_stats()
+            self.bucket_util.print_bucket_stats()
+            self.bucket_helper_obj = BucketHelper(self.cluster.master)
+            self.log.info("==========Finished rebalance base setup========")
+        else:
+            self.bucket_util.add_rbac_user()
+            if self.standard_buckets > 10:
+                self.bucket_util.change_max_buckets(self.standard_buckets)
+            self.create_buckets(self.bucket_size)
+
+            # Create Scope/Collection based on inputs given
+            for bucket in self.bucket_util.buckets:
+                if self.scope_name != CbServer.default_scope:
+                    self.scope_name = BucketUtils.get_random_name()
+                    BucketUtils.create_scope(self.cluster.master,
+                                             bucket,
+                                             {"name": self.scope_name})
+                if self.collection_name != CbServer.default_collection:
+                    self.collection_name = BucketUtils.get_random_name()
+                    BucketUtils.create_collection(self.cluster.master,
+                                                  bucket,
+                                                  self.scope_name,
+                                                  {"name": self.collection_name,
+                                                   "num_items": self.num_items})
+                    self.log.info("Bucket %s using scope::collection - '%s::%s'"
+                                  % (bucket.name,
+                                     self.scope_name,
+                                     self.collection_name))
+
+                # Update required num_items under default collection
+                bucket.scopes[self.scope_name] \
+                    .collections[self.collection_name] \
+                    .num_items = self.num_items
+
+            if self.flusher_total_batch_limit:
+                self.bucket_util.set_flusher_total_batch_limit(
+                    self.cluster.master,
+                    self.flusher_total_batch_limit,
+                    self.bucket_util.buckets)
+
+            self.gen_create = self.get_doc_generator(0, self.num_items)
+            if self.active_resident_threshold < 100:
+                self.check_temporary_failure_exception = True
+            if not self.atomicity:
+                _ = self._load_all_buckets(self.cluster, self.gen_create,
+                                           "create", 0, batch_size=self.batch_size)
+                self.log.info("Verifying num_items counts after doc_ops")
+                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util.validate_docs_per_collections_all_buckets(
+                    timeout=120)
+            else:
+                self.transaction_commit = True
+                self._load_all_buckets_atomicty(self.gen_create, "create")
+                self.transaction_commit = self.input.param("transaction_commit",
+                                                           True)
+
+            # Initialize doc_generators
+            self.active_resident_threshold = 100
+            self.gen_create = None
+            self.gen_delete = None
+            self.gen_update = self.get_doc_generator(0, (self.items / 2))
+            self.durability_helper = DurabilityHelper(
+                self.log, len(self.cluster.nodes_in_cluster),
+                durability=self.durability_level,
+                replicate_to=self.replicate_to, persist_to=self.persist_to)
+            self.cluster_util.print_cluster_stats()
+            self.bucket_util.print_bucket_stats()
+            self.log.info("==========Finished rebalance base setup========")
 
     def _create_default_bucket(self, bucket_size):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
