@@ -132,6 +132,7 @@ class KVGenerator(object):
         self.key_size = 8
         self.doc_size = 256
         self.body = [''.rjust(self.doc_size, 'a')][0]
+        self.deep_copy = False
 
     def has_next(self):
         return self.itr < self.end
