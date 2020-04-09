@@ -57,7 +57,11 @@ class NodeHelper:
         self.connect_ok = False
         self.shell = None
         self.info = None
+        self.enable_ipv6 = False
         self.check_node_reachable()
+        self.nonroot = self.shell.nonroot
+        self.actions_dict = install_constants.NON_ROOT_CMDS \
+            if self.nonroot else install_constants.CMDS
 
     def check_node_reachable(self):
         start_time = time.time()
@@ -70,8 +74,8 @@ class NodeHelper:
                 if self.connect_ok:
                     break
             except Exception as e:
-                log.warn("{0} unreachable, {1}, retrying.."
-                         .format(self.ip, e.message))
+                log.warning("{0} unreachable, {1}, retrying.."
+                            .format(self.ip, e))
                 time.sleep(20)
 
     def get_os(self):
@@ -80,15 +84,23 @@ class NodeHelper:
         for _ in to_be_replaced:
             if _ in os:
                 os = os.replace(_, '')
+        if self.info.deliverable_type == "dmg":
+            major_version = os.split('.')
+            os = major_version[0] + '.' + major_version[1]
         return os
 
     def uninstall_cb(self):
-        if install_constants.CMDS[self.info.deliverable_type]["uninstall"]:
-            cmd = install_constants.CMDS[self.info.deliverable_type]["uninstall"]
+        need_nonroot_relogin = False
+        if self.shell.nonroot:
+            self.node.ssh_username = "root"
+            self.shell = RemoteMachineShellConnection(self.node)
+            need_nonroot_relogin = True
+        if self.actions_dict[self.info.deliverable_type]["uninstall"]:
+            cmd = self.actions_dict[self.info.deliverable_type]["uninstall"]
             if "msi" in cmd:
                 '''WINDOWS UNINSTALL'''
                 self.shell.terminate_processes(self.info, [s for s in testconstants.WIN_PROCESSES_KILLED])
-                self.shell.terminate_processes(self.info, \
+                self.shell.terminate_processes(self.info,
                                                [s + "-*" for s in testconstants.COUCHBASE_FROM_VERSION_3])
                 installed_version, _ = self.shell.execute_command(
                     "cat " + install_constants.DEFAULT_INSTALL_DIR["WINDOWS_SERVER"] + "VERSION.txt")
@@ -98,8 +110,8 @@ class NodeHelper:
                             0] + "*.msi")
                     if len(installed_msi) == 1:
                         self.shell.execute_command(
-                            install_constants.CMDS[self.info.deliverable_type]["uninstall"].replace("installed-msi",
-                                                                                                    installed_msi[0]))
+                            self.actions_dict[self.info.deliverable_type]["uninstall"]
+                                .replace("installed-msi", installed_msi[0]))
                 for browser in install_constants.WIN_BROWSERS:
                     self.shell.execute_command("taskkill /F /IM " + browser + " /T")
             else:
@@ -112,32 +124,38 @@ class NodeHelper:
                             break
                         self.wait_for_completion(duration, event)
                     except Exception as e:
-                        log.warn("Exception {0} occurred on {1}, retrying..".format(e.message, self.ip))
+                        log.warning("Exception {0} occurred on {1}, retrying.."
+                                    .format(e, self.ip))
                         self.wait_for_completion(duration, event)
+            self.shell.terminate_processes(self.info, install_constants.PROCESSES_TO_TERMINATE)
+
+        if need_nonroot_relogin:
+            self.node.ssh_username = "nonroot"
+            self.shell = RemoteMachineShellConnection(self.node)
 
     def pre_install_cb(self):
-        if install_constants.CMDS[self.info.deliverable_type]["pre_install"]:
-            cmd = install_constants.CMDS[self.info.deliverable_type]["pre_install"]
+        if self.actions_dict[self.info.deliverable_type]["pre_install"]:
+            cmd = self.actions_dict[self.info.deliverable_type]["pre_install"]
             duration, event, timeout = install_constants.WAIT_TIMES[self.info.deliverable_type]["pre_install"]
             if cmd is not None and "HDIUTIL_DETACH_ATTACH" in cmd:
                 start_time = time.time()
                 while time.time() < start_time + timeout:
                     try:
-                        ret = hdiutil_attach(self.shell, self.build.path, self.build.version)
+                        ret = hdiutil_attach(self.shell, self.build.path)
                         if ret:
                             break
                         self.wait_for_completion(duration, event)
                     except Exception as e:
-                        log.warn("Exception {0} occurred on {1}, retrying..".format(e.message, self.ip))
+                        log.warning("Exception {0} occurred on {1}, retrying..".format(e, self.ip))
                         self.wait_for_completion(duration, event)
 
     def install_cb(self):
         self.pre_install_cb()
-        if install_constants.CMDS[self.info.deliverable_type]["install"]:
+        if self.actions_dict[self.info.deliverable_type]["install"]:
             if "suse" in self.get_os():
-                cmd = install_constants.CMDS[self.info.deliverable_type]["suse_install"]
+                cmd = self.actions_dict[self.info.deliverable_type]["suse_install"]
             else:
-                cmd = install_constants.CMDS[self.info.deliverable_type]["install"]
+                cmd = self.actions_dict[self.info.deliverable_type]["install"]
             cmd = cmd.replace("buildbinary", self.build.name)
             cmd = cmd.replace("buildpath", self.build.path)
             cmd = cmd.replace("mountpoint", "/tmp/couchbase-server-" + params["version"])
@@ -150,7 +168,8 @@ class NodeHelper:
                         break
                     self.wait_for_completion(duration, event)
                 except Exception as e:
-                    log.warn("Exception {0} occurred on {1}, retrying..".format(e.message, self.ip))
+                    log.warning("Exception {0} occurred on {1}, retrying.."
+                                .format(e, self.ip))
                     self.wait_for_completion(duration, event)
         self.post_install_cb()
 
@@ -159,27 +178,27 @@ class NodeHelper:
         start_time = time.time()
         while time.time() < start_time + timeout:
             try:
-                if install_constants.CMDS[self.info.deliverable_type]["post_install"]:
-                    cmd = install_constants.CMDS[self.info.deliverable_type]["post_install"].replace("buildversion",
-                                                                                                     self.build.version)
+                if self.actions_dict[self.info.deliverable_type]["post_install"]:
+                    cmd = self.actions_dict[self.info.deliverable_type]["post_install"].replace("buildversion", self.build.version)
                     o, e = self.shell.execute_command(cmd, debug=self.params["debug_logs"])
                     if o == ['1']:
                         break
                     else:
-                        if install_constants.CMDS[self.info.deliverable_type]["post_install_retry"]:
+                        if self.actions_dict[self.info.deliverable_type]["post_install_retry"]:
                             if self.info.deliverable_type == "msi":
                                 check_if_downgrade, _ = self.shell.execute_command(
                                     "cd " + install_constants.DOWNLOAD_DIR["WINDOWS_SERVER"] +
                                     "; vi +\"set nobomb | set fenc=ascii | x\" install_status.txt; "
                                     "grep 'Adding WIX_DOWNGRADE_DETECTED property' install_status.txt")
-                                print(check_if_downgrade * 10)
+                                print((check_if_downgrade * 10))
                             else:
                                 self.shell.execute_command(
-                                    install_constants.CMDS[self.info.deliverable_type]["post_install_retry"],
+                                    self.actions_dict[self.info.deliverable_type]["post_install_retry"],
                                     debug=self.params["debug_logs"])
                         self.wait_for_completion(duration, event)
             except Exception as e:
-                log.warn("Exception {0} occurred on {1}, retrying..".format(e.message, self.ip))
+                log.warning("Exception {0} occurred on {1}, retrying.."
+                            .format(e, self.ip))
                 self.wait_for_completion(duration, event)
 
     def set_cbft_env_options(self, name, value, retries=3):
@@ -189,14 +208,17 @@ class NodeHelper:
                     ret, _ = self.shell.execute_command(install_constants.CBFT_ENV_OPTIONS[name].format(value))
                     self.shell.stop_server()
                     self.shell.start_server()
+                    time.sleep(10)
                     if ret == ['1']:
-                        log.info("{0} set to {1} on {2}".format(name, value, self.ip))
+                        log.info("{0} set to {1} on {2}"
+                                 .format(name, value, self.ip))
                         break
                 else:
                     time.sleep(20)
                 retries -= 1
             else:
-                print_result_and_exit("Unable to set fts_query_limit on {0}".format(self.ip))
+                print_result_and_exit("Unable to set fts_query_limit on {0}"
+                                      .format(self.ip))
 
     def _get_cli_path(self):
         if self.get_os() in install_constants.LINUX_DISTROS:
@@ -206,29 +228,37 @@ class NodeHelper:
         elif self.get_os() in install_constants.WINDOWS_SERVER:
             return install_constants.DEFAULT_CLI_PATH["WINDOWS_SERVER"]
 
+    def _set_ip_version(self):
+        if params["enable_ipv6"]:
+            self.enable_ipv6 = True
+            if self.node.ip.startswith("["):
+                hostname = self.node.ip[self.node.ip.find("[") + 1:self.node.ip.find("]")]
+            else:
+                hostname = self.node.ip
+            cmd = install_constants.NODE_INIT["ipv6"]\
+                .format(self._get_cli_path(),
+                        self.ip,
+                        hostname,
+                        self.node.rest_username,
+                        self.node.rest_password)
+        else:
+            cmd = install_constants.NODE_INIT["ipv4"]\
+                .format(self._get_cli_path(),
+                        self.ip,
+                        self.node.rest_username,
+                        self.node.rest_password)
+
+        self.shell.execute_command(cmd)
+
     def pre_init_cb(self):
         try:
-            if params["fts_query_limit"] > 0:
-                self.set_cbft_env_options("fts_query_limit", params["fts_query_limit"])
+            self._set_ip_version()
 
-            if params["enable_ipv6"]:
-                if self.node.ip.startswith("["):
-                    hostname = self.node.ip[self.node.ip.find("[") + 1:self.node.ip.find("]")]
-                else:
-                    hostname = self.node.ip
-                cmd = install_constants.NODE_INIT["ipv6"].format(self._get_cli_path(),
-                                                    self.ip,
-                                                    hostname,
-                                                    self.node.rest_username,
-                                                    self.node.rest_password)
-            else:
-                cmd = install_constants.NODE_INIT["ipv4"].format(self._get_cli_path(),
-                                                    self.ip,
-                                                    self.node.rest_username,
-                                                    self.node.rest_password)
-            self.shell.execute_command(cmd)
+            if params["fts_query_limit"] > 0:
+                self.set_cbft_env_options("fts_query_limit",
+                                          params["fts_query_limit"])
         except Exception as e:
-            log.warn("Exception {0} occurred during pre-init".format(e.message))
+            log.warning("Exception {0} occurred during pre-init".format(e))
 
     def post_init_cb(self):
         # Optionally change node name and restart server
@@ -250,32 +280,45 @@ class NodeHelper:
     def allocate_memory_quotas(self):
         kv_quota = 0
         info = self.rest.get_nodes_self()
-        kv_quota = int(info.mcdMemoryReserved * testconstants.CLUSTER_QUOTA_RATIO)
-        """ for fts, we need to grep quota from ns_server
-                    but need to make it works even RAM of vm is
-                    smaller than 2 GB """
+
+        start_time = time.time()
+        while time.time() < start_time + 30 and kv_quota == 0:
+            kv_quota = int(info.mcdMemoryReserved * testconstants.CLUSTER_QUOTA_RATIO)
+            time.sleep(1)
 
         self.services = self.get_services()
         if "index" in self.services:
-            log.info("Setting INDEX memory quota as {0} MB on {1}".format(testconstants.INDEX_QUOTA, self.ip))
-            self.rest.set_service_memoryQuota(service='indexMemoryQuota', memoryQuota=testconstants.INDEX_QUOTA)
+            log.info("Setting INDEX memory quota as {0} MB on {1}"
+                     .format(testconstants.INDEX_QUOTA, self.ip))
+            self.rest.set_service_memoryQuota(
+                service='indexMemoryQuota',
+                memoryQuota=testconstants.INDEX_QUOTA)
             kv_quota -= testconstants.INDEX_QUOTA
         if "fts" in self.services:
-            log.info("Setting FTS memory quota as {0} MB on {1}".format(params["fts_quota"], self.ip))
-            self.rest.set_service_memoryQuota(service='ftsMemoryQuota', memoryQuota=params["fts_quota"])
+            log.info("Setting FTS memory quota as {0} MB on {1}"
+                     .format(params["fts_quota"], self.ip))
+            self.rest.set_service_memoryQuota(service='ftsMemoryQuota',
+                                              memoryQuota=params["fts_quota"])
             kv_quota -= params["fts_quota"]
         if "cbas" in self.services:
-            log.info("Setting CBAS memory quota as {0} MB on {1}".format(testconstants.CBAS_QUOTA, self.ip))
-            self.rest.set_service_memoryQuota(service="cbasMemoryQuota", memoryQuota=testconstants.CBAS_QUOTA)
+            log.info("Setting CBAS memory quota as {0} MB on {1}"
+                     .format(testconstants.CBAS_QUOTA, self.ip))
+            self.rest.set_service_memoryQuota(
+                service="cbasMemoryQuota",
+                memoryQuota=testconstants.CBAS_QUOTA)
             kv_quota -= testconstants.CBAS_QUOTA
-        if kv_quota < testconstants.MIN_KV_QUOTA:
-            log.warning("KV memory quota is {0}MB but needs to be at least {1}MB on {2}".format(kv_quota,
-                                                                                                    testconstants.MIN_KV_QUOTA,
-                                                                                                    self.ip))
-            kv_quota = testconstants.MIN_KV_QUOTA
-        kv_quota -= 1
-        log.info("Setting KV memory quota as {0} MB on {1}".format(kv_quota, self.ip))
-        self.rest.init_cluster_memoryQuota(self.node.rest_username, self.node.rest_password, kv_quota)
+        if "kv" in self.services:
+            if kv_quota < testconstants.MIN_KV_QUOTA:
+                log.warning("KV memory quota is {0}MB but needs to be at least {1}MB on {2}"
+                            .format(kv_quota,
+                                    testconstants.MIN_KV_QUOTA,
+                                    self.ip))
+                kv_quota = testconstants.MIN_KV_QUOTA
+            log.info("Setting KV memory quota as {0} MB on {1}"
+                     .format(kv_quota, self.ip))
+        self.rest.init_cluster_memoryQuota(self.node.rest_username,
+                                           self.node.rest_password,
+                                           kv_quota)
 
     def init_cb(self):
         duration, event, timeout = install_constants.WAIT_TIMES[self.info.deliverable_type]["init"]
@@ -287,12 +330,13 @@ class NodeHelper:
                 self.pre_init_cb()
 
                 self.rest = RestConnection(self.node)
-                # Make sure that data_path and index_path are writable by couchbase user
-                for path in set(filter(None, [self.node.data_path, self.node.index_path])):
+                # Make sure that data_and index_path are writable by couchbase user
+                for path in set([_f for _f in [self.node.data_path, self.node.index_path] if _f]):
                     for cmd in ("rm -rf {0}/*".format(path),
                                 "chown -R couchbase:couchbase {0}".format(path)):
                         self.shell.execute_command(cmd)
-                self.rest.set_data_path(data_path=self.node.data_path, index_path=self.node.index_path)
+                self.rest.set_data_path(data_path=self.node.data_path,
+                                        index_path=self.node.index_path)
                 self.allocate_memory_quotas()
                 self.rest.init_node_services(hostname=None,
                                              username=self.node.rest_username,
@@ -300,7 +344,8 @@ class NodeHelper:
                                              services=self.get_services())
 
                 if "index" in self.get_services():
-                    self.rest.set_indexer_storage_mode(storageMode=params["storage_mode"])
+                    self.rest.set_indexer_storage_mode(
+                        storageMode=params["storage_mode"])
 
                 self.rest.init_cluster(username=self.node.rest_username,
                                        password=self.node.rest_password)
@@ -309,7 +354,8 @@ class NodeHelper:
                     break
                 self.wait_for_completion(duration, event)
             except Exception as e:
-                log.warn("Exception {0} occurred on {1}, retrying..".format(e.message, self.ip))
+                log.warning("Exception {0} occurred on {1}, retrying.."
+                            .format(e, self.ip))
                 self.wait_for_completion(duration, event)
         self.post_init_cb()
 
@@ -319,17 +365,19 @@ class NodeHelper:
         time.sleep(duration)
 
     def cleanup_cb(self):
-        cmd = install_constants.CMDS[self.info.deliverable_type]["cleanup"]
+        cmd = self.actions_dict[self.info.deliverable_type]["cleanup"]
         if cmd:
             try:
                 # Delete all but the most recently accessed build binaries
-                self.shell.execute_command(cmd, debug=self.params["debug_logs"])
+                self.shell.execute_command(cmd,
+                                           debug=self.params["debug_logs"])
             except:
-                #ok to ignore
                 pass
 
+
 def _get_mounted_volumes(shell):
-    volumes, _ = shell.execute_command("ls /tmp | grep '{0}'".format("couchbase-server-"))
+    volumes, _ = shell.execute_command("ls /tmp | grep '{0}'"
+                                       .format("couchbase-server-"))
     return volumes
 
 
@@ -390,7 +438,7 @@ def _parse_user_input():
         userinput = TestInput.TestInputParser.get_test_input(sys.argv)
     except IndexError:
         print_result_and_exit(install_constants.USAGE)
-    except getopt.GetoptError, err:
+    except getopt.GetoptError as err:
         print_result_and_exit(str(err))
 
     # Mandatory params
@@ -400,7 +448,7 @@ def _parse_user_input():
         params["servers"] = userinput.servers
 
     # Validate and extract remaining params
-    for key, value in userinput.test_params.items():
+    for key, value in list(userinput.test_params.items()):
         if key == "debug_logs":
             params["debug_logs"] = True if value.lower() == "true" else False
         if key == "install_tasks":
@@ -420,9 +468,10 @@ def _parse_user_input():
             if value.startswith("http"):
                 params["url"] = value
             else:
-                log.warn("URL:{0} is not valid, will use version to locate build".format(value))
+                log.warning('URL:{0} is invalid, will use version to locate build'
+                            .format(value))
         if key == "type" or key == "edition" and value.lower() in install_constants.CB_EDITIONS:
-            params["edition"] = value.lower()
+            params["cb_edition"] = value.lower()
         if key == "timeout" and int(value) > 60:
             params["timeout"] = int(value)
         if key == "storage_mode":
@@ -455,10 +504,11 @@ def __check_servers_reachable():
     unreachable = []
     for server in params["servers"]:
         try:
-            RemoteMachineShellConnection(server)
+            tem_shell = RemoteMachineShellConnection(server)
+            tem_shell.disconnect()
             reachable.append(server.ip)
         except Exception as e:
-            log.error(e.message)
+            log.error(e)
             unreachable.append(server.ip)
 
     if len(unreachable) > 0:
@@ -484,7 +534,8 @@ def _params_validation():
     node_os = []
     for node in NodeHelpers:
         if node.get_os() not in install_constants.SUPPORTED_OS:
-            print_result_and_exit("Install on {0} OS is not supported".format(node.get_os()))
+            print_result_and_exit("Install on {0} OS is not supported"
+                                  .format(node.get_os()))
         else:
             node_os.append(node.get_os())
     if len(set(node_os)) == 1:
@@ -506,12 +557,13 @@ def pre_install_steps():
             if NodeHelpers[0].shell.is_url_live(params["url"]):
                 params["all_nodes_same_os"] = True
                 for node in NodeHelpers:
-                    build_binary = params["url"].split('/')[-1]
+                    build_binary = __get_build_binary_name(node)
                     build_url = params["url"]
-                    filepath = __get_download_dir(node.get_os()) + build_binary
+                    filepath = __get_download_dir(node) + build_binary
                     node.build = build(build_binary, build_url, filepath)
             else:
-                print_result_and_exit("URL {0} is not live. Exiting.".format(params["url"]))
+                print_result_and_exit("URL {0} is not live. Exiting."
+                                      .format(params["url"]))
         else:
             for node in NodeHelpers:
                 build_binary = __get_build_binary_name(node)
@@ -519,14 +571,17 @@ def pre_install_steps():
                 if not build_url:
                     print_result_and_exit(
                         "Build is not present in latestbuilds or release repos, please check {0}".format(build_binary))
-                filepath = __get_download_dir(node.get_os()) + build_binary
+                filepath = __get_download_dir(node) + build_binary
                 node.build = build(build_binary, build_url, filepath)
         _download_build()
 
 
 def _execute_local(command, timeout):
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True).wait(timeout)
-    process.communicate()[0].strip()
+    # -- Uncomment the below 2 lines for python 3
+    # process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True).wait(timeout)
+    # process.communicate()[0].strip()
+    # -- python 2
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True).wait()
 
 
 def __copy_thread(src_path, dest_path, node):
@@ -538,7 +593,8 @@ def __copy_thread(src_path, dest_path, node):
 def _copy_to_nodes(src_path, dest_path):
     copy_threads = []
     for node in NodeHelpers:
-        copy_to_node = threading.Thread(target=__copy_thread, args=(src_path, dest_path, node))
+        copy_to_node = threading.Thread(target=__copy_thread,
+                                        args=(src_path, dest_path, node))
         copy_threads.append(copy_to_node)
         copy_to_node.start()
 
@@ -566,22 +622,17 @@ def __get_build_url(node, build_binary):
             testconstants.CB_VERSION_NAME[(params["version"]).split('-')[0][:-2]],
             params["version"].split('-')[1],
             build_binary)
-        if node.shell.is_url_live(latestbuilds_url):
+        if node.shell.is_url_live(latestbuilds_url, exit_if_not_live=False):
             return latestbuilds_url
-        elif node.shell.is_url_live(release_url):
+        elif node.shell.is_url_live(release_url, exit_if_not_live=False):
             return release_url
     return None
 
 
 def _download_build():
     if params["all_nodes_same_os"] and not params["skip_local_download"]:
-        build_url = NodeHelpers[0].build.url
-        filepath = NodeHelpers[0].build.path
-        timeout = install_constants.WAIT_TIMES[NodeHelpers[0].info.deliverable_type]["download_binary"]
-        cmd = install_constants.WGET_CMD.format(__get_download_dir(NodeHelpers[0].get_os()), build_url)
-        log.debug("Downloading build binary to {0}..".format(filepath))
-        _execute_local(cmd, timeout)
-        _copy_to_nodes(filepath, filepath)
+        check_and_retry_download_binary_local(NodeHelpers[0])
+        _copy_to_nodes(NodeHelpers[0].build.path, NodeHelpers[0].build.path)
     else:
         for node in NodeHelpers:
             build_url = node.build.url
@@ -593,14 +644,35 @@ def _download_build():
                                  ["download_binary"])
 
             elif "wget" in cmd:
-                cmd = cmd.format(__get_download_dir(node.get_os()), build_url)
+                cmd = cmd.format(__get_download_dir(node), build_url)
             logging.info("Downloading build binary to {0}:{1}..".format(node.ip, filepath))
             check_and_retry_download_binary(cmd, node)
     log.debug("Done downloading build binary")
 
 
+def check_and_retry_download_binary_local(node):
+    log.info("Downloading build binary to {0}..".format(node.build.path))
+    duration, event, timeout = install_constants.WAIT_TIMES[node.info.deliverable_type][
+        "download_binary"]
+    cmd = install_constants.WGET_CMD.format(__get_download_dir(node), node.build.url)
+    start_time = time.time()
+    while time.time() < start_time + timeout:
+        try:
+            _execute_local(cmd, timeout)
+            if os.path.exists(node.build.path):
+                break
+            time.sleep(duration)
+        except Exception as e:
+            log.warn("Unable to download build: {0}, retrying..".format(e.message))
+            time.sleep(duration)
+    else:
+        print_result_and_exit("Unable to download build in {0}s on {1}, exiting"
+                              .format(timeout, node.build.path))
+
+
 def check_file_exists(node, filepath):
-    output, _ = node.shell.execute_command("ls -lh {0}".format(filepath), debug=params["debug_logs"])
+    output, _ = node.shell.execute_command("ls -lh {0}".format(filepath),
+                                           debug=params["debug_logs"])
     for line in output:
         if line.find('No such file or directory') == -1:
             return True
@@ -609,7 +681,6 @@ def check_file_exists(node, filepath):
 
 def check_and_retry_download_binary(cmd, node):
     duration, event, timeout = install_constants.WAIT_TIMES[node.info.deliverable_type]["download_binary"]
-    time.sleep(duration)
     start_time = time.time()
     while time.time() < start_time + timeout:
         try:
@@ -618,15 +689,20 @@ def check_and_retry_download_binary(cmd, node):
                 break
             time.sleep(duration)
         except Exception as e:
-            log.warn("Unable to download build: {0}, retrying..".format(e.message))
+            log.warning("Unable to download build: {0}, retrying..".format(e))
             time.sleep(duration)
     else:
-        print_result_and_exit("Unable to download build in {0}s on {1}, exiting".format(timeout, node.ip))
+        print_result_and_exit("Unable to download build in {0}s on {1}, exiting"
+                              .format(timeout, node.ip))
 
 
-def __get_download_dir(os):
+def __get_download_dir(node):
+    os = node.get_os()
     if os in install_constants.LINUX_DISTROS:
-        return install_constants.DOWNLOAD_DIR["LINUX_DISTROS"]
+        if node.shell.nonroot:
+            return install_constants.NON_ROOT_DOWNLOAD_DIR['LINUX_DISTROS']
+        else:
+            return install_constants.DOWNLOAD_DIR["LINUX_DISTROS"]
     elif os in install_constants.MACOS_VERSIONS:
         return install_constants.DOWNLOAD_DIR["MACOS_VERSIONS"]
     elif os in install_constants.WINDOWS_SERVER:

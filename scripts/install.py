@@ -15,7 +15,6 @@ from custom_exceptions.install_exceptions import InstallException
 
 logging.config.fileConfig("scripts.logging.conf")
 log = logging.getLogger()
-q = Queue.Queue()
 
 
 def node_installer(node, install_tasks):
@@ -31,7 +30,7 @@ def node_installer(node, install_tasks):
 def on_install_error(install_task, node, e):
     node.queue.empty()
     log.error("Error {0}:{1} occurred on {2} during {3}"
-              .format(repr(e), e.message, node.ip, install_task))
+              .format(repr(e), e, node.ip, install_task))
 
 
 def do_install_task(task, node):
@@ -62,11 +61,19 @@ def validate_install(version):
             for item in node_status:
                 if version in item['version'] and item['status'] == "healthy":
                     node.install_success = True
-                    log.info("node:{0}\tversion:{1}\tstatus:{2}\tservices:{3}"
-                             .format(item['hostname'],
-                                     item['version'],
-                                     item['status'],
-                                     item['services']))
+
+                if node.enable_ipv6 and not item["addressFamily"] == "inet6":
+                    node.install_success = False
+
+                afamily = "Unknown"
+                if 'addressFamily' in list(item.keys()):
+                    afamily = item['addressFamily']
+
+                log.info("node:{0}\tversion:{1}\taFamily:{2}\tservices:{3}"
+                         .format(item['hostname'],
+                                 item['version'],
+                                 afamily,
+                                 item['services']))
     install_utils.print_result_and_exit()
 
 
@@ -75,13 +82,14 @@ def do_install(params):
     for server in params["servers"]:
         node_helper = install_utils.get_node_helper(server.ip)
         install_tasks = params["install_tasks"]
-        q = Queue.Queue()
-        for _ in install_tasks:
-            q.put(_)
-        t = threading.Thread(target=node_installer, args=(node_helper, q))
+        queue_obj = Queue.Queue()
+        for task in install_tasks:
+            queue_obj.put(task)
+        t = threading.Thread(target=node_installer,
+                             args=(node_helper, queue_obj))
         t.daemon = True
         t.start()
-        node_helper.queue = q
+        node_helper.queue = queue_obj
         node_helper.thread = t
 
     force_stop = start_time + params["timeout"]
