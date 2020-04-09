@@ -1,4 +1,3 @@
-import random
 import time
 import json
 import datetime
@@ -34,12 +33,11 @@ class AutoCompactionTests(CollectionBase):
         self.log.info("======= Finished Autocompaction base setup =========")
 
     @staticmethod
-    def insert_key(serverInfo, bucket_name, count, size):
-        rest = RestConnection(serverInfo)
+    def insert_key(node, bucket_name, count, size):
+        rest = RestConnection(node)
         smart = VBucketAwareMemcached(rest, bucket_name)
         for i in xrange(count * 1000):
             key = "key_" + str(i)
-            flag = random.randint(1, 999)
             value = {"value": MemcachedClientHelper.create_value("*", size)}
             smart.memcached(key).set(key, 0, 0, json.dumps(value))
 
@@ -61,8 +59,6 @@ class AutoCompactionTests(CollectionBase):
             # update docs to create fragmentation
             try:
                 for bucket in self.bucket_util.buckets:
-                    bucket = self.bucket_util.get_bucket_obj(
-                        self.bucket_util.buckets, bucket_name)
                     for _, scope in bucket.scopes.items():
                         for _, collection in scope.collections.items():
                             task = self.task.async_load_gen_docs(
@@ -81,7 +77,7 @@ class AutoCompactionTests(CollectionBase):
             self.err = "Monitor fragmentation task failed"
 
     def _load_all_buckets(self, generator, op_type, batch_size=10,
-                          process_concurrency=8, items=self.num_items):
+                          process_concurrency=8, items=0):
         for bucket in self.bucket_util.buckets:
             for _, scope in bucket.scopes.items():
                 for _, collection in scope.collections.items():
@@ -142,19 +138,22 @@ class AutoCompactionTests(CollectionBase):
                           .format(items, item_size))
             if self.load_spec:
                 doc_loading_spec = \
-                    self.bucket_util.get_crud_template_from_package(self.load_spec)
-                self.bucket_util.run_scenario_from_spec(self.task,
-                                                    self.cluster,
-                                                    self.bucket_util.buckets,
-                                                    doc_loading_spec,
-                                                    mutation_num=0)
+                    self.bucket_util.get_crud_template_from_package(
+                        self.load_spec)
+                self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.bucket_util.buckets,
+                    doc_loading_spec,
+                    mutation_num=0)
+            shell_conn = RemoteMachineShellConnection(self.cluster.master)
             cb_stat = Cbstats(shell_conn)
-            collection_count = cb_stat.get_collections(self.bucket[0])["count"]
+            collection_count = cb_stat.get_collections(self.bucket)["count"]
             items = items/collection_count
-            self.log.info("Start to load {0}K keys with {1} bytes/key"
-                      .format(items, item_size))
+            self.log.info("Start to load %s keys with %s bytes/key"
+                          % (items, item_size))
             generator = doc_generator(self.key, 0, (items*1000),
-                                          doc_size=int(item_size))
+                                      doc_size=int(item_size))
             self._load_all_buckets(generator, "create", items=items*1000)
 
             self.sleep(10, "Wait before next run")
@@ -202,7 +201,7 @@ class AutoCompactionTests(CollectionBase):
                 if str(ex).find("enospc") != -1:
                     self.is_crashed.set()
                     self.log.error("Disk is out of space, unable to load data")
-                    insert_thread._Thread__stop()
+                    insert_thread._Thread_stop()
                 else:
                     insert_thread._Thread__stop()
                     raise ex
@@ -227,7 +226,7 @@ class AutoCompactionTests(CollectionBase):
 
     def rebalance_in_with_DB_compaction(self):
         self.bucket_util.disable_compaction(bucket=str(self.bucket.name))
-        self._load_all_buckets(self.gen_load, "create")
+        self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
         servs_in = self.servers[self.nodes_init:self.nodes_in + 1]
         rebalance = self.task.async_rebalance(
@@ -236,8 +235,8 @@ class AutoCompactionTests(CollectionBase):
         compaction_task = self.task.async_compact_bucket(
                                 self.cluster.master, self.bucket)
         result = compaction_task.result(self.wait_timeout * 5)
-        self.assertTrue(result,
-                        "Compaction didn't finished correctly. Please check diags")
+        self.assertTrue(result, "Compaction didn't finished correctly. "
+                                "Please check diags")
         self.task.jython_task_manager.get_task_result(rebalance)
         self.bucket_util.verify_cluster_stats(self.servers[:self.nodes_in + 1])
 
@@ -272,17 +271,20 @@ class AutoCompactionTests(CollectionBase):
         self.cluster.rebalance(self.servers[:self.num_servers],
                                self.servers[1:self.num_servers], [])
         self.bucket_util.disable_compaction(bucket=self.bucket.name)
-        self._load_all_buckets(self.gen_load, "create")
+        self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
-        servs_out = [self.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
+        servs_out = [self.servers[self.num_servers - i - 1]
+                     for i in range(self.nodes_out)]
         rebalance = self.task.async_rebalance([self.cluster.master], [],
-                                                 servs_out)
+                                              servs_out)
         compaction_task = self.task.async_compact_bucket(
-            self.cluster.master, self.default_bucket_name)
+            self.cluster.master, self.bucket.name)
         result = compaction_task.result(self.wait_timeout * 5)
-        self.assertTrue(result, "Compaction didn't finished correctly. Please check diags")
+        self.assertTrue(result, "Compaction didn't finished correctly. "
+                                "Please check diags")
         self.task.jython_task_manager.get_task_result(rebalance)
-        self.verify_cluster_stats(self.servers[:self.num_servers - self.nodes_out])
+        self.bucket_util.verify_cluster_stats(
+            self.servers[:self.num_servers - self.nodes_out])
 
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
@@ -297,10 +299,12 @@ class AutoCompactionTests(CollectionBase):
             rest,
             dbFragmentThresholdPercentage=self.autocompaction_value,
             bucket=self.bucket.name)
-        self._load_all_buckets(self.gen_load, "create")
+        self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
-        servs_out = [self.servers[self.num_servers - i - 1] for i in range(self.nodes_out)]
-        rebalance = self.task.async_rebalance([self.cluster.master], [], servs_out)
+        servs_out = [self.servers[self.num_servers - i - 1]
+                     for i in range(self.nodes_out)]
+        rebalance = self.task.async_rebalance([self.cluster.master],
+                                              [], servs_out)
         compact_run = remote_client.wait_till_compaction_end(
             rest,
             self.bucket.name,
@@ -315,7 +319,8 @@ class AutoCompactionTests(CollectionBase):
             self.log.info("Compaction is already completed")
         else:
             self.fail("auto compaction does not run")
-        self.verify_cluster_stats(self.servers[:self.num_servers - self.nodes_out])
+        self.bucket_util.verify_cluster_stats(
+            self.servers[:self.num_servers - self.nodes_out])
         remote_client.disconnect()
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
@@ -324,21 +329,23 @@ class AutoCompactionTests(CollectionBase):
         self.assertTrue(self.num_servers > self.nodes_in + self.nodes_out,
                         "ERROR: Not enough nodes to do rebalance in and out")
         servs_init = self.servers[:self.nodes_init]
-        servs_in = [self.servers[i + self.nodes_init] for i in range(self.nodes_in)]
-        servs_out = [self.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
+        servs_in = [self.servers[i + self.nodes_init]
+                    for i in range(self.nodes_in)]
+        servs_out = [self.servers[self.nodes_init - i - 1]
+                     for i in range(self.nodes_out)]
         result_nodes = set(servs_init + servs_in) - set(servs_out)
         self.bucket_util.disable_compaction(bucket=self.bucket.name)
-        self._load_all_buckets(self.gen_load, "create")
+        self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         rebalance = self.task.async_rebalance(servs_init, servs_in, servs_out)
         while rebalance.state != "FINISHED":
             self._monitor_DB_fragmentation(self.bucket)
             compaction_task = self.cluster.async_compact_bucket(
                     self.cluster.master, self.bucket.name)
             result = compaction_task.result(self.wait_timeout * 5)
-            self.assertTrue(result,
-                            "Compaction didn't finished correctly. Please check diags")
+            self.assertTrue(result, "Compaction didn't finished correctly. "
+                                    "Please check diags")
         self.task.jython_task_manager.get_task_result(rebalance)
-        self.verify_cluster_stats(result_nodes)
+        self.bucket_util.verify_cluster_stats(result_nodes)
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
 
@@ -375,38 +382,44 @@ class AutoCompactionTests(CollectionBase):
     def test_database_time_compaction(self):
         remote_client = RemoteMachineShellConnection(self.cluster.master)
         rest = RestConnection(self.cluster.master)
-        currTime = datetime.datetime.now()
-        fromTime = currTime + datetime.timedelta(hours=1)
-        toTime = currTime + datetime.timedelta(hours=10)
-        self.set_auto_compaction(rest,
-                                 dbFragmentThresholdPercentage=self.autocompaction_value,
-                                 allowedTimePeriodFromHour=fromTime.hour,
-                                 allowedTimePeriodFromMin=fromTime.minute,
-                                 allowedTimePeriodToHour=toTime.hour,
-                                 allowedTimePeriodToMin=toTime.minute,
-                                 allowedTimePeriodAbort="false")
-        self._load_all_buckets(self.gen_load, "create")
+        curr_time = datetime.datetime.now()
+        from_time = curr_time + datetime.timedelta(hours=1)
+        to_time = curr_time + datetime.timedelta(hours=10)
+        self.bucket_util.set_auto_compaction(
+            rest,
+            dbFragmentThresholdPercentage=self.autocompaction_value,
+            allowedTimePeriodFromHour=from_time.hour,
+            allowedTimePeriodFromMin=from_time.minute,
+            allowedTimePeriodToHour=to_time.hour,
+            allowedTimePeriodToMin=to_time.minute,
+            allowedTimePeriodAbort="false")
+        self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
         for i in xrange(10):
             active_tasks = self.cluster.async_monitor_active_task(
-                                self.cluster.master, "bucket_compaction",
-                                 "bucket", wait_task=False)
+                self.cluster.master,
+                "bucket_compaction",
+                "bucket",
+                wait_task=False)
             for active_task in active_tasks:
                 result = active_task.result()
                 self.assertTrue(result)
                 self.sleep(2)
-        currTime = datetime.datetime.now()
+        curr_time = datetime.datetime.now()
         # Need to make it configurable
-        newTime = currTime + datetime.timedelta(minutes=5)
-        self.set_auto_compaction(rest,
-                                 dbFragmentThresholdPercentage=self.autocompaction_value,
-                                 allowedTimePeriodFromHour=currTime.hour,
-                                 allowedTimePeriodFromMin=currTime.minute,
-                                 allowedTimePeriodToHour=newTime.hour,
-                                 allowedTimePeriodToMin=newTime.minute,
-                                 allowedTimePeriodAbort="false")
-        compact_run = remote_client.wait_till_compaction_end(rest, self.default_bucket_name,
-                                                             timeout_in_seconds=(self.wait_timeout * 5))
+        new_time = curr_time + datetime.timedelta(minutes=5)
+        self.bucket_util.set_auto_compaction(
+            rest,
+            dbFragmentThresholdPercentage=self.autocompaction_value,
+            allowedTimePeriodFromHour=curr_time.hour,
+            allowedTimePeriodFromMin=curr_time.minute,
+            allowedTimePeriodToHour=new_time.hour,
+            allowedTimePeriodToMin=new_time.minute,
+            allowedTimePeriodAbort="false")
+        compact_run = remote_client.wait_till_compaction_end(
+            rest,
+            self.bucket.name,
+            timeout_in_seconds=(self.wait_timeout * 5))
         if compact_run:
             self.log.info("auto compaction run successfully")
         else:
@@ -416,42 +429,47 @@ class AutoCompactionTests(CollectionBase):
     def rebalance_in_with_DB_time_compaction(self):
         remote_client = RemoteMachineShellConnection(self.cluster.master)
         rest = RestConnection(self.cluster.master)
-        currTime = datetime.datetime.now()
-        fromTime = currTime + datetime.timedelta(hours=1)
-        toTime = currTime + datetime.timedelta(hours=24)
-        self.set_auto_compaction(rest,
-                                 dbFragmentThresholdPercentage=self.autocompaction_value,
-                                 allowedTimePeriodFromHour=fromTime.hour,
-                                 allowedTimePeriodFromMin=fromTime.minute,
-                                 allowedTimePeriodToHour=toTime.hour,
-                                 allowedTimePeriodToMin=toTime.minute,
-                                 allowedTimePeriodAbort="false")
-        self._load_all_buckets(self.gen_load, "create")
+        curr_time = datetime.datetime.now()
+        from_time = curr_time + datetime.timedelta(hours=1)
+        to_time = curr_time + datetime.timedelta(hours=24)
+        self.bucket_util.set_auto_compaction(
+            rest,
+            dbFragmentThresholdPercentage=self.autocompaction_value,
+            allowedTimePeriodFromHour=from_time.hour,
+            allowedTimePeriodFromMin=from_time.minute,
+            allowedTimePeriodToHour=to_time.hour,
+            allowedTimePeriodToMin=to_time.minute,
+            allowedTimePeriodAbort="false")
+        self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
         for i in xrange(10):
             active_tasks = self.cluster.async_monitor_active_task(
-                                            self.cluster.master, "bucket_compaction",
-                                            "bucket", wait_task=False)
+                self.cluster.master,
+                "bucket_compaction",
+                "bucket",
+                wait_task=False)
             for active_task in active_tasks:
                 result = active_task.result()
                 self.assertTrue(result)
                 self.sleep(2)
-        currTime = datetime.datetime.now()
+        curr_time = datetime.datetime.now()
         # Need to make it configurable
-        newTime = currTime + datetime.timedelta(minutes=5)
-        self.set_auto_compaction(rest,
-                                 dbFragmentThresholdPercentage=self.autocompaction_value,
-                                 allowedTimePeriodFromHour=currTime.hour,
-                                 allowedTimePeriodFromMin=currTime.minute,
-                                 allowedTimePeriodToHour=newTime.hour,
-                                 allowedTimePeriodToMin=newTime.minute,
-                                 allowedTimePeriodAbort="false")
+        new_time = curr_time + datetime.timedelta(minutes=5)
+        self.bucket_util.set_auto_compaction(
+            rest,
+            dbFragmentThresholdPercentage=self.autocompaction_value,
+            allowedTimePeriodFromHour=curr_time.hour,
+            allowedTimePeriodFromMin=curr_time.minute,
+            allowedTimePeriodToHour=new_time.hour,
+            allowedTimePeriodToMin=new_time.minute,
+            allowedTimePeriodAbort="false")
         servs_in = self.servers[self.nodes_init:self.nodes_in + 1]
-        rebalance = self.task.async_rebalance([self.cluster.master], servs_in, [])
-        compact_run = remote_client.wait_till_compaction_end(rest,
-                                             self.default_bucket_name,
-                                             timeout_in_seconds=(
-                                             self.wait_timeout * 5))
+        rebalance = self.task.async_rebalance([self.cluster.master],
+                                              servs_in, [])
+        compact_run = remote_client.wait_till_compaction_end(
+            rest,
+            self.bucket.name,
+            timeout_in_seconds=self.wait_timeout*5)
         self.task.jython_task_manager.get_task_result(rebalance)
         if compact_run:
             self.log.info("auto compaction run successfully")
@@ -462,21 +480,24 @@ class AutoCompactionTests(CollectionBase):
     def test_database_size_compaction(self):
         rest = RestConnection(self.cluster.master)
         percent_threshold = self.autocompaction_value * 1048576
-        self.set_auto_compaction(rest, dbFragmentThreshold=percent_threshold)
-        self._load_all_buckets(self.gen_load, "create")
+        self.bucket_util.set_auto_compaction(
+            rest,
+            dbFragmentThreshold=percent_threshold)
+        self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         end_time = time.time() + self.wait_timeout * 5
         monitor_fragm = self.task.async_monitor_disk_size_fragmentation(
                                     self.cluster.master, percent_threshold,
-                                    self.default_bucket_name)
+                                    self.bucket.name)
         while monitor_fragm.state != "FINISHED":
             if end_time < time.time():
                 self.fail("Fragmentation level is not reached in %s sec"
                           % self.wait_timeout * 5)
             try:
-                monitor_fragm = self.task.async_monitor_disk_size_fragmentation(
-                                        self.cluster.master, percent_threshold,
-                                        self.default_bucket_name)
-                self._load_all_buckets(self.gen_update, "update", items=0)
+                monitor_fragm = \
+                    self.task.async_monitor_disk_size_fragmentation(
+                        self.cluster.master, percent_threshold,
+                        self.bucket.name)
+                self._load_all_buckets(self.gen_update, "update")
                 active_tasks = self.task.async_monitor_active_task(
                                     self.cluster.master, "bucket_compaction",
                                     "bucket", wait_task=False)
@@ -538,8 +559,12 @@ class AutoCompactionTests(CollectionBase):
         # Rename here and restart Couchbase server
         remote_client.stop_couchbase()
         time.sleep(5)
-        remote_client.execute_command("cd /opt/couchbase/var/lib/couchbase/data/default;rename .1 .65535 *.1")
-        remote_client.execute_command("cd /opt/couchbase/var/lib/couchbase/data/default;rename .2 .65535 *.2")
+        remote_client.execute_command(
+            "cd /opt/couchbase/var/lib/couchbase/data/default; "
+            "rename .1 .65535 *.1")
+        remote_client.execute_command(
+            "cd /opt/couchbase/var/lib/couchbase/data/default; "
+            "rename .2 .65535 *.2")
         remote_client.start_couchbase()
 
         for _ in range(5):
@@ -551,7 +576,7 @@ class AutoCompactionTests(CollectionBase):
                 rest,
                 self.bucket.name,
                 timeout_in_seconds=self.wait_timeout)
-            res = compaction_task.result(self.wait_timeout)
+            _ = compaction_task.result(self.wait_timeout)
 
         if compact_run:
             self.log.info("Auto compaction run successfully")
@@ -588,7 +613,7 @@ class AutoCompactionTests(CollectionBase):
 
         self.task_manager.get_task_result(doc_update_task)
         self.task_manager.get_task_result(compaction_monitor_task)
-        self._load_all_buckets(self.gen_update, "update", items=0)
+        self._load_all_buckets(self.gen_update, "update")
 
         if self.is_crashed.is_set():
             self.fail("Error occurred during test run")
@@ -614,12 +639,13 @@ class AutoCompactionTests(CollectionBase):
             if bucket.name == "default":
                 self.bucket_util.disable_compaction(bucket=bucket.name)
             else:
-                self.set_auto_compaction(rest,
-                                         dbFragmentThresholdPercentage=self.autocompaction_value,
-                                         bucket=bucket.name)
+                self.bucket_util.set_auto_compaction(
+                    rest,
+                    dbFragmentThresholdPercentage=self.autocompaction_value,
+                    bucket=bucket.name)
 
         # Load bucket with docs with updated compaction value
-        self._load_all_buckets(self.gen_load, "create")
+        self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         end_time = time.time() + self.wait_timeout * 30
         for bucket in self.bucket_util.buckets:
             self.cluster_util._monitor_DB_fragmentation(bucket)
@@ -630,7 +656,7 @@ class AutoCompactionTests(CollectionBase):
                     self.fail("Fragmentation level is not reached in %s sec"
                               % self.wait_timeout * 30)
                 try:
-                    self._load_all_buckets(self.gen_update, "update", items=0)
+                    self._load_all_buckets(self.gen_update, "update")
                 except Exception, ex:
                     self.log.error("Load cannot be performed: %s" % str(ex))
                     self.fail(ex)
