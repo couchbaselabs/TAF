@@ -95,8 +95,14 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         # Wait for rebalance + doc_loading tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
-
         if not rebalance_task.result:
+            self.task_manager.abort_all_tasks()
+            for task in tasks_info:
+                try:
+                    for client in task.clients:
+                        client.close()
+                except Exception:
+                    pass
             self.fail("Rebalance Failed")
 
         for task in tasks_info:
@@ -348,8 +354,13 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks_info = self.loadgen_docs()
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
-            for task, _ in tasks_info.items():
-                self.task_manager.get_task_result(task)
+            self.task_manager.abort_all_tasks()
+            for task in tasks_info:
+                try:
+                    for client in task.clients:
+                        client.close()
+                except Exception:
+                    pass
             self.fail("Rebalance Failed")
 
         for task in tasks_info:
@@ -405,6 +416,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             num_iter += 1
 
         self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result,"Rebalance Failed")
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(self.num_items)
@@ -437,12 +449,19 @@ class RebalanceOutTests(RebalanceBaseTest):
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
             tasks_info = self.loadgen_docs()
             self.task.jython_task_manager.get_task_result(rebalance_task)
+            if not rebalance_task.result:
+                self.task_manager.abort_all_tasks()
+                for task in tasks_info:
+                    try:
+                        for client in task.clients:
+                            client.close()
+                    except Exception:
+                        pass
+                self.fail("Rebalance Failed")
 
             # Wait for rebalance+doc_loading tasks to complete
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
-            if not rebalance_task.result:
-                self.fail("Rebalance Failed")
 
             if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
@@ -551,6 +570,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                 expected_rows=expected_rows)
         # verify view queries results after rebalancing
         self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         for bucket in self.bucket_util.buckets:
             self.bucket_util.perform_verify_queries(
@@ -624,6 +644,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                 expected_rows=expected_rows)
             # verify view queries results after rebalancing
             self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed")
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(self.cluster.servers[i:i + 2]))
             self.bucket_util.perform_verify_queries(
                 num_views, prefix, ddoc_name, self.default_view_name,
@@ -680,6 +701,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             rebalance = self.task.async_rebalance(
                 self.cluster.servers, [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed")
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         except RebalanceFailedException:
             self.log.info("Rebalance was failed as expected")
@@ -691,6 +713,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             rebalance = self.task.async_rebalance(
                 self.cluster.servers, [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed")
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(self.num_items)
@@ -723,6 +746,15 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.cluster, gen_2, "delete", 0)
             tasks_info.update(tem_tasks_info.copy())
             self.task.jython_task_manager.get_task_result(rebalance_task)
+            if not rebalance_task.result:
+                self.task_manager.abort_all_tasks()
+                for task in tasks_info:
+                    try:
+                        for client in task.clients:
+                            client.close()
+                    except Exception:
+                        pass
+                self.fail("Rebalance Failed")
             self.cluster.nodes_in_cluster.remove(self.cluster.servers[i])
             for task in tasks_info.keys():
                 self.task_manager.get_task_result(task)
