@@ -37,6 +37,7 @@ import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from Jython_tasks.task_manager import TaskManager
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
+from reactor.util.function import Tuples
 
 
 class Task(Callable):
@@ -3991,16 +3992,14 @@ class Atomicity(Task):
             self.update_keys = list()
             self.delete_keys = list()
             docs = list()
+            self.key_value = list()
 
             doc_gen = self.generator
             while self.has_next():
                 self.batch = doc_gen.next_batch()
-                self.key_value = {}
-                for item in self.batch:
-                    self.key_value.update({item.getT1(): item.getT2()})
+                self.key_value.extend(self.batch)
 
                 for op_type in self.op_type:
-
                     if op_type == 'general_create':
                         for client in Atomicity.clients:
                             self.batch_create(
@@ -4013,9 +4012,10 @@ class Atomicity(Task):
                     docs.append(tuple)
                 last_batch = dict(self.batch)
 
+            self.all_keys = dict(self.key_value).keys()
             self.list_docs = list(self.__chunks(self.all_keys,
                                                 Atomicity.num_docs))
-            self.docs = list(self.__chunks(self.batch, Atomicity.num_docs))
+            self.docs = list(self.__chunks(self.key_value, Atomicity.num_docs))
 
             for op_type in self.op_type:
                 self.encoding = list()
@@ -4132,11 +4132,11 @@ class Atomicity(Task):
                 self.inserted_keys[client].extend(self.all_keys)
 
             self.test_log.info("Starting Atomicity Verification thread")
-            self.process_values_for_verification(self.keys_values)
+            self.process_values_for_verification(self.key_value)
             for client in Atomicity.clients:
-                result_map = self.batch_read(self.keys_values.keys(), client)
+                result_map = self.batch_read(self.all_keys, client)
                 wrong_values = self.validate_key_val(result_map[0],
-                                                     self.keys_values,
+                                                     self.key_value,
                                                      client)
 
                 if wrong_values:
@@ -4207,7 +4207,9 @@ class Atomicity(Task):
 
         def validate_key_val(self, map, key_value, client):
             wrong_values = []
-            for key, value in key_value.items():
+            for item in key_value:
+                key = item.getT1()
+                value = item.getT2()
                 if key in map:
                     if self.op_type == "time_out":
                         expected_val = {}
@@ -4231,21 +4233,24 @@ class Atomicity(Task):
             return wrong_values
 
         def process_values_for_verification(self, key_val):
-            for key, value in key_val.items():
+            for item in key_val:
+                key = item.getT1()
                 if key in self.update_keys or self.op_type == "verify":
                     try:
                         # New updated value, however it is not their
                         # in orignal code "LoadDocumentsTask"
-                        value = key_val[key]
-                        value_json = Json.loads(value)
-                        value_json['mutated'] = Atomicity.updatecount
-                        value = Json.dumps(value_json)
+                        value = item.getT2()
+                        value.put('mutated', Atomicity.updatecount)
                     except ValueError:
                         self.random.seed(key)
                         index = self.random.choice(range(len(value)))
-                        value = value[0:index] + self.random.choice(string.ascii_uppercase) + value[index + 1:]
+                        value = value[0:index] + \
+                                self.random.choice(string.ascii_uppercase) + \
+                                value[index + 1:]
                     finally:
-                        key_val[key] = value
+                        key_val.remove(item)
+                        item = Tuples.of(key, value)
+                        key_val.append(item)
 
 
 class MonitorViewFragmentationTask(Task):
