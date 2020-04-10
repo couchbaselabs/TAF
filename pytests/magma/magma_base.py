@@ -79,7 +79,7 @@ class MagmaBaseTest(BaseTestCase):
                 self.bucket_util.buckets)
         self.doc_size = self.input.param("doc_size", 1024)
         self.test_itr = self.input.param("test_itr", 4)
-        self.update_count = self.input.param("update_count", 10)
+        self.update_itr = self.input.param("update_itr", 10)
         self.next_half = self.input.param("next_half", False)
         self.deep_copy = self.input.param("deep_copy", False)
         if self.active_resident_threshold < 100:
@@ -241,25 +241,35 @@ class MagmaBaseTest(BaseTestCase):
             magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 
-    def get_disk_usage(self, bucket, servers=None, paths=None):
+    def get_disk_usage(self, bucket, servers=None):
         disk_usage = []
         if servers is None:
             servers = self.cluster.nodes_in_cluster
         if type(servers) is not list:
             servers = [servers]
-        if type(paths) is not list:
-            paths = [paths]
-        for path in paths:
-            usage = 0
-            for server in servers:
-                shell = RemoteMachineShellConnection(server)
-                usage += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
-                " % os.path.join(RestConnection(server).get_data_path(),
-                                 bucket.name, path))[0][0].split('\n')[0])
-                shell.disconnect()
-            self.log.debug("Total Disk usage for bucket with \
-            path {} is {}".format(bucket.name, path, usage))
-            disk_usage.append(usage)
-        self.log.debug("disk usage for bucket {}'s all \
-        paths {} is {}".format(bucket.name, paths, disk_usage))
+        kvstore = 0
+        wal = 0
+        keyTree = 0
+        seqTree = 0
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            kvstore += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
+            " % os.path.join(RestConnection(server).get_data_path(),
+                             bucket.name, "magma.*/kv*"))[0][0].split('\n')[0])
+            wal += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
+            " % os.path.join(RestConnection(server).get_data_path(),
+                             bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
+            keyTree += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
+            " % os.path.join(RestConnection(server).get_data_path(),
+                             bucket.name, "magma.*/kv*/rev*/key*"))[0][0].split('\n')[0])
+            seqTree += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
+            " % os.path.join(RestConnection(server).get_data_path(),
+                             bucket.name, "magma.*/kv*/rev*/seq*"))[0][0].split('\n')[0])
+            shell.disconnect()
+        self.log.info("Disk usage stats for bucekt {} is below".format(bucket.name))
+        self.log.info("Total Disk usage for kvstore is {}MB".format(kvstore))
+        self.log.debug("Total Disk usage for wal is {}MB".format(wal))
+        self.log.debug("Total Disk usage for keyTree is {}B".format(keyTree))
+        self.log.debug("Total Disk usage for seqTree is {}B".format(seqTree))
+        disk_usage.extend([kvstore, wal, keyTree, seqTree])
         return disk_usage
