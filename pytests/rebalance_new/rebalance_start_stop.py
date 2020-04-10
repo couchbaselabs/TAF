@@ -16,9 +16,41 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.extra_servs_out = [self.servers[self.nodes_init - i - 1 - self.nodes_out] for i in range(extra_nodes_out)]
         self.withMutationOps = self.input.param("withMutationOps", True)
         self.sleep_before_rebalance = self.input.param("sleep_before_rebalance", 0)
+        self.num_items = 20000
+        self.items = 20000
+        self.gen_update = self.get_doc_generator(0, (self.items / 2))
+
 
     def tearDown(self):
         super(RebalanceStartStopTests, self).tearDown()
+
+    def load_all_buckets(self, doc_gen, op=None, num_items_to_create=None):
+        tasks = []
+        buckets = self.bucket_util.get_all_buckets()
+        for bucket in buckets:
+            for _, scope in bucket.scopes.items():
+                for _, collection in scope.collections.items():
+                    tasks.append(self.task.async_load_gen_docs(
+                        self.cluster, bucket, doc_gen, op, 0,
+                        durability=self.durability_level,
+                        timeout_secs=self.sdk_timeout,
+                        batch_size=10,
+                        process_concurrency=8,
+                        scope=scope.name,
+                        collection=collection.name))
+                    if op == "create":
+                        bucket.scopes[scope.name] \
+                            .collections[collection.name] \
+                            .num_items += num_items_to_create
+        return tasks
+
+    def tasks_result(self, tasks):
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+
+    def validate_docs(self):
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_start_stop_rebalance(self):
         """
@@ -66,26 +98,13 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
             self.task_manager.get_task_result(rebalance)
             if RestHelper(rest).is_cluster_rebalanced():
-                self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
+                self.validate_docs()
                 self.log.info(
                     "Rebalance was completed when tried to stop rebalance on {0}%".format(str(expected_progress)))
                 break
             else:
-                self.gen_create = self.get_doc_generator(0, self.num_items)
                 self.log.info("Rebalance is still required. Verifying the data in the buckets")
-                tasks = []
-                for bucket in self.bucket_util.buckets:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency))
-                for task in tasks:
-                    self.task.jython_task_manager.get_task_result(task)
-#                     task.client.close()
-                self.bucket_util.verify_cluster_stats(self.num_items,
-                                                      check_ep_items_remaining=True,
-                                                      check_bucket_stats=False,
-                                                      verify_total_items=False)
+                self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def test_start_stop_rebalance_with_mutations(self):
@@ -115,8 +134,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         # should be completed, that also is verified and tracked
         for i in range(1, 6):
             if self.withMutationOps:
-                tasks = self.bucket_util._async_load_all_buckets(
-                    self.cluster, self.gen_update, "update", 0)
+                tasks = self.load_all_buckets(self.gen_update, "update", 0)
             if i == 1:
                 rebalance = self.task.async_rebalance(
                     self.servs_init[:self.nodes_init],
@@ -137,37 +155,20 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                             .format(expected_progress))
             if not RestHelper(rest).is_cluster_rebalanced():
                 self.log.info("Stop the rebalance")
-                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
+                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
                 if self.withMutationOps:
-                    for task, _ in tasks.items():
-                        self.task.jython_task_manager.get_task_result(task)
+                    self.tasks_result(tasks)
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
             if RestHelper(rest).is_cluster_rebalanced():
-                self.bucket_util.verify_cluster_stats(self.num_items)
+                self.validate_docs()
                 self.log.info("Rebalance was completed when tried to stop rebalance on {0}%"
                               .format(str(expected_progress)))
                 break
             else:
                 self.log.info("Rebalance is still required. Verifying the data in the buckets")
-                tasks = []
-                self.gen_create = self.get_doc_generator(self.num_items/2, self.num_items)
-                for bucket in self.bucket_util.buckets:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency))
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_update, "update", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency))
-                for task in tasks:
-                    self.task.jython_task_manager.get_task_result(task)
-#                     task.client.close()
-                self.bucket_util.verify_cluster_stats(self.num_items,
-                                          check_bucket_stats=False,
-                                          verify_total_items=False)
+                self.bucket_util._wait_for_stats_all_buckets()
 
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -212,7 +213,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     sleep_before_rebalance=self.sleep_before_rebalance)
                 add_in_once = []
                 result_nodes = set(self.servs_init + self.servs_in + self.extra_servs_in) \
-                                - set(self.servs_out + self.extra_servs_out)
+                               - set(self.servs_out + self.extra_servs_out)
             self.sleep(20)
             expected_progress = 20 * i
             reached = RestHelper(rest).rebalance_reached(expected_progress)
@@ -220,47 +221,20 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                             .format(expected_progress))
             if not RestHelper(rest).is_cluster_rebalanced():
                 self.log.info("Stop the rebalance")
-                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
+                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
-                tasks = []
-                for bucket in self.bucket_util.buckets:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency))
-                for task in tasks:
-                    self.task.jython_task_manager.get_task_result(task)
-#                     task.client.close()
                 if self.withMutationOps:
-                    self.gen_create = self.get_doc_generator(self.num_items/2, self.num_items)
-                    tasks = self.bucket_util._async_load_all_buckets(
-                        self.cluster, self.gen_update, "update", 0)
-                    for task, _ in tasks.items():
-                        self.task.jython_task_manager.get_task_result(task)
+                    self.load_all_buckets(self.gen_update, "update")
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
             if RestHelper(rest).is_cluster_rebalanced():
-                self.bucket_util.verify_cluster_stats(self.num_items)
+                self.validate_docs()
                 self.log.info("Rebalance was completed when tried to stop rebalance on {0}%"
                               .format(str(expected_progress)))
                 break
             else:
                 self.log.info("Rebalance is still required. Verifying the data in the buckets.")
-                tasks = []
-                for bucket in self.bucket_util.buckets:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency))
-                    if self.withMutationOps:
-                        tasks.append(self.task.async_validate_docs(
-                            self.cluster, bucket, self.gen_update, "update", 0,
-                            batch_size=self.batch_size,
-                            process_concurrency=self.process_concurrency))
-                for task in tasks:
-                    self.task.jython_task_manager.get_task_result(task)
-#                     task.client.close()
-                self.bucket_util.verify_cluster_stats(self.num_items, check_bucket_stats=False, verify_total_items=False)
+                self.bucket_util._wait_for_stats_all_buckets()
 
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
@@ -279,10 +253,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             validate rebalance was completed successfully.
             """
         fail_over = self.input.param("fail_over", False)
-        tasks = self.bucket_util._async_load_all_buckets(self.cluster, self.gen_update,
-                                             "update", 0)
-        for task, _ in tasks.items():
-            self.task.jython_task_manager.get_task_result(task)
+        tasks = self.load_all_buckets(self.gen_update, "update")
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.sleep(20)
@@ -306,12 +277,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.rest.fail_over(chosen[0].id, graceful=fail_over)
 
         # Doc_mutation after failing over the nodes
-        self.gen_create_more = self.get_doc_generator(self.num_items, self.num_items*3/2)
-        tasks_info = self.bucket_util._async_load_all_buckets(self.cluster,
-                                                              self.gen_create_more, "create", 0)
-        for task, _ in tasks_info.items():
-            self.task.jython_task_manager.get_task_result(task)
-
+        self.gen_create_more = self.get_doc_generator(self.num_items, self.num_items * 2)
+        tasks = self.load_all_buckets(self.gen_create_more, "create", num_items_to_create=self.num_items)
+        self.tasks_result(tasks)
         self.task.async_rebalance(
             self.servers[:self.nodes_init], self.servs_in, self.servs_out)
         expected_progress = 50
@@ -323,24 +291,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.log.info("Stop the rebalance")
             stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
             self.assertTrue(stopped, msg="Unable to stop rebalance")
-            tasks = []
-            self.gen_create = self.get_doc_generator(self.num_items/2, self.num_items*3/2)
-            for bucket in self.bucket_util.buckets:
-                tasks.append(self.task.async_validate_docs(
-                    self.cluster, bucket, self.gen_create, "create", 0,
-                    batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency))
-                tasks.append(self.task.async_validate_docs(
-                    self.cluster, bucket, self.gen_update, "update", 0,
-                    batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency))
-            for task in tasks:
-                self.task.jython_task_manager.get_task_result(task)
-#                 task.client.close()
+            self.validate_docs()
         self.shuffle_nodes_between_zones_and_rebalance()
-        self.bucket_util.verify_cluster_stats(self.num_items,
-                                              check_ep_items_remaining=True,
-                                              check_bucket_stats=False)
+        self.validate_docs()
         self.sleep(30)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
