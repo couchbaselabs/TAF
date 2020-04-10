@@ -211,8 +211,13 @@ class BasicCrudTests(MagmaBaseTest):
                         100 - self.fragmentation)))
         self.log.info("Count of docs to be update is {}\
         ".format(update_doc_count))
+        num_update = list()
+        while update_doc_count > self.num_items:
+            num_update.append(self.num_items)
+            update_doc_count -= self.num_items
+        if update_doc_count > 0:
+            num_update.append(update_doc_count)
         while count < self.test_itr:
-            num_update = list()
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
@@ -221,11 +226,6 @@ class BasicCrudTests(MagmaBaseTest):
                                 [self.cluster_util.cluster.master],
                                 self.bucket_util.buckets[0],
                                 wait_time=self.wait_timeout * 10))
-                while update_doc_count > self.num_items:
-                    num_update.append(self.num_items)
-                    update_doc_count -= self.num_items
-                if update_doc_count > 0:
-                    num_update.append(update_doc_count)
             self.log.debug("List of docs to be updated {}\
             ".format(num_update))
             for itr in num_update:
