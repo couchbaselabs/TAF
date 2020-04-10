@@ -64,15 +64,18 @@ class RebalanceOutTests(RebalanceBaseTest):
                 if "update" in self.doc_ops:
                     tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_update, "update", 0,
-                        batch_size=10))
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency))
                 if "create" in self.doc_ops:
                     tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=10, process_concurrency=8))
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency))
                 if "delete" in self.doc_ops:
                     tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_delete, "delete", 0,
-                        batch_size=10))
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.bucket_util.validate_docs_per_collections_all_buckets()
@@ -92,11 +95,12 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         # Wait for rebalance + doc_loading tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
 
         if not rebalance_task.result:
             self.fail("Rebalance Failed")
+
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
 
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
@@ -115,18 +119,23 @@ class RebalanceOutTests(RebalanceBaseTest):
                     if "update" in self.doc_ops:
                         tasks.append(self.task.async_validate_docs(
                             self.cluster, bucket, self.gen_update, "update", 0,
-                            batch_size=10, check_replica=self.check_replica))
+                            batch_size=self.batch_size,
+                            process_concurrency=self.process_concurrency,
+                            check_replica=self.check_replica))
                     if "create" in self.doc_ops:
                         tasks.append(
                             self.task.async_validate_docs(
                                 self.cluster, bucket, self.gen_create, "create",
-                                0, batch_size=10, process_concurrency=8,
+                                0, batch_size=self.batch_size,
+                                process_concurrency=self.process_concurrency,
                                 check_replica=self.check_replica))
                     if "delete" in self.doc_ops:
                         tasks.append(
                             self.task.async_validate_docs(
                                 self.cluster, bucket, self.gen_delete, "delete", 0,
-                                batch_size=10, check_replica=self.check_replica))
+                                batch_size=self.batch_size,
+                                process_concurrency=self.process_concurrency,
+                                check_replica=self.check_replica))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         if not self.atomicity:
@@ -182,8 +191,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
         self.add_remove_servers_and_rebalance([], servs_out)
         if not self.atomicity:
-            self.bucket_util.validate_docs_per_collections_all_buckets(
-                timeout=120)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
             self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
         new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats,
                                                          self.cluster.servers[:self.nodes_init - self.nodes_out], self.bucket_util.buckets)
@@ -217,7 +225,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         # allows multiple of them but one by one
         tasks_info = self.loadgen_docs()
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
-        self.bucket_util.validate_docs_per_collections_all_buckets(timeout=120)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
         self.bucket_util._wait_for_stats_all_buckets()
         self.rest = RestConnection(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
@@ -276,8 +284,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks_info = self.loadgen_docs()
         ejectedNode = self.cluster_util.find_node_info(self.cluster.master, self.cluster.servers[self.nodes_init - 1])
         if not self.atomicity:
-            self.bucket_util.validate_docs_per_collections_all_buckets(
-                timeout=120)
+            self.bucket_util.validate_docs_per_collections_all_buckets()
             self.bucket_util._wait_for_stats_all_buckets()
         self.sleep(20)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)

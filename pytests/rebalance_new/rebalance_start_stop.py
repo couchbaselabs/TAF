@@ -77,7 +77,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 for bucket in self.bucket_util.buckets:
                     tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=10, process_concurrency=8))
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency))
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
 #                     task.client.close()
@@ -155,10 +156,12 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 for bucket in self.bucket_util.buckets:
                     tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=10, process_concurrency=2))
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency))
                     tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_update, "update", 0,
-                        batch_size=10, process_concurrency=2))
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency))
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
 #                     task.client.close()
@@ -223,7 +226,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 for bucket in self.bucket_util.buckets:
                     tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=10, process_concurrency=8))
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency))
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
 #                     task.client.close()
@@ -246,11 +250,13 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 for bucket in self.bucket_util.buckets:
                     tasks.append(self.task.async_validate_docs(
                         self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=10, process_concurrency=4))
+                        batch_size=self.batch_size,
+                        process_concurrency=self.process_concurrency))
                     if self.withMutationOps:
                         tasks.append(self.task.async_validate_docs(
                             self.cluster, bucket, self.gen_update, "update", 0,
-                            batch_size=10, process_concurrency=4))
+                            batch_size=self.batch_size,
+                            process_concurrency=self.process_concurrency))
                 for task in tasks:
                     self.task.jython_task_manager.get_task_result(task)
 #                     task.client.close()
@@ -322,10 +328,12 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             for bucket in self.bucket_util.buckets:
                 tasks.append(self.task.async_validate_docs(
                     self.cluster, bucket, self.gen_create, "create", 0,
-                    batch_size=10, process_concurrency=8))
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency))
                 tasks.append(self.task.async_validate_docs(
                     self.cluster, bucket, self.gen_update, "update", 0,
-                    batch_size=10, process_concurrency=8))
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
 #                 task.client.close()

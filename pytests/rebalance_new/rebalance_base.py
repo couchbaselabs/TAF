@@ -322,7 +322,7 @@ class RebalanceBaseTest(BaseTestCase):
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
                     self.cluster, self.bucket_util.buckets, self.gen_update,
-                    "rebalance_only_update", 0, batch_size=20,
+                    "rebalance_only_update", 0, batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
@@ -335,7 +335,7 @@ class RebalanceBaseTest(BaseTestCase):
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
                     self.cluster, self.bucket_util.buckets, self.gen_create,
-                    "create", 0, batch_size=20,
+                    "create", 0, batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
@@ -347,7 +347,7 @@ class RebalanceBaseTest(BaseTestCase):
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
                     self.cluster, self.bucket_util.buckets, self.gen_delete,
-                    "rebalance_delete", 0, batch_size=20,
+                    "rebalance_delete", 0, batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
@@ -367,7 +367,7 @@ class RebalanceBaseTest(BaseTestCase):
         tasks_info = dict()
         if "update" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_update, "update", 0, batch_size=20,
+                self.cluster, self.gen_update, "update", 0, batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
@@ -378,7 +378,7 @@ class RebalanceBaseTest(BaseTestCase):
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_create, "create", 0, batch_size=20,
+                self.cluster, self.gen_create, "create", 0, batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
@@ -395,7 +395,7 @@ class RebalanceBaseTest(BaseTestCase):
                     .num_items += (self.gen_create.end - self.gen_create.start)
         if "delete" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_delete, "delete", 0, batch_size=20,
+                self.cluster, self.gen_delete, "delete", 0, batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
