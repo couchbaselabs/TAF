@@ -12,6 +12,7 @@ class BucketStats(object):
         self.memUsed = 0
         self.ram = 0
         self.manifest_uid = 0
+        self.expected_item_count = 0
         self.mutex = Lock()
         # Used to manage Bucket stats task
         self.stats_task = {"count": 0,

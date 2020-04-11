@@ -2910,40 +2910,6 @@ class BucketUtils(ScopeUtils):
         else:
             return priority
 
-    def load_sample_buckets(self, servers=None, bucketName=None,
-                            total_items=None):
-        """ Load the specified sample bucket in Couchbase """
-        self.assertTrue(
-            BucketHelper(self.cluster.master).load_sample(bucketName),
-            "Failure while loading sample bucket: %s" % bucketName)
-
-        """ check for load data into travel-sample bucket """
-        if total_items:
-            end_time = time.time() + 600
-            while time.time() < end_time:
-                self.sleep(10)
-                num_actual = 0
-                if not servers:
-                    num_actual = self.get_item_count(self.cluster.master,
-                                                     bucketName)
-                else:
-                    for server in servers:
-                        if "kv" in server.services:
-                            num_actual += self.get_item_count(server,
-                                                              bucketName)
-                if int(num_actual) == total_items:
-                    self.log.debug("%s items are loaded in the %s bucket"
-                                   % (num_actual, bucketName))
-                    break
-                self.log.debug("%s items are loaded in the %s bucket"
-                               % (num_actual, bucketName))
-            if int(num_actual) != total_items:
-                return False
-        else:
-            self.sleep(120)
-
-        return True
-
     def wait_for_vbuckets_ready_state(self, node, bucket,
                                       timeout_in_seconds=300, log_msg='',
                                       admin_user='cbadminbucket',
