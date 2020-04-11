@@ -27,8 +27,6 @@ class cbas_object_tests(CBASBaseTest):
         self.assertTrue(result['status'] == "success")
         
         self.cbas_util.createConn(self.default_bucket_name)
-        self.assertTrue(self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                       cb_bucket_name=self.default_bucket_name),"bucket creation failed on cbas")
         
         self.assertTrue(self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.default_bucket_name,
                           cbas_dataset_name=self.cbas_dataset_name), "dataset creation failed on cbas")

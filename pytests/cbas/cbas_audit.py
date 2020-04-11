@@ -2,7 +2,7 @@ import json
 
 from cbas.cbas_base import CBASBaseTest
 from security_utils.audit_ready_functions import audit
-from Rbac_utils.Rbac_ready_functions import rbac_utils
+from rbac_utils.Rbac_ready_functions import rbac_utils
 
 
 class CBASAuditLogs(CBASBaseTest):
@@ -38,7 +38,7 @@ class CBASAuditLogs(CBASBaseTest):
         super(CBASAuditLogs, self).setUp()
 
         self.log.info("Enable audit on cluster")
-        audit_obj = audit(host=self.master)
+        audit_obj = audit(host=self.cluster.master)
         current_state = audit_obj.getAuditStatus()
         if current_state:
             self.log.info("Audit already enabled, disabling and re-enabling to remove previous settings")
@@ -67,17 +67,20 @@ class CBASAuditLogs(CBASBaseTest):
         self.log.info("Create a configuration map that will be passed as JSON body for service configuration")
         update_configuration_map = {}
         for key in CBASAuditLogs.actual_service_parameter_dict:
-            if isinstance(CBASAuditLogs.actual_service_parameter_dict[key], (int, long)):
+            if isinstance(CBASAuditLogs.actual_service_parameter_dict[key], (int, long)) and CBASAuditLogs.actual_service_parameter_dict[key] != 1:
                 update_configuration_map[key] = CBASAuditLogs.actual_service_parameter_dict[key] - 1
 
         self.log.info("Update service configuration")
-        status, _, _ = self.cbas_util.update_service_parameter_configuration_on_cbas(update_configuration_map)
+
+        status, _, _ = self.cbas_util.update_service_parameter_configuration_on_cbas({'jobHistorySize' : 20})
         self.assertTrue(status, msg="Incorrect status for configuration service PUT request")
 
         self.log.info("Update expected dictionary")
         expected_dict = CBASAuditLogs.expected_service_parameter_dict
-        for key in update_configuration_map:
-            expected_dict["config_after:" + key] = update_configuration_map[key]
+        key = "jobHistorySize"
+        value = 20
+
+        expected_dict["config_after:" + key] = value
 
         self.log.info("Validate audit log for service configuration update")
         self.validate_audit_event(self.audit_id, self.cbas_node, expected_dict)
@@ -151,7 +154,7 @@ class CBASAuditLogs(CBASBaseTest):
         self.audit_id = self.input.param("audit_id")
 
         self.log.info("Disable audit logging for service configuration change")
-        audit_obj = audit(host=self.master)
+        audit_obj = audit(host=self.cluster.master)
         audit_obj.setAuditFeatureDisabled(str(self.audit_id))
 
         self.log.info("Update configuration service parameters: logLevel")
@@ -182,7 +185,7 @@ class CBASAuditLogs(CBASBaseTest):
         self.audit_id = self.input.param("audit_id")
 
         self.log.info("Disable audit logging for node configuration change")
-        audit_obj = audit(host=self.master)
+        audit_obj = audit(host=self.cluster.master)
         audit_obj.setAuditFeatureDisabled(str(self.audit_id))
 
         self.log.info("Update configuration node parameters: storageBuffercacheSize")
@@ -214,7 +217,7 @@ class CBASAuditLogs(CBASBaseTest):
         self.node_audit_id = self.input.param("node_audit_id")
 
         self.log.info("Disable audit logging for service & node configuration change")
-        audit_obj = audit(host=self.master)
+        audit_obj = audit(host=self.cluster.master)
         audit_obj.setAuditFeatureDisabled(str(self.service_audit_id) + "," + str(self.node_audit_id))
 
         self.log.info("Update service configuration service parameter: logLevel")
@@ -241,14 +244,14 @@ class CBASAuditLogs(CBASBaseTest):
     def test_audit_logs_with_filtered_user_list(self):
 
         self.log.info("Create a user with role cluster admin")
-        rbac_util = rbac_utils(self.master)
+        rbac_util = rbac_utils(self.cluster.master)
         rbac_util._create_user_and_grant_role("cbas_admin", "cluster_admin")
 
         self.log.info("Read configuration audit ids")
         self.audit_id = self.input.param("audit_id")
 
         self.log.info("Disabled audit logs for user")
-        audit_obj = audit(host=self.master)
+        audit_obj = audit(host=self.cluster.master)
         audit_obj.setWhiteListUsers("cbas_admin/local")
 
         self.log.info("Update service configuration service parameter: logLevel")

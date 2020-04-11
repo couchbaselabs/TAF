@@ -16,7 +16,7 @@ class CBASDCPState(CBASBaseTest):
         self.shell.execute_command("echo '' > /opt/couchbase/var/lib/couchbase/logs/analytics*.log")
         
         self.log.info("Load documents in the default bucket")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
 
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
@@ -25,7 +25,7 @@ class CBASDCPState(CBASBaseTest):
         self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, self.cbas_dataset_name)
 
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.add_node(self.servers[1], services=["cbas"], rebalance=True), msg="Failed to add CBAS node")
+        self.assertTrue(self.cluster_util.add_node(self.servers[1], services=["cbas"], rebalance=True), msg="Failed to add CBAS node")
         
         self.log.info("Connect to Local link")
         self.cbas_util.connect_link()
@@ -45,8 +45,10 @@ class CBASDCPState(CBASBaseTest):
         Expected Behaviour: Rebalance must pass once we receive DCP state API response
         """
         self.log.info("Delete KV bucket")
-        self.delete_bucket_or_assert(serverInfo=self.master)
-        
+        self.assertTrue(self.bucket_util.delete_bucket(
+            self.cluster.master, self.bucket_util.buckets[0].name),
+            "Bucket deletion failed")
+
         self.log.info("Check DCP state")
         start_time = time.time()
         dcp_state_captured = False
@@ -65,12 +67,12 @@ class CBASDCPState(CBASBaseTest):
         self.assertFalse(content["exact"], msg="DCP state is consistent. Failing the test since subsequent rebalance will pass.")
         
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.add_node(self.servers[3], services=["cbas"], rebalance=False), msg="Failed to add CBAS node")
+        self.assertTrue(self.cluster_util.add_node(self.servers[3], services=["cbas"], rebalance=False), msg="Failed to add CBAS node")
         
         self.log.info("Rebalance in CBAS node")
         rebalance_success = False
         try:
-            rebalance_success = self.rebalance()
+            rebalance_success = self.cluster_util.rebalance()
         except Exception as e:
             pass
         self.assertTrue(rebalance_success, msg="Rebalance in of CBAS node must succeed since DCP state API returned success")
@@ -84,8 +86,10 @@ class CBASDCPState(CBASBaseTest):
         Expected Behaviour: Rebalance must succeeds and we must see in logs "Bucket Bucket:Default.cbas doesn't exist in KV anymore... nullifying its DCP state"
         """
         self.log.info("Delete KV bucket")
-        self.delete_bucket_or_assert(serverInfo=self.master)
-        
+        self.assertTrue(self.bucket_util.delete_bucket(
+            self.cluster.master, self.bucket_util.buckets[0].name),
+            "Bucket deletion failed")
+
         self.log.info("Disconnect from CBAS bucket")
         start_time = time.time()
         while time.time() < start_time + 120:
@@ -94,18 +98,20 @@ class CBASDCPState(CBASBaseTest):
                 break
             except Exception as e:
                 pass
-        
+
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.add_node(self.servers[3], services=["cbas"], rebalance=False),
+        self.assertTrue(self.cluster_util.add_node(self.servers[3],
+                                                   services=["cbas"],
+                                                   rebalance=False),
                          msg="Failed to add a CBAS node")
-        
+
         self.log.info("Rebalance in CBAS node")
-        self.assertTrue(self.rebalance(), msg="Rebalance in CBAS node failed")
-        
+        self.assertTrue(self.cluster_util.rebalance(), msg="Rebalance in CBAS node failed")
+
         self.log.info("Grep Analytics logs for message")
         result, _ = self.shell.execute_command("grep 'exist in KV anymore... nullifying its DCP state' /opt/couchbase/var/lib/couchbase/logs/analytics*.log")
         self.assertTrue("nullifying its DCP state" in result[0], msg="Expected message 'nullifying its DCP state' not found")
-    
+
     """
     test_dcp_state_with_cbas_bucket_disconnected_kv_bucket_deleted_and_recreate,default_bucket=True,cb_bucket_name=default,cbas_dataset_name=ds,items=10000
     """
@@ -115,8 +121,10 @@ class CBASDCPState(CBASBaseTest):
         Expected Behaviour: Rebalance succeeds with message in logs "Bucket Bucket:Default.cbas doesn't exist in KV anymore... nullifying its DCP state, then again after bucket is re-created, data is re-ingested from 0"
         """
         self.log.info("Delete KV bucket")
-        self.delete_bucket_or_assert(serverInfo=self.master)
-        
+        self.assertTrue(self.bucket_util.delete_bucket(
+            self.cluster.master, self.bucket_util.buckets[0].name),
+            "Bucket deletion failed")
+
         self.log.info("Disconnect from CBAS bucket")
         start_time = time.time()
         while time.time() < start_time + 120:
@@ -125,20 +133,20 @@ class CBASDCPState(CBASBaseTest):
                 break
             except Exception as e:
                 pass
-        
+
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.add_node(self.servers[3], services=["cbas"], rebalance=False),
+        self.assertTrue(self.cluster_util.add_node(self.servers[3], services=["cbas"], rebalance=False),
                          msg="Failed to add a CBAS node")
         
         self.log.info("Rebalance in CBAS node")
-        self.assertTrue(self.rebalance(), msg="Rebalance in CBAS node failed")
+        self.assertTrue(self.cluster_util.rebalance(), msg="Rebalance in CBAS node failed")
         
         self.log.info("Grep Analytics logs for message")
         result, _ = self.shell.execute_command("grep 'exist in KV anymore... nullifying its DCP state' /opt/couchbase/var/lib/couchbase/logs/analytics*.log")
         self.assertTrue("nullifying its DCP state" in result[0], msg="Expected message 'nullifying its DCP state' not found")
         
         self.log.info("Recreate KV bucket")
-        self.create_default_bucket()
+        self.bucket_util.create_default_bucket()
         
         self.log.info("Load documents in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets(self.num_items // 100, "create", 0, self.num_items // 100)
@@ -171,20 +179,20 @@ class CBASDCPState(CBASBaseTest):
                 pass
         
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.add_node(self.servers[3], services=["cbas"], rebalance=False),
+        self.assertTrue(self.cluster_util.add_node(self.servers[3], services=["cbas"], rebalance=False),
                          msg="Failed to add a CBAS node")
         
         self.log.info("Rebalance in CBAS node")
         rebalance_success = False
         try:
-            rebalance_success = self.rebalance()
+            rebalance_success = self.cluster_util.rebalance()
         except Exception as e:
             pass
 
         if rebalance_success == False:
             self.log.info("Grep Analytics logs for user action as rebalance in Failed")
             result, _ = self.shell.execute_command("grep 'Datasets in different partitions have different DCP states.' /opt/couchbase/var/lib/couchbase/logs/analytics*.log")
-            self.assertTrue("User action: Connect the bucket:" in result[0] and "or drop the dataset: Default.ds" in result[0], msg="User action not found.")
+            self.assertTrue("User action: Connect the link:" in result[0] and "or drop the dataset: Default.ds" in result[0], msg="User action not found.")
 
             user_action = self.input.param("user_action", "drop_dataset")
             if user_action == "connect_cbas_bucket":
@@ -196,7 +204,7 @@ class CBASDCPState(CBASBaseTest):
                 self.cbas_util.drop_dataset(self.cbas_dataset_name)
         
             self.log.info("Rebalance in CBAS node")
-            self.assertTrue(self.rebalance(), msg="Rebalance in CBAS node must succeed after user has taken the specified action.")
+            self.assertTrue(self.cluster_util.rebalance(), msg="Rebalance in CBAS node must succeed after user has taken the specified action.")
         else:
             self.log.info("Rebalance was successful as DCP state were consistent")
 
@@ -216,7 +224,7 @@ class CBASPendingMutations(CBASBaseTest):
     def test_pending_mutations_idle_kv_system(self):
 
         self.log.info("Load documents in KV")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items, batch_size=5000)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items, batch_size=5000)
 
         self.log.info("Create dataset on the CBAS")
         self.cbas_util.create_dataset_on_bucket(
@@ -232,7 +240,7 @@ class CBASPendingMutations(CBASBaseTest):
             self.assertTrue(status, msg="Fetch pending mutations failed")
             content = json.loads(content)
             if content:
-                aggregate_remaining_mutations_list.append(content["Default.ds"])
+                aggregate_remaining_mutations_list.append(content["Default"]["ds"])
                 total_count, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
                 if total_count == self.num_items:
                     break
@@ -261,7 +269,7 @@ class CBASPendingMutations(CBASBaseTest):
     def test_pending_mutations_busy_kv_system(self):
 
         self.log.info("Load documents in KV")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
 
         self.log.info("Create dataset on the CBAS")
         self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, self.cbas_dataset_name)
@@ -272,7 +280,7 @@ class CBASPendingMutations(CBASBaseTest):
         self.log.info("Perform async doc operations on KV")
         json_generator = JsonGenerator()
         generators = json_generator.generate_docs_simple(docs_per_day=self.num_items * 4, start=self.num_items)
-        kv_task = self._async_load_all_buckets(self.master, generators, "create", 0, batch_size=3000)
+        kv_task = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0, batch_size=5000)
         
         self.log.info("Fetch cluster remaining mutations")
         aggregate_remaining_mutations_list = []
@@ -281,14 +289,14 @@ class CBASPendingMutations(CBASBaseTest):
             self.assertTrue(status, msg="Fetch pending mutations failed")
             content = json.loads(content)
             if content:
-                aggregate_remaining_mutations_list.append(content["Default.ds"])
+                aggregate_remaining_mutations_list.append(content["Default"]["ds"])
                 total_count, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
                 if total_count == self.num_items * 4:
                     break
-        
+
         self.log.info("Get KV ops result")
         for task in kv_task:
-            task.get_result()
+            self.task_manager.get_task_result(task)
 
         self.log.info("Verify remaining mutation count is reducing as ingestion progress's")
         self.log.info(aggregate_remaining_mutations_list)
@@ -302,11 +310,11 @@ class CBASPendingMutations(CBASBaseTest):
             if not aggregate_remaining_mutations_list[i-1] >= aggregate_remaining_mutations_list[i]:
                 is_remaining_mutation_count_reducing = False
                 break
-        
+
         self.log.info("Assert mutation progress API response")
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items * 4), msg="Count mismatch on CBAS")
         self.assertTrue(len(aggregate_remaining_mutations_list) > 1, msg="Found no items during ingestion")
         self.assertFalse(is_remaining_mutation_count_reducing, msg="Remaining mutation must increase as ingestion progress's")
-        
+
     def tearDown(self):
         super(CBASPendingMutations, self).tearDown()

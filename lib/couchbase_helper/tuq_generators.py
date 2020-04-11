@@ -900,7 +900,7 @@ class JsonGenerator:
         template = JsonObject.create()
         template.put("age", age)
         template.put("name", name)
-        gen_load = DocumentGenerator(key_prefix, template, age, name,
+        gen_load = DocumentGenerator(key_prefix, template,
                                      start=start, end=end,
                                      randomize=True,
                                      name=name,

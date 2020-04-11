@@ -15,17 +15,17 @@ class CBASCancelDDL(CBASBaseTest):
         self.analytics_servers.append(self.cbas_node)
 
         self.log.info("Add CBAS nodes")
-        self.add_node(self.servers[1], services=["cbas"], rebalance=False)
+        self.cluster_util.add_node(self.servers[1], services=["cbas"], rebalance=False)
         self.analytics_servers.append(self.servers[1])
 
-        self.add_node(self.cbas_servers[0], services=["cbas"], rebalance=True)
-        self.analytics_servers.append(self.cbas_servers[0])
+        self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=True)
+        self.analytics_servers.append(self.cluster.cbas_nodes[0])
 
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
 
         self.log.info("Load documents in KV")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items, batch_size=1000)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items, batch_size=1000)
 
     """
     cbas.cbas_cancel_ddl.CBASCancelDDL.test_cancel_ddl_dataset_create,default_bucket=True,cb_bucket_name=default,cbas_dataset_name=ds,items=10000
@@ -82,12 +82,16 @@ class CBASCancelDDL(CBASBaseTest):
             self.log.info("Sleep for the window time")
             self.sleep(self.kill_window)
 
-            self.log.info("kill Java process with id %s" % java_process_id[0])
-            shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            self.log.info("kill Java process")
+            if len(java_process_id):
+                shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            else:
+                # In case of windows
+                shell.kill_java()
 
             self.log.info("Fetch task result")
             for task in tasks:
-                task.get_result()
+                self.task.jython_task_manager.get_task_result(task)
 
             self.log.info("Wait for request to complete and cluster to be active: Using private ping() function")
             cluster_recover_start_time = time.time()
@@ -181,12 +185,16 @@ class CBASCancelDDL(CBASBaseTest):
             self.log.info("Sleep for the window time")
             self.sleep(self.kill_window)
 
-            self.log.info("kill Java process with id %s" % java_process_id[0])
-            shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            self.log.info("kill Java process")
+            if len(java_process_id):
+                shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            else:
+                # In case of windows
+                shell.kill_java()
 
             self.log.info("Fetch task result")
             for task in tasks:
-                task.get_result()
+                self.task.jython_task_manager.get_task_result(task)
 
             self.log.info("Wait for request to complete and cluster to be active: Using private ping() function")
             cluster_recover_start_time = time.time()
@@ -288,12 +296,16 @@ class CBASCancelDDL(CBASBaseTest):
             self.log.info("Sleep for the window time")
             self.sleep(self.kill_window)
 
-            self.log.info("kill Java process with id %s" % java_process_id[0])
-            shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            self.log.info("kill Java process")
+            if len(java_process_id):
+                shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            else:
+                # In case of windows
+                shell.kill_java()
 
             self.log.info("Fetch task result")
             for task in tasks:
-                task.get_result()
+                self.task_manager.get_task_result(task)
 
             self.log.info("Wait for request to complete and cluster to be active: Using private ping() function")
             cluster_recover_start_time = time.time()
@@ -397,12 +409,16 @@ class CBASCancelDDL(CBASBaseTest):
             self.log.info("Sleep for the window time")
             self.sleep(self.kill_window)
 
-            self.log.info("kill Java process with id %s" % java_process_id[0])
-            shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            self.log.info("kill Java process")
+            if len(java_process_id):
+                shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            else:
+                # In case of windows
+                shell.kill_java()
 
             self.log.info("Fetch task result")
             for task in tasks:
-                task.get_result()
+                self.task_manager.get_task_result(task)
 
             self.log.info("Wait for request to complete and cluster to be active: Using private ping() function")
             cluster_recover_start_time = time.time()
@@ -489,12 +505,16 @@ class CBASCancelDDL(CBASBaseTest):
             self.log.info("Sleep for the window time")
             self.sleep(self.kill_window)
 
-            self.log.info("kill Java process with id %s" % java_process_id[0])
-            shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            self.log.info("kill Java process")
+            if len(java_process_id):
+                shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            else:
+                # In case of windows
+                shell.kill_java()
 
             self.log.info("Fetch task result")
             for task in tasks:
-                task.get_result()
+                self.task_manager.get_task_result(task)
 
             self.log.info("Wait for request to complete and cluster to be active: Using private ping() function")
             cluster_recover_start_time = time.time()
@@ -576,12 +596,16 @@ class CBASCancelDDL(CBASBaseTest):
             self.log.info("Sleep for the window time")
             self.sleep(self.kill_window)
 
-            self.log.info("kill Java process with id %s" % java_process_id[0])
-            shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            self.log.info("kill Java process")
+            if len(java_process_id):
+                shell.execute_command("kill -9 %s" % (java_process_id[0]))
+            else:
+                # In case of windows
+                shell.kill_java()
 
             self.log.info("Fetch task result")
             for task in tasks:
-                task.get_result()
+                self.task_manager.get_task_result(task)
 
             self.log.info("Wait for request to complete and cluster to be active: Using private ping() function")
             cluster_recover_start_time = time.time()
@@ -661,7 +685,7 @@ class CBASCancelDDLWhileRebalance(CBASBaseTest):
         self.cbas_util.createConn(self.cb_bucket_name)
 
         self.log.info("Load documents in KV")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
 
         self.log.info("Create dataset")
         self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, self.cbas_dataset_name)
@@ -689,12 +713,16 @@ class CBASCancelDDLWhileRebalance(CBASBaseTest):
                 self.cbas_util.disconnect_link()
 
             self.log.info("Rebalance in a CBAS node")
-            otp_nodes.append(self.add_node(self.cbas_servers[0], rebalance=True, wait_for_rebalance_completion=False))
+            otp_nodes.append(self.cluster_util.add_node(self.cluster.cbas_nodes[0], rebalance=True, wait_for_rebalance_completion=False))
 
             self.log.info("Execute '%s' DDL statements, and verify DDL fail while rebalance is in progress" % ddl['query'])
-            while True:
-                if self.rest._rebalance_status_and_progress()[1] >= 25:
-                    break
+            start_time = time.time()
+            while time.time() < start_time + 180:
+                status, content, header = self.rest._rebalance_progress_status(all_node_rebalance_status=True)
+                self.assertTrue(status, msg="Failed to fetch rebalance status")
+                if content['status'] != "none":
+                    if content['ns_1@'+self.cbas_node.ip]['progress'] > 0:
+                        break
             status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(ddl['query'])
             self.assert_cancel_ddl_error_response(errors, status)
             

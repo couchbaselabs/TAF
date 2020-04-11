@@ -19,23 +19,19 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         self.input.test_params.update({"default_bucket":False})
         super(IngestionInterrupt_CBAS, self).setUp()
         
-        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cbas_servers) > 0:
-            self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cbas_servers))
+        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 0:
+            self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes))
             
-        self.create_default_bucket()
+        self.bucket_util.create_default_bucket()
         self.cb_bucket_name = self.input.param('cb_bucket_name', 'default')
         self.cbas_util.createConn("default")
     def setup_for_test(self, skip_data_loading=False):
         
         if not skip_data_loading:
             # Load Couchbase bucket first.
-            self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+            self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                    self.num_items, batch_size=1000)
-
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
@@ -71,7 +67,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
     def ingestion_in_progress(self):
         self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
         
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items*2, "create", self.num_items,
+        self.perform_doc_ops_in_all_cb_buckets("create", self.num_items,
                                                    self.num_items*3, batch_size=1000)
         
         
@@ -90,7 +86,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         if self.cbas_node_type == "CC":
             node_in_test = self.cbas_node
         else:
-            node_in_test = self.cbas_servers[0]
+            node_in_test = self.cluster.cbas_nodes[0]
         
         items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
         self.log.info("Items before service restart: %s"%items_in_cbas_bucket)
@@ -167,7 +163,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         if cbas_node_type == "CC":
             node_in_test = self.cbas_node
         else:
-            node_in_test = self.cbas_servers[0]
+            node_in_test = self.cluster.cbas_nodes[0]
         
         items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
         self.log.info("Items before service kill: %s"%items_in_cbas_bucket)
@@ -244,10 +240,10 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         if self.cbas_node_type == "CC":
             node_in_test = self.cbas_node
             self.cbas_util.closeConn()
-            self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
             self.cbas_util.createConn("default")
         else:
-            node_in_test = self.cbas_servers[0]
+            node_in_test = self.cluster.cbas_nodes[0]
         
         items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
         self.log.info("Items before service restart: %s"%items_in_cbas_bucket)
@@ -318,9 +314,9 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         self.cbas_node_type = self.input.param('cbas_node_type',None)
         if self.cbas_node_type == "CC":
             node_in_test = self.cbas_node
-            self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
         else:
-            node_in_test = self.cbas_servers[0]
+            node_in_test = self.cluster.cbas_nodes[0]
             
         remote_client = RemoteMachineShellConnection(node_in_test)
         output, error = remote_client.execute_command("rm -rf full_disk*", use_channel=True)
@@ -415,13 +411,13 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         if self.cbas_node_type:
             if self.cbas_node_type == "CC":
                 node_in_test = self.cbas_node
-                self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+                self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
                 self.cbas_util.createConn("default")
             else:
-                node_in_test = self.cbas_servers[0]
+                node_in_test = self.cluster.cbas_nodes[0]
         # Stop network on KV node to mimic n/w partition on KV
         else:
-            node_in_test = self.master
+            node_in_test = self.cluster.master
         
         items_in_cbas_bucket_before, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
         self.log.info("Intems before network down: %s"%items_in_cbas_bucket_before)
@@ -488,8 +484,8 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         
         end = self.num_items
         CC = self.cbas_node
-        NC = self.cbas_servers          
-        KV = self.master
+        NC = self.cluster.cbas_nodes          
+        KV = self.cluster.master
         nodes = [CC] + NC
         
         for node in nodes: 
@@ -498,7 +494,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
                 
                 start = end
                 end = start + self.num_items
-                tasks = self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", start,
+                tasks = self.perform_doc_ops_in_all_cb_buckets("create", start,
                                                                    end, batch_size=1000,_async=True)
                 
                 self.sleep(30, "Sleep after enabling firewall on node %s then disbale it."%node.ip)
@@ -524,7 +520,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
                 self.cbas_util._run_concurrent_queries(query,"immediate",100)
                 
                 for task in tasks:
-                    task.get_result()
+                    self.task_manager.get_task_result(task)
                     
                 if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,end):
                     self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
@@ -533,7 +529,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
                 
                 start = end
                 end = start + self.num_items
-                tasks = self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", start,
+                tasks = self.perform_doc_ops_in_all_cb_buckets("create", start,
                                                                    end, batch_size=1000,_async=True)
                 
                 self.sleep(30, "Sleep after enabling firewall on CC node then disbale it.")
@@ -559,7 +555,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
                 self.cbas_util._run_concurrent_queries(query,"immediate",100)
                 
                 for task in tasks:
-                    task.get_result()
+                    self.task_manager.get_task_result(task)
                     
                 if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,end):
                     self.fail("No. of items in CBAS dataset do not match that in the CB bucket")

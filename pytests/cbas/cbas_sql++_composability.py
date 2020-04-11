@@ -28,8 +28,8 @@ class SQLPP_Composability_CBAS(CBASBaseTest):
         
         super(SQLPP_Composability_CBAS, self).setUp()
             
-        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cbas_servers) > 0:
-            self.otpNodes.append(self.add_all_nodes_then_rebalance(self.cbas_servers))
+        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 0:
+            self.otpNodes.append(self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes))
         self.shell = RemoteMachineShellConnection(self.cbas_node)
         
     def tearDown(self):

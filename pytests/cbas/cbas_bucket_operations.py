@@ -12,7 +12,7 @@ from sdk_exceptions import SDKException
 
 
 class CBASBucketOperations(CBASBaseTest):
-    def setUp(self, add_default_cbas_node=True):
+    def setUp(self):
         super(CBASBucketOperations, self).setUp()
 
         ''' Considering all the scenarios where:
@@ -25,23 +25,6 @@ class CBASBucketOperations(CBASBaseTest):
               For that service check on nodes is needed.
         '''
 
-        self.input.test_params.update({"default_bucket": False})
-
-        # Create default bucket
-        ram_available = 0
-        node_info = self.rest.get_nodes_self()
-        if node_info.memoryQuota and int(node_info.memoryQuota) > 0:
-            ram_available = node_info.memoryQuota
-
-        self.bucket_size = ram_available - 1
-        self.bucket_util.create_default_bucket(
-            bucket_type=self.bucket_type,
-            ram_quota=self.bucket_size,
-            replica=self.num_replicas,
-            conflict_resolution=self.bucket_conflict_resolution_type,
-            replica_index=self.bucket_replica_index,
-            storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
         if self.bucket_time_sync:
             self.bucket_util._set_time_sync_on_buckets(["default"])
 
@@ -60,6 +43,7 @@ class CBASBucketOperations(CBASBaseTest):
                 0,
                 self.num_items,
                 durability=self.durability_level)
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write aborts before dataset creation")
@@ -172,6 +156,7 @@ class CBASBucketOperations(CBASBaseTest):
             "create",
             self.num_items,
             self.num_items * 2)
+        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write aborts after dataset connect")
@@ -211,7 +196,7 @@ class CBASBucketOperations(CBASBaseTest):
             "create",
             0,
             self.num_items)
-
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
         # Validate no. of items in CBAS dataset
         if not self.cbas_util.validate_cbas_dataset_items_count(
                 self.cbas_dataset_name,
@@ -295,6 +280,7 @@ class CBASBucketOperations(CBASBaseTest):
             "create",
             self.num_items,
             self.num_items * 2)
+        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,

@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 import datetime
+import json
 
-from cbas_base import *
+from TestInput import TestInputSingleton
+from cbas_base import CBASBaseTest
+from cbas_utils.cbas_utils import CbasUtil
 from couchbase_helper.tuq_generators import JsonGenerator
+from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
-from Jython_tasks.task import rebalanceTask, DocloaderTask
-from Jython_tasks.task_manager import TaskManager
-from sdk_client import SDKClient
-from com.couchbase.client.java import *
+from sdk_client3 import SDKClient
 
 
 class CBASClusterOperations(CBASBaseTest):
@@ -27,33 +28,27 @@ class CBASClusterOperations(CBASBaseTest):
         self.rebalance_both = self.input.param("rebalance_cbas_and_kv", False)
         if not self.rebalance_both:
             if self.nodeType == "KV":
-                self.rebalanceServers = self.kv_servers
+                self.rebalanceServers = self.cluster.kv_nodes
                 self.wait_for_rebalance=False
             elif self.nodeType == "CBAS":
-                self.rebalanceServers = [self.cbas_node] + self.cbas_servers
+                self.rebalanceServers = [self.cbas_node] + self.cluster.cbas_nodes
         else:
-            self.rebalanceServers = self.kv_servers + [self.cbas_node] + self.cbas_servers
+            self.rebalanceServers = self.cluster.kv_nodes + [self.cbas_node] + self.cluster.cbas_nodes
             self.nodeType = "KV" + "-" +"CBAS"
 
         self.assertTrue(len(self.rebalanceServers)>1, "Not enough %s servers to run tests."%self.rebalanceServers)
         self.log.info("This test will be running in %s context."%self.nodeType)
-        self.task_manager = TaskManager()
         self.load_gen_tasks = []
 
     def setup_for_test(self, skip_data_loading=False):
         if not skip_data_loading:
             # Load Couchbase bucket first.
-            self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+            self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                    self.num_items)
         self.cbas_util.createConn(self.cb_bucket_name)
-        # Create bucket on CBAS
-        self.assertTrue(self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip),"bucket creation failed on cbas")
-
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
-                                      cbas_dataset_name=self.cbas_dataset_name)
+                                      cbas_dataset_name=self.cbas_dataset_name, compress_dataset=self.compress_dataset)
 
         # Create indexes on the CBAS bucket
         self.create_secondary_indexes = self.input.param("create_secondary_indexes",False)
@@ -98,10 +93,10 @@ class CBASClusterOperations(CBASBaseTest):
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
 
         self.setup_for_test()
-        self.add_node(node=self.rebalanceServers[1], rebalance=True, wait_for_rebalance_completion=self.wait_for_rebalance)
+        self.cluster_util.add_node(node=self.rebalanceServers[1], rebalance=True, wait_for_rebalance_completion=self.wait_for_rebalance)
         self.log.info("Rebalance state:%s"%self.rest._rebalance_progress_status())
 
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create",
+        self.perform_doc_ops_in_all_cb_buckets("create",
                                                self.num_items,
                                                self.num_items * 2)
 
@@ -130,7 +125,7 @@ class CBASClusterOperations(CBASBaseTest):
         Author: Ritesh Agarwal/Mihir Kamdar
         Date Created: 18/07/2017
         '''
-        self.add_node(node=self.rebalanceServers[1])
+        self.cluster_util.add_node(node=self.rebalanceServers[1])
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
         self.setup_for_test()
         otpnodes = []
@@ -141,7 +136,7 @@ class CBASClusterOperations(CBASBaseTest):
         self.remove_node(otpnodes, wait_for_rebalance=self.wait_for_rebalance)
         self.log.info("Rebalance state:%s"%self.rest._rebalance_progress_status())
 
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create",
+        self.perform_doc_ops_in_all_cb_buckets("create",
                                                self.num_items,
                                                self.num_items * 2)
 
@@ -175,11 +170,11 @@ class CBASClusterOperations(CBASBaseTest):
             service = ["kv"]
         else:
             service = ["cbas"]
-        otpnodes.append(self.add_node(node=self.servers[1], services=service))
-        self.add_node(node=self.servers[3], services=service,rebalance=False)
+        otpnodes.append(self.cluster_util.add_node(node=self.servers[1], services=service))
+        self.cluster_util.add_node(node=self.servers[3], services=service,rebalance=False)
         self.remove_node(otpnodes, wait_for_rebalance=self.wait_for_rebalance)
 
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create",
+        self.perform_doc_ops_in_all_cb_buckets("create",
                                                self.num_items,
                                                self.num_items * 2)
 
@@ -208,7 +203,7 @@ class CBASClusterOperations(CBASBaseTest):
         '''
 
         #Add node which will be failed over later.
-        self.add_node(node=self.rebalanceServers[1])
+        self.cluster_util.add_node(node=self.rebalanceServers[1])
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
 
         graceful_failover = self.input.param("graceful_failover", False)
@@ -216,10 +211,11 @@ class CBASClusterOperations(CBASBaseTest):
         failover_task = self._cb_cluster.async_failover(self.input.servers,
                                                         [self.rebalanceServers[1]],
                                                         graceful_failover)
-        failover_task.get_result()
+        self.task_manager.get_task_result(failover_task)
 
-        self.rebalance()
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create",
+        result = self.cluster_util.rebalance()
+        self.assertTrue(result, "Rebalance operation failed")
+        self.perform_doc_ops_in_all_cb_buckets("create",
                                                self.num_items,
                                                self.num_items * 3 / 2)
 
@@ -243,23 +239,23 @@ class CBASClusterOperations(CBASBaseTest):
 
         self.log.info("Rebalance in KV node")
         wait_for_rebalace_complete = self.input.param("wait_for_rebalace", False)
-        self.add_node(node=self.rebalanceServers[1], rebalance=False,
+        self.cluster_util.add_node(node=self.rebalanceServers[1], rebalance=False,
                       wait_for_rebalance_completion=wait_for_rebalace_complete)
 
         self.log.info("Rebalance in CBAS node")
-        self.add_node(node=self.rebalanceServers[3], rebalance=True,
+        self.cluster_util.add_node(node=self.rebalanceServers[3], rebalance=True,
                       wait_for_rebalance_completion=wait_for_rebalace_complete)
 
         self.log.info(
             "Perform document create as rebalance is in progress : Rebalance state:%s" % self.rest._rebalance_progress_status())
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", self.num_items, self.num_items * 2)
+        self.perform_doc_ops_in_all_cb_buckets("create", self.num_items, self.num_items * 2)
 
         self.log.info(
             "Run queries as rebalance is in progress : Rebalance state:%s" % self.rest._rebalance_progress_status())
         handles = self.cbas_util._run_concurrent_queries(dataset_count_query, None, 2000, batch_size=self.concurrent_batch_size)
 
         self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
+        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
         if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items * 2, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
@@ -271,10 +267,10 @@ class CBASClusterOperations(CBASBaseTest):
     def test_rebalance_out_cb_cbas_together(self):
 
         self.log.info("Rebalance in KV node and  wait for rebalance to complete")
-        self.add_node(node=self.rebalanceServers[1])
+        self.cluster_util.add_node(node=self.rebalanceServers[1])
 
         self.log.info("Rebalance in CBAS node and  wait for rebalance to complete")
-        self.add_node(node=self.rebalanceServers[3])
+        self.cluster_util.add_node(node=self.rebalanceServers[3])
 
         self.log.info("Creates cbas buckets and dataset")
         dataset_count_query = "select count(*) from {0};".format(self.cbas_dataset_name)
@@ -295,7 +291,7 @@ class CBASClusterOperations(CBASBaseTest):
 
         self.log.info(
             "Perform document create as rebalance is in progress : Rebalance state:%s" % self.rest._rebalance_progress_status())
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", self.num_items, self.num_items * 2)
+        self.perform_doc_ops_in_all_cb_buckets("create", self.num_items, self.num_items * 2)
 
         self.log.info(
             "Run queries as rebalance is in progress : Rebalance state:%s" % self.rest._rebalance_progress_status())
@@ -303,7 +299,7 @@ class CBASClusterOperations(CBASBaseTest):
                                                batch_size=self.concurrent_batch_size)
 
         self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
+        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
         if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items * 2, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
@@ -320,10 +316,10 @@ class CBASClusterOperations(CBASBaseTest):
         self.setup_for_test()
 
         self.log.info("Add KV node and don't rebalance")
-        self.add_node(node=self.rebalanceServers[1], rebalance=False)
+        self.cluster_util.add_node(node=self.rebalanceServers[1], rebalance=False)
 
         self.log.info("Add cbas node and don't rebalance")
-        self.add_node(node=self.rebalanceServers[3], rebalance=False)
+        self.cluster_util.add_node(node=self.rebalanceServers[3], rebalance=False)
 
         otpnodes = []
         nodes = self.rest.node_statuses()
@@ -333,9 +329,10 @@ class CBASClusterOperations(CBASBaseTest):
 
         self.log.info("Remove master node")
         self.remove_node(otpnode=otpnodes, wait_for_rebalance=wait_for_rebalance)
+        self.cluster.master = self.rebalanceServers[1]
 
         self.log.info("Create instances pointing to new master nodes")
-        c_utils = cbas_utils(self.rebalanceServers[1], self.rebalanceServers[3])
+        c_utils = CbasUtil(self.rebalanceServers[1], self.rebalanceServers[3], self.task)
         c_utils.createConn(self.cb_bucket_name)
 
         self.log.info("Create reference to SDK client")
@@ -353,7 +350,7 @@ class CBASClusterOperations(CBASBaseTest):
                                                batch_size=self.concurrent_batch_size)
 
         self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
+        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
         if not c_utils.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items + (self.num_items//10) , 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
@@ -367,7 +364,7 @@ class CBASClusterOperations(CBASBaseTest):
         self.log.info("Run KV ops in async while rebalance is in progress")
         json_generator = JsonGenerator()
         generators = json_generator.generate_docs_simple(docs_per_day=self.num_items, start=0)
-        tasks = self.bucket_util._async_load_all_buckets(self.cluster.master, generators, "create", 0)
+        tasks = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0)
 
         self.log.info("Run concurrent queries to simulate busy system")
         statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
@@ -379,62 +376,10 @@ class CBASClusterOperations(CBASBaseTest):
 
         self.log.info("Get KV ops result")
         for task in tasks:
-            task.get_result()
+            self.task_manager.get_task_result(task)
 
         self.log.info("Log concurrent query status")
         self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
-
-        if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items, 0):
-            self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
-
-    def _start_load_gen(self, docs, bucket, num_executors):
-        cluster = CouchbaseCluster.create(self.servers[0].ip);
-        cluster.authenticate("Administrator","password")
-        bucket = cluster.openBucket(bucket);
-        k = "rebalance"
-        v = {"value": "asd"}
-        docloaders=[]
-        total_num_executors = num_executors
-        num_docs = docs/total_num_executors
-        load_gen_task_name = "Loadgen"
-        for i in xrange(total_num_executors):
-            task_name = "{0}_{1}".format(load_gen_task_name, i)
-            self.load_gen_tasks.append(DocloaderTask(bucket, num_docs, i*num_docs, k, v, task_name))
-        for task in self.load_gen_tasks:
-            self.task_manager.add_new_task(task)
-
-    def _finish_load_gen(self):
-        for task in self.load_gen_tasks:
-            self.log.info(self.task_manager.get_task_result(task))
-
-    def test_rebalance_in_multiple_cbas_on_a_busy_system_jython(self):
-        services = []
-        services.append(self.input.param('service',"cbas"))
-        services.append(self.input.param('service','cbas'))
-        self.log.info("Setup CBAS")
-        self.setup_for_test(skip_data_loading=True)
-        self.log.info("Run KV ops in background")
-        num_executors = 9 // self.buckets.__len__()
-        for bucket in self.buckets:
-            self._start_load_gen(self.num_items, bucket.name, num_executors)
-
-        self.log.info("Run concurrent queries to simulate busy system")
-        statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
-        handles = self.cbas_util._run_concurrent_queries(statement, self.mode, self.num_concurrent_queries)
-
-        self.log.info("Rebalance in CBAS nodes")
-        nodes_in = [self.rebalanceServers[1], self.rebalanceServers[3]]
-        rebalance_task = rebalanceTask(self.servers[:2], to_add=nodes_in, to_remove=[], services=services)
-        self.task_manager.add_new_task(rebalance_task)
-
-        rebalance_result = self.task_manager.get_task_result(rebalance_task)
-        self.log.info(rebalance_result)
-
-        self.log.info("Get KV ops result")
-        self._finish_load_gen()
-
-        self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
 
         if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
@@ -443,8 +388,8 @@ class CBASClusterOperations(CBASBaseTest):
         node_services = []
         node_services.append(self.input.param('service',"cbas"))
         self.log.info("Rebalance in CBAS nodes")
-        self.add_node(node=self.rebalanceServers[1], services=node_services)
-        self.add_node(node=self.rebalanceServers[3], services=node_services)
+        self.cluster_util.add_node(node=self.rebalanceServers[1], services=node_services)
+        self.cluster_util.add_node(node=self.rebalanceServers[3], services=node_services)
 
         self.log.info("Setup CBAS")
         self.setup_for_test(skip_data_loading=True)
@@ -452,7 +397,7 @@ class CBASClusterOperations(CBASBaseTest):
         self.log.info("Run KV ops in async while rebalance is in progress")
         json_generator = JsonGenerator()
         generators = json_generator.generate_docs_simple(docs_per_day=self.num_items, start=0)
-        tasks = self._async_load_all_buckets(self.master, generators, "create", 0)
+        tasks = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0)
 
         self.log.info("Run concurrent queries to simulate busy system")
         statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
@@ -469,7 +414,7 @@ class CBASClusterOperations(CBASBaseTest):
                     out_nodes.append(node)
             self.cbas_util.closeConn()
             self.log.info("Reinitialize CBAS utils with ip %s, since CC node is rebalanced out" %self.servers[3].ip)
-            self.cbas_util = cbas_utils(self.master, self.servers[3])
+            self.cbas_util = CbasUtil(self.cluster.master, self.servers[3], self.task)
             self.cbas_util.createConn("default")
         else:
             for node in nodes:
@@ -481,10 +426,10 @@ class CBASClusterOperations(CBASBaseTest):
 
         self.log.info("Get KV ops result")
         for task in tasks:
-            task.get_result()
+            self.task_manager.get_task_result(task)
 
         self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
+        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
         if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
@@ -507,7 +452,7 @@ class CBASClusterOperations(CBASBaseTest):
         node_services.append(self.input.param('service', "cbas"))
 
         self.log.info("Rebalance in CBAS nodes, this node will be removed during swap")
-        self.add_node(node=self.rebalanceServers[1], services=node_services)
+        self.cluster_util.add_node(node=self.rebalanceServers[1], services=node_services)
 
         self.log.info("Setup CBAS")
         self.setup_for_test(skip_data_loading=True)
@@ -515,7 +460,7 @@ class CBASClusterOperations(CBASBaseTest):
         self.log.info("Run KV ops in async while rebalance is in progress")
         json_generator = JsonGenerator()
         generators = json_generator.generate_docs_simple(docs_per_day=self.num_items, start=0)
-        tasks = self._async_load_all_buckets(self.master, generators, "create", 0)
+        tasks = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0)
 
         self.log.info("Run concurrent queries to simulate busy system")
         statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
@@ -534,21 +479,22 @@ class CBASClusterOperations(CBASBaseTest):
                 out_nodes.append(node)
 
         self.log.info("Swap rebalance CBAS nodes")
-        self.add_node(node=self.rebalanceServers[3], services=node_services, rebalance=False)
+        self.cluster_util.add_node(node=self.rebalanceServers[3], services=node_services, rebalance=False)
         self.remove_node([out_nodes[0]], wait_for_rebalance=True)
 
         self.log.info("Get KV ops result")
         for task in tasks:
-            task.get_result()
+            self.task_manager.get_task_result(task)
 
         if reinitialize_cbas_util is True:
-            self.cbas_util = cbas_utils(self.master, self.rebalanceServers[3])
+            self.cbas_util = CbasUtil(self.cluster.master, self.rebalanceServers[3], self.task)
             self.cbas_util.createConn("default")
 
         self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
+        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
-        if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items, 0):
+        count_n1ql = self.rest.query_tool('select count(*) from %s' % (self.cb_bucket_name))['results'][0]['$1']
+        if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, count_n1ql, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
 
     '''
@@ -576,7 +522,7 @@ class CBASClusterOperations(CBASBaseTest):
         8. Verify document count on dataset post failover
         """
         self.log.info("Add an extra node to fail-over")
-        self.add_node(node=self.rebalanceServers[1])
+        self.cluster_util.add_node(node=self.rebalanceServers[1])
 
         self.log.info("Read the failure out type to be performed")
         graceful_failover = self.input.param("graceful_failover", True)
@@ -587,7 +533,7 @@ class CBASClusterOperations(CBASBaseTest):
         self.log.info("Perform Async doc operations on KV")
         json_generator = JsonGenerator()
         generators = json_generator.generate_docs_simple(docs_per_day=self.num_items * 3 / 2, start=self.num_items)
-        kv_task = self._async_load_all_buckets(self.master, generators, "create", 0)
+        kv_task = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0)
 
         self.log.info("Run concurrent queries on CBAS")
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
@@ -595,13 +541,14 @@ class CBASClusterOperations(CBASBaseTest):
 
         self.log.info("fail-over the node")
         fail_task = self._cb_cluster.async_failover(self.input.servers, [self.rebalanceServers[1]], graceful_failover)
-        fail_task.get_result()
+        self.task_manager.get_task_result(fail_task)
 
         self.log.info("Read input param to decide on add back or rebalance out")
         self.rebalance_out = self.input.param("rebalance_out", False)
         if self.rebalance_out:
             self.log.info("Rebalance out the fail-over node")
-            self.rebalance()
+            result = self.cluster_util.rebalance()
+            self.assertTrue(result, "Rebalance operation failed")
         else:
             self.recovery_strategy = self.input.param("recovery_strategy", "full")
             self.log.info("Performing %s recovery" % self.recovery_strategy)
@@ -618,14 +565,15 @@ class CBASClusterOperations(CBASBaseTest):
             if not success:
                 self.fail("Recovery %s failed." % self.recovery_strategy)
             self.rest.add_back_node('ns_1@' + self.rebalanceServers[1].ip)
-            self.rebalance()
+            result = self.cluster_util.rebalance()
+            self.assertTrue(result, "Rebalance operation failed")
 
         self.log.info("Get KV ops result")
         for task in kv_task:
-            task.get_result()
+            self.task_manager.get_task_result(task)
 
         self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
+        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
         self.log.info("Validate dataset count on CBAS")
         count_n1ql = self.rest.query_tool('select count(*) from `%s`' % self.cb_bucket_name)['results'][0]['$1']
@@ -646,10 +594,10 @@ class CBASClusterOperations(CBASBaseTest):
         reinitialize_cbas_util = False
         if self.rebalance_type == 'out':
             nodes_to_remove.append(self.rebalanceServers[1])
-            self.add_node(self.rebalanceServers[1])
+            self.cluster_util.add_node(self.rebalanceServers[1])
             nodes_to_add = []
         elif self.rebalance_type == 'swap':
-            self.add_node(nodes_to_add[0], rebalance=False)
+            self.cluster_util.add_node(nodes_to_add[0], rebalance=False)
             nodes_to_remove.append(self.cbas_node)
             reinitialize_cbas_util = True
         self.log.info("Incoming nodes - %s, outgoing nodes - %s. For rebalance type %s " %(nodes_to_add, nodes_to_remove, self.rebalance_type))
@@ -661,7 +609,7 @@ class CBASClusterOperations(CBASBaseTest):
         self.log.info("Perform async doc operations on KV")
         json_generator = JsonGenerator()
         generators = json_generator.generate_docs_simple(docs_per_day=self.num_items * 3 / 2, start=self.num_items)
-        kv_task = self._async_load_all_buckets(self.master, generators, "create", 0, batch_size=5000)
+        kv_task = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0, batch_size=5000)
 
         self.log.info("Run concurrent queries on CBAS")
         handles = self.cbas_util._run_concurrent_queries(dataset_count_query, "async", self.num_concurrent_queries)
@@ -675,7 +623,7 @@ class CBASClusterOperations(CBASBaseTest):
         shell = RemoteMachineShellConnection(node)
 
         self.log.info("Rebalance nodes")
-        self.cluster.async_rebalance(self.servers, nodes_to_add, nodes_to_remove)
+        self.task.async_rebalance(self.servers, nodes_to_add, nodes_to_remove)
 
         self.log.info("Restart Couchbase on node %s" % node.ip)
         shell.restart_couchbase()
@@ -683,23 +631,109 @@ class CBASClusterOperations(CBASBaseTest):
 
         self.log.info("Verify subsequent rebalance is successful")
         nodes_to_add = [] # Node is already added to cluster in previous rebalance, adding it again will throw exception
-        self.assertTrue(self.cluster.rebalance(self.servers, nodes_to_add, nodes_to_remove))
+        self.assertTrue(self.task.rebalance(self.servers, nodes_to_add, nodes_to_remove))
+
+        if reinitialize_cbas_util is True:
+            self.cbas_util = CbasUtil(self.cluster.master, self.rebalanceServers[1], self.task)
+            self.cbas_util.createConn("default")
+            self.cbas_util.wait_for_cbas_to_recover()
 
         self.log.info("Get KV ops result")
         for task in kv_task:
-            task.get_result()
+            self.task_manager.get_task_result(task)
 
         self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
-
-        if reinitialize_cbas_util is True:
-            self.cbas_util = cbas_utils(self.master, self.rebalanceServers[1])
-            self.cbas_util.createConn("default")
+        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
         self.log.info("Validate dataset count on CBAS")
         if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items * 3 / 2, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
 
+    def test_auto_retry_failed_rebalance(self):
+
+        # Auto-retry rebalance settings
+        body = {"enabled": "true", "afterTimePeriod": self.retry_time, "maxAttempts": self.num_retries}
+        rest = RestConnection(self.cluster.master)
+        rest.set_retry_rebalance_settings(body)
+        result = rest.get_retry_rebalance_settings()
+
+        self.log.info("Pick the incoming and outgoing nodes during rebalance")
+        self.rebalance_type = self.input.param("rebalance_type", "in")
+        nodes_to_add = [self.rebalanceServers[1]]
+        nodes_to_remove = []
+        reinitialize_cbas_util = False
+        if self.rebalance_type == 'out':
+            nodes_to_remove.append(self.rebalanceServers[1])
+            self.cluster_util.add_node(self.rebalanceServers[1])
+            nodes_to_add = []
+        elif self.rebalance_type == 'swap':
+            self.cluster_util.add_node(nodes_to_add[0], rebalance=False)
+            nodes_to_remove.append(self.cbas_node)
+            reinitialize_cbas_util = True
+        self.log.info("Incoming nodes - %s, outgoing nodes - %s. For rebalance type %s " % (
+        nodes_to_add, nodes_to_remove, self.rebalance_type))
+
+        self.log.info("Creates cbas buckets and dataset")
+        dataset_count_query = "select count(*) from {0};".format(self.cbas_dataset_name)
+        self.setup_for_test()
+
+        self.log.info("Perform async doc operations on KV")
+        json_generator = JsonGenerator()
+        generators = json_generator.generate_docs_simple(docs_per_day=self.num_items * 3 / 2, start=self.num_items)
+        kv_task = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0, batch_size=5000)
+
+        self.log.info("Run concurrent queries on CBAS")
+        handles = self.cbas_util._run_concurrent_queries(dataset_count_query, "async", self.num_concurrent_queries)
+
+        self.log.info("Fetch the server to restart couchbase on")
+        restart_couchbase_on_incoming_or_outgoing_node = self.input.param(
+            "restart_couchbase_on_incoming_or_outgoing_node", True)
+        if not restart_couchbase_on_incoming_or_outgoing_node:
+            node = self.cbas_node
+        else:
+            node = self.rebalanceServers[1]
+        shell = RemoteMachineShellConnection(node)
+
+        try:
+            self.log.info("Rebalance nodes")
+            self.task.async_rebalance(self.servers, nodes_to_add, nodes_to_remove)
+
+            self.sleep(10, message="Restarting couchbase after 10s on node %s" % node.ip)
+
+            shell.restart_couchbase()
+            self.sleep(30, message="Waiting for service to be back again...")
+
+            self.sleep(self.retry_time, "Wait for retry time to complete and then check the rebalance results")
+
+            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
+            self.log.info("Rebalance status : {0}".format(reached))
+            self.sleep(20)
+
+            self._check_retry_rebalance_succeeded()
+
+            if reinitialize_cbas_util is True:
+                self.cbas_util = CbasUtil(self.cluster.master, self.rebalanceServers[1], self.task)
+                self.cbas_util.createConn("default")
+                self.cbas_util.wait_for_cbas_to_recover()
+
+            self.log.info("Get KV ops result")
+            for task in kv_task:
+                self.task_manager.get_task_result(task)
+
+            self.log.info("Log concurrent query status")
+            self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
+
+            self.log.info("Validate dataset count on CBAS")
+            if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items * 3 / 2, 0):
+                self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
+        except Exception as e:
+            self.fail("Some exception occurred : {0}".format(e.message))
+
+
+        finally:
+            body = {"enabled": "false"}
+            rest.set_retry_rebalance_settings(body)
+    
     '''
     test_rebalance_on_nodes_running_multiple_services,cb_bucket_name=default,cbas_bucket_name=default_bucket,cbas_dataset_name=default_ds,items=10,nodeType=KV,num_queries=10,rebalance_type=in
     test_rebalance_on_nodes_running_multiple_services,cb_bucket_name=default,cbas_bucket_name=default_bucket,cbas_dataset_name=default_ds,items=10,nodeType=KV,num_queries=10,rebalance_type=out
@@ -716,12 +750,12 @@ class CBASClusterOperations(CBASBaseTest):
             # This node will be rebalanced out
             nodes_to_remove.append(self.rebalanceServers[1])
             # Will be running services as specified in the list - active_services
-            self.add_node(nodes_to_add[0], services=active_services)
+            self.cluster_util.add_node(nodes_to_add[0], services=active_services)
             # No nodes to remove so making the add notes empty
             nodes_to_add = []
         elif self.rebalance_type == 'swap':
             # Below node will be swapped with the incoming node specified in nodes_to_add
-            self.add_node(nodes_to_add[0], services=active_services)
+            self.cluster_util.add_node(nodes_to_add[0], services=active_services)
             nodes_to_add = []
             nodes_to_add.append(self.rebalanceServers[3])
             # Below node will be removed and swapped with node that was added earlier
@@ -737,21 +771,21 @@ class CBASClusterOperations(CBASBaseTest):
         self.log.info("Perform async doc operations on KV")
         json_generator = JsonGenerator()
         generators = json_generator.generate_docs_simple(docs_per_day=self.num_items * 3 / 2, start=self.num_items)
-        kv_task = self._async_load_all_buckets(self.master, generators, "create", 0, batch_size=5000)
+        kv_task = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0, batch_size=5000)
 
         self.log.info("Run concurrent queries on CBAS")
         handles = self.cbas_util._run_concurrent_queries(dataset_count_query, "async", self.num_concurrent_queries)
 
         self.log.info("Rebalance nodes")
         # Do not add node to nodes_to_add if already added as add_node earlier
-        self.cluster.rebalance(self.servers, nodes_to_add, nodes_to_remove, services=active_services)
+        self.task.rebalance(self.servers, nodes_to_add, nodes_to_remove, services=active_services)
 
         self.log.info("Get KV ops result")
         for task in kv_task:
-            task.get_result()
+            self.task_manager.get_task_result(task)
 
         self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.master, handles)
+        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
         self.log.info("Validate dataset count on CBAS")
         if not self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items * 3 / 2, 0):
@@ -759,3 +793,150 @@ class CBASClusterOperations(CBASBaseTest):
 
     def tearDown(self):
         super(CBASClusterOperations, self).tearDown()
+
+    def _check_retry_rebalance_succeeded(self):
+        rest = RestConnection(self.cluster.master)
+        result = json.loads(rest.get_pending_rebalance_info())
+        self.log.info(result)
+
+        if "retry_rebalance" in result and result["retry_rebalance"] != "not_pending":
+            retry_after_secs = result["retry_after_secs"]
+            attempts_remaining = result["attempts_remaining"]
+            retry_rebalance = result["retry_rebalance"]
+            self.log.info("Attempts remaining : {0}, Retry rebalance : {1}".format(attempts_remaining, retry_rebalance))
+            while attempts_remaining:
+            # wait for the afterTimePeriod for the failed rebalance to restart
+                self.sleep(retry_after_secs, message="Waiting for the afterTimePeriod to complete")
+                try:
+                    result = self.rest.monitorRebalance()
+                    msg = "monitoring rebalance {0}"
+                    self.log.info(msg.format(result))
+                except Exception:
+                    result = json.loads(self.rest.get_pending_rebalance_info())
+                    self.log.info(result)
+                    try:
+                        attempts_remaining = result["attempts_remaining"]
+                        retry_rebalance = result["retry_rebalance"]
+                        retry_after_secs = result["retry_after_secs"]
+                    except KeyError:
+                        self.fail("Retrying of rebalance still did not help. All the retries exhausted...")
+                    self.log.info("Attempts remaining : {0}, Retry rebalance : {1}".format(attempts_remaining,
+                                                                                       retry_rebalance))
+                else:
+                    self.log.info("Retry rebalanced fixed the rebalance failure")
+                    break
+
+
+class MultiNodeFailOver(CBASBaseTest):
+    """
+    Class contains test cases for multiple analytics node failures.[CC+NC, NC+NC]
+    """
+
+    def setUp(self):
+        super(MultiNodeFailOver, self).setUp()
+
+        self.log.info("Read the input params")
+        self.nc_nc_fail_over = self.input.param("nc_nc_fail_over", True)
+        self.create_secondary_indexes = self.input.param("create_secondary_indexes", False)
+        # In this fail over we fail first 3 added cbas nodes[CC + first NC + Second NC]
+        self.meta_data_node_failure = self.input.param("meta_data_node_failure", False)
+
+        self.log.info("Add CBAS nodes to cluster")
+        self.assertIsNotNone(self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=False), msg="Add node failed")
+        self.assertIsNotNone(self.cluster_util.add_node(self.cluster.cbas_nodes[1], services=["cbas"], rebalance=True), msg="Add node failed")
+        # This node won't be failed over
+        if self.meta_data_node_failure:
+            self.assertIsNotNone(self.cluster_util.add_node(self.cluster.cbas_nodes[2], services=["cbas"], rebalance=True), msg="Add node failed")
+
+        self.log.info("Create connection")
+        self.cbas_util.createConn(self.cb_bucket_name)
+
+        self.log.info("Load documents in kv bucket")
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
+
+        self.log.info("Create dataset")
+        self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, self.cbas_dataset_name)
+
+        self.log.info("Create secondary index")
+        if self.create_secondary_indexes:
+            self.index_fields = "profession:string,number:bigint"
+            create_idx_statement = "create index {0} on {1}({2});".format(self.index_name, self.cbas_dataset_name, self.index_fields)
+            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(create_idx_statement)
+            self.assertTrue(status == "success", "Create Index query failed")
+            self.assertTrue(self.cbas_util.verify_index_created(self.index_name, self.index_fields.split(","), self.cbas_dataset_name)[0])
+
+        self.log.info("Connect Local link")
+        self.cbas_util.connect_link()
+
+        self.log.info("Validate dataset count")
+        self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items)
+
+        self.log.info("Pick nodes to fail over")
+        self.fail_over_nodes = []
+        if self.nc_nc_fail_over:
+            self.log.info("This is NC+NC fail over")
+            self.fail_over_nodes.append(self.cluster.cbas_nodes[0])
+            self.fail_over_nodes.append(self.cluster.cbas_nodes[1])
+            self.neglect_failures = False
+        else:
+            self.log.info("This is NC+CC fail over")
+            self.fail_over_nodes.append(self.cluster.cbas_nodes[0])
+            self.fail_over_nodes.append(self.cbas_node)
+            self.cbas_util.closeConn()
+            self.cbas_util = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[1], self.task)
+
+            if self.meta_data_node_failure:
+                self.fail_over_nodes.append(self.cluster.cbas_nodes[1])
+                self.cbas_util = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[2], self.task)
+
+            self.cbas_util.createConn(self.cb_bucket_name)
+            self.neglect_failures = True
+
+    def test_cbas_multi_node_fail_over(self):
+
+        self.log.info("fail-over the node")
+        fail_over_task = self._cb_cluster.async_failover(self.input.servers, self.fail_over_nodes)
+        self.assertTrue(self.task_manager.get_task_result(fail_over_task), msg="Fail over of nodes failed")
+
+        self.log.info("Rebalance remaining nodes")
+        result = self.cluster_util.rebalance()
+        self.assertTrue(result, "Rebalance operation failed")
+
+        self.log.info("Validate dataset count")
+        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items), msg="Document count mismatch")
+
+    def test_cbas_multi_node_fail_over_busy_system(self):
+
+        self.log.info("Perform doc operation async")
+        tasks = self.perform_doc_ops_in_all_cb_buckets(
+            "create",
+            start_key=self.num_items,
+            end_key=self.num_items+(self.num_items/4),
+            _async=True)
+
+        self.log.info("Run concurrent queries to simulate busy system")
+        statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
+        try:
+            self.cbas_util._run_concurrent_queries(statement, "async", 10, batch_size=10)
+        except Exception as e:
+            if self.neglect_failures:
+                self.log.info("Neglecting failed queries, to handle node fail over CC")
+            else:
+                raise e
+
+        self.log.info("fail-over the node")
+        fail_over_task = self._cb_cluster.async_failover(self.input.servers, self.fail_over_nodes)
+        self.assertTrue(self.task_manager.get_task_result(fail_over_task), msg="Fail over of nodes failed")
+
+        self.log.info("Rebalance remaining nodes")
+        result = self.cluster_util.rebalance()
+        self.assertTrue(result, "Rebalance operation failed")
+
+        for task in tasks:
+            self.log.info(self.task_manager.get_task_result(task))
+
+        self.log.info("Validate dataset count")
+        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items + self.num_items/4), msg="Document count mismatch")      
+
+    def tearDown(self):
+        super(MultiNodeFailOver, self).tearDown()

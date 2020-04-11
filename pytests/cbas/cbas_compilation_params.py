@@ -10,7 +10,7 @@ class CBASCompilationParamsTests(CBASBaseTest):
         if self.expected_error:
             self.validate_error = True
         self.handles = []
-        self.rest = RestConnection(self.master)
+        self.rest = RestConnection(self.cluster.master)
         self.failed_count = 0
         self.success_count = 0
         self.rejected_count = 0
@@ -21,7 +21,7 @@ class CBASCompilationParamsTests(CBASBaseTest):
         self.validate_item_count = True
         self.statement = "select sleep(count(*),500) from {0} where mutated=0;".format(
             self.cbas_dataset_name)
-        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cbas_servers) > 1:
+        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 1:
             self.add_all_cbas_node_then_rebalance()
             
     def tearDown(self):
@@ -29,11 +29,6 @@ class CBASCompilationParamsTests(CBASBaseTest):
 
     def _setupForTest(self):
         self.cbas_util.createConn(self.cb_bucket_name)
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
-
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
                                       cbas_dataset_name=self.cbas_dataset_name)
@@ -43,7 +38,7 @@ class CBASCompilationParamsTests(CBASBaseTest):
                                cb_bucket_password=self.cb_bucket_password)
 
         # Load CB bucket
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+        self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
 
         # Wait while ingestion is completed
@@ -65,7 +60,7 @@ class CBASCompilationParamsTests(CBASBaseTest):
             self.cbas_dataset_name)
         default_query_statement = "select sleep(count(*),500) from {0} where mutated=0;".format(
             self.cbas_dataset_name)
-        join_query_statement = "select a.firstname, b.firstname from {0} a, {0} b where a.number=b.number;".format(
+        join_query_statement = "select a.firstname as fname, b.firstname as firstName from {0} a, {0} b where a.number=b.number;".format(
             self.cbas_dataset_name)
 
         if self.compiler_param == "compiler.groupmemory":
@@ -102,7 +97,7 @@ class CBASCompilationParamsTests(CBASBaseTest):
         group_order_query_statement = "select count(*), first_name Name from {0} GROUP BY first_name ORDER BY first_name;".format(
             self.cbas_dataset_name)
         compiler_param_statement = "SET `compiler.groupmemory` \"50MB\"; SET `compiler.sortmemory` \"64MB\"; SET `compiler.joinmemory` \"64MB\"; SET `compiler.parallelism` \"0\";"
-        join_query_statement = "select a.firstname, b.firstname from {0} a, {0} b where a.number=b.number;".format(
+        join_query_statement = "select a.firstname as fname, b.firstname as firstName from {0} a, {0} b where a.number=b.number;".format(
             self.cbas_dataset_name)
         self.statement = compiler_param_statement + group_order_query_statement
 

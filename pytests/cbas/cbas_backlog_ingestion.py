@@ -5,18 +5,17 @@ Created on 28-Mar-2018
 
 @author: tanzeem
 """
-import uuid
 import json
 import time
-
-import testconstants
-from couchbase_helper.documentgenerator import DocumentGenerator
-from couchbase_helper.tuq_generators import JsonGenerator
-from membase.helper.cluster_helper import ClusterOperationHelper
+import uuid
 
 from BucketLib.BucketOperations import BucketHelper
 from cbas.cbas_base import CBASBaseTest
+from couchbase_helper.documentgenerator import DocumentGenerator
+from couchbase_helper.tuq_generators import JsonGenerator
+from membase.helper.cluster_helper import ClusterOperationHelper
 from sdk_client3 import SDKClient
+import testconstants
 
 
 class CBASBacklogIngestion(CBASBaseTest):
@@ -55,16 +54,17 @@ class CBASBacklogIngestion(CBASBaseTest):
         10. Verify the updated dataset count post expiry
         """
         self.log.info("Set expiry pager on default bucket")
-        ClusterOperationHelper.flushctl_set(self.master, "exp_pager_stime", 1, bucket="default")
+        ClusterOperationHelper.flushctl_set(self.cluster.master, "exp_pager_stime", 1, bucket="default")
 
         self.log.info("Load data in the default bucket")
         num_items = self.input.param("items", 10000)
         batch_size = self.input.param("batch_size", 10000)
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, num_items, exp=0, batch_size=batch_size)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, num_items, exp=0, batch_size=batch_size)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         self.log.info("Load data in the default bucket, with documents containing profession teacher")
         load_gen = CBASBacklogIngestion.generate_documents(num_items, num_items * 2, role=['teacher'])
-        self._async_load_all_buckets(server=self.master, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
+        self.bucket_util._async_load_all_buckets(server=self.cluster, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
 
         self.log.info("Create primary index")
         query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.buckets[0].name)
@@ -76,8 +76,6 @@ class CBASBacklogIngestion(CBASBaseTest):
 
         self.log.info("Create a CBAS bucket")
         cbas_bucket_name = self.input.param("cbas_bucket_name")
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=cbas_bucket_name,
-                                             cb_bucket_name=cb_bucket_name)
 
         self.log.info("Create a default data-set")
         cbas_dataset_name = self.input.param("cbas_dataset_name")
@@ -126,7 +124,7 @@ class CBASBacklogIngestion(CBASBaseTest):
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(cbas_dataset_with_clause, num_items))
 
         self.log.info("Delete half of the teacher records")
-        self.perform_doc_ops_in_all_cb_buckets(num_items // 2, "delete", num_items + (num_items // 2), num_items * 2)
+        self.perform_doc_ops_in_all_cb_buckets("delete", num_items + (num_items // 2), num_items * 2)
 
         self.log.info("Wait for ingestion to complete")
         self.cbas_util.wait_for_ingestion_complete([cbas_dataset_name], num_items + (num_items // 2))
@@ -138,7 +136,7 @@ class CBASBacklogIngestion(CBASBaseTest):
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(cbas_dataset_with_clause, num_items // 2))
 
         self.log.info("Update the documents with profession teacher to expire in next 1 seconds")
-        self.perform_doc_ops_in_all_cb_buckets(num_items // 2, "update", num_items, num_items + (num_items // 2), exp=1)
+        self.perform_doc_ops_in_all_cb_buckets("update", num_items, num_items + (num_items // 2), exp=1)
 
         self.log.info("Wait for documents to expire")
         self.sleep(15, message="Waiting for documents to expire")
@@ -170,7 +168,7 @@ class CBASBacklogIngestion(CBASBaseTest):
         professions = ['teacher', 'doctor', 'engineer', 'dentist', 'racer', 'dancer', 'singer', 'musician', 'pilot',
                        'finance']
         load_gen = CBASBacklogIngestion.generate_documents(0, self.num_items, role=professions[:num_of_cbas_buckets])
-        self._async_load_all_buckets(server=self.master, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
+        self.bucket_util._async_load_all_buckets(server=self.cluster, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
 
         self.log.info("Create primary index")
         query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.buckets[0].name)
@@ -181,11 +179,6 @@ class CBASBacklogIngestion(CBASBaseTest):
 
         self.log.info("Create CBAS buckets")
         num_of_cbas_buckets = self.input.param("num_of_cbas_buckets", 2)
-#         for index in range(num_of_cbas_buckets):
-#             self.assertTrue(self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=cbas_bucket_name + str(index),
-#                                                                  cb_bucket_name=self.cb_bucket_name),
-#                             "Failed to create cbas bucket " + self.cbas_bucket_name + str(index))
-
         self.log.info("Create data-sets")
         field = self.input.param("where_field", "")
         join_operator = self.input.param("join_operator", "or")
@@ -262,11 +255,12 @@ class BucketOperations(CBASBaseTest):
         self.fetch_test_case_arguments()
 
         self.log.info("Load data in the default bucket")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         self.log.info("Create reference to SDK client")
-        client = SDKClient(scheme="couchbase", hosts=[self.master.ip], bucket=self.cb_bucket_name,
-                           password=self.master.rest_password)
+        client = SDKClient(scheme="couchbase", hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name,
+                           password=self.cluster.master.rest_password)
 
         self.log.info("Insert binary data into default bucket")
         keys = ["%s" % (uuid.uuid4()) for i in range(0, self.num_items)]
@@ -280,9 +274,6 @@ class BucketOperations(CBASBaseTest):
         self.cbas_util.createConn(self.cb_bucket_name)
 
         self.log.info("Create a CBAS bucket")
-        self.assertTrue(self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                                             cb_bucket_name=self.cb_bucket_name),
-                        msg="Failed to create CBAS bucket")
 
         self.log.info("Create datasets")
         for i in range(1, self.num_of_dataset + 1):
@@ -333,15 +324,13 @@ class BucketOperations(CBASBaseTest):
         self.fetch_test_case_arguments()
 
         self.log.info("Load data in the default bucket")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
 
         self.log.info("Create a CBAS bucket")
-        self.assertTrue(self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                                             cb_bucket_name=self.cb_bucket_name),
-                        msg="Failed to create CBAS bucket")
 
         self.log.info("Create datasets")
         self.assertTrue(self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
@@ -357,13 +346,15 @@ class BucketOperations(CBASBaseTest):
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.dataset_name, self.num_items))
 
         self.log.info("Delete CB bucket")
-        self.delete_bucket_or_assert(serverInfo=self.master)
+        self.assertTrue(self.bucket_util.delete_bucket(
+            self.cluster.master, self.bucket_util.buckets[0].name),
+            "Bucket deletion failed")
 
         self.log.info("Verify count on dataset")
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.dataset_name, self.num_items))
 
         self.log.info("Recreate CB bucket")
-        self.create_default_bucket()
+        self.bucket_util.create_default_bucket()
 
         self.log.info("Wait for ingestion to complete and verify count")
         self.cbas_util.wait_for_ingestion_complete([self.dataset_name], self.num_items)
@@ -371,7 +362,8 @@ class BucketOperations(CBASBaseTest):
 
         self.log.info("Load back data in the default bucket")
         self.log.info("Now that the UUID of this new bucet is different hence cbas will not ingest anything from this bucket anymore.")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", self.num_items, self.num_items * 2)
+        self.perform_doc_ops_in_all_cb_buckets("create", self.num_items, self.num_items * 2)
+        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
 
         self.log.info("Wait for ingestion to complete and verify count")
         self.cbas_util.wait_for_ingestion_complete([self.dataset_name], self.num_items)
@@ -416,16 +408,17 @@ class BucketOperations(CBASBaseTest):
         self.assertEqual(active_dataset, active_data_set_count, msg="Value in correct for active dataset count")
 
         self.log.info("Create {0} cb buckets".format(self.num_of_cb_buckets))
-        self.create_multiple_buckets(server=self.master, replica=1, howmany=self.num_of_cb_buckets)
+        self.create_multiple_buckets(server=self.cluster.master, replica=1, howmany=self.num_of_cb_buckets)
         self.sleep(30, message="Wait for buckets to be ready")
 
         self.log.info("Check if buckets are created")
-        bucket_helper = BucketHelper(self.master)
+        bucket_helper = BucketHelper(self.cluster.master)
         kv_buckets = bucket_helper.get_buckets()
         self.assertEqual(len(kv_buckets), self.num_of_cb_buckets, msg="CB bucket count mismatch")
 
         self.log.info("Load data in the default bucket")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         self.log.info("Create connection to all buckets")
         for bucket in kv_buckets:
@@ -478,9 +471,6 @@ class CBASDataOperations(CBASBaseTest):
         self.cbas_util.createConn(self.cb_bucket_name)
 
         self.log.info("Create a CBAS bucket")
-        self.assertTrue(self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                                             cb_bucket_name=self.cb_bucket_name),
-                        msg="Failed to create CBAS bucket")
 
         self.log.info("Create datasets")
         self.assertTrue(self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
@@ -527,8 +517,8 @@ class CBASDataOperations(CBASBaseTest):
         self.fetch_test_case_arguments()
 
         self.log.info("Create reference to SDK client")
-        client = SDKClient(scheme="couchbase", hosts=[self.master.ip], bucket=self.cb_bucket_name,
-                           password=self.master.rest_password)
+        client = SDKClient(scheme="couchbase", hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name,
+                           password=self.cluster.master.rest_password)
 
         self.log.info("Add multilingual documents to the default bucket")
         client.insert_custom_json_documents("custom-key-", multilingual_strings)
@@ -566,10 +556,11 @@ class CBASDataOperations(CBASBaseTest):
         while end <= total_documents:
             load_gen = CBASDataOperations.generate_docs_bigdata(start=start, num_of_documents=end,
                                                                 document_size_in_mb=self.document_size)
-            tasks = self._async_load_all_buckets(server=self.master, kv_gen=load_gen, op_type="create", exp=0,
+            tasks = self.bucket_util._async_load_all_buckets(server=self.cluster, kv_gen=load_gen, op_type="create", exp=0,
                                                  batch_size=self.batch_size)
             for task in tasks:
-                self.log.info("-------------------------------------------------------- " + str(task.get_result()))
+                self.log.info("-------------------------------------------------------- " + \
+                              str(self.task.jython_task_manager.get_task_result(task)))
             start = end
             end += self.batch_size
 
@@ -597,8 +588,8 @@ class CBASDataOperations(CBASBaseTest):
         self.fetch_test_case_arguments()
 
         self.log.info("Create reference to SDK client")
-        client = SDKClient(scheme="couchbase", hosts=[self.master.ip], bucket="default",
-                           password=self.master.rest_password)
+        client = SDKClient(scheme="couchbase", hosts=[self.cluster.master.ip], bucket="default",
+                           password=self.cluster.master.rest_password)
 
         self.log.info("Insert custom data into default bucket")
         documents = ['{"name":"value"}'] * self.num_of_documents

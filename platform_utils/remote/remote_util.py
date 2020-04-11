@@ -3731,7 +3731,7 @@ class RemoteMachineShellConnection:
         return o, r
 
     def reboot_server_and_wait_for_cb_run(self, cluster_util,
-                                          server,
+                                          server=None,
                                           wait_timeout=120):
         """Reboot a server and wait for couchbase server to run.
         :param cluster_util: ClusterUtil object from test case
@@ -3777,10 +3777,11 @@ class RemoteMachineShellConnection:
 
         _, _ = self.execute_command("iptables -F")
         # wait till server is ready after warmup
-        cluster_util.wait_for_ns_servers_or_assert(
-            [server],
-            wait_time=wait_timeout,
-            wait_if_warmup=True)
+        if server:
+            cluster_util.wait_for_ns_servers_or_assert(
+                [server],
+                wait_time=wait_timeout,
+                wait_if_warmup=True)
 
     def start_couchbase(self):
         self.extract_remote_info()

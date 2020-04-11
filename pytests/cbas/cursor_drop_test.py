@@ -423,24 +423,24 @@ class volume(BaseTestCase):
         num_executors = 5
         doc_executors = 5
         num_items = total_num_items / doc_executors
-        
+
         for i in xrange(doc_executors):
             executors.append(GleambookUser_Docloader(bucket, num_items, items_start_from+i*num_items,batch_size=2000))
             executors.append(GleambookMessages_Docloader(msg_bucket, num_items, items_start_from+i*num_items,batch_size=2000))
         rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.servers[3]], [])
         futures = pool.invokeAll(executors)
-        
+
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)  
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-        
+
         bucket.close()
         msg_bucket.close()
         cluster.disconnect()
-        
+
         print "End Time: %s"%str(time.strftime("%H:%M:%S", time.gmtime(time.time())))
 

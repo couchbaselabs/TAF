@@ -299,7 +299,7 @@ class volume(BaseTestCase):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)  
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         

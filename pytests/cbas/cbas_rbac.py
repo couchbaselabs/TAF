@@ -1,6 +1,10 @@
-from cbas_base import *
+import json
+
+from BucketLib.bucket import TravelSample, BeerSample
+from rbac_utils.Rbac_ready_functions import RbacUtils
+from TestInput import TestInputSingleton
+from cbas.cbas_base import CBASBaseTest
 from remote.remote_util import RemoteMachineShellConnection
-from Rbac_utils.Rbac_ready_functions import rbac_utils
 
 
 class CBASRBACTests(CBASBaseTest):
@@ -9,16 +13,14 @@ class CBASRBACTests(CBASBaseTest):
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
         super(CBASRBACTests, self).setUp()
-        self.rbac_util = rbac_utils(self.master)
+        self.rbac_util = RbacUtils(self.cluster.master)
 
     def tearDown(self):
         super(CBASRBACTests, self).tearDown()
 
     def test_cbas_rbac(self):
-        self.load_sample_buckets(servers=[self.master],
-                                 bucketName=self.cb_bucket_name,
-                                 total_items=self.travel_sample_docs_count)
-        
+        self.bucket_util.load_sample_bucket(self.sample_bucket)
+
         users = [{"username": "analytics_manager1",
                   "roles": "bucket_full_access[travel-sample]:analytics_manager[travel-sample]"},
                  {"username": "analytics_manager2",
@@ -36,65 +38,12 @@ class CBASRBACTests(CBASBaseTest):
                   "roles": "data_reader[travel-sample]:analytics_reader"},
                  {"username": "ro_admin", "roles": "ro_admin"},
                  {"username": "cluster_admin", "roles": "cluster_admin"},
-                 {"username": "admin", "roles": "admin"}, ]
+                 {"username": "admin", "roles": "admin"},
+                 {"username": "analytics_reader", "roles": "analytics_reader"},
+                 {"username": "analytics_manager", "roles": "analytics_manager[*]"}  
+                ]
 
         operation_map = [
-#             {"operation": "create_bucket",
-#              "should_work_for_users": ["analytics_manager1",
-#                                        "analytics_manager4",
-#                                        "admin"
-#                                        ],
-#              "should_not_work_for_users": ["analytics_manager3",
-#                                            "analytics_manager2",
-#                                            "analytics_reader1", 
-#                                            "analytics_reader2",
-#                                            "analytics_reader3",
-#                                            "analytics_reader4",
-#                                            "cluster_admin", 
-# #                                            "ro_admin"
-#                                            ]},
-#             {"operation": "create_dataset",
-#              "should_work_for_users": ["analytics_manager1",
-#                                        "analytics_manager4",
-#                                        "admin"
-#                                        ],
-#              "should_not_work_for_users": ["analytics_manager3",
-#                                            "analytics_manager2",
-#                                            "analytics_reader1", 
-#                                            "analytics_reader2",
-#                                            "analytics_reader3",
-#                                            "analytics_reader4",
-#                                            "cluster_admin", 
-# #                                            "ro_admin"
-#                                            ]},
-#             {"operation": "connect_bucket",
-#              "should_work_for_users": ["analytics_manager1",
-#                                        "analytics_manager4",
-#                                        "admin"
-#                                        ],
-#              "should_not_work_for_users": ["analytics_manager3",
-#                                            "analytics_manager2",
-#                                            "analytics_reader1", 
-#                                            "analytics_reader2",
-#                                            "analytics_reader3",
-#                                            "analytics_reader4",
-#                                            "cluster_admin", 
-# #                                            "ro_admin"
-#                                            ]},
-#             {"operation": "disconnect_bucket",
-#              "should_work_for_users": ["analytics_manager1",
-#                                        "analytics_manager4",
-#                                        "admin"
-#                                        ],
-#              "should_not_work_for_users": ["analytics_manager3",
-#                                            "analytics_manager2",
-#                                            "analytics_reader1", 
-#                                            "analytics_reader2",
-#                                            "analytics_reader3",
-#                                            "analytics_reader4",
-#                                            "cluster_admin", 
-# #                                            "ro_admin"
-#                                            ]},
             {"operation": "drop_dataset",
              "should_work_for_users": ["analytics_manager1",
                                        "analytics_manager4",
@@ -106,23 +55,8 @@ class CBASRBACTests(CBASBaseTest):
                                            "analytics_reader2",
                                            "analytics_reader3",
                                            "analytics_reader4",
-                                           "cluster_admin", 
-#                                            "ro_admin"
+                                           "cluster_admin",
                                            ]},
-#             {"operation": "drop_bucket",
-#              "should_work_for_users": ["analytics_manager1",
-#                                        "analytics_manager4",
-#                                        "admin"
-#                                        ],
-#              "should_not_work_for_users": ["analytics_manager3",
-#                                            "analytics_manager2",
-#                                            "analytics_reader1", 
-#                                            "analytics_reader2",
-#                                            "analytics_reader3",
-#                                            "analytics_reader4",
-#                                            "cluster_admin", 
-# #                                            "ro_admin"
-#                                            ]},
             {"operation": "create_index",
              "should_work_for_users": ["analytics_manager1",
                                        "analytics_manager4",
@@ -134,8 +68,7 @@ class CBASRBACTests(CBASBaseTest):
                                            "analytics_reader2",
                                            "analytics_reader3",
                                            "analytics_reader4",
-                                           "cluster_admin", 
-#                                            "ro_admin"
+                                           "cluster_admin",
                                            ]},
             {"operation": "drop_index",
              "should_work_for_users": ["analytics_manager1",
@@ -148,23 +81,45 @@ class CBASRBACTests(CBASBaseTest):
                                            "analytics_reader2",
                                            "analytics_reader3",
                                            "analytics_reader4",
-                                           "cluster_admin", 
-#                                            "ro_admin"
+                                           "cluster_admin",
                                            ]},
             {"operation": "execute_query",
              "should_work_for_users": ["analytics_manager3",
-                                       "analytics_reader2", 
-#                                        "ro_admin",
-                                       "cluster_admin", 
+                                       "analytics_reader2",
+                                       "cluster_admin",
                                        "admin"
                                        ]},
             {"operation": "execute_metadata_query",
              "should_work_for_users": ["analytics_manager3",
-                                       "analytics_reader2", 
-#                                        "ro_admin",
-                                       "cluster_admin", 
+                                       "analytics_reader2",
+                                       "cluster_admin",
                                        "admin"
-                                       ]}]
+                                       ]},
+            {
+                "operation": "create_dataverse",
+                "should_work_for_users": [
+                                          "cluster_admin",
+                                          "admin"
+                                          ],
+                "should_not_work_for_users": [
+                                              "analytics_reader",
+                                              "analytics_manager",
+                                              "ro_admin"
+                                              ]
+            },
+            {
+                "operation": "drop_dataverse",
+                "should_work_for_users": [
+                                          "cluster_admin",
+                                          "admin"
+                                          ],
+                "should_not_work_for_users": [
+                                              "analytics_reader",
+                                              "analytics_manager",
+                                              "ro_admin"
+                                              ]
+            }
+            ]
 
         for user in users:
             self.log.info("Creating user %s", user["username"])
@@ -212,17 +167,7 @@ class CBASRBACTests(CBASBaseTest):
                 self.cbas_util.closeConn()
                 return False
         if operation:
-            if operation == "create_bucket":
-                status = self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                                    self.cb_bucket_name,
-                                                    username=username)
-
-                # Cleanup
-                self.cleanup_cbas()
-
-            elif operation == "create_dataset":
-                self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                           self.cb_bucket_name)
+            if operation == "create_dataset":
                 status = self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
                                                        self.cbas_dataset_name,
                                                        username=username)
@@ -231,8 +176,6 @@ class CBASRBACTests(CBASBaseTest):
                 self.cleanup_cbas()
 
             elif operation == "connect_bucket":
-                self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                           self.cb_bucket_name)
                 self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
                                               self.cbas_dataset_name)
                 status = self.cbas_util.connect_to_bucket(self.cbas_bucket_name,
@@ -242,8 +185,6 @@ class CBASRBACTests(CBASBaseTest):
                 self.cleanup_cbas()
 
             elif operation == "disconnect_bucket":
-                self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                           self.cb_bucket_name)
                 self.cbas_util.create_dataset_on_bucket(self.cbas_bucket_name,
                                               self.cbas_dataset_name)
                 self.cbas_util.connect_to_bucket(self.cbas_bucket_name)
@@ -254,8 +195,6 @@ class CBASRBACTests(CBASBaseTest):
                 self.cleanup_cbas()
 
             elif operation == "drop_dataset":
-                self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                           self.cb_bucket_name)
                 self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
                                               self.cbas_dataset_name)
                 status = self.cbas_util.drop_dataset(self.cbas_dataset_name,
@@ -265,8 +204,6 @@ class CBASRBACTests(CBASBaseTest):
                 self.cleanup_cbas()
 
             elif operation == "drop_bucket":
-                self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                           self.cb_bucket_name)
                 status = self.cbas_util.drop_cbas_bucket(self.cbas_bucket_name,
                                                username=username)
                 self.log.info(
@@ -277,8 +214,6 @@ class CBASRBACTests(CBASBaseTest):
                 self.cleanup_cbas()
 
             elif operation == "create_index":
-                self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                           self.cb_bucket_name)
                 self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
                                               self.cbas_dataset_name)
                 create_idx_statement = "create index idx1 on {0}(city:String);".format(
@@ -294,8 +229,6 @@ class CBASRBACTests(CBASBaseTest):
                 self.cleanup_cbas()
 
             elif operation == "drop_index":
-                self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                           self.cb_bucket_name)
                 self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
                                               self.cbas_dataset_name)
                 create_idx_statement = "create index idx1 on {0}(city:String);".format(
@@ -315,8 +248,6 @@ class CBASRBACTests(CBASBaseTest):
                 self.cleanup_cbas()
 
             elif operation == "execute_query":
-                self.cbas_util.create_bucket_on_cbas(self.cbas_bucket_name,
-                                           self.cb_bucket_name)
                 self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
                                               self.cbas_dataset_name)
                 self.cbas_util.connect_to_bucket(self.cbas_bucket_name)
@@ -333,12 +264,23 @@ class CBASRBACTests(CBASBaseTest):
                     self.cbas_dataset_name)
                 status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
                     query_statement, username=username)
+                self.cleanup_cbas()
+            
+            elif operation == "create_dataverse":
+                status = self.cbas_util.create_dataverse_on_cbas(dataverse_name="Custom", username=username)
+                self.cleanup_cbas()
+            
+            elif operation == "drop_dataverse":
+                self.cbas_util.create_dataverse_on_cbas(dataverse_name="Custom")
+                status = self.cbas_util.drop_dataverse_on_cbas(dataverse_name="Custom", username=username)
+                self.cleanup_cbas()
+                
         self.cbas_util.closeConn()
         return status
 
     def test_rest_api_authorization_version_api_no_authentication(self):
         api_url = "http://{0}:8095/analytics/version".format(self.cbas_node.ip)
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
 
         roles = ["analytics_manager[*]", "analytics_reader", "ro_admin",
                  "cluster_admin", "admin"]
@@ -360,6 +302,10 @@ class CBASRBACTests(CBASBaseTest):
 
     def test_rest_api_authorization_cbas_cluster_info_api(self):
         validation_failed = False
+
+        self.bucket_util.load_sample_bucket(TravelSample())
+
+        self.bucket_util.load_sample_bucket(BeerSample())
 
         api_authentication = [{
             "api_url": "http://{0}:8095/analytics/cluster".format(
@@ -425,7 +371,8 @@ class CBASRBACTests(CBASBaseTest):
                           {"role": "analytics_manager[*]",
                            "expected_status": 401},
                           {"role": "analytics_reader",
-                           "expected_status": 401}]},
+                           "expected_status": 401}]
+            },
             {
                 "api_url": "http://{0}:8095/analytics/node/config".format(
                     self.cbas_node.ip),
@@ -438,13 +385,33 @@ class CBASRBACTests(CBASBaseTest):
                           {"role": "analytics_manager[*]",
                            "expected_status": 401},
                           {"role": "analytics_reader",
-                           "expected_status": 401}]},
+                           "expected_status": 401}]
+            },
             {
-                "api_url": "http://{0}:8095/analytics/cluster/restart".format(
-                    self.cbas_node.ip),
+                "api_url": "http://{0}:9110/analytics/node/agg/stats/remaining".format(self.cbas_node.ip),
                 "roles": [
-#                     {"role": "ro_admin",
-#                            "expected_status": 401},
+                    {"role": "analytics_manager[*]", "expected_status": 200},
+                    {"role": "analytics_reader", "expected_status": 200}],
+            },
+            {
+                "api_url": "http://{0}:8095/analytics/backup?bucket=travel-sample".format(self.cbas_node.ip),
+                "roles": [
+                    {"role": "admin", "expected_status": 200},
+                    {"role": "data_backup[*],analytics_reader", "expected_status": 200},
+                    {"role": "data_backup[*], analytics_manager[*]", "expected_status": 200},
+                    {"role": "data_backup[travel-sample], analytics_reader", "expected_status": 200},
+                    {"role": "data_backup[travel-sample], analytics_manager[travel-sample]", "expected_status": 200},
+                    {"role": "ro_admin", "expected_status": 401},
+                    {"role": "analytics_reader", "expected_status": 401},
+                    {"role": "analytics_manager[*]", "expected_status": 401},
+                    {"role": "data_backup[beer-sample], analytics_reader", "expected_status": 401},
+                    {"role": "data_backup[beer-sample], analytics_manager[*]", "expected_status": 401},
+                    {"role": "data_backup[beer-sample], analytics_manager[beer-sample]", "expected_status": 401},
+                ],
+            },
+            {
+                "api_url": "http://{0}:8095/analytics/cluster/restart".format(self.cbas_node.ip),
+                "roles": [
                           {"role": "cluster_admin",
                            "expected_status": 202},
                           {"role": "admin",
@@ -453,11 +420,11 @@ class CBASRBACTests(CBASBaseTest):
                            "expected_status": 401},
                           {"role": "analytics_reader",
                            "expected_status": 401}],
-                "method": "POST"}
-
+                "method": "POST"
+            },
         ]
 
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
 
         for api in api_authentication:
             for role in api["roles"]:

@@ -15,17 +15,24 @@ from remote.remote_util import RemoteMachineShellConnection
 
 
 class CbasUtil:
-    def __init__(self, master, cbas_node):
+    def __init__(self, master, cbas_node, server_task=None):
         self.log = logging.getLogger("test")
         self.cbas_node = cbas_node
         self.master = master
+        self.task = server_task
         self.cbas_helper = CBASHelper(master, cbas_node)
+
+    def createConn(self, bucket, username=None, password=None):
+        self.cbas_helper.createConn(bucket, username, password)
+
+    def closeConn(self):
+        self.cbas_helper.closeConn()
 
     def execute_statement_on_cbas_util(self, statement, mode=None, rest=None,
                                        timeout=120, client_context_id=None,
                                        username=None, password=None,
-                                       analytics_timeout=120,
-                                       time_out_unit="s"):
+                                       analytics_timeout=120, time_out_unit="s",
+                                       scan_consistency=None, scan_wait=None):
         """
         Executes a statement on CBAS using the REST API using REST Client
         """
@@ -36,7 +43,8 @@ class CbasUtil:
                 statement, mode, pretty, timeout, client_context_id,
                 username, password,
                 analytics_timeout=analytics_timeout,
-                time_out_unit=time_out_unit)
+                time_out_unit=time_out_unit,
+                scan_consistency=scan_consistency, scan_wait=scan_wait)
             if type(response) == str:
                 response = json.loads(response)
             if "errors" in response:
@@ -224,24 +232,37 @@ class CbasUtil:
                 return True
 
     def create_dataset_on_bucket(self, cbas_bucket_name, cbas_dataset_name,
-                                 where_field=None, where_value=None,
-                                 validate_error_msg=False, username=None,
-                                 password=None, expected_error=None):
+                                 where_field=None, where_value = None,
+                                 validate_error_msg=False, username = None,
+                                 password = None, expected_error=None, dataverse=None, compress_dataset=False):
         """
         Creates a shadow dataset on a CBAS bucket
         """
         cbas_bucket_name = "`"+cbas_bucket_name+"`"
-        cmd_create_dataset = "create dataset {0} on {1};".format(
-            cbas_dataset_name, cbas_bucket_name)
+
+        cmd_create_dataset = "create dataset {0} ".format(cbas_dataset_name)
+        if compress_dataset:
+            cmd_create_dataset = cmd_create_dataset + "with {'storage-block-compression': {'scheme': 'snappy'}} "
+
+        cmd_create_dataset = cmd_create_dataset + "on {0} ".format(cbas_bucket_name)
+
         if where_field and where_value:
-            cmd_create_dataset = \
-                "create dataset {0} on {1} WHERE `{2}`=\"{3}\";" \
-                .format(cbas_dataset_name, cbas_bucket_name,
-                        where_field, where_value)
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd_create_dataset,
-                                                username=username,
-                                                password=password)
+            cmd_create_dataset = cmd_create_dataset + "WHERE `{0}`=\"{1}\";".format(where_field, where_value)
+        else:
+            cmd_create_dataset = cmd_create_dataset + ";"
+
+            #cmd_create_dataset = "create dataset {0} on {1};".format(
+        #    cbas_dataset_name, cbas_bucket_name)
+        #if where_field and where_value:
+        #    cmd_create_dataset = "create dataset {0} on {1} WHERE `{2}`=\"{3}\";".format(
+        #        cbas_dataset_name, cbas_bucket_name, where_field, where_value)
+
+        if dataverse is not None:
+            dataverse_prefix = 'use ' + dataverse + ';\n'
+            cmd_create_dataset = dataverse_prefix + cmd_create_dataset
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd_create_dataset, username=username, password=password)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
                                                    expected_error)
@@ -631,14 +652,18 @@ class CbasUtil:
             response = json.loads(response)
         shell.disconnect()
 
-        return response
+        returnval = None
+        if 'results' in response:
+            returnval = response['results']
 
-    def convert_execution_time_into_ms(self, execution_time):
+        return returnval
+
+    def convert_execution_time_into_ms(self, time):
         """
         Converts the execution time into ms
         """
         import re
-        match = re.match(r"([0-9]+.[0-9]+)([a-zA-Z]+)", execution_time, re.I)
+        match = re.match(r"([0-9]+.[0-9]+)([a-zA-Z]+)", time, re.I)
         if match:
             items = match.groups()
 
@@ -1288,3 +1313,56 @@ class CbasUtil:
         response = self.cbas_helper.get_analytics_diagnostics(cbas_node,
                                                               timeout=timeout)
         return response
+
+    def set_global_compression_type(self, compression_type="snappy",
+                                    username=None, password=None):
+        return self.cbas_helper.set_global_compression_type(compression_type,
+                                                            username, password)
+
+    def wait_for_cbas_to_recover(self, timeout=180):
+        """
+        Returns True if analytics service is recovered/available. 
+        False if service is unavailable despite waiting for specified "timeout" period.
+        """
+        analytics_recovered = False
+        cluster_recover_start_time = time.time()
+        while time.time() < cluster_recover_start_time + timeout:
+            try:
+                status, _, _, _, _ = self.execute_statement_on_cbas_util("set `import-private-functions` `true`;ping()")
+                if status == "success":
+                    analytics_recovered = True
+                    break
+            except:
+                self.log.info("Service unavailable sleep for 2 seconds, and retry")
+                time.sleep(2)
+        return analytics_recovered
+
+    # Backup Analytics metadata
+    def backup_cbas_metadata(self, bucket_name='default',
+                             username=None, password=None):
+        response = self.cbas_helper.backup_cbas_metadata(bucket_name,
+                                                         username=username,
+                                                         password=password)
+        return response.json()
+
+    # Restore Analytics metadata
+    def restore_cbas_metadata(self, metadata, bucket_name='default',
+                              username=None, password=None):
+        if metadata is None:
+            raise ValueError("Missing metadata")
+        response = self.cbas_helper.restore_cbas_metadata(metadata, 
+                                                          bucket_name,
+                                                          username=username,
+                                                          password=password)
+        return response.json()
+
+    def get_ds_compression_type(self, ds):
+        query = "select raw BlockLevelStorageCompression.DatasetCompressionScheme from Metadata.`Dataset` where DatasetName='{0}';".format(ds)
+        _, _, _, ds_compression_type, _ = self.execute_statement_on_cbas_util(query)
+        ds_compression_type = ds_compression_type[0]
+        if ds_compression_type is not None:
+            ds_compression_type = ds_compression_type.encode('ascii', 'ignore')
+        self.log.info("Compression Type for Dataset {0} is {1}".format(ds, ds_compression_type))
+
+        return ds_compression_type
+

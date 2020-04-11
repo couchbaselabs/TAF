@@ -24,11 +24,11 @@ class PartialRollback_CBAS(CBASBaseTest):
         3. There can be only 1 node running KV,CBAS service.
         NOTE: Cases pending where there are nodes which are running only cbas. For that service check on nodes is needed.
         '''
-        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cbas_servers) > 0:
-            self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cbas_servers))
+        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 0:
+            self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes))
         
         '''Create default bucket'''
-        self.create_default_bucket()
+        self.bucket_util.create_default_bucket()
         self.cbas_util.createConn("default")
         
         self.merge_policy = self.input.param('merge_policy', None)
@@ -43,13 +43,8 @@ class PartialRollback_CBAS(CBASBaseTest):
         
         if not skip_data_loading:
             # Load Couchbase bucket first.
-            self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+            self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                    self.num_items, batch_size=1000)
-
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
 
         # Create dataset on the CBAS bucket
         if self.merge_policy == None:
@@ -72,11 +67,11 @@ class PartialRollback_CBAS(CBASBaseTest):
                                cb_bucket_password=self.cb_bucket_password)
 
         if not skip_data_loading:
-            result = RestConnection(self.master).query_tool("CREATE INDEX {0} ON {1}({2})".format(self.index_name, self.cb_bucket_name, "profession"))
+            result = RestConnection(self.cluster.master).query_tool("CREATE INDEX {0} ON {1}({2})".format(self.index_name, self.cb_bucket_name, "profession"))
             self.sleep(20, "wait for index creation.")
             self.assertTrue(result['status'] == "success")
             if self.where_field and self.where_value:
-                items = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+                items = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
             else:
                 items = self.num_items
             # Validate no. of items in CBAS dataset
@@ -95,19 +90,19 @@ class PartialRollback_CBAS(CBASBaseTest):
         self.log.info("Items in CBAS before persistence stop: %s"%items_before_persistence_stop)
         # Stop Persistence on Node A & Node B
         self.log.info("Stopping persistence on NodeA")
-        mem_client = MemcachedClientHelper.direct_client(self.master,
+        mem_client = MemcachedClientHelper.direct_client(self.cluster.master,
                                                          self.cb_bucket_name)
         mem_client.stop_persistence()
 
         # Perform Create, Update, Delete ops in the CB bucket
         self.log.info("Performing Mutations")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items/2, "create", self.num_items,
+        self.perform_doc_ops_in_all_cb_buckets("create", self.num_items,
                                                self.num_items*3/2)
         
-        kv_nodes = self.get_kv_nodes(self.servers, self.master)
+        kv_nodes = self.get_kv_nodes(self.servers, self.cluster.master)
         items_in_cb_bucket = 0
         if self.where_field and self.where_value:
-            items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+            items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
         else:
             for node in kv_nodes:
                 items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
@@ -126,7 +121,7 @@ class PartialRollback_CBAS(CBASBaseTest):
 
         # Kill memcached on Node A so that Node B becomes master
         self.log.info("Kill Memcached process on NodeA")
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         shell.kill_memcached()
         self.sleep(2,"Wait for 2 secs for DCP rollback sent to CBAS.")
         curr = time.time()
@@ -144,7 +139,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cbas_bucket = 0
             if self.where_field and self.where_value:
                 try:
-                    items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+                    items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
                 except:
                     self.log.info("Indexer in rollback state. Query failed. Pass and move ahead.")
                     pass
@@ -169,19 +164,19 @@ class PartialRollback_CBAS(CBASBaseTest):
         self.log.info("Items in CBAS before persistence stop: %s"%items_before_persistence_stop)
         # Stop Persistence on Node A & Node B
         self.log.info("Stopping persistence on NodeA")
-        mem_client = MemcachedClientHelper.direct_client(self.master,
+        mem_client = MemcachedClientHelper.direct_client(self.cluster.master,
                                                          self.cb_bucket_name)
         mem_client.stop_persistence()
 
         # Perform Create, Update, Delete ops in the CB bucket
         self.log.info("Performing Mutations")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items/2, "create", self.num_items,
+        self.perform_doc_ops_in_all_cb_buckets("create", self.num_items,
                                                self.num_items*3/2)
         
-        kv_nodes = self.get_kv_nodes(self.servers, self.master)
+        kv_nodes = self.get_kv_nodes(self.servers, self.cluster.master)
         items_in_cb_bucket = 0
         if self.where_field and self.where_value:
-            items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+            items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
         else:
             for node in kv_nodes:
                 items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
@@ -202,7 +197,7 @@ class PartialRollback_CBAS(CBASBaseTest):
         
         # Kill memcached on Node A so that Node B becomes master
         self.log.info("Kill Memcached process on NodeA")
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         shell.kill_memcached()
         if self.input.param('kill_cbas', False):
             shell = RemoteMachineShellConnection(self.cbas_node)
@@ -236,7 +231,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cbas_bucket = 0
             if self.where_field and self.where_value:
                 try:
-                    items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+                    items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
                 except:
                     self.log.info("Indexer in rollback state. Query failed. Pass and move ahead.")
                     pass
@@ -260,19 +255,19 @@ class PartialRollback_CBAS(CBASBaseTest):
         self.setup_for_test()
         # Stop Persistence on Node A & Node B
         self.log.info("Stopping persistence on NodeA")
-        mem_client = MemcachedClientHelper.direct_client(self.master,
+        mem_client = MemcachedClientHelper.direct_client(self.cluster.master,
                                                          self.cb_bucket_name)
         mem_client.stop_persistence()
 
         # Perform Create, Update, Delete ops in the CB bucket
         self.log.info("Performing Mutations")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items/2, "delete", 0,
+        self.perform_doc_ops_in_all_cb_buckets("delete", 0,
                                                self.num_items / 2)
         
-        kv_nodes = self.get_kv_nodes(self.servers, self.master)
+        kv_nodes = self.get_kv_nodes(self.servers, self.cluster.master)
         items_in_cb_bucket = 0
         if self.where_field and self.where_value:
-            items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+            items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
         else:
             for node in kv_nodes:
                 items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
@@ -291,7 +286,7 @@ class PartialRollback_CBAS(CBASBaseTest):
 
         # Kill memcached on Node A so that Node B becomes master
         self.log.info("Kill Memcached process on NodeA")
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         shell.kill_memcached()
         self.sleep(2,"Wait for 2 secs for DCP rollback sent to CBAS.")
         curr = time.time()
@@ -309,7 +304,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cbas_bucket = 0
             if self.where_field and self.where_value:
                 try:
-                    items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+                    items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
                 except:
                     self.log.info("Indexer in rollback state. Query failed. Pass and move ahead.")
                     pass
@@ -333,17 +328,17 @@ class PartialRollback_CBAS(CBASBaseTest):
 
         # Stop Persistence on Node A & Node B
         self.log.info("Stopping persistence on NodeA")
-        mem_client = MemcachedClientHelper.direct_client(self.master,
+        mem_client = MemcachedClientHelper.direct_client(self.cluster.master,
                                                          self.cb_bucket_name)
         mem_client.stop_persistence()
         
         # Perform Create, Update, Delete ops in the CB bucket
         self.log.info("Performing Mutations")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items/2, "delete", 0,
+        self.perform_doc_ops_in_all_cb_buckets("delete", 0,
                                                self.num_items / 2)
 
         # Count no. of items in CB & CBAS Buckets
-        kv_nodes = self.get_kv_nodes(self.servers, self.master)
+        kv_nodes = self.get_kv_nodes(self.servers, self.cluster.master)
         items_in_cb_bucket = 0
         for node in kv_nodes:
             items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
@@ -359,7 +354,7 @@ class PartialRollback_CBAS(CBASBaseTest):
         self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
         # Kill memcached on Node A so that Node B becomes master
         self.log.info("Kill Memcached process on NodeA")
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         shell.kill_memcached()
 #         self.sleep(10,"Wait for 10 secs for memcached restarts.")
         if self.input.param('kill_cbas', False):
@@ -391,7 +386,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cbas_bucket = 0
             if self.where_field and self.where_value:
                 try:
-                    items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+                    items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
                 except:
                     self.log.info("Indexer in rollback state. Query failed. Pass and move ahead.")
                     pass
@@ -419,19 +414,19 @@ class PartialRollback_CBAS(CBASBaseTest):
         self.log.info("Items in CBAS before persistence stop: %s"%items_before_persistence_stop)
         # Stop Persistence on Node A & Node B
         self.log.info("Stopping persistence on NodeA")
-        mem_client = MemcachedClientHelper.direct_client(self.master,
+        mem_client = MemcachedClientHelper.direct_client(self.cluster.master,
                                                          self.cb_bucket_name)
         mem_client.stop_persistence()
 
         # Perform Create, Update, Delete ops in the CB bucket
         self.log.info("Performing Mutations")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items/2, "create", self.num_items,
+        self.perform_doc_ops_in_all_cb_buckets("create", self.num_items,
                                                self.num_items*3/2)
         
-        kv_nodes = self.get_kv_nodes(self.servers, self.master)
+        kv_nodes = self.get_kv_nodes(self.servers, self.cluster.master)
         items_in_cb_bucket = 0
         if self.where_field and self.where_value:
-            items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+            items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
         else:
             for node in kv_nodes:
                 items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
@@ -451,14 +446,14 @@ class PartialRollback_CBAS(CBASBaseTest):
         if self.CC:
             self.cluster_util.remove_node([self.otpNodes[0]],wait_for_rebalance=False)
             self.cbas_util.closeConn()
-            self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
             self.cbas_util.createConn("default")
         else:
             self.cluster_util.remove_node([self.otpNodes[1]],wait_for_rebalance=False)
             
         # Kill memcached on Node A so that Node B becomes master
         self.log.info("Kill Memcached process on NodeA")
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         shell.kill_memcached()
         self.sleep(2,"Wait for 2 secs for DCP rollback sent to CBAS.")
         curr = time.time()
@@ -481,7 +476,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cbas_bucket = 0
             if self.where_field and self.where_value:
                 try:
-                    items_in_cb_bucket = RestConnection(self.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
+                    items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
                 except:
                     self.log.info("Indexer in rollback state. Query failed. Pass and move ahead.")
                     pass

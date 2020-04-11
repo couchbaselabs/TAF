@@ -16,6 +16,12 @@ class CBASHelper(RestConnection):
         super(CBASHelper, self).__init__(cbas_node)
         self.cbas_base_url = "http://{0}:{1}".format(self.ip, 8095)
 
+    def createConn(self, bucket, username, password):
+        pass
+
+    def closeConn(self):
+        pass
+
     def execute_statement_on_cbas(self, statement, mode, pretty=True,
                                   timeout=70, client_context_id=None,
                                   username=None, password=None,
@@ -232,10 +238,19 @@ class CBASHelper(RestConnection):
             api, method="GET", headers=headers)
         return status, content, response
 
-    def operation_service_parameters_configuration_cbas(self, method="GET",
-                                                        params=None,
-                                                        username=None,
-                                                        password=None):
+    def fetch_cbas_storage_stats(self, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        headers = self._create_capi_headers(username, password)
+        cbas_base_url = "http://{0}:{1}".format(self.ip, 9110)
+        api = cbas_base_url + "/analytics/node/storage/stats"
+        status, content, response = self._http_request(api, method="GET", headers=headers)
+        content = json.loads(content)
+        return status, content, response
+    
+    def operation_service_parameters_configuration_cbas(self, method="GET", params=None, username=None, password=None):
         if not username:
             username = self.username
         if not password:
@@ -350,3 +365,37 @@ class CBASHelper(RestConnection):
             return json_parsed
         else:
             raise Exception("Unable to get jre path from analytics")
+
+    # Backup Analytics metadata
+    def backup_cbas_metadata(self, bucket_name, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        url = self.cbas_base_url + "/analytics/backup?bucket={0}".format(bucket_name)
+        response = requests.get(url=url, auth=(username, password))
+        return response
+
+    # Restore Analytics metadata
+    def restore_cbas_metadata(self, metadata, bucket_name, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        url = self.cbas_base_url + "/analytics/backup?bucket={0}".format(bucket_name)
+        response = requests.post(url, data=json.dumps(metadata), auth=(username, password))
+        return response
+
+    # Set Analytics config parameter
+    def set_global_compression_type(self, compression_type="snappy", username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        headers = self._create_capi_headers(username, password)
+        url = self.cbas_base_url + "/analytics/config/service"
+        setting = {'storageCompressionBlock': compression_type}
+        setting = json.dumps(setting)
+
+        status, content, header = self._http_request(url, 'PUT', setting, headers=headers)
+        return status

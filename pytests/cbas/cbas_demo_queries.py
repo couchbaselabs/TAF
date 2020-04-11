@@ -127,20 +127,11 @@ class CBASDemoQueries(CBASBaseTest):
     def test_demo_query(self):
         query_details = QueryDetails(self.query_id)
         query_record, dataset_record = query_details.get_query_and_dataset_details()
-
-        # Delete Default bucket and load beer-sample bucket
-#         self.cluster.bucket_delete(server=self.master, bucket="default")
-        self.load_sample_buckets(servers=[self.master],
-                                 bucketName=dataset_record['cb_bucket_name'],
-                                 total_items=self.beer_sample_docs_count)
+        self.sample_bucket = self.sample_bucket_dict[dataset_record['cb_bucket_name']]
+        self.load_sample_buckets(self.sample_bucket)
         self.cbas_util.createConn(dataset_record['cb_bucket_name'])
-        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cbas_servers) > 1:
+        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 1:
             self.add_all_cbas_node_then_rebalance()
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(
-            cbas_bucket_name=dataset_record['cbas_bucket_name'],
-            cb_bucket_name=dataset_record['cb_bucket_name'],
-            cb_server_ip=self.cb_server_ip)
 
         # Create datasets on the CBAS bucket
         for dataset in dataset_record['ds_details']:
@@ -154,8 +145,8 @@ class CBASDemoQueries(CBASBaseTest):
         self.cbas_util.connect_to_bucket(
             cbas_bucket_name=dataset_record['cbas_bucket_name'],
             cb_bucket_password=self.cb_bucket_password)
-        
-        num_items = self.get_item_count(self.master,dataset_record['cb_bucket_name'])
+
+        num_items = self.get_item_count(self.cluster.master,dataset_record['cb_bucket_name'])
         self.assertTrue(self.cbas_util.wait_for_ingestion_complete(["beers","breweries"], num_items),"Data ingestion couldn't complete in 300 secs")
 
         # Execute Query

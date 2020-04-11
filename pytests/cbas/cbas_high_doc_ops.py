@@ -71,7 +71,7 @@ class analytics_high_doc_ops(CBASBaseTest):
     
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
-        bucket_util = bucket_utils(self.master)
+        bucket_util = bucket_utils(self.cluster.master)
         self.info = bucket_util.rest.get_nodes_self()
         threadhold_memory = 1024
         total_memory_in_mb = self.info.memoryFree / 1024 ** 2
@@ -95,14 +95,14 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         self.log.info("Create CB buckets")
             
-        self.create_bucket(self.master, "GleambookUsers",bucket_ram=available_memory, replica=0)
+        self.create_bucket(self.cluster.master, "GleambookUsers",bucket_ram=available_memory, replica=0)
         self.sleep(30, "wait for bucket warmup to complete.")
         result = RestConnection(self.query_node).query_tool("CREATE PRIMARY INDEX idx_GleambookUsers ON GleambookUsers;")
         self.sleep(10, "wait for index creation.")
         self.assertTrue(result['status'] == "success")
 
     def setup_cbas(self):
-        self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+        self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
         self.cbas_util.createConn("GleambookUsers")
         self.cleanup_cbas()
 
@@ -163,31 +163,31 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.query_node = self.servers[1]
         rest = RestConnection(self.query_node)
         rest.set_data_path(data_path=self.query_node.data_path,index_path=self.query_node.index_path,cbas_path=self.query_node.cbas_path)
-        result = self.add_node(self.query_node, rebalance=False)
+        result = self.cluster_util.add_node(self.query_node, rebalance=False)
         self.assertTrue(result, msg="Failed to add N1QL/Index node.")
         self.log.info("Add a KV nodes")
-        rest = RestConnection(self.kv_servers[1])
-        rest.set_data_path(data_path=self.kv_servers[1].data_path,index_path=self.kv_servers[1].index_path,cbas_path=self.kv_servers[1].cbas_path)
-        result = self.add_node(self.kv_servers[1], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[1])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,index_path=self.cluster.kv_nodes[1].index_path,cbas_path=self.cluster.kv_nodes[1].cbas_path)
+        result = self.cluster_util.add_node(self.cluster.kv_nodes[1], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add one more KV node")
-        rest = RestConnection(self.kv_servers[3])
-        rest.set_data_path(data_path=self.kv_servers[3].data_path,index_path=self.kv_servers[3].index_path,cbas_path=self.kv_servers[3].cbas_path)
-        result = self.add_node(self.kv_servers[3], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[3])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[3].data_path,index_path=self.cluster.kv_nodes[3].index_path,cbas_path=self.cluster.kv_nodes[3].cbas_path)
+        result = self.cluster_util.add_node(self.cluster.kv_nodes[3], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add one more KV node")
-        rest = RestConnection(self.kv_servers[4])
-        rest.set_data_path(data_path=self.kv_servers[4].data_path,index_path=self.kv_servers[4].index_path,cbas_path=self.kv_servers[4].cbas_path)
-        result = self.add_node(self.kv_servers[4], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[4])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[4].data_path,index_path=self.cluster.kv_nodes[4].index_path,cbas_path=self.cluster.kv_nodes[4].cbas_path)
+        result = self.cluster_util.add_node(self.cluster.kv_nodes[4], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
                  
         self.log.info("Add a CBAS nodes")
-        result = self.add_node(self.cbas_servers[0], services=["cbas"], rebalance=True)
+        result = self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=True)
         self.assertTrue(result, msg="Failed to add CBAS node.")
          
-        nodes_in_cluster = nodes_in_cluster + [self.query_node, self.kv_servers[1], self.kv_servers[3], self.kv_servers[4], self.cbas_servers[0]]
+        nodes_in_cluster = nodes_in_cluster + [self.query_node, self.cluster.kv_nodes[1], self.cluster.kv_nodes[3], self.cluster.kv_nodes[4], self.cluster.cbas_nodes[0]]
         ########################################################################################################################
         self.log.info("Step 2: Create Couchbase buckets.")
         self.create_required_buckets()
@@ -208,7 +208,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
         load_thread.join()
@@ -220,7 +220,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.log.info("Step 4: Create 8 analytics buckets and 8 datasets and connect.")
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
         
@@ -251,10 +251,10 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
         delete_thread.start()
         upsert_thread.start()
         
@@ -280,10 +280,10 @@ class analytics_high_doc_ops(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 12: When 11 is in progress do a KV Rebalance in of 1 nodes.")
-        rest = RestConnection(self.kv_servers[2])
-        rest.set_data_path(data_path=self.kv_servers[2].data_path,index_path=self.kv_servers[2].index_path,cbas_path=self.kv_servers[2].cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.kv_servers[2]], [])
-        nodes_in_cluster += [self.kv_servers[2]]
+        rest = RestConnection(self.cluster.kv_nodes[2])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[2].data_path,index_path=self.cluster.kv_nodes[2].index_path,cbas_path=self.cluster.kv_nodes[2].cbas_path)
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.cluster.kv_nodes[2]], [])
+        nodes_in_cluster += [self.cluster.kv_nodes[2]]
         ########################################################################################################################
         self.log.info("Step 11: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -294,7 +294,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
 
@@ -332,10 +332,10 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
         delete_thread.start()
         upsert_thread.start()
         
@@ -367,7 +367,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
 
@@ -411,8 +411,8 @@ class analytics_high_doc_ops(CBASBaseTest):
             executors.append(QueryRunner(random.choice(queries),num_query,self.cbas_util))
          
         self.log.info("Step 22: When 21 is in progress do a KV Rebalance out of 2 nodes.")
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.kv_servers[1:2])
-        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.kv_servers[1:2]]
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cluster.kv_nodes[1:2])
+        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.kv_nodes[1:2]]
          
         futures = pool.invokeAll(executors)
         self.log.info("Step 23: Wait for rebalance.")
@@ -440,7 +440,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
         for i in xrange(query_executors):
@@ -452,11 +452,11 @@ class analytics_high_doc_ops(CBASBaseTest):
          
         ##################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 25: When 24 is in progress do a CBAS Rebalance in of 2 nodes.")
-        for node in self.cbas_servers[2:]:
+        for node in self.cluster.cbas_nodes[2:]:
             rest = RestConnection(node)
             rest.set_data_path(data_path=node.data_path,index_path=node.index_path,cbas_path=node.cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, self.cbas_servers[1:],[],services=["cbas","cbas"])
-        nodes_in_cluster = nodes_in_cluster + self.cbas_servers[1:]
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, self.cluster.cbas_nodes[1:],[],services=["cbas","cbas"])
+        nodes_in_cluster = nodes_in_cluster + self.cluster.cbas_nodes[1:]
         futures = pool.invokeAll(executors)
         
         for future in futures:
@@ -488,10 +488,10 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
         delete_thread.start()
         upsert_thread.start()
         
@@ -519,7 +519,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
 
@@ -528,8 +528,8 @@ class analytics_high_doc_ops(CBASBaseTest):
  
         ###################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 32: When 31 is in progress do a CBAS Rebalance out of 1 nodes.")
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cbas_servers[-1:])
-        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cbas_servers[-1:]]
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cluster.cbas_nodes[-1:])
+        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.cbas_nodes[-1:]]
         futures = pool.invokeAll(executors)
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
@@ -561,10 +561,10 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
         delete_thread.start()
         upsert_thread.start()
         
@@ -592,7 +592,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
 
@@ -602,11 +602,11 @@ class analytics_high_doc_ops(CBASBaseTest):
         ###################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 38: When 37 is in progress do a CBAS CC SWAP Rebalance of 2 nodes.")
         
-        for node in self.cbas_servers[-1:]:
+        for node in self.cluster.cbas_nodes[-1:]:
             rest = RestConnection(node)
             rest.set_data_path(data_path=node.data_path,index_path=node.index_path,cbas_path=node.cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster,self.cbas_servers[-1:], [self.cbas_node],services=["cbas"],check_vbucket_shuffling=False)
-        nodes_in_cluster += self.cbas_servers[-1:]
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster,self.cluster.cbas_nodes[-1:], [self.cbas_node],services=["cbas"],check_vbucket_shuffling=False)
+        nodes_in_cluster += self.cluster.cbas_nodes[-1:]
         nodes_in_cluster.remove(self.cbas_node)
         futures = pool.invokeAll(executors)
         for future in futures:
@@ -640,10 +640,10 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
         delete_thread.start()
         upsert_thread.start()
         
@@ -671,7 +671,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
 
@@ -685,10 +685,10 @@ class analytics_high_doc_ops(CBASBaseTest):
         rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.cbas_node], [],services=["cbas"])
         nodes_in_cluster += [self.cbas_node]
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-        rest = RestConnection(self.kv_servers[1])
-        rest.set_data_path(data_path=self.kv_servers[1].data_path,index_path=self.kv_servers[1].index_path,cbas_path=self.kv_servers[1].cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.kv_servers[1]], [])
-        nodes_in_cluster += [self.kv_servers[1]]
+        rest = RestConnection(self.cluster.kv_nodes[1])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,index_path=self.cluster.kv_nodes[1].index_path,cbas_path=self.cluster.kv_nodes[1].cbas_path)
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.cluster.kv_nodes[1]], [])
+        nodes_in_cluster += [self.cluster.kv_nodes[1]]
         futures = pool.invokeAll(executors)
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
@@ -720,10 +720,10 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
         delete_thread.start()
         upsert_thread.start()
         
@@ -751,7 +751,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
 
@@ -760,12 +760,12 @@ class analytics_high_doc_ops(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 50: When 49 is in progress do a CBAS Rebalance OUT.")
-        rest = RestConnection(self.kv_servers[2])
-#         rest.set_data_path(data_path=self.kv_servers[2].data_path,index_path=self.kv_servers[2].index_path,cbas_path=self.kv_servers[2].cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cbas_servers[-1:])
+        rest = RestConnection(self.cluster.kv_nodes[2])
+#         rest.set_data_path(data_path=self.cluster.kv_nodes[2].data_path,index_path=self.cluster.kv_nodes[2].index_path,cbas_path=self.cluster.kv_nodes[2].cbas_path)
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cluster.cbas_nodes[-1:])
 #         
-        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cbas_servers[-1:]]
-#         nodes_in_cluster.remove(self.kv_servers[1])
+        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.cbas_nodes[-1:]]
+#         nodes_in_cluster.remove(self.cluster.kv_nodes[1])
         
         futures = pool.invokeAll(executors)
         for future in futures:
@@ -797,10 +797,10 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
         delete_thread.start()
         upsert_thread.start()
         
@@ -829,7 +829,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.rate_limit = self.input.param('rate_limit', '100000')
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
+                                 args=(self.cluster.master, GleambookUsers, total_num_items,50,4, items_start_from,2, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
 
@@ -838,13 +838,13 @@ class analytics_high_doc_ops(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 56: When 55 is in progress do a CBAS Rebalance IN.")
-        for node in self.cbas_servers[-1:]:
+        for node in self.cluster.cbas_nodes[-1:]:
             rest = RestConnection(node)
             rest.set_data_path(data_path=node.data_path,index_path=node.index_path,cbas_path=node.cbas_path)
-        rest = RestConnection(self.cbas_servers[-1])
-        rest.set_data_path(data_path=self.cbas_servers[-1].data_path,index_path=self.cbas_servers[-1].index_path,cbas_path=self.cbas_servers[-1].cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, self.cbas_servers[-1:], [], services=["cbas"])
-        nodes_in_cluster += self.cbas_servers[-1:]
+        rest = RestConnection(self.cluster.cbas_nodes[-1])
+        rest.set_data_path(data_path=self.cluster.cbas_nodes[-1].data_path,index_path=self.cluster.cbas_nodes[-1].index_path,cbas_path=self.cluster.cbas_nodes[-1].cbas_path)
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, self.cluster.cbas_nodes[-1:], [], services=["cbas"])
+        nodes_in_cluster += self.cluster.cbas_nodes[-1:]
          
         futures = pool.invokeAll(executors)
         for future in futures:
@@ -877,10 +877,10 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10,10000,4, updates_from,1, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
+                                 args=(self.cluster.master, GleambookUsers, num_items/10, self.rate_limit, 10000, 2, deletes_from,1))
         delete_thread.start()
         upsert_thread.start()
         

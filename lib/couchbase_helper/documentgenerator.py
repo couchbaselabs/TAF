@@ -158,7 +158,7 @@ class KVGenerator(object):
 
 class DocumentGenerator(KVGenerator):
     """ An idempotent document generator."""
-    def __init__(self, name, template, *args, **kwargs):
+    def __init__(self, key_prefix, template, *args, **kwargs):
         """Initializes the document generator
 
         Example:
@@ -181,7 +181,7 @@ class DocumentGenerator(KVGenerator):
         self.args = args
         self.kwargs = kwargs
         self.template = template
-        KVGenerator.__init__(self, name)
+        KVGenerator.__init__(self, key_prefix)
 
         if 'start' in kwargs:
             self.start = kwargs['start']
@@ -205,7 +205,7 @@ class DocumentGenerator(KVGenerator):
 
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
-            random.seed(name)
+            random.seed(key_prefix)
             self.random_string = [''.join(random.choice(letters)
                                           for _ in range(4*1024))][0]
             self.len_random_string = len(self.random_string)

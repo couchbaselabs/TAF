@@ -1,11 +1,10 @@
+from BucketLib.bucket import TravelSample, BeerSample, Bucket
 from basetestcase import BaseTestCase
 from cbas_utils.cbas_utils import CbasUtil
-from couchbase_helper.documentgenerator import DocumentGenerator
-from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
-
-from membase.api.rest_client import RestHelper, RestConnection
-
 from com.couchbase.client.java.json import JsonObject
+from couchbase_helper.documentgenerator import DocumentGenerator
+from membase.api.rest_client import RestHelper, RestConnection
+from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 
 
 class CBASBaseTest(BaseTestCase):
@@ -28,9 +27,12 @@ class CBASBaseTest(BaseTestCase):
                                cbas_path=server.cbas_path)
 
         invalid_ip = '10.111.151.109'
-        self._cb_cluster = self.cluster
+        self._cb_cluster = self.task
         self.cb_bucket_name = self.input.param('cb_bucket_name',
                                                'travel-sample')
+        self.sample_bucket_dict = {TravelSample().name: TravelSample(),
+                                   BeerSample().name: BeerSample()}
+        self.sample_bucket = None
         self.cbas_bucket_name = self.input.param('cbas_bucket_name', 'travel')
         self.cb_bucket_password = self.input.param('cb_bucket_password', None)
         self.expected_error = self.input.param("error", None)
@@ -67,8 +69,12 @@ class CBASBaseTest(BaseTestCase):
         self.compiler_param_val = self.input.param('compiler_param_val', None)
         self.expect_reject = self.input.param('expect_reject', False)
         self.expect_failure = self.input.param('expect_failure', False)
+        self.compress_dataset = self.input.param('compress_dataset', False)
         self.index_name = self.input.param('index_name', "NoName")
         self.index_fields = self.input.param('index_fields', None)
+        self.retry_time = self.input.param("retry_time", 300)
+        self.num_retries = self.input.param("num_retries", 1)
+        self.flush_enabled = Bucket.FlushBucket.ENABLED
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
         if self.index_fields:
@@ -107,7 +113,8 @@ class CBASBaseTest(BaseTestCase):
         # Drop any existing buckets and datasets
         if self.cluster.cbas_nodes:
             self.cbas_node = self.cluster.cbas_nodes[0]
-            self.cbas_util = CbasUtil(self.cluster.master, self.cbas_node)
+            self.cbas_util = CbasUtil(self.cluster.master, self.cbas_node,
+                                      self.task)
             if "cbas" in self.cluster.master.services:
                 self.cleanup_cbas()
             if add_default_cbas_node:
@@ -123,7 +130,20 @@ class CBASBaseTest(BaseTestCase):
                 """
                 self.cleanup_cbas()
                 self.cluster.cbas_nodes.remove(self.cbas_node)
+        if self.default_bucket:
+            self.bucket_util.create_default_bucket(
+                bucket_type=self.bucket_type,
+                ram_quota=self.bucket_size,
+                replica=self.num_replicas,
+                conflict_resolution=self.bucket_conflict_resolution_type,
+                replica_index=self.bucket_replica_index,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy,
+                flush_enabled=self.flush_enabled)
+        elif self.cb_bucket_name in self.sample_bucket_dict.keys():
+            self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
 
+        self.bucket_util.add_rbac_user()
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 
@@ -168,6 +188,16 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("********* Dropped all buckets *********")
             else:
                 self.log.info("********* No buckets to drop *********")
+            self.log.info("Drop Dataverse other than Default and Metadata")
+            cmd_get_dataverse = 'select DataverseName from Metadata.`Dataverse` where DataverseName != "Metadata" and DataverseName != "Default";'
+            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(cmd_get_dataverse)
+            if (results != None) & (len(results) > 0):
+                for row in results:
+                    self.cbas_util.disconnect_link("`" + row['DataverseName'] + "`" + ".Local")
+                    self.cbas_util.drop_dataverse_on_cbas(dataverse_name="`" + row['DataverseName'] + "`")
+                self.log.info("********* Dropped all dataverse except Default and Metadata *********")
+            else:
+                self.log.info("********* No dataverse to drop *********")
         except Exception as e:
             self.log.info(e.message)
 
@@ -195,6 +225,8 @@ class CBASBaseTest(BaseTestCase):
         template_obj.put("first_name", "")
         template_obj.put("profession", "")
         template_obj.put("mutated", 0)
+        if operation == "update":
+            template_obj.put("mutated", 1)
         template_obj.put("mutation_type", "ADD")
 
         doc_gen = DocumentGenerator('test_docs', template_obj,
@@ -215,7 +247,6 @@ class CBASBaseTest(BaseTestCase):
                     durability=durability,
                     batch_size=batch_size,
                     suppress_error_table=True)
-                self.bucket_util.verify_stats_all_buckets(self.num_items)
         except Exception as e:
             self.log.error(e.message)
 

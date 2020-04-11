@@ -1,14 +1,16 @@
 from BucketLib.bucket import TravelSample
 from cbas_base import CBASBaseTest
+from TestInput import TestInputSingleton
 
 
 class CBASFunctionalTests(CBASBaseTest):
     def setUp(self, add_default_cbas_node=True):
-        super(CBASFunctionalTests, self).setUp(add_default_cbas_node)
-        sample_bucket = TravelSample()
-
+        self.input = TestInputSingleton.input
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
+
+        super(CBASFunctionalTests, self).setUp(add_default_cbas_node)
+        sample_bucket = TravelSample()
 
         self.validate_error = False
         if self.expected_error:

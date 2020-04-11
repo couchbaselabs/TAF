@@ -1,7 +1,7 @@
 import json
 
 from cbas.cbas_base import CBASBaseTest
-from sdk_client import SDKClient
+from sdk_client3 import SDKClient
 import uuid
 
 
@@ -15,7 +15,7 @@ class CbasStats(CBASBaseTest):
         super(CbasStats, self).setUp()
 
         self.log.info("Add Json documents to default bucket")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
 
         self.log.info("Create reference to SDK client")
         client = SDKClient(scheme="couchbase", hosts=[self.master.ip], bucket=self.cb_bucket_name,
@@ -27,12 +27,6 @@ class CbasStats(CBASBaseTest):
 
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
-
-        self.log.info("Create bucket on CBAS")
-        self.assertTrue(self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                                             cb_bucket_name=self.cb_bucket_name,
-                                                             cb_server_ip=self.cb_server_ip),
-                        "bucket creation failed on cbas")
 
         self.log.info("Create dataset on the CBAS bucket")
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,

@@ -30,17 +30,18 @@ class CbasLogging(CBASBaseTest):
 
         # Dictionary containing the default logging configuration that we set and verify if they are set
         CbasLogging.DEFAULT_LOGGER_CONFIG_DICT = {"org.apache.asterix": "INFO",
+                                                  "DcpIngestionFailureLogger": "WARN",
                                                   "com.couchbase.client.dcp.conductor.DcpChannel": "WARN",
                                                   "com.couchbase.client.core.node": "WARN",
                                                   "com.couchbase.analytics": "DEBUG",
                                                   "org.apache.hyracks": "DEBUG",
                                                   "org.apache.asterix": "DEBUG",
-                                                  "org.apache.hyracks.http.server.CLFLogger": "ACCESS",
-                                                  "": "ERROR"} # Empty string corresponds to ROOT logger
+                                                  "org.apache.hyracks.http.server.CLFLogger": "ACCESS"
+                                                  }  # Empty string corresponds to ROOT logger
 
         # Fetch the NC node ID and add trace logger to default logger config dictionary, trace logger has NodeId so this has to be picked at run time
         _, node_id, _ = self.cbas_util.retrieve_nodes_config()
-        CbasLogging.DEFAULT_LOGGER_CONFIG_DICT["org.apache.hyracks.util.trace.Tracer@" + node_id] = "INFO"
+        CbasLogging.DEFAULT_LOGGER_CONFIG_DICT["org.apache.hyracks.util.trace.Tracer.Traces." + node_id] = "INFO"
 
     '''
     -i b/resources/4-nodes-template.ini -t cbas.cbas_logging_test.CbasLogging.test_get_cbas_default_logger_levels,default_bucket=False
@@ -55,7 +56,7 @@ class CbasLogging(CBASBaseTest):
 
         self.log.info("Convert response to a dictionary")
         log_dict = CbasLogging.convert_logger_get_result_to_a_dict(content)
-        self.assertEqual(len(log_dict), len(CbasLogging.DEFAULT_LOGGER_CONFIG_DICT), "Logger count incorrect")
+        self.assertEqual(len(log_dict), len(CbasLogging.DEFAULT_LOGGER_CONFIG_DICT) + 1, "Logger count incorrect") # Adding +1 to accomodate Root logger that can not be updated 
 
         self.log.info("Verify logger configuration and count")
         for key in CbasLogging.DEFAULT_LOGGER_CONFIG_DICT.keys():
@@ -111,7 +112,7 @@ class CbasLogging(CBASBaseTest):
     def test_logging_configurations_are_shared_across_cbas_node(self):
 
         self.log.info("Add a cbas node")
-        result = self.add_node(self.cbas_servers[0], services=["cbas"], rebalance=True)
+        result = self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=True)
         self.assertTrue(result, msg="Failed to add CBAS node")
 
         self.log.info("Delete all loggers")
@@ -132,14 +133,14 @@ class CbasLogging(CBASBaseTest):
 
         self.log.info("Verify logging configuration on other cbas node")
         for name, level in CbasLogging.DEFAULT_LOGGER_CONFIG_DICT.items():
-            status, content, response = cbas_utils(self.master, self.cbas_servers[0]).get_specific_cbas_log_level(name)
+            status, content, response = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
             self.assertTrue(status, msg="Response status incorrect for GET request")
             self.assertEquals(content, level, msg="Logger configuration mismatch for logger " + name)
 
         self.log.info("Update logging configuration on other cbas node")
         logger_level = self.input.param("logger_level", "FATAL")
         logger_name = self.input.param("logger_name", "org.apache.asterix")
-        status, content, response = cbas_utils(self.master, self.cbas_servers[0]).set_specific_log_level_on_cbas(
+        status, content, response = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0]).set_specific_log_level_on_cbas(
             logger_name, logger_level)
         self.assertTrue(status, msg="Status mismatch for SET")
 
@@ -177,15 +178,10 @@ class CbasLogging(CBASBaseTest):
         self.assertTrue(status, msg="Response status incorrect for SET request")
 
         self.log.info("Set log level of root to ERROR")
-        logger_level = "FATAL"
+        logger_level = "ERROR"
         logger_name = ""
         status, content, response = self.cbas_util.set_specific_log_level_on_cbas(logger_name, logger_level)
-        self.assertTrue(status, msg="Status mismatch for SET")
-
-        self.log.info("Get log level of root")
-        status, content, response = self.cbas_util.get_specific_cbas_log_level(logger_name)
-        self.assertTrue(status, msg="Status mismatch for GET")
-        self.assertEquals(content, logger_level, msg="Logger configuration mismatch for logger " + logger_name)
+        self.assertFalse(status, msg="Root logger can not be modified")
 
         self.log.info("Delete specific logger")
         logger_name = "com.couchbase.analytics"
@@ -206,7 +202,7 @@ class CbasLogging(CBASBaseTest):
     def test_logging_configurations_are_restored_post_service_restarts(self):
 
         self.log.info("Add a cbas node")
-        result = self.add_node(self.cbas_servers[0], services=["cbas"], rebalance=True)
+        result = self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=True)
         self.assertTrue(result, msg="Failed to add CBAS node")
 
         self.log.info("Delete all loggers")
@@ -246,7 +242,7 @@ class CbasLogging(CBASBaseTest):
 
         self.log.info("Verify logging configuration on other cbas node")
         for name, level in CbasLogging.DEFAULT_LOGGER_CONFIG_DICT.items():
-            status, content, response = cbas_utils(self.master, self.cbas_servers[0]).get_specific_cbas_log_level(name)
+            status, content, response = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
             self.assertTrue(status, msg="Response status incorrect for GET request")
             self.assertEquals(content, level, msg="Logger configuration mismatch for logger " + name)
 
@@ -259,7 +255,7 @@ class CbasLogging(CBASBaseTest):
 
         self.log.info("Establish a remote connection")
         shell_cc = RemoteMachineShellConnection(self.cbas_node)
-        shell_nc = RemoteMachineShellConnection(self.cbas_servers[0])
+        shell_nc = RemoteMachineShellConnection(self.cluster.cbas_nodes[0])
 
         if kill_services:
             self.log.info("Kill the %s service on CC cbas node" % service_name)
@@ -278,7 +274,7 @@ class CbasLogging(CBASBaseTest):
             NodeHelper.reboot_server_new(self.cbas_node, self)
 
             self.log.info("Reboot couchbase NC node")
-            NodeHelper.reboot_server_new(self.cbas_servers[0], self)
+            NodeHelper.reboot_server_new(self.cluster.cbas_nodes[0], self)
 
         self.log.info("Wait for request to complete and cluster to be active: Using private ping() function")
         cluster_recover_start_time = time.time()
@@ -300,7 +296,7 @@ class CbasLogging(CBASBaseTest):
 
         self.log.info("Verify logging configuration on other cbas node post service kill")
         for name, level in CbasLogging.DEFAULT_LOGGER_CONFIG_DICT.items():
-            status, content, response = cbas_utils(self.master, self.cbas_servers[0]).get_specific_cbas_log_level(name)
+            status, content, response = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
             self.assertTrue(status, msg="Response status incorrect for GET request")
             self.assertEquals(content, level, msg="Logger configuration mismatch for logger " + name)
 

@@ -1207,7 +1207,8 @@ class BucketUtils(ScopeUtils):
             conflict_resolution=Bucket.ConflictResolution.SEQ_NO,
             replica_index=1,
             storage=Bucket.StorageBackend.couchstore,
-            eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY):
+            eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
+            flush_enabled=Bucket.FlushBucket.DISABLED):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ramQuotaMB = ram_quota
@@ -1227,7 +1228,8 @@ class BucketUtils(ScopeUtils):
                                      conflict_resolution,
                                  Bucket.replicaIndex: replica_index,
                                  Bucket.storageBackend: storage,
-                                 Bucket.evictionPolicy: eviction_policy})
+                                 Bucket.evictionPolicy: eviction_policy,
+                                 Bucket.flushEnabled: flush_enabled})
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])

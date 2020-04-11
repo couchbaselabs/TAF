@@ -20,42 +20,42 @@ class QueryParameterTest(CBASBaseTest):
         self.query_file = self.input.param("query_file","b/resources/analytics_query_with_parameter.txt")
         self.n1ql_server = self.get_nodes_from_services_map(service_type="n1ql")
         self.curl_path = "curl"
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         type = shell.extract_remote_info().distribution_type
         if type.lower() == 'windows':
             self.path = testconstants.WIN_COUCHBASE_BIN_PATH
             self.curl_path = "%scurl" % self.path
             self.n1ql_certs_path = "/cygdrive/c/Program\ Files/Couchbase/server/var/lib/couchbase/n1qlcerts"
-        self.load_sample_buckets(servers=[self.master], bucketName="travel-sample",
-                                 total_items=self.travel_sample_docs_count)
-        self.cbas_util.createConn("travel-sample")
+        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.cbas_util.createConn(self.sample_bucket.name)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
-            cbas_dataset_name=self.cbas_dataset_name)
+                                                cbas_dataset_name=self.cbas_dataset_name)
 
         # Connect to Bucket
         self.cbas_util.connect_to_bucket(cbas_bucket_name=self.cbas_bucket_name,
                                          cb_bucket_password=self.cb_bucket_password)
 
         # Allow ingestion to complete
-        self.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name], self.travel_sample_docs_count, 300)
+        self.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
+                                                   self.sample_bucket.stats.expected_item_count, 300)
 
         self.n1ql_node = self.get_nodes_from_services_map(service_type="n1ql")
-        self.shell = RemoteMachineShellConnection(self.master)
+        self.shell = RemoteMachineShellConnection(self.cluster.master)
         self.item_flag = self.input.param("item_flag", 0)
         self.n1ql_port = self.input.param("n1ql_port", 8093)
         self.n1ql_helper = N1QLHelper(shell=self.shell, max_verify=self.max_verify, buckets=self.buckets,
                                       item_flag=self.item_flag, n1ql_port=self.n1ql_port, log=self.log, input=self.input,
-                                      master=self.master, use_rest=True)
+                                      master=self.cluster.master, use_rest=True)
 
     def curl_helper(self, statement):
         cmd = "{4} -u {0}:{1} http://{2}:8093/query/service -d 'statement={3}'". \
-            format('Administrator', 'password', self.master.ip, statement, self.curl_path)
+            format('Administrator', 'password', self.cluster.master.ip, statement, self.curl_path)
         return self.run_helper_cmd(cmd)
 
     def run_helper_cmd(self, cmd):
-        shell = RemoteMachineShellConnection(self.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         output, error = shell.execute_command(cmd)
         new_list = [string.strip() for string in output]
         concat_string = ''.join(new_list)

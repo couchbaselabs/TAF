@@ -351,10 +351,11 @@ class analytics(CBASBaseTest):
         self.rest.set_service_memoryQuota(service='indexMemoryQuota', memoryQuota=available_memory-1024)
 
         self.log.info("Create CB buckets")
-            
-        self.create_bucket(self.master, "GleambookUsers",bucket_ram=available_memory/3)
-        self.create_bucket(self.master, "GleambookMessages",bucket_ram=available_memory/3)
-        self.create_bucket(self.master, "ChirpMessages",bucket_ram=available_memory/3)
+        self.create_bucket(self.master, "ChirpMessages", bucket_ram=100)
+        available_memory -= 100
+        self.create_bucket(self.master, "GleambookUsers", bucket_ram=int(available_memory*1/3))
+        self.create_bucket(self.master, "GleambookMessages", bucket_ram=int(available_memory*2/3))
+        
 
         result = RestConnection(self.query_node).query_tool("CREATE PRIMARY INDEX idx_GleambookUsers ON GleambookUsers;")
         self.sleep(10, "wait for index creation.")
@@ -371,16 +372,6 @@ class analytics(CBASBaseTest):
     def setup_cbas(self):
         self.cbas_util.createConn("GleambookUsers")
         self.cleanup_cbas()
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name="GleambookUsers",
-                                   cb_bucket_name="GleambookUsers",
-                                   cb_server_ip=self.cb_server_ip)
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name="GleambookMessages",
-                                   cb_bucket_name="GleambookMessages",
-                                   cb_server_ip=self.cb_server_ip)
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name="ChirpMessages",
-                                   cb_bucket_name="ChirpMessages",
-                                   cb_server_ip=self.cb_server_ip)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name="GleambookUsers",
@@ -538,28 +529,28 @@ class analytics(CBASBaseTest):
         result = self.add_node(self.query_node, rebalance=False)
         self.assertTrue(result, msg="Failed to add N1QL/Index node.")
         self.log.info("Add a KV nodes")
-        rest = RestConnection(self.kv_servers[1])
-        rest.set_data_path(data_path=self.kv_servers[1].data_path,index_path=self.kv_servers[1].index_path,cbas_path=self.kv_servers[1].cbas_path)
-        result = self.add_node(self.kv_servers[1], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[1])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,index_path=self.cluster.kv_nodes[1].index_path,cbas_path=self.cluster.kv_nodes[1].cbas_path)
+        result = self.add_node(self.cluster.kv_nodes[1], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add one more KV node")
-        rest = RestConnection(self.kv_servers[3])
-        rest.set_data_path(data_path=self.kv_servers[3].data_path,index_path=self.kv_servers[3].index_path,cbas_path=self.kv_servers[3].cbas_path)
-        result = self.add_node(self.kv_servers[3], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[3])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[3].data_path,index_path=self.cluster.kv_nodes[3].index_path,cbas_path=self.cluster.kv_nodes[3].cbas_path)
+        result = self.add_node(self.cluster.kv_nodes[3], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add one more KV node")
-        rest = RestConnection(self.kv_servers[4])
-        rest.set_data_path(data_path=self.kv_servers[4].data_path,index_path=self.kv_servers[4].index_path,cbas_path=self.kv_servers[4].cbas_path)
-        result = self.add_node(self.kv_servers[4], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[4])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[4].data_path,index_path=self.cluster.kv_nodes[4].index_path,cbas_path=self.cluster.kv_nodes[4].cbas_path)
+        result = self.add_node(self.cluster.kv_nodes[4], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
                  
         self.log.info("Add a CBAS nodes")
-        result = self.add_node(self.cbas_servers[0], services=["cbas"], rebalance=True)
+        result = self.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=True)
         self.assertTrue(result, msg="Failed to add CBAS node.")
          
-        nodes_in_cluster = nodes_in_cluster + [self.query_node, self.kv_servers[1], self.kv_servers[3], self.kv_servers[4], self.cbas_servers[0]]
+        nodes_in_cluster = nodes_in_cluster + [self.query_node, self.cluster.kv_nodes[1], self.cluster.kv_nodes[3], self.cluster.kv_nodes[4], self.cluster.cbas_nodes[0]]
         ########################################################################################################################
         self.log.info("Step 2: Create Couchbase buckets.")
         self.create_required_buckets()
@@ -643,10 +634,10 @@ class analytics(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 12: When 11 is in progress do a KV Rebalance in of 1 nodes.")
-        rest = RestConnection(self.kv_servers[2])
-        rest.set_data_path(data_path=self.kv_servers[2].data_path,index_path=self.kv_servers[2].index_path,cbas_path=self.kv_servers[2].cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.kv_servers[2]], [])
-        nodes_in_cluster += [self.kv_servers[2]]
+        rest = RestConnection(self.cluster.kv_nodes[2])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[2].data_path,index_path=self.cluster.kv_nodes[2].index_path,cbas_path=self.cluster.kv_nodes[2].cbas_path)
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.cluster.kv_nodes[2]], [])
+        nodes_in_cluster += [self.cluster.kv_nodes[2]]
         ########################################################################################################################
         self.log.info("Step 11: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -673,7 +664,7 @@ class analytics(CBASBaseTest):
                  
         ########################################################################################################################
         self.log.info("Step 13: Wait for rebalance to complete.")
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
@@ -762,12 +753,12 @@ class analytics(CBASBaseTest):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
          
         self.log.info("Step 22: When 21 is in progress do a KV Rebalance out of 2 nodes.")
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.kv_servers[1:3])
-        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.kv_servers[1:3]]
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cluster.kv_nodes[1:3])
+        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.kv_nodes[1:3]]
          
         futures = pool.invokeAll(executors)
         self.log.info("Step 23: Wait for rebalance.")
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
@@ -799,11 +790,11 @@ class analytics(CBASBaseTest):
          
         ##################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 25: When 24 is in progress do a CBAS Rebalance in of 2 nodes.")
-        for node in self.cbas_servers[2:]:
+        for node in self.cluster.cbas_nodes[2:]:
             rest = RestConnection(node)
             rest.set_data_path(data_path=node.data_path,index_path=node.index_path,cbas_path=node.cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, self.cbas_servers[1:],[],services=["cbas","cbas"])
-        nodes_in_cluster = nodes_in_cluster + self.cbas_servers[1:]
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, self.cluster.cbas_nodes[1:],[],services=["cbas","cbas"])
+        nodes_in_cluster = nodes_in_cluster + self.cluster.cbas_nodes[1:]
         futures = pool.invokeAll(executors)
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
@@ -815,7 +806,7 @@ class analytics(CBASBaseTest):
         items_start_from += total_num_items
  
         self.log.info("Step 27: Wait for rebalance to complete.")
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
          
@@ -867,8 +858,8 @@ class analytics(CBASBaseTest):
  
         ###################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 32: When 31 is in progress do a CBAS Rebalance out of 2 nodes.")
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cbas_servers[1:])
-        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cbas_servers[1:]]
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cluster.cbas_nodes[1:])
+        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.cbas_nodes[1:]]
         futures = pool.invokeAll(executors)
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
@@ -880,7 +871,7 @@ class analytics(CBASBaseTest):
         items_start_from += total_num_items
         ########################################################################################################################
         self.log.info("Step 33: Wait for rebalance to complete.")
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
@@ -933,11 +924,11 @@ class analytics(CBASBaseTest):
          
         ###################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 38: When 37 is in progress do a CBAS SWAP Rebalance of 2 nodes.")
-        for node in self.cbas_servers[-1:]:
+        for node in self.cluster.cbas_nodes[-1:]:
             rest = RestConnection(node)
             rest.set_data_path(data_path=node.data_path,index_path=node.index_path,cbas_path=node.cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster,self.cbas_servers[-1:], [self.cbas_node],services=["cbas"],check_vbucket_shuffling=False)
-        nodes_in_cluster += self.cbas_servers[-1:]
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster,self.cluster.cbas_nodes[-1:], [self.cbas_node],services=["cbas"],check_vbucket_shuffling=False)
+        nodes_in_cluster += self.cluster.cbas_nodes[-1:]
         nodes_in_cluster.remove(self.cbas_node)
         futures = pool.invokeAll(executors)
         for future in futures:
@@ -947,7 +938,7 @@ class analytics(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 39: Wait for rebalance to complete.")
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
@@ -1009,10 +1000,10 @@ class analytics(CBASBaseTest):
         rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.cbas_node], [],services=["cbas"])
         nodes_in_cluster += [self.cbas_node]
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-        rest = RestConnection(self.kv_servers[1])
-        rest.set_data_path(data_path=self.kv_servers[1].data_path,index_path=self.kv_servers[1].index_path,cbas_path=self.kv_servers[1].cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.kv_servers[1]], [])
-        nodes_in_cluster += [self.kv_servers[1]]
+        rest = RestConnection(self.cluster.kv_nodes[1])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,index_path=self.cluster.kv_nodes[1].index_path,cbas_path=self.cluster.kv_nodes[1].cbas_path)
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.cluster.kv_nodes[1]], [])
+        nodes_in_cluster += [self.cluster.kv_nodes[1]]
         futures = pool.invokeAll(executors)
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
@@ -1021,7 +1012,7 @@ class analytics(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 45: Wait for rebalance to complete.")
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
@@ -1078,12 +1069,12 @@ class analytics(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 50: When 49 is in progress do a KV+CBAS Rebalance OUT.")
-        rest = RestConnection(self.kv_servers[2])
-        rest.set_data_path(data_path=self.kv_servers[2].data_path,index_path=self.kv_servers[2].index_path,cbas_path=self.kv_servers[2].cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.kv_servers[2]], self.cbas_servers[-1:]+[self.kv_servers[1]])
-#         rebalance.get_result()
-        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cbas_servers[-1:]] + [self.kv_servers[2]]
-        nodes_in_cluster.remove(self.kv_servers[1])
+        rest = RestConnection(self.cluster.kv_nodes[2])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[2].data_path,index_path=self.cluster.kv_nodes[2].index_path,cbas_path=self.cluster.kv_nodes[2].cbas_path)
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.cluster.kv_nodes[2]], self.cluster.cbas_nodes[-1:]+[self.cluster.kv_nodes[1]])
+#         self.task_manager.get_task_result(rebalance)
+        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.cbas_nodes[-1:]] + [self.cluster.kv_nodes[2]]
+        nodes_in_cluster.remove(self.cluster.kv_nodes[1])
         
         futures = pool.invokeAll(executors)
         for future in futures:
@@ -1093,7 +1084,7 @@ class analytics(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 51: Wait for rebalance to complete.")
-        rebalance.get_result()
+        self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
@@ -1150,17 +1141,17 @@ class analytics(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 56: When 55 is in progress do a KV+CBAS SWAP Rebalance .")
-        for node in self.cbas_servers[-1:]:
+        for node in self.cluster.cbas_nodes[-1:]:
             rest = RestConnection(node)
             rest.set_data_path(data_path=node.data_path,index_path=node.index_path,cbas_path=node.cbas_path)
-        rest = RestConnection(self.kv_servers[1])
-        rest.set_data_path(data_path=self.kv_servers[1].data_path,index_path=self.kv_servers[1].index_path,cbas_path=self.kv_servers[1].cbas_path)
-        rebalance = self.cluster.async_rebalance(nodes_in_cluster, self.cbas_servers[-1:]+[self.kv_servers[1]], [self.cbas_node, self.kv_servers[2]],services=["cbas","kv"])
-#         rebalance.get_result()
+        rest = RestConnection(self.cluster.kv_nodes[1])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,index_path=self.cluster.kv_nodes[1].index_path,cbas_path=self.cluster.kv_nodes[1].cbas_path)
+        rebalance = self.cluster.async_rebalance(nodes_in_cluster, self.cluster.cbas_nodes[-1:]+[self.cluster.kv_nodes[1]], [self.cbas_node, self.cluster.kv_nodes[2]],services=["cbas","kv"])
+#         self.task_manager.get_task_result(rebalance)
         nodes_in_cluster.remove(self.cbas_node)
-        nodes_in_cluster.remove(self.kv_servers[2])
-        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cbas_servers[-1:]]
-        nodes_in_cluster += [self.kv_servers[1]]
+        nodes_in_cluster.remove(self.cluster.kv_nodes[2])
+        nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.cbas_nodes[-1:]]
+        nodes_in_cluster += [self.cluster.kv_nodes[1]]
          
         futures = pool.invokeAll(executors)
         for future in futures:
@@ -1170,8 +1161,8 @@ class analytics(CBASBaseTest):
          
         ########################################################################################################################
         self.log.info("Step 57: Wait for rebalance to complete.")
-        rebalance.get_result()
-        reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
+        self.task_manager.get_task_result(rebalance)
+        reached = RestHelper(self.rest).rebalance_reached(wait_step=240)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
          

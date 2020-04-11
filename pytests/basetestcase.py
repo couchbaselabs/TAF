@@ -65,6 +65,8 @@ class BaseTestCase(unittest.TestCase):
         self.bucket_eviction_policy = \
             self.input.param("bucket_eviction_policy",
                              Bucket.EvictionPolicy.VALUE_ONLY)
+        self.flush_enabled = self.input.param("flushEnabled",
+                                              Bucket.FlushBucket.DISABLED)
         self.bucket_time_sync = self.input.param("bucket_time_sync", False)
         self.standard_buckets = self.input.param("standard_buckets", 1)
         self.num_replicas = self.input.param("replicas",

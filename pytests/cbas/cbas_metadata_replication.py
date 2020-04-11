@@ -23,34 +23,29 @@ class MetadataReplication(CBASBaseTest):
         self.input.test_params.update({"default_bucket":False})
         super(MetadataReplication, self).setUp()
         self.nc_otpNodes = []
-        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cbas_servers) > 0:
-            self.nc_otpNodes = self.add_all_nodes_then_rebalance(self.cbas_servers)
+        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 0:
+            self.nc_otpNodes = self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes)
         elif self.input.param("nc_nodes_to_add",0):
-            self.nc_otpNodes = self.add_all_nodes_then_rebalance(self.cbas_servers[:self.input.param("nc_nodes_to_add")])
+            self.nc_otpNodes = self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes[:self.input.param("nc_nodes_to_add")])
         self.otpNodes += self.nc_otpNodes
-            
-        self.create_default_bucket()
+
+        self.bucket_util.create_default_bucket()
         self.cbas_util.createConn("default")
-        self.shell = RemoteMachineShellConnection(self.master)
-        
+        self.shell = RemoteMachineShellConnection(self.cluster.master)
+
         #test for number of partitions:
         self.partitions_dict = self.cbas_util.get_num_partitions(self.shell)
-        
-#         if self.master.cbas_path:
+
+#         if self.cluster.master.cbas_path:
 #             for key in self.partitions_dict.keys():
-#                 self.assertTrue(self.partitions_dict[key] == len(ast.literal_eval(self.master.cbas_path)), "Number of partitions created are incorrect on cbas nodes.")
-        
+#                 self.assertTrue(self.partitions_dict[key] == len(ast.literal_eval(self.cluster.master.cbas_path)), "Number of partitions created are incorrect on cbas nodes.")
+
     def setup_for_test(self, skip_data_loading=False):
-        
+
         if not skip_data_loading:
             # Load Couchbase bucket first.
-            self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+            self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                    self.num_items, batch_size=1000)
-
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
@@ -86,7 +81,7 @@ class MetadataReplication(CBASBaseTest):
     def ingestion_in_progress(self):
         self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
         
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items*2, "create", 0,
+        self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                    self.num_items*2, batch_size=1000)
         
         
@@ -96,7 +91,7 @@ class MetadataReplication(CBASBaseTest):
     def ingest_more_data(self):
         self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
         
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items*2, "create", self.num_items*2,
+        self.perform_doc_ops_in_all_cb_buckets("create", self.num_items*2,
                                                    self.num_items*4, batch_size=1000)
         
         self.cbas_util.connect_to_bucket(cbas_bucket_name=self.cbas_bucket_name,
@@ -121,24 +116,24 @@ class MetadataReplication(CBASBaseTest):
             otpNodes = [self.otpNodes[0]]
             
             self.cbas_util.closeConn()
-            self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
             self.cbas_util.createConn("default")
             
-            self.cbas_node = self.cbas_servers[0]
+            self.cbas_node = self.cluster.cbas_nodes[0]
         elif self.rebalance_node == "NC":
-            node_in_test = self.cbas_servers[:self.how_many]
+            node_in_test = self.cluster.cbas_nodes[:self.how_many]
             otpNodes = self.nc_otpNodes[:self.how_many]
         else:
-            node_in_test = [self.cbas_node] + self.cbas_servers[:self.how_many]
+            node_in_test = [self.cbas_node] + self.cluster.cbas_nodes[:self.how_many]
             otpNodes = self.otpNodes[:self.how_many+1]
             self.cbas_util.closeConn()
-            self.cbas_util = cbas_utils(self.master, self.cbas_servers[self.how_many])
+            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[self.how_many])
             self.cbas_util.createConn("default")
         replicas_before_rebalance=len(self.cbas_util.get_replicas_info(self.shell))
         
         if self.rebalance_type == 'in':
             if self.restart_rebalance:
-                self.cluster_util.add_all_nodes_then_rebalance(self.cbas_servers[self.input.param("nc_nodes_to_add"):self.how_many+self.input.param("nc_nodes_to_add")],wait_for_completion=False)
+                self.cluster_util.add_all_nodes_then_rebalance(self.cluster.cbas_nodes[self.input.param("nc_nodes_to_add"):self.how_many+self.input.param("nc_nodes_to_add")],wait_for_completion=False)
                 self.sleep(2)
                 if self.rest._rebalance_progress_status() == "running":
                     self.assertTrue(self.rest.stop_rebalance(wait_timeout=120), "Failed while stopping rebalance.")
@@ -148,7 +143,7 @@ class MetadataReplication(CBASBaseTest):
                 
                 self.rebalance(wait_for_completion=False)
             else:
-                self.cluster_util.add_all_nodes_then_rebalance(self.cbas_servers[self.input.param("nc_nodes_to_add"):self.how_many+self.input.param("nc_nodes_to_add")],wait_for_completion=False)
+                self.cluster_util.add_all_nodes_then_rebalance(self.cluster.cbas_nodes[self.input.param("nc_nodes_to_add"):self.how_many+self.input.param("nc_nodes_to_add")],wait_for_completion=False)
             replicas_before_rebalance += self.replica_change
         else:
             if self.restart_rebalance:
@@ -252,10 +247,10 @@ class MetadataReplication(CBASBaseTest):
             for otpnode in self.otpNodes:
                 if otpnode.ip == cc_ip:
                     self.cluster_util.remove_node([otpnode],wait_for_rebalance=True)
-                    for server in self.cbas_servers:
+                    for server in self.cluster.cbas_nodes:
                         if cc_ip != server.ip:
                             self.cbas_util.closeConn()
-                            self.cbas_util = cbas_utils(self.master, server)
+                            self.cbas_util = cbas_utils(self.cluster.master, server)
                             self.cbas_util.createConn("default")
                             self.cbas_node = server
                             break
@@ -297,14 +292,14 @@ class MetadataReplication(CBASBaseTest):
         
         replicas_before_rebalance=len(self.cbas_util.get_replicas_info(self.shell))
         
-        self.cluster_util.add_node(node=self.cbas_servers[-1],rebalance=False)
+        self.cluster_util.add_node(node=self.cluster.cbas_nodes[-1],rebalance=False)
         swap_nc = self.input.param('swap_nc', False)
         if not swap_nc:
             out_nodes = [self.otpNodes[0]]
             self.cbas_util.closeConn()
-            self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
             self.cbas_util.createConn("default")
-            self.cbas_node = self.cbas_servers[0]
+            self.cbas_node = self.cluster.cbas_nodes[0]
         else:
             out_nodes = [self.otpNodes[1]]    
         
@@ -324,7 +319,7 @@ class MetadataReplication(CBASBaseTest):
             if replicas:
                 for replica in replicas:
                     self.log.info("replica state during rebalance: %s"%replica['status'])
-        self.sleep(20)
+        self.sleep(30)
         
         replicas = self.cbas_util.get_replicas_info(self.shell)
         replicas_after_rebalance=len(replicas)
@@ -357,9 +352,9 @@ class MetadataReplication(CBASBaseTest):
         fail_count = 0
         success_count = 0
         aborted_count = 0
-        shell=RemoteMachineShellConnection(self.master)
+        shell=RemoteMachineShellConnection(self.cluster.master)
         for handle in handles:
-            status, hand = self.cbas_util.retrieve_request_status_using_handle(self.master, handle, shell)
+            status, hand = self.cbas_util.retrieve_request_status_using_handle(self.cluster.master, handle, shell)
             if status == "running":
                 run_count += 1
                 self.log.info("query with handle %s is running."%handle)
@@ -396,11 +391,11 @@ class MetadataReplication(CBASBaseTest):
         if self.node_type == "CC":
             NodeHelper.reboot_server(self.cbas_node, self)
         elif self.node_type == "NC":
-            for server in self.cbas_servers:
+            for server in self.cluster.cbas_nodes:
                 NodeHelper.reboot_server(server, self)
         else:
             NodeHelper.reboot_server(self.cbas_node, self)
-            for server in self.cbas_servers:
+            for server in self.cluster.cbas_nodes:
                 NodeHelper.reboot_server(server, self)
         
         self.sleep(60)
@@ -450,18 +445,18 @@ class MetadataReplication(CBASBaseTest):
             node_in_test = [self.cbas_node]
             otpNodes = [self.otpNodes[0]]
             self.cbas_util.closeConn()
-            self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
             self.cbas_util.createConn("default")
             
-            self.cbas_node = self.cbas_servers[0]
+            self.cbas_node = self.cluster.cbas_nodes[0]
         elif self.rebalance_node == "NC":
-            node_in_test = self.cbas_servers[:self.how_many]
+            node_in_test = self.cluster.cbas_nodes[:self.how_many]
             otpNodes = self.nc_otpNodes[:self.how_many]
         else:
-            node_in_test = [self.cbas_node] + self.cbas_servers[:self.how_many]
+            node_in_test = [self.cbas_node] + self.cluster.cbas_nodes[:self.how_many]
             otpNodes = self.otpNodes[:self.how_many+1]
             self.cbas_util.closeConn()
-            self.cbas_util = cbas_utils(self.master, self.cbas_servers[self.how_many])
+            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[self.how_many])
             self.cbas_util.createConn("default")
             
         replicas_before_rebalance=len(self.cbas_util.get_replicas_info(self.shell))
@@ -480,7 +475,7 @@ class MetadataReplication(CBASBaseTest):
             failover_task = self._cb_cluster.async_failover(self.input.servers,
                                                             node_in_test,
                                                             graceful_failover)
-            failover_task.get_result()
+            self.task_manager.get_task_result(failover_task)
             if self.add_back:
                 for otpnode in otpNodes:
                     self.rest.set_recovery_type('ns_1@' + otpnode.ip, "full")
@@ -502,7 +497,7 @@ class MetadataReplication(CBASBaseTest):
             failover_task = self._cb_cluster.async_failover(self.input.servers,
                                                             node_in_test,
                                                             graceful_failover)
-            failover_task.get_result()
+            self.task_manager.get_task_result(failover_task)
             if self.add_back:
                 for otpnode in otpNodes:
                     self.rest.set_recovery_type('ns_1@' + otpnode.ip, "full")

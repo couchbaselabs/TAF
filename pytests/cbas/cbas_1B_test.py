@@ -11,6 +11,7 @@ from bucket_utils.Bucket import Bucket as buck
 import time
 from pytests.cbas.cbas_utils import cbas_utils
 
+
 class QueryRunner(Callable):
     def __init__(self, query, num_queries, cbas_util):
         self.num_queries = num_queries
@@ -71,7 +72,7 @@ class analytics_high_doc_ops(CBASBaseTest):
     
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
-        bucket_util = bucket_utils(self.master)
+        bucket_util = bucket_utils(self.cluster.master)
         self.info = bucket_util.rest.get_nodes_self()
         threadhold_memory = 1024
         total_memory_in_mb = self.info.memoryFree / 1024 ** 2
@@ -95,14 +96,14 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         self.log.info("Create CB buckets")
             
-        self.create_bucket(self.master, "GleambookUsers",bucket_ram=available_memory, replica=0)
+        self.create_bucket(self.cluster.master, "GleambookUsers",bucket_ram=available_memory, replica=0)
         self.sleep(30, "wait for bucket warmup to complete.")
         result = RestConnection(self.query_node).query_tool("CREATE PRIMARY INDEX idx_GleambookUsers ON GleambookUsers;")
         self.sleep(10, "wait for index creation.")
         self.assertTrue(result['status'] == "success")
 
     def setup_cbas(self):
-        self.cbas_util = cbas_utils(self.master, self.cbas_servers[0])
+        self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
         self.cbas_util.createConn("GleambookUsers")
         self.cleanup_cbas()
 
@@ -163,43 +164,43 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.query_node = self.servers[1]
         rest = RestConnection(self.query_node)
         rest.set_data_path(data_path=self.query_node.data_path,index_path=self.query_node.index_path,cbas_path=self.query_node.cbas_path)
-        result = self.add_node(self.query_node, rebalance=False)
+        result = self.cluster_util.add_node(self.query_node, rebalance=False)
         self.assertTrue(result, msg="Failed to add N1QL/Index node.")
         
         self.log.info("Add 2nd KV node")
-        rest = RestConnection(self.kv_servers[1])
-        rest.set_data_path(data_path=self.kv_servers[1].data_path,index_path=self.kv_servers[1].index_path,cbas_path=self.kv_servers[1].cbas_path)
-        result = self.add_node(self.kv_servers[1], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[1])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,index_path=self.cluster.kv_nodes[1].index_path,cbas_path=self.cluster.kv_nodes[1].cbas_path)
+        result = self.cluster_util.add_node(self.cluster.kv_nodes[1], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add 3rd KV node")
-        rest = RestConnection(self.kv_servers[2])
-        rest.set_data_path(data_path=self.kv_servers[2].data_path,index_path=self.kv_servers[2].index_path,cbas_path=self.kv_servers[2].cbas_path)
-        result = self.add_node(self.kv_servers[2], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[2])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[2].data_path,index_path=self.cluster.kv_nodes[2].index_path,cbas_path=self.cluster.kv_nodes[2].cbas_path)
+        result = self.cluster_util.add_node(self.cluster.kv_nodes[2], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add 4rd KV node")
-        rest = RestConnection(self.kv_servers[3])
-        rest.set_data_path(data_path=self.kv_servers[3].data_path,index_path=self.kv_servers[3].index_path,cbas_path=self.kv_servers[3].cbas_path)
-        result = self.add_node(self.kv_servers[3], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[3])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[3].data_path,index_path=self.cluster.kv_nodes[3].index_path,cbas_path=self.cluster.kv_nodes[3].cbas_path)
+        result = self.cluster_util.add_node(self.cluster.kv_nodes[3], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add 5th KV node")
-        rest = RestConnection(self.kv_servers[4])
-        rest.set_data_path(data_path=self.kv_servers[4].data_path,index_path=self.kv_servers[4].index_path,cbas_path=self.kv_servers[4].cbas_path)
-        result = self.add_node(self.kv_servers[4], services=["kv"], rebalance=False)
+        rest = RestConnection(self.cluster.kv_nodes[4])
+        rest.set_data_path(data_path=self.cluster.kv_nodes[4].data_path,index_path=self.cluster.kv_nodes[4].index_path,cbas_path=self.cluster.kv_nodes[4].cbas_path)
+        result = self.cluster_util.add_node(self.cluster.kv_nodes[4], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
                  
         self.log.info("Add 2nd CBAS nodes")
-        result = self.add_node(self.cbas_servers[0], services=["cbas"], rebalance=False)
+        result = self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=False)
         self.assertTrue(result, msg="Failed to add CBAS node.")
         
         self.log.info("Add 3rd CBAS nodes")
-        result = self.add_node(self.cbas_servers[1], services=["cbas"], rebalance=False)
+        result = self.cluster_util.add_node(self.cluster.cbas_nodes[1], services=["cbas"], rebalance=False)
         self.assertTrue(result, msg="Failed to add CBAS node.")
         
         self.log.info("Add 4th CBAS nodes")
-        result = self.add_node(self.cbas_servers[2], services=["cbas"], rebalance=True)
+        result = self.cluster_util.add_node(self.cluster.cbas_nodes[2], services=["cbas"], rebalance=True)
         self.assertTrue(result, msg="Failed to add CBAS node.")
         
         ########################################################################################################################
@@ -410,10 +411,10 @@ class analytics_high_doc_ops(CBASBaseTest):
     def upsert_delete_data(self, bucket):
         upsert_thread = Thread(target=self.load_buckets_with_high_ops,
                          name="high_ops_delete",
-                         args=(self.master, bucket, self.num_items/10,10000,4, self.updates_from,1, 0))
+                         args=(self.cluster.master, bucket, self.num_items/10,10000,4, self.updates_from,16, 0))
         delete_thread = Thread(target=self.delete_buckets_with_high_ops,
                                  name="high_ops_delete",
-                                 args=(self.master, bucket, self.num_items/10, self.rate_limit, 10000, 2, self.deletes_from,1))
+                                 args=(self.cluster.master, bucket, self.num_items/10, self.rate_limit, 10000, 2, self.deletes_from,16))
         delete_thread.start()
         upsert_thread.start()
         delete_thread.join()
@@ -422,7 +423,7 @@ class analytics_high_doc_ops(CBASBaseTest):
     def load_data(self, bucket):
         load_thread = Thread(target=self.load_buckets_with_high_ops,
                                  name="high_ops_load",
-                                 args=(self.master, bucket, self.num_items,50,4, self.items_start_from,2, 0))
+                                 args=(self.cluster.master, bucket, self.num_items,50,4, self.items_start_from,32, 0))
         self.log.info('starting the load thread...')
         load_thread.start()
         load_thread.join()

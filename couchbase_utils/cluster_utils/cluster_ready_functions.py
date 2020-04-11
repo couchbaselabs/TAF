@@ -651,12 +651,10 @@ class ClusterUtils:
                                       ejectedNodes=ejected_nodes)
         if started and wait_for_completion:
             result = self.rest.monitorRebalance()
-            # self.assertTrue(result, "Rebalance operation failed after adding %s cbas nodes,"%self.cbas_servers)
             self.log.debug("Successfully rebalanced cluster {0}".format(result))
         else:
             result = started
         return result
-            # self.assertTrue(started, "Rebalance operation started and in progress %s,"%self.cbas_servers)
 
     def remove_all_nodes_then_rebalance(self, otpnodes=None, rebalance=True):
         return self.remove_node(otpnodes, rebalance)

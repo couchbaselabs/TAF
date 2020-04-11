@@ -1,7 +1,7 @@
 from cbas_base import *
 from threading import Thread
 import threading
-from Rbac_utils.Rbac_ready_functions import rbac_utils
+from rbac_utils.Rbac_ready_functions import rbac_utils
 
 
 class CBASConcurrentQueryMgtTests(CBASBaseTest):
@@ -11,7 +11,7 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
         if self.expected_error:
             self.validate_error = True
         self.handles = []
-        self.rest = RestConnection(self.master)
+        self.rest = RestConnection(self.cluster.master)
         self.failed_count = 0
         self.success_count = 0
         self.rejected_count = 0
@@ -29,10 +29,6 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
     def _setupForTest(self):
         # Create bucket on CBAS
         self.cbas_util.createConn(self.cb_bucket_name)
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
-
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
                                       cbas_dataset_name=self.cbas_dataset_name)
@@ -42,7 +38,7 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
                                cb_bucket_password=self.cb_bucket_password)
 
         # Load CB bucket
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+        self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
 
         # Wait while ingestion is completed
@@ -64,7 +60,7 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
             self.cbas_dataset_name)
         default_query_statement = "select sleep(count(*),500) from {0} where mutated=0;".format(
             self.cbas_dataset_name)
-        join_query_statement = "select a.firstname, b.firstname from {0} a, {0} b where a.number=b.number;".format(
+        join_query_statement = "select a.firstname as fname, b.firstname as firstName from {0} a, {0} b where a.number=b.number;".format(
             self.cbas_dataset_name)
 
         if self.compiler_param == "compiler.groupmemory":
@@ -205,7 +201,7 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
                   "expected_status": 200}]
 
         for role in roles:
-            rbac_utils(self.master)._create_user_and_grant_role("testuser", role["role"])
+            rbac_utils(self.cluster.master)._create_user_and_grant_role("testuser", role["role"])
             self.sleep(5)
 
             client_context_id = "abcd1234"
@@ -225,7 +221,7 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
                     "Cancelling request as user with {0} role worked as expected".format(
                         role["role"]))
 
-            rbac_utils(self.master)._drop_user("testuser")
+            rbac_utils(self.cluster.master)._drop_user("testuser")
 
         self.assertFalse(validation_failed,
                          "Authentication errors with some APIs. Check the test log above.")

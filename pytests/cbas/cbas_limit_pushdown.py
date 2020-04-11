@@ -9,7 +9,7 @@ class CBASLimitPushdown(CBASBaseTest):
         super(CBASLimitPushdown, self).setUp()
 
         self.log.info("Create a reference to SDK client")
-        client = SDKClient(hosts=[self.master.ip], bucket=self.cb_bucket_name, password=self.master.rest_password)
+        client = SDKClient(hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name, password=self.cluster.master.rest_password)
 
         self.log.info("Insert documents in KV bucket")
         documents = [
@@ -155,7 +155,8 @@ class CBASLimitQueries:
         },
         {
             'id': 'limit+where+greater+than',
-            'query': 'select * from default where name > "f" limit 2'
+            'query': 'select * from default where name > "f" limit 2',
+            'skip_processed_count': True
         },
         {
             'id': 'limit+where+greater+than+equals',
@@ -211,7 +212,8 @@ class CBASLimitQueries:
         },
         {
             'id': 'limit+where+and+different+keys',
-            'query': 'select * from default where age >=20 and gender != "Male" limit 1'
+            'query': 'select * from default where age >=20 and gender != "Male" limit 1',
+            'skip_processed_count':True
         },
         {
             'id': 'limit+where+and+same+keys',

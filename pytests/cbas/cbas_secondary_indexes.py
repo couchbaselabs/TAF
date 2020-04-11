@@ -11,25 +11,22 @@ class CBASSecondaryIndexes(CBASBaseTest):
             self.input.test_params.update({"default_bucket": False})
         super(CBASSecondaryIndexes, self).setUp()
 
-        self.load_sample_buckets(servers=[self.master],
+        self.load_sample_buckets(servers=[self.cluster.master],
                                  bucketName=self.cb_bucket_name,
                                  total_items=self.beer_sample_docs_count)
 
         if "add_all_cbas_nodes" in self.input.test_params and \
                 self.input.test_params["add_all_cbas_nodes"] and len(
-            self.cbas_servers) > 1:
-            self.add_all_nodes_then_rebalance(self.cbas_servers)
+            self.cluster.cbas_nodes) > 1:
+            self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes)
         
         self.cbas_util.createConn(self.cb_bucket_name)
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(
             cbas_bucket_name=self.cb_bucket_name,
-            cbas_dataset_name=self.cbas_dataset_name)
+            cbas_dataset_name=self.cbas_dataset_name,
+            compress_dataset=self.compress_dataset)
 
     def tearDown(self):
         super(CBASSecondaryIndexes, self).tearDown()
@@ -231,6 +228,8 @@ class CBASSecondaryIndexes(CBASBaseTest):
         self.assertTrue(
             self.cbas_util.verify_index_created(self.index_name + "2", index_fields2,
                                       self.cbas_dataset_name)[0])
+        statement = 'SELECT VALUE v FROM '+ self.cbas_dataset_name + ' v WHERE v.geo.lat > 1 AND v.abv > 2'
+        self.verify_index_used(statement, True, self.index_name)
 
     def test_create_index_non_empty_dataset(self):
         '''
@@ -464,12 +463,12 @@ class CBASSecondaryIndexes(CBASBaseTest):
             try:
                 from sdk_client import SDKClient
                 scheme = "couchbase"
-                host = self.master.ip
-                if self.master.ip == "127.0.0.1":
+                host = self.cluster.master.ip
+                if self.cluster.master.ip == "127.0.0.1":
                     scheme = "http"
-                    host = "{0}:{1}".format(self.master.ip, self.master.port)
+                    host = "{0}:{1}".format(self.cluster.master.ip, self.cluster.master.port)
                 return SDKClient(scheme=scheme, hosts=[host], bucket=bucket,
-                                 password=self.master.rest_password)
+                                 password=self.cluster.master.rest_password)
             except Exception, ex:
                 self.log.error("cannot load sdk client due to error {0}"
                                .format(str(ex)))
@@ -495,7 +494,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
         testuser = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'password': 'password'}]
         rolelist = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'roles': 'admin'}]
         self.add_built_in_server_user(testuser=testuser, rolelist=rolelist)
-        self.client = self._direct_client(self.master, self.cb_bucket_name)
+        self.client = self._direct_client(self.cluster.master, self.cb_bucket_name)
         k = 'test_index_population'
 
         index_fields = ""
@@ -592,7 +591,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
         testuser = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'password': 'password'}]
         rolelist = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'roles': 'admin'}]
         self.add_built_in_server_user(testuser=testuser, rolelist=rolelist)
-        self.client = self._direct_client(self.master, self.cb_bucket_name)
+        self.client = self._direct_client(self.cluster.master, self.cb_bucket_name)
         k = 'test_index_population_thread'
 
         index_fields = ""
@@ -745,7 +744,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
     
     def test_index_metadata(self):
         self.buckets = [Bucket(name="beer-sample")]
-        self.perform_doc_ops_in_all_cb_buckets(100000, "create", start_key=0, end_key=100000)
+        self.perform_doc_ops_in_all_cb_buckets("create", start_key=0, end_key=100000)
         index_fields = ""
         for index_field in self.index_fields:
             index_fields += index_field + ","
@@ -798,3 +797,13 @@ class CBASSecondaryIndexes(CBASBaseTest):
         self.assertEquals(status, "success")
         self.assertEquals(errors, None)
         self.assertEquals(results, [{'$1': 107303}])
+    
+    def test_index_on_nested_fields_same_object(self):
+        index_fields = ["geo.lon:double", "geo.lat:double"]
+        create_idx_statement = "create index {0} IF NOT EXISTS on {1}({2});".format(self.index_name, self.cbas_dataset_name, ",".join(index_fields))
+        status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(create_idx_statement)
+        self.assertTrue(status == "success", "Create Index query failed")
+
+        self.assertTrue(self.cbas_util.verify_index_created(self.index_name, index_fields, self.cbas_dataset_name)[0])
+        statement = 'SELECT VALUE v FROM '+ self.cbas_dataset_name + ' v WHERE v.geo.lon > 1 AND v.geo.lat > 2'
+        self.verify_index_used(statement, True, self.index_name)

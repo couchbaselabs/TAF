@@ -26,7 +26,8 @@ from com.couchbase.client.core.error import \
     TimeoutException
 from com.couchbase.client.core.retry import FailFastRetryStrategy
 from com.couchbase.client.java import Cluster, ClusterOptions
-from com.couchbase.client.java.codec import RawBinaryTranscoder
+from com.couchbase.client.java.codec import RawBinaryTranscoder,\
+    RawStringTranscoder
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.java.manager.collection import CollectionSpec
@@ -60,6 +61,8 @@ import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
 from Cb_constants import ClusterRun, CbServer
 from couchbase_helper.durability_helper import DurabilityHelper
+from com.couchbase.client.core.deps.io.netty.buffer import Unpooled
+from com.couchbase.client.core.deps.io.netty.util import CharsetUtil
 
 
 class SDKClientPool(object):
@@ -666,6 +669,8 @@ class SDKClient(object):
                                             durability=durability)
             if doc_type == "binary":
                 options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+            elif doc_type == "string":
+                options = options.transcoder(RawStringTranscoder.INSTANCE)
             if fail_fast:
                 options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
@@ -1277,3 +1282,39 @@ class SDKClient(object):
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, options)
         return self.__translate_upsert_multi_sub_doc_result(result)
+
+    def insert_binary_document(self, keys):
+        options = self.getInsertOptions().transcoder(RawBinaryTranscoder.INSTANCE)
+        for key in keys:
+            binary_value = Unpooled.copiedBuffer('{value":"' + key + '"}', CharsetUtil.UTF_8)
+            self.collection.upsert(key, binary_value, options)
+
+    def insert_string_document(self, keys):
+        options = self.getInsertOptions().transcoder(RawStringTranscoder.INSTANCE)
+        for key in keys:
+            self.collection.upsert(key, '{value":"' + key + '"}', options)
+
+    def insert_custom_json_documents(self, key_prefix, documents):
+        for index, data in enumerate(documents):
+            self.collection.insert(key_prefix+str(index),
+                                   JsonObject.create().put("content", data))
+
+    def insert_xattr_attribute(self, document_id, path, value, xattr=True, create_parents=True):
+        self.crud("subdoc_insert",
+                  document_id,
+                  [path, value],
+                  time_unit="seconds",
+                  create_path=create_parents,
+                  xattr=xattr)
+
+    def update_xattr_attribute(self, document_id, path, value, xattr=True, create_parents=True):
+        self.crud("subdoc_upsert",
+                  document_id,
+                  [path, value],
+                  time_unit="seconds",
+                  create_path=create_parents,
+                  xattr=xattr)
+
+    def insert_json_documents(self, key_prefix, documents):
+        for index, data in enumerate(documents):
+            self.collection.insert(key_prefix+str(index), JsonObject.fromJson(data))

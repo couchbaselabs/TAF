@@ -1,13 +1,15 @@
-from cbas_base import *
 import datetime
-import mode
+
+from TestInput import TestInputSingleton
+from cbas.cbas_base import CBASBaseTest
+
 
 class CBASAsyncResultDeliveryTests(CBASBaseTest):
     def setUp(self):
         self.input = TestInputSingleton.input
         if "cb_bucket_name" not in self.input.test_params:
-            self.input.test_params.update({"default_bucket":False})
-        
+            self.input.test_params.update({"default_bucket": False})
+
         super(CBASAsyncResultDeliveryTests, self).setUp()
         self.validate_error = False
         if self.expected_error:
@@ -17,12 +19,8 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
         super(CBASAsyncResultDeliveryTests, self).tearDown()
 
     def setupForTest(self):
-        self.load_sample_buckets(servers=[self.master], bucketName="travel-sample", total_items=self.travel_sample_docs_count)
-        self.cbas_util.createConn("travel-sample")
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
+        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.cbas_util.createConn(self.sample_bucket.name)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(
@@ -30,38 +28,45 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
             cbas_dataset_name=self.cbas_dataset_name)
 
         # Connect to Bucket
-        self.cbas_util.connect_to_bucket(cbas_bucket_name=self.cbas_bucket_name,
-                               cb_bucket_password=self.cb_bucket_password)
+        self.cbas_util.connect_to_bucket(
+            cbas_bucket_name=self.cbas_bucket_name,
+            cb_bucket_password=self.cb_bucket_password)
 
         # Allow ingestion to complete
-        self.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name], self.travel_sample_docs_count, 300)
+        self.cbas_util.wait_for_ingestion_complete(
+            [self.cbas_dataset_name],
+            self.sample_bucket.stats.expected_item_count, 300)
 
     def test_mode_timeout(self):
         self.setupForTest()
         client_context_id = "abc"
-        statement = "select sleep(count(*),200000) from {0} where mutated=0;".format(
-            self.cbas_dataset_name)
+        statement = "select sleep(count(*),200000) from {0} where mutated=0;".\
+            format(self.cbas_dataset_name)
         import time
         start_time = time.time()
         end_time = start_time
         diff = end_time - start_time
         try:
-            status, metrics, errors, results, response_handle = self.cbas_util.execute_statement_on_cbas_util(
-            statement, mode=self.mode, client_context_id=client_context_id, timeout=75,analytics_timeout=120)
+            _, _, _, _, _ = self.cbas_util.execute_statement_on_cbas_util(
+                statement, mode=self.mode, client_context_id=client_context_id,
+                timeout=75, analytics_timeout=120)
         except Exception as e:
-            end_time=time.time()
+            end_time = time.time()
             diff = end_time - start_time
-        self.assertTrue(diff > 70 and diff < 80, "Request took %s seconds to timeout"%diff)
+        self.assertTrue(diff > 70 and diff < 90, "Request took %s seconds to \
+        timeout" % diff)
         status = self.cbas_util.delete_request(client_context_id)
-        self.assertTrue(str(status)!="200", "Request is still running on the server even client is timed out.")
-        
+        self.assertTrue(str(status) != "200",
+                        "Request is still running on the server even client \
+                        is timed out.")
+
     def test_mode(self):
         self.setupForTest()
 
         statement = "select * from {0} where city=\"Chicago\";".format(
             self.cbas_dataset_name)
-        status, metrics, errors, results, response_handle = self.cbas_util.execute_statement_on_cbas_util(
-            statement, mode=self.mode)
+        status, _, _, results, response_handle = self.cbas_util.\
+            execute_statement_on_cbas_util(statement, mode=self.mode)
 
         if self.mode == 'async' or self.mode == 'deferred':
             if results:
@@ -77,21 +82,23 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
                 # Retrieve status first. Then, from status URI,
                 # get the handle to retrieve results
                 # Wait for results to be available at the Status URI
-                status, result_handle = self.cbas_util.retrieve_request_status_using_handle(self.master,
-                                                                   response_handle)
+                status, result_handle = self.cbas_util.\
+                    retrieve_request_status_using_handle(self.cluster.master,
+                                                         response_handle)
 
                 while (status.lower() != "success"):
                     self.sleep(5)
-                    status, result_handle = self.cbas_util.retrieve_request_status_using_handle(
-                        self.master, response_handle)
+                    status, result_handle = self.cbas_util.\
+                        retrieve_request_status_using_handle(self.cluster.master,
+                                                             response_handle)
 
-                results = self.cbas_util.retrieve_result_using_handle(self.master,
-                                                            result_handle)
+                results = self.cbas_util.retrieve_result_using_handle(
+                    self.cluster.master, result_handle)
 
             if self.mode == "deferred":
                 # Retrieve results directly from this handle.
-                results = self.cbas_util.retrieve_result_using_handle(self.master,
-                                                            response_handle)
+                results = self.cbas_util.retrieve_result_using_handle(
+                    self.cluster.master, response_handle)
 
             # Execute the same query without passing the mode param (legacy mode)
             _, _, _, immediate_results, _ = self.cbas_util.execute_statement_on_cbas_util(
@@ -118,8 +125,8 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
 
         # Fetch result using the same handle twice
         if handle:
-            response1 = self.cbas_util.retrieve_result_using_handle(self.master, handle)
-            response2 = self.cbas_util.retrieve_result_using_handle(self.master, handle)
+            response1 = self.cbas_util.retrieve_result_using_handle(self.cluster.master, handle)
+            response2 = self.cbas_util.retrieve_result_using_handle(self.cluster.master, handle)
 
             # Validate results can not be fetched more than once using the same handle
             if response2:
@@ -134,7 +141,7 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
 
         handle = "http://{0}:8095/analytics/service/result/999-0".format(self.cbas_node.ip)
 
-        response = self.cbas_util.retrieve_result_using_handle(self.master, handle)
+        response = self.cbas_util.retrieve_result_using_handle(self.cluster.master, handle)
 
         if response:
             self.fail("No error when using an invalid handle")
@@ -142,10 +149,6 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
     def test_async_mode(self):
         delay = 20000
         self.cbas_util.createConn(self.cb_bucket_name)
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
@@ -156,13 +159,14 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
                                cb_bucket_password=self.cb_bucket_password)
 
         # Load CB bucket
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+        self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Wait while ingestion is completed
         total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(
             self.cbas_dataset_name)
-        
+
         timeout = 300
         while (timeout > 0):
             if self.num_items == total_items:
@@ -196,13 +200,13 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
             # Retrive results from handle and compute elapsed time
             a = datetime.datetime.now()
             status, result_handle = self.cbas_util.retrieve_request_status_using_handle(
-                self.master, handle)
+                self.cluster.master, handle)
             while (status.lower() != "success"):
                 self.sleep(5)
                 status, result_handle = self.cbas_util.retrieve_request_status_using_handle(
-                    self.master, handle)
+                    self.cluster.master, handle)
 
-            response = self.cbas_util.retrieve_result_using_handle(self.master, result_handle)
+            response = self.cbas_util.retrieve_result_using_handle(self.cluster.master, result_handle)
             b = datetime.datetime.now()
             c = b - a
             elapsedTime = c.total_seconds() * 1000
@@ -220,22 +224,20 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
 
     def test_deferred_mode(self):
         self.cbas_util.createConn(self.cb_bucket_name)
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
-
         # Create dataset on the CBAS bucket
-        self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
-                                      cbas_dataset_name=self.cbas_dataset_name)
+        self.cbas_util.create_dataset_on_bucket(
+            cbas_bucket_name=self.cb_bucket_name,
+            cbas_dataset_name=self.cbas_dataset_name)
 
         # Connect to Bucket
-        self.cbas_util.connect_to_bucket(cbas_bucket_name=self.cbas_bucket_name,
-                               cb_bucket_password=self.cb_bucket_password)
+        self.cbas_util.connect_to_bucket(
+            cbas_bucket_name=self.cbas_bucket_name,
+            cb_bucket_password=self.cb_bucket_password)
 
         # Load CB bucket
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+        self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Wait while ingestion is completed
         total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(
@@ -280,17 +282,13 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
 
         # Validate if result can be retrieved using the handle
         if deferred_handle:
-            response = self.cbas_util.retrieve_result_using_handle(self.master,
+            response = self.cbas_util.retrieve_result_using_handle(self.cluster.master,
                                                          deferred_handle)
             if not response:
                 self.fail("Did not get the response using the handle")
 
     def test_immediate_mode(self):
         self.cbas_util.createConn(self.cb_bucket_name)
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
 
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
@@ -301,8 +299,9 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
                                cb_bucket_password=self.cb_bucket_password)
 
         # Load CB bucket
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+        self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Wait while ingestion is completed
         total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(
@@ -334,49 +333,38 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
 
     def test_status(self):
         delay = 20000
-        
         self.cbas_util.createConn(self.cb_bucket_name)
-        # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name=self.cb_bucket_name,
-                                   cb_server_ip=self.cb_server_ip)
 
         # Create dataset on the CBAS bucket
-        self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
-                                      cbas_dataset_name=self.cbas_dataset_name)
+        self.cbas_util.create_dataset_on_bucket(
+            cbas_bucket_name=self.cb_bucket_name,
+            cbas_dataset_name=self.cbas_dataset_name)
 
         # Connect to Bucket
-        self.cbas_util.connect_to_bucket(cbas_bucket_name=self.cbas_bucket_name,
-                               cb_bucket_password=self.cb_bucket_password)
+        self.cbas_util.connect_to_bucket(
+            cbas_bucket_name=self.cbas_bucket_name,
+            cb_bucket_password=self.cb_bucket_password)
 
         # Load CB bucket
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0,
+        self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-        # Wait while ingestion is completed
-#         total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(
-#             self.cbas_dataset_name)
-#         while (self.num_items > total_items):
-#             self.sleep(5)
-#             total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(
-#                 self.cbas_dataset_name)
-        # Validate no. of items in CBAS dataset
         if not self.cbas_util.validate_cbas_dataset_items_count(
                 self.cbas_dataset_name,
                 self.num_items):
-            self.fail(
-                    "No. of items in CBAS dataset do not match that in the CB bucket")
+            self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
         # Execute query (with sleep induced) and use the handle immediately to fetch the results
-        statement = "select sleep(count(*),{0}) from {1} where mutated=0;".format(
-            delay, self.cbas_dataset_name)
+        statement = "select sleep(count(*),{0}) from {1} where mutated=0;".\
+            format(delay, self.cbas_dataset_name)
 
-        status, metrics, errors, results, handle = self.cbas_util.execute_statement_on_cbas_util(
+        status, _, _, _, handle = self.cbas_util.execute_statement_on_cbas_util(
             statement, mode=self.mode)
 
         if handle:
             if self.mode == "async":
                 # Retrieve status from handle
-                status, result_handle = self.cbas_util.retrieve_request_status_using_handle(self.master,
+                status, result_handle = self.cbas_util.retrieve_request_status_using_handle(self.cluster.master,
                                                                    handle)
                 if status.lower() != "running":
                     self.fail("Status is not RUNNING")
@@ -384,12 +372,12 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
                     # Allow the request to be processed, and then check status
                     self.sleep((delay / 1000) + 5)
                     status, result_handle = self.cbas_util.retrieve_request_status_using_handle(
-                        self.master, handle)
+                        self.cluster.master, handle)
                     if status.lower() != "success":
                         self.fail("Status is not SUCCESS")
             elif self.mode == "deferred":
                 # Retrieve status from handle
-                status = self.cbas_util.retrieve_request_status_using_handle(self.master,
+                status = self.cbas_util.retrieve_request_status_using_handle(self.cluster.master,
                                                                    handle)
                 if status.lower() != "success":
                     self.fail("Status is not SUCCESS")
@@ -400,7 +388,7 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
         handle = "http://{0}:8095/analytics/service/status/999-0".format(self.cbas_node.ip)
 
         # Retrive status from handle
-        status, result_handle = self.cbas_util.retrieve_request_status_using_handle(self.master,
+        status, result_handle = self.cbas_util.retrieve_request_status_using_handle(self.cluster.master,
                                                            handle)
 
         if status:

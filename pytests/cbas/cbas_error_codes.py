@@ -1,6 +1,6 @@
 import time
 
-from Rbac_utils.Rbac_ready_functions import rbac_utils
+from rbac_utils.Rbac_ready_functions import rbac_utils
 from cbas.cbas_base import CBASBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -20,7 +20,7 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Establish remote connection to CBAS node")
         self.shell = RemoteMachineShellConnection(self.cbas_node)
-        self.shell_kv = RemoteMachineShellConnection(self.master)
+        self.shell_kv = RemoteMachineShellConnection(self.cluster.master)
         self.cbas_url = "http://{0}:{1}/analytics/service".format(self.cbas_node.ip, 8095)
 
     def create_dataset_connect_link(self):
@@ -60,6 +60,10 @@ class CBASErrorValidator(CBASBaseTest):
                 time_unit = error_object["time_unit"] if "time_unit" in error_object else "s"
                 status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(error_object["query"], analytics_timeout=time_out, time_out_unit=time_unit)
 
+            self.log.info(status)
+            self.log.info(errors)
+
+
             if not self.validate_error_response(status, errors, error_object["msg"], error_object["code"]):
                 error_response_mismatch.append([error_object['id']])
 
@@ -90,6 +94,26 @@ class CBASErrorValidator(CBASBaseTest):
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
     
     """
+    test_error_response_index_on_meta_fields,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=index_on_meta_id
+    test_error_response_index_on_meta_fields,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=index_on_meta_cas
+    test_error_response_index_on_meta_fields,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=composite_index_on_meta_and_document_field
+    """
+    def test_error_response_index_on_meta_fields(self):
+
+        self.log.info("Create dataset and connect link")
+        self.create_dataset_connect_link()
+        
+        self.log.info("Disconnect Local link")
+        self.assertTrue(self.cbas_util.disconnect_from_bucket(), msg="Failed to disconnect connected bucket")
+        
+        self.log.info("Create a secondary index")
+        self.assertTrue(self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"]), msg="Failed to create secondary index")
+
+        self.log.info("Execute query and validate error response")
+        status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
+        self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
+    
+    """
     test_error_response_user_permission,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=user_permission
     """
     def test_error_response_user_permission(self):
@@ -98,7 +122,7 @@ class CBASErrorValidator(CBASBaseTest):
         self.create_dataset_connect_link()
         
         self.log.info("Create a user with analytics reader role")
-        rbac_util = rbac_utils(self.master)
+        rbac_util = rbac_utils(self.cluster.master)
         rbac_util._create_user_and_grant_role("reader_admin", "analytics_reader")
 
         self.log.info("Execute query and validate error response")
@@ -124,12 +148,14 @@ class CBASErrorValidator(CBASBaseTest):
     test_error_response_connect_link_failed,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=connect_link_fail
     """
     def test_error_response_connect_link_failed(self):
-        
+
         self.log.info("Create dataset and connect link")
         self.create_dataset_connect_link()
-        
+
         self.log.info("Delete KV bucket")
-        self.delete_bucket_or_assert(serverInfo=self.master)
+        self.assertTrue(self.bucket_util.delete_bucket(
+            self.cluster.master, self.bucket_util.buckets[0].name),
+            "Bucket deletion failed")
 
         self.log.info("Execute query and validate error response")
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
@@ -160,6 +186,10 @@ class CBASErrorValidator(CBASBaseTest):
     """
     def test_analytics_service_tmp_unavailable(self):
 
+        self.log.info("Add CBAS nodes")
+        self.cluster_util.add_node(self.servers[1], services=["cbas"], rebalance=False)
+        self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=True)
+
         self.log.info("Create dataset and connect link")
         self.create_dataset_connect_link()
 
@@ -189,7 +219,7 @@ class CBASErrorValidator(CBASBaseTest):
     def test_error_response_rebalance_in_progress(self):
 
         self.log.info("Load documents in KV bucket")
-        self.perform_doc_ops_in_all_cb_buckets(self.num_items, "create", 0, self.num_items, batch_size=5000)
+        self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items, batch_size=5000)
 
         self.log.info("Create dataset and connect link")
         self.create_dataset_connect_link()
@@ -198,7 +228,7 @@ class CBASErrorValidator(CBASBaseTest):
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items), msg="Count mismatch on CBAS")
 
         self.log.info("Rebalance in a cbas node")
-        self.add_node(self.cbas_servers[0], wait_for_rebalance_completion=False)
+        self.cluster_util.add_node(self.cluster.cbas_nodes[0], wait_for_rebalance_completion=False)
 
         self.log.info("Execute query and validate error response")
         start_time = time.time()
@@ -229,7 +259,7 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("create memcached bucket")
         self.shell_kv.execute_command(
-            "curl 'http://{0}:8091/pools/default/buckets' --data 'name={1}&bucketType=memcached&ramQuotaMB=100' -u Administrator:password".format(self.master.ip, self.cb_bucket_name))
+            "curl 'http://{0}:8091/pools/default/buckets' --data 'name={1}&bucketType=memcached&ramQuotaMB=100' -u Administrator:password".format(self.cluster.master.ip, self.cb_bucket_name))
         self.log.info("Execute query and validate error response")
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
@@ -281,10 +311,12 @@ class CBASErrorValidator(CBASBaseTest):
         self.cbas_util.disconnect_link()
 
         self.log.info("Delete KV bucket")
-        self.delete_bucket_or_assert(serverInfo=self.master)
+        self.assertTrue(self.bucket_util.delete_bucket(
+            self.cluster.master, self.bucket_util.buckets[0].name),
+            "Bucket deletion failed")
 
         self.log.info("Recreate KV bucket")
-        self.create_default_bucket()
+        self.bucket_util.create_default_bucket()
 
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
@@ -302,6 +334,42 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.assertTrue(self.error_response["msg"] in str(output), msg="Error message mismatch")
         self.assertTrue(str(self.error_response["code"]) in str(output), msg="Error code mismatch")
+
+    """
+    test_error_response_type_mismatch_object,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=type_mismatch_for_object
+    """
+    def test_error_response_type_mismatch_object(self):
+        self.log.info("Create a reference to SDK client")
+        client = SDKClient(hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name, password=self.cluster.master.rest_password)
+
+        self.log.info("Insert documents in KV bucket")
+        documents = ['{"address":{"city":"NY"}}']
+        client.insert_json_documents("id-", documents)
+
+        self.log.info("Create dataset and connect link")
+        self.create_dataset_connect_link()
+
+        status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
+        self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
+
+    """
+    test_error_response_for_kv_bucket_delete,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=kv_bucket_does_not_exist
+    """
+    def test_error_response_for_kv_bucket_delete(self):
+
+        self.log.info("Create dataset and connect link")
+        self.create_dataset_connect_link()
+
+        self.log.info("Disconnect link")
+        self.cbas_util.disconnect_link()
+
+        self.log.info("Delete KV bucket")
+        self.assertTrue(self.bucket_util.delete_bucket(
+            self.cluster.master, self.bucket_util.buckets[0].name),
+            "Bucket deletion failed")
+
+        status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
+        self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
 
     def tearDown(self):
         super(CBASErrorValidator, self).tearDown()
@@ -325,18 +393,10 @@ class CBASError:
         # Error codes starting with 21xxx
         {
             "id": "invalid_duration",
-            "msg": 'Invalid duration "tos"',
-            "code": 21000,
+            "msg": 'Invalid value for parameter "timeout": tos',
+            "code": 21008,
             "query": "select sleep(count(*), 2000) from ds",
             "time_out":"to",
-            "run_in_loop": True
-        },
-        {
-            "id": "unknown_duration",
-            "msg": 'Unknown duration unit M',
-            "code": 21001,
-            "query": "select sleep(count(*), 2000) from ds",
-            "time_unit": "M",
             "run_in_loop": True
         },
         {
@@ -364,6 +424,12 @@ class CBASError:
         {
             "id": "connect_link_failed",
             "msg": "Connect link failed",
+            "code": 22001,
+            "query": "connect link Local"
+        },
+        {
+            "id": "kv_bucket_does_not_exist",
+            "msg": 'Connect link failed {\"Default.Local.default\" : \"Bucket (default) does not exist\"}',
             "code": 22001,
             "query": "connect link Local"
         },
@@ -400,22 +466,15 @@ class CBASError:
         },
         {
             "id": "dataverse_drop_link_connected",
-            "msg": "Dataverse Default cannot be dropped while link Local is connected",
+            "msg": "Dataverse custom cannot be dropped while link Local is connected",
             "code": 23005,
             "query": "drop dataverse custom"
-        },
-        {
-            "id": "dataset_create_link_connected",
-            "msg": "Dataset cannot be created on default while link Local is connected",
-            "code": 23006,
-            "query": "create dataset ds1 on default",
-            "run_in_loop": True
         },
         {
             "id": "job_requirement",
             "msg": 'exceeds capacity (memory: ',
             "code": 23008,
-            "query": 'SET `compiler.groupmemory` "10GB";select sleep(count(*),500) from ds GROUP BY name'
+            "query": 'SET%20%60compiler.groupmemory%60%20%2210GB%22%3Bselect%20sleep(count(*)%2C500)%20from%20ds%20GROUP%20BY%20name'
         },
         {
             "id": "overflow",
@@ -425,18 +484,10 @@ class CBASError:
             "run_in_loop": True
         },
         {
-            "id": "compare_non_primitive",
-            "msg": 'Cannot compare non-primitive values',
-            "code": 23021,
-            "query": "select ARRAY_INTERSECT([2011,2012], [[2011]])",
-            "run_in_loop": True
-        },
-        {
-            "id": "dataset_drop_link_connected",
-            "msg": 'Dataset cannot be dropped while link Local is connected',
-            "code": 23022,
-            "query": "drop dataset ds",
-            "run_in_loop": True
+            "id": "type_mismatch_for_object",
+            "msg": 'Type mismatch: expected value of type object, but got the value of type string',
+            "code": 23023,
+            "query": "select address.city.name from default where address.city=\"NY\""
         },
         {
             "id": "limit_non_integer",
@@ -459,6 +510,24 @@ class CBASError:
             "code": 24001,
             "query": "select count(*) ds",
             "run_in_loop": True
+        },
+        {
+            "id": "index_on_meta_id",
+            "msg": "Compilation error: Cannot create index on meta fields",
+            "code": 24001,
+            "query": "create index meta_idx on ds(meta().id)"
+        },
+        {
+            "id": "index_on_meta_cas",
+            "msg": "Compilation error: Cannot create index on meta fields",
+            "code": 24001,
+            "query": "create index meta_idx on ds(meta().cas)"
+        },
+        {
+            "id": "composite_index_on_meta_and_document_field",
+            "msg": "Compilation error: Cannot create index on meta fields",
+            "code": 24001,
+            "query": "create index comp_meta_idx on ds(city:string, meta().id)"
         },
         {
             "id": "index_on_type",
@@ -503,10 +572,10 @@ class CBASError:
             "run_in_loop": True
         },
         {
-            "id": "type_mismatch",
-            "msg": "Type mismatch: function contains expects its 2nd input parameter to be of type string, but the actual input type is bigint",
-            "code": 24011,
-            "query": 'SELECT CONTAINS("N1QL is awesome", 123) as n1ql',
+            "id": "type_incompatibility",
+            "msg": "Type incompatibility: function numeric-add gets incompatible input values: string and string",
+            "code": 24012,
+            "query": 'select "a"+"b"',
             "run_in_loop": True
         },
         {
@@ -542,6 +611,13 @@ class CBASError:
             "msg": "A dataset with name ds already exists in dataverse Default",
             "code": 24040,
             "query": "create dataset ds on default",
+            "run_in_loop": True
+        },
+        {
+            "id": "ambiguous_alias",
+            "msg": "Cannot resolve ambiguous alias reference for identifier IDENT",
+            "code": 24042,
+            "query": "select min(IDENT) from ds c, ds o where c.c_id = o.c_id",
             "run_in_loop": True
         },
         {
@@ -583,6 +659,13 @@ class CBASError:
             "msg": "Type mismatch: expected value of type integer, but got the value of type string",
             "query": "SELECT * FROM ds limit $1",
             "param": [{"args": ["United States"]}],
+            "run_in_loop": True
+        },
+        {
+            "id": "reuse_variable",
+            "code": 24057,
+            "msg": "Type mismatch: expected value of type multiset or array, but got the value of type object",
+            "query": "SELECT name FROM ds WHERE rating = (SELECT MAX(rating) FROM ds)",
             "run_in_loop": True
         },
         # Error codes starting with 25XXX

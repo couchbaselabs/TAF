@@ -5,7 +5,7 @@ Created on Mar 13, 2018
 '''
 
 from cbas_base import *
-from sdk_client import SDKSmartClient
+from sdk_client3 import SDKSmartClient
 from couchbase_helper.tuq_generators import JsonGenerator
 
 class CBASSQL_Alignment(CBASBaseTest):
@@ -13,26 +13,20 @@ class CBASSQL_Alignment(CBASBaseTest):
         self.input = TestInputSingleton.input
         if "cb_bucket_name" not in self.input.test_params:
             self.input.test_params.update({"default_bucket":False})
-        
+
         super(CBASSQL_Alignment, self).setUp()
         self.validate_error = False
         if self.expected_error:
             self.validate_error = True
 
     def setupForTest(self):
-#         self.create_default_bucket()
         self.cbas_util.createConn("default")
         json_generator = JsonGenerator()
         generators = json_generator.generate_all_type_documents_for_gsi(docs_per_day=10,
             start=0)
-        tasks = self._async_load_all_buckets(self.master, generators,"create",0)
+        tasks = self.bucket_util._async_load_all_buckets(self.cluster, generators,"create",0)
         for task in tasks:
-            task.get_result()
-#         # Create bucket on CBAS
-        self.cbas_util.create_bucket_on_cbas(cbas_bucket_name=self.cbas_bucket_name,
-                                   cb_bucket_name="default",
-                                   cb_server_ip=self.cb_server_ip)
- 
+            self.task_manager.get_task_result(task)
         # Create dataset on the CBAS bucket
         self.cbas_util.create_dataset_on_bucket(
             cbas_bucket_name=self.cb_bucket_name,
@@ -52,7 +46,7 @@ class CBASSQL_Alignment(CBASBaseTest):
                  "travel_history":["String", 12345567,None,{'key':'value'},123456.123456,],
                  "address":["String", 12345567,[234234,134234,"string"],None,123456.123456,]
                  }
-        self.client = SDKSmartClient(RestConnection(self.master), "default", self.master)
+        self.client = SDKSmartClient(RestConnection(self.cluster.master), "default", self.cluster.master)
         i=0
         for key in data_dict.keys():
             for value in data_dict[key]:
