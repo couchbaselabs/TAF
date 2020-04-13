@@ -11,6 +11,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
+import copy
 
 
 class MagmaCrashTests(MagmaBaseTest):
@@ -110,6 +111,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
                                                    name)
         start = self.num_items
+        self.gen_read = copy.deepcopy(self.gen_create)
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
