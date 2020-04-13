@@ -16,10 +16,10 @@ from remote.remote_util import RemoteMachineShellConnection
 class MagmaCrashTests(MagmaBaseTest):
     def setUp(self):
         super(MagmaCrashTests, self).setUp()
+
         self.gen_create = doc_generator(
             self.key, 0, self.num_items,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
+            doc_size=self.doc_size, doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
             vbuckets=self.cluster_util.vbuckets,
             key_size=self.key_size,
@@ -27,17 +27,21 @@ class MagmaCrashTests(MagmaBaseTest):
             randomize_value=self.randomize_value,
             mix_key_size=self.mix_key_size,
             deep_copy=self.deep_copy)
+
         self.result_task = self._load_all_buckets(
             self.cluster, self.gen_create,
             "create", 0,
             batch_size=self.batch_size,
             dgm_batch=self.dgm_batch)
+
         if self.active_resident_threshold != 100:
             for task in self.result_task.keys():
                 self.num_items = task.doc_index
+
         self.log.info("Verifying num_items counts after doc_ops")
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
+
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
 
@@ -65,22 +69,24 @@ class MagmaCrashTests(MagmaBaseTest):
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
                 shell.disconnect()
+
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
+
             self.gen_create = doc_generator(
-                self.key,
-                start,
-                end,
+                self.key, start, end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
+
             self.loadgen_docs(_sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
+
             data_validation = self.task.async_validate_docs(
                 self.cluster, self.bucket_util.buckets[0],
                 self.gen_create, "create", 0,
@@ -89,6 +95,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task.jython_task_manager.get_task_result(data_validation)
             start = end
             self.bucket_util.verify_stats_all_buckets(end, timeout=300)
+
             self.gen_update = self.gen_create
 
     def test_magma_rollback_n_times(self):
@@ -108,23 +115,22 @@ class MagmaCrashTests(MagmaBaseTest):
             mem_client = MemcachedClientHelper.direct_client(
                 self.input.servers[0], self.bucket_util.buckets[0])
             mem_client.stop_persistence()
-            self.log.debug("Start: Create DocGen for targeted vBuckets.")
+
             self.gen_create = doc_generator(
-                self.key,
-                start,
-                mem_only_items,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
+                self.key, start, mem_only_items,
+                doc_size=self.doc_size, doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
-            self.log.debug("Completed: Create DocGen for targeted vBuckets.")
+
             self.loadgen_docs(_sync=True)
             start = self.gen_create.key_counter
+
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                                  mem_only_items}
             vb_replica_queue_size_map = {self.cluster.nodes_in_cluster[0]: 0}
+
             for node in self.cluster.nodes_in_cluster[1:]:
                 ep_queue_size_map.update({node: 0})
                 vb_replica_queue_size_map.update({node: 0})
@@ -141,11 +147,13 @@ class MagmaCrashTests(MagmaBaseTest):
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
             shell.kill_memcached()
+
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
+
             self.bucket_util.verify_stats_all_buckets(items, timeout=300)
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
@@ -166,27 +174,29 @@ class MagmaCrashTests(MagmaBaseTest):
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket\
                       to test rollback")
+
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
         shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
         self.target_vbucket = Cbstats(shell).vbucket_list(self.bucket_util.
                                                           buckets[0].name)
         start = self.num_items
+
         # Stopping persistence on NodeA
         mem_client = MemcachedClientHelper.direct_client(
             self.input.servers[0], self.bucket_util.buckets[0])
         mem_client.stop_persistence()
+
         for i in xrange(1, self.num_rollbacks+1):
             self.gen_create = doc_generator(
-                self.key,
-                start,
-                mem_only_items,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
+                self.key, start, mem_only_items,
+                doc_size=self.doc_size, doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
+
             self.loadgen_docs(_sync=True)
+
             start = self.gen_create.key_counter
             stat_map = {self.cluster.nodes_in_cluster[0]: mem_only_items*i}
             for node in self.cluster.nodes_in_cluster[1:]:
@@ -212,7 +222,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         initial_data_size = 0
         for bucket in self.bucket_util.buckets:
-            initial_data_size += self.get_magma_disk_usage(bucket)[0]
+            initial_data_size += self.get_disk_usage(bucket)[0]
 
         metadata_size = 200
         exact_size = self.num_items*(self.doc_size + metadata_size)\
