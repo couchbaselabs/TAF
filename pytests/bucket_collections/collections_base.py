@@ -1,6 +1,8 @@
 from math import ceil
 
 from basetestcase import BaseTestCase
+from collections_helper.collections_spec_constants import \
+    MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
@@ -16,6 +18,8 @@ class CollectionBase(BaseTestCase):
         self.doc_ops = self.input.param("doc_ops", None)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
+        self.over_ride_spec_params = \
+            self.input.param("override_spec_params", "").split(";")
 
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
@@ -48,6 +52,10 @@ class CollectionBase(BaseTestCase):
             self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
+
+        # Process params to over_ride values if required
+        self.over_ride_template_params(buckets_spec)
+        self.over_ride_template_params(doc_loading_spec)
 
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
@@ -88,3 +96,12 @@ class CollectionBase(BaseTestCase):
     def tearDown(self):
         self.bucket_util.remove_scope_collections_and_validate()
         super(CollectionBase, self).tearDown()
+
+    def over_ride_template_params(self, target_spec):
+        for over_ride_param in self.over_ride_spec_params:
+            if over_ride_param == "num_items":
+                target_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                    self.num_items
+            elif over_ride_param == "durability":
+                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
+                    self.durability_level
