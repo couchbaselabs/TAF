@@ -24,6 +24,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.rest.update_autofailover_settings(False, 120)
         else:
             self.rest.update_autofailover_settings(True, self.auto_failover_timeout)
+        self.data_load = self.input.param("data_load", False)  # To support data load during auto retry op
 
     def tearDown(self):
         self.reset_retry_rebalance_settings()
@@ -34,6 +35,27 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         for zone in zones:
             if zone != "Group 1":
                 rest.delete_zone(zone)
+
+    def async_data_load(self):
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package("volume_test_load")
+        tasks = self.bucket_util.run_scenario_from_spec(self.task,
+                                                        self.cluster,
+                                                        self.bucket_util.buckets,
+                                                        doc_loading_spec,
+                                                        mutation_num=0,
+                                                        async_load=True)
+        return tasks
+
+    def data_validation(self, tasks):
+        self.task.jython_task_manager.get_task_result(tasks)
+        if tasks.result is False:
+            self.fail("Doc_loading failed")
+
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.print_bucket_stats()
+
 
     def test_auto_retry_of_failed_rebalance_where_failure_happens_before_rebalance(self):
         before_rebalance_failure = self.input.param("before_rebalance_failure", "stop_server")
@@ -48,7 +70,11 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Recover from the error
             self._recover_from_error(before_rebalance_failure)
+            if self.data_load:
+                tasks = self.async_data_load()
             self.check_retry_rebalance_succeeded()
+            if self.data_load:
+                self.data_validation(tasks)
         else:
             self.fail("Rebalance did not fail as expected. Hence could not validate auto-retry feature..")
         finally:
@@ -70,13 +96,21 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Recover from the error
             self._recover_from_error(during_rebalance_failure)
+            if self.data_load:
+                tasks = self.async_data_load()
             self.check_retry_rebalance_succeeded()
+            if self.data_load:
+                self.data_validation(tasks)
         else:
             # This is added as the failover task is not throwing exception
             if self.rebalance_operation == "graceful_failover":
                 # Recover from the error
                 self._recover_from_error(during_rebalance_failure)
+                if self.data_load:
+                    tasks = self.async_data_load()
                 self.check_retry_rebalance_succeeded()
+                if self.data_load:
+                    self.data_validation(tasks)
             else:
                 self.fail("Rebalance did not fail as expected. Hence could not validate auto-retry feature..")
         finally:
@@ -110,7 +144,11 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Recover from the error
             self._recover_from_error(during_rebalance_failure)
+            if self.data_load:
+                tasks = self.async_data_load()
             result = json.loads(self.rest.get_pending_rebalance_info())
+            if self.data_load:
+                self.data_validation(tasks)
             self.log.info(result)
             retry_rebalance = result["retry_rebalance"]
             rebalance_id = result["rebalance_id"]
@@ -223,7 +261,11 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.log.info("Rebalance failed with : {0}".format(str(e)))
             # Delete the rebalance test condition so that we recover from the error
             self._delete_rebalance_test_condition(test_failure_condition)
+            if self.data_load:
+                tasks = self.async_data_load()
             self.check_retry_rebalance_succeeded()
+            if self.data_load:
+                self.data_validation(tasks)
         else:
             self.fail("Rebalance did not fail as expected. Hence could not validate auto-retry feature..")
         finally:
