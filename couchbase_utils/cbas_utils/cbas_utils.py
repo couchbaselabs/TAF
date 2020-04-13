@@ -705,7 +705,7 @@ class CbasUtil:
         """
         Asynchronously run queries
         """
-        self.log.deebug("Executing %s queries concurrently", num_queries)
+        self.log.debug("Executing %s queries concurrently", num_queries)
 
         cbas_base_url = "http://{0}:8095/analytics/service" \
                         .format(self.cbas_node.ip)
