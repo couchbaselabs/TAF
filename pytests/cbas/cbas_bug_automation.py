@@ -2,7 +2,6 @@ import datetime
 import time
 import json
 
-from bucket_utils.bucket_ready_functions import bucket_utils
 from cbas.cbas_base import CBASBaseTest
 from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.rest_client import RestConnection
@@ -84,8 +83,7 @@ class CBASBugAutomation(CBASBaseTest):
         '''
 
         self.log.info("Get the available memory quota")
-        bucket_util = bucket_utils(self.cluster.master)
-        self.info = bucket_util.rest.get_nodes_self()
+        self.info = self.rest.get_nodes_self()
         threadhold_memory = 1024
         total_memory_in_mb = self.info.memoryTotal / 1024 ** 2
         total_available_memory_in_mb = total_memory_in_mb
@@ -99,10 +97,11 @@ class CBASBugAutomation(CBASBaseTest):
             total_available_memory_in_mb -= self.info.cbasMemoryQuota
         if "eventing" in active_service:
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
-        
+
         print(total_memory_in_mb)
-        available_memory =  total_available_memory_in_mb - threadhold_memory 
-        self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=available_memory)
+        available_memory = total_available_memory_in_mb - threadhold_memory
+        self.rest.set_service_memoryQuota(service='memoryQuota',
+                                          memoryQuota=available_memory)
 
         self.log.info("Add a KV nodes")
         result = self.cluster_util.add_node(self.servers[1], services=["kv"], rebalance=False)

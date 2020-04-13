@@ -1,6 +1,4 @@
-from cbas_base import *
-from threading import Thread
-import threading
+from cbas.cbas_base import CBASBaseTest
 
 
 class CBASCompilationParamsTests(CBASBaseTest):
@@ -10,7 +8,6 @@ class CBASCompilationParamsTests(CBASBaseTest):
         if self.expected_error:
             self.validate_error = True
         self.handles = []
-        self.rest = RestConnection(self.cluster.master)
         self.failed_count = 0
         self.success_count = 0
         self.rejected_count = 0
@@ -23,7 +20,7 @@ class CBASCompilationParamsTests(CBASBaseTest):
             self.cbas_dataset_name)
         if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 1:
             self.add_all_cbas_node_then_rebalance()
-            
+
     def tearDown(self):
         super(CBASCompilationParamsTests, self).tearDown()
 

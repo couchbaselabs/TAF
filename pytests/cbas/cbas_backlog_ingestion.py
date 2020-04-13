@@ -54,20 +54,20 @@ class CBASBacklogIngestion(CBASBaseTest):
         10. Verify the updated dataset count post expiry
         """
         self.log.info("Set expiry pager on default bucket")
-        ClusterOperationHelper.flushctl_set(self.cluster.master, "exp_pager_stime", 1, bucket="default")
+        self.bucket_util.expire_pager([self.cluster.master], val=1)
 
         self.log.info("Load data in the default bucket")
         num_items = self.input.param("items", 10000)
         batch_size = self.input.param("batch_size", 10000)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, num_items, exp=0, batch_size=batch_size)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(num_items)
 
         self.log.info("Load data in the default bucket, with documents containing profession teacher")
         load_gen = CBASBacklogIngestion.generate_documents(num_items, num_items * 2, role=['teacher'])
-        self.bucket_util._async_load_all_buckets(server=self.cluster, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
+        self.bucket_util._async_load_all_buckets(self.cluster, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
 
         self.log.info("Create primary index")
-        query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.buckets[0].name)
+        query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.bucket_util.buckets[0].name)
         self.rest.query_tool(query)
 
         self.log.info("Create a connection")
@@ -168,10 +168,10 @@ class CBASBacklogIngestion(CBASBaseTest):
         professions = ['teacher', 'doctor', 'engineer', 'dentist', 'racer', 'dancer', 'singer', 'musician', 'pilot',
                        'finance']
         load_gen = CBASBacklogIngestion.generate_documents(0, self.num_items, role=professions[:num_of_cbas_buckets])
-        self.bucket_util._async_load_all_buckets(server=self.cluster, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
+        self.bucket_util._async_load_all_buckets(self.cluster, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
 
         self.log.info("Create primary index")
-        query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.buckets[0].name)
+        query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.bucket_util.buckets[0].name)
         self.rest.query_tool(query)
 
         self.log.info("Create connection")
@@ -259,7 +259,7 @@ class BucketOperations(CBASBaseTest):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         self.log.info("Create reference to SDK client")
-        client = SDKClient(scheme="couchbase", hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name,
+        client = SDKClient(hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name,
                            password=self.cluster.master.rest_password)
 
         self.log.info("Insert binary data into default bucket")
@@ -378,7 +378,7 @@ class BucketOperations(CBASBaseTest):
         self.fetch_test_case_arguments()
 
         self.log.info("Fetch and set memory quota")
-        memory_for_kv = int(self.fetch_available_memory_for_kv_on_a_node())
+        memory_for_kv = int(self.bucket_util.fetch_available_memory_for_kv_on_a_node())
         self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=memory_for_kv)
 
         self.log.info("Update storageMaxActiveWritableDatasets count")
@@ -517,7 +517,7 @@ class CBASDataOperations(CBASBaseTest):
         self.fetch_test_case_arguments()
 
         self.log.info("Create reference to SDK client")
-        client = SDKClient(scheme="couchbase", hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name,
+        client = SDKClient(hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name,
                            password=self.cluster.master.rest_password)
 
         self.log.info("Add multilingual documents to the default bucket")
@@ -556,7 +556,7 @@ class CBASDataOperations(CBASBaseTest):
         while end <= total_documents:
             load_gen = CBASDataOperations.generate_docs_bigdata(start=start, num_of_documents=end,
                                                                 document_size_in_mb=self.document_size)
-            tasks = self.bucket_util._async_load_all_buckets(server=self.cluster, kv_gen=load_gen, op_type="create", exp=0,
+            tasks = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen=load_gen, op_type="create", exp=0,
                                                  batch_size=self.batch_size)
             for task in tasks:
                 self.log.info("-------------------------------------------------------- " + \
@@ -588,7 +588,7 @@ class CBASDataOperations(CBASBaseTest):
         self.fetch_test_case_arguments()
 
         self.log.info("Create reference to SDK client")
-        client = SDKClient(scheme="couchbase", hosts=[self.cluster.master.ip], bucket="default",
+        client = SDKClient(hosts=[self.cluster.master.ip], bucket=self.bucket_util.buckets[0],
                            password=self.cluster.master.rest_password)
 
         self.log.info("Insert custom data into default bucket")

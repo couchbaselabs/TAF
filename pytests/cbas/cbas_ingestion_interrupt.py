@@ -4,13 +4,12 @@ Created on Jan 31, 2018
 @author: riteshagarwal
 '''
 
-from cbas_base import CBASBaseTest, TestInputSingleton
-from lib.memcached.helper.data_helper import MemcachedClientHelper
+from cbas_base import CBASBaseTest
 from remote.remote_util import RemoteMachineShellConnection
-from membase.api.rest_client import RestConnection
 import time
-from node_utils.node_ready_functions import NodeHelper
-from cbas.cbas_utils import cbas_utils
+from TestInput import TestInputSingleton
+from cbas_utils.cbas_utils import CbasUtil
+
 
 class IngestionInterrupt_CBAS(CBASBaseTest):
 
@@ -18,10 +17,10 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket":False})
         super(IngestionInterrupt_CBAS, self).setUp()
-        
+
         if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 0:
             self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes))
-            
+
         self.bucket_util.create_default_bucket()
         self.cb_bucket_name = self.input.param('cb_bucket_name', 'default')
         self.cbas_util.createConn("default")
@@ -240,7 +239,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         if self.cbas_node_type == "CC":
             node_in_test = self.cbas_node
             self.cbas_util.closeConn()
-            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
+            self.cbas_util = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[0])
             self.cbas_util.createConn("default")
         else:
             node_in_test = self.cluster.cbas_nodes[0]
@@ -314,7 +313,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         self.cbas_node_type = self.input.param('cbas_node_type',None)
         if self.cbas_node_type == "CC":
             node_in_test = self.cbas_node
-            self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
+            self.cbas_util = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[0])
         else:
             node_in_test = self.cluster.cbas_nodes[0]
             
@@ -411,7 +410,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         if self.cbas_node_type:
             if self.cbas_node_type == "CC":
                 node_in_test = self.cbas_node
-                self.cbas_util = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0])
+                self.cbas_util = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[0])
                 self.cbas_util.createConn("default")
             else:
                 node_in_test = self.cluster.cbas_nodes[0]

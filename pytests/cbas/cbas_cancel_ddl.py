@@ -4,7 +4,6 @@ import json
 
 from cbas.cbas_base import CBASBaseTest
 from remote.remote_util import RemoteMachineShellConnection
-from membase.api.rest_client import RestConnection
 
 
 class CBASCancelDDL(CBASBaseTest):

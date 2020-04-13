@@ -18,7 +18,7 @@ class CbasStats(CBASBaseTest):
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
 
         self.log.info("Create reference to SDK client")
-        client = SDKClient(scheme="couchbase", hosts=[self.master.ip], bucket=self.cb_bucket_name,
+        client = SDKClient(hosts=[self.master.ip], bucket=self.cb_bucket_name,
                            password=self.master.rest_password)
 
         self.log.info("Insert binary data into default bucket")

@@ -1,4 +1,5 @@
-from cbas_base import *
+from cbas.cbas_base import CBASBaseTest
+from TestInput import TestInputSingleton
 
 
 class QueryDetails:

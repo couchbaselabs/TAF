@@ -2,7 +2,7 @@ import json
 
 from cbas.cbas_base import CBASBaseTest
 from security_utils.audit_ready_functions import audit
-from rbac_utils.Rbac_ready_functions import rbac_utils
+from rbac_utils.Rbac_ready_functions import RbacUtils
 
 
 class CBASAuditLogs(CBASBaseTest):
@@ -244,7 +244,7 @@ class CBASAuditLogs(CBASBaseTest):
     def test_audit_logs_with_filtered_user_list(self):
 
         self.log.info("Create a user with role cluster admin")
-        rbac_util = rbac_utils(self.cluster.master)
+        rbac_util = RbacUtils(self.cluster.master)
         rbac_util._create_user_and_grant_role("cbas_admin", "cluster_admin")
 
         self.log.info("Read configuration audit ids")

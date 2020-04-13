@@ -7,9 +7,9 @@ import json
 import time
 
 from cbas.cbas_base import CBASBaseTest
-from cbas.cbas_utils import cbas_utils
 from basetestcase import RemoteMachineShellConnection
-from node_utils.node_ready_functions import NodeHelper
+from cbas_utils.cbas_utils import CbasUtil
+
 
 class CbasLogging(CBASBaseTest):
     # Dictionary containing the default logging configuration that we set and verify if they are set
@@ -133,14 +133,14 @@ class CbasLogging(CBASBaseTest):
 
         self.log.info("Verify logging configuration on other cbas node")
         for name, level in CbasLogging.DEFAULT_LOGGER_CONFIG_DICT.items():
-            status, content, response = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
+            status, content, response = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
             self.assertTrue(status, msg="Response status incorrect for GET request")
             self.assertEquals(content, level, msg="Logger configuration mismatch for logger " + name)
 
         self.log.info("Update logging configuration on other cbas node")
         logger_level = self.input.param("logger_level", "FATAL")
         logger_name = self.input.param("logger_name", "org.apache.asterix")
-        status, content, response = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0]).set_specific_log_level_on_cbas(
+        status, content, response = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[0]).set_specific_log_level_on_cbas(
             logger_name, logger_level)
         self.assertTrue(status, msg="Status mismatch for SET")
 
@@ -242,7 +242,7 @@ class CbasLogging(CBASBaseTest):
 
         self.log.info("Verify logging configuration on other cbas node")
         for name, level in CbasLogging.DEFAULT_LOGGER_CONFIG_DICT.items():
-            status, content, response = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
+            status, content, response = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
             self.assertTrue(status, msg="Response status incorrect for GET request")
             self.assertEquals(content, level, msg="Logger configuration mismatch for logger " + name)
 
@@ -271,10 +271,16 @@ class CbasLogging(CBASBaseTest):
 
         if reboot:
             self.log.info("Reboot couchbase CC node")
-            NodeHelper.reboot_server_new(self.cbas_node, self)
+            shell = RemoteMachineShellConnection(self.cbas_node)
+            shell.reboot_server_and_wait_for_cb_run(self.cluster_util,
+                                                    self.cbas_node)
+            shell.disconnect()
 
             self.log.info("Reboot couchbase NC node")
-            NodeHelper.reboot_server_new(self.cluster.cbas_nodes[0], self)
+            shell = RemoteMachineShellConnection(self.cluster.cbas_nodes[0])
+            shell.reboot_server_and_wait_for_cb_run(self.cluster_util,
+                                                    self.cluster.cbas_nodes[0])
+            shell.disconnect()
 
         self.log.info("Wait for request to complete and cluster to be active: Using private ping() function")
         cluster_recover_start_time = time.time()
@@ -296,7 +302,7 @@ class CbasLogging(CBASBaseTest):
 
         self.log.info("Verify logging configuration on other cbas node post service kill")
         for name, level in CbasLogging.DEFAULT_LOGGER_CONFIG_DICT.items():
-            status, content, response = cbas_utils(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
+            status, content, response = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[0]).get_specific_cbas_log_level(name)
             self.assertTrue(status, msg="Response status incorrect for GET request")
             self.assertEquals(content, level, msg="Logger configuration mismatch for logger " + name)
 

@@ -11,6 +11,7 @@ from bucket_utils.Bucket import Bucket as buck
 import time
 from pytests.cbas.cbas_utils import cbas_utils
 
+
 class QueryRunner(Callable):
     def __init__(self, query, num_queries, cbas_util):
         self.num_queries = num_queries

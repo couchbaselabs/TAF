@@ -1,8 +1,9 @@
 import time
 
-from rbac_utils.Rbac_ready_functions import rbac_utils
+from rbac_utils.Rbac_ready_functions import RbacUtils
 from cbas.cbas_base import CBASBaseTest
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 
 
 class CBASErrorValidator(CBASBaseTest):
@@ -122,7 +123,7 @@ class CBASErrorValidator(CBASBaseTest):
         self.create_dataset_connect_link()
         
         self.log.info("Create a user with analytics reader role")
-        rbac_util = rbac_utils(self.cluster.master)
+        rbac_util = RbacUtils(self.cluster.master)
         rbac_util._create_user_and_grant_role("reader_admin", "analytics_reader")
 
         self.log.info("Execute query and validate error response")

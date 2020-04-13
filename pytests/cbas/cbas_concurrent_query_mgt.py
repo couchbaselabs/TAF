@@ -1,7 +1,5 @@
-from cbas_base import *
-from threading import Thread
-import threading
-from rbac_utils.Rbac_ready_functions import rbac_utils
+from rbac_utils.Rbac_ready_functions import RbacUtils
+from cbas.cbas_base import CBASBaseTest
 
 
 class CBASConcurrentQueryMgtTests(CBASBaseTest):
@@ -11,7 +9,6 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
         if self.expected_error:
             self.validate_error = True
         self.handles = []
-        self.rest = RestConnection(self.cluster.master)
         self.failed_count = 0
         self.success_count = 0
         self.rejected_count = 0
@@ -201,7 +198,7 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
                   "expected_status": 200}]
 
         for role in roles:
-            rbac_utils(self.cluster.master)._create_user_and_grant_role("testuser", role["role"])
+            RbacUtils(self.cluster.master)._create_user_and_grant_role("testuser", role["role"])
             self.sleep(5)
 
             client_context_id = "abcd1234"
@@ -221,7 +218,7 @@ class CBASConcurrentQueryMgtTests(CBASBaseTest):
                     "Cancelling request as user with {0} role worked as expected".format(
                         role["role"]))
 
-            rbac_utils(self.cluster.master)._drop_user("testuser")
+            RbacUtils(self.cluster.master)._drop_user("testuser")
 
         self.assertFalse(validation_failed,
                          "Authentication errors with some APIs. Check the test log above.")

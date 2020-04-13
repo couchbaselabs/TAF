@@ -1,7 +1,7 @@
-from cbas_base import *
-# from couchbase import FMT_BYTES
 import threading
 import random
+from TestInput import TestInputSingleton
+from cbas.cbas_base import CBASBaseTest
 
 
 class CBASSecondaryIndexes(CBASBaseTest):
@@ -461,7 +461,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
         # CREATE SDK CLIENT
         if self.sdk_client_type == "java":
             try:
-                from sdk_client import SDKClient
+                from sdk_client3 import SDKClient
                 scheme = "couchbase"
                 host = self.cluster.master.ip
                 if self.cluster.master.ip == "127.0.0.1":
