@@ -16,6 +16,30 @@ from remote.remote_util import RemoteMachineShellConnection
 class MagmaCrashTests(MagmaBaseTest):
     def setUp(self):
         super(MagmaCrashTests, self).setUp()
+        self.gen_create = doc_generator(
+            self.key, 0, self.num_items,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            key_size=self.key_size,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value,
+            mix_key_size=self.mix_key_size,
+            deep_copy=self.deep_copy)
+        self.result_task = self._load_all_buckets(
+            self.cluster, self.gen_create,
+            "create", 0,
+            batch_size=self.batch_size,
+            dgm_batch=self.dgm_batch)
+        if self.active_resident_threshold != 100:
+            for task in self.result_task.keys():
+                self.num_items = task.doc_index
+        self.log.info("Verifying num_items counts after doc_ops")
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
 
     def tearDown(self):
         super(MagmaCrashTests, self).tearDown()
