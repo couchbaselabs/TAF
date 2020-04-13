@@ -95,6 +95,12 @@ class Collection(object):
         return {"name": self.name, "maxTTL": self.maxTTL}
 
     @staticmethod
+    def flushed(collection_obj):
+        collection_obj.num_items = 0
+        collection_obj.doc_index = (0, 0)
+        collection_obj.sub_doc_index = (0, 0)
+
+    @staticmethod
     def recreated(collection_obj, collection_spec):
         collection_obj.num_items = collection_spec.get("num_items", 0)
         collection_obj.maxTTL = collection_spec.get("maxTTL", 0)

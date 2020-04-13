@@ -591,13 +591,26 @@ class CollectionUtils(DocLoaderUtils):
         """
         Function to mark the collection as dropped
 
-        :param bucket: Bucket object under which the collection is created
-        :param scope_name: Scope name under which the collection is created
+        :param bucket: Bucket object under which the collection is dropped
+        :param scope_name: Scope name under which the collection is dropped
         :param collection_name: Collection name to be marked as dropped
         """
         scope = ScopeUtils.get_scope_obj(bucket, scope_name)
         collection = CollectionUtils.get_collection_obj(scope, collection_name)
         collection.is_dropped = True
+
+    @staticmethod
+    def mark_collection_as_flushed(bucket, scope_name, collection_name):
+        """
+        Function to mark the collection object as flushed
+        :param bucket: Bucket object under which the collection is flushed
+        :param scope_name: Scope name under which the collection is flushed
+        :param collection_name: Collection name to be marked as flushed
+        :return:
+        """
+        scope = ScopeUtils.get_scope_obj(bucket, scope_name)
+        collection = CollectionUtils.get_collection_obj(scope, collection_name)
+        Collection.flushed(collection)
 
     @staticmethod
     def create_collection(node, bucket,
@@ -1733,6 +1746,15 @@ class BucketUtils(ScopeUtils):
             if not status:
                 self.log.error("Flush bucket '{0}' failed from {1}"
                                .format(bucket, kv_node.ip))
+            else:
+                # Mark all existing collections as flushed
+                for s_name in BucketUtils.get_active_scopes(bucket,
+                                                            only_names=True):
+                    for c_name in BucketUtils.get_active_collections(
+                            bucket, s_name, only_names=True):
+                        BucketUtils.mark_collection_as_flushed(bucket,
+                                                               s_name,
+                                                               c_name)
             return status
 
     def flush_all_buckets(self, kv_node):
