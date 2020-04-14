@@ -129,6 +129,7 @@ class BasicCrudTests(MagmaBaseTest):
         count = 0
         init_items = self.num_items
         while count < self.test_itr:
+            self.log.info("Create Iteration count == {}".format(count))
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
@@ -178,9 +179,9 @@ class BasicCrudTests(MagmaBaseTest):
                         bucket, self.servers)
                     self.assertIs(
                         disk_usage[2] > disk_usage[3], True,
-                        "For Bucket {} , Disk Usage for seqIndex \
-                        After new Creates count {} \
-                        exceeds keyIndex disk \
+                        "For Bucket {} , Disk Usage for seqIndex'\n' \
+                        After new Creates count {}'\n' \
+                        exceeds keyIndex disk'\n' \
                         usage".format(bucket.name, count+1))
             if self.standard_buckets > 1 and self.standard_buckets == self.magma_buckets:
                 disk_usage = dict()
@@ -201,7 +202,6 @@ class BasicCrudTests(MagmaBaseTest):
         Update all the docs n times, and after each iteration
         check for space amplificationa and data validation
         """
-        self.log.info("Updating half the docs multiple times")
         count = 0
         mutated = 1
         update_doc_count = int(
@@ -209,7 +209,7 @@ class BasicCrudTests(MagmaBaseTest):
                 float(
                     self.fragmentation * self.num_items) / (
                         100 - self.fragmentation)))
-        self.log.info("Count of docs to be update is {}\
+        self.log.info("Count of docs to be updated is {}\
         ".format(update_doc_count))
         num_update = list()
         while update_doc_count > self.num_items:
@@ -218,6 +218,7 @@ class BasicCrudTests(MagmaBaseTest):
         if update_doc_count > 0:
             num_update.append(update_doc_count)
         while count < self.test_itr:
+            self.log.info("Update Iteration count == {}".format(count))
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
@@ -258,8 +259,8 @@ class BasicCrudTests(MagmaBaseTest):
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
             _res = disk_usage[0]
-            self.log.info("After count {} disk usage is {}\
-            ".format(_res, count + 1))
+            self.log.info("After update count {} disk usage is {}\
+            ".format(count + 1, _res))
             usage_factor = (
                 (float(
                     self.num_items + sum(num_update)
@@ -268,9 +269,9 @@ class BasicCrudTests(MagmaBaseTest):
             self.assertIs(
                 _res > usage_factor * self.disk_usage[
                     self.disk_usage.keys()[0]],
-                False, "Disk Usage {} After Update \
-                Count {} exceeds Actual \
-                disk usage {} by {} \
+                False, "Disk Usage {}MB After Update'\n' \
+                Count {} exceeds Actual'\n' \
+                disk usage {}MB by {}'\n' \
                 times".format(
                     _res, count,
                     self.disk_usage[self.disk_usage.keys()[0]],
