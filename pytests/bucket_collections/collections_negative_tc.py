@@ -1,13 +1,15 @@
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
+from sdk_client3 import SDKClient
+from Cb_constants import CbServer
 
 
 class CollectionsNegativeTc(CollectionBase):
     def setUp(self):
         super(CollectionsNegativeTc, self).setUp()
         self.bucket = self.bucket_util.buckets[0]
-        self.invalid = ["_a", "%%", "a~", "a`", "a!", "a@", "a#", "a$", "a^", "a&", "a*", "a(", "a)", "a=", "a+", "a{"
-                        "a}", "a|", "a:", "a;", "a'", "a,", "a<", "a.", "a>", "a?", "a/"
+        self.invalid = ["_a", "%%", "a~", "a`", "a!", "a@", "a#", "a$", "a^", "a&", "a*", "a(", "a)", "a=", "a+", "a{",
+                        "a}", "a|", "a:", "a;", "a'", "a,", "a<", "a.", "a>", "a?", "a/",
                         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
 
     def tearDown(self):
@@ -89,4 +91,48 @@ class CollectionsNegativeTc(CollectionBase):
             else:
                 self.fail("Illegal scope name did not fail")
 
+    def test_more_than_max_collections_single_scope(self):
+        BucketUtils.create_scope(self.cluster.master, self.bucket,
+                                 {"name": "scope1"})
+        # Max_collections count, after considering default collection in setup
+        max_collections = 1000
+        BucketUtils.create_collections(self.cluster, self.bucket, max_collections - 1, "scope1")
+        try:
+            BucketUtils.create_collections(self.cluster, self.bucket, 500, "scope1")
+        except Exception as e:
+            self.log.info("Creating more than max collections failed as expected")
+        else:
+            self.fail("Creating more than max collections did not fail")
 
+    def test_more_than_max_collections_multiple_scopes(self):
+        try:
+            BucketUtils.create_scopes(self.cluster, self.bucket, 10, collection_count=200)
+        except Exception as e:
+            self.log.info("Creating more than max collections failed as expected")
+        else:
+            self.fail("Creating more than max collections did not fail")
+
+    def test_more_than_max_scopes(self):
+        # Max_scopes count, after considering default scope in setup
+        max_scopes = 1000
+        BucketUtils.create_scopes(self.cluster, self.bucket, max_scopes - 1)
+        try:
+            BucketUtils.create_scopes(self.cluster, self.bucket, 500)
+        except Exception as e:
+            self.log.info("Creating more than max scopes failed as expected")
+        else:
+            self.fail("Creating more than max scopes did not fail")
+
+    def test_load_duplicate_key_within_same_collection(self):
+        client = SDKClient([self.cluster.master], self.bucket,
+                           scope=CbServer.default_scope,
+                           collection=CbServer.default_collection,
+                           compression_settings=self.sdk_compression)
+        result = client.crud("create", "test_key-1", "TestValue")
+        if result["status"] is True:
+            self.log.info("CRUD succeeded first time")
+        result = client.crud("create", "test_key-1", "TestValue")
+        if result["status"] is True:
+            self.fail("CRUD succeeded second time when it should have not")
+        elif result["status"] is False:
+            self.log.info("CRUD didn't succeed for duplicate key as expected")
