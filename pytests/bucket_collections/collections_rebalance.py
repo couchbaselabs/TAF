@@ -427,9 +427,10 @@ class CollectionsRebalance(CollectionBase):
     def sync_data_load(self):
         self.subsequent_data_load()
 
-    def wait_for_async_data_load_to_complete(self, tasks):
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
+    def wait_for_async_data_load_to_complete(self, task):
+        self.task.jython_task_manager.get_task_result(task)
+        if task.result is False:
+            self.fail("Doc_loading failed")
 
     def wait_for_compaction_to_complete(self):
         # Strictly, we should be doing this
