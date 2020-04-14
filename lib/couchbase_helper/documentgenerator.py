@@ -184,6 +184,12 @@ class DocumentGenerator(KVGenerator):
         self.template = template
         KVGenerator.__init__(self, key_prefix)
 
+        # random string will be used of random_val is true or random_key is true
+        random.seed(key_prefix)
+        self.random_string = [''.join(random.choice(letters)
+                                      for _ in range(4*1024))][0]
+        self.len_random_string = len(self.random_string)
+
         if 'start' in kwargs:
             self.start = kwargs['start']
             self.itr = kwargs['start']
@@ -206,10 +212,6 @@ class DocumentGenerator(KVGenerator):
 
         if 'randomize_value' in kwargs:
             self.randomize_value = kwargs['randomize_value']
-            random.seed(key_prefix)
-            self.random_string = [''.join(random.choice(letters)
-                                          for _ in range(4*1024))][0]
-            self.len_random_string = len(self.random_string)
 
         if 'randomize' in self.kwargs:
             self.randomize = self.kwargs["randomize"]
@@ -254,7 +256,7 @@ class DocumentGenerator(KVGenerator):
         if doc_size and self.randomize_value:
             _slice = int(self.random.random()*self.len_random_string)
             self.body = (self.random_string *
-                         (doc_size/self.len_random_string+2)
+                         (doc_size//self.len_random_string+2)
                          )[_slice:doc_size + _slice]
         if template.get("body"):
             template.put("body", self.body)
@@ -264,8 +266,10 @@ class DocumentGenerator(KVGenerator):
 
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
-            doc_key = ''.join(self.random.choice(letters)
-                              for _ in range(self.key_size))
+            _slice = int(self.random.random()*(self.len_random_string-self.key_size))
+            key_len = self.key_size - len(str(self.itr))
+            doc_key = (self.random_string
+                         )[_slice:key_len + _slice] + str(self.itr)
         elif self.mix_key_size:
             doc_key = "{}-{}".format(self.name, str(abs(self.itr)).zfill(
                 self.random.randint(self.key_size, 250)
