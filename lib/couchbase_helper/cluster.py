@@ -362,12 +362,19 @@ class ServerTasks(object):
                             collection=CbServer.default_collection,
                             sdk_client_pool=None):
         self.log.debug("Validating documents")
-        client = None
-        if sdk_client_pool is None:
-            client = SDKClient([cluster.master], bucket,
-                               scope, collection)
+        clients = list()
+        gen_start = int(generator.start)
+        gen_end = int(generator.end)
+        gen_range = max(int((generator.end - generator.start)
+                            / process_concurrency), 1)
+        for _ in range(gen_start, gen_end, gen_range):
+            client = None
+            if sdk_client_pool is None:
+                client = SDKClient([cluster.master], bucket,
+                                   scope, collection)
+            clients.append(client)
         _task = jython_tasks.DocumentsValidatorTask(
-            cluster, self.jython_task_manager, bucket, client, [generator],
+            cluster, self.jython_task_manager, bucket, clients, [generator],
             opt_type, exp, flag=flag, only_store_hash=only_store_hash,
             batch_size=batch_size, pause_secs=pause_secs,
             timeout_secs=timeout_secs, compression=compression,

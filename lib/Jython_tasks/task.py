@@ -2033,7 +2033,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
 
 
 class DocumentsValidatorTask(Task):
-    def __init__(self, cluster, task_manager, bucket, client, generators,
+    def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, flag=0, only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=60, compression=None,
                  process_concurrency=4, check_replica=False,
@@ -2051,7 +2051,7 @@ class DocumentsValidatorTask(Task):
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
-        self.client = client
+        self.clients = clients
         self.sdk_client_pool = sdk_client_pool
         self.task_manager = task_manager
         self.batch_size = batch_size
@@ -2106,7 +2106,8 @@ class DocumentsValidatorTask(Task):
                                    "{}".format(task.wrong_values.__len__(),
                                                task.wrong_values))
         if self.sdk_client_pool is None:
-            self.client.close()
+            for client in self.clients:
+                    client.close()
         self.complete_task()
 
     def get_tasks(self, generator):
@@ -2126,9 +2127,9 @@ class DocumentsValidatorTask(Task):
                 partition_gen,
                 self.batch_size)
             generators.append(batch_gen)
-        for generator in generators:
+        for i in range(0, len(generators)):
             task = ValidateDocumentsTask(
-                self.cluster, self.bucket, self.client, generator,
+                self.cluster, self.bucket, self.clients[i], generators[i],
                 self.op_type, self.exp, self.flag, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression, check_replica=self.check_replica,
