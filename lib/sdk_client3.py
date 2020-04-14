@@ -1023,8 +1023,10 @@ class SDKClient(object):
                                         timeout=timeout,
                                         time_unit=time_unit,
                                         durability=durability)
-        if doc_type == "binary":
+        if doc_type.lower() == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+        elif doc_type.lower() == "string":
+            options = options.transcoder(RawStringTranscoder.INSTANCE)
         result = SDKClient.doc_op.bulkInsert(
             self.collection, items, options)
         return self.__translate_upsert_multi_results(result)
@@ -1039,8 +1041,10 @@ class SDKClient(object):
                                         timeout=timeout,
                                         time_unit=time_unit,
                                         durability=durability)
-        if doc_type == "binary":
+        if doc_type.lower() == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+        elif doc_type.lower() == "string":
+            options = options.transcoder(RawStringTranscoder.INSTANCE)
         result = SDKClient.doc_op.bulkUpsert(
             self.collection, docs, options)
         return self.__translate_upsert_multi_results(result)
@@ -1054,8 +1058,10 @@ class SDKClient(object):
                                          timeout=timeout,
                                          time_unit=time_unit,
                                          durability=durability)
-        if doc_type == "binary":
+        if doc_type.lower() == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+        elif doc_type.lower() == "string":
+            options = options.transcoder(RawStringTranscoder.INSTANCE)
         result = SDKClient.doc_op.bulkReplace(
             self.collection, docs, exp, exp_unit,
             options)
