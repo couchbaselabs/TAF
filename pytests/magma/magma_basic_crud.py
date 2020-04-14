@@ -254,13 +254,6 @@ class BasicCrudTests(MagmaBaseTest):
                     _sync=True)
                 self.log.info("Waiting for ep-queues to get drained")
                 self.bucket_util._wait_for_stats_all_buckets()
-            data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_update, "update", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
-            self.task.jython_task_manager.get_task_result(data_validation)
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
@@ -283,6 +276,13 @@ class BasicCrudTests(MagmaBaseTest):
                     self.disk_usage[self.disk_usage.keys()[0]],
                     usage_factor))
             count += 1
+        data_validation = self.task.async_validate_docs(
+            self.cluster, self.bucket_util.buckets[0],
+            self.gen_update, "update", 0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            pause_secs=5, timeout_secs=self.sdk_timeout)
+        self.task.jython_task_manager.get_task_result(data_validation)
         self.log.info("====test_update_multi ends====")
 
     def test_multi_update_delete(self):
