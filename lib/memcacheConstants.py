@@ -183,7 +183,7 @@ TAP_FLAG_TYPES = {TAP_FLAG_BACKFILL: ">Q",
 TAP_FLAG_ACK = 0x01
 TAP_FLAG_NO_VALUE = 0x02 # The value for the key is not included in the packet
 
-# UPR per-message flags
+# DCP per-message flags
 FLAG_OPEN_CONSUMER = 0x00
 FLAG_OPEN_PRODUCER = 0x01
 FLAG_OPEN_NOTIFIER = 0x02
@@ -297,6 +297,9 @@ REQ_PKT_SD_EXTRAS= ">HB"
 # magic, opcode, keylen, extralen, datatype, status, bodylen, opaque, cas
 RES_PKT_FMT = ">BBHBBHIIQ"
 
+# magic, opcode, frameextra, keylen, extralen, datatype, status, bodylen, opaque, cas
+ALT_RES_PKT_FMT = ">BBBBBBHIIQ"
+
 #opcode, flags, pathlen, vallen
 REQ_PKT_SD_MULTI_MUTATE = ">BBHI"
 
@@ -372,3 +375,35 @@ PROTOCOL_BINARY_FEATURE_MUTATION_SEQNO = 0x04
 SKIP_CONFLICT_RESOLUTION_FLAG = 0x1
 FORCE_ACCEPT_WITH_META_OPS = 0x2
 REGENERATE_CAS = 0x4
+
+# HELO Features
+HELO_DATATYPE       = 0x0001
+HELO_TLS            = 0x0002
+HELO_TCP_NODELAY    = 0x0003
+HELO_MUTATION_SEQNO = 0x0004
+HELO_TCP_DELAY      = 0x0005
+HELO_XATTR          = 0x0006
+HELO_XERROR         = 0x0007
+HELO_SELECT_BUCKET  = 0x0008
+HELO_COLLECTIONS    = 0x0012
+HELO_SNAPPY         = 0x000a
+HELO_JSON           = 0x000b
+
+# Error Codes
+SUCCESS             = 0x00
+ERR_KEY_ENOENT      = 0x01
+ERR_KEY_EEXISTS     = 0x02
+ERR_E2BIG           = 0x03
+ERR_DELTA_BADVAL    = 0x06
+ERR_AUTH_ERROR      = 0x20
+ERR_ERANGE          = 0x22
+ERR_ROLLBACK        = 0x23
+ERR_UNKNOWN_COMMAND = 0x81
+ERR_ECLIENT         = 0xff
+
+# System Events
+EVENT_CREATE_COLLECTION = 0x0
+EVENT_DELETE_COLLECTION = 0x1
+EVENT_FLUSH_COLLECTION = 0x2
+EVENT_CREATE_SCOPE = 0x3
+EVENT_DELETE_SCOPE = 0x4

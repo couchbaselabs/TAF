@@ -17,7 +17,7 @@ import zlib
 from memcacheConstants import REQ_MAGIC_BYTE, RES_MAGIC_BYTE
 from memcacheConstants import REQ_PKT_FMT, RES_PKT_FMT, MIN_RECV_PACKET, REQ_PKT_SD_EXTRAS, SUBDOC_FLAGS_MKDIR_P
 from memcacheConstants import SET_PKT_FMT, DEL_PKT_FMT, INCRDECR_RES_FMT, INCRDECR_RES_WITH_UUID_AND_SEQNO_FMT, META_CMD_FMT
-from memcacheConstants import TOUCH_PKT_FMT, GAT_PKT_FMT, GETL_PKT_FMT
+from memcacheConstants import TOUCH_PKT_FMT, GAT_PKT_FMT, GETL_PKT_FMT, ALT_RES_PKT_FMT
 import memcacheConstants
 
 
@@ -128,8 +128,10 @@ class MemcachedClient(object):
                 raise exceptions.EOFError("Timeout waiting for socket recv. from {0}".format(self.host))
 
         assert len(response) == MIN_RECV_PACKET
-        magic, cmd, keylen, extralen, dtype, errcode, remaining, opaque, cas = \
-            struct.unpack(RES_PKT_FMT, response)
+        magic, cmd, frameextralen, keylen, extralen, dtype, errcode, remaining, opaque, cas = \
+                struct.unpack(ALT_RES_PKT_FMT, response)
+#         magic, cmd, keylen, extralen, dtype, errcode, remaining, opaque, cas = \
+#             struct.unpack(RES_PKT_FMT, response)
 
         rv = ""
         while remaining > 0:
@@ -143,19 +145,19 @@ class MemcachedClient(object):
             else:
                 raise exceptions.EOFError("Timeout waiting for socket recv. from {0}".format(self.host))
         assert (magic in (RES_MAGIC_BYTE, REQ_MAGIC_BYTE)), "Got magic: %d" % magic
-        return cmd, errcode, opaque, cas, keylen, extralen, rv
+        return cmd, errcode, opaque, cas, keylen, extralen, dtype, rv, frameextralen
 
     def _handleKeyedResponse(self, myopaque):
-        cmd, errcode, opaque, cas, keylen, extralen, rv = self._recvMsg()
+        cmd, errcode, opaque, cas, keylen, extralen, dtype, rv, frameextralen = self._recvMsg()
         assert myopaque is None or opaque == myopaque, \
             "expected opaque %x, got %x" % (myopaque, opaque)
         if errcode:
             rv += " for vbucket :{0} to mc {1}:{2}".format(self.vbucketId, self.host, self.port)
             raise MemcachedError(errcode, rv)
-        return cmd, opaque, cas, keylen, extralen, rv
+        return cmd, opaque, cas, keylen, extralen, dtype, rv, frameextralen
 
     def _handleSingleResponse(self, myopaque):
-        cmd, opaque, cas, keylen, extralen, data = self._handleKeyedResponse(myopaque)
+        cmd, opaque, cas, keylen, extralen, dtype, data, frameextralen = self._handleKeyedResponse(myopaque)
         return opaque, cas, data
 
     def _doCmd(self, cmd, key, val, extraHeader='', cas=0,extended_meta_data='',extraHeaderLength=None):
@@ -658,7 +660,7 @@ class MemcachedClient(object):
         done = False
         rv = {}
         while not done:
-            cmd, opaque, cas, klen, extralen, data = self._handleKeyedResponse(None)
+            cmd, opaque, cas, klen, extralen, dtype, data, frameextralen = self._handleKeyedResponse(None)
             if klen:
                 rv[data[0:klen]] = data[klen:]
             else:
