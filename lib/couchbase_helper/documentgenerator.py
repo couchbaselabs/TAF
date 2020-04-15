@@ -258,7 +258,7 @@ class DocumentGenerator(KVGenerator):
             self.body = (self.random_string *
                          (doc_size//self.len_random_string+2)
                          )[_slice:doc_size + _slice]
-        if template.get("body"):
+        if template.containsKey("body"):
             template.put("body", self.body)
 
         if self.doc_type.find("binary") != -1:
@@ -268,8 +268,7 @@ class DocumentGenerator(KVGenerator):
             """ This will generate a random ascii key with 12 characters """
             _slice = int(self.random.random()*(self.len_random_string-self.key_size))
             key_len = self.key_size - (len(str(self.itr)) + 1)
-            doc_key = (self.random_string
-                         )[_slice:key_len + _slice] + "-" + str(self.itr)
+            doc_key = self.random_string[_slice:key_len+_slice] + "-" + str(self.itr)
         elif self.mix_key_size:
             doc_key = "{}-{}".format(self.name, str(abs(self.itr)).zfill(
                 self.random.randint(self.key_size, 250)
