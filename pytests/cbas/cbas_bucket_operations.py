@@ -257,7 +257,8 @@ class CBASBucketOperations(CBASBaseTest):
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
-            self.num_items / 10)
+            self.num_items / 10,
+            mutation_num=1)
 
         # Validate no. of items in CBAS dataset
         if not self.cbas_util.validate_cbas_dataset_items_count(
@@ -274,7 +275,8 @@ class CBASBucketOperations(CBASBaseTest):
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
-            self.num_items)
+            self.num_items,
+            mutation_num=1)
 
         # Validate no. of items in CBAS dataset
         if not self.cbas_util.validate_cbas_dataset_items_count(
@@ -298,7 +300,8 @@ class CBASBucketOperations(CBASBaseTest):
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
-            self.num_items)
+            self.num_items,
+            mutation_num=1)
         self.perform_doc_ops_in_all_cb_buckets(
             "delete",
             0,
@@ -328,7 +331,8 @@ class CBASBucketOperations(CBASBaseTest):
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
-            self.num_items)
+            self.num_items,
+            mutation_num=1)
         self.perform_doc_ops_in_all_cb_buckets(
             "delete",
             0,
@@ -478,7 +482,8 @@ class CBASBucketOperations(CBASBaseTest):
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
-            self.num_items / 4)
+            self.num_items / 4,
+            mutation_num=1)
 
         self.cbas_util.validate_cbas_dataset_items_count(
             self.cbas_dataset_name,
@@ -491,7 +496,8 @@ class CBASBucketOperations(CBASBaseTest):
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             self.num_items / 4,
-            self.num_items / 2)
+            self.num_items / 2,
+            mutation_num=1)
 
         # Connect to Bucket and sleep for 2s to allow ingestion to start
         self.cbas_util.connect_to_bucket(

@@ -1,5 +1,5 @@
 from basetestcase import BaseTestCase
-from cbas_utils.cbas_utils import CbasUtil
+from couchbase_utils.cbas_utils.cbas_utils import CbasUtil
 from couchbase_helper.documentgenerator import DocumentGenerator
 from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 
@@ -173,7 +173,8 @@ class CBASBaseTest(BaseTestCase):
                                           start_key=0, end_key=1000,
                                           batch_size=10, exp=0,
                                           _async=False,
-                                          durability=""):
+                                          durability="",
+                                          mutation_num=0):
         """
         Create/Update/Delete docs in all cb buckets
         :param operation: String - "create","update","delete"
@@ -189,7 +190,7 @@ class CBASBaseTest(BaseTestCase):
         first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
         profession = ['doctor', 'lawyer']
         template = '{{"number": {0}, "first_name": "{1}", ' \
-                   + '"profession": "{2}", "mutated": 0}}'
+                   + '"profession": "{2}", "mutated": %d}}' % mutation_num
 
         doc_gen = DocumentGenerator('test_docs', template, age, first,
                                     profession, start=start_key, end=end_key)
