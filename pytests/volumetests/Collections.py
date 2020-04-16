@@ -3,233 +3,28 @@ from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
-from BucketLib.bucket import Bucket
-from basetestcase import BaseTestCase
 import random
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
-from couchbase_helper.documentgenerator import doc_generator
-from table_view import TableView
-from sdk_exceptions import SDKException
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from bucket_utils.bucket_ready_functions import BucketUtils
 from Cb_constants import CbServer
+from bucket_collections.collections_base import CollectionBase
 
 
-class volume(BaseTestCase):
+class volume(CollectionBase):
     # will add the __init__ functions after the test has been stabilised
     def setUp(self):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket":False})
-        BaseTestCase.setUp(self)
+        super(volume, self).setUp()
         self.rest = RestConnection(self.servers[0])
-        self.op_type = self.input.param("op_type", "create")
-        self.tasks = []         # To have all tasks running in parallel.
-        self._iter_count = 0    # To keep a check of how many items are deleted
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
-        self.num_buckets = self.input.param("num_buckets", 1)
-        self.mutate = 0
-        self.doc_ops = self.input.param("doc_ops", None)
-        if self.doc_ops:
-            self.doc_ops = self.doc_ops.split(';')
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
-        self.new_num_writer_threads = self.input.param(
-            "new_num_writer_threads", 6)
-        self.new_num_reader_threads = self.input.param(
-            "new_num_reader_threads", 8)
-
-    def create_required_buckets(self):
-        self.log.info("Get the available memory quota")
-        self.info = self.rest.get_nodes_self()
-        threshold_memory = 100
-        # threshold_memory_vagrant = 100
-        total_memory_in_mb = self.info.mcdMemoryReserved
-        total_available_memory_in_mb = total_memory_in_mb
-        active_service = self.info.services
-
-        # If the mentioned service is already present,
-        # we remove that much memory from available memory quota
-        if "index" in active_service:
-            total_available_memory_in_mb -= self.info.indexMemoryQuota
-        if "fts" in active_service:
-            total_available_memory_in_mb -= self.info.ftsMemoryQuota
-        if "cbas" in active_service:
-            total_available_memory_in_mb -= self.info.cbasMemoryQuota
-        if "eventing" in active_service:
-            total_available_memory_in_mb -= self.info.eventingMemoryQuota
-
-        available_memory = total_available_memory_in_mb - threshold_memory
-        # available_memory =  total_available_memory_in_mb - threshold_memory_vagrant
-        self.rest.set_service_memoryQuota(service='memoryQuota',
-                                          memoryQuota=available_memory)
-
-        # Creating buckets for data loading purpose
-        self.log.info("Create CB buckets")
-        self.spec_name = self.input.param("bucket_spec",
-                                          "single_bucket.default")
-        self.bucket_type = self.input.param("bucket_type", Bucket.Type.MEMBASE)  # Bucket.bucket_type.EPHEMERAL
-        buckets_spec = self.bucket_util.get_bucket_template_from_package(
-            self.spec_name)
-
-        self.bucket_util.create_buckets_using_json_data(buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete()
-
-        # rebalance the new buckets across all nodes.
-        self.log.info("Rebalance Starts")
-        self.nodes = self.rest.node_statuses()
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                            ejectedNodes=[])
-        self.rest.monitorRebalance()
-
-        # rebalance the new buckets across all nodes.
-        self.log.info("Rebalance Starts")
-        self.nodes = self.rest.node_statuses()
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                            ejectedNodes=[])
-        self.rest.monitorRebalance()
-
-    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default"):
-        for node in self.cluster_util.get_kv_nodes():
-            bucket_helper = BucketHelper(node)
-            bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
-                                                    num_reader_threads=num_reader_threads)
-
-    def volume_doc_generator_users(self, key, start, end):
-        template = '{{ "id":"{0}", "alias":"{1}", "name":"{2}", "user_since":"{3}", "employment":{4} }}'
-        return GleamBookUsersDocumentGenerator(key, template,
-                                               start=start, end=end)
-
-    def volume_doc_generator_messages(self, key, start, end):
-        template = '{{ "message_id": "{0}", "author_id": "{1}", "send_time": "{2}" }}'
-        return GleamBookMessagesDocumentGenerator(key, template,
-                                                  start=start, end=end)
-
-    def initial_data_load(self, initial_load):
-        if self.atomicity:
-            task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
-                                                            initial_load, "create" , exp=0,
-                                                            batch_size=10,
-                                                            process_concurrency=self.process_concurrency,
-                                                            replicate_to=self.replicate_to,
-                                                            persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                                            retries=self.sdk_retries,update_count=self.mutate, transaction_timeout=self.transaction_timeout,
-                                                            commit=self.transaction_commit,durability=self.durability_level,sync=self.sync)
-            self.task.jython_task_manager.get_task_result(task)
-        else:
-            tasks_info = self.bucket_util._async_load_all_buckets(self.cluster, initial_load,
-                                                            "create", exp=0,
-                                                            persist_to = self.persist_to,
-                                                            replicate_to=self.replicate_to,
-                                                            batch_size= 10,
-                                                            pause_secs = 5,
-                                                            timeout_secs=30,
-                                                            durability=self.durability_level,
-                                                            process_concurrency = self.process_concurrency,
-                                                            retries=self.sdk_retries)
-
-            for task, task_info in tasks_info.items():
-                self.task_manager.get_task_result(task)
-        self.sleep(10)
-
-    # Loading documents in 2 buckets in parallel through transactions
-    def doc_load_using_txns(self):
-        if "update" in self.doc_ops and self.gen_update_users is not None:
-            self.tasks.append(self.doc_loader_txn("update", self.gen_update_users))
-        if "create" in self.doc_ops and self.gen_create_users is not None:
-            self.tasks.append(self.doc_loader_txn("create", self.gen_create_users))
-        if "delete" in self.doc_ops and self.gen_delete_users is not  None:
-            self.tasks.append(self.doc_loader_txn("delete", self.gen_delete_users))
-        self.sleep(20)
-        for task in self.tasks:
-            self.task.jython_task_manager.get_task_result(task)
-
-    def doc_loader_txn(self, op_type, kv_gen):
-        if op_type == "update":
-            print("Value of Mutated is", self.mutate)
-            self.sleep(5)
-        process_concurrency = self.process_concurrency
-        # if op_type == "update":
-        #     if "create" not in self.doc_ops:
-        #         self.create_perc = 0
-        #     if "delete" not in self.doc_ops:
-        #         self.delete_perc = 0
-        #     process_concurrency = (self.update_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
-        # if op_type == "create":
-        #     if "update" not in self.doc_ops:
-        #         self.update_perc = 0
-        #     if "delete" not in self.doc_ops:
-        #         self.delete_perc = 0
-        #     process_concurrency = (self.create_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
-        # if op_type == "delete":
-        #     if "create" not in self.doc_ops:
-        #         self.create_perc = 0
-        #     if "update" not in self.doc_ops:
-        #         self.update_perc = 0
-        #     process_concurrency = (self.delete_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
-        task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
-                                                       kv_gen, op_type, exp=0,
-                                                       batch_size=10,
-                                                       process_concurrency=process_concurrency,
-                                                       replicate_to=self.replicate_to,
-                                                       persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                                       retries=self.sdk_retries, update_count=self.mutate,
-                                                       transaction_timeout=self.transaction_timeout,
-                                                       commit=self.transaction_commit, durability=self.durability_level,
-                                                       sync=self.sync, defer=self.defer)
-        return task
-
-    # Loading documents through normal doc loader
-    def normal_doc_loader(self):
-        tasks_info = dict()
-        if "update" in self.doc_ops and self.gen_update_users is not None:
-            task_info = self.doc_loader("update", self.gen_update_users)
-            tasks_info.update(task_info.items())
-        if "create" in self.doc_ops and self.gen_create_users is not None:
-            task_info = self.doc_loader("create", self.gen_create_users)
-            tasks_info.update(task_info.items())
-        if "delete" in self.doc_ops and self.gen_delete_users is not None:
-            task_info = self.doc_loader("delete", self.gen_delete_users)
-            tasks_info.update(task_info.items())
-        return tasks_info
-
-    def doc_loader(self, op_type, kv_gen):
-        process_concurrency = self.process_concurrency
-        if op_type == "update":
-            if "create" not in self.doc_ops:
-                self.create_perc = 0
-            if "delete" not in self.doc_ops:
-                self.delete_perc = 0
-            process_concurrency = (self.update_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
-        if op_type == "create":
-            if "update" not in self.doc_ops:
-                self.update_perc = 0
-            if "delete" not in self.doc_ops:
-                self.delete_perc = 0
-            process_concurrency = (self.create_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
-        if op_type == "delete":
-            if "create" not in self.doc_ops:
-                self.create_perc = 0
-            if "update" not in self.doc_ops:
-                self.update_perc = 0
-            process_concurrency = (self.delete_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
-        retry_exceptions = [
-            SDKException.AmbiguousTimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            SDKException.DurabilityImpossibleException,
-        ]
-        tasks_info = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen,
-                                                              op_type, 0, batch_size=20,
-                                                              persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                                              durability=self.durability_level, pause_secs=5,
-                                                              timeout_secs=30, process_concurrency=process_concurrency,
-                                                              retries=self.sdk_retries,
-                                                              retry_exceptions=retry_exceptions)
-        return tasks_info
 
     # Stopping and restarting the memcached process
     def stop_process(self):
@@ -270,127 +65,25 @@ class volume(BaseTestCase):
                 self.task.jython_task_manager.get_task_result(task)
             self.fail("Rebalance Failed")
 
-    def data_validation(self, tasks_info):
-        if not self.atomicity:
-            for task in tasks_info:
-                self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
-            self.bucket_util.log_doc_ops_task_failures(tasks_info)
-
-            self.sleep(10)
-
-            for task, task_info in tasks_info.items():
-                self.assertFalse(
-                    task_info["ops_failed"],
-                    "Doc ops failed for task: {}".format(task.thread_name))
-
-        self.log.info("Validating Active/Replica Docs")
-        if self.atomicity:
-            self.check_replica = False
-        else:
-            self.check_replica = True
-
-        for bucket in self.bucket_util.buckets:
-            tasks = list()
-            if self.gen_update_users is not None:
-                tasks.append(self.task.async_validate_docs(
-                    self.cluster, bucket, self.gen_update_users, "update", 0,
-                    batch_size=10, check_replica=self.check_replica))
-            if self.gen_create_users is not None:
-                tasks.append(self.task.async_validate_docs(
-                    self.cluster, bucket, self.gen_create_users, "create", 0,
-                    batch_size=10, check_replica=self.check_replica))
-            if self.gen_delete_users is not  None:
-                tasks.append(self.task.async_validate_docs(
-                    self.cluster, bucket, self.gen_delete_users, "delete", 0,
-                    batch_size=10, check_replica=self.check_replica))
-            for task in tasks:
-                self.task.jython_task_manager.get_task_result(task)
-            self.sleep(20)
-
-        if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.end - self.initial_load_count*self.delete_perc/100*self._iter_count)
-
-    def data_load(self):
-        tasks_info = dict()
-        if self.atomicity:
-            self.doc_load_using_txns()
-            self.sleep(10)
-        else:
-            tasks_info = self.normal_doc_loader()
-            self.sleep(10)
-        return tasks_info
-
-    def generate_docs(self):
-        self.create_perc = self.input.param("create_perc",100)
-        self.update_perc = self.input.param("update_perc", 10)
-        self.delete_perc = self.input.param("delete_perc", 10)
-
-        self.gen_delete_users = None
-        self.gen_create_users = None
-        self.gen_update_users = None
-
-        if "update" in self.doc_ops:
-            self.mutate += 1
-            self.gen_update_users = doc_generator("Users", 0, self.initial_load_count*self.update_perc/100,
-                                                doc_size = self.doc_size, mutate = self.mutate)
-        if "delete" in self.doc_ops:
-            self.gen_delete_users = doc_generator("Users", self.start,
-                                              self.start + (self.initial_load_count*self.delete_perc)/100, doc_size = self.doc_size)
-            self._iter_count += 1
-
-        if "create" in self.doc_ops:
-            self.start = self.end
-            self.end += self.initial_load_count*self.create_perc/100
-            self.gen_create_users = doc_generator("Users", self.start, self.end, doc_size = self.doc_size)
-
-    def data_validation_mode(self, tasks_info):
-        # if not self.atomicity:
-        self.data_validation(tasks_info)
-        '''
-        else:
-            for task in self.tasks:
-                self.task.jython_task_manager.get_task_result(task)
-            self.sleep(10)
-        '''
-    def get_bucket_dgm(self, bucket):
-        self.rest_client = BucketHelper(self.cluster.master)
-        dgm = self.rest_client.fetch_bucket_stats(
-            bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
-        self.log.info("Active Resident Threshold of {0} is {1}".format(bucket.name, dgm))
-
-    def print_crud_stats(self):
-        self.table = TableView(self.log.info)
-        self.table.set_headers(["Initial Items", "Current Items", "Items Updated", "Items Created", "Items Deleted"])
-        if self._iter_count != 0:
-            self.table.add_row([str(self.start - self.initial_load_count*self.delete_perc/100*(self._iter_count-1)),
-                                str(self.end- self.initial_load_count*self.delete_perc/100*self._iter_count),
-                                str(self.update_perc - self.update_perc) + "---" +
-                                str(self.initial_load_count*self.update_perc/100),
-                                str(self.start) + "---" + str(self.end),
-                                str(self.start - self.initial_load_count*self.create_perc/100) + "---" +
-                                str(self.start + (self.initial_load_count*self.delete_perc/100) - self.initial_load_count*self.create_perc/100)])
-        self.table.display("Docs statistics")
-
-    def initial_data_load_collection(self):
-        doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("initial_load")
-        self.bucket_util.run_scenario_from_spec(self.task,
-                                                self.cluster,
-                                                self.bucket_util.buckets,
-                                                doc_loading_spec,
-                                                mutation_num=0)
-
     def data_load_collection(self):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("volume_test_load")
-        self.bucket_util.run_scenario_from_spec(self.task,
+        task = self.bucket_util.run_scenario_from_spec(self.task,
                                                 self.cluster,
                                                 self.bucket_util.buckets,
                                                 doc_loading_spec,
-                                                mutation_num=0)
+                                                mutation_num=0,
+                                                async_load=True)
+        return task
+
+    def wait_for_async_data_load_to_complete(self, task):
+        self.task.jython_task_manager.get_task_result(task)
+        if task.result is False:
+            self.fail("Doc_loading failed")
+
+    def data_validation_collection(self):
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def delete_recreate_collection_helper(self, req_num, consider_scopes, consider_buckets):
         collections = BucketUtils.get_random_collections(
@@ -435,92 +128,43 @@ class volume(BaseTestCase):
         consider_buckets = doc_loading_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 0)
         self.delete_recreate_collection_helper(req_num, consider_scopes, consider_buckets)
 
-    def data_validation_collection(self):
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
-
     def test_volume_taf(self):
-        ########################################################################################################################
-        self.log.info("Step1: Create a n node cluster")
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.query_node = self.cluster.master
-        ########################################################################################################################
-        self.log.info("Step 2 & 3: Create required buckets.")
-        bucket = self.create_required_buckets()
         self.loop = 0
-        #######################################################################################################################
         while self.loop<self.iterations:
-            self.log.info("Step 4: Pre-Requisites for Loading of docs")
-            self.bucket_util.add_rbac_user()
-            self.initial_data_load_collection()
-            self.data_validation_collection()
-            self.tasks = []
-            self.bucket_util.print_bucket_stats()
-            ########################################################################################################################
+            self.log.info("Finished steps 1-4 successfully in setup")
             self.log.info("Step 5: Rebalance in with Loading of docs")
-            self.gen_delete_users=None
-            self._iter_count = 0
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in = 1, nodes_out = 0)
-            self.data_load_collection()
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
-            # self.sleep(600, "Wait for Rebalance to start")
+            task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.tasks = []
             self.bucket_util.print_bucket_stats()
             #########################################################################################################################
             self.log.info("Step 6: Rebalance Out with Loading of docs")
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in = 0, nodes_out = 1)
-            self.data_load_collection()
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
-            # self.sleep(600, "Wait for Rebalance to start")
+            task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.tasks = []
             self.bucket_util.print_bucket_stats()
             #######################################################################################################################
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in = 2, nodes_out = 1)
-            self.data_load_collection()
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
-            # self.sleep(600, "Wait for Rebalance to start")
+            task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.tasks = []
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
             self.log.info("Step 8: Swap with Loading of docs")
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
-            self.data_load_collection()
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
-            # self.sleep(600, "Wait for Rebalance to start")
+            task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
@@ -530,39 +174,25 @@ class volume(BaseTestCase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=2)
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in =1, nodes_out= 0)
-            self.data_load_collection()
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
-            # self.sleep(600, "Wait for Rebalance to start")
+            task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.tasks = []
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
             if "ephemeral" in self.bucket_type:
                 self.log.info("No Memcached kill for epehemral bucket")
             else:
                 self.log.info("Step 10: Stopping and restarting memcached process")
-                if not self.atomicity:
-                    self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                           num_reader_threads=self.new_num_reader_threads)
                 rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
-                self.data_load_collection()
-                if not self.atomicity:
-                    self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                           num_reader_threads="disk_io_optimized")
-                # self.sleep(600, "Wait for Rebalance to start")
+                task = self.data_load_collection()
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
                 self.stop_process()
+                self.wait_for_async_data_load_to_complete(task)
                 self.data_validation_collection()
-                self.tasks = []
                 self.bucket_util.print_bucket_stats()
             ########################################################################################################################
             self.log.info("Step 11: Failover a node and RebalanceOut that node with loading in parallel")
@@ -581,14 +211,11 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
             # Mark Node for failover
-            self.data_load_collection()
+            task = self.data_load_collection()
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
             self.sleep(300)
             self.nodes = self.rest.node_statuses()
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[self.chosen[0].id])
             # self.sleep(600)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
@@ -598,6 +225,7 @@ class volume(BaseTestCase):
             self.available_servers += servs_out
             self.sleep(10)
 
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
 
             self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
@@ -636,7 +264,7 @@ class volume(BaseTestCase):
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
-            self.data_load_collection()
+            task = self.data_load_collection()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
@@ -646,20 +274,14 @@ class volume(BaseTestCase):
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="full")
 
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
-            # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
 
             self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
@@ -694,27 +316,22 @@ class volume(BaseTestCase):
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
-            self.data_load_collection()
+            task = self.data_load_collection()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
             self.sleep(300)
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
-            # self.sleep(600)
+
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
 
             self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
@@ -736,17 +353,11 @@ class volume(BaseTestCase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
             rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
-            self.data_load_collection()
-            if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
-            # self.sleep(600, "Wait for Rebalance to start")
+            task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
@@ -763,12 +374,10 @@ class volume(BaseTestCase):
                     servs_out = random.sample(self.nodes_cluster, int(len(self.cluster.nodes_in_cluster) - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
                         self.cluster.servers[:self.nodes_init], [], servs_out)
-                    # self.sleep(600)
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
                     self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
-                self._iter_count = 0
             else:
                 self.log.info("Volume Test Run Complete")
         ############################################################################################################################
