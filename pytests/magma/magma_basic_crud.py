@@ -288,15 +288,21 @@ class BasicCrudTests(MagmaBaseTest):
 
     def test_multi_update_delete(self):
         """
-        Update all the docs 3 times, and after each iteration
-        check for space amplificationa and data validation
-        Delete half the docs, and recreate deleted docs again
-        After delete and recreate check for space amplification
-        and data validation
+        Step 1: Kill memcached and Update all the docs update_itr times
+        After each iteration check for space amplification
+        and for last iteration
+        of test_itr validate docs
+        Step 2: Delete half the docs, check sapce amplification
+        Step 3 Recreate check for space amplification.
+        Repeat all above steps test_itr times
+        Step 4 : Do data validation for newly create docs
         """
         count = 0
+        mutated = 1
         for i in range(self.test_itr):
             while count < self.update_itr:
+                self.log.debug("Iteration {}: Step 1 of test_multi_update_delete \
+                ".format(self.test_itr+1))
                 for node in self.cluster.nodes_in_cluster:
                     shell = RemoteMachineShellConnection(node)
                     shell.kill_memcached()
@@ -318,51 +324,47 @@ class BasicCrudTests(MagmaBaseTest):
                     target_vbucket=self.target_vbucket,
                     vbuckets=self.cluster_util.vbuckets,
                     key_size=self.key_size,
-                    mutate=count+1,
+                    mutate=mutated,
                     randomize_doc_size=self.randomize_doc_size,
                     randomize_value=self.randomize_value,
                     mix_key_size=self.mix_key_size,
                     deep_copy=self.deep_copy)
+                mutated += 1
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
                                       _sync=True)
                 self.log.info("Waiting for ep-queues to get drained")
                 self.bucket_util._wait_for_stats_all_buckets()
+                disk_usage = self.get_disk_usage(
+                    self.bucket_util.get_all_buckets()[0],
+                    self.servers)
+                _res = disk_usage[0]
+                self.log.info("After update count {} disk usage is {}MB\
+                ".format(count+1, _res))
+                self.assertIs(
+                    _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
+                    False, "Disk Usage {}MB After \
+                    Update Count {} exceeds Actual \
+                    disk usage {}MB by 2.5\
+                    times".format(_res, count,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
+                count += 1
+            # Will check data validatio only in the last
+            # iteration of test_tr to avoid multiple
+            # data validation, that is why below if check
+            if i+1 == self.test_itr:
                 data_validation = self.task.async_validate_docs(
                     self.cluster, self.bucket_util.buckets[0],
                     self.gen_update, "update", 0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
-                    pause_secs=5, timeout_secs=self.sdk_timeout)
+                    pause_secs=5,
+                    timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(data_validation)
-                disk_usage = self.get_disk_usage(
-                    self.bucket_util.get_all_buckets()[0],
-                    self.servers)
-                _res = disk_usage[0] - disk_usage[1]
-                self.log.info("disk usage after update count {}\
-                is {}".format(count+1, _res))
-                self.assertIs(
-                    _res > 4 * self.disk_usage[self.disk_usage.keys()[0]],
-                    False, "Disk Usage {} After \
-                    Update Count {} exceeds Actual \
-                    disk usage {} by four \
-                    times".format(_res, count,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
-                count += 1
+
             self.update_itr += self.update_itr
-            self.gen_update = doc_generator(
-                self.key, self.num_items//2,
-                self.num_items,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                mutate=count,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
+            self.log.debug("Iteration {}: Step 2 of test_multi_update_delete \
+            ".format(self.test_itr+1))
             start_del = 0
             end_del = self.num_items//2
             if self.rev_del:
@@ -389,16 +391,20 @@ class BasicCrudTests(MagmaBaseTest):
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
-            _res = disk_usage[0] - disk_usage[1]
-            self.log.info("disk usage after delete is {}".format(_res))
+            _res = disk_usage[0]
+            self.log.info("After delete count {} disk usage is {}MB\
+            ".format(i+1, _res))
             self.assertIs(
-                _res > 4 * self.disk_usage[
+                _res > 2.5 * self.disk_usage[
                     self.disk_usage.keys()[0]],
-                False, "Disk Usage {} After \
+                False, "Disk Usage {}MB After \
                 Delete count {} exceeds Actual \
-                disk usage {} by four \
+                disk usage {}MB by 2.5 \
                 times".format(_res, i+1,
                               self.disk_usage[self.disk_usage.keys()[0]]))
+
+            self.log.debug("Iteration{}: Step 3 of test_multi_update_delete \
+            ".format(self.test_itr+1))
             self.gen_create = copy.deepcopy(self.gen_delete)
             self.log.info("Recreating num_items//2 docs")
             self.doc_ops = "create"
@@ -407,35 +413,30 @@ class BasicCrudTests(MagmaBaseTest):
                                   _sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
-            data_validation = []
-            data_validation.extend([self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_update, "update", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                pause_secs=5,
-                timeout_secs=self.sdk_timeout), self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_create, "create", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)])
-            for task in data_validation:
-                self.task.jython_task_manager.get_task_result(task)
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
-            _res = disk_usage[0] - disk_usage[1]
+            _res = disk_usage[0]
             self.log.info("disk usage after new create \
             is {}".format(_res))
             self.assertIs(
-                _res > 4 * self.disk_usage[
+                _res > 2.5 * self.disk_usage[
                     self.disk_usage.keys()[0]],
-                False, "Disk Usage {} After \
+                False, "Disk Usage {}MB After \
                 new Creates count {} exceeds \
-                Actual disk usage {} by \
-                four times".format(_res, i+1,
-                                   self.disk_usage[self.disk_usage.keys()[0]]))
+                Actual disk usage {}MB by \
+                2.5 times".format(_res, i+1,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
+        self.log.debug("Iteration{}: Step 4 of test_multi_update_delete \
+        ".format(self.test_itr+1))
+        data_validation = self.task.async_validate_docs(
+            self.cluster, self.bucket_util.buckets[0],
+            self.gen_create, "create", 0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            pause_secs=5,
+            timeout_secs=self.sdk_timeout)
+        self.task.jython_task_manager.get_task_result(data_validation)
         self.log.info("====test_multiUpdate_delete ends====")
 
     def test_update_rev_update(self):
