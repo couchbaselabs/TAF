@@ -92,7 +92,8 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.cluster, self.bucket_util.buckets[0],
                 self.gen_create, "create", 0,
                 batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
+                process_concurrency=self.process_concurrency,
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(data_validation)
             start = end
             self.bucket_util.verify_stats_all_buckets(end, timeout=300)
