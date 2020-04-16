@@ -6,6 +6,7 @@ from collections_helper.collections_spec_constants import \
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
+from sdk_exceptions import SDKException
 
 
 class CollectionBase(BaseTestCase):
@@ -56,6 +57,10 @@ class CollectionBase(BaseTestCase):
         # Process params to over_ride values if required
         self.over_ride_template_params(buckets_spec)
         self.over_ride_template_params(doc_loading_spec)
+
+        # MB-38438, adding CollectionNotFoundException in retry exception
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
+            SDKException.CollectionNotFoundException)
 
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
