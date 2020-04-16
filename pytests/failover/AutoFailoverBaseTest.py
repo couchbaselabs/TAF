@@ -162,26 +162,29 @@ class AutoFailoverBaseTest(BaseTestCase):
 
     def bareSetUp(self):
         super(AutoFailoverBaseTest, self).setUp()
+        self.spec_name = self.input.param("bucket_spec",
+                                          None)
         self._get_params()
         self.rest = RestConnection(self.orchestrator)
-        self.initial_load_gen = doc_generator(self.key,
-                                              0,
-                                              self.num_items,
-                                              key_size=self.key_size,
-                                              doc_size=self.doc_size,
-                                              doc_type=self.doc_type)
-        self.update_load_gen = doc_generator(self.key,
-                                             0,
-                                             self.update_items,
-                                             key_size=self.key_size,
-                                             doc_size=self.doc_size,
-                                             doc_type=self.doc_type)
-        self.delete_load_gen = doc_generator(self.key,
-                                             self.update_items,
-                                             self.delete_items,
-                                             key_size=self.key_size,
-                                             doc_size=self.doc_size,
-                                             doc_type=self.doc_type)
+        if self.spec_name is None:
+            self.initial_load_gen = doc_generator(self.key,
+                                                  0,
+                                                  self.num_items,
+                                                  key_size=self.key_size,
+                                                  doc_size=self.doc_size,
+                                                  doc_type=self.doc_type)
+            self.update_load_gen = doc_generator(self.key,
+                                                 0,
+                                                 self.update_items,
+                                                 key_size=self.key_size,
+                                                 doc_size=self.doc_size,
+                                                 doc_type=self.doc_type)
+            self.delete_load_gen = doc_generator(self.key,
+                                                 self.update_items,
+                                                 self.delete_items,
+                                                 key_size=self.key_size,
+                                                 doc_size=self.doc_size,
+                                                 doc_type=self.doc_type)
         self.server_to_fail = self._servers_to_fail()
         self.servers_to_add = self.cluster.servers[self.nodes_init:self.nodes_init +
                                                    self.nodes_in]
@@ -922,12 +925,15 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.task.rebalance(self.cluster.servers[:1],
                             self.cluster.servers[1:self.nodes_init],
                             [], services=self.services)
-        self.bucket_util.add_rbac_user()
-        if self.read_loadgen:
-            self.bucket_size = 100
-        self.bucket_util.create_default_bucket(ram_quota=self.bucket_size,
-                                               replica=self.num_replicas)
-        self.load_all_buckets(self.initial_load_gen, "create", 0)
+        if self.spec_name is None:
+            self.bucket_util.add_rbac_user()
+            if self.read_loadgen:
+                self.bucket_size = 100
+            self.bucket_util.create_default_bucket(ram_quota=self.bucket_size,
+                                                   replica=self.num_replicas)
+            self.load_all_buckets(self.initial_load_gen, "create", 0)
+        else:
+            self.collectionSetUp()
 
         # If updated, update in 'DurabilityHelper.durability_succeeds' as well
         self.failover_actions['disk_failure'] = self.fail_disk_via_disk_failure
@@ -935,6 +941,48 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
         self.loadgen_tasks = []
         self.log.info("=========Finished Diskautofailover base setup=========")
+
+    def collectionSetUp(self):
+        self.bucket_util.add_rbac_user()
+        buckets_spec = self.bucket_util.get_bucket_template_from_package(
+            self.spec_name)
+        doc_loading_spec = \
+            self.bucket_util.get_crud_template_from_package("initial_load")
+        self.bucket_util.create_buckets_using_json_data(buckets_spec)
+        self.bucket_util.wait_for_collection_creation_to_complete()
+
+        # Create clients in SDK client pool
+        if self.sdk_client_pool:
+            self.log.info("Creating required SDK clients for client_pool")
+            bucket_count = len(self.bucket_util.buckets)
+            max_clients = self.task_manager.number_of_threads
+            clients_per_bucket = int(ceil(max_clients / bucket_count))
+            for bucket in self.bucket_util.buckets:
+                self.sdk_client_pool.create_clients(
+                    bucket,
+                    [self.cluster.master],
+                    clients_per_bucket,
+                    compression_settings=self.sdk_compression)
+
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.bucket_util.buckets,
+                doc_loading_spec,
+                mutation_num=0)
+        if doc_loading_task.result is False:
+            self.fail("Initial doc_loading failed")
+
+        self.cluster_util.print_cluster_stats()
+
+        # Verify initial doc load count
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+
+        self.bucket_util.print_bucket_stats()
+        self.bucket_helper_obj = BucketHelper(self.cluster.master)
+
 
     def tearDown(self):
         self.log.info("=========Starting Diskautofailover teardown ==========")
