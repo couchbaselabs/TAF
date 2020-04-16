@@ -348,7 +348,8 @@ class SubdocDocumentGenerator(KVGenerator):
 
     def create_key_for_vbucket(self):
         while self.doc_keys_len < self.end:
-            doc_key = self.next_key(self.key_counter)
+            doc_key = super(SubdocDocumentGenerator,
+                            self).next_key(self.key_counter)
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                      (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
@@ -480,7 +481,8 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
     def create_key_for_vbucket(self):
         while self.doc_keys_len < self.end:
-            doc_key = self.next_key(self.key_counter)
+            doc_key = super(DocumentGeneratorForTargetVbucket,
+                            self).next_key(self.key_counter)
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                 (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
@@ -495,8 +497,9 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
        The document generated
     """
     def next_key(self):
+        doc_key = self.doc_keys[self.itr]
         self.itr += 1
-        return self.doc_keys[self.itr]
+        return doc_key
 
     def next(self):
         if self.itr > self.end:

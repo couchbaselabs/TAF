@@ -92,7 +92,8 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def get_doc_generator(op_type, collection_obj, num_items,
-                          generic_key, mutation_num=0):
+                          generic_key, mutation_num=0,
+                          target_vbuckets="all"):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -100,6 +101,8 @@ class DocLoaderUtils(object):
         :param num_items: Targeted item count under the given collection
         :param generic_key: Doc_key to be used while doc generation
         :param mutation_num: Mutation number, used for doc validation task
+        :param target_vbuckets: Target_vbuckets for which doc loading
+                                should be done. Type: list / range()
         :return: doc_generator object based on given inputs
         """
         if op_type == "create":
@@ -116,7 +119,12 @@ class DocLoaderUtils(object):
         else:
             start = collection_obj.doc_index[0]
             end = start + num_items
+
+        if target_vbuckets == "all":
+            target_vbuckets = None
+
         return doc_generator(generic_key, start, end,
+                             target_vbucket=target_vbuckets,
                              mutation_type=op_type,
                              mutate=mutation_num)
 
@@ -260,6 +268,7 @@ class DocLoaderUtils(object):
                                         collection,
                                         num_items,
                                         doc_key,
+                                        target_vbuckets=target_vbs,
                                         mutation_num=mutation_num)
                             else:
                                 c_crud_data[op_type]["xattr_test"] = \
@@ -299,6 +308,8 @@ class DocLoaderUtils(object):
             MetaCrudParams.DURABILITY_LEVEL, "")
         skip_read_on_error = input_spec.get(
             MetaCrudParams.SKIP_READ_ON_ERROR, False)
+        target_vbs = input_spec.get(
+            MetaCrudParams.TARGET_VBUCKETS, "all")
 
         # Fetch  number of items to be loaded for newly created collections
         num_items_for_new_collections = input_spec["doc_crud"].get(
