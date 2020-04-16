@@ -1,11 +1,13 @@
 from math import ceil
 
 from basetestcase import BaseTestCase
+from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
+from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
 
 
@@ -65,18 +67,21 @@ class CollectionBase(BaseTestCase):
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
 
+        # Init sdk_client_pool if not initialized before
+        if self.sdk_client_pool is None:
+            self.init_sdk_pool_object()
+
         # Create clients in SDK client pool
-        if self.sdk_client_pool:
-            self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(self.bucket_util.buckets)
-            max_clients = self.task_manager.number_of_threads
-            clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in self.bucket_util.buckets:
-                self.sdk_client_pool.create_clients(
-                    bucket,
-                    [self.cluster.master],
-                    clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+        self.log.info("Creating required SDK clients for client_pool")
+        bucket_count = len(self.bucket_util.buckets)
+        max_clients = self.task_manager.number_of_threads
+        clients_per_bucket = int(ceil(max_clients / bucket_count))
+        for bucket in self.bucket_util.buckets:
+            self.sdk_client_pool.create_clients(
+                bucket,
+                [self.cluster.master],
+                clients_per_bucket,
+                compression_settings=self.sdk_compression)
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(

@@ -170,8 +170,7 @@ class BaseTestCase(unittest.TestCase):
 
         # SDKClientPool object for creating generic clients across tasks
         if self.sdk_client_pool is True:
-            self.sdk_client_pool = SDKClientPool()
-            DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
+            self.init_sdk_pool_object()
 
         # Initiate logging variables
         self.log = logging.getLogger("test")
@@ -568,6 +567,10 @@ class BaseTestCase(unittest.TestCase):
 
     def get_task_mgr(self):
         return self.task_manager
+
+    def init_sdk_pool_object(self):
+        self.sdk_client_pool = SDKClientPool()
+        DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
     def check_coredump_exist(self, servers):
         """
