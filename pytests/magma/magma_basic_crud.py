@@ -14,6 +14,7 @@ from com.couchbase.client.core.error import DocumentUnretrievableException
 class BasicCrudTests(MagmaBaseTest):
     def setUp(self):
         super(BasicCrudTests, self).setUp()
+        self.enable_disable_swap_space(self.servers)
         start = 0
         end = self.num_items
         start_read = 0
@@ -284,6 +285,7 @@ class BasicCrudTests(MagmaBaseTest):
             process_concurrency=self.process_concurrency,
             pause_secs=5, timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
+        self.enable_disable_swap_space(self.servers, disable=False)
         self.log.info("====test_update_multi ends====")
 
     def test_multi_update_delete(self):

@@ -273,3 +273,30 @@ class MagmaBaseTest(BaseTestCase):
         self.log.debug("Total Disk usage for seqTree is {}B".format(seqTree))
         disk_usage.extend([kvstore, wal, keyTree, seqTree])
         return disk_usage
+
+    def enable_disable_swap_space(self, servers=None, disable=True):
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            if disable:
+                _ = shell.execute_command("swapoff -a")
+                self.sleep(5)
+                output = shell.execute_command(
+                    "free | tail -1 | awk '{print $2}'")[0][0].split('\n')[0]
+                self.assertEqual(
+                    int(output), 0,
+                    msg="Failed to disable swap space on server {} having value {} \
+                     ".format(server, output))
+            else:
+                _ = shell.execute_command("swapon -a")
+                self.sleep(5)
+                output = shell.execute_command(
+                    "free | tail -1 | awk '{print $2}'")[0][0].split('\n')[0]
+                self.assertNotEqual(
+                    int(output), 0,
+                    msg="Failed to enable swap space on server {} having value {} \
+                    ".format(server, output))
+        return
