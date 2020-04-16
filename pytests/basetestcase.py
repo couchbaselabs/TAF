@@ -513,7 +513,7 @@ class BaseTestCase(unittest.TestCase):
         return: a list (list of servers with crashes or a empty list if no core dump exists)
         Args: list of servers
         """
-        
+
         self.log.info("Initializing core dump check on all the nodes");
         servers_with_crashes = [];
         for server in servers:
