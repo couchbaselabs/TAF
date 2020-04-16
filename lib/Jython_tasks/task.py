@@ -299,19 +299,6 @@ class RebalanceTask(Task):
 
     def check(self):
         try:
-            if self.monitor_vbuckets_shuffling:
-                non_swap_servers = set(self.servers) - set(self.to_remove) - set(self.to_add)
-                new_vbuckets = BucketHelper(self.servers[0])._get_vbuckets(non_swap_servers, None)
-                for vb_type in ["active_vb", "replica_vb"]:
-                    for srv in non_swap_servers:
-                        if set(self.old_vbuckets[srv][vb_type]) != set(new_vbuckets[srv][vb_type]):
-                            msg = "%s vBuckets were shuffled on %s! " \
-                                  "Expected: %s, Got: %s" \
-                                  % (vb_type, srv.ip,
-                                     self.old_vbuckets[srv][vb_type],
-                                     new_vbuckets[srv][vb_type])
-                            self.test_log.error(msg)
-                            raise Exception(msg)
             (status, progress) = self.rest._rebalance_status_and_progress()
             self.test_log.info("Rebalance - status: %s, progress: %s", status,
                                progress)
@@ -375,7 +362,25 @@ class RebalanceTask(Task):
             self.test_log.info(
                 "Rebalance completed with progress: {0}% in {1} sec"
                 .format(progress, time.time() - self.start_time))
-            self.result = True
+
+            if self.monitor_vbuckets_shuffling:
+                non_swap_servers = set(self.servers) \
+                                   - set(self.to_remove) \
+                                   - set(self.to_add)
+                new_vbuckets = BucketHelper(self.servers[0]) \
+                    ._get_vbuckets(non_swap_servers, None)
+                for vb_type in ["active_vb", "replica_vb"]:
+                    for srv in non_swap_servers:
+                        if set(self.old_vbuckets[srv][vb_type]) \
+                                != set(new_vbuckets[srv][vb_type]):
+                            msg = "%s vBuckets were shuffled on %s! " \
+                                  "Expected: %s, Got: %s" \
+                                  % (vb_type, srv.ip,
+                                     self.old_vbuckets[srv][vb_type],
+                                     new_vbuckets[srv][vb_type])
+                            self.test_log.error(msg)
+                            self.result = False
+            self.result = self.result and True
             return
 
 
