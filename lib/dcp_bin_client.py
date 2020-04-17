@@ -26,7 +26,7 @@ class DcpClient(MemcachedClient):
         self.dead = False
 
         # open_producer defines if collections are being streamed
-        self.collections = False
+        self.collections = True
 
         # initialize delete_times as false
         self.delete_times = False
@@ -451,7 +451,7 @@ class StreamRequest(Operation):
 
     def __init__(self, vbucket, takeover, start_seqno, end_seqno,
                  vb_uuid, snap_start=None, snap_end=None,
-                 collections=False, delete_times=False, json=''):
+                 collections=True, delete_times=False, json=''):
 
         if snap_start is None:
             snap_start = start_seqno

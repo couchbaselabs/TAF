@@ -22,7 +22,6 @@ class DcpTestCase(DCPBase):
                                   self.vb_uuid_list,
                                   self.vb_retry, self.filter_file)
         output_string = self.process_dcp_traffic(streams)
-        print(output_string)
         rest = RestConnection(self.cluster.master)
         expected_item_count = sum(rest.get_buckets_itemCount().values())
         actual_item_count = len(list(filter(lambda x: 'KEY' in x, output_string)))

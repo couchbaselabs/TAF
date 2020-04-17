@@ -19,7 +19,7 @@ class DCPBase(CollectionBase):
         super(DCPBase, self).setUp()
         self.dictstore = {}
         self.verification_seqno = None
-        self.collections = self.input.param("collections", False)
+        self.collections = self.input.param("collections", True)
         self.xattrs = self.input.param("xattrs", False)
         self.compression = self.input.param("compression", 0)
         self.delete_times = self.input.param("delete_times", False)
@@ -47,8 +47,8 @@ class DCPBase(CollectionBase):
         self.keys = self.input.param("keys", True)
         self.docs = self.input.param("docs", False)
         self.dcp_client = self.initialise_cluster_connections()
+        self.output_string = list()
 
-        
     def initialise_cluster_connections(self):
         init_dcp_client = self.initiate_connection()
 
@@ -137,18 +137,16 @@ class DCPBase(CollectionBase):
         return dcp_client
 
     def check_for_features(self, dcp_client):
-        pass
-#         features = [HELO_XERROR]
-#         if self.xattrs:
-#             features.append(HELO_XATTR)
-#         if self.collections:
-#             features.append(HELO_COLLECTIONS)
-#         if self.compression:
-#             features.append(HELO_SNAPPY)
-#         resp = dcp_client.hello(features, "pydcp feature HELO")
-#         print(resp)
-#         for feature in features:
-#             assert feature in resp
+        features = [HELO_XERROR]
+        if self.xattrs:
+            features.append(HELO_XATTR)
+        if self.collections:
+            features.append(HELO_COLLECTIONS)
+        if self.compression:
+            features.append(HELO_SNAPPY)
+        resp = dcp_client.hello(features, "pydcp feature HELO")
+        for feature in features:
+            assert feature in resp
 
     def handle_stream_create_response(self, dcpStream):
         if dcpStream.status == SUCCESS:
@@ -186,7 +184,7 @@ class DCPBase(CollectionBase):
                 uid = format(uid, 'x')
                 sid = format(sid, 'x')
                 cid = format(cid, 'x')
-                print "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:\"{}\", id:{}, scope:{}, manifest:{}," \
+                string = "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:\"{}\", id:{}, scope:{}, manifest:{}," \
                       " seqno:{}".format(response['vbucket'],
                                          response['streamId'],
                                          response['key'],
@@ -194,6 +192,7 @@ class DCPBase(CollectionBase):
                                          sid,
                                          uid,
                                          response['by_seqno'])
+                self.output_string.append(string)
                 manifest['uid'] = uid
                 for e in manifest['scopes']:
                     if e['uid'] == sid:
@@ -205,7 +204,7 @@ class DCPBase(CollectionBase):
                 uid = format(uid, 'x')
                 sid = format(sid, 'x')
                 cid = format(cid, 'x')
-                print "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:\"{}\", id:{}, scope:{}, ttl:{}, " \
+                string = "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:\"{}\", id:{}, scope:{}, ttl:{}, " \
                       "manifest:{}, seqno:{}".format(response['vbucket'],
                                                      response['streamId'],
                                                      response['key'],
@@ -214,6 +213,7 @@ class DCPBase(CollectionBase):
                                                      ttl,
                                                      uid,
                                                      response['by_seqno'])
+                self.output_string.append(string)
                 manifest['uid'] = uid
                 for e in manifest['scopes']:
                     if e['uid'] == sid:
@@ -221,7 +221,7 @@ class DCPBase(CollectionBase):
                                                  'uid': cid,
                                                  'max_ttl': 0});
             else:
-                print "Unknown DCP Event version:", response['version']
+                self.log.info("Unknown DCP Event version: %s"% response['version'])
 
         elif response['event'] == EVENT_DELETE_COLLECTION:
             # We can receive delete collection without a corresponding create, this
@@ -230,8 +230,9 @@ class DCPBase(CollectionBase):
             uid = format(uid, 'x')
             sid = format(sid, 'x')
             cid = format(cid, 'x')
-            print "DCP Event: vb:{}, sid:{}, what:CollectionDROPPED, id:{}, scope:{},  manifest:{}, " \
+            string = "DCP Event: vb:{}, sid:{}, what:CollectionDROPPED, id:{}, scope:{},  manifest:{}, " \
                   "seqno:{}".format(response['vbucket'], response['streamId'], cid, sid, uid, response['by_seqno'])
+            self.output_string.append(string)
             manifest['uid'] = uid
             collections = []
             for e in manifest['scopes']:
@@ -248,13 +249,14 @@ class DCPBase(CollectionBase):
             uid, sid = struct.unpack(">QI", response['value'])
             uid = format(uid, 'x')
             sid = format(sid, 'x')
-            print "DCP Event: vb:{}, sid:{}, what:ScopeCREATED, name:\"{}\", id:{}, manifest:{}, " \
+            string = "DCP Event: vb:{}, sid:{}, what:ScopeCREATED, name:\"{}\", id:{}, manifest:{}, " \
                   "seqno:{}".format(response['vbucket'],
                                     response['streamId'],
                                     response['key'],
                                     sid,
                                     uid,
                                     response['by_seqno'])
+            self.output_string.append(string)
 
             # Record the scope
             manifest['uid'] = uid
@@ -268,8 +270,9 @@ class DCPBase(CollectionBase):
             uid, sid = struct.unpack(">QI", response['value'])
             uid = format(uid, 'x')
             sid = format(sid, 'x')
-            print "DCP Event: vb:{}, sid:{}, what:ScopeDROPPED, id:{}, manifest:{}, " \
+            string ="DCP Event: vb:{}, sid:{}, what:ScopeDROPPED, id:{}, manifest:{}, " \
                   "seqno:{}".format(response['vbucket'], response['streamId'], sid, uid, response['by_seqno'])
+            self.output_string.append(string)
             manifest['uid'] = uid
             scopes = []
             for e in manifest['scopes']:
@@ -311,13 +314,12 @@ class DCPBase(CollectionBase):
 
     def checkSnapshot(self, vb, se, current, stream):
         if se == current:
-            print "Snapshot for vb:{} has completed, end:{}, " \
-                  "stream.mutation_count:{}".format(vb, se, stream.mutation_count)
+            self.log.info("Snapshot for vb:%s has completed, end:%s, " \
+                  "stream.mutation_count:%s"%(vb, se, stream.mutation_count))
 
     def process_dcp_traffic(self, streams):
         active_streams = len(streams)
-        outputstring = list()
-        print("no of active streams {}".format(active_streams))
+        self.log.info("no of active streams %s" % active_streams)
 
         while active_streams > 0:
 
@@ -338,7 +340,7 @@ class DCPBase(CollectionBase):
                                 opcode == CMD_DELETION or
                                 opcode == CMD_EXPIRATION):
                             seqno, output_string = self.handleMutation(response)
-                            outputstring.append(output_string)
+                            self.output_string.append(output_string)
                             if self.failover_logging:
                                 self.dcp_log_data.upsert_sequence_no(response['vbucket'],
                                                                 response['by_seqno'])
@@ -394,7 +396,7 @@ class DCPBase(CollectionBase):
                       "system events".format(vb['id']))
                 self.log.info(json.dumps(vb['manifest'], sort_keys=True, indent=2))
                 break
-        return outputstring
+        return self.output_string
 
     def add_streams(self, vbuckets, start, end, uuid, retry_limit=15, filter=None):
         self.vb_list = vbuckets
@@ -456,7 +458,6 @@ class DCPBase(CollectionBase):
                                  "snap_start": 0,
                                  "snap_end": 0
                                  }
-#                     print(vb_stream)
                     streams.append(vb_stream)
                 else:
                     for vb_stream in handle_response:
@@ -531,12 +532,11 @@ class DCPBase(CollectionBase):
             if host == 'localhost':
                 return host
             elif host == '$HOST':
-                print("'$HOST' received as a stream request host input, which is invalid. "
-                      "Trying to use 'localhost' instead")
+                self.log.info("using localhost")
                 return 'localhost'
             else:
                 raise StandardError("Invalid host input", host, "Error origin:", errorOrigin)
-        
+
     def get_node_of_dcp_client_connection(self, vb):
         node_id = vb_map[vb][0]
         return self.dcp_client_dict[node_id]['node']

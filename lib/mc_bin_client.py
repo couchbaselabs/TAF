@@ -38,8 +38,7 @@ def decodeCollectionID(key):
         if end == len(data):
             #  We should of stopped for a stop byte, not the end of the buffer
             raise exceptions.ValueError("encoded key did not contain a stop byte")
-        return cid, key[end:]
-
+    return cid, key[end:]
 
 class MemcachedError(exceptions.Exception):
     """Error raised when a command fails."""
@@ -364,11 +363,11 @@ class MemcachedClient(object):
                                    exp, seqno, cas, options, 0) )
         return resp
 
-    def hello(self, feature_flag): #, key, exp, flags, val, vbucket= -1):
-        resp = self._doCmd(memcacheConstants.CMD_HELLO, '', struct.pack(">H", feature_flag))
-        result = struct.unpack('>H', resp[2])
-        if result[0] != feature_flag:
-            raise MemcachedError(0, 'Unable to enable the feature {0}'.format( feature_flag))
+    def hello(self, features, name=''):
+        """Send a hello command for feature checking"""
+        #MB-11902
+        opaque, cas, data = self._doCmd(memcacheConstants.CMD_HELLO, name, struct.pack('>' + ('H' * len(features)), *features))
+        return struct.unpack('>' + ('H' * (len(data)/2)), data)
 
     def send_set(self, key, exp, flags, val, vbucket= -1):
         """Set a value in the memcached server without handling the response"""
