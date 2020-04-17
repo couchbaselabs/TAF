@@ -77,7 +77,7 @@ class MagmaBaseTest(BaseTestCase):
             self.bucket_util.update_bucket_props(
                 "backend", "magma;magma_max_commit_points=0",
                 self.bucket_util.buckets)
-        self.doc_size = self.input.param("doc_size", 1024)
+        self.doc_size = self.input.param("doc_size", 2048)
         self.test_itr = self.input.param("test_itr", 4)
         self.update_itr = self.input.param("update_itr", 10)
         self.next_half = self.input.param("next_half", False)
