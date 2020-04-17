@@ -83,6 +83,10 @@ class CollectionBase(BaseTestCase):
                 clients_per_bucket,
                 compression_settings=self.sdk_compression)
 
+        # Added because of MB-38497
+        # TODO: remove this once the bug is fixed
+        self.sleep(60)
+
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task,
