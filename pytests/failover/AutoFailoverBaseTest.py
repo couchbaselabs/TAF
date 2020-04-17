@@ -13,6 +13,7 @@ from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from BucketLib.BucketOperations import BucketHelper
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
+from sdk_exceptions import SDKException
 
 
 class AutoFailoverBaseTest(BaseTestCase):
@@ -115,8 +116,16 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.over_ride_template_params(buckets_spec)
         self.over_ride_template_params(doc_loading_spec)
 
+        # MB-38438, adding CollectionNotFoundException in retry exception
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
+            SDKException.CollectionNotFoundException)
+
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
+
+        # Init sdk_client_pool if not initialized before
+        if self.sdk_client_pool is None:
+            self.init_sdk_pool_object()
 
         # Create clients in SDK client pool
         if self.sdk_client_pool:
