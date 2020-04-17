@@ -161,13 +161,13 @@ class MagmaCrashTests(MagmaBaseTest):
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
 
-            data_validation = self.task.async_validate_docs(
-                    self.cluster, self.bucket_util.buckets[0],
-                    self.gen_read, "create", 0,
-                    batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency,
-                    pause_secs=5, timeout_secs=self.sdk_timeout)
-            self.task.jython_task_manager.get_task_result(data_validation)
+        data_validation = self.task.async_validate_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                self.gen_read, "create", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                pause_secs=5, timeout_secs=self.sdk_timeout)
+        self.task.jython_task_manager.get_task_result(data_validation)
 
         shell.disconnect()
 
@@ -256,11 +256,10 @@ class MagmaCrashTests(MagmaBaseTest):
                 Actual Size {} \n\
                 Max Expected Size {}".format(exact_size, disk_size, max_size)
                 )
-
-            data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_update, "update", 0, batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
-            self.task.jython_task_manager.get_task_result(data_validation)
             self.bucket_util.verify_stats_all_buckets(self.num_items,
                                                       timeout=300)
+        data_validation = self.task.async_validate_docs(
+            self.cluster, self.bucket_util.buckets[0],
+            self.gen_update, "update", 0, batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency)
+        self.task.jython_task_manager.get_task_result(data_validation)
