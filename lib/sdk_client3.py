@@ -203,15 +203,11 @@ class SDKClient(object):
         self.default_timeout = 0
         self.cluster = None
         self.bucket = bucket
-        self.bucket_name = bucket
         self.bucketObj = None
         self.collection = None
         self.compression = compression_settings
         self.cert_path = cert_path
         self.log = logging.getLogger("test")
-
-        if hasattr(bucket, 'name'):
-            self.bucket_name = bucket.name
 
         for server in servers:
             self.servers += (server.ip, int(server.port))
@@ -283,7 +279,7 @@ class SDKClient(object):
                                    % e)
                     i += 1
 
-            self.bucketObj = self.cluster.bucket(self.bucket_name)
+            self.bucketObj = self.cluster.bucket(self.bucket.name)
             self.bucketObj.waitUntilReady(self.getDuration(60, "seconds"))
             self.select_collection(self.scope_name, self.collection_name)
         except Exception as e:
@@ -557,8 +553,8 @@ class SDKClient(object):
         """
         Method to select collection. Can be called directly from test case.
         """
-        self.log.debug("Selecting scope::collection %s::%s"
-                       % (scope_name, collection_name))
+        self.log.debug("Selecting bucket:scope::collection %s:%s:%s"
+                       % (self.bucket.name, scope_name, collection_name))
         if collection_name != CbServer.default_collection:
             self.collection = self.bucketObj \
                 .scope(scope_name) \

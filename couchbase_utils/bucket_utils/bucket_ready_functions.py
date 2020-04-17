@@ -4237,16 +4237,16 @@ class BucketUtils(ScopeUtils):
                     scope = sample(ops_spec[bucket_name]["scopes"].keys(),
                                    1)[0]
                     created_names = CollectionUtils.create_collections(
-                        cluster, bucket, 1,
-                        sample(scope, 1)[0])
+                        cluster, bucket, 1, scope)
                     created_collections += 1
                     update_ops_details_dict(
                         "collections_added",
                         {bucket_name:
-                            {"scopes": {scope:
-                                {"collections": {
-                                    created_names[0]: dict()
-                                }}}}})
+                            {"scopes":
+                                {scope:
+                                    {"collections": {
+                                        created_names.keys()[0]: dict()
+                                    }}}}})
             elif operation_type in ["flush", "drop"]:
                 if operation_type == "drop":
                     update_ops_details_dict("collections_dropped", ops_spec)
