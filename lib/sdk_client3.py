@@ -336,7 +336,14 @@ class SDKClient(object):
                 fail[key] = dict()
                 fail[key]['cas'] = item['cas']
                 fail[key]['value'] = json_object
-                fail[key]['error'] = str(item['error'])
+                fail[key]['error'] = str(item['error'].getClass().getName() +
+                                         " | " + item['error'].getMessage())
+                try:
+                    fail[key]['error'] += " | " + str(item['error'].context().requestContext().lastDispatchedTo())
+                    fail[key]['error'] += " | retryAttempts:" + str(item['error'].context().requestContext().retryAttempts())
+                    fail[key]['error'] += " | retryReasons:" + str(item['error'].context().requestContext().retryReasons())
+                except Exception:
+                    pass
         return success, fail
 
     def __tranlate_delete_multi_results(self, data):
@@ -699,6 +706,15 @@ class SDKClient(object):
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
+        if result["error"]:
+            result["error"] = str(ex.getClass().getName() +
+                                  " | " + ex.getMessage())
+            try:
+                result["error"] += " | " + str(ex.context().requestContext().lastDispatchedTo())
+                result["error"] += " | retryAttempts:" + str(ex.context().requestContext().retryAttempts())
+                result["error"] += " | retryReasons:" + str(ex.context().requestContext().retryReasons())
+            except Exception:
+                pass
         return result
 
     def replace(self, key, value, exp=0, exp_unit="seconds",
