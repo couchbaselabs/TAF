@@ -14,7 +14,7 @@ from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 from com.couchbase.client.java.json import JsonObject
 from java.lang import String
 from java.nio.charset import StandardCharsets
-from reactor.util.function import Tuples
+from reactor.util.function import Tuple2
 
 
 letters = ascii_uppercase + ascii_lowercase + digits
@@ -260,9 +260,11 @@ class DocumentGenerator(KVGenerator):
                          )[_slice:doc_size + _slice]
         if template.containsKey("body"):
             template.put("body", self.body)
+        if self.doc_type.lower().find("binary") != -1:
+            template = String(str(template)).getBytes(StandardCharsets.UTF_8)
 
-        if self.doc_type.find("binary") != -1:
-            template = String(template).getBytes(StandardCharsets.UTF_8)
+        if self.doc_type.lower().find("string") != -1:
+            template = String(str(template))
 
         if self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
