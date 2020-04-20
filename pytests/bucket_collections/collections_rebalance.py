@@ -9,9 +9,11 @@ from remote.remote_util import RemoteMachineShellConnection
 class CollectionsRebalance(CollectionBase):
     def setUp(self):
         super(CollectionsRebalance, self).setUp()
+        self.bucket_util._expiry_pager()
         self.load_gen = doc_generator(self.key, 0, self.num_items)
         self.bucket = self.bucket_util.buckets[0]
         self.rest = RestConnection(self.cluster.master)
+        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
         self.data_load_stage = self.input.param("data_load_stage", "before")
         self.data_load_type = self.input.param("data_load_type", "async")
         self.nodes_swap = self.input.param("nodes_swap", 1)
@@ -411,7 +413,7 @@ class CollectionsRebalance(CollectionBase):
         return operation
 
     def subsequent_data_load(self, async_load=False):
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package("volume_test_load")
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                 self.cluster,
                                                 self.bucket_util.buckets,
@@ -450,8 +452,18 @@ class CollectionsRebalance(CollectionBase):
             self.wait_for_compaction_to_complete()
 
     def data_validation_collection(self):
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        if self.data_load_spec == "ttl_load":
+            self.sleep(300, "wait for maxttl to finish")
+            items = 0
+            self.bucket_util._expiry_pager()
+            self.bucket_util._wait_for_stats_all_buckets()
+            for bucket in self.bucket_util.buckets:
+                items = items + self.bucket_helper_obj.get_active_key_count(bucket)
+            if items != 0:
+                self.fail("TTL + rebalance failed")
+        else:
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None
