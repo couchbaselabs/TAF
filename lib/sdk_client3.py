@@ -355,8 +355,15 @@ class SDKClient(object):
             else:
                 fail[key] = dict()
                 fail[key]['cas'] = result['cas']
-                fail[key]['error'] = result['error']
                 fail[key]['value'] = dict()
+                fail[key]['error'] = str(result['error'].getClass().getName() +
+                                         " | " + result['error'].getMessage())
+                try:
+                    fail[key]['error'] += " | " + str(result['error'].context().requestContext().lastDispatchedTo())
+                    fail[key]['error'] += " | retryAttempts:" + str(result['error'].context().requestContext().retryAttempts())
+                    fail[key]['error'] += " | retryReasons:" + str(result['error'].context().requestContext().retryReasons())
+                except Exception:
+                    pass
         return success, fail
 
     def __translate_get_multi_results(self, data):
@@ -373,8 +380,15 @@ class SDKClient(object):
             else:
                 fail[key] = dict()
                 fail[key]['cas'] = result['cas']
-                fail[key]['error'] = result['error']
                 fail[key]['value'] = dict()
+                fail[key]['error'] = str(result['error'].getClass().getName() +
+                                         " | " + result['error'].getMessage())
+                try:
+                    fail[key]['error'] += " | " + str(result['error'].context().requestContext().lastDispatchedTo())
+                    fail[key]['error'] += " | retryAttempts:" + str(result['error'].context().requestContext().retryAttempts())
+                    fail[key]['error'] += " | retryReasons:" + str(result['error'].context().requestContext().retryReasons())
+                except Exception:
+                    pass
         return success, fail
 
     # Translate APIs for sub-document operations
