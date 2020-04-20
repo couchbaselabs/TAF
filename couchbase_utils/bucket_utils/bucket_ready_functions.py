@@ -1379,7 +1379,6 @@ class BucketUtils(ScopeUtils):
         scope_spec = \
             buckets_spec["buckets"][bucket_name]["scopes"][scope_name]
 
-        def_maxttl = buckets_spec["buckets"][bucket_name].get(Bucket.maxTTL, 0)
         def_num_docs = \
             buckets_spec["buckets"][bucket_name].get(
                 MetaConstants.NUM_ITEMS_PER_COLLECTION, 0)
@@ -1409,8 +1408,6 @@ class BucketUtils(ScopeUtils):
 
         # Expand spec values within all collection definition specs
         for _, collection_spec in scope_spec["collections"].items():
-            if Bucket.maxTTL not in collection_spec:
-                collection_spec[Bucket.maxTTL] = def_maxttl
             if MetaConstants.NUM_ITEMS_PER_COLLECTION not in collection_spec:
                 collection_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
                     def_num_docs
