@@ -23,8 +23,8 @@ class BasicCrudTests(MagmaBaseTest):
             start = -int(self.num_items - 1)
             end = 1
         if self.rev_read:
-            start = -int(self.num_items - 1)
-            end = 1
+            start_read = -int(self.num_items - 1)
+            end_read = 1
         self.gen_create = doc_generator(
             self.key, start, end,
             doc_size=self.doc_size,
@@ -58,7 +58,7 @@ class BasicCrudTests(MagmaBaseTest):
                     ".format(bucket.name,
                         self.disk_usage[bucket.name]))
         self.gen_read = doc_generator(
-            self.key, start, end,
+            self.key, start_read, end_read,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
@@ -653,3 +653,111 @@ class BasicCrudTests(MagmaBaseTest):
                 times".format(_res, i+1,
                               self.disk_usage[self.disk_usage.keys()[0]]))
         self.log.info("====test_update_rev_update ends====")
+
+    def test_update_single_doc_n_times(self):
+        """
+        Update same document n times,  where n is number which
+        gets derived from given fragmentation value and after
+        updates check for space amplification and data
+        validation
+        """
+        count = 0
+        self.assertIs(
+            (self.fragmentation <= 0 or self.fragmentation >= 100),
+            False, msg="Fragmentation value can't be <=0 or >=100")
+        update_count = int(
+            math.ceil(
+                float(
+                    self.fragmentation * self.num_items) / (
+                        100 - self.fragmentation)))
+        self.log.info("{} is the count with which doc will be updated \
+        ".format(update_count))
+        self.doc_ops = "update"
+
+        self.client = SDKClient([self.cluster.master],
+                                self.bucket_util.buckets[0],
+                                scope=CbServer.default_scope,
+                                collection=CbServer.default_collection)
+        self.gen_update = doc_generator(
+                self.key, 0, 1,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                mutate=count,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
+        key, val = self.gen_update.next()
+
+        for node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(node)
+            shell.kill_memcached()
+            shell.disconnect()
+            self.assertTrue(
+                self.bucket_util._wait_warmup_completed(
+                    [self.cluster_util.cluster.master],
+                    self.bucket_util.buckets[0],
+                    wait_time=self.wait_timeout * 10))
+
+        while count < (update_count + 1):
+            self.log.debug("Update Iteration count == {}".format(count))
+            val.put("mutated", count+1)
+            self.client.upsert(key, val)
+            count += 1
+        self.bucket_util._wait_for_stats_all_buckets()
+
+        disk_usage = self.get_disk_usage(
+            self.bucket_util.get_all_buckets()[0],
+            self.servers)
+        _res = disk_usage[0]
+        self.log.info("After all updates disk usage is {}MB\
+        ".format(_res))
+        usage_factor = (
+            (float(self.num_items + update_count
+                   ) / self.num_items) + 0.5)
+        self.log.debug("Disk usage factor is {}".format(usage_factor))
+        self.assertIs(
+            _res > usage_factor * self.disk_usage[
+                self.disk_usage.keys()[0]],
+            False, "Disk Usage {}MB After all Updates'\n' \
+            exceeds Actual'\n' \
+            disk usage {}MB by {}'\n' \
+            times".format(
+                _res,
+                self.disk_usage[self.disk_usage.keys()[0]],
+                usage_factor))
+        data_validation = self.task.async_validate_docs(
+            self.cluster, self.bucket_util.buckets[0],
+            self.gen_update, "update", 0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            pause_secs=5, timeout_secs=self.sdk_timeout)
+        self.task.jython_task_manager.get_task_result(data_validation)
+        self.enable_disable_swap_space(self.servers, disable=False)
+        self.log.info("====test_update_single_doc_n_times====")
+
+    def test_read_docs_using_multithreads(self):
+        """
+        Read same docs together using multithreads.
+        """
+        self.log.info("Reading docs parallelly using multi thread")
+        tasks_info = dict()
+        self.doc_ops = "read"
+        for node in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(node)
+                shell.kill_memcached()
+                shell.disconnect()
+
+        for _ in range(0, self.read_thread_count+1):
+            read_task_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                _sync=False)
+            tasks_info.update(read_task_info.items())
+
+        for task in tasks_info:
+                self.task_manager.get_task_result(task)
+        self.log.info("test_read_docs_using_multithreads ends")

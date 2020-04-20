@@ -88,6 +88,10 @@ class MagmaBaseTest(BaseTestCase):
         self.gen_delete = None
         self.gen_read = None
         self.gen_update = None
+
+        # self.thread_count is used to define number of thread use
+        # to read same number of documents parallelly
+        self.read_thread_count = self.input.param("read_thread_count", 4)
         self.log.info("==========Finished magma base setup========")
 
     def _create_default_bucket(self):
