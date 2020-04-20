@@ -14,7 +14,7 @@ from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 from com.couchbase.client.java.json import JsonObject
 from java.lang import String
 from java.nio.charset import StandardCharsets
-from reactor.util.function import Tuple2
+from reactor.util.function import Tuples
 
 
 letters = ascii_uppercase + ascii_lowercase + digits
