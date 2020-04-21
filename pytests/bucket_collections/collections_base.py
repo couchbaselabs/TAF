@@ -9,6 +9,7 @@ from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
+from BucketLib.bucket import Bucket
 
 
 class CollectionBase(BaseTestCase):
@@ -119,3 +120,6 @@ class CollectionBase(BaseTestCase):
             elif over_ride_param == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                     self.durability_level
+            elif over_ride_param == "replicas":
+                target_spec[Bucket.replicaNumber] = \
+                    eval(self.num_replicas)
