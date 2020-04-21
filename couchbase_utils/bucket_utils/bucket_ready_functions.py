@@ -3939,18 +3939,13 @@ class BucketUtils(ScopeUtils):
 
     def validate_manifest_uid(self, bucket):
         status = True
-        for node in self.cluster_util.get_kv_nodes():
-            shell = RemoteMachineShellConnection(node)
-            cbstats = Cbstats(shell)
-            col_details = cbstats.get_collection_details(bucket.name)
-            if col_details["uid"] != bucket.stats.manifest_uid:
-                BucketUtils.log.error("%s - Bucket UID mismatch. "
-                                      "Expected: %s, Actual: %s"
-                                      % (node.ip,
-                                         bucket.stats.manifest_uid,
-                                         col_details["uid"]))
-                status = False
-            shell.disconnect()
+        manifest_uid = BucketHelper(self.cluster.master).get_bucket_manifest_uid(bucket)
+        if manifest_uid != str(bucket.stats.manifest_uid):
+            BucketUtils.log.error("Bucket UID mismatch. "
+                                  "Expected: %s, Actual: %s"
+                                  % (bucket.stats.manifest_uid,
+                                     manifest_uid))
+            status = False
         return status
 
     def get_expected_total_num_items(self, bucket):

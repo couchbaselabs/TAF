@@ -670,3 +670,9 @@ class BucketHelper(RestConnection):
             collections = len(scope["collections"])
             collection_count += collections
         return collection_count
+
+    def get_bucket_manifest_uid(self, bucket):
+        status, content = self.list_collections(bucket)
+        json_parsed = json.loads(content)
+        manifest_uid = json_parsed["uid"]
+        return manifest_uid
