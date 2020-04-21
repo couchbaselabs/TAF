@@ -14,9 +14,9 @@ from remote.remote_util import RemoteMachineShellConnection
 import copy
 
 
-class MagmaCrashTests(MagmaBaseTest):
+class MagmaFailures(MagmaBaseTest):
     def setUp(self):
-        super(MagmaCrashTests, self).setUp()
+        super(MagmaFailures, self).setUp()
 
         self.gen_create = doc_generator(
             self.key, 0, self.num_items,
@@ -47,7 +47,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.bucket_util.print_bucket_stats()
 
     def tearDown(self):
-        super(MagmaCrashTests, self).tearDown()
+        super(MagmaFailures, self).tearDown()
 
     def kill_magma_check_wal_file_size(self):
         nIter = 200
@@ -57,6 +57,9 @@ class MagmaCrashTests(MagmaBaseTest):
             shell.kill_memcached()
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
+
+
+class MagmaCrashTests(MagmaFailures):
 
     def test_crash_magma_n_times(self):
         self.num_crashes = self.input.param("num_crashes", 10)
@@ -99,6 +102,9 @@ class MagmaCrashTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(end, timeout=300)
 
             self.gen_update = self.gen_create
+
+
+class MagmaRollbackTests(MagmaFailures):
 
     def test_magma_rollback_n_times(self):
         items = self.num_items
@@ -216,6 +222,9 @@ class MagmaCrashTests(MagmaBaseTest):
             wait_time=self.wait_timeout * 10))
         self.bucket_util.verify_stats_all_buckets(items)
         shell.disconnect()
+
+
+class MagmaSpaceAmplification(MagmaFailures):
 
     def test_space_amplification(self):
         self.num_updates = self.input.param("num_updates", 50)
