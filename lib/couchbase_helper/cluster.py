@@ -1,6 +1,7 @@
 import logging
 import tasks.tasks as conc
 import Jython_tasks.task as jython_tasks
+from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask
 
@@ -162,8 +163,7 @@ class ServerTasks(object):
                 if durability.lower() == "none":
                     check_persistence = False
                     majority_value = 1
-                elif durability.upper() \
-                        == DurabilityHelper.SupportedLevel.MAJORITY:
+                elif durability.upper() == Bucket.DurabilityLevel.MAJORITY:
                     check_persistence = False
 
                 _task = jython_tasks.Durability(

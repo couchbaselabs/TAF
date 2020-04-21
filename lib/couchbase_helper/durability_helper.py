@@ -2,6 +2,7 @@ from json import loads as json_loads
 from math import floor
 
 from BucketLib.BucketOperations import BucketHelper
+from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -12,15 +13,6 @@ class DurabilityHelper:
 
     EQUAL = '=='
     GREATER_THAN_EQ = '>='
-
-    SupportedDurability = ["MAJORITY",
-                           "MAJORITY_AND_PERSIST_TO_ACTIVE",
-                           "PERSIST_TO_MAJORITY"]
-
-    class SupportedLevel(object):
-        MAJORITY = "MAJORITY"
-        MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
-        PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
 
     def __init__(self, logger, cluster_len, durability="MAJORITY",
                  replicate_to=0, persist_to=0):
@@ -61,15 +53,14 @@ class DurabilityHelper:
     @staticmethod
     def getDurabilityLevel(durability_level):
         durability_level = durability_level.upper()
-        if durability_level == DurabilityHelper.SupportedLevel.MAJORITY:
+        if durability_level == Bucket.DurabilityLevel.MAJORITY:
             return DurabilityLevel.MAJORITY
 
         if durability_level == \
-                DurabilityHelper.SupportedLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             return DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
-        if durability_level == \
-                DurabilityHelper.SupportedLevel.PERSIST_TO_MAJORITY:
+        if durability_level == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
             return DurabilityLevel.PERSIST_TO_MAJORITY
 
         return DurabilityLevel.NONE

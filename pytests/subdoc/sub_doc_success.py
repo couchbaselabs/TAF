@@ -25,8 +25,7 @@ class BasicOps(DurabilityTestsBase):
         """
         doc_op = self.input.param("op_type", None)
         def_bucket = self.bucket_util.buckets[0]
-        ignore_exceptions = list()
-        retry_exceptions = list()
+        supported_d_levels = self.bucket_util.get_supported_durability_levels()
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -37,7 +36,7 @@ class BasicOps(DurabilityTestsBase):
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["sync_write_committed_count"] = 0
 
-        if self.durability_level in DurabilityHelper.SupportedDurability:
+        if self.durability_level in supported_d_levels:
             verification_dict["sync_write_committed_count"] += self.num_items
 
         # Initial validation
@@ -74,7 +73,7 @@ class BasicOps(DurabilityTestsBase):
 
         # Update verification_dict and validate
         verification_dict["ops_update"] += self.num_items
-        if self.durability_level in DurabilityHelper.SupportedDurability:
+        if self.durability_level in supported_d_levels:
             verification_dict["sync_write_committed_count"] += self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
@@ -114,7 +113,7 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["ops_update"] += \
                 (sub_doc_gen.end - sub_doc_gen.start
                  + len(task.fail.keys()))
-            if self.durability_level in DurabilityHelper.SupportedDurability:
+            if self.durability_level in supported_d_levels:
                 verification_dict["sync_write_committed_count"] += \
                     num_item_start_for_crud
 
@@ -160,7 +159,7 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["ops_update"] += \
                 (sub_doc_gen.end - sub_doc_gen.start
                  + len(task.fail.keys()))
-            if self.durability_level in DurabilityHelper.SupportedDurability:
+            if self.durability_level in supported_d_levels:
                 verification_dict["sync_write_committed_count"] += \
                     num_item_start_for_crud
 

@@ -1017,6 +1017,11 @@ class BucketUtils(ScopeUtils):
         return rand_name
 
     @staticmethod
+    def get_supported_durability_levels():
+        return [key for key in vars(Bucket.DurabilityLevel)
+                if not key.startswith("__")]
+
+    @staticmethod
     def get_random_buckets(buckets, req_num, exclude_from=dict()):
         """
         Function to select random buckets from the given buckets object

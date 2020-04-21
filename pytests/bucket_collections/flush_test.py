@@ -1,6 +1,7 @@
 from random import sample
 
 from bucket_collections.collections_base import CollectionBase
+from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
@@ -21,7 +22,7 @@ class FlushTests(CollectionBase):
         # docs.couchbase.com/server/6.5/learn/buckets-memory-and-storage/expiration.html
         doc_ttl = sample([0, 30000, 2147483648], 1)[0]
         durability_level = sample(
-            [DurabilityHelper.SupportedDurability] + [""], 1)[0]
+            BucketUtils.get_supported_durability_levels() + [""], 1)[0]
         return doc_ttl, durability_level
 
     @staticmethod

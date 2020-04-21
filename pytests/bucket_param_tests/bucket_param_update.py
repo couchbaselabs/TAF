@@ -1,3 +1,4 @@
+from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
@@ -188,6 +189,7 @@ class BucketParamTest(BaseTestCase):
 
     def generic_replica_update(self, doc_count, doc_ops, bucket_helper_obj,
                                replicas_to_update, start_doc_for_insert):
+        supported_d_levels = self.bucket_util.get_supported_durability_levels()
         for replica_num in replicas_to_update:
             # Creating doc creator to be used by test cases
             doc_create = doc_generator(self.key, start_doc_for_insert,
@@ -311,7 +313,7 @@ class BucketParamTest(BaseTestCase):
 
                 for task, task_info in tasks.items():
                     if replica_num == 3:
-                        if self.durability_level in DurabilityHelper.SupportedDurability:
+                        if self.durability_level in supported_d_levels:
                             self.assertTrue(
                                 len(task.fail.keys()) == (self.num_items/2),
                                 "Few doc_ops succeeded while they should have failed.")

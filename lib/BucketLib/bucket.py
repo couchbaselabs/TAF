@@ -172,6 +172,11 @@ class Bucket(object):
         magma = "magma"
         couchstore = "couchstore"
 
+    class DurabilityLevel(object):
+        MAJORITY = "MAJORITY"
+        MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
+        PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
+
     def __init__(self, new_params=dict()):
         # Default values based on Couchbase document,
         # docs.couchbase.com/server/current/rest-api/rest-bucket-create.html

@@ -198,6 +198,7 @@ class basic_ops(BaseTestCase):
         def_bucket = self.bucket_util.buckets[0]
         ignore_exceptions = list()
         retry_exceptions = list()
+        supported_d_levels = self.bucket_util.get_supported_durability_levels()
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -264,7 +265,7 @@ class basic_ops(BaseTestCase):
         verification_dict["ops_create"] += \
             self.num_items - len(task.fail.keys())
         # Validate vbucket stats
-        if self.durability_level in DurabilityHelper.SupportedDurability:
+        if self.durability_level in supported_d_levels:
             verification_dict["sync_write_committed_count"] += self.num_items
 
         failed = self.durability_helper.verify_vbucket_details_stats(
@@ -313,7 +314,7 @@ class basic_ops(BaseTestCase):
                 sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
             verification_dict["ops_update"] += mutation_doc_count
-            if self.durability_level in DurabilityHelper.SupportedDurability:
+            if self.durability_level in supported_d_levels:
                 verification_dict["sync_write_committed_count"] \
                     += mutation_doc_count
             if self.ryow:
@@ -358,7 +359,7 @@ class basic_ops(BaseTestCase):
                 .num_items -= (self.num_items - num_item_start_for_crud)
             verification_dict["ops_delete"] += mutation_doc_count
 
-            if self.durability_level in DurabilityHelper.SupportedDurability:
+            if self.durability_level in supported_d_levels:
                 verification_dict["sync_write_committed_count"] \
                     += mutation_doc_count
             if self.ryow:

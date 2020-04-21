@@ -4036,12 +4036,12 @@ class Atomicity(Task):
         Atomicity.clients = clients[0]
         Atomicity.generator = generator
         Atomicity.updatecount = update_count
-        if durability == DurabilityHelper.SupportedLevel.MAJORITY:
+        if durability == Bucket.DurabilityLevel.MAJORITY:
             Atomicity.durability = 1
         elif durability == \
-                DurabilityHelper.SupportedLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             Atomicity.durability = 2
-        elif durability == DurabilityHelper.SupportedLevel.PERSIST_TO_MAJORITY:
+        elif durability == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
             Atomicity.durability = 3
         elif durability == "ONLY_NONE":
             Atomicity.durability = 4
