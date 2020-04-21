@@ -1909,12 +1909,12 @@ class ValidateDocumentsTask(GenericLoadingTask):
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression, sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection)
-        self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s_%s_%s" % (
+        self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s_%s_%s_%s" % (
             bucket.name,
             self.scope,
             self.collection,
             generator._doc_gen.start, generator._doc_gen.end,
-            op_type)
+            op_type,time.time())
 
         self.generator = generator
         self.op_type = op_type
