@@ -25,6 +25,7 @@ class volume(CollectionBase):
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
+        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
 
     # Stopping and restarting the memcached process
     def stop_process(self):
@@ -67,7 +68,7 @@ class volume(CollectionBase):
 
     def data_load_collection(self):
         doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("volume_test_load")
+            self.bucket_util.get_crud_template_from_package(self.data_load_spec)
         task = self.bucket_util.run_scenario_from_spec(self.task,
                                                 self.cluster,
                                                 self.bucket_util.buckets,
@@ -85,48 +86,6 @@ class volume(CollectionBase):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.validate_docs_per_collections_all_buckets()
 
-    def delete_recreate_collection_helper(self, req_num, consider_scopes, consider_buckets):
-        collections = BucketUtils.get_random_collections(
-            self.bucket_util.buckets, req_num, consider_scopes, consider_buckets)
-        # delete collection
-        for bucket_name, scope_dict in collections.iteritems():
-            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
-                                                bucket_name)
-            scope_dict = scope_dict["scopes"]
-            for scope_name, collection_dict in scope_dict.items():
-                collection_dict = collection_dict["collections"]
-                for c_name, _ in collection_dict.items():
-                    BucketUtils.drop_collection(self.cluster.master,
-                                                bucket,
-                                                scope_name, c_name)
-        # recreate collection
-        for bucket_name, scope_dict in collections.iteritems():
-            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
-                                                bucket_name)
-            scope_dict = scope_dict["scopes"]
-            for scope_name, collection_dict in scope_dict.items():
-                collection_dict = collection_dict["collections"]
-                for c_name, _ in collection_dict.items():
-                    # Cannot create a _default collection
-                    if c_name == CbServer.default_collection:
-                        continue
-                    col_obj = \
-                        bucket.scopes[scope_name].collections[c_name]
-                    BucketUtils.create_collection(self.cluster.master,
-                                                  bucket,
-                                                  scope_name,
-                                                  col_obj.get_dict_object())
-        # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
-        self.validate_test_failure()
-
-    def delete_recreate_collection(self):
-        doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("drop_recreate_collection")
-        req_num = doc_loading_spec.get(MetaCrudParams.COLLECTIONS_TO_DROP_AND_RECREATE, 0)
-        consider_scopes = doc_loading_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, 0)
-        consider_buckets = doc_loading_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 0)
-        self.delete_recreate_collection_helper(req_num, consider_scopes, consider_buckets)
 
     def test_volume_taf(self):
         self.loop = 0
