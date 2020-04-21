@@ -25,6 +25,8 @@ class CollectionsRebalance(CollectionBase):
         self.recovery_type = self.input.param("recovery_type", "full")
         self.compaction = self.input.param("compaction", False)
         self.warmup = self.input.param("warmup", False)
+        self.update_replica = self.input.param("update_replica", False)  # for replica + rebalance tests
+        self.num_replicas = self.input.param("num_replicas", 1)  # for replica + rebalance tests
         if (self.compaction):
             self.compaction_tasks = list()
 
@@ -111,6 +113,10 @@ class CollectionsRebalance(CollectionBase):
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
                 else:
+                    if self.update_replica:
+                        self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
+                        self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+                        self.bucket_util.print_bucket_stats()
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
                     if self.compaction:
@@ -151,6 +157,10 @@ class CollectionsRebalance(CollectionBase):
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
                 else:
+                    if self.update_replica:
+                        self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
+                        self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+                        self.bucket_util.print_bucket_stats()
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [])
                     if self.compaction:
@@ -194,6 +204,10 @@ class CollectionsRebalance(CollectionBase):
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
                 else:
+                    if self.update_replica:
+                        self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
+                        self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+                        self.bucket_util.print_bucket_stats()
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                            node.ip, self.cluster.servers[self.nodes_init].port)
@@ -242,6 +256,10 @@ class CollectionsRebalance(CollectionBase):
                     self.wait_for_rebalance_to_complete(operation)
                 self.sleep(60)
             else:
+                if self.update_replica:
+                    self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
+                    self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+                    self.bucket_util.print_bucket_stats()
                 for node in add_nodes:
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                        node.ip, self.cluster.servers[self.nodes_init].port)
