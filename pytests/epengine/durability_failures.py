@@ -2,6 +2,7 @@ import copy
 import time
 import json
 
+from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
@@ -363,7 +364,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         cbstat_obj = Cbstats(shell_conn)
         error_sim = CouchbaseError(self.log, shell_conn)
 
-        self.durability_level = "MAJORITY_AND_PERSIST_TO_ACTIVE"
+        self.durability_level = \
+            Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         half_of_num_items = max(int(self.num_items/2), 1)
         # Override the crud_batch_size
@@ -790,7 +792,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         cbstat_obj = Cbstats(shell_conn)
         error_sim = CouchbaseError(self.log, shell_conn)
 
-        self.durability_level = "MAJORITY_AND_PERSIST_TO_ACTIVE"
+        self.durability_level = \
+            Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         # Override the crud_batch_size
         self.crud_batch_size = 5
@@ -1117,7 +1120,8 @@ class TimeoutTests(DurabilityTestsBase):
         error_sim = CouchbaseError(self.log, shell_conn)
         vb_info = dict()
 
-        self.durability_level = "MAJORITY_AND_PERSIST_TO_ACTIVE"
+        self.durability_level = \
+            Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.sdk_timeout

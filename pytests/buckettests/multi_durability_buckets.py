@@ -189,13 +189,18 @@ class MultiDurabilityTests(BaseTestCase):
         replica = self.bucket_dict[3]["replica"]
         replicate_to = 0 if replica == 0 else int(replica/2) + 1
         # First-set of ops on multi-buckets
-        dict_updater(0, self.bucket_dict, gen_create, "create",
-                     durability="MAJORITY", sdk_timeout=30)
-        dict_updater(1, self.bucket_dict, gen_update, "update",
-                     durability="MAJORITY_AND_PERSIST_TO_ACTIVE",
-                     sdk_timeout=30)
-        dict_updater(2, self.bucket_dict, gen_delete, "delete",
-                     durability="PERSIST_TO_MAJORITY", sdk_timeout=60)
+        dict_updater(
+            0, self.bucket_dict, gen_create, "create",
+            durability=Bucket.DurabilityLevel.MAJORITY,
+            sdk_timeout=30)
+        dict_updater(
+            1, self.bucket_dict, gen_update, "update",
+            durability=Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+            sdk_timeout=30)
+        dict_updater(
+            2, self.bucket_dict, gen_delete, "delete",
+            durability=Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+            sdk_timeout=60)
         dict_updater(3, self.bucket_dict, gen_update, "update",
                      persist_to=1, replicate_to=replicate_to,
                      sdk_timeout=10)
@@ -214,13 +219,18 @@ class MultiDurabilityTests(BaseTestCase):
         dict_updater(0, self.bucket_dict, gen_update, "update",
                      persist_to=persist_to, replicate_to=replicate_to,
                      sdk_timeout=30)
-        dict_updater(1, self.bucket_dict, gen_delete, "delete",
-                     durability="MAJORITY_AND_PERSIST_TO_ACTIVE",
-                     sdk_timeout=30)
-        dict_updater(2, self.bucket_dict, gen_create, "create",
-                     durability="PERSIST_TO_MAJORITY", sdk_timeout=60)
-        dict_updater(3, self.bucket_dict, gen_delete, "delete",
-                     durability="MAJORITY", sdk_timeout=10)
+        dict_updater(
+            1, self.bucket_dict, gen_delete, "delete",
+            durability=Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+            sdk_timeout=30)
+        dict_updater(
+            2, self.bucket_dict, gen_create, "create",
+            durability=Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+            sdk_timeout=60)
+        dict_updater(
+            3, self.bucket_dict, gen_delete, "delete",
+            durability=Bucket.DurabilityLevel.MAJORITY,
+            sdk_timeout=10)
         dict_updater(4, self.bucket_dict, gen_update, "update",
                      sdk_timeout=10)
 

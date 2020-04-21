@@ -6,6 +6,7 @@ import logging
 import threading
 import time
 
+from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import DocumentGenerator
 from sdk_client3 import SDKClient
@@ -41,11 +42,13 @@ class basic_ops(BaseTestCase):
         super(basic_ops, self).tearDown()
 
     def __durability_level(self):
-        if self.durability_level == "MAJORITY":
+        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
             self.durability = 1
-        elif self.durability_level == "MAJORITY_AND_PERSIST_TO_ACTIVE":
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             self.durability = 2
-        elif self.durability_level == "PERSIST_TO_MAJORITY":
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
             self.durability = 3
         elif self.durability_level == "ONLY_NONE":
             self.durability = 4

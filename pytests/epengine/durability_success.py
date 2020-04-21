@@ -29,8 +29,9 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         Note: self.sdk_timeout value is considered as 'seconds'
         """
 
-        if self.durability_level.upper() in ["MAJORITY_AND_PERSIST_TO_ACTIVE",
-                                             "PERSIST_TO_MAJORITY"]:
+        if self.durability_level.upper() in [
+                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]:
             self.log.critical("Test not valid for persistence durability")
             return
 

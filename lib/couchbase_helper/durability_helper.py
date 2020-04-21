@@ -14,7 +14,8 @@ class DurabilityHelper:
     EQUAL = '=='
     GREATER_THAN_EQ = '>='
 
-    def __init__(self, logger, cluster_len, durability="MAJORITY",
+    def __init__(self, logger, cluster_len,
+                 durability=Bucket.DurabilityLevel.MAJORITY,
                  replicate_to=0, persist_to=0):
         """
         :param logger:       Logger object to log the errors/warnings
@@ -89,7 +90,7 @@ class DurabilityHelper:
             if (self.cluster_len-failed_nodes) < majority_value:
                 durability_succeeds = False
         else:
-            if (self.durability == "MAJORITY"
+            if (self.durability == Bucket.DurabilityLevel.MAJORITY
                     and induced_error in self.disk_error_types):
                 durability_succeeds = True
             elif (self.cluster_len-len(failed_nodes)) < majority_value:

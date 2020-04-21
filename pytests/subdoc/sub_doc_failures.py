@@ -1,9 +1,11 @@
 import json
 import time
 
+from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
-from couchbase_helper.documentgenerator import doc_generator, \
-    sub_doc_generator,\
+from couchbase_helper.documentgenerator import \
+    doc_generator, \
+    sub_doc_generator, \
     sub_doc_generator_for_edit
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
@@ -282,7 +284,8 @@ class SubDocTimeouts(DurabilityTestsBase):
         target_vbs = target_nodes_vbuckets["active"]
         if self.nodes_init == 1:
             pass
-        elif self.durability_level == "PERSIST_TO_MAJORITY":
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
             target_vbs = target_nodes_vbuckets["replica"]
 
         # Create required doc_generators

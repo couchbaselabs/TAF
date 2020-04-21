@@ -1213,7 +1213,8 @@ class Durability(Task):
                         key, val = doc[0], doc[1]
                         vBucket = (((zlib.crc32(key)) >> 16) & 0x7fff) & (len(self.bucket.vbuckets)-1)
                         nodes = [self.bucket.vbuckets[vBucket].master]
-                        if self.durability == "PERSIST_TO_MAJORITY":
+                        if self.durability \
+                                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
                             nodes += self.bucket.vbuckets[vBucket].replica
                         count = 0
                         if self.op_type == 'create':

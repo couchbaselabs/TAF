@@ -1,17 +1,18 @@
-import time
-from basetestcase import BaseTestCase
-from BucketLib.bucket import Bucket
 import logging
-import threading
+import time
+
+from BucketLib.bucket import Bucket
+from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient as VBucketAwareMemcached
+
 from reactor.util.function import Tuples
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
-import com.couchbase.client.java.json.JsonObject as JsonObject
 
 """
 Basic test cases with commit,rollback scenarios
 """
+
 
 class basic_ops(BaseTestCase):
     def setUp(self):
@@ -53,11 +54,13 @@ class basic_ops(BaseTestCase):
         super(basic_ops, self).tearDown()
 
     def __durability_level(self):
-        if self.durability_level == "MAJORITY":
+        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
             self.durability = 1
-        elif self.durability_level == "MAJORITY_AND_PERSIST_TO_ACTIVE":
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             self.durability = 2
-        elif self.durability_level == "PERSIST_TO_MAJORITY":
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
             self.durability = 3
         elif self.durability_level == "ONLY_NONE":
             self.durability = 4
