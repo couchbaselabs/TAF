@@ -829,3 +829,55 @@ class BasicCrudTests(MagmaBaseTest):
         self.log.info("Waiting for ep-queues to get drained")
         self.bucket_util._wait_for_stats_all_buckets()
         self.log.info("test_read_docs_using_multithreads ends")
+
+    def test_basic_create_delete(self):
+        """
+        CREATE(n)-> DELETE(n)->DISK_USAGE_CHECK
+        REPEAT ABove test_itr_times
+        """
+        self.log.info("Cretaing  and Deletes docs n times ")
+        count = 0
+        start = 0
+        end = self.num_items
+        self.gen_delete = doc_generator(
+            self.key, start, end,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            key_size=self.key_size,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value,
+            mix_key_size=self.mix_key_size,
+            deep_copy=self.deep_copy)
+
+        while count < self.test_itr:
+            self.doc_ops = "delete"
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.log.info("Verifying doc counts after delete doc_ops")
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            disk_usage = self.get_disk_usage(
+                self.bucket_util.get_all_buckets()[0],
+                self.servers)
+            _res = disk_usage[0]
+            self.log.info("disk usage after delete count {} \
+            is {}MB".format(count+1, _res))
+            self.assertIs(
+                _res > 2.5 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                False, "Disk Usage {}MB After \
+                delete count {} exceeds \
+                Actual disk usage {}MB by \
+                2.5 times".format(_res, count+1,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
+            self.doc_ops = "create"
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            count += 1
+        self.log.info("====test_basic_create_delete ends====")
