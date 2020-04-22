@@ -745,6 +745,41 @@ class BasicCrudTests(MagmaBaseTest):
         """
         self.log.info("Reading docs parallelly using multi threading")
         tasks_info = dict()
+        update_doc_count = int(
+            math.ceil(
+                float(
+                    self.fragmentation * self.num_items) / (
+                        100 - self.fragmentation)))
+        self.log.info("Count of docs to be updated is {}\
+        ".format(update_doc_count))
+        num_update = list()
+        while update_doc_count > self.num_items:
+            num_update.append(self.num_items)
+            update_doc_count -= self.num_items
+        if update_doc_count > 0:
+            num_update.append(update_doc_count)
+        for itr in num_update:
+            self.doc_ops = "update"
+            start = 0
+            end = itr
+            self.gen_update = doc_generator(
+                self.key, start, end,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                mutate=0,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
+            update_task_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                _sync=False)
+            tasks_info.update(update_task_info.items())
+
         count = 0
         self.doc_ops = "read"
 
@@ -790,4 +825,7 @@ class BasicCrudTests(MagmaBaseTest):
 
         for task in tasks_info:
                 self.task_manager.get_task_result(task)
+
+        self.log.info("Waiting for ep-queues to get drained")
+        self.bucket_util._wait_for_stats_all_buckets()
         self.log.info("test_read_docs_using_multithreads ends")
