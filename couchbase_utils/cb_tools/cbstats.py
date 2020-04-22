@@ -58,7 +58,7 @@ class Cbstats(CbCmdBase):
         scope_data["count"] = int(scope_count)
         scope_data["uid"] = scope_uid
 
-        scope_names_pattern = "[ \t]*([0-9xa-f]+):name:[ \t]+([0-9A-Za-z_%-]+)"
+        scope_names_pattern = "[ \t]+([0-9xa-f]+):name:[ \t]+([0-9A-Za-z_%-]+)"
         col_count_pattern = "[ \t]*%s:collections:[ \t]+([0-9]+)"
         items_count_pattern = "[ \t]*%s:items:[ \t]+([0-9]+)"
 
@@ -71,13 +71,13 @@ class Cbstats(CbCmdBase):
             s_name = s_name_match[1]
 
             collections_count_pattern = col_count_pattern % s_id
-            items_count_pattern = items_count_pattern % s_id
+            s_items_count_pattern = items_count_pattern % s_id
 
             collections_count_pattern = re.compile(collections_count_pattern)
-            items_count_pattern = re.compile(items_count_pattern)
+            s_items_count_pattern = re.compile(s_items_count_pattern)
 
             collection_count = collections_count_pattern.findall(output)[0]
-            items_count = items_count_pattern.findall(output)[0]
+            items_count = s_items_count_pattern.findall(output)[0]
 
             scope_data[s_name] = dict()
             scope_data[s_name]["id"] = s_id
@@ -154,14 +154,12 @@ class Cbstats(CbCmdBase):
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        output = str(output)
-
         collection_count_pattern = "[ \t]*collections:[ \t]+([0-9]+)"
         default_collection_exist_pattern = "[ \t]*default_exists:" \
                                            "[ \t]+([truefals]+)"
         collection_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
 
-        scope_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:" \
+        scope_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):scope_name:" \
                              "[ \t]+([a-zA-Z_0-9%-]+)"
         col_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:" \
                            "[ \t]+([a-zA-Z_0-9%-]+)"
@@ -176,10 +174,10 @@ class Cbstats(CbCmdBase):
         col_name_pattern = re.compile(col_name_pattern)
 
         # Populate generic manifest stats
-        collection_count = collection_count_pattern.findall(output)[0]
+        collection_count = collection_count_pattern.findall(str(output))[0]
         default_collection_exist = \
-            default_collection_exist_pattern.findall(output)[0]
-        collection_uid = collection_uid_pattern.findall(output)[0]
+            default_collection_exist_pattern.findall(str(output))[0]
+        collection_uid = collection_uid_pattern.findall(str(output))[0]
         collection_data["default_exists"] = True
         if default_collection_exist == "false":
             collection_data["default_exists"] = False
@@ -187,8 +185,8 @@ class Cbstats(CbCmdBase):
         collection_data["count"] = int(collection_count)
 
         # Fetch all available collection names
-        scope_names = scope_name_pattern.findall(output)
-        collection_names = col_name_pattern.findall(output)
+        scope_names = scope_name_pattern.findall(str(output))
+        collection_names = col_name_pattern.findall(str(output))
 
         for scope_name_match in scope_names:
             scope_id_mapping[scope_name_match[0]] = scope_name_match[2]
@@ -206,7 +204,7 @@ class Cbstats(CbCmdBase):
 
             curr_col_items_pattern = collection_items_pattern % (s_id, c_id)
             curr_col_items_pattern = re.compile(curr_col_items_pattern)
-            items_match = int(curr_col_items_pattern.findall(output)[0])
+            items_match = int(curr_col_items_pattern.findall(str(output))[0])
 
             collection_data[scope_name][c_name] = dict()
             collection_data[scope_name][c_name]["id"] = c_id

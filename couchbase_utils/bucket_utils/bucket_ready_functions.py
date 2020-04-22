@@ -3939,8 +3939,9 @@ class BucketUtils(ScopeUtils):
 
     def validate_manifest_uid(self, bucket):
         status = True
-        manifest_uid = BucketHelper(self.cluster.master).get_bucket_manifest_uid(bucket)
-        if manifest_uid != str(bucket.stats.manifest_uid):
+        manifest_uid = BucketHelper(self.cluster.master) \
+            .get_bucket_manifest_uid(bucket)
+        if bucket.stats.manifest_uid != int(manifest_uid, 16):
             BucketUtils.log.error("Bucket UID mismatch. "
                                   "Expected: %s, Actual: %s"
                                   % (bucket.stats.manifest_uid,
