@@ -3979,23 +3979,9 @@ class BucketUtils(ScopeUtils):
         :return status: Boolean value representing the validation status.
                         'True' for success, 'False' for failure
         """
-        scope_data = None
         status = True
-        # Validate scope data is consistent across each KV node
-        for cb_stat in cbstat_obj_list:
-            tem_scope_data = cb_stat.get_scopes(bucket)
-            if scope_data is None:
-                scope_data = tem_scope_data
-            elif scope_data != tem_scope_data:
-                status = False
-                self.log.error("Mismatch in cbstats scope output. %s != %s"
-                               % (tem_scope_data, scope_data))
-        if scope_data is None:
-            status = False
-            self.log.error("No scope data to process")
-
+        scope_data = cbstat_obj_list[0].get_scopes(bucket)
         active_scopes = ScopeUtils.get_active_scopes(bucket)
-
         # Validate scope count
         if len(active_scopes) != scope_data["count"]:
             status = False
