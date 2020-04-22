@@ -43,10 +43,12 @@ class Cbstats(CbCmdBase):
                  bucket.name)
 
         output, error = self._execute_cmd(cmd)
-
         if len(error) != 0:
             raise Exception("\n".join(error))
 
+        output = str(output)
+
+        # Fetch general scope stats
         scope_count_pattern = "[ \t]*scopes:[ \t]+([0-9]+)"
         scope_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
         scope_count_pattern = re.compile(scope_count_pattern)
@@ -56,29 +58,32 @@ class Cbstats(CbCmdBase):
         scope_data["count"] = int(scope_count)
         scope_data["uid"] = scope_uid
 
-        scope_id_pattern = "[\t ]*([0-9A-Za-z_%-]+):id:[ \t]+([0-9a-fx]+)"
-        collection_count_pattern = "[ \t]*([0-9A-Za-z_%-]+):collections:" \
-                                   "[ \t]+([0-9]+)"
+        scope_names_pattern = "[ \t]*([0-9xa-f]+):name:[ \t]+([0-9A-Za-z_%-]+)"
+        col_count_pattern = "[ \t]*%s:collections:[ \t]+([0-9]+)"
+        items_count_pattern = "[ \t]*%s:items:[ \t]+([0-9]+)"
 
-        scope_id_pattern = re.compile(scope_id_pattern)
-        collection_count_pattern = re.compile(collection_count_pattern)
+        scope_names_pattern = re.compile(scope_names_pattern)
+        scope_names = scope_names_pattern.findall(output)
 
-        # Cluster_run case
-        if type(output) is str:
-            output = output.split("\n")
+        # Populate specific scope stats
+        for s_name_match in scope_names:
+            s_id = s_name_match[0]
+            s_name = s_name_match[1]
 
-        for line in output:
-            collection_count = collection_count_pattern.match(line)
-            scope_id = scope_id_pattern.match(line)
+            collections_count_pattern = col_count_pattern % s_id
+            items_count_pattern = items_count_pattern % s_id
 
-            if collection_count:
-                curr_scope_name = collection_count.group(1)
-                scope_data[curr_scope_name] = dict()
-                scope_data[curr_scope_name]["collections"] = \
-                    int(collection_count.group(2))
-            elif scope_id:
-                curr_scope_name = scope_id.group(1)
-                scope_data[curr_scope_name]["id"] = scope_id.group(2)
+            collections_count_pattern = re.compile(collections_count_pattern)
+            items_count_pattern = re.compile(items_count_pattern)
+
+            collection_count = collections_count_pattern.findall(output)[0]
+            items_count = items_count_pattern.findall(output)[0]
+
+            scope_data[s_name] = dict()
+            scope_data[s_name]["id"] = s_id
+            scope_data[s_name]["collections"] = int(collection_count)
+            scope_data[s_name]["num_items"] = int(items_count)
+
         return scope_data
 
     def get_scope_details(self, bucket_name):
@@ -136,6 +141,7 @@ class Cbstats(CbCmdBase):
         :collection_data - Dict containing the collections stat values
         """
         collection_data = dict()
+        scope_id_mapping = dict()
 
         # Fetch scope_data before fetching collections
         # scope_data = self.get_scopes(bucket)
@@ -148,49 +154,64 @@ class Cbstats(CbCmdBase):
         if len(error) != 0:
             raise Exception("\n".join(error))
 
+        output = str(output)
+
         collection_count_pattern = "[ \t]*collections:[ \t]+([0-9]+)"
         default_collection_exist_pattern = "[ \t]*default_exists:" \
                                            "[ \t]+([truefals]+)"
         collection_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
-        c_id_pattern = "[ \t]*([0-9A-Za-z_%-]+):([0-9A-Za-z_%-]+):id:" \
-                       "[ \t]+([a-zA-Z_0-9%-]+)"
+
+        scope_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:" \
+                             "[ \t]+([a-zA-Z_0-9%-]+)"
+        col_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:" \
+                           "[ \t]+([a-zA-Z_0-9%-]+)"
         collection_items_pattern = \
-            "[ \t]*([0-9A-Za-z_%-]+):([0-9A-Za-z_%-]+):items:[ \t]+([0-9]+)"
+            "[ \t]*%s:%s:items:[ \t]+([0-9]+)"
 
         collection_count_pattern = re.compile(collection_count_pattern)
         default_collection_exist_pattern = re.compile(
             default_collection_exist_pattern)
         collection_uid_pattern = re.compile(collection_uid_pattern)
-        collection_items_pattern = re.compile(collection_items_pattern)
-        c_id_pattern = re.compile(c_id_pattern)
+        scope_name_pattern = re.compile(scope_name_pattern)
+        col_name_pattern = re.compile(col_name_pattern)
 
         # Populate generic manifest stats
-        collection_count = collection_count_pattern.findall(str(output))[0]
+        collection_count = collection_count_pattern.findall(output)[0]
         default_collection_exist = \
-            default_collection_exist_pattern.findall(str(output))[0]
-        collection_uid = collection_uid_pattern.findall(str(output))[0]
+            default_collection_exist_pattern.findall(output)[0]
+        collection_uid = collection_uid_pattern.findall(output)[0]
         collection_data["default_exists"] = True
         if default_collection_exist == "false":
             collection_data["default_exists"] = False
         collection_data["uid"] = int(collection_uid)
         collection_data["count"] = int(collection_count)
 
-        # Fetch all available collections with scope map and id
-        collection_names = c_id_pattern.findall(str(output))
-        for collection in collection_names:
-            scope_name = collection[0]
-            collection_name = collection[1]
+        # Fetch all available collection names
+        scope_names = scope_name_pattern.findall(output)
+        collection_names = col_name_pattern.findall(output)
+
+        for scope_name_match in scope_names:
+            scope_id_mapping[scope_name_match[0]] = scope_name_match[2]
+
+        # Populate collection specific data
+        for c_name_match in collection_names:
+            s_id = c_name_match[0]
+            c_id = c_name_match[1]
+
+            scope_name = scope_id_mapping[s_id]
+            c_name = c_name_match[2]
+
             if scope_name not in collection_data:
                 collection_data[scope_name] = dict()
-            collection_data[scope_name][collection_name] = dict()
-            collection_data[scope_name][collection_name]["id"] = collection[2]
 
-        # Fetch all items count for each collection
-        collection_items = collection_items_pattern.findall(str(output))
-        for c_data in collection_items:
-            scope_name = c_data[0]
-            c_name = c_data[1]
-            collection_data[scope_name][c_name]["num_items"] = int(c_data[2])
+            curr_col_items_pattern = collection_items_pattern % (s_id, c_id)
+            curr_col_items_pattern = re.compile(curr_col_items_pattern)
+            items_match = int(curr_col_items_pattern.findall(output)[0])
+
+            collection_data[scope_name][c_name] = dict()
+            collection_data[scope_name][c_name]["id"] = c_id
+            collection_data[scope_name][c_name]["num_items"] = items_match
+
         return collection_data
 
     def get_collection_details(self, bucket_name):
