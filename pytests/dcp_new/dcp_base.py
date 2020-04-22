@@ -184,7 +184,7 @@ class DCPBase(CollectionBase):
                 uid = format(uid, 'x')
                 sid = format(sid, 'x')
                 cid = format(cid, 'x')
-                string = "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:\"{}\", id:{}, scope:{}, manifest:{}," \
+                string = "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:{}, id:{}, scope:{}, manifest:{}," \
                       " seqno:{}".format(response['vbucket'],
                                          response['streamId'],
                                          response['key'],
@@ -204,7 +204,7 @@ class DCPBase(CollectionBase):
                 uid = format(uid, 'x')
                 sid = format(sid, 'x')
                 cid = format(cid, 'x')
-                string = "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:\"{}\", id:{}, scope:{}, ttl:{}, " \
+                string = "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:{}, id:{}, scope:{}, ttl:{}, " \
                       "manifest:{}, seqno:{}".format(response['vbucket'],
                                                      response['streamId'],
                                                      response['key'],
@@ -231,7 +231,10 @@ class DCPBase(CollectionBase):
             sid = format(sid, 'x')
             cid = format(cid, 'x')
             string = "DCP Event: vb:{}, sid:{}, what:CollectionDROPPED, id:{}, scope:{},  manifest:{}, " \
-                  "seqno:{}".format(response['vbucket'], response['streamId'], cid, sid, uid, response['by_seqno'])
+                  "seqno:{}".format(response['vbucket'],
+                                    response['streamId'],
+                                    cid, sid, uid,
+                                    response['by_seqno'])
             self.output_string.append(string)
             manifest['uid'] = uid
             collections = []
@@ -249,7 +252,7 @@ class DCPBase(CollectionBase):
             uid, sid = struct.unpack(">QI", response['value'])
             uid = format(uid, 'x')
             sid = format(sid, 'x')
-            string = "DCP Event: vb:{}, sid:{}, what:ScopeCREATED, name:\"{}\", id:{}, manifest:{}, " \
+            string = "DCP Event: vb:{}, sid:{}, what:ScopeCREATED, name:{}, id:{}, manifest:{}, " \
                   "seqno:{}".format(response['vbucket'],
                                     response['streamId'],
                                     response['key'],
@@ -271,7 +274,8 @@ class DCPBase(CollectionBase):
             uid = format(uid, 'x')
             sid = format(sid, 'x')
             string ="DCP Event: vb:{}, sid:{}, what:ScopeDROPPED, id:{}, manifest:{}, " \
-                  "seqno:{}".format(response['vbucket'], response['streamId'], sid, uid, response['by_seqno'])
+                  "seqno:{}".format(response['vbucket'], response['streamId'],
+                                     sid, uid, response['by_seqno'])
             self.output_string.append(string)
             manifest['uid'] = uid
             scopes = []
@@ -412,9 +416,9 @@ class DCPBase(CollectionBase):
         # stream-request value, or an array of many values. Use of many values
         # is intended to be used in conjunction with enable_stream_id and sid
         if self.collections and self.filter_file != None:
-            filter_file = open(self.filter_file, "r")
-            jsonData = filter_file.read()
-            parsed = json.loads(jsonData)
+#             filter_file = open(self.filter_file, "r")
+#             jsonData = filter_file.read()
+            parsed = json.loads(self.filter_file)
 
             # Is this an array or singular filter?
             if 'streams' in parsed:
@@ -422,7 +426,7 @@ class DCPBase(CollectionBase):
                     filter_json.append(json.dumps(f))
             else:
                 # Assume entire document is the filter
-                filter_json.append(jsonData)
+                filter_json.append(self.filter_file)
             self.log.info("DCP Open filter: {}".format(filter_json))
         else:
             filter_json.append('')
