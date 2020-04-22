@@ -216,3 +216,34 @@ class DcpTestCase(DCPBase):
         if self.create_collection:
             self.check_dcp_event(collection_name, output_string)
         self.validate_test_failure()
+
+    def test_stream_multiple_collections(self):
+        self.num_collection_stream = self.input.param("num_collection", 2)
+        collections = self.bucket_util.get_random_collections(
+                                    [self.bucket], "all", "all",
+                                    self.num_collection_stream)
+
+        list_uid = []
+        total_items = 0
+        for self.bucket_name, scope_dict in collections.iteritems():
+            bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
+                                                self.bucket_name)
+            scope_dict = scope_dict["scopes"]
+            for scope_name, collection_dict in scope_dict.items():
+                collection_dict = collection_dict["collections"]
+                for c_name, _ in collection_dict.items():
+                    list_uid.append(self.get_collection_id(self.bucket_name,
+                                                 scope_name, c_name))
+                    total_items += bucket.scopes[scope_name] \
+                            .collections[c_name].num_items
+
+        self.filter_file = {"collections": list_uid}
+        self.filter_file = json.dumps(self.filter_file)
+        output_string = self.get_dcp_event()
+
+        # verify item count
+        actual_item_count = len(list(filter(lambda x: 'CMD_MUTATION' in x, output_string)))
+        if actual_item_count != total_items:
+            self.log_failure("item count mismatch, expected %s actual %s"\
+                             %(total_items, actual_item_count))
+        self.validate_test_failure()
