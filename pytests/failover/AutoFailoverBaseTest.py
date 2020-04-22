@@ -167,6 +167,9 @@ class AutoFailoverBaseTest(BaseTestCase):
             elif over_ride_param == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                     self.durability_level
+            elif over_ride_param == "replicas":
+                target_spec[Bucket.replicaNumber] = \
+                    eval(self.num_replicas)
 
 
     def bareSetUp(self):
