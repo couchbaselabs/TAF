@@ -743,20 +743,50 @@ class BasicCrudTests(MagmaBaseTest):
         """
         Read same docs together using multithreads.
         """
-        self.log.info("Reading docs parallelly using multi thread")
+        self.log.info("Reading docs parallelly using multi threading")
         tasks_info = dict()
+        count = 0
         self.doc_ops = "read"
+
+        # if self.next_half is true then one thread will read
+        # in ascending order and other in descending order
+
+        if self.next_half:
+            start = -int(self.num_items - 1)
+            end = 1
+            g_read = doc_generator(
+                self.key, start, end,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
         for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
                 shell.disconnect()
 
-        for _ in range(0, self.read_thread_count+1):
+        while count < self.read_thread_count:
             read_task_info = self.loadgen_docs(
                 self.retry_exceptions,
                 self.ignore_exceptions,
                 _sync=False)
             tasks_info.update(read_task_info.items())
+            count += 1
+            if self.next_half and count < self.read_thread_count:
+                read_tasks_info = self.bucket_util._async_validate_docs(
+                    self.cluster, g_read, "read", 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    pause_secs=5, timeout_secs=self.sdk_timeout,
+                    retry_exceptions=self.retry_exceptions,
+                    ignore_exceptions=self.ignore_exceptions)
+                tasks_info.update(read_task_info.items())
+                count += 1
 
         for task in tasks_info:
                 self.task_manager.get_task_result(task)
