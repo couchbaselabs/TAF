@@ -255,18 +255,18 @@ class MagmaBaseTest(BaseTestCase):
             wal += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
             " % os.path.join(RestConnection(server).get_data_path(),
                              bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
-            keyTree += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
+            keyTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
             " % os.path.join(RestConnection(server).get_data_path(),
                              bucket.name, "magma.*/kv*/rev*/key*"))[0][0].split('\n')[0])
-            seqTree += int(shell.execute_command("du -cb %s | tail -1 | awk '{print $1}'\
+            seqTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
             " % os.path.join(RestConnection(server).get_data_path(),
                              bucket.name, "magma.*/kv*/rev*/seq*"))[0][0].split('\n')[0])
             shell.disconnect()
         self.log.info("Disk usage stats for bucekt {} is below".format(bucket.name))
         self.log.info("Total Disk usage for kvstore is {}MB".format(kvstore))
         self.log.debug("Total Disk usage for wal is {}MB".format(wal))
-        self.log.debug("Total Disk usage for keyTree is {}B".format(keyTree))
-        self.log.debug("Total Disk usage for seqTree is {}B".format(seqTree))
+        self.log.debug("Total Disk usage for keyTree is {}MB".format(keyTree))
+        self.log.debug("Total Disk usage for seqTree is {}MB".format(seqTree))
         disk_usage.extend([kvstore, wal, keyTree, seqTree])
         return disk_usage
 
