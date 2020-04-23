@@ -232,14 +232,11 @@ class MagmaSpaceAmplification(MagmaFailures):
         metadata_size = 200
         exact_size = self.num_items*(self.doc_size + metadata_size)\
             * (1 + self.num_replicas)
-        max_size = initial_data_size * 2.1
+        max_size = initial_data_size * 2.5
         for i in xrange(1, self.num_updates+1):
             self.log.info("Iteration: {}, updating {} items".
                           format(i, self.num_items))
-            self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
-                self.bucket_util.buckets[0],
-                wait_time=self.wait_timeout * 10))
+
             self.gen_update = doc_generator(
                 self.key, 0, self.num_items,
                 doc_size=self.doc_size, doc_type=self.doc_type,
@@ -247,7 +244,8 @@ class MagmaSpaceAmplification(MagmaFailures):
                 vbuckets=self.cluster_util.vbuckets,
                 randomize=self.randomize_value)
             self.loadgen_docs(_sync=True)
-            self.bucket_util._wait_for_stats_all_buckets()
+
+            self.bucket_util._wait_for_stats_all_buckets(timeout=self.wait_timeout*20)
             self.bucket_util.print_bucket_stats()
 
             disk_size = self.get_disk_usage(bucket)[0]
@@ -259,6 +257,7 @@ class MagmaSpaceAmplification(MagmaFailures):
                 )
             self.bucket_util.verify_stats_all_buckets(self.num_items,
                                                       timeout=300)
+
         data_validation = self.task.async_validate_docs(
             self.cluster, self.bucket_util.buckets[0],
             self.gen_update, "update", 0, batch_size=self.batch_size,

@@ -15,6 +15,7 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
+from cb_tools.cb_cli import CbCli
 
 
 class BaseTestCase(unittest.TestCase):
@@ -46,6 +47,7 @@ class BaseTestCase(unittest.TestCase):
         self.gsi_type = self.input.param("gsi_type", 'plasma')
         # CBAS setting
         self.jre_path = self.input.param("jre_path", None)
+        self.enable_dp = self.input.param("enable_dp", False)
         # End of cluster info parameters
 
         # Bucket specific params
@@ -275,6 +277,14 @@ class BaseTestCase(unittest.TestCase):
                     self.log.info("{0} initialized".format(cluster))
             else:
                 self.quota = ""
+
+            # Enable dp_version since we need collections enabled
+            if self.enable_dp:
+                for server in self.cluster.servers:
+                    shell_conn = RemoteMachineShellConnection(server)
+                    cb_cli = CbCli(shell_conn)
+                    cb_cli.enable_dp()
+                    shell_conn.disconnect()
 
             for cluster in self.__cb_clusters:
                 cluster_util = ClusterUtils(cluster, self.task_manager)

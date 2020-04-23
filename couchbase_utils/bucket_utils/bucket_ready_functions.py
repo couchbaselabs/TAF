@@ -617,7 +617,7 @@ class BucketUtils:
     def _wait_for_stats_all_buckets(self, ep_queue_size=0,
                                     ep_queue_size_cond='==',
                                     check_ep_items_remaining=False,
-                                    timeout=60):
+                                    timeout=500):
         """
         Waits for queues to drain on all servers and buckets in a cluster.
 

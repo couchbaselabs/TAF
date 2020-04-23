@@ -36,6 +36,7 @@ import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from Jython_tasks.task_manager import TaskManager
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
+from mc_bin_client import MemcachedError
 
 
 class Task(Callable):
@@ -2162,11 +2163,14 @@ class StatsWaitTask(Task):
                 val_dict[cb_stat_obj.shellConn.ip] = tem_stat
                 if tem_stat and tem_stat != "None":
                     stat_result += int(tem_stat)
+        except MemcachedError as e:
+            self.test_log.warn("Hitting memcached error while running cbstats: %s" %
+                               e)
         except Exception as error:
-            for shell in self.shellConnList:
-                shell.disconnect()
-            self.set_exception(error)
-            self.stop = True
+#             for shell in self.shellConnList:
+#                 shell.disconnect()
+#             self.set_exception(error)
+#             self.stop = True
             return False
         if not self._compare(self.comparison, str(stat_result), self.value):
             self.test_log.warn("Not Ready: %s %s %s %s. Received: %s for bucket '%s'"
