@@ -286,7 +286,8 @@ class ServerTasks(object):
                                       num_threads=5, record_fail=False,
                                       defer=False,
                                       scope=CbServer.default_scope,
-                                      collection=CbServer.default_collection):
+                                      collection=CbServer.default_collection,
+                                      start_task=True):
 
         self.log.info("Loading documents ")
         bucket_list = list()
@@ -319,7 +320,8 @@ class ServerTasks(object):
             transaction_timeout=transaction_timeout, commit=commit,
             durability=durability, sync=sync, num_threads=num_threads,
             record_fail=record_fail, defer=defer)
-        self.jython_task_manager.add_new_task(_task)
+        if start_task:
+            self.jython_task_manager.add_new_task(_task)
         return _task
 
     def load_bucket_into_dgm(self, cluster, bucket, key, num_items,

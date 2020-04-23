@@ -1,13 +1,11 @@
 from math import ceil
 
 from basetestcase import BaseTestCase
-from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
-from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
 
