@@ -27,6 +27,7 @@ class CollectionsRebalance(CollectionBase):
         self.warmup = self.input.param("warmup", False)
         self.update_replica = self.input.param("update_replica", False)  # for replica + rebalance tests
         self.num_replicas = self.input.param("num_replicas", 1)  # for replica + rebalance tests
+        self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster", False) # To change during rebalance
         if (self.compaction):
             self.compaction_tasks = list()
 
@@ -48,6 +49,14 @@ class CollectionsRebalance(CollectionBase):
         shell.start_couchbase()
         shell.disconnect()
         self.log.info("Done warming up...")
+
+    def set_ram_quota_cluster(self):
+        self.sleep(45, "Wait for rebalance have some progress")
+        self.log.info("Changing cluster RAM size")
+        status = self.rest.init_cluster_memoryQuota(self.cluster.master.rest_username,
+                                           self.cluster.master.rest_password,
+                                           memoryQuota=3000)
+        self.assertTrue(status, "RAM quota wasn't changed")
 
     def update_bucket_replica(self):
         self.log.info("Updating all the bucket replicas to {0}".format(self.replicas_for_failover))
@@ -121,6 +130,8 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
                     if self.compaction:
                         self.compact_all_buckets()
+                    if self.change_ram_quota_cluster:
+                        self.set_ram_quota_cluster()
             else:
                 # list of lists each of length step_count
                 remove_list = []
@@ -165,6 +176,8 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [])
                     if self.compaction:
                         self.compact_all_buckets()
+                    if self.change_ram_quota_cluster:
+                        self.set_ram_quota_cluster()
             else:
                 # list of lists each of length step_count
                 add_list = []
@@ -214,6 +227,8 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
                     if self.compaction:
                         self.compact_all_buckets()
+                    if self.change_ram_quota_cluster:
+                        self.set_ram_quota_cluster()
             else:
                 #list of lists each of length step_count
                 add_list = []
@@ -266,6 +281,8 @@ class CollectionsRebalance(CollectionBase):
                 operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
                 if self.compaction:
                     self.compact_all_buckets()
+                if self.change_ram_quota_cluster:
+                    self.set_ram_quota_cluster()
         elif rebalance_operation == "graceful_failover_rebalance_out":
             if step_count == -1:
                 failover_count = 0
@@ -278,6 +295,8 @@ class CollectionsRebalance(CollectionBase):
                     self.compact_all_buckets()
                 self.data_load_after_failover()
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+                if self.change_ram_quota_cluster:
+                    self.set_ram_quota_cluster()
             else:
                 # list of lists each of length step_count
                 failover_list = []
@@ -314,6 +333,8 @@ class CollectionsRebalance(CollectionBase):
                     self.compact_all_buckets()
                 self.data_load_after_failover()
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+                if self.change_ram_quota_cluster:
+                    self.set_ram_quota_cluster()
             else:
                 # list of lists each of length step_count
                 failover_list = []
@@ -354,6 +375,8 @@ class CollectionsRebalance(CollectionBase):
                     self.compact_all_buckets()
                 # Rebalance all the nodes
                 operation = self.task.async_rebalance(known_nodes, [], [])
+                if self.change_ram_quota_cluster:
+                    self.set_ram_quota_cluster()
             else:
                 # list of lists each of length step_count
                 failover_list = []
@@ -398,6 +421,8 @@ class CollectionsRebalance(CollectionBase):
                     self.compact_all_buckets()
                 # Rebalance all the nodes
                 operation = self.task.async_rebalance(known_nodes, [], [])
+                if self.change_ram_quota_cluster:
+                    self.set_ram_quota_cluster()
             else:
                 # list of lists each of length step_count
                 failover_list = []
