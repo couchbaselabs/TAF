@@ -3,6 +3,7 @@ import json
 import sys
 
 from BucketLib.bucket import Bucket
+from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import \
@@ -33,6 +34,20 @@ class SubdocBaseTest(BaseTestCase):
             bucket_type=self.bucket_type, storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
+
+        # Create required scope/collection for testing
+        if self.collection_name != CbServer.default_collection:
+            self.collection_name = self.bucket_util.get_random_name()
+            if self.scope_name != CbServer.default_scope:
+                self.scope_name = self.bucket_util.get_random_name()
+                self.bucket_util.create_scope(self.cluster.master,
+                                              self.bucket_util.buckets[0],
+                                              {"name": self.scope_name})
+            self.bucket_util.create_collection(
+                self.cluster.master,
+                self.bucket_util.buckets[0],
+                scope_name=self.scope_name,
+                collection_spec={"name": self.collection_name})
 
         for bucket in self.bucket_util.buckets:
             testuser = [{'id': bucket.name,
@@ -1591,7 +1606,10 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
         self.client = SDKClient([self.cluster.master],
-                                self.bucket_util.buckets[0])
+                                self.bucket_util.buckets[0],
+                                scope=self.scope_name,
+                                collection=self.collection_name,
+                                compression_settings=self.sdk_compression)
 
     def tearDown(self):
         # Close the SDK connections
@@ -1649,6 +1667,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             sync_write_task = self.task.async_load_gen_docs(
                 self.cluster, self.bucket_util.buckets[0],
                 doc_gen["doc_crud"], op_type,
+                scope=self.scope_name,
+                collection=self.collection_name,
                 batch_size=1,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
@@ -1773,6 +1793,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             sync_write_task = self.task.async_load_gen_sub_docs(
                 self.cluster, self.bucket_util.buckets[0],
                 doc_gen[op_type], op_type,
+                scope=self.scope_name,
+                collection=self.collection_name,
                 path_create=True,
                 xattr=self.xattr,
                 batch_size=1,

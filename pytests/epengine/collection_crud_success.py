@@ -1,5 +1,4 @@
 from copy import deepcopy
-from random import randint
 
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
@@ -7,6 +6,7 @@ from bucket_collections.collections_base import CollectionBase
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from error_simulation.disk_error import DiskError
 from remote.remote_util import RemoteMachineShellConnection
@@ -19,21 +19,6 @@ class CollectionsSuccessTests(CollectionBase):
 
     def tearDown(self):
         super(CollectionsSuccessTests, self).tearDown()
-
-    def __getTargetNodes(self):
-        def select_randam_node(nodes):
-            rand_node_index = randint(1, self.nodes_init-1)
-            if self.cluster.nodes_in_cluster[rand_node_index] not in node_list:
-                nodes.append(self.cluster.nodes_in_cluster[rand_node_index])
-
-        node_list = list()
-        if len(self.cluster.nodes_in_cluster) > 1:
-            # Choose random nodes, if the cluster is not a single node cluster
-            while len(node_list) != self.num_nodes_affected:
-                select_randam_node(node_list)
-        else:
-            node_list.append(self.cluster.master)
-        return node_list
 
     def __load_data_for_sub_doc_ops(self):
         new_data_load_template = \
@@ -53,7 +38,6 @@ class CollectionsSuccessTests(CollectionBase):
                 mutation_num=0)
         if doc_loading_task.result is False:
             self.fail("Extra doc loading task failed")
-
 
     def __perform_collection_crud(self):
         collection_crud_spec = dict()
@@ -196,7 +180,9 @@ class CollectionsSuccessTests(CollectionBase):
         vb_info_info["afterCrud"] = dict()
 
         self.log.info("Selecting nodes to simulate error condition")
-        target_nodes = self.__getTargetNodes()
+        target_nodes = DurabilityHelper.getTargetNodes(self.cluster,
+                                                       self.nodes_init,
+                                                       self.num_nodes_affected)
 
         self.log.info("Simulate error condition on %s" % target_nodes)
         for node in target_nodes:
@@ -331,7 +317,9 @@ class CollectionsSuccessTests(CollectionBase):
         vb_info_info["afterCrud"] = dict()
 
         self.log.info("Selecting nodes to simulate error condition")
-        target_nodes = self.__getTargetNodes()
+        target_nodes = DurabilityHelper.getTargetNodes(self.cluster,
+                                                       self.nodes_init,
+                                                       self.num_nodes_affected)
 
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:
@@ -894,7 +882,9 @@ class CollectionsSuccessTests(CollectionBase):
             MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION] = 25
 
         self.log.info("Selecting nodes to simulate error condition")
-        target_nodes = self.__getTargetNodes()
+        target_nodes = DurabilityHelper.getTargetNodes(self.cluster,
+                                                       self.nodes_init,
+                                                       self.num_nodes_affected)
 
         # Create new docs for sub-doc operations to run
         self.__load_data_for_sub_doc_ops()
@@ -1002,7 +992,9 @@ class CollectionsSuccessTests(CollectionBase):
         self.__load_data_for_sub_doc_ops()
 
         self.log.info("Selecting nodes to simulate error condition")
-        target_nodes = self.__getTargetNodes()
+        target_nodes = DurabilityHelper.getTargetNodes(self.cluster,
+                                                       self.nodes_init,
+                                                       self.num_nodes_affected)
 
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:

@@ -1,4 +1,6 @@
 from json import loads as json_loads
+from random import randint
+
 from math import floor
 
 from BucketLib.BucketOperations import BucketHelper
@@ -65,6 +67,22 @@ class DurabilityHelper:
             return DurabilityLevel.PERSIST_TO_MAJORITY
 
         return DurabilityLevel.NONE
+
+    @staticmethod
+    def getTargetNodes(cluster, nodes_init, num_nodes_affected):
+        def select_random_node(nodes):
+            rand_node_index = randint(1, nodes_init-1)
+            if cluster.nodes_in_cluster[rand_node_index] not in node_list:
+                nodes.append(cluster.nodes_in_cluster[rand_node_index])
+
+        node_list = list()
+        if len(cluster.nodes_in_cluster) > 1:
+            # Choose random nodes, if the cluster is not a single node cluster
+            while len(node_list) != num_nodes_affected:
+                select_random_node(node_list)
+        else:
+            node_list.append(cluster.master)
+        return node_list
 
     def durability_succeeds(self, bucket_name, master,
                             induced_error=None, failed_nodes=[]):

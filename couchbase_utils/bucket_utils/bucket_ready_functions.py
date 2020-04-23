@@ -147,6 +147,7 @@ class DocLoaderUtils(object):
                                      cluster,
                                      buckets,
                                      crud_spec,
+                                     batch_size=200,
                                      async_load=False):
         """
         Will load(only Creates) all given collections under all bucket objects.
@@ -157,6 +158,7 @@ class DocLoaderUtils(object):
         :param crud_spec: Dict for bucket-scope-collections with
                           appropriate doc_generator objects.
                           (Returned from create_doc_gens_for_spec function)
+        :param batch_size: Batch size to use during doc_loading tasks
         :param async_load: (Boolean) To wait for doc_loading to finish or not
         :return: List of doc_loading tasks
         """
@@ -167,7 +169,7 @@ class DocLoaderUtils(object):
         task = task_manager.async_load_gen_docs_from_spec(
             cluster, task_manager.jython_task_manager, loader_spec,
             DocLoaderUtils.sdk_client_pool,
-            batch_size=200,
+            batch_size=batch_size,
             process_concurrency=1,
             print_ops_rate=True,
             start_task=True,
@@ -496,7 +498,9 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def run_scenario_from_spec(task_manager, cluster, buckets,
-                               input_spec, mutation_num=1,
+                               input_spec,
+                               batch_size=200,
+                               mutation_num=1,
                                async_load=False,
                                validate_task=True):
         """
@@ -505,6 +509,7 @@ class DocLoaderUtils(object):
                         To create SDK connections / REST client
         :param buckets: List of bucket objects considered for doc loading
         :param input_spec: CRUD spec (JSON format)
+        :param batch_size: Batch size to use during doc_loading tasks
         :param mutation_num: Mutation field value to be used in doc_generator
         :param async_load: (Bool) To wait for doc_loading to finish or not
         :param validate_task: (Bool) To validate doc_loading results or not
@@ -523,6 +528,7 @@ class DocLoaderUtils(object):
             cluster,
             buckets,
             crud_spec,
+            batch_size=batch_size,
             async_load=async_load)
         if not async_load and validate_task:
             DocLoaderUtils.validate_doc_loading_results(doc_loading_task)

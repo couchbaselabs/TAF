@@ -149,6 +149,10 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure("Failover stats mismatch. {0} != {1}"
                              .format(vb_info["failure_stat"],
                                      vb_info["create_stat"]))
+        # Close all SSH sessions
+        for node in nodes_in_cluster:
+            shell_conn[node.ip].disconnect()
+
         self.validate_test_failure()
 
     def test_sync_write_in_progress(self):
