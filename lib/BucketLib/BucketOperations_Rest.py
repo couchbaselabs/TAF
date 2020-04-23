@@ -297,8 +297,7 @@ class BucketHelper(RestConnection):
                        'flushEnabled': bucket_params.get('flushEnabled'),
                        'evictionPolicy': bucket_params.get('evictionPolicy'),
                        'compressionMode': bucket_params.get('compressionMode'),
-                       'maxTTL': bucket_params.get('maxTTL'),
-                       'storageBackend': bucket_params.get('storageBackend')}
+                       'maxTTL': bucket_params.get('maxTTL')}
 
         # Remove 'replicaNumber' in case of MEMCACHED bucket
         if bucket_params.get("bucketType") == Bucket.Type.MEMCACHED:

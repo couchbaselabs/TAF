@@ -164,6 +164,9 @@ class BucketUtils:
                               % (bucket.name, raise_exception)
             raise Exception(raise_exception)
 
+        if bucket.storageBackend == Bucket.StorageBackend.magma:
+            self.update_bucket_props("backend", "magma", [bucket])
+
     def delete_bucket(self, serverInfo, bucket, wait_for_bucket_deletion=True):
         self.log.debug('Deleting existing bucket {0} on {1}'
                        .format(bucket, serverInfo))
@@ -437,6 +440,8 @@ class BucketUtils:
                 if not warmed_up:
                     success = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name
+                elif bucket.storageBackend == Bucket.StorageBackend.magma:
+                    self.update_bucket_props("backend", "magma", [bucket])
 
             if raise_exception:
                 raise Exception(raise_exception)
