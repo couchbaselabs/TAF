@@ -526,18 +526,22 @@ class BaseTestCase(unittest.TestCase):
 
                 self.log.info("Copying cbcollect ZIP file to Client")
                 remote_client = RemoteMachineShellConnection(node)
-                cb_collect_path = \
+                if 'perNode' in cb_collect_response:
+                    cb_collect_path = \
                     cb_collect_response['perNode'][params['nodes']]['path']
-                zip_file_copied = remote_client.get_file(
-                    os.path.dirname(cb_collect_path),
-                    os.path.basename(cb_collect_path),
-                    log_path)
-                self.log.info("%s node cb collect zip coped on client : %s"
-                              % (node.ip, zip_file_copied))
-
-                if zip_file_copied:
-                    remote_client.execute_command("rm -f %s" % cb_collect_path)
-                    remote_client.disconnect()
+                    zip_file_copied = remote_client.get_file(
+                        os.path.dirname(cb_collect_path),
+                        os.path.basename(cb_collect_path),
+                        log_path)
+                    self.log.info(
+                        "%s node cb collect zip coped on client : %s"
+                        % (node.ip, zip_file_copied))
+                    if zip_file_copied:
+                        remote_client.execute_command("rm -f %s" % cb_collect_path)
+                        remote_client.disconnect()
+                else:
+                    self.log.error("Failed to retrieve zip file path on node {}\
+                    ".format(node.ip))
             else:
                 self.log.error("API perform_cb_collect returned False")
 
