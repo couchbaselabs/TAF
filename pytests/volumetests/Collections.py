@@ -26,6 +26,7 @@ class volume(CollectionBase):
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
+        self.contains_ephemeral = self.input.param("contains_ephemeral", True)
 
     # Stopping and restarting the memcached process
     def stop_process(self):
@@ -141,8 +142,8 @@ class volume(CollectionBase):
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
-            if "ephemeral" in self.bucket_type:
-                self.log.info("No Memcached kill for epehemral bucket")
+            if self.contains_ephemeral:
+                self.log.info("No Memcached kill for ephemeral bucket")
             else:
                 self.log.info("Step 10: Stopping and restarting memcached process")
                 rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
