@@ -7,8 +7,7 @@ from datetime import datetime
 import uuid
 
 sys.path = [".", "lib"] + sys.path
-from platform_utils.remote.remote_util import \
-    RemoteMachineShellConnection
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 import TestInput
 import logging.config
 
@@ -46,6 +45,7 @@ class CommandRunner(object):
         print self.server.ip
         print "\n".join(output)
         print "\n".join(error)
+        remote_client.disconnect()
 
 
 class ScriptRunner(object):
@@ -63,6 +63,7 @@ class ScriptRunner(object):
         print self.server.ip
         print "\n".join(output)
         print "\n".join(error)
+        remote_client.disconnect()
 
 
 class RemoteJob(object):
