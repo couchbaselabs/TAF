@@ -836,6 +836,12 @@ class BasicCrudTests(MagmaBaseTest):
         REPEAT ABove test_itr_times
         """
         self.log.info("Cretaing  and Deletes docs n times ")
+
+        keyTree, seqTree = (self.get_disk_usage(
+                        self.bucket_util.get_all_buckets()[0],
+                        self.servers)[2:4])
+        self.log.debug("Initial Disk usage for keyTree and SeqTree is '\n'\
+        {}MB and {} MB".format(keyTree, seqTree))
         count = 0
         start = 0
         end = self.num_items
@@ -862,17 +868,16 @@ class BasicCrudTests(MagmaBaseTest):
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
-            _res = disk_usage[0]
+
             self.log.info("disk usage after delete count {} \
-            is {}MB".format(count+1, _res))
-            self.assertIs(
-                _res > 2.5 * self.disk_usage[
-                    self.disk_usage.keys()[0]],
-                False, "Disk Usage {}MB After \
-                delete count {} exceeds \
-                Actual disk usage {}MB by \
-                2.5 times".format(_res, count+1,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
+            is {}MB".format(count+1, disk_usage))
+
+            self.assertEqual((
+                self.disk_usage[self.disk_usage.keys()[0]],
+                keyTree, seqTree), (disk_usage[0],
+                                    disk_usage[2],
+                                    disk_usage[3]))
+
             self.doc_ops = "create"
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
