@@ -1,4 +1,4 @@
-from couchbase_helper.documentgenerator import BlobGenerator
+from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
 from membase.api.rest_client import RestConnection, RestHelper
 from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_base import RebalanceBaseTest
@@ -16,9 +16,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.extra_servs_out = [self.servers[self.nodes_init - i - 1 - self.nodes_out] for i in range(extra_nodes_out)]
         self.withMutationOps = self.input.param("withMutationOps", True)
         self.sleep_before_rebalance = self.input.param("sleep_before_rebalance", 0)
-        self.num_items = 20000
-        self.items = 20000
-        self.gen_update = self.get_doc_generator(0, (self.items / 2))
+        if self.spec_name is not None:
+            self.num_items = 20000
+            self.items = 20000
+            # We need to use "test_collections" key for update, since doc_loading was done from spec
+            self.gen_update = doc_generator("test_collections", 0, (self.items / 2),  mutation_type="SET")
 
 
     def tearDown(self):
@@ -224,7 +226,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
                 if self.withMutationOps:
-                    self.load_all_buckets(self.gen_update, "update")
+                    tasks = self.load_all_buckets(self.gen_update, "update")
+                    self.tasks_result(tasks)
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
             if RestHelper(rest).is_cluster_rebalanced():
@@ -254,8 +257,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             """
         fail_over = self.input.param("fail_over", False)
         tasks = self.load_all_buckets(self.gen_update, "update")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.tasks_result(tasks)
+        self.validate_docs()
         self.sleep(20)
 
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
