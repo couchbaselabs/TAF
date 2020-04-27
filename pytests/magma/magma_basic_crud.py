@@ -1,5 +1,6 @@
 import copy
 import math
+import threading
 
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
@@ -652,26 +653,17 @@ class BasicCrudTests(MagmaBaseTest):
                 Actual disk usage {} by four \
                 times".format(_res, i+1,
                               self.disk_usage[self.disk_usage.keys()[0]]))
-        self.log.info("====test_update_rev_update ends====")
-
+        self.log.info("====test_update_rev_update ends====") 
     def test_update_single_doc_n_times(self):
         """
-        Update same document n times,  where n is number which
-        gets derived from given fragmentation value and after
-        updates check for space amplification and data
-        validation
+        Update same document 100k times,
+        Important Note: Multithreading is used to update
+        single doc, since we are not worried about what
+        should be the final val of mutate in doc
+        semaphores have been avoided(also to speed up
+        the execution of test)
+        v
         """
-        count = 0
-        self.assertIs(
-            (self.fragmentation <= 0 or self.fragmentation >= 100),
-            False, msg="Fragmentation value can't be <=0 or >=100")
-        update_count = int(
-            math.ceil(
-                float(
-                    self.fragmentation * self.num_items) / (
-                        100 - self.fragmentation)))
-        self.log.info("{} is the count with which doc will be updated \
-        ".format(update_count))
         self.doc_ops = "update"
 
         self.client = SDKClient([self.cluster.master],
@@ -685,13 +677,12 @@ class BasicCrudTests(MagmaBaseTest):
                 target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 key_size=self.key_size,
-                mutate=count,
+                mutate=0,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
                 mix_key_size=self.mix_key_size,
                 deep_copy=self.deep_copy)
         key, val = self.gen_update.next()
-
         for node in self.cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(node)
             shell.kill_memcached()
@@ -702,33 +693,37 @@ class BasicCrudTests(MagmaBaseTest):
                     self.bucket_util.buckets[0],
                     wait_time=self.wait_timeout * 10))
 
-        while count < (update_count + 1):
-            self.log.debug("Update Iteration count == {}".format(count))
-            val.put("mutated", count+1)
-            self.client.upsert(key, val)
-            count += 1
+        def upsert_d(start_num, end_num, key_obj, val_obj):
+            for i in range(start_num, end_num):
+                val_obj.put("mutated", 0)
+                self.client.upsert(key_obj, val_obj)
+
+        threads = []
+        for t in range(10):
+            start_n = 0 + t*10000
+            end_n = start_n + 10000
+            th = threading.Thread(
+                target=upsert_d, args=[start_n, end_n, key, val])
+            th.start()
+            threads.append(th)
+
+        for th in threads:
+            th.join()
+
         self.bucket_util._wait_for_stats_all_buckets()
 
         disk_usage = self.get_disk_usage(
             self.bucket_util.get_all_buckets()[0],
             self.servers)
-        _res = disk_usage[0]
-        self.log.info("After all updates disk usage is {}MB\
-        ".format(_res))
-        usage_factor = (
-            (float(self.num_items + update_count
-                   ) / self.num_items) + 0.5)
-        self.log.debug("Disk usage factor is {}".format(usage_factor))
-        self.assertIs(
-            _res > usage_factor * self.disk_usage[
-                self.disk_usage.keys()[0]],
-            False, "Disk Usage {}MB After all Updates'\n' \
-            exceeds Actual'\n' \
-            disk usage {}MB by {}'\n' \
-            times".format(
-                _res,
-                self.disk_usage[self.disk_usage.keys()[0]],
-                usage_factor))
+        self.assertEqual(
+            self.disk_usage[self.disk_usage.keys()[0]],
+            disk_usage[0],
+            msg="Disk usage {}MB after updating a '\n' \
+            single doc is not same as initial '\n' \
+            disk usagne{}MB '\n' \
+            ".format(disk_usage[0],
+                     self.disk_usage[self.disk_usage.keys()[0]]))
+
         data_validation = self.task.async_validate_docs(
             self.cluster, self.bucket_util.buckets[0],
             self.gen_update, "update", 0,
@@ -736,6 +731,7 @@ class BasicCrudTests(MagmaBaseTest):
             process_concurrency=self.process_concurrency,
             pause_secs=5, timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
+
         self.enable_disable_swap_space(self.servers, disable=False)
         self.log.info("====test_update_single_doc_n_times====")
 
