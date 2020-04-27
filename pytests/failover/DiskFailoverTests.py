@@ -202,7 +202,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             self.loadgen_tasks.extend(self._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
-            task = self.data_load_from_spec()
+            task = self.data_load_from_spec(async_load=True)
         self.failover_actions[self.failover_action]()
         for node in self.servers_to_add:
             self.rest.add_node(user=self.orchestrator.rest_username,
@@ -246,7 +246,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             self.loadgen_tasks.extend(self._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
-            task = self.data_load_from_spec()
+            task = self.data_load_from_spec(async_load=True)
         self.failover_actions[self.failover_action]()
         self.bring_back_failed_nodes_up()
         self.sleep(30)
@@ -289,8 +289,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             self.loadgen_tasks.extend(self._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
-            task = self.data_load_from_spec()
-        self.failover_actions[self.failover_action]()
+            task = self.data_load_from_spec(async_load=True)
         self.failover_actions[self.failover_action]()
         self.nodes = self.rest.node_statuses()
         self.remove_after_failover = True
