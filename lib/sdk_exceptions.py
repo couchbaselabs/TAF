@@ -1,8 +1,6 @@
 class SDKException(object):
     CasMismatchException = \
         "com.couchbase.client.core.error.CasMismatchException"
-    CollectionDoesNotExistException = \
-        "com.couchbase.client.core.error.CollectionDoesNotExistException"
     CollectionNotFoundException = \
         "com.couchbase.client.core.error.CollectionNotFoundException"
     CollectionsNotAvailableException = \

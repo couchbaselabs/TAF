@@ -20,25 +20,6 @@ class CollectionsSuccessTests(CollectionBase):
     def tearDown(self):
         super(CollectionsSuccessTests, self).tearDown()
 
-    def __load_data_for_sub_doc_ops(self):
-        new_data_load_template = \
-            self.bucket_util.get_crud_template_from_package("initial_load")
-        new_data_load_template[MetaCrudParams.DURABILITY_LEVEL] = \
-            self.durability_level
-        new_data_load_template["doc_crud"][
-            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 100
-        new_data_load_template["subdoc_crud"][
-            MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION] = 50
-        doc_loading_task = \
-            self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.bucket_util.buckets,
-                new_data_load_template,
-                mutation_num=0)
-        if doc_loading_task.result is False:
-            self.fail("Extra doc loading task failed")
-
     def __perform_collection_crud(self):
         collection_crud_spec = dict()
         collection_crud_spec[
@@ -789,7 +770,7 @@ class CollectionsSuccessTests(CollectionBase):
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
 
         # Create new docs for sub-doc operations to run
-        self.__load_data_for_sub_doc_ops()
+        self.load_data_for_sub_doc_ops()
 
         # Create required doc_generators for CRUD ops
         doc_load_template["doc_crud"][
@@ -887,7 +868,7 @@ class CollectionsSuccessTests(CollectionBase):
                                                        self.num_nodes_affected)
 
         # Create new docs for sub-doc operations to run
-        self.__load_data_for_sub_doc_ops()
+        self.load_data_for_sub_doc_ops()
 
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:
@@ -989,7 +970,7 @@ class CollectionsSuccessTests(CollectionBase):
         vb_info_info["afterCrud"] = dict()
         def_bucket = self.bucket_util.buckets[0]
 
-        self.__load_data_for_sub_doc_ops()
+        self.load_data_for_sub_doc_ops()
 
         self.log.info("Selecting nodes to simulate error condition")
         target_nodes = DurabilityHelper.getTargetNodes(self.cluster,

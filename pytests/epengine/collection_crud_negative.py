@@ -22,25 +22,6 @@ class CollectionDurabilityTests(CollectionBase):
     def tearDown(self):
         super(CollectionDurabilityTests, self).tearDown()
 
-    def __load_data_for_sub_doc_ops(self):
-        new_data_load_template = \
-            self.bucket_util.get_crud_template_from_package("initial_load")
-        new_data_load_template[MetaCrudParams.DURABILITY_LEVEL] = \
-            self.durability_level
-        new_data_load_template["doc_crud"][
-            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 100
-        new_data_load_template["subdoc_crud"][
-            MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION] = 50
-        doc_loading_task = \
-            self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.bucket_util.buckets,
-                new_data_load_template,
-                mutation_num=0)
-        if doc_loading_task.result is False:
-            self.fail("Extra doc loading task failed")
-
     def test_crud_failures(self):
         """
         Test to configure the cluster in such a way durability will always fail
@@ -76,7 +57,7 @@ class CollectionDurabilityTests(CollectionBase):
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 10
         else:
-            self.__load_data_for_sub_doc_ops()
+            self.load_data_for_sub_doc_ops()
             doc_load_spec["subdoc_crud"][
                 MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION] = 10
             doc_load_spec["subdoc_crud"][
@@ -577,7 +558,7 @@ class CollectionDurabilityTests(CollectionBase):
         self.crud_batch_size = 5
         expected_failed_doc_num = self.crud_batch_size
 
-        self.__load_data_for_sub_doc_ops()
+        self.load_data_for_sub_doc_ops()
 
         # Acquire SDK client from the pool for performing doc_ops locally
         client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
