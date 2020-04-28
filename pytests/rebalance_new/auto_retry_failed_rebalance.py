@@ -48,6 +48,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
     def data_validation(self, tasks):
         self.task.jython_task_manager.get_task_result(tasks)
+        self.bucket_util.validate_doc_loading_results(tasks)
         if tasks.result is False:
             self.fail("Doc_loading failed")
 
