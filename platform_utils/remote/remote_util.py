@@ -786,7 +786,23 @@ class RemoteMachineShellConnection:
 
     def is_url_live(self, url, exit_if_not_live=True):
         live_url = False
-        status = urllib.urlopen(url).getcode()
+        retry_time = 600
+        sleep_time = 30
+        status = None
+        self.log.info("Polling for URL state. Max poll time: %s secs"
+                      % retry_time)
+        while retry_time > 0:
+            try:
+                status = urllib.urlopen(url).getcode()
+                break
+            except IOError as io_error:
+                if "Address already in use" in str(io_error):
+                    self.log.info("Address already in use. Retry after %s sec"
+                                  % sleep_time)
+                    time.sleep(sleep_time)
+                    retry_time -= sleep_time
+                else:
+                    raise io_error
         if status == 200:
             self.log.info("%s - Url %s is live" % (self.ip, url))
             live_url = True
