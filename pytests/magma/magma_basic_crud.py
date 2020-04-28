@@ -1,6 +1,7 @@
 import copy
 import math
 import threading
+import json as Json
 
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
@@ -653,10 +654,11 @@ class BasicCrudTests(MagmaBaseTest):
                 Actual disk usage {} by four \
                 times".format(_res, i+1,
                               self.disk_usage[self.disk_usage.keys()[0]]))
-        self.log.info("====test_update_rev_update ends====") 
+        self.log.info("====test_update_rev_update ends====")
+
     def test_update_single_doc_n_times(self):
         """
-        Update same document 100k times,
+        Update a single document n times,
         Important Note: Multithreading is used to update
         single doc, since we are not worried about what
         should be the final val of mutate in doc
@@ -693,17 +695,19 @@ class BasicCrudTests(MagmaBaseTest):
                     self.bucket_util.buckets[0],
                     wait_time=self.wait_timeout * 10))
 
-        def upsert_d(start_num, end_num, key_obj, val_obj):
+        def upsert_doc(start_num, end_num, key_obj, val_obj):
             for i in range(start_num, end_num):
-                val_obj.put("mutated", 0)
+                val_obj.put("mutated", i)
                 self.client.upsert(key_obj, val_obj)
 
         threads = []
+        start = 0
+        end = 0
         for t in range(10):
-            start_n = 0 + t*10000
-            end_n = start_n + 10000
+            start = end
+            end += 100000
             th = threading.Thread(
-                target=upsert_d, args=[start_n, end_n, key, val])
+                target=upsert_doc, args=[start, end, key, val])
             th.start()
             threads.append(th)
 
@@ -724,13 +728,22 @@ class BasicCrudTests(MagmaBaseTest):
             ".format(disk_usage[0],
                      self.disk_usage[self.disk_usage.keys()[0]]))
 
-        data_validation = self.task.async_validate_docs(
-            self.cluster, self.bucket_util.buckets[0],
-            self.gen_update, "update", 0,
-            batch_size=self.batch_size,
-            process_concurrency=self.process_concurrency,
-            pause_secs=5, timeout_secs=self.sdk_timeout)
-        self.task.jython_task_manager.get_task_result(data_validation)
+        success, fail = self.client.getMulti([key],
+                                             self.wait_timeout)
+
+        self.assertIs(key in success, True,
+                      msg="key {} doesn't exist\
+                      ".format(key))
+        actual_val = dict()
+        expected_val = Json.loads(val.toString())
+        actual_val = Json.loads(success[key][
+            'value'].toString())
+        self.log.debug("Expected_val= {} and actual_val = {}\
+        ".format(expected_val, actual_val))
+        self.assertIs(expected_val == actual_val, True,
+                      msg="Expected and Actual value differs'\n' \
+                      expected_val== {} and Actual_val =={}\
+                      ".format(expected_val, actual_val))
 
         self.enable_disable_swap_space(self.servers, disable=False)
         self.log.info("====test_update_single_doc_n_times====")
