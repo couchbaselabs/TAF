@@ -9,15 +9,16 @@ from Cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 import json
 from cb_tools.cbstats import Cbstats
+from threading import Thread
 
 class DcpTestCase(DCPBase):
     def setUp(self):
         super(DcpTestCase, self).setUp()
 
-    def check_dcp_event(self, collection_name, output_string, event="create_collection"):
+    def check_dcp_event(self, collection_name, output_string, event="create_collection", count=1):
         if event == "create_collection":
             cmd = "CollectionCREATED, name:"+ collection_name
-            event_count = len(list(filter(lambda x: cmd in x, output_string)))
+            event_count = len(list(filter(lambda x: cmd in x, output_string))) * count
             if event_count == len(self.vbuckets):
                 self.log.info("number of collection creation event matches %s"% event_count)
             else:
@@ -82,21 +83,135 @@ class DcpTestCase(DCPBase):
                 collection_list = scope.collections.values()
                 for collection in collection_list:
                     scope_items += collection.num_items
-        print(scope_items)
         return scope_items
 
-    def test_stream_entire_bucket(self):
-        # get all the scopes
-        scope_list = self.bucket_util.get_active_scopes(self.bucket)
-        # drop scope before streaming dcp events
+    def get_scope_name(self):
         retry =5
         while retry > 0:
             scope_dict = self.bucket_util.get_random_scopes(
                                 self.bucket_util.buckets, 1, 1)
             scope_name = scope_dict[self.bucket.name]["scopes"].keys()[0]
-            if scope_name != CbServer.default_scope: 
+            if scope_name != CbServer.default_scope:
                 break
             retry -= 1
+        return scope_name
+
+    def rebalance_in(self):
+        servs_in = [self.cluster.servers[0 + self.nodes_init]]
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], servs_in, [])
+        self.sleep(10)
+        self.task_manager.get_task_result(rebalance_task)
+        if rebalance_task.result is False:
+                self.fail("Rebalance failed")
+
+    def drop_scope(self):
+        scope_name = self.get_scope_name()
+        if scope_name != CbServer.default_scope:
+            self.bucket_util.drop_scope(
+                self.cluster.master, self.bucket, scope_name)
+        return scope_name
+
+    def drop_collection(self):
+        collections = self.bucket_util.get_random_collections(
+                                    [self.bucket], 1, 1, 1)
+        scope_dict = collections[self.bucket.name]["scopes"]
+        scope_name = scope_dict.keys()[0]
+        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        self.bucket_util.drop_collection(self.cluster.master,
+                                        self.bucket,
+                                        scope_name,
+                                        collection_name)
+        return scope_name, collection_name
+
+    def __perform_operation(self):
+        if self.operation == "rebalance":
+            self.rebalance_in()
+
+        elif self.operation == "replica_update":
+            self.rebalance_in()
+            self.sleep(10)
+            self.bucket_util.update_all_bucket_replicas(1)
+
+        elif self.operation == "drop_scope":
+            self.scope_name = self.drop_scope()
+
+        elif self.operation == "recreate_scope":
+            self.scope_name = self.drop_scope()
+            print self.scope_name
+            self.bucket_util.create_scope(self.cluster.master,
+                                         self.bucket,
+                                         {"name": self.scope_name})
+
+        elif self.operation == "drop_collection":
+            self.drop_collection()
+
+        elif self.operation == "recreate_collection":
+            self.scope_name, self.collection_name = self.drop_collection()
+            print(self.scope_name, self.collection_name)
+            self.bucket_util.create_collection(self.cluster.master,
+                                           self.bucket_util.buckets[0],
+                                           self.scope_name,
+                                           {"name": self.collection_name})
+
+        elif self.operation == "load_data":
+            doc_loading_spec = \
+            self.bucket_util.get_crud_template_from_package("def_load_random_collection")
+
+            self.bucket_util.run_scenario_from_spec(self.task,
+                                                    self.cluster,
+                                                    self.bucket_util.buckets,
+                                                    doc_loading_spec,
+                                                    mutation_num=0)
+
+        elif self.operation == "kill_memcached":
+            self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
+            if self.remote_shell.info.type.lower()== 'windows':
+                self._execute_command('taskkill /F /T /IM memcached*')
+            else:
+                self._execute_command('killall -9 memcached')
+            # wait for server to be up
+            self.wait_for_warmup(self.cluster.master.ip,  self.cluster.master.port)
+
+    def verify_operation(self, operation, mutation_count):
+        self.dcp_client = self.initialise_cluster_connections()
+        output_string = self.get_dcp_event()
+        actual_item_count = len(list(filter(
+                    lambda x: 'CMD_MUTATION' in x, output_string)))
+
+        if operation == "drop_scope":
+            self.check_dcp_event(self.scope_name,
+                                    output_string, "drop_scope")
+
+        if operation == "drop_collection":
+            self.check_dcp_event(self.collection_name,
+                                    output_string, "drop_collection")
+
+        if operation == "recreate_scope":
+            self.check_dcp_event(self.scope_name,
+                                    output_string, "drop_scope")
+            self.check_dcp_event(self.scope_name,
+                                   output_string, "create_scope")
+
+        if operation == "recreate_collection":
+            self.check_dcp_event(self.collection_name,
+                                    output_string, "drop_collection")
+            self.check_dcp_event(self.collection_name,
+                                    output_string, "create_collection", 2)
+
+        if operation == "load_data":
+            if mutation_count == actual_item_count:
+                self.log_failure("mutation count not changed")
+        else:
+            if mutation_count != actual_item_count:
+                self.log_failure("mutation count same as expected")
+
+    def test_stream_entire_bucket(self):
+        # get all the scopes
+        scope_list = self.bucket_util.get_active_scopes(self.bucket)
+
+        # drop scope before streaming dcp events
+        scope_name = self.get_scope_name()
 
         if scope_name != CbServer.default_scope:
             self.collection_list = \
@@ -247,3 +362,37 @@ class DcpTestCase(DCPBase):
             self.log_failure("item count mismatch, expected %s actual %s"\
                              %(total_items, actual_item_count))
         self.validate_test_failure()
+
+    def test_dcp_stream_check(self):
+        # load to specific vbucket
+        self.vbuckets = [100]
+        self.operation = self.input.param("operation", "load_data")
+        stream = self.dcp_client.stream_req(100, 0, 0, 10, 0)
+        assert stream.status is SUCCESS
+        stream.run()
+        self.mutation_count = stream.mutation_count
+
+        self.__perform_operation()
+        self.verify_operation(self.operation, stream.mutation_count)
+        self.validate_test_failure()
+
+    def test_dcp_stream_disconnect(self):
+        # needs single vbucket load
+        self.operation = self.input.param("operation", "load_data")
+        proc1 = Thread(target=self.get_dcp_event,
+                       args=())
+
+        proc2 = Thread(target=self.__perform_operation,
+                       args=())
+
+        proc1.start()
+        proc2.start()
+        self.sleep(2)
+        proc2.join()
+        proc1.join()
+
+        rest = RestConnection(self.cluster.master)
+        expected_item_count = sum(rest.get_buckets_itemCount().values())
+        self.verify_operation(self.operation, expected_item_count)
+        self.validate_test_failure()
+
