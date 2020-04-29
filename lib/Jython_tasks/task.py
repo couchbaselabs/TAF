@@ -776,7 +776,7 @@ class LoadDocumentsTask(GenericLoadingTask):
 
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
-        key_value = doc_gen.next_batch()
+        key_value = doc_gen.next_batch(self.op_type)
         if self.sdk_client_pool is not None:
             self.client = \
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
@@ -889,7 +889,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
 
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
-        key_value = doc_gen.next_batch()
+        key_value = doc_gen.next_batch(self.op_type)
         if self.op_type == 'insert':
             success, fail = self.batch_sub_doc_insert(
                 key_value,
@@ -1944,7 +1944,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
                                                            self.scope,
                                                            self.collection)
-        key_value = dict(doc_gen.next_batch())
+        key_value = dict(doc_gen.next_batch(self.op_type))
         if self.check_replica:
             # change to getFromReplica
             result_map = dict()
