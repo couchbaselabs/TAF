@@ -12,6 +12,12 @@ from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 import copy
+from sdk_exceptions import SDKException
+
+retry_exceptions = [SDKException.TimeoutException,
+                    SDKException.AmbiguousTimeoutException,
+                    SDKException.RequestCanceledException,
+                    SDKException.UnambiguousTimeoutException]
 
 
 class MagmaFailures(MagmaBaseTest):
@@ -88,7 +94,8 @@ class MagmaCrashTests(MagmaFailures):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
 
-            self.loadgen_docs(_sync=True)
+            self.loadgen_docs(_sync=True,
+                              retry_exceptions=retry_exceptions)
             self.bucket_util._wait_for_stats_all_buckets()
 
             data_validation = self.task.async_validate_docs(
@@ -133,7 +140,8 @@ class MagmaRollbackTests(MagmaFailures):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
 
-            self.loadgen_docs(_sync=True)
+            self.loadgen_docs(_sync=True,
+                              retry_exceptions=retry_exceptions)
             start = self.gen_create.key_counter
 
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
@@ -204,7 +212,8 @@ class MagmaRollbackTests(MagmaFailures):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
 
-            self.loadgen_docs(_sync=True)
+            self.loadgen_docs(_sync=True,
+                              retry_exceptions=retry_exceptions)
 
             start = self.gen_create.key_counter
             stat_map = {self.cluster.nodes_in_cluster[0]: mem_only_items*i}
@@ -243,10 +252,7 @@ class MagmaSpaceAmplification(MagmaFailures):
         for i in xrange(1, self.num_updates+1):
             self.log.info("Iteration: {}, updating {} items".
                           format(i, self.num_items))
-            self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
-                self.bucket_util.buckets[0],
-                wait_time=self.wait_timeout * 10))
+
             self.gen_update = doc_generator(
                 self.key, 0, self.num_items,
                 doc_size=self.doc_size, doc_type=self.doc_type,
@@ -254,8 +260,10 @@ class MagmaSpaceAmplification(MagmaFailures):
                 vbuckets=self.cluster_util.vbuckets,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
-            self.loadgen_docs(_sync=True)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.loadgen_docs(_sync=True,
+                              retry_exceptions=retry_exceptions)
+
+            self.bucket_util._wait_for_stats_all_buckets(timeout=self.wait_timeout*20)
             self.bucket_util.print_bucket_stats()
 
             disk_size = self.get_disk_usage(bucket)[0]
@@ -266,7 +274,7 @@ class MagmaSpaceAmplification(MagmaFailures):
                 Max Expected Size {}".format(exact_size, disk_size, max_size)
                 )
             self.bucket_util.verify_stats_all_buckets(self.num_items,
-                                                      timeout=300)
+                                                      timeout=self.wait_timeout*20)
         data_validation = self.task.async_validate_docs(
             self.cluster, self.bucket_util.buckets[0],
             self.gen_update, "update", 0, batch_size=self.batch_size,
