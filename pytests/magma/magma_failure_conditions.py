@@ -248,7 +248,7 @@ class MagmaSpaceAmplification(MagmaFailures):
         metadata_size = 200
         exact_size = self.num_items*(self.doc_size + metadata_size)\
             * (1 + self.num_replicas)
-        max_size = initial_data_size * 2.1
+        max_size = initial_data_size * 2.2
         for i in xrange(1, self.num_updates+1):
             self.log.info("Iteration: {}, updating {} items".
                           format(i, self.num_items))
