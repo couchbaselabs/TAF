@@ -18,7 +18,7 @@ class volume(CollectionBase):
     # will add the __init__ functions after the test has been stabilised
     def setUp(self):
         self.input = TestInputSingleton.input
-        self.input.test_params.update({"default_bucket":False})
+        self.input.test_params.update({"default_bucket": False})
         super(volume, self).setUp()
         self.rest = RestConnection(self.servers[0])
         self.available_servers = list()
@@ -27,6 +27,10 @@ class volume(CollectionBase):
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
         self.contains_ephemeral = self.input.param("contains_ephemeral", True)
+        # the stage at which CRUD for collection level/ document level take place.
+        # "before" - start and finish before rebalance/failover starts at each step
+        # "during" - during rebalance/failover at each step
+        self.data_load_stage = self.input.param("data_load_stage", "during")
 
     # Stopping and restarting the memcached process
     def stop_process(self):
@@ -67,15 +71,15 @@ class volume(CollectionBase):
                 self.task.jython_task_manager.get_task_result(task)
             self.fail("Rebalance Failed")
 
-    def data_load_collection(self):
+    def data_load_collection(self, async_load=True):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(self.data_load_spec)
         task = self.bucket_util.run_scenario_from_spec(self.task,
-                                                self.cluster,
-                                                self.bucket_util.buckets,
-                                                doc_loading_spec,
-                                                mutation_num=0,
-                                                async_load=True)
+                                                       self.cluster,
+                                                       self.bucket_util.buckets,
+                                                       doc_loading_spec,
+                                                       mutation_num=0,
+                                                       async_load=async_load)
         return task
 
     def wait_for_async_data_load_to_complete(self, task):
@@ -88,58 +92,77 @@ class volume(CollectionBase):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.validate_docs_per_collections_all_buckets()
 
-
     def test_volume_taf(self):
         self.loop = 0
-        while self.loop<self.iterations:
+        while self.loop < self.iterations:
             self.log.info("Finished steps 1-4 successfully in setup")
             self.log.info("Step 5: Rebalance in with Loading of docs")
-            rebalance_task = self.rebalance(nodes_in = 1, nodes_out = 0)
-            task = self.data_load_collection()
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
+            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
             #########################################################################################################################
             self.log.info("Step 6: Rebalance Out with Loading of docs")
-            rebalance_task = self.rebalance(nodes_in = 0, nodes_out = 1)
-            task = self.data_load_collection()
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
+            rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
             #######################################################################################################################
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
-            rebalance_task = self.rebalance(nodes_in = 2, nodes_out = 1)
-            task = self.data_load_collection()
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
+            rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
             self.log.info("Step 8: Swap with Loading of docs")
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
-            task = self.data_load_collection()
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
             self.log.info("Step 9: Updating the bucket replica to 2")
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=2)
-            rebalance_task = self.rebalance(nodes_in =1, nodes_out= 0)
-            task = self.data_load_collection()
+            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
@@ -147,21 +170,29 @@ class volume(CollectionBase):
                 self.log.info("No Memcached kill for ephemeral bucket")
             else:
                 self.log.info("Step 10: Stopping and restarting memcached process")
+                if self.data_load_stage == "before":
+                    task = self.data_load_collection(async_load=False)
                 rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
-                task = self.data_load_collection()
+                if self.data_load_stage == "during":
+                    task = self.data_load_collection()
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
                 self.stop_process()
-                self.wait_for_async_data_load_to_complete(task)
+                if self.data_load_stage == "during":
+                    self.wait_for_async_data_load_to_complete(task)
                 self.data_validation_collection()
                 self.bucket_util.print_bucket_stats()
             ########################################################################################################################
             self.log.info("Step 11: Failover a node and RebalanceOut that node with loading in parallel")
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster,
+                                                                      self.bucket_util.buckets)
+            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster,
+                                                                     self.bucket_util.buckets)
             self.sleep(10)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
@@ -172,7 +203,8 @@ class volume(CollectionBase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
             # Mark Node for failover
-            task = self.data_load_collection()
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
             self.sleep(300)
@@ -186,10 +218,12 @@ class volume(CollectionBase):
             self.available_servers += servs_out
             self.sleep(10)
 
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
 
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster,
+                                                    self.bucket_util.buckets)
             self.sleep(10)
 
             self.bucket_util.data_analysis_active_replica_all(
@@ -211,11 +245,15 @@ class volume(CollectionBase):
             ########################################################################################################################
             self.log.info("Step 12: Failover a node and FullRecovery that node")
 
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster,
+                                                                      self.bucket_util.buckets)
+            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster,
+                                                                     self.bucket_util.buckets)
             self.sleep(10)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
@@ -225,7 +263,8 @@ class volume(CollectionBase):
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
-            task = self.data_load_collection()
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
@@ -235,17 +274,18 @@ class volume(CollectionBase):
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="full")
 
-
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
 
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster,
+                                                    self.bucket_util.buckets)
             self.sleep(10)
 
             self.bucket_util.data_analysis_active_replica_all(
@@ -263,11 +303,15 @@ class volume(CollectionBase):
             ########################################################################################################################
             self.log.info("Step 13: Failover a node and DeltaRecovery that node with loading in parallel")
 
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster,
+                                                                      self.bucket_util.buckets)
+            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster,
+                                                                     self.bucket_util.buckets)
             self.sleep(10)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
@@ -277,7 +321,8 @@ class volume(CollectionBase):
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
-            task = self.data_load_collection()
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
@@ -292,10 +337,12 @@ class volume(CollectionBase):
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
 
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster,
+                                                    self.bucket_util.buckets)
             self.sleep(10)
 
             self.bucket_util.data_analysis_active_replica_all(
@@ -308,21 +355,25 @@ class volume(CollectionBase):
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.bucket_util.print_bucket_stats()
-        ########################################################################################################################
+            ########################################################################################################################
             self.log.info("Step 14: Updating the bucket replica to 1")
+            if self.data_load_stage == "before":
+                task = self.data_load_collection(async_load=False)
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
             rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
-            task = self.data_load_collection()
+            if self.data_load_stage == "during":
+                task = self.data_load_collection()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
-            self.wait_for_async_data_load_to_complete(task)
+            if self.data_load_stage == "during":
+                self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
-        ########################################################################################################################
+            ########################################################################################################################
             self.log.info("Step 15: Flush the bucket and start the entire process again")
             self.loop += 1
             if self.loop < self.iterations:
@@ -332,7 +383,8 @@ class volume(CollectionBase):
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
                     self.nodes_cluster = self.cluster.nodes_in_cluster[:]
                     self.nodes_cluster.remove(self.cluster.master)
-                    servs_out = random.sample(self.nodes_cluster, int(len(self.cluster.nodes_in_cluster) - self.nodes_init))
+                    servs_out = random.sample(self.nodes_cluster,
+                                              int(len(self.cluster.nodes_in_cluster) - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
                         self.cluster.servers[:self.nodes_init], [], servs_out)
                     self.task.jython_task_manager.get_task_result(rebalance_task)
