@@ -171,7 +171,7 @@ class MagmaCrashTests(MagmaFailures):
 
         th = threading.Thread(target=self.crash)
         th.start()
-        self.process_concurrency = 4
+
         tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                   skip_read_on_error=True,
                                   suppress_error_table=True,
