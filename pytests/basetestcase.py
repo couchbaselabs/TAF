@@ -593,6 +593,8 @@ class BaseTestCase(unittest.TestCase):
                 rest = RestConnection(server)
                 core_path = str(rest.get_data_path()).split("data")[0] \
                     + "crash/"
+                if not os.path.isdir(core_path):
+                    core_path = "/opt/couchbase/var/lib/couchbase/crash/"
 
             elif shell.info.type.lower() == "windows":
                 core_path = 'c://CrashDumps'

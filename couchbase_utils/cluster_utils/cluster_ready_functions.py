@@ -7,6 +7,7 @@ Created on Sep 26, 2017
 import copy
 import logging
 import time
+import os
 
 import testconstants
 from couchbase_cli import CouchbaseCLI
@@ -408,12 +409,15 @@ class ClusterUtils:
                 rest = RestConnection(node)
                 data_path = rest.get_data_path()
                 core_path= str(rest.get_data_path()).split("data")[0] + "crash/"
+                if not os.path.isdir(core_path):
+                    core_path = "/opt/couchbase/var/lib/couchbase/crash/"
+
                 # Stop node
                 self.stop_server(node)
                 # Delete Path
                 shell.cleanup_data_config(data_path)
                 shell.cleanup_data_config(core_path);
-                
+
                 self.start_server(node)
                 shell.disconnect()
             time.sleep(10)
