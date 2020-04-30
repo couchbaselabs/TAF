@@ -119,7 +119,9 @@ class MagmaBaseTest(BaseTestCase):
 
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
-                          timeout_secs=30, compression=True, dgm_batch=5000):
+                          timeout_secs=30, compression=True, dgm_batch=5000,
+                          skip_read_on_error=False,
+                          suppress_error_table=False):
 
         retry_exceptions = list([SDKException.AmbiguousTimeoutException])
         tasks_info = self.bucket_util.sync_load_all_buckets(
@@ -131,6 +133,8 @@ class MagmaBaseTest(BaseTestCase):
             process_concurrency=self.process_concurrency,
             retry_exceptions=retry_exceptions,
             active_resident_threshold=self.active_resident_threshold,
+            skip_read_on_error=skip_read_on_error,
+            suppress_error_table=suppress_error_table,
             dgm_batch=dgm_batch)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
@@ -142,6 +146,8 @@ class MagmaBaseTest(BaseTestCase):
     def start_parallel_cruds(self,
                              retry_exceptions=[],
                              ignore_exceptions=[],
+                             skip_read_on_error=False,
+                             suppress_error_table=False,
                              _sync=True):
         tasks_info = dict()
         read_tasks_info = dict()
@@ -155,7 +161,9 @@ class MagmaBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -166,7 +174,9 @@ class MagmaBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "read" in self.doc_ops and self.gen_read is not None:
@@ -176,7 +186,9 @@ class MagmaBaseTest(BaseTestCase):
                process_concurrency=self.process_concurrency,
                pause_secs=5, timeout_secs=self.sdk_timeout,
                retry_exceptions=retry_exceptions,
-               ignore_exceptions=ignore_exceptions)
+               ignore_exceptions=ignore_exceptions,
+               skip_read_on_error=skip_read_on_error,
+               suppress_error_table=suppress_error_table)
             read_task = True
         if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -187,7 +199,9 @@ class MagmaBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
@@ -212,13 +226,17 @@ class MagmaBaseTest(BaseTestCase):
     def loadgen_docs(self,
                      retry_exceptions=[],
                      ignore_exceptions=[],
+                     skip_read_on_error=False,
+                     suppress_error_table=False,
                      _sync=True):
 
         if self.check_temporary_failure_exception:
             retry_exceptions.append(SDKException.TemporaryFailureException)
         loaders = self.start_parallel_cruds(retry_exceptions,
                                             ignore_exceptions,
-                                            _sync)
+                                            skip_read_on_error=skip_read_on_error,
+                                            suppress_error_table=suppress_error_table,
+                                            _sync=_sync)
         return loaders
 
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):

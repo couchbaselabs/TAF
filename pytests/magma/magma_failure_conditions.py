@@ -13,6 +13,7 @@ from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 import copy
 from sdk_exceptions import SDKException
+import threading
 
 retry_exceptions = [SDKException.TimeoutException,
                     SDKException.AmbiguousTimeoutException,
@@ -64,6 +65,30 @@ class MagmaFailures(MagmaBaseTest):
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
+    def crash(self, nodes=None):
+        self.stop_crash = False
+        if not nodes:
+            nodes = self.cluster.nodes_in_cluster
+
+        while not self.stop_crash:
+            sleep = random.randint(30, 60)
+            self.sleep(sleep,
+                       "waiting for %s sec to kill memcached on all nodes" %
+                       sleep)
+            for node in nodes:
+                shell = RemoteMachineShellConnection(node)
+                shell.kill_memcached()
+                shell.disconnect()
+
+            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+            self.assertTrue(len(crashes) == 0,
+                            "Found servers having crashes")
+
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                [self.cluster_util.cluster.master],
+                self.bucket_util.buckets[0],
+                wait_time=self.wait_timeout * 20))
+
 
 class MagmaCrashTests(MagmaFailures):
 
@@ -83,7 +108,7 @@ class MagmaCrashTests(MagmaFailures):
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [self.cluster_util.cluster.master],
                 self.bucket_util.buckets[0],
-                wait_time=self.wait_timeout * 10))
+                wait_time=self.wait_timeout * 20))
 
             self.gen_create = doc_generator(
                 self.key, start, end,
@@ -109,6 +134,50 @@ class MagmaCrashTests(MagmaFailures):
             self.bucket_util.verify_stats_all_buckets(end, timeout=300)
 
             self.gen_update = self.gen_create
+
+    def test_crash_during_ops(self):
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
+
+        self.gen_create = doc_generator(
+            self.key, self.num_items, self.num_items * 20,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value)
+
+        self.gen_update = doc_generator(
+            self.key, 0, self.num_items/2,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value)
+
+        self.gen_delete = doc_generator(
+            self.key, self.num_items/2, self.num_items,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value)
+
+        th = threading.Thread(target=self.crash)
+        th.start()
+        self.process_concurrency = 4
+        tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                  skip_read_on_error=True,
+                                  suppress_error_table=True,
+                                  _sync=False)
+
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+        self.stop_crash = True
+        th.join()
 
 
 class MagmaRollbackTests(MagmaFailures):
