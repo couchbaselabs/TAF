@@ -719,14 +719,18 @@ class BasicCrudTests(MagmaBaseTest):
         disk_usage = self.get_disk_usage(
             self.bucket_util.get_all_buckets()[0],
             self.servers)
-        self.assertEqual(
-            self.disk_usage[self.disk_usage.keys()[0]],
-            disk_usage[0],
-            msg="Disk usage {}MB after updating a '\n' \
-            single doc is not same as initial '\n' \
-            disk usagne{}MB '\n' \
-            ".format(disk_usage[0],
-                     self.disk_usage[self.disk_usage.keys()[0]]))
+        self.log.debug("Disk usage after updates {}".format(
+            disk_usage))
+        _res = disk_usage[0]
+        self.assertIs(
+            _res > 2.2 * self.disk_usage[
+                self.disk_usage.keys()[0]],
+            False, "Disk Usage {}MB After '\n\'\
+            Updates exceeds '\n\'\
+            Actual disk usage {}MB by '\n'\
+            2.2 times".format(_res,
+                              self.disk_usage[
+                                  self.disk_usage.keys()[0]]))
 
         success, fail = self.client.getMulti([key],
                                              self.wait_timeout)
