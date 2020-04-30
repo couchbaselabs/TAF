@@ -2202,7 +2202,8 @@ class BucketUtils(ScopeUtils):
                           compression=True, process_concurrency=8, retries=5,
                           active_resident_threshold=100,
                           ryow=False, check_persistence=False,
-                          suppress_error_table=False, dgm_batch=5000,
+                          skip_read_on_error=False, suppress_error_table=False,
+                          dgm_batch=5000,
                           scope=CbServer.default_scope,
                           collection=CbServer.default_collection):
         return self.task.async_load_gen_docs(
@@ -2214,7 +2215,9 @@ class BucketUtils(ScopeUtils):
             process_concurrency=process_concurrency, retries=retries,
             active_resident_threshold=active_resident_threshold,
             ryow=ryow, check_persistence=check_persistence,
-            suppress_error_table=suppress_error_table, dgm_batch=dgm_batch,
+            suppress_error_table=suppress_error_table,
+            skip_read_on_error=skip_read_on_error,
+            dgm_batch=dgm_batch,
             scope=scope, collection=collection)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
@@ -2226,7 +2229,8 @@ class BucketUtils(ScopeUtils):
                                 ignore_exceptions=[], retry_exceptions=[],
                                 active_resident_threshold=100,
                                 ryow=False, check_persistence=False,
-                                suppress_error_table=False, dgm_batch=5000,
+                                skip_read_on_error=False, suppress_error_table=False,
+                                dgm_batch=5000,
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection):
 
@@ -2251,7 +2255,9 @@ class BucketUtils(ScopeUtils):
                 sdk_compression, process_concurrency, retries,
                 active_resident_threshold=active_resident_threshold,
                 ryow=ryow, check_persistence=check_persistence,
-                suppress_error_table=suppress_error_table, dgm_batch=dgm_batch,
+                suppress_error_table=suppress_error_table,
+                skip_read_on_error=skip_read_on_error,
+                dgm_batch=dgm_batch,
                 scope=scope, collection=collection)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
@@ -2303,7 +2309,9 @@ class BucketUtils(ScopeUtils):
                               retry_exceptions=list(),
                               active_resident_threshold=100,
                               ryow=False, check_persistence=False,
-                              suppress_error_table=False, dgm_batch=5000,
+                              skip_read_on_error=False,
+                              suppress_error_table=False,
+                              dgm_batch=5000,
                               scope=CbServer.default_scope,
                               collection=CbServer.default_collection):
 
@@ -2330,7 +2338,9 @@ class BucketUtils(ScopeUtils):
             ignore_exceptions, retry_exceptions, ryow=ryow,
             active_resident_threshold=active_resident_threshold,
             check_persistence=check_persistence,
-            suppress_error_table=suppress_error_table, dgm_batch=dgm_batch,
+            skip_read_on_error=skip_read_on_error,
+            suppress_error_table=suppress_error_table,
+            dgm_batch=dgm_batch,
             scope=scope, collection=collection)
 
         for task in tasks_info.keys():
