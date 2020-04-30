@@ -21,7 +21,6 @@ class CollectionsRebalance(CollectionBase):
         self.failover_ops = ["graceful_failover_rebalance_out", "hard_failover_rebalance_out",
                              "graceful_failover_recovery", "hard_failover_recovery"]
         self.step_count = self.input.param("step_count", -1)
-        self.replicas_for_failover = self.input.param("replicas_for_failover", 3)
         self.recovery_type = self.input.param("recovery_type", "full")
         self.compaction = self.input.param("compaction", False)
         self.warmup = self.input.param("warmup", False)
@@ -57,17 +56,6 @@ class CollectionsRebalance(CollectionBase):
                                            self.cluster.master.rest_password,
                                            memoryQuota=3000)
         self.assertTrue(status, "RAM quota wasn't changed")
-
-    def update_bucket_replica(self):
-        self.log.info("Updating all the bucket replicas to {0}".format(self.replicas_for_failover))
-        for i in range(len(self.bucket_util.buckets)):
-            bucket_helper = BucketHelper(self.cluster.master)
-            bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[i], replicaNumber=self.replicas_for_failover)
-        task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
-        self.task.jython_task_manager.get_task_result(task)
-        self.log.info("Bucket stats before failover")
-        self.bucket_util.print_bucket_stats()
 
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
@@ -512,8 +500,6 @@ class CollectionsRebalance(CollectionBase):
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None
         rebalance = None
-        # if rebalance_operation in self.failover_ops:
-        #     self.update_bucket_replica()
         self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
         if self.data_load_stage == "before":
             if self.data_load_type == "async":
