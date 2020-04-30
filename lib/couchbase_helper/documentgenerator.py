@@ -239,7 +239,7 @@ class DocumentGenerator(KVGenerator):
                 - self.key_len
                 - 1))
         else:
-            doc_key = super(KVGenerator, self).next_key(self.itr)
+            doc_key = super(DocumentGenerator, self).next_key(self.itr)
 
         self.itr += 1
         return doc_key
