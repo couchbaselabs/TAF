@@ -81,6 +81,9 @@ class MagmaFailures(MagmaBaseTest):
                 shell.disconnect()
 
             crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+            if len(crashes) > 0:
+                self.task.jython_task_manager.abort_all_tasks()
+
             self.assertTrue(len(crashes) == 0,
                             "Found servers having crashes")
 
