@@ -13,7 +13,7 @@ class BucketWarmup(CollectionBase):
     def create_scope(self):
         self.bucket_util.create_scope(self.cluster.master,
                                          self.bucket,
-                                         self.scope_name)
+                                         {"name": self.scope_name})
 
     def drop_scope(self):
         self.bucket_util.drop_scope(self.cluster.master,
@@ -25,14 +25,14 @@ class BucketWarmup(CollectionBase):
         self.bucket_util.create_collection(self.cluster.master,
                                                  self.bucket,
                                                  CbServer.default_scope,
-                                                 self.collection_name)
+                                                 {"name": self.collection_name})
 
     def drop_collection(self):
         self.bucket_util.drop_collection(self.cluster.master,
                                                  self.bucket,
                                                  self.scope_name,
                                                  self.collection_name)
-        del self.bucket.scopes[scope_name] \
+        del self.bucket.scopes[self.scope_name] \
                            .collections[self.collection_name]
 
     def random_load(self):
@@ -93,7 +93,7 @@ class BucketWarmup(CollectionBase):
                                     self.bucket_util.buckets, 1, 1, 1)
             scope_dict = collections[self.bucket.name]["scopes"]
             self.scope_name = scope_dict.keys()[0]
-            self.collection_name = scope_dict[scope_name]["collections"].keys()[0]
+            self.collection_name = scope_dict[self.scope_name]["collections"].keys()[0]
             try:
                 self.drop_collection()
                 self.log_failure("drop collection succeeded")
