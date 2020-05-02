@@ -65,7 +65,7 @@ class MagmaFailures(MagmaBaseTest):
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
-    def crash(self, nodes=None):
+    def crash(self, nodes=None, graceful=False):
         self.stop_crash = False
         if not nodes:
             nodes = self.cluster.nodes_in_cluster
@@ -77,7 +77,10 @@ class MagmaFailures(MagmaBaseTest):
                        sleep)
             for node in nodes:
                 shell = RemoteMachineShellConnection(node)
-                shell.kill_memcached()
+                if graceful:
+                    shell.restart_couchbase()
+                else:
+                    shell.kill_memcached()
                 shell.disconnect()
 
             crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
@@ -139,6 +142,7 @@ class MagmaCrashTests(MagmaFailures):
             self.gen_update = self.gen_create
 
     def test_crash_during_ops(self):
+        self.graceful = self.input.param("graceful", False)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
 
@@ -169,7 +173,7 @@ class MagmaCrashTests(MagmaFailures):
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value)
 
-        th = threading.Thread(target=self.crash)
+        th = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
         th.start()
 
         tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
