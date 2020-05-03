@@ -135,14 +135,58 @@ class KVGenerator(object):
         self.body = [''.rjust(self.doc_size, 'a')][0]
         self.deep_copy = False
 
+        self.random_string = None
+        self.len_random_string = None
+        self.key_len = None
+
+        self.doc_keys = dict()
+        self.target_vbucket = None
+
+        # Generic function reference
+        self.next_key = self.get_next_key
+        if self.name == "random_keys":
+            self.next_key = self.get_random_key
+
     def has_next(self):
         return self.itr < self.end
 
-    def next_key(self, doc_index):
+    def get_random_key(self):
+        seed_hash = self.name + '-' + str(abs(self.itr))
+        self.random.seed(seed_hash)
+        """ This will generate a random ascii key with 12 characters """
+        _slice = int(self.random.random()
+                     * (self.len_random_string-self.key_size))
+        key_len = self.key_size - (len(str(self.itr)) + 1)
+        doc_key = self.random_string[_slice:key_len+_slice] \
+                  + "-" \
+                  + str(self.itr)
+        self.itr += 1
+        return doc_key
+
+    def get_target_vb_key(self):
+        self.itr += 1
+        return self.doc_keys[self.itr]
+
+    def get_mixed_size_key(self):
+        seed_hash = self.name + '-' + str(abs(self.itr))
+        self.random.seed(seed_hash)
+        doc_key = "{}-{}".format(self.name, str(abs(self.itr)).zfill(
+            self.random.randint(self.key_size, 250)
+            - self.key_len
+            - 1))
+        self.itr += 1
+        return doc_key
+
+    def get_next_key(self):
+        doc_key = self.get_key_for_index(self.itr)
+        self.itr += 1
+        return doc_key
+
+    def get_key_for_index(self, index):
         return "%s-%s" % (self.name,
-                          str(abs(doc_index)).zfill(self.key_size
-                                                    - len(self.name)
-                                                    - 1))
+                          str(abs(index)).zfill(self.key_size
+                                                - len(self.name)
+                                                - 1))
 
     def next(self):
         raise NotImplementedError
@@ -184,7 +228,7 @@ class DocumentGenerator(KVGenerator):
         self.template = template
         KVGenerator.__init__(self, key_prefix)
 
-        # random string will be used of random_val is true or random_key is true
+        # Random string to use if random_val is true or random_key is true
         random.seed(key_prefix)
         self.random_string = [''.join(random.choice(letters)
                                       for _ in range(4*1024))][0]
@@ -219,30 +263,10 @@ class DocumentGenerator(KVGenerator):
         if 'mix_key_size' in kwargs:
             self.mix_key_size = kwargs['mix_key_size']
             self.key_len = len(self.name)
+            self.next_key = self.get_mixed_size_key
 
         if 'deep_copy' in kwargs:
             self.deep_copy = kwargs['deep_copy']
-
-    def next_key(self):
-        if self.name == "random_keys":
-            seed_hash = self.name + '-' + str(abs(self.itr))
-            self.random.seed(seed_hash)
-            """ This will generate a random ascii key with 12 characters """
-            _slice = int(self.random.random()*(self.len_random_string-self.key_size))
-            key_len = self.key_size - (len(str(self.itr)) + 1)
-            doc_key = self.random_string[_slice:key_len+_slice] + "-" + str(self.itr)
-        elif self.mix_key_size:
-            seed_hash = self.name + '-' + str(abs(self.itr))
-            self.random.seed(seed_hash)
-            doc_key = "{}-{}".format(self.name, str(abs(self.itr)).zfill(
-                self.random.randint(self.key_size, 250)
-                - self.key_len
-                - 1))
-        else:
-            doc_key = super(DocumentGenerator, self).next_key(self.itr)
-
-        self.itr += 1
-        return doc_key
 
     """Creates the next generated document and increments the iterator.
 
@@ -288,7 +312,6 @@ class DocumentGenerator(KVGenerator):
             template = String(str(template))
 
         doc_key = self.next_key()
-
         return doc_key, template
 
 
@@ -314,11 +337,9 @@ class SubdocDocumentGenerator(KVGenerator):
         self.args = args
         self.template = template
         self.doc_type = "json"
-        self.doc_keys = dict()
         self.doc_keys_len = 0
         self.key_counter = 0
         self.key_size = 0
-        self.target_vbucket = None
         self.vbuckets = None
 
         KVGenerator.__init__(self, name)
@@ -335,6 +356,7 @@ class SubdocDocumentGenerator(KVGenerator):
 
         if 'target_vbucket' in kwargs:
             self.target_vbucket = kwargs['target_vbucket']
+            self.next_key = self.get_target_vb_key
 
         if 'vbuckets' in kwargs:
             self.vbuckets = kwargs['vbuckets']
@@ -348,7 +370,7 @@ class SubdocDocumentGenerator(KVGenerator):
 
     def create_key_for_vbucket(self):
         while self.doc_keys_len < self.end:
-            doc_key = self.next_key(self.key_counter)
+            doc_key = self.get_key_for_index(self.key_counter)
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                      (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
@@ -356,22 +378,6 @@ class SubdocDocumentGenerator(KVGenerator):
                 self.doc_keys_len += 1
             self.key_counter += 1
         self.end = self.start + self.doc_keys_len
-
-    def next_key(self):
-        if self.target_vbucket is not None:
-            doc_key = self.doc_keys[self.itr]
-        elif self.name == "random_keys":
-            """ This will generate a random ascii key with 12 characters """
-            seed_hash = self.name + '-' + str(self.itr)
-            self.random.seed(seed_hash)
-            doc_key = ''.join(self.random.choice(
-                              ascii_uppercase + ascii_lowercase + digits)
-                              for _ in range(12))
-        else:
-            doc_key = super(SubdocDocumentGenerator, self).next_key(self.itr)
-
-        self.itr += 1
-        return doc_key
 
     """Creates the next generated document and increments the iterator.
     Returns:
@@ -395,8 +401,7 @@ class SubdocDocumentGenerator(KVGenerator):
         for path, value in json_val.items():
             return_val.append((path, value))
 
-        doc_key = self.next_key(self.itr)
-
+        doc_key = self.next_key()
         return doc_key, return_val
 
 
@@ -426,7 +431,6 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         self.kwargs = kwargs
         self.template = template
         self.doc_type = "json"
-        self.doc_keys = dict()
         self.doc_keys_len = 0
         self.key_size = 0
         self.key_counter = 1
@@ -448,6 +452,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
         if 'target_vbucket' in kwargs:
             self.target_vbucket = kwargs['target_vbucket']
+            self.next_key = self.get_target_vb_key
 
         if 'key_size' in kwargs:
             self.key_size = kwargs['key_size']
@@ -480,7 +485,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
 
     def create_key_for_vbucket(self):
         while self.doc_keys_len < self.end:
-            doc_key = self.next_key(self.key_counter)
+            doc_key = self.get_key_for_index(self.key_counter)
             tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
                 (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
@@ -488,15 +493,6 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                 self.doc_keys_len += 1
             self.key_counter += 1
         self.end = self.start + self.doc_keys_len
-
-    """
-    Creates the next generated document and increments the iterator.
-    Returns:
-       The document generated
-    """
-    def next_key(self):
-        self.itr += 1
-        return self.doc_keys[self.itr]
 
     def next(self):
         if self.itr > self.end:
@@ -522,8 +518,8 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                          )[_slice:self.doc_size + _slice]
         if template.get("body"):
             template.put("body", self.body)
-        doc_key = self.next_key()
 
+        doc_key = self.next_key()
         return doc_key, template
 
 
@@ -558,7 +554,6 @@ class BlobGenerator(KVGenerator):
 
 
 class BatchedDocumentGenerator(object):
-
     def __init__(self, document_generator, batch_size_int=100):
         self._doc_gen = document_generator
         self._batch_size = batch_size_int
@@ -575,7 +570,6 @@ class BatchedDocumentGenerator(object):
     def next_batch(self, op_type=None):
         self.count = 0
         key_val = []
-        key = None
         val = None
         while self.count < self._batch_size and self.has_next():
             if op_type == "touch" or op_type == "delete":
