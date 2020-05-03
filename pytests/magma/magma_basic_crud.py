@@ -70,6 +70,18 @@ class BasicCrudTests(MagmaBaseTest):
             randomize_value=self.randomize_value,
             mix_key_size=self.mix_key_size,
             deep_copy=self.deep_copy)
+        self.gen_update = doc_generator(
+            self.key, start, end,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            key_size=self.key_size,
+            mutate=1,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value,
+            mix_key_size=self.mix_key_size,
+            deep_copy=self.deep_copy)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
 
@@ -1028,3 +1040,87 @@ class BasicCrudTests(MagmaBaseTest):
         self.task.jython_task_manager.get_task_result(data_validation)
         self.enable_disable_swap_space(self.servers, disable=False)
         self.log.info("====test_move_docs_btwn_key_and_seq_trees ends====")
+
+    def test_parallel_create_update(self):
+        """
+        Create new docs and updates already created docs
+        Check disk_usage after each Iteration
+        Data validation for last iteration
+        """
+        self.log.info("Updating and Creating docs parallelly")
+        count = 0
+        init_items = self.num_items
+        self.doc_ops = "create:update"
+        while count < self.test_itr:
+            self.log.info("Iteration {}".format(count+1))
+            start = self.num_items
+            end = self.num_items+init_items
+            start_update = self.num_items
+            end_update = self.num_items+init_items
+            if self.rev_write:
+                start = -int(self.num_items+init_items - 1)
+                end = -int(self.num_items - 1)
+            if self.rev_update:
+                start_update = -int(self.num_items+init_items - 1)
+                end_update = -int(self.num_items - 1)
+            self.gen_create = doc_generator(
+                self.key, start, end,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            if count == self.test_itr - 1:
+                data_validation = self.task.async_validate_docs(
+                    self.cluster, self.bucket_util.buckets[0],
+                    self.gen_update, "update", 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    pause_secs=5, timeout_secs=self.sdk_timeout)
+                self.task.jython_task_manager.get_task_result(
+                    data_validation)
+            self.gen_update = doc_generator(
+                self.key, start_update, end_update,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                mutate=1,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
+            disk_usage = self.get_disk_usage(
+                self.bucket_util.get_all_buckets()[0],
+                self.servers)
+            if self.doc_size <= 32:
+                self.assertIs(
+                    disk_usage[2] >= disk_usage[3], True,
+                    "seqIndex usage = {}MB'\n' \
+                    after Iteration {}'\n' \
+                    exceeds keyIndex usage={}MB'\n' \
+                    ".format(disk_usage[3],
+                             count+1,
+                             disk_usage[2]))
+            self.assertIs(
+                disk_usage[0] > 2.2 * (2 * self.disk_usage[
+                    self.disk_usage.keys()[0]]),
+                False, "Disk Usage {}MB After '\n\'\
+                Updates exceeds '\n\'\
+                Actual disk usage {}MB by '\n'\
+                2.2 times".format(disk_usage[0],
+                                  (2 * self.disk_usage[
+                                      self.disk_usage.keys()[0]])))
+            count += 1
+        self.enable_disable_swap_space(self.servers, disable=False)
+        self.log.info("====test_parallel_create_update ends====")
