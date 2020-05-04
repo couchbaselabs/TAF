@@ -83,7 +83,7 @@ class MagmaBaseTest(BaseTestCase):
             update_bucket_props = True
 
         if self.fragmentation != 50:
-            props += ";magma_delete_frag_ratio=%s" % self.fragmentation/100
+            props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
             update_bucket_props = True
 
         if update_bucket_props:
