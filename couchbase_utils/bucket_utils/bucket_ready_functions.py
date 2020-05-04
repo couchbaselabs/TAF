@@ -314,6 +314,8 @@ class DocLoaderUtils(object):
             MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION, 0)
         spec_percent_data["read"] = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION, 0)
+        spec_percent_data["touch"] = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.TOUCH_PERCENTAGE_PER_COLLECTION, 0)
 
         # Fetch sub_doc CRUD percentage from given spec
         xattr_test = input_spec["subdoc_crud"].get(

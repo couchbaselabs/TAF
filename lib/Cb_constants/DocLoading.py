@@ -5,6 +5,7 @@ class Bucket(object):
         UPDATE = "update"
         REPLACE = "replace"
         READ = "read"
+        TOUCH = "touch"
 
     class SubDocOps(object):
         INSERT = "insert"
@@ -16,7 +17,8 @@ class Bucket(object):
                DocOps.CREATE,
                DocOps.UPDATE,
                DocOps.REPLACE,
-               DocOps.READ]
+               DocOps.READ,
+               DocOps.TOUCH]
     SUB_DOC_OPS = [SubDocOps.INSERT,
                    SubDocOps.UPSERT,
                    SubDocOps.REMOVE,
