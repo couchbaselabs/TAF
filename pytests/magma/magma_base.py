@@ -31,7 +31,7 @@ class MagmaBaseTest(BaseTestCase):
             self.key = "random_keys"
         self.items = self.num_items
         self.check_temporary_failure_exception = False
-        self.fragmentation = self.input.param("fragmentation", 50)
+        self.fragmentation = int(self.input.param("fragmentation", 50))
         self.dgm_batch = self.input.param("dgm_batch", 5000)
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
