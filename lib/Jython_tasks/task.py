@@ -2197,6 +2197,8 @@ class StatsWaitTask(Task):
                                 "Received: %s for bucket '%s'"
                                 % (self.stat, stat_result, self.comparison,
                                    self.value, val_dict, self.bucket.name))
+            # Required to avoid unnecessary logs
+            time.sleep(5)
             return False
         else:
             self.test_log.debug("Ready: %s %s %s %s. "
