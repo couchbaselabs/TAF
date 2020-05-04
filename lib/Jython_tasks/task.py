@@ -4231,7 +4231,7 @@ class Atomicity(Task):
 
                 if op_type == "general_update":
                     for client in Atomicity.clients:
-                        self.batch_update(last_batch, client,
+                        self.batch_update(self.batch, client,
                                           persist_to=self.persist_to,
                                           replicate_to=self.replicate_to,
                                           timeout=self.timeout,
@@ -4243,7 +4243,7 @@ class Atomicity(Task):
                                         % last_batch.keys())
                     for client in Atomicity.clients:
                         keys = self.batch_delete(
-                            last_batch, client,
+                            self.batch, client,
                             persist_to=self.persist_to,
                             replicate_to=self.replicate_to,
                             timeout=self.timeout,
