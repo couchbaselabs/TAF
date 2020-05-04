@@ -17,17 +17,17 @@ spec = {
 
     # Doc loading params
     "doc_crud": {
+        MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
         MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 30,
         MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 30,
         MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 30,
-        MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 30,
+        MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
         MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 30,
     },
 
     "subdoc_crud": {
         MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION: 0,
         MetaCrudParams.SubDocCrud.UPSERT_PER_COLLECTION: 0,
-        MetaCrudParams.SubDocCrud.UPDATE_PER_COLLECTION: 0,
         MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION: 0,
     },
 
