@@ -63,12 +63,26 @@ class MagmaBaseTest(BaseTestCase):
             self._create_default_bucket()
         else:
             self._create_multiple_buckets()
+
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
+
+        props = "magma"
+        update_bucket_props = False
+
         if self.disable_magma_commit_points:
+            props += ";magma_max_commit_points=0"
+            update_bucket_props = True
+
+        if self.fragmentation != 50:
+            props += ";magma_delete_frag_ratio=%s" % self.fragmentation/100
+            update_bucket_props = True
+
+        if update_bucket_props:
             self.bucket_util.update_bucket_props(
-                "backend", "magma;magma_max_commit_points=0",
-                self.bucket_util.buckets)
+                    "backend", props,
+                    self.bucket_util.buckets)
+
         self.doc_size = self.input.param("doc_size", 2048)
         self.test_itr = self.input.param("test_itr", 4)
         self.update_itr = self.input.param("update_itr", 10)
