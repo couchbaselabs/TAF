@@ -1124,3 +1124,90 @@ class BasicCrudTests(MagmaBaseTest):
             count += 1
         self.enable_disable_swap_space(self.servers, disable=False)
         self.log.info("====test_parallel_create_update ends====")
+
+    def test_parallel_creates_deletes(self):
+        """
+        Primary focus for this is to check space
+        Amplification
+
+        Create new docs and deletes already created docs
+        Check disk_usage after each Iteration
+        """
+        self.log.info("Deletion and Creation of docs parallelly")
+        count = 0
+        init_items = self.num_items
+        self.gen_delete = doc_generator(
+            self.key, 0, self.num_items,
+            doc_size=self.doc_size,
+            doc_type=self.doc_type,
+            target_vbucket=self.target_vbucket,
+            vbuckets=self.cluster_util.vbuckets,
+            key_size=self.key_size,
+            randomize_doc_size=self.randomize_doc_size,
+            randomize_value=self.randomize_value,
+            mix_key_size=self.mix_key_size,
+            deep_copy=self.deep_copy)
+        self.doc_ops = "create:delete"
+        while count < self.test_itr:
+            self.log.info("Iteration {}".format(count+1))
+            start = self.num_items
+            end = self.num_items+init_items
+            start_del = self.num_items
+            end_del = self.num_items+init_items
+            if self.rev_write:
+                start = -int(self.num_items+init_items - 1)
+                end = -int(self.num_items - 1)
+            if self.rev_delete:
+                start_del = -int(self.num_items+init_items - 1)
+                end_del = -int(self.num_items - 1)
+            self.gen_create = doc_generator(
+                self.key, start, end,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.gen_delete = doc_generator(
+                self.key, start_del, end_del,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
+            disk_usage = self.get_disk_usage(
+                self.bucket_util.get_all_buckets()[0],
+                self.servers)
+            if self.doc_size <= 32:
+                self.assertIs(
+                    disk_usage[2] >= disk_usage[3], True,
+                    "seqIndex usage = {}MB'\n' \
+                    after Iteration {}'\n' \
+                    exceeds keyIndex usage={}MB'\n' \
+                    ".format(disk_usage[3],
+                             count+1,
+                             disk_usage[2]))
+            self.assertIs(
+                disk_usage[0] > 2.2 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                False, "Disk Usage {}MB After '\n\'\
+                Updates exceeds '\n\'\
+                Actual disk usage {}MB by '\n'\
+                2.2 times".format(disk_usage[0],
+                                  self.disk_usage[
+                                      self.disk_usage.keys()[0]]))
+            count += 1
+        self.enable_disable_swap_space(self.servers, disable=False)
+        self.log.info("====test_parallel_create_delete ends====")
