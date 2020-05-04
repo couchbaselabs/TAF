@@ -570,7 +570,10 @@ class BatchedDocumentGenerator(object):
     def next_batch(self, op_type=None):
         self.count = 0
         key_val = []
-        val = None
+        # Value is not required for
+        # delete/touch ops, so below empty string
+        # string is used
+        val = ""
         while self.count < self._batch_size and self.has_next():
             if op_type == "touch" or op_type == "delete":
                 key = self._doc_gen.next_key()
