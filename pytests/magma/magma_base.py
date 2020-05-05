@@ -200,9 +200,7 @@ class MagmaBaseTest(BaseTestCase):
                process_concurrency=self.process_concurrency,
                pause_secs=5, timeout_secs=self.sdk_timeout,
                retry_exceptions=retry_exceptions,
-               ignore_exceptions=ignore_exceptions,
-               skip_read_on_error=skip_read_on_error,
-               suppress_error_table=suppress_error_table)
+               ignore_exceptions=ignore_exceptions)
             read_task = True
         if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
