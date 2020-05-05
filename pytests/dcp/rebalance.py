@@ -1,4 +1,3 @@
-import time
 from dcp.constants import PRODUCER
 from dcpbase import DCPBase
 from membase.api.rest_client import RestConnection, RestHelper
@@ -198,7 +197,7 @@ class DCPRebalanceTests(DCPBase):
         del self.stopped_nodes[0]
         rest = RestHelper(RestConnection(nodeA))
         assert rest.is_ns_server_running()
-        time.sleep(10)
+        self.sleep(10, "Wait before rebalance start")
         self.cluster.rebalance([nodeB], [nodeA], [])
 
         # stop nodeB and failover

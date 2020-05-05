@@ -1,8 +1,8 @@
+import time
+
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection, RestHelper
-from BucketLib.BucketOperations import BucketHelper
-import time
 from remote.remote_util import RemoteMachineShellConnection
 
 
@@ -62,7 +62,8 @@ class CollectionsRebalance(CollectionBase):
         self.subsequent_data_load()  # sync data load
         self.data_validation_collection()
 
-    def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
+    def wait_for_failover_or_assert(self, expected_failover_count,
+                                    timeout=180):
         time_start = time.time()
         time_max_end = time_start + timeout
         actual_failover_count = 0
@@ -70,7 +71,7 @@ class CollectionsRebalance(CollectionBase):
             actual_failover_count = self.get_failover_count()
             if actual_failover_count == expected_failover_count:
                 break
-            time.sleep(20)
+            self.sleep(20)
         time_end = time.time()
         self.assertTrue(actual_failover_count == expected_failover_count,
                         "{0} nodes failed over, expected : {1}"

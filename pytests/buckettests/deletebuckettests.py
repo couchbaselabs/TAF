@@ -34,8 +34,7 @@ class DeleteBucketTests(BaseTestCase):
                 return True
             else:
                 data_file = '{0}-data'.format(bucket)
-                self.log.info("still waiting for deletion of {0} ...".format(data_file))
-                time.sleep(2)
+                self.sleep(2, "Still waiting for %s deletion" % data_file)
         return False
 
     def verify_data_files_deletion(self,

@@ -35,7 +35,7 @@ class XDCRTransactions(XDCRNewBaseTest):
         super(XDCRTransactions, self).tearDown()
 
     def wait_for_op_to_complete(self, timeout=60):
-        time.sleep(timeout)
+        self.sleep(timeout, "Wait for ops to complete")
 
     def verify_results(self):
         for cb_cluster in self.clusters:

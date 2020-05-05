@@ -1,4 +1,3 @@
-import time
 import json
 
 from basetestcase import BaseTestCase
@@ -148,8 +147,7 @@ class basic_ops(BaseTestCase):
         stats = mc.stats()
         self.log.info('curr_items: {0} and curr_temp_items:{1}'
                       .format(stats['curr_items'], stats['curr_temp_items']))
-        self.log.info("Sleeping for 5 and checking stats again")
-        time.sleep(5)
+        self.sleep(5, "Wait before checking the stats")
         stats = mc.stats()
         self.log.info('curr_items: {0} and curr_temp_items:{1}'
                       .format(stats['curr_items'], stats['curr_temp_items']))
@@ -588,7 +586,7 @@ class basic_ops(BaseTestCase):
                             'compression mode set to off')
 
             # sleep for 10 sec (minimum 250sec)
-            time.sleep(10)
+            self.sleep(10)
 
         # Load data and check stats to see compression
         # is not done for newly added data

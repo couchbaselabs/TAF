@@ -3,6 +3,7 @@ from random import shuffle
 
 from BucketLib.bucket import Bucket
 from Cb_constants import constants
+from common_lib import sleep
 from global_vars import logger
 from membase.api.exception import StatsUnavailableException, \
     ServerAlreadyJoinedException, RebalanceFailedException, \
@@ -71,10 +72,10 @@ class RebalanceHelper(object):
 
                 previous_stat_value = curr_stat_value
 
+                sleep_time = 2
                 if not verbose:
-                    time.sleep(0.1)
-                else:
-                    time.sleep(2)
+                    sleep_time = 0.1
+                sleep(sleep_time)
         return verified
 
     @staticmethod
@@ -113,23 +114,24 @@ class RebalanceHelper(object):
 
                     previous_stat_value = curr_stat_value
 
+                    sleep_time = 2
                     if not verbose:
-                        time.sleep(0.1)
-                    else:
-                        time.sleep(2)
+                        sleep_time = 0.1
+                    sleep(sleep_time)
             except:
                 log.info("unable to collect stats from server {0}".format(master))
-                verified = True  #TODO: throw ex and assume caller catches
+                # TODO: throw ex and assume caller catches
+                verified = True
                 break
-            # wait for 5 seconds for the next check
-            time.sleep(5)
+            sleep(5, "Wait before next stats check", log_type="infra")
 
         return verified
 
     @staticmethod
-    def wait_for_stats_no_timeout(master, bucket, stat_key, stat_value, timeout_in_seconds=-1, verbose=True):
+    def wait_for_stats_no_timeout(master, bucket, stat_key, stat_value,
+                                  timeout_in_seconds=-1, verbose=True):
         log = logger.get("infra")
-        log.info("waiting for bucket {0} stat: {1} to match {2} on {3}"
+        log.info("Waiting for bucket {0} stat: {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
         rest = RestConnection(master)
         stats = rest.get_bucket_stats(bucket)
@@ -138,14 +140,15 @@ class RebalanceHelper(object):
             stats = rest.get_bucket_stats(bucket)
             if verbose:
                 log.info("{0} : {1}".format(stat_key, stats.get(stat_key, -1)))
-            time.sleep(5)
+            sleep(5, log_type="infra")
         return True
 
     @staticmethod
-    #bucket is a json object that contains name,port,password
-    def wait_for_mc_stats(master, bucket, stat_key, stat_value, timeout_in_seconds=120, verbose=True):
+    # Bucket is a json object that contains name,port,password
+    def wait_for_mc_stats(master, bucket, stat_key, stat_value,
+                          timeout_in_seconds=120, verbose=True):
         log = logger.get("infra")
-        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
+        log.info("Waiting for bucket {0} stat: {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
         start = time.time()
         verified = False
@@ -162,29 +165,29 @@ class RebalanceHelper(object):
                 if stats and stat_key in stats:
                     if verbose:
                         log.info("{0} : {1}".format(stat_key, stats[stat_key]))
+                sleep_time = 2
                 if not verbose:
-                    time.sleep(0.1)
-                else:
-                    time.sleep(2)
+                    sleep_time = 0.1
+                sleep(sleep_time, log_type="infra")
         return verified
 
     @staticmethod
     def wait_for_mc_stats_no_timeout(master, bucket, stat_key, stat_value,
                                      timeout_in_seconds=-1, verbose=True):
         log = logger.get("infra")
-        log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
+        log.info("Waiting for bucket {0} stat : {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
         # keep retrying until reaches the server
-        stats = {}
+        stats = dict()
         while not stats:
             try:
                 c = MemcachedClient(master.ip, constants.memcached_port)
                 c.sasl_auth_plain(bucket, '')
                 stats = c.stats()
             except Exception as e:
-                log.info("Exception: %s, retry in 2 seconds ..." % str(e))
-                stats = {}
-                time.sleep(2)
+                stats = dict()
+                sleep(2, "Exception: %s. Will retry.." % str(e),
+                      log_type="infra")
             finally:
                 c.close()
 
@@ -195,21 +198,23 @@ class RebalanceHelper(object):
             c.close()
             if verbose:
                 log.info("{0} : {1}".format(stat_key, stats[stat_key]))
-            time.sleep(5)
+            sleep(5, log_type="infra")
         return True
 
     @staticmethod
-    #bucket is a json object that contains name,port,password
-    def wait_for_stats_int_value(master, bucket, stat_key, stat_value, option="==", timeout_in_seconds=120, verbose=True):
+    # bucket is a json object that contains name,port,password
+    def wait_for_stats_int_value(master, bucket, stat_key, stat_value,
+                                 option="==", timeout_in_seconds=120,
+                                 verbose=True):
         log = logger.get("infra")
-        log.info("waiting for bucket {0} stat : {1} to {2} {3} on {4}".format(bucket, stat_key, option, \
-                                                                                stat_value, master.ip))
+        log.info("waiting for bucket {0} stat : {1} to {2} {3} on {4}"
+                 .format(bucket, stat_key, option, stat_value, master.ip))
         start = time.time()
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
             rest = RestConnection(master)
             stats = rest.get_bucket_stats(bucket)
-            #some stats are in memcached
+            # some stats are in memcached
             if stats and stat_key in stats:
                 actual = int(stats[stat_key])
                 if option == "==":
@@ -226,14 +231,15 @@ class RebalanceHelper(object):
                     log.info("verified {0} : {1}".format(stat_key, actual))
                     break
                 if verbose:
-                    log.info("{0} : {1} isn't {2} {3}".format(stat_key, stat_value, option, actual))
-            time.sleep(2)
+                    log.info("{0} : {1} isn't {2} {3}"
+                             .format(stat_key, stat_value, option, actual))
+            sleep(2, log_type="infra")
         return verified
 
     @staticmethod
-    #bucket is a json object that contains name,port,password
-    def wait_for_stats_on_all(master, bucket, stat_key, stat_value, timeout_in_seconds=120,
-                              fn=None):
+    # bucket is a json object that contains name,port,password
+    def wait_for_stats_on_all(master, bucket, stat_key, stat_value,
+                              timeout_in_seconds=120, fn=None):
         log = logger.get("infra")
         fn = fn or RebalanceHelper.wait_for_stats
         rest = RestConnection(master)

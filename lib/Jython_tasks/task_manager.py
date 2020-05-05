@@ -4,6 +4,7 @@ import time
 from java.util.concurrent import Executors, TimeUnit
 from threading import InterruptedException
 
+from common_lib import sleep
 from global_vars import logger
 
 
@@ -15,10 +16,6 @@ class TaskManager:
         self.number_of_threads = number_of_threads
         self.pool = Executors.newFixedThreadPool(self.number_of_threads)
         self.futures = dict()
-
-    def sleep(self, time_in_sec, message):
-        self.log.info("%s. Sleep for %s seconds.." % (message, time_in_sec))
-        time.sleep(time_in_sec)
 
     def add_new_task(self, task):
         future = self.pool.submit(task)
@@ -34,8 +31,9 @@ class TaskManager:
 
     def schedule(self, task, sleep_time=0):
         if sleep_time > 0:
-            self.sleep(sleep_time, "Wait before scheduling task %s"
-                                   % task.thread_name)
+            sleep(sleep_time,
+                  "Wait before scheduling task %s" % task.thread_name,
+                  log_type="infra")
         self.add_new_task(task)
 
     def stop_task(self, task):
@@ -44,8 +42,10 @@ class TaskManager:
         future = self.futures[task.thread_name]
         i = 0
         while not future.isDone() and i < 30:
-            self.sleep(1, "Wait for %s to complete. Current status: %s"
-                          % (task.thread_name, future.isDone()))
+            sleep(1,
+                  "Wait for %s to complete. Current status: %s"
+                  % (task.thread_name, future.isDone()),
+                  log_type="infra")
             i += 1
         else:
             self.log.debug("Task %s in already finished. No need to stop task"

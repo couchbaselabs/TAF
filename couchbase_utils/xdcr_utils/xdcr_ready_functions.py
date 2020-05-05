@@ -1,6 +1,6 @@
 import re
-import time
 
+from common_lib import sleep
 from global_vars import logger
 from membase.api.exception import XDCRException
 from membase.api.rest_client import RestConnection
@@ -1080,7 +1080,7 @@ class XDCReplication:
         self.__validate_start_audit_event()
         # if within this 10s for pipeline updater if we try to create another replication, it doesn't work until the previous pipeline is updated.
         # but better to have this 10s sleep between replications.
-        time.sleep(10)
+        sleep(10, "Wait between replications")
 
     def __verify_pause(self):
         """Verify if replication is paused"""

@@ -3,6 +3,7 @@ import Queue
 from threading import Thread
 
 from Cb_constants import constants
+from common_lib import sleep
 from global_vars import logger
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
@@ -140,9 +141,10 @@ class ClusterOperationHelper(object):
             _new_stats = rest.get_bucket_stats(bucket)
             if _new_stats and 'ep_flusher_todo' in _new_stats:
                 stats.append(_new_stats[stat_key])
-                time.sleep(0.5)
+                # Wait before checking bucket_stats
+                sleep(0.5)
             else:
-                log.error("unable to obtain stats for bucket: %s" % bucket)
+                log.error("Unable to obtain stats for bucket: %s" % bucket)
         value_90th = ClusterOperationHelper.percentile(stats, 90)
         average = float(sum(stats)) / len(stats)
         log.info("90th percentile value is {0} and average {1}"

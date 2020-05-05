@@ -9,6 +9,8 @@ from couchbase.bucket import Bucket, LOCKMODE_WAIT, CouchbaseError, \
 from couchbase.cluster import ServerTasks, PasswordAuthenticator
 from decorator import decorator
 
+from common_lib import sleep
+
 description = """
 Upsert some documents into a bucket using the couchbase python client.
 The tool can create documents and update them based on the count parameter.
@@ -34,12 +36,14 @@ def with_sleep(method, *args):
     end_time = time.time()
     exec_time = end_time - start_time
     if self.rate_limited and exec_time < self.thread_min_time:
-        time.sleep(self.thread_min_time - exec_time)
+        sleep(self.thread_min_time - exec_time)
     return return_value
+
 
 UPSERT = "upsert"
 DELETE = "delete"
 VALIDATE = "validate"
+
 
 def parseArguments():
     parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawTextHelpFormatter)
@@ -91,7 +95,7 @@ class Document:
         sec = range(0,60)
         self.val = int(value)
         self.update = 0
-         
+
         import random
         num = self.val
         organization = ["Wipro","Infosys","TCS","Tech Mahindra","CTS","Microsoft"]
@@ -100,16 +104,16 @@ class Document:
         employment = []
 #         start_date = "%04d"%random.choice(year) + "-" + "%02d"%random.choice(month) + "-" + "%02d"%random.choice(day)
 #         end_date = "%04d"%random.choice(year) + "-" + "%02d"%random.choice(month) + "-" + "%02d"%random.choice(day)
-         
-        EmploymentType = {"organization":random.choice(organization)}
-        employment.append(EmploymentType)
-         
+
         EmploymentType = {"organization":random.choice(organization)}
         employment.append(EmploymentType)
 
         EmploymentType = {"organization":random.choice(organization)}
         employment.append(EmploymentType)
-         
+
+        EmploymentType = {"organization":random.choice(organization)}
+        employment.append(EmploymentType)
+
         self.id = num
 #         self.alias ="Peter"+"%05d"%num
 #         self.name = "Peter Thomas"

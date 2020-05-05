@@ -1,12 +1,11 @@
 import json
 import os
-import time
 
+from common_lib import sleep
 from global_vars import logger
 from membase.api.rest_client import RestConnection
 from EventingLib.EventingOperations_Rest import EventingHelper
 from remote.remote_util import RemoteMachineShellConnection
-import inspect
 from BucketLib.BucketOperations import BucketHelper
 
 
@@ -104,7 +103,7 @@ class EventingUtils:
         result = self.eventing_helper.get_deployed_eventing_apps()
         count = 0
         while name not in result and count < iterations:
-            self.sleep(30, message="Waiting for eventing node to come out of bootstrap state...")
+            sleep(30, "Waiting for eventing node to complete bootstrap")
             count += 1
             result = self.eventing_helper.get_deployed_eventing_apps()
         if count == iterations:
@@ -112,11 +111,11 @@ class EventingUtils:
                 'Eventing took lot of time to come out of bootstrap state or did not successfully bootstrap')
 
     def wait_for_undeployment(self, name, iterations=20):
-        self.sleep(30, message="Waiting for undeployment of function...")
+        sleep(30, "Waiting for undeployment of function...")
         result = self.eventing_helper.get_running_eventing_apps()
         count = 0
         while name in result and count < iterations:
-            self.sleep(30, message="Waiting for undeployment of function...")
+            sleep(30, "Waiting for undeployment of function...")
             count += 1
             result = self.eventing_helper.get_running_eventing_apps()
         if count == iterations:
@@ -149,7 +148,8 @@ class EventingUtils:
                 # wait for eventing node to process dcp mutations
                 self.log.info("Number of {0} processed till now : {1}".format(mutation_type, actual_dcp_mutations))
                 while actual_dcp_mutations != expected_dcp_mutations and count < 20:
-                    self.sleep(timeout/20, message="Waiting for eventing to process all dcp mutations...")
+                    sleep(timeout/20,
+                          "Waiting for eventing to process all dcp mutations")
                     count += 1
                     if num_nodes <= 1:
                         stats = self.eventing_helper.get_event_processing_stats(name)
@@ -167,15 +167,16 @@ class EventingUtils:
         count = 0
         stats_dst = self.bucket_helper.get_bucket_stats(bucket)
         while stats_dst["curr_items"] != expected_dcp_mutations and count < 20:
-            message = "Waiting for handler code {2} to complete bucket operations... Current : {0} Expected : {1}".\
+            message = "Waiting for handler code {2} to complete bucket operations... " \
+                      "Current : {0} Expected : {1}".\
                       format(stats_dst["curr_items"], expected_dcp_mutations,name)
-            self.sleep(timeout/20, message=message)
-            curr_items=stats_dst["curr_items"]
+            sleep(timeout/20, message)
+            curr_items = stats_dst["curr_items"]
             stats_dst = self.bucket_helper.get_bucket_stats(bucket)
             if curr_items == stats_dst["curr_items"]:
                 count += 1
             else:
-                count=0
+                count = 0
         try:
             stats_src = self.bucket_helper.get_bucket_stats(self.src_bucket_name)
             self.log.info("Documents in source bucket : {}".format(stats_src["curr_items"]))
@@ -222,10 +223,11 @@ class EventingUtils:
                                                                                             indent=4)))
 
     def eventing_stats(self):
-        self.sleep(30)
-        content=self.eventing_helper.get_all_eventing_stats()
-        js=json.loads(content)
-        self.log.debug("execution stats: {0}".format(js))
+        self.log.debug("Wait before get_all_eventing_stats() call")
+        sleep(30)
+        content = self.eventing_helper.get_all_eventing_stats()
+        js = json.loads(content)
+        self.log.debug("Execution stats: {0}".format(js))
         # for j in js:
         #     print j["function_name"]
         #     print j["execution_stats"]["on_update_success"]
@@ -253,7 +255,8 @@ class EventingUtils:
 
     def undeploy_and_delete_function(self, body):
         self.undeploy_function(body)
-        self.sleep(5)
+        self.log.debug("Wait between undeploy & before delete_function() call")
+        sleep(5)
         self.delete_function(body)
 
     def undeploy_function(self, body):
@@ -432,54 +435,47 @@ class EventingUtils:
     #                                                                  json.dumps(full_out, sort_keys=True, indent=4)))
     #         raise Exception("Eventing has not processed all the mutation in expected time, docs:{}  expected doc: {}".format(result, doc_count))
 
-    def pause_resume_n(self,body,num):
+    def pause_resume_n(self, body, num):
         for i in range(num):
             self.pause_function(body)
-            self.sleep(30)
+            self.log.debug("Wait between pause_function & "
+                           "before resume_function() call")
+            sleep(30)
             self.resume_function(body)
 
-
-    def wait_for_handler_state(self, name,status,iterations=20):
-        self.sleep(20, message="Waiting for {} to {}...".format(name,status))
-        result = self.eventing_helper.get_composite_eventing_status()
+    def wait_for_handler_state(self, name, status, iterations=20):
+        sleep(20, "Waiting for %s to %s..." % (name, status))
+        _ = self.eventing_helper.get_composite_eventing_status()
         count = 0
         composite_status = None
         while composite_status != status and count < iterations:
-            self.sleep(20,"Waiting for {} to {}...".format(name,status))
+            sleep(20, "Waiting for %s to %s..." % (name, status))
             result = self.eventing_helper.get_composite_eventing_status()
             for i in range(len(result['apps'])):
                 if result['apps'][i]['name'] == name:
                     composite_status = result['apps'][i]['composite_status']
-            count+=1
+            count += 1
         if count == iterations:
-            raise Exception('Eventing took lot of time for handler {} to {}'.format(name,status))
+            raise Exception('Eventing took lot of time for handler %s to %s'
+                            % (name, status))
 
-    def setup_curl(self,):
-        o=os.system('python scripts/curl_setup.py start')
+    def setup_curl(self):
+        o = os.system('python scripts/curl_setup.py start')
         self.log.info("=== started docker container =======".format(o))
-        self.sleep(10)
-        if o!=0:
+        sleep(10, "Wait for docker to start", log_type="infra")
+        if o != 0:
             self.log.info("script result {}".format(o))
             raise Exception("unable to start docker")
-        o=os.system('python scripts/curl_setup.py setup')
+        o = os.system('python scripts/curl_setup.py setup')
         self.log.info("=== setup done =======")
-        if o!=0:
+        if o != 0:
             self.log.info("script result {}".format(o))
             raise Exception("curl setup fail")
 
     def check_eventing_rebalance(self):
-        status=self.eventing_helper.get_eventing_rebalance_status()
+        status = self.eventing_helper.get_eventing_rebalance_status()
         self.log.info("Eventing rebalance status: {}".format(status))
-        if status=="true":
+        if status == "true":
             return True
         else:
             return False
-
-    def sleep(self, timeout=15, message=None):
-        self.log.debug("Sleep is called from %s -> %s():L%s"
-                       % (inspect.stack()[1][1],
-                          inspect.stack()[1][3],
-                          inspect.stack()[1][2]))
-        self.log.info("Reason: %s. Sleep for %s secs ..." % (message,
-                                                             timeout))
-        time.sleep(timeout)

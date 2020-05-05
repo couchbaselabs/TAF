@@ -30,7 +30,8 @@ class basic_ops(BaseTestCase):
                 ram_quota=100,
                 bucket_type=self.bucket_type)
 
-        time.sleep(10)
+        self.sleep(10, "Wait for bucket to become ready for ops")
+
         self.def_bucket = self.bucket_util.get_all_buckets()
         self.client = SDKClient(RestConnection(self.cluster.master),
                                 self.def_bucket[0])

@@ -35,7 +35,7 @@ class basic_ops(BaseTestCase):
                 eviction_policy=self.bucket_eviction_policy,
                 compression_mode=self.compression_mode)
 
-        time.sleep(20)
+        self.sleep(10, "Wait for bucket to become ready for ops")
 
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0

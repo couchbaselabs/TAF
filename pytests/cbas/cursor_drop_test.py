@@ -3,45 +3,45 @@ Created on Apr 23, 2018
 @author: riteshagarwal
 
 To run:
-/opt/jython/bin/jython -J-cp 'Couchbase-Java-Client-2.5.6/*:jsch-0.1.54.jar:doc_ops.jar' testrunner.py 
+/opt/jython/bin/jython -J-cp 'Couchbase-Java-Client-2.5.6/*:jsch-0.1.54.jar:doc_ops.jar' testrunner.py
 -i INI_FILE.ini num_query=100,num_items=10000 -t cbas.cursor_drop_test.volume.test_volume,num_query=100,num_items=10000000
 
 '''
-import bulk_doc_operations.doc_ops as doc_op
-from com.couchbase.client.java.env import DefaultCouchbaseEnvironment
-import copy
-from com.couchbase.client.java import *;
-from com.couchbase.client.java.transcoder import JsonTranscoder
-from com.couchbase.client.java.document import *;
-from com.couchbase.client.java.document.json import *;
-from com.couchbase.client.java.query import *;
-import threading
-import string
+
+import json
 import random
+import sys
+import threading
+import time
+
+from com.couchbase.client.java.env import DefaultCouchbaseEnvironment
+from com.couchbase.client.java import *
+from com.couchbase.client.java.transcoder import JsonTranscoder
+from com.couchbase.client.java.document import *
+from com.couchbase.client.java.document.json import *
+from com.couchbase.client.java.query import *
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
-import json
-from lib.CbasLib.CBASOperations import CBASHelper
-import json
-from com.couchbase.client.java.analytics import AnalyticsQuery, AnalyticsParams
-import sys, time, traceback
-from pytests.cbas.cbas_base import CBASBaseTest
-from lib.membase.api.rest_client import RestConnection, RestHelper
+
+import bulk_doc_operations.doc_ops as doc_op
+from common_lib import sleep
+from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import bucket_utils
 from basetestcase import BaseTestCase
-from lib.remote.remote_util import RemoteMachineShellConnection
+from remote.remote_util import RemoteMachineShellConnection
 from node_utils.node_ready_functions import NodeHelper
 
+
 class global_vars:
-    
     message_id = 1
     start_message_id = 0
     end_message_id = 0
-    
-    
+
+
 class GleambookMessages_Docloader(Callable):
-    def __init__(self, msg_bucket, num_items, start_from,op_type="create",batch_size=1000):
+    def __init__(self, msg_bucket, num_items, start_from, op_type="create",
+                 batch_size=1000):
         self.msg_bucket = msg_bucket
         self.num_items = num_items
         self.start_from = start_from
@@ -55,20 +55,20 @@ class GleambookMessages_Docloader(Callable):
         self.month = range(1,12)
         self.day = range(1,28)
         self.batch_size = batch_size
-        
+
     def generate_GleambookMessages(self, num=None,message_id=None):
 
         date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
         time = "%02d"%random.choice(range(0,24)) + "-" + "%02d"%random.choice(range(0,60)) + "-" + "%02d"%random.choice(self.day)
 
         GleambookMessages = {"message_id": "%d"%message_id, "author_id": "%d"%num,
-#                              "in_response_to": "%d"%random.choice(range(message_id)), 
-#                              "sender_location": str(round(random.uniform(0, 100), 4))+","+str(round(random.uniform(0, 100), 4)), 
-                             "send_time": date+"T"+time, 
+#                              "in_response_to": "%d"%random.choice(range(message_id)),
+#                              "sender_location": str(round(random.uniform(0, 100), 4))+","+str(round(random.uniform(0, 100), 4)),
+                             "send_time": date+"T"+time,
 #                              "message": ''.join(random.choice(string.lowercase) for x in range(50))
                              }
         return GleambookMessages
-    
+
     def __str__(self):
         if self.exception:
             return "[%s] %s download error %s in %.2fs" % \
@@ -97,17 +97,16 @@ class GleambookMessages_Docloader(Callable):
                 if self.op_type == "create":
                     for j in xrange(random.randint(1,10)):
                         var = str(json.dumps(self.generate_GleambookMessages(i+self.start_from , global_vars.message_id)))
-                        user = JsonTranscoder().stringToJsonObject(var);
-#                         print i+self.start_from,global_vars.message_id
-                        doc = JsonDocument.create(str(global_vars.message_id), user);
+                        user = JsonTranscoder().stringToJsonObject(var)
+                        # print i+self.start_from,global_vars.message_id
+                        doc = JsonDocument.create(str(global_vars.message_id), user)
                         docs.append(doc)
-                        temp+=1
+                        temp += 1
                         if temp == self.batch_size:
                             try:
                                 doc_op().bulkSet(self.msg_bucket, docs)
                             except:
-                                print "Sleeping for 20 secs"
-                                time.sleep(20)
+                                sleep(20, "Exception in Java SDK - create")
                                 try:
                                     doc_op().bulkUpsert(self.msg_bucket, docs)
                                 except:
@@ -119,27 +118,26 @@ class GleambookMessages_Docloader(Callable):
                     end_message_id = global_vars.message_id
                 elif self.op_type == "update":
                     var = str(json.dumps(self.generate_GleambookMessages(i+self.start_from , i+start_message_id)))
-                    user = JsonTranscoder().stringToJsonObject(var);
-                    doc = JsonDocument.create(str(i+start_message_id), user);
+                    user = JsonTranscoder().stringToJsonObject(var)
+                    doc = JsonDocument.create(str(i+start_message_id), user)
                     docs.append(doc)
                     if temp == self.batch_size:
                         try:
                             doc_op().bulkUpsert(self.msg_bucket, docs)
                         except:
-                            print "Sleeping for 20 secs"
-                            time.sleep(20)
+                            sleep(20, "Exception in Java SDK - create")
                             try:
                                 doc_op().bulkUpsert(self.msg_bucket, docs)
                             except:
                                 print "skipping %s documents upload"%len(docs)
                                 pass
                         temp = 0
-                        docs=[]           
+                        docs=[]
                 elif self.op_type == "delete":
                     try:
-                        response = self.msg_bucket.remove(str(i+start_message_id));
+                        response = self.msg_bucket.remove(str(i+start_message_id))
                     except:
-                        pass      
+                        pass
                 self.loaded += 1
         except Exception, ex:
             import traceback
@@ -149,7 +147,7 @@ class GleambookMessages_Docloader(Callable):
             self.exception = ex
         self.completed = time.time()
         return self
-    
+
 class GleambookUser_Docloader(Callable):
     def __init__(self, bucket, num_items, start_from,op_type="create", batch_size=2000):
         self.bucket = bucket
@@ -168,7 +166,7 @@ class GleambookUser_Docloader(Callable):
         self.min = range(0,60)
         self.sec = range(0,60)
         self.batch_size = batch_size
-        
+
     def generate_GleambookUser(self, num=None):
         organization = ["Wipro","Infosys","TCS","Tech Mahindra","CTS","Microsoft"]
         date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
@@ -176,16 +174,16 @@ class GleambookUser_Docloader(Callable):
         employment = []
         start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
         end_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
-        
+
         for i in xrange(3):
 #             start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
 #             end_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
- 
+
             EmploymentType = {"organization":random.choice(organization),"start_date":start_date,"end_date":end_date}
             employment.append(EmploymentType)
- 
+
 #             start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
-             
+
             EmploymentType = {"organization":random.choice(organization),"start_date":start_date}
             employment.append(EmploymentType)
 
@@ -221,16 +219,15 @@ class GleambookUser_Docloader(Callable):
             for i in xrange(self.num_items):
                 if self.op_type == "create":
                     var = str(json.dumps(self.generate_GleambookUser(i+self.start_from)))
-                    user = JsonTranscoder().stringToJsonObject(var);
-                    doc = JsonDocument.create(str(i+self.start_from), user);
+                    user = JsonTranscoder().stringToJsonObject(var)
+                    doc = JsonDocument.create(str(i+self.start_from), user)
                     docs.append(doc)
                     temp += 1
                     if temp == self.batch_size:
                         try:
                             doc_op().bulkSet(self.bucket, docs)
                         except:
-                            print "Exception from Java SDK - create"
-                            time.sleep(20)
+                            sleep(20, "Exception in Java SDK - create")
                             try:
                                 doc_op().bulkUpsert(self.bucket, docs)
                             except:
@@ -238,19 +235,18 @@ class GleambookUser_Docloader(Callable):
                                 pass
                         temp = 0
                         docs=[]
-#                     response = self.bucket.insert(doc);
+#                     response = self.bucket.insert(doc)
                 elif self.op_type == "update":
                     var = str(json.dumps(self.generate_GleambookUser(i+self.start_from)))
-                    user = JsonTranscoder().stringToJsonObject(var);
-                    doc = JsonDocument.create(str(i+self.start_from), user);
+                    user = JsonTranscoder().stringToJsonObject(var)
+                    doc = JsonDocument.create(str(i+self.start_from), user)
                     docs.append(doc)
                     temp += 1
                     if temp == self.batch_size:
                         try:
                             doc_op().bulkUpsert(self.bucket, docs)
                         except:
-                            print "Exception from Java SDK - create"
-                            time.sleep(20)
+                            sleep(20, "Exception in Java SDK - create")
                             try:
                                 doc_op().bulkUpsert(self.bucket, docs)
                             except:
@@ -258,10 +254,10 @@ class GleambookUser_Docloader(Callable):
                                 pass
                         temp = 0
                         docs=[]
-                    
+
                 elif self.op_type == "delete":
                     try:
-                        response = self.bucket.remove(str(i+self.start_from));
+                        response = self.bucket.remove(str(i+self.start_from))
                     except:
                         print "Exception from Java SDK - remove"
                 self.loaded += 1
@@ -273,7 +269,7 @@ class GleambookUser_Docloader(Callable):
             self.exception = ex
         self.completed = time.time()
         return self
-    
+
 def shutdown_and_await_termination(pool, timeout):
     pool.shutdown()
     try:
@@ -286,7 +282,7 @@ def shutdown_and_await_termination(pool, timeout):
         pool.shutdownNow()
         # Preserve interrupt status
         Thread.currentThread().interrupt()
- 
+
 class volume(BaseTestCase):
     def setUp(self, add_defualt_cbas_node=True):
         self.input = TestInputSingleton.input
@@ -313,7 +309,7 @@ class volume(BaseTestCase):
             total_available_memory_in_mb -= self.info.cbasMemoryQuota
         if "eventing" in active_service:
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
-        
+
         print(total_memory_in_mb)
         available_memory =  total_available_memory_in_mb - threadhold_memory
         self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=available_memory)
@@ -340,15 +336,15 @@ class volume(BaseTestCase):
         result = RestConnection(self.query_node).query_tool("CREATE PRIMARY INDEX idx_GleambookMessages ON GleambookMessages;")
         self.sleep(10, "wait for index creation.")
         self.assertTrue(result['status'] == "success")
- 
+
         result = RestConnection(self.query_node).query_tool("CREATE PRIMARY INDEX idx_ChirpMessages ON ChirpMessages;")
         self.sleep(10, "wait for index creation.")
         self.assertTrue(result['status'] == "success")
-        
+
     def test_volume(self):
         nodes_in_cluster= [self.servers[0]]
         print "Start Time: %s"%str(time.strftime("%H:%M:%S", time.gmtime(time.time())))
-        
+
         ########################################################################################################################
         self.log.info("Add a N1QL/Index nodes")
         self.query_node = self.servers[1]
@@ -356,11 +352,11 @@ class volume(BaseTestCase):
         rest.set_data_path(data_path=self.query_node.data_path,index_path=self.query_node.index_path,cbas_path=self.query_node.cbas_path)
         result = self.add_node(self.query_node, rebalance=False)
         self.assertTrue(result, msg="Failed to add N1QL/Index node.")
-        
+
         self.log.info("Add a KV nodes")
         result = self.add_node(self.servers[2], services=["kv"], rebalance=True)
         self.assertTrue(result, msg="Failed to add KV node.")
-         
+
         nodes_in_cluster = nodes_in_cluster + [self.servers[1], self.servers[2]]
         ########################################################################################################################
         self.log.info("Step 2: Create Couchbase buckets.")
@@ -370,16 +366,16 @@ class volume(BaseTestCase):
             NodeHelper.wait_service_started(node)
         ########################################################################################################################
         self.log.info("Step 3: Create 10M docs average of 1k docs for 8 couchbase buckets.")
-        env = DefaultCouchbaseEnvironment.builder().mutationTokensEnabled(True).computationPoolSize(5).socketConnectTimeout(100000).connectTimeout(100000).maxRequestLifetime(TimeUnit.SECONDS.toMillis(300)).build();
-        cluster = CouchbaseCluster.create(env, self.master.ip);
+        env = DefaultCouchbaseEnvironment.builder().mutationTokensEnabled(True).computationPoolSize(5).socketConnectTimeout(100000).connectTimeout(100000).maxRequestLifetime(TimeUnit.SECONDS.toMillis(300)).build()
+        cluster = CouchbaseCluster.create(env, self.master.ip)
         cluster.authenticate("Administrator","password")
-        bucket = cluster.openBucket("GleambookUsers");
+        bucket = cluster.openBucket("GleambookUsers")
         msg_bucket = cluster.openBucket("GleambookMessages")
-        
+
         pool = Executors.newFixedThreadPool(5)
         items_start_from = 0
         total_num_items = self.input.param("num_items",5000)
-        
+
         executors=[]
         num_executors = 5
         doc_executors = 5
@@ -391,8 +387,8 @@ class volume(BaseTestCase):
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
-        shutdown_and_await_termination(pool, num_executors)   
-        
+        shutdown_and_await_termination(pool, num_executors)
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
         items_start_from += total_num_items
@@ -404,7 +400,7 @@ class volume(BaseTestCase):
         executors=[]
         num_executors = 5
         doc_executors = 4
-          
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
@@ -414,7 +410,7 @@ class volume(BaseTestCase):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.sleep(120,"Sleeping after 2nd cycle.")
         pool = Executors.newFixedThreadPool(5)
@@ -433,7 +429,7 @@ class volume(BaseTestCase):
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
-        shutdown_and_await_termination(pool, num_executors)  
+        shutdown_and_await_termination(pool, num_executors)
         self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")

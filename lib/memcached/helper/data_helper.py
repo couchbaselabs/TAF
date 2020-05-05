@@ -17,6 +17,7 @@ from Queue import Queue
 
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import constants
+from common_lib import sleep
 from global_vars import logger
 from mc_bin_client import MemcachedClient, MemcachedError
 from mc_ascii_client import MemcachedAsciiClient
@@ -350,18 +351,16 @@ class MemcachedClientHelper(object):
     @staticmethod
     def flush_bucket(server, bucket, admin_user='cbadminbucket',admin_pass='password'):
         # if memcached throws OOM error try again ?
-        log = logger.get("test")
         client = MemcachedClientHelper.direct_client(server, bucket, admin_user=admin_user, admin_pass=admin_pass)
         retry_attempt = 5
         while retry_attempt > 0:
             try:
                 client.flush()
-                log.info('flushed bucket {0}...'.format(bucket))
+                logger.get("test").info("Bucket %s flushed" % bucket)
                 break
             except MemcachedError:
                 retry_attempt -= 1
-                log.info('flush raised memcached error trying again in 5 seconds...')
-                time.sleep(5)
+                sleep(5, "Flush raised memcached error. Will retry..")
         client.close()
         return
 
@@ -426,9 +425,12 @@ class ReaderThread(object):
         #    log.error(error_msg.format(key))
 
     def start(self):
-        client = MemcachedClientHelper.direct_client(self.info["server"], self.info['name'],admin_user='cbadminbucket',
-                                                     admin_pass='password')
-        time.sleep(5)
+        client = MemcachedClientHelper.direct_client(
+            self.info["server"],
+            self.info['name'],
+            admin_user='cbadminbucket',
+            admin_pass='password')
+        sleep(5, "Wait for MC client to be acquired", log_type="infra")
         while self.queue.empty() and self.keyset:
             selected = MemcachedClientHelper.random_pick(self.keyset)
             selected['how_many'] -= 1
@@ -549,12 +551,14 @@ class WorkerThread(threading.Thread):
                 if time.time() - last_reported > 2 * 60:
                     if not self.moxi:
                         awareness.done()
+                        rest = RestConnection(self.serverInfo)
                         try:
-                            awareness = VBucketAwareMemcached(RestConnection(self.serverInfo), self.name)
+                            awareness = VBucketAwareMemcached(rest, self.name)
                         except Exception:
                             # vbucket map is changing . sleep 5 seconds
-                            time.sleep(5)
-                            awareness = VBucketAwareMemcached(RestConnection(self.serverInfo), self.name)
+                            sleep(5, "Wait for vBucket map to get updated",
+                                  log_type="infra")
+                            awareness = VBucketAwareMemcached(rest, self.name)
                         self.log.info("Connected to {0} memcacheds"
                                       .format(len(awareness.memcacheds)))
                     last_reported = time.time()
@@ -605,10 +609,10 @@ class WorkerThread(threading.Thread):
                         awareness = VBucketAwareMemcached(RestConnection(self.serverInfo), self.name)
                     except Exception:
                         # vbucket map is changing . sleep 5 seconds
-                        time.sleep(5)
+                        sleep(5, "vBucket map is updating..", log_type="infra")
                         awareness = VBucketAwareMemcached(RestConnection(self.serverInfo), self.name)
                     self.log.info("Now connected to {0} memcacheds"
-                             .format(len(awareness.memcacheds)))
+                                  .format(len(awareness.memcacheds)))
                     if isinstance(self.serverInfo, dict):
                         self.log.error("Memcached error {0} {1} from {2}"
                                        .format(error.status, error.msg,
@@ -623,9 +627,9 @@ class WorkerThread(threading.Thread):
                         backoff_seconds = 15 * backoff_count
                     else:
                         backoff_seconds = 2 * backoff_count
-                    self.log.info("Received error #134. backing off for {0}sec"
-                                  .format(backoff_seconds))
-                    time.sleep(backoff_seconds)
+                    sleep(backoff_seconds,
+                          "Memcached error #134. Backing off for %s sec"
+                          % backoff_seconds)
 
                 self._rejected_keys_count += 1
                 self._rejected_keys.append({"key": key, "value": value})
@@ -1082,7 +1086,8 @@ class VBucketAwareMemcached(object):
             elif timeout <= 0:
                 return errors
             else:
-                time.sleep(pause)
+                # Sleep before calling
+                sleep(pause)
                 self.reset_vbuckets(self.rest, self._get_vBucket_ids(keyval.keys()))
                 rec_caller_fn(exp, flags, keyval, pause, timeout - pause)  # Start all over again for these key vals.
                 return []  # Note: If used for async,too many recursive threads could get spawn here.
@@ -1093,7 +1098,8 @@ class VBucketAwareMemcached(object):
                    or "Broken pipe" in error.strerror \
                    or "Connection reset by peer" in error.strerror \
                    and timeout > 0:
-                    time.sleep(pause)
+                    # Wait before reset_vbs call
+                    sleep(pause)
                     self.reset_vbuckets(self.rest, self._get_vBucket_ids(keyval.keys()))
                     rec_caller_fn(exp, flags, keyval, pause, timeout - pause)
                     return []
@@ -1105,7 +1111,8 @@ class VBucketAwareMemcached(object):
                    or "Broken pipe" in error.message \
                    or "Connection reset by peer" in error.message \
                    and timeout > 0:
-                    time.sleep(pause)
+                    # Wait before reset_vbs call
+                    sleep(pause)
                     self.reset_vbuckets(self.rest, self._get_vBucket_ids(keyval.keys()))
                     rec_caller_fn(exp, flags, keyval, pause, timeout - pause)
                     return []
@@ -1116,7 +1123,8 @@ class VBucketAwareMemcached(object):
             if timeout <= 0:
                 return [error]
             else:
-                time.sleep(pause)
+                # Wait before reset_vbs call
+                sleep(pause)
                 self.reset_vbuckets(self.rest, self._get_vBucket_ids(keyval.keys()))
                 rec_caller_fn(exp, flags, keyval, pause, timeout - pause)
                 return []
@@ -1168,7 +1176,8 @@ class VBucketAwareMemcached(object):
                or "Broken pipe" in error.message \
                or "Connection reset by peer" in error.message \
                and timeout > 0:
-                time.sleep(pause)
+                # Wait before reset_vbs call
+                sleep(pause)
                 self.reset_vbuckets(self.rest, self._get_vBucket_ids(keys))
                 return rec_caller_fn(keys, pause, timeout - pause)
             else:
@@ -1176,7 +1185,8 @@ class VBucketAwareMemcached(object):
         except BaseException as error:
             if timeout <= 0:
                 raise error
-            time.sleep(pause)
+            # Wait before reset_vbs call
+            sleep(pause)
             self.reset_vbuckets(self.rest, self._get_vBucket_ids(keys))
             return rec_caller_fn(keys, pause, timeout - pause)
 
@@ -1242,12 +1252,14 @@ class VBucketAwareMemcached(object):
                 return func(*args, **kargs)
             except MemcachedError as error:
                 if error.status == ERR_ETMPFAIL and backoff < .5:
-                    time.sleep(backoff)
+                    # Wait before retrying send_op
+                    sleep(backoff)
                     backoff *= 2
                 else:
                     raise error
             except (EOFError, IOError, socket.error), error:
-                raise MemcachedError(ERR_NOT_MY_VBUCKET, "Connection reset with error: {0}".format(error))
+                raise MemcachedError(ERR_NOT_MY_VBUCKET,
+                                     "Connection reset with error: %s" % error)
 
     def done(self):
         [self.memcacheds[ip].close() for ip in self.memcacheds]

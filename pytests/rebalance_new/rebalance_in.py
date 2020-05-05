@@ -29,7 +29,7 @@ class RebalanceInTests(RebalanceBaseTest):
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, [])
-        time.sleep(10)
+        self.sleep(10)
 
         tasks_info = self.bucket_util._async_load_all_buckets(
             self.cluster, self.gen_create, "create", 0,

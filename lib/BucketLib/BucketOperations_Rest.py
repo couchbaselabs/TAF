@@ -9,6 +9,7 @@ import time
 import urllib
 
 from bucket import Bucket
+from common_lib import sleep
 from membase.api.exception import \
     BucketCreationException, GetBucketInfoFailed, \
     BucketCompactionException
@@ -39,9 +40,7 @@ class BucketHelper(RestConnection):
         status, content, _ = self._http_request(api)
         num = 1
         while not status and num_attempt > num:
-            self.sleep("Try to get {0} again after {1} sec"
-                       .format(api, timeout))
-            time.sleep(timeout)
+            sleep(timeout, "Will retry to get %s" % api, log_type="infra")
             status, content, _ = self._http_request(api)
             num += 1
         if status:
@@ -102,10 +101,10 @@ class BucketHelper(RestConnection):
     def vbucket_map_ready(self, bucket, timeout_in_seconds=360):
         end_time = time.time() + timeout_in_seconds
         while time.time() <= end_time:
-            vBuckets = self.get_vbuckets(bucket)
-            if vBuckets:
+            v_buckets = self.get_vbuckets(bucket)
+            if v_buckets:
                 return True
-            time.sleep(0.5)
+            sleep(0.5, "Wait before retrying get_vbs call", log_type="infra")
         msg = 'Vbucket map not ready for bucket {0} after waiting {1} seconds'
         self.log.warn(msg.format(bucket, timeout_in_seconds))
         return False

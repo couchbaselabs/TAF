@@ -10,6 +10,7 @@ import time
 from threading import Thread
 
 from CbasLib.CBASOperations import CBASHelper
+from common_lib import sleep
 from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -342,8 +343,8 @@ class CbasUtil:
                 actual_error = errors[0]["msg"]
                 if "Failover response The vbucket belongs to another server" in actual_error or "Bucket configuration doesn't contain a vbucket map" in actual_error:
                     retry_attempt -= 1
-                    time.sleep(10)
                     self.log.debug("Retrying connecting of bucket")
+                    sleep(10)
                 else:
                     self.log.debug("Not a vbucket error, so don't retry")
                     connect_bucket_failed = False
@@ -413,8 +414,8 @@ class CbasUtil:
                         in actual_error \
                         or "Bucket configuration doesn't contain a vbucket map" in actual_error:
                     retry_attempt -= 1
-                    time.sleep(10)
                     self.log.debug("Retrying connecting of bucket")
+                    sleep(10)
                 else:
                     self.log.debug("Not a vbucket error, so don't retry")
                     connect_bucket_failed = False
@@ -494,7 +495,7 @@ class CbasUtil:
                                % counter)
                 return True
             else:
-                time.sleep(2)
+                sleep(2)
                 total_items = 0
                 for ds_name in cbas_dataset_names:
                     total_items += self.get_num_items_in_cbas_dataset(ds_name)[0]
@@ -556,7 +557,7 @@ class CbasUtil:
         if expected_mutated_count:
             while (count != expected_count
                    or mutated_count != expected_mutated_count) and tries > 0:
-                time.sleep(10)
+                sleep(10)
                 count, mutated_count = self.get_num_items_in_cbas_dataset(
                     dataset_name,
                     timeout=timeout,
@@ -564,7 +565,7 @@ class CbasUtil:
                 tries -= 1
         else :
             while count != expected_count and tries > 0:
-                time.sleep(10)
+                sleep(10)
                 count, mutated_count = self.get_num_items_in_cbas_dataset(
                     dataset_name,
                     timeout=timeout,
@@ -748,7 +749,7 @@ class CbasUtil:
             i += 1
             if i % self.concurrent_batch_size == 0:
                 self.log.debug("Submitted {0} queries".format(i))
-                time.sleep(5)
+                sleep(5)
             thread.start()
         for thread in threads:
             thread.join()
@@ -1333,8 +1334,7 @@ class CbasUtil:
                     analytics_recovered = True
                     break
             except:
-                self.log.info("Service unavailable sleep for 2 seconds, and retry")
-                time.sleep(2)
+                sleep(2, "Service unavailable. Will retry..")
         return analytics_recovered
 
     # Backup Analytics metadata

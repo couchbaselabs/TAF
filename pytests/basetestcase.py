@@ -1,13 +1,12 @@
 import datetime
 import os
-import time
 import traceback
 import unittest
-import inspect
 
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 from cb_tools.cb_cli import CbCli
+from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from global_vars import logger
@@ -184,6 +183,8 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager = TaskManager(self.thread_to_use)
         self.task = ServerTasks(self.task_manager)
         # End of library object creation
+
+        self.sleep = sleep
 
         self.cleanup = False
         self.nonroot = False
@@ -500,8 +501,7 @@ class BaseTestCase(unittest.TestCase):
             self.log.info('Running cbcollect on node ' + node.ip)
             rest = RestConnection(node)
             status, _, _ = rest.perform_cb_collect(params)
-            # Needed as it takes a few seconds before the collection start
-            time.sleep(10)
+            sleep(10, "Wait for CB collect to start", log_type="infra")
             self.log.info("%s - cbcollect status: %s" % (node.ip, status))
 
             if status is True:
@@ -519,9 +519,8 @@ class BaseTestCase(unittest.TestCase):
                         self.log.debug(cb_collect_response)
                         break
                     else:
-                        # CB collect running, wait and check progress again
                         retry += 1
-                        time.sleep(10)
+                        sleep(10, "CB collect still running", log_type="infra")
 
                 self.log.info("Copying cbcollect ZIP file to Client")
                 remote_client = RemoteMachineShellConnection(node)
@@ -545,15 +544,6 @@ class BaseTestCase(unittest.TestCase):
                         % node.ip)
             else:
                 self.log.error("API perform_cb_collect returned False")
-
-    def sleep(self, timeout=15, message=None):
-        self.log.debug("Sleep is called from %s -> %s():L%s"
-                       % (inspect.stack()[1][1],
-                          inspect.stack()[1][3],
-                          inspect.stack()[1][2]))
-        self.log.info("Reason: %s. Sleep for %s secs ..." % (message,
-                                                             timeout))
-        time.sleep(timeout)
 
     def log_failure(self, message):
         self.log.error(message)

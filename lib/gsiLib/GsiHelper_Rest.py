@@ -1,17 +1,13 @@
 import json
-from time import sleep
 
 from Rest_Connection import RestConnection
+from common_lib import sleep
 
 
 class GsiHelper(RestConnection):
     def __init__(self, server, logger):
         super(GsiHelper, self).__init__(server)
         self.log = logger
-
-    def sleep(self, seconds, message=""):
-        self.log.debug("%s. Sleep for %s seconds." % (message, seconds))
-        sleep(seconds)
 
     def trigger_index_compaction(self, timeout=120):
         api = self.indexUrl + 'triggerCompaction'
@@ -361,5 +357,5 @@ class GsiHelper(RestConnection):
                 if index_stats["num_docs_queued"] != 0:
                     index_completed = False
                     break
-            self.sleep(2, "Wait before next indexer stats query")
+            sleep(2, "Wait before next indexer stats query")
         return index_completed

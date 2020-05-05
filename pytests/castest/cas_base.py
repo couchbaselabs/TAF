@@ -1,5 +1,4 @@
 import re
-import time
 import traceback
 
 from basetestcase import BaseTestCase
@@ -96,7 +95,7 @@ class CasBaseTest(BaseTestCase):
             shell = RemoteMachineShellConnection(self.master)
             self.shell.execute_cluster_backup(self.couchbase_login_info, self.backup_location, self.command_options)
 
-            time.sleep(5)
+            self.sleep(5)
             shell.restore_backupFile(self.couchbase_login_info, self.backup_location, [bucket.name for bucket in self.buckets])
 
         finally:
@@ -113,7 +112,7 @@ class CasBaseTest(BaseTestCase):
             shell = RemoteMachineShellConnection(self.master)
             self.shell.execute_cluster_backup(self.couchbase_login_info, self.backup_location, self.command_options)
 
-            time.sleep(5)
+            self.sleep(5, "Wait after cluster_backup")
             self.bucket_util.create_bucket(name="new_bucket")
             self.buckets = RestConnection(self.master).get_buckets()
             shell.restore_backupFile(self.couchbase_login_info,
@@ -141,10 +140,10 @@ class CasBaseTest(BaseTestCase):
         for server in servers:
             shell = RemoteMachineShellConnection(server)
             shell.stop_couchbase()
-            time.sleep(10)
+            self.sleep(10, "Wait between server stop and start")
             shell.start_couchbase()
             shell.disconnect()
-        time.sleep(30)
+        self.sleep(30, "Wait for all servers to come up")
 
     # REBOOT
     def _reboot_server(self):
@@ -160,9 +159,7 @@ class CasBaseTest(BaseTestCase):
                     o, r = shell.execute_command("reboot")
                     shell.log_command_output(o, r)
                     shell.disconnect()
-                    self.log.info("Node {0} is being stopped".format(server.ip))
-
-                    time.sleep(120)
+                    self.sleep(120, "Node %s is being stopped" % server.ip)
                     shell = RemoteMachineShellConnection(server)
                     command = "/sbin/iptables -F"
                     o, r = shell.execute_command(command)
@@ -170,8 +167,7 @@ class CasBaseTest(BaseTestCase):
                     shell.disconnect()
                     self.log.info("Node {0} backup".format(server.ip))
         finally:
-            self.log.info("Warming-up servers ..")
-            time.sleep(100)
+            self.sleep(100, "Warming-up servers..")
 
     def _check_config(self):
         rc = self.rest.get_bucket_json(self.bucket)

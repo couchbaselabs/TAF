@@ -12,6 +12,7 @@ from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
 from Cb_constants import constants
+from common_lib import sleep
 from global_vars import logger
 from testconstants import VERSION_FILE
 from testconstants import MEMBASE_VERSIONS
@@ -118,7 +119,8 @@ class RemoteMachineHelper(object):
                 self.infra_log.error("%s - process %s not running or crashed"
                                      % (self.remote_shell.ip, process_name))
                 return False
-            time.sleep(1)
+            self.log.debug("Sleep before monitor_process retry..")
+            sleep(1, log_type="infra")
         return True
 
     def is_process_running(self, process_name):
@@ -248,17 +250,12 @@ class RemoteMachineShellConnection:
                                    "Exception {1}. Will try again in 1 sec"
                                    .format(self.ip, e))
                     attempt += 1
-                    time.sleep(1)
+                    sleep(1, log_type="infra")
                 else:
                     self.log.fatal("{0} - Ssh connection failed: {1}"
                                    .format(self.ip, e))
                     exit(1)
         self.log.debug("%s - Connected as %s" % (self.ip, user))
-
-    def sleep(self, timeout=1, message=""):
-        self.log.info("{0}:sleep for {1} secs. {2} ..."
-                      .format(self.ip, timeout, message))
-        time.sleep(timeout)
 
     def __check_output(self, word_check, output):
         found = False
@@ -333,7 +330,7 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
             o, r = self.execute_command("net stop couchbaseserver")
             self.log_command_output(o, r)
-            self.sleep(10, "Wait to stop service completely")
+            sleep(10, "Wait to stop service completely", log_type="infra")
         if self.info.type.lower() == "linux":
             o, r = self.execute_command("/etc/init.d/membase-server stop")
             self.log_command_output(o, r)
@@ -790,9 +787,8 @@ class RemoteMachineShellConnection:
                 break
             except IOError as io_error:
                 if "Address already in use" in str(io_error):
-                    self.log.info("Address already in use. Retry after %s sec"
-                                  % sleep_time)
-                    time.sleep(sleep_time)
+                    sleep(sleep_time, "Address already in use. Will retry..",
+                          log_type="infra")
                     retry_time -= sleep_time
                 else:
                     raise io_error
@@ -1527,7 +1523,7 @@ class RemoteMachineShellConnection:
 
         self.copy_file_local_to_remote(full_src_path, full_des_path)
         """ remove capture file from source after copy to destination """
-        self.sleep(4, "wait for remote copy completed")
+        sleep(4, "wait for remote copy to complete", log_type="infra")
         """ need to implement to remove only at the end
             of installation """
         # os.remove(full_src_path)
@@ -1661,7 +1657,8 @@ class RemoteMachineShellConnection:
         self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_unregister.bat")
         self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_register.bat")
         self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_start.bat")
-        self.sleep(10, "wait for cb server start completely after reset vbuckets!")
+        sleep(10, "Wait for cb server start completely after reset vbuckets!",
+              log_type="infra")
 
         """ remove temporary files on slave """
         os.remove(local_file)
@@ -1707,7 +1704,8 @@ class RemoteMachineShellConnection:
         self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_unregister.bat")
         self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_register.bat")
         self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_start.bat")
-        self.sleep(10, "wait for cb server start completely after setting CBFT_ENV_OPTIONS")
+        sleep(10, "Wait for cb server start completely after setting CBFT_ENV_OPTIONS",
+              log_type="infra")
 
         """ remove temporary files on slave """
         os.remove(local_file)
@@ -1844,10 +1842,10 @@ class RemoteMachineShellConnection:
                                 int(fts_query_limit),
                                 nonroot_path_start))
                 success &= self.log_command_output(o, e, track_words)
-                self.sleep(5, "Wait for server up before stop it")
+                sleep(5, "Wait for server up before stop it", log_type="infra")
                 self.stop_couchbase()
                 self.start_couchbase()
-                self.sleep(10, "Wait for server to become online")
+                sleep(10, "Wait for server to become online", log_type="infra")
         return success_upgrade
 
     def couchbase_upgrade_win(self, architecture, windows_name, version):
@@ -1869,7 +1867,7 @@ class RemoteMachineShellConnection:
             #   Please run installer again to continue."""
             output, error = self.execute_command("cmd /c schtasks /run /tn upgrademe")
             self.log_command_output(output, error)
-            self.sleep(200, "because upgrade version is {0}".format(output))
+            sleep(200, "Upgrade version is %s" % output, log_type="infra")
             output, error = self.execute_command("cmd /c "
                                                  "schtasks /Query /FO LIST /TN upgrademe /V")
             self.log_command_output(output, error)
@@ -1889,7 +1887,7 @@ class RemoteMachineShellConnection:
         ended = self.wait_till_process_ended(version[:10])
         if not ended:
             sys.exit("*****  Node %s failed to upgrade  *****" % (self.ip))
-        self.sleep(10, "wait for server to start up completely")
+        sleep(10, "wait for server to start up completely", log_type="infra")
         ct = time.time()
         while time.time() - ct < 10800:
             output, error = self.execute_command("cmd /c "
@@ -1901,8 +1899,8 @@ class RemoteMachineShellConnection:
                 self.log.exception("Ugrade failed!!!")
                 break
             else:
-                self.log.info("upgrademe task still running:{0}".format(output))
-                self.sleep(30)
+                sleep(30, "Task upgrademe still running: %s" % output,
+                      log_type="infra")
         output, error = self.execute_command("cmd /c "
                                              "schtasks /Query /FO LIST /TN upgrademe /V")
         self.log_command_output(output, error)
@@ -1952,8 +1950,8 @@ class RemoteMachineShellConnection:
             self.log_command_output(output, error)
             ended = self.wait_till_process_ended(build.product_version[:10])
             if not ended:
-                sys.exit("*****  Node %s failed to install  *****" % (self.ip))
-            self.sleep(10, "wait for server to start up completely")
+                sys.exit("*****  Node %s failed to install  *****" % self.ip)
+            sleep(10, "wait for server to start completely", log_type="infra")
             if vbuckets and int(vbuckets) != 1024:
                 self.set_vbuckets_win(vbuckets)
             if fts_query_limit:
@@ -2147,10 +2145,10 @@ class RemoteMachineShellConnection:
             """ close Safari browser before install """
             self.terminate_process(self.info, "/Applications/Safari.app/Contents/MacOS/Safari")
             o, r = self.execute_command("ps aux | grep Archive | awk '{print $2}' | xargs kill -9")
-            self.sleep(20)
+            sleep(20, "Wait for browser to exit", log_type="infra")
             output, error = self.execute_command("cd ~/Downloads ; open couchbase-server*.zip")
             self.log_command_output(output, error)
-            self.sleep(20)
+            sleep(20, "Wait for zip files to open", log_type="infra")
             cmd1 = "mv ~/Downloads/couchbase-server*/Couchbase\ Server.app /Applications/"
             cmd2 = "sudo xattr -d -r com.apple.quarantine /Applications/Couchbase\ Server.app"
             cmd3 = "open /Applications/Couchbase\ Server.app"
@@ -2242,9 +2240,11 @@ class RemoteMachineShellConnection:
                     sys.exit("*****  Node %s failed to install  *****"
                              % self.ip)
             if version[:3] == "2.5":
-                self.sleep(20, "wait for server to start up completely")
+                sleep(20, "wait for server to start up completely",
+                      log_type="infra")
             else:
-                self.sleep(10, "wait for server to start up completely")
+                sleep(10, "wait for server to start up completely",
+                      log_type="infra")
             output, error = self.execute_command("rm -f *-diag.zip")
             self.log_command_output(output, error, track_words)
             if vbuckets and int(vbuckets) != 1024:
@@ -2401,12 +2401,12 @@ class RemoteMachineShellConnection:
             # get the process list
             exists = self.file_exists(remotepath, filename)
             if exists:
-                self.log.error('at {2} file {1} still exists'
-                          .format(remotepath, filename, self.ip))
-                time.sleep(10)
+                self.log.error('At {2} file {1} still exists'
+                               .format(remotepath, filename, self.ip))
+                sleep(10, log_type="infra")
             else:
                 self.log.info('at {2} FILE {1} DOES NOT EXIST ANYMORE!'
-                         .format(remotepath, filename, self.ip))
+                              .format(remotepath, filename, self.ip))
                 deleted = True
         return deleted
 
@@ -2419,12 +2419,12 @@ class RemoteMachineShellConnection:
             # get the process list
             exists = self.file_exists(remotepath, filename)
             if not exists:
-                self.log.error('at {2} file {1} does not exist'
-                          .format(remotepath, filename, self.ip))
-                time.sleep(10)
+                self.log.error('At {2} file {1} does not exist'
+                               .format(remotepath, filename, self.ip))
+                sleep(10, log_type="infra")
             else:
-                self.log.info('at {2} FILE {1} EXISTS!'
-                         .format(remotepath, filename, self.ip))
+                self.log.info('At {2} FILE {1} EXISTS!'
+                              .format(remotepath, filename, self.ip))
                 added = True
         return added
 
@@ -2434,8 +2434,8 @@ class RemoteMachineShellConnection:
         while time.time() < end_time:
             status, progress = rest.check_compaction_status(bucket)
             if status:
-                self.log.info("Compaction progress: %s%%" % progress)
-                time.sleep(1)
+                sleep(1, "Compaction in progress - %s%%" % progress,
+                      log_type="infra")
             else:
                 # the compaction task has completed
                 return True
@@ -2456,7 +2456,7 @@ class RemoteMachineShellConnection:
                                                  .format(process_name))
             self.log_command_output(output, error)
             if output and process_name in output[0]:
-                self.sleep(8, "wait for process ended!")
+                sleep(8, "wait for process ended!", log_type="infra")
                 process_running = True
             else:
                 if process_running:
@@ -2466,8 +2466,8 @@ class RemoteMachineShellConnection:
                 else:
                     if count_process_not_run < 5:
                         self.log.error("{1}: process {0} may not run"
-                                  .format(process_name, self.ip))
-                        self.sleep(5)
+                                       .format(process_name, self.ip))
+                        sleep(5, log_type="infra")
                         count_process_not_run += 1
                     else:
                         self.log.error("{1}: process {0} did not run after 25 secs"
@@ -2628,7 +2628,7 @@ class RemoteMachineShellConnection:
                 """ End remove this workaround when bug MB-14504 is fixed """
 
                 self.stop_couchbase()
-                time.sleep(5)
+                sleep(5, "Wait for CB-server to stop", log_type="infra")
                 # run schedule task uninstall couchbase server
                 if windows_msi:
                     self.log.info("******** uninstall via msi method ***********")
@@ -2676,9 +2676,9 @@ class RemoteMachineShellConnection:
                             sys.exit("****  Node %s failed to uninstall  ****"
                                      % self.ip)
                 if full_version[:3] == "2.5":
-                    self.sleep(20, "next step is to install")
+                    sleep(20, "next step is to install", log_type="infra")
                 else:
-                    self.sleep(10, "next step is to install")
+                    sleep(10, "next step is to install", log_type="infra")
                 """ delete binary after uninstall """
                 self.delete_file(WIN_TMP_PATH, build_name)
                 """ the code below need to remove when bug MB-11328
@@ -2891,7 +2891,8 @@ class RemoteMachineShellConnection:
             self.log_command_output(output, error)
             """ end remove code """
 
-            self.sleep(5, "before running task schedule uninstall")
+            sleep(5, "Before running task schedule uninstall",
+                  log_type="infra")
             # run schedule task uninstall couchbase server
             output, error = self.execute_command("cmd /c schtasks /run /tn removeme")
             self.log_command_output(output, error)
@@ -2904,7 +2905,7 @@ class RemoteMachineShellConnection:
             if not ended:
                 sys.exit("*****  Node %s failed to uninstall  *****"
                          % self.ip)
-            self.sleep(10, "next step is to install")
+            sleep(10, "next step is to install", log_type="infra")
             output, error = self.execute_command("rm -f \
                        /cygdrive/c/automation/*_{0}_uninstall.iss"
                        .format(self.ip))
@@ -2978,7 +2979,8 @@ class RemoteMachineShellConnection:
                 self.modify_bat_file('/cygdrive/c/automation', bat_file,
                                      product, short_version, task)
                 self.stop_schedule_tasks()
-                self.sleep(5, "before running task schedule uninstall")
+                sleep(5, "before running task schedule uninstall",
+                      log_type="infra")
                 # run schedule task uninstall Couchbase server
                 output, error = self.execute_command("cmd /c schtasks /run /tn removeme")
                 self.log_command_output(output, error)
@@ -2989,7 +2991,8 @@ class RemoteMachineShellConnection:
                 ended = self.wait_till_process_ended(full_version[:10])
                 if not ended:
                     sys.exit("****  Node %s failed to uninstall  ****" % (self.ip))
-                self.sleep(10, "next step is to install")
+                sleep(10, "next step is to install",
+                      log_type="infra")
                 output, error = self.execute_command("rm -f \
                        /cygdrive/c/automation/*_{0}_uninstall.iss".format(self.ip))
                 self.log_command_output(output, error)
@@ -3161,11 +3164,11 @@ class RemoteMachineShellConnection:
                 else:
                     main_command = main_command + " -f=" + filename
 
-        self.log.debug("running command on {0}: {1}".format(self.ip, main_command))
+        self.log.debug("Running command on {0}: {1}".format(self.ip, main_command))
         output = ""
         if self.remote:
             (stdin, stdout, stderro) = self._ssh_client.exec_command(main_command)
-            time.sleep(10)
+            sleep(10, log_type="infra")
             count = 0
             for line in stdout.readlines():
                 if (count == 0) and line.lower().find("error") > 0:
@@ -3204,8 +3207,7 @@ class RemoteMachineShellConnection:
             p = Popen(main_command, shell=True, stdout=PIPE, stderr=PIPE)
             stdout, stderro = p.communicate()
             output = stdout
-            print output
-            time.sleep(1)
+            sleep(1, log_type="infra")
         """
         for cmd in subcommands:
             self.log.info("running command {0} inside {1} ({2})"
@@ -3221,7 +3223,7 @@ class RemoteMachineShellConnection:
                 output = stdout.channel.recv(1024)
                 if output.strip().endswith(end_msg) and len(output) >= min_output_size:
                     break
-                time.sleep(2)
+                sleep(2)
             self.log.info("{0}:'{1}' -> '{2}' output\n: {3}".format(self.ip, main_command, cmd, output))
         stdin.close()
         stdout.close()
@@ -3698,8 +3700,8 @@ class RemoteMachineShellConnection:
         if self.info.type.lower() == 'windows':
             o, r = self.execute_command("net stop couchbaseserver")
             self.log_command_output(o, r)
-            self.sleep(10, "{0} - Wait to stop service completely"
-                           .format(self.ip))
+            sleep(10, "%s - Wait to stop service completely" % self.ip,
+                  log_type="infra")
         if self.info.type.lower() == "linux":
             if self.nonroot:
                 self.log.debug("{0} - stopping couchbase-server as non-root"
@@ -3760,7 +3762,8 @@ class RemoteMachineShellConnection:
             sleep_time = wait_timeout * 5
         else:
             sleep_time = wait_timeout / 6
-        self.sleep(sleep_time, "Wait for server to reboot and warmup")
+        sleep(sleep_time, "Wait for server to reboot and warmup",
+              log_type="infra")
         end_time = time.time() + 400
         while time.time() < end_time:
             try:
@@ -3782,7 +3785,8 @@ class RemoteMachineShellConnection:
                     raise Exception("Node not yet reachable")
                 break
             except Exception:
-                self.sleep(10, "Node not reachable, retry after 10 secs")
+                sleep(10, "Node not reachable, retry after 10 secs",
+                      log_type="infra")
 
         _, _ = self.execute_command("iptables -F")
         # wait till server is ready after warmup
@@ -3828,8 +3832,7 @@ class RemoteMachineShellConnection:
         else:
             o, r = self.execute_command("killall -SIGSTOP memcached")
             self.log_command_output(o, r)
-        self.log.info("wait %s seconds to make node down." % timesleep)
-        time.sleep(timesleep)
+        sleep(timesleep, "Waiting for node to become down", log_type="infra")
 
     def unpause_memcached(self, os="linux"):
         self.log.info("*** unpause memcached process ***")
@@ -4530,10 +4533,11 @@ class RemoteMachineShellConnection:
             if not r:
                 success = True
                 self.log_command_output(o, r)
-                self.sleep(30, "Wait for windows to execute completely")
+                sleep(30, "Wait for windows to execute completely",
+                      log_type="infra")
             else:
                 self.log.error("Command didn't run successfully. Error: {0}"
-                          .format(r))
+                               .format(r))
         else:
             o, r = self.execute_command("netsh advfirewall firewall add rule name=\"block erl.exe in\" dir=in action=block program=\"%ProgramFiles%\Couchbase\Server\\bin\erl.exe\"")
             if not r:
@@ -4847,8 +4851,9 @@ class RemoteMachineShellConnection:
     def stop_current_python_running(self, mesg):
         os.system("ps aux | grep python | grep %d " % os.getpid())
         print mesg
-        self.sleep(5, "Delay kill pid %d in 5 seconds to printout message"
-                      % os.getpid())
+        sleep(5, "Delay kill pid %d in 5 seconds to printout message"
+                 % os.getpid(),
+              log_type="infra")
         os.system('kill %d' % os.getpid())
 
     def enable_diag_eval_on_non_local_hosts(self, state=True):
@@ -5022,14 +5027,13 @@ class RemoteUtilHelper(object):
             shell.unpause_memcached()
             shell.unpause_beam()
             shell.disconnect()
-        time.sleep(10)
+        sleep(10, "Wait after common_basic_setup", log_type="infra")
 
     @staticmethod
     def use_hostname_for_server_settings(server):
         shell = RemoteMachineShellConnection(server)
         info = shell.extract_remote_info()
         version = RestConnection(server).get_nodes_self().version
-        time.sleep(5)
         hostname = shell.get_full_hostname()
         if version.startswith("1.8.") or version.startswith("2.0"):
             shell.stop_couchbase()
@@ -5052,7 +5056,6 @@ class RemoteUtilHelper(object):
                         /opt/couchbase/bin/couchbase-server".format(hostname)
                 o, r = shell.execute_command(cmd)
                 shell.log_command_output(o, r)
-                time.sleep(2)
                 cmd = 'rm -rf /opt/couchbase/var/lib/couchbase/data/*'
                 shell.execute_command(cmd)
                 cmd = 'rm -rf /opt/couchbase/var/lib/couchbase/mnesia/*'

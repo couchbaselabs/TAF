@@ -1,32 +1,33 @@
-import bulk_doc_operations.doc_ops as doc_op
-from com.couchbase.client.java.env import DefaultCouchbaseEnvironment
-import copy
-from com.couchbase.client.java import *;
-from com.couchbase.client.java.transcoder import JsonTranscoder
-from com.couchbase.client.java.document import *;
-from com.couchbase.client.java.document.json import *;
-from com.couchbase.client.java.query import *;
+import json
 import threading
-import string
 import random
+import sys
+import time
+
+from com.couchbase.client.java.env import DefaultCouchbaseEnvironment
+from com.couchbase.client.java import *
+from com.couchbase.client.java.transcoder import JsonTranscoder
+from com.couchbase.client.java.document import *
+from com.couchbase.client.java.document.json import *
+from com.couchbase.client.java.query import *
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
-import json
-from lib.CbasLib.CBASOperations import CBASHelper
-import json
 from com.couchbase.client.java.analytics import AnalyticsQuery, AnalyticsParams
-import sys, time, traceback
-from pytests.cbas.cbas_base import CBASBaseTest
-from lib.membase.api.rest_client import RestConnection, RestHelper
+
+import bulk_doc_operations.doc_ops as doc_op
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import bucket_utils
+from common_lib import sleep
+from cbas.cbas_base import CBASBaseTest
+from membase.api.rest_client import RestConnection, RestHelper
+
 
 class global_vars:
-    
     message_id = 1
     start_message_id = 0
     end_message_id = 0
-    
+
+
 class QueryRunner(Callable):
     def __init__(self, bucket, query, num_queries, cbas_util):
         self.bucket = bucket
@@ -44,7 +45,7 @@ class QueryRunner(Callable):
         self.params = self.params.rawParam("username", "Administrator")
         self.params = self.params.rawParam("password", "password")
         self.query = AnalyticsQuery.simple(query, self.params)
- 
+
     def __str__(self):
         if self.exception:
             return "[%s] %s download error %s in %.2fs" % \
@@ -61,7 +62,7 @@ class QueryRunner(Callable):
         else:
             return "[%s] %s not yet scheduled" % \
                 (self.thread_used, self.num_queries)
- 
+
     def call(self):
         self.thread_used = threading.currentThread().getName()
         self.started = time.time()
@@ -88,20 +89,20 @@ class GleambookMessages_Docloader(Callable):
         self.month = range(1,12)
         self.day = range(1,28)
         self.batch_size = batch_size
-        
+
     def generate_GleambookMessages(self, num=None,message_id=None):
 
         date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
         time = "%02d"%random.choice(range(0,24)) + "-" + "%02d"%random.choice(range(0,60)) + "-" + "%02d"%random.choice(self.day)
 
         GleambookMessages = {"message_id": "%d"%message_id, "author_id": "%d"%num,
-#                              "in_response_to": "%d"%random.choice(range(message_id)), 
-#                              "sender_location": str(round(random.uniform(0, 100), 4))+","+str(round(random.uniform(0, 100), 4)), 
-                             "send_time": date+"T"+time, 
+#                              "in_response_to": "%d"%random.choice(range(message_id)),
+#                              "sender_location": str(round(random.uniform(0, 100), 4))+","+str(round(random.uniform(0, 100), 4)),
+                             "send_time": date+"T"+time,
 #                              "message": ''.join(random.choice(string.lowercase) for x in range(50))
                              }
         return GleambookMessages
-    
+
     def __str__(self):
         if self.exception:
             return "[%s] %s download error %s in %.2fs" % \
@@ -130,17 +131,16 @@ class GleambookMessages_Docloader(Callable):
                 if self.op_type == "create":
                     for j in xrange(random.randint(1,10)):
                         var = str(json.dumps(self.generate_GleambookMessages(i+self.start_from , global_vars.message_id)))
-                        user = JsonTranscoder().stringToJsonObject(var);
+                        user = JsonTranscoder().stringToJsonObject(var)
 #                         print i+self.start_from,global_vars.message_id
-                        doc = JsonDocument.create(str(global_vars.message_id), user);
+                        doc = JsonDocument.create(str(global_vars.message_id), user)
                         docs.append(doc)
                         temp+=1
                         if temp == self.batch_size:
                             try:
                                 doc_op().bulkSet(self.msg_bucket, docs)
                             except:
-                                print "Sleeping for 20 secs"
-                                time.sleep(20)
+                                sleep(20, "Exception in Java SDK - create")
                                 try:
                                     doc_op().bulkUpsert(self.msg_bucket, docs)
                                 except:
@@ -152,27 +152,26 @@ class GleambookMessages_Docloader(Callable):
                     end_message_id = global_vars.message_id
                 elif self.op_type == "update":
                     var = str(json.dumps(self.generate_GleambookMessages(i+self.start_from , i+start_message_id)))
-                    user = JsonTranscoder().stringToJsonObject(var);
-                    doc = JsonDocument.create(str(i+start_message_id), user);
+                    user = JsonTranscoder().stringToJsonObject(var)
+                    doc = JsonDocument.create(str(i+start_message_id), user)
                     docs.append(doc)
                     if temp == self.batch_size:
                         try:
                             doc_op().bulkUpsert(self.msg_bucket, docs)
                         except:
-                            print "Sleeping for 20 secs"
-                            time.sleep(20)
+                            sleep(20, "Exception in Java SDK - create")
                             try:
                                 doc_op().bulkUpsert(self.msg_bucket, docs)
                             except:
                                 print "skipping %s documents upload"%len(docs)
                                 pass
                         temp = 0
-                        docs=[]           
+                        docs=[]
                 elif self.op_type == "delete":
                     try:
-                        response = self.msg_bucket.remove(str(i+start_message_id));
+                        response = self.msg_bucket.remove(str(i+start_message_id))
                     except:
-                        pass      
+                        pass
                 self.loaded += 1
         except Exception, ex:
             import traceback
@@ -182,7 +181,7 @@ class GleambookMessages_Docloader(Callable):
             self.exception = ex
         self.completed = time.time()
         return self
-    
+
 class GleambookUser_Docloader(Callable):
     def __init__(self, bucket, num_items, start_from,op_type="create", batch_size=2000):
         self.bucket = bucket
@@ -201,7 +200,7 @@ class GleambookUser_Docloader(Callable):
         self.min = range(0,60)
         self.sec = range(0,60)
         self.batch_size = batch_size
-        
+
     def generate_GleambookUser(self, num=None):
         organization = ["Wipro","Infosys","TCS","Tech Mahindra","CTS","Microsoft"]
         date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
@@ -209,16 +208,16 @@ class GleambookUser_Docloader(Callable):
         employment = []
         start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
         end_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
-        
+
         for i in xrange(3):
 #             start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
 #             end_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
- 
+
             EmploymentType = {"organization":random.choice(organization),"start_date":start_date,"end_date":end_date}
             employment.append(EmploymentType)
- 
+
 #             start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
-             
+
             EmploymentType = {"organization":random.choice(organization),"start_date":start_date}
             employment.append(EmploymentType)
 
@@ -254,16 +253,15 @@ class GleambookUser_Docloader(Callable):
             for i in xrange(self.num_items):
                 if self.op_type == "create":
                     var = str(json.dumps(self.generate_GleambookUser(i+self.start_from)))
-                    user = JsonTranscoder().stringToJsonObject(var);
-                    doc = JsonDocument.create(str(i+self.start_from), user);
+                    user = JsonTranscoder().stringToJsonObject(var)
+                    doc = JsonDocument.create(str(i+self.start_from), user)
                     docs.append(doc)
                     temp += 1
                     if temp == self.batch_size:
                         try:
                             doc_op().bulkSet(self.bucket, docs)
                         except:
-                            print "Exception from Java SDK - create"
-                            time.sleep(20)
+                            sleep(20, "Exception in Java SDK - create")
                             try:
                                 doc_op().bulkUpsert(self.bucket, docs)
                             except:
@@ -271,19 +269,18 @@ class GleambookUser_Docloader(Callable):
                                 pass
                         temp = 0
                         docs=[]
-#                     response = self.bucket.insert(doc);
+#                     response = self.bucket.insert(doc)
                 elif self.op_type == "update":
                     var = str(json.dumps(self.generate_GleambookUser(i+self.start_from)))
-                    user = JsonTranscoder().stringToJsonObject(var);
-                    doc = JsonDocument.create(str(i+self.start_from), user);
+                    user = JsonTranscoder().stringToJsonObject(var)
+                    doc = JsonDocument.create(str(i+self.start_from), user)
                     docs.append(doc)
                     temp += 1
                     if temp == self.batch_size:
                         try:
                             doc_op().bulkUpsert(self.bucket, docs)
                         except:
-                            print "Exception from Java SDK - create"
-                            time.sleep(20)
+                            sleep(20, "Exception in Java SDK - create")
                             try:
                                 doc_op().bulkUpsert(self.bucket, docs)
                             except:
@@ -291,10 +288,10 @@ class GleambookUser_Docloader(Callable):
                                 pass
                         temp = 0
                         docs=[]
-                    
+
                 elif self.op_type == "delete":
                     try:
-                        response = self.bucket.remove(str(i+self.start_from));
+                        response = self.bucket.remove(str(i+self.start_from))
                     except:
                         print "Exception from Java SDK - remove"
                 self.loaded += 1
@@ -306,7 +303,7 @@ class GleambookUser_Docloader(Callable):
             self.exception = ex
         self.completed = time.time()
         return self
-    
+
 def shutdown_and_await_termination(pool, timeout):
     pool.shutdown()
     try:
@@ -319,13 +316,13 @@ def shutdown_and_await_termination(pool, timeout):
         pool.shutdownNow()
         # Preserve interrupt status
         Thread.currentThread().interrupt()
- 
+
 class analytics(CBASBaseTest):
     def setUp(self, add_defualt_cbas_node=True):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket":False})
         CBASBaseTest.setUp(self, add_defualt_cbas_node=add_defualt_cbas_node)
-    
+
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
         bucket_util = bucket_utils(self.master)
@@ -343,7 +340,7 @@ class analytics(CBASBaseTest):
             total_available_memory_in_mb -= self.info.cbasMemoryQuota
         if "eventing" in active_service:
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
-        
+
         print(total_memory_in_mb)
         available_memory =  total_available_memory_in_mb - threadhold_memory
         self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=available_memory)
@@ -355,7 +352,7 @@ class analytics(CBASBaseTest):
         available_memory -= 100
         self.create_bucket(self.master, "GleambookUsers", bucket_ram=int(available_memory*1/3))
         self.create_bucket(self.master, "GleambookMessages", bucket_ram=int(available_memory*2/3))
-        
+
 
         result = RestConnection(self.query_node).query_tool("CREATE PRIMARY INDEX idx_GleambookUsers ON GleambookUsers;")
         self.sleep(10, "wait for index creation.")
@@ -364,7 +361,7 @@ class analytics(CBASBaseTest):
         result = RestConnection(self.query_node).query_tool("CREATE PRIMARY INDEX idx_GleambookMessages ON GleambookMessages;")
         self.sleep(10, "wait for index creation.")
         self.assertTrue(result['status'] == "success")
- 
+
         result = RestConnection(self.query_node).query_tool("CREATE PRIMARY INDEX idx_ChirpMessages ON ChirpMessages;")
         self.sleep(10, "wait for index creation.")
         self.assertTrue(result['status'] == "success")
@@ -380,18 +377,18 @@ class analytics(CBASBaseTest):
                                                 cbas_dataset_name="GleambookMessages_ds")
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name="ChirpMessages",
                                                 cbas_dataset_name="ChirpMessages_ds")
-        
+
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name="GleambookUsers",
                                                 cbas_dataset_name="GleambookUsers_ds1")
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name="GleambookMessages",
                                                 cbas_dataset_name="GleambookMessages_ds1")
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name="ChirpMessages",
                                                 cbas_dataset_name="ChirpMessages_ds1")
-        
+
         # Connect to Bucket
         self.connect_cbas_buckets()
-        
-    def connect_cbas_buckets(self):        
+
+    def connect_cbas_buckets(self):
         # Connect to Bucket
         self.cbas_util.connect_to_bucket(cbas_bucket_name='GleambookUsers',
                                cb_bucket_password=self.cb_bucket_password)
@@ -399,9 +396,9 @@ class analytics(CBASBaseTest):
                                cb_bucket_password=self.cb_bucket_password)
         self.cbas_util.connect_to_bucket(cbas_bucket_name='ChirpMessages',
                                cb_bucket_password=self.cb_bucket_password)
-        
+
     def disconnect_cbas_buckets(self):
-        
+
         result = self.cbas_util.disconnect_from_bucket(cbas_bucket_name="GleambookUsers")
         self.assertTrue(result, "Disconnect GleambookUsers bucket failed")
         result = self.cbas_util.disconnect_from_bucket(cbas_bucket_name="GleambookMessages")
@@ -429,8 +426,8 @@ class analytics(CBASBaseTest):
         self.assertTrue(status == "success", "Create Index query failed")
         status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
             "CREATE INDEX sndTimeIdx1  ON `ChirpMessages_ds1`(send_time: string);",timeout=300,analytics_timeout=300)
-        self.assertTrue(status == "success", "Create Index query failed")    
-            
+        self.assertTrue(status == "success", "Create Index query failed")
+
     def validate_items_count(self):
         items_GleambookUsers = RestConnection(self.query_node).query_tool('select count(*) from GleambookUsers')['results'][0]['$1']
         items_GleambookMessages = RestConnection(self.query_node).query_tool('select count(*) from GleambookMessages')['results'][0]['$1']
@@ -438,7 +435,7 @@ class analytics(CBASBaseTest):
         self.log.info("Items in CB GleanBookUsers bucket: %s"%items_GleambookUsers)
         self.log.info("Items in CB GleambookMessages bucket: %s"%items_GleambookMessages)
         self.log.info("Items in CB ChirpMessages bucket: %s"%items_ChirpMessages)
-        
+
         self.sleep(60)
         result = False
         tries = 10
@@ -450,7 +447,7 @@ class analytics(CBASBaseTest):
                 pass
             tries -= 1
         self.assertTrue(result,"No. of items in GleambookUsers dataset do not match that in the CB bucket")
-        
+
         result = False
         tries = 10
         while tries>0:
@@ -461,7 +458,7 @@ class analytics(CBASBaseTest):
                 pass
             tries -= 1
         self.assertTrue(result,"No. of items in GleambookMessages dataset do not match that in the CB bucket")
-        
+
         result = False
         tries = 10
         while tries>0:
@@ -505,7 +502,7 @@ class analytics(CBASBaseTest):
                 pass
             tries -= 1
         self.assertTrue(result,"No. of items in ChirpMessages dataset do not match that in the CB bucket")
-                
+
     def test_analytics_volume(self):
         queries = ['SELECT VALUE u FROM `GleambookUsers_ds` u WHERE u.user_since >= "2010-02-13T16-48-15" AND u.user_since < "2010-10-13T16-48-15" AND (SOME e IN u.employment SATISFIES e.end_date IS UNKNOWN) LIMIT 100;',
            'SELECT VALUE u FROM `GleambookUsers_ds` u WHERE u.user_since >= "2010-02-13T16-48-15" AND u.user_since < "2010-12-13T16-48-15" limit 100;',
@@ -518,7 +515,7 @@ class analytics(CBASBaseTest):
            ]
         nodes_in_cluster= [self.servers[0],self.cbas_node]
         print "Start Time: %s"%str(time.strftime("%H:%M:%S", time.gmtime(time.time())))
-        
+
         ########################################################################################################################
         self.log.info("Step 1: Start the test with 2 KV and 2 CBAS nodes")
 
@@ -545,24 +542,24 @@ class analytics(CBASBaseTest):
         rest.set_data_path(data_path=self.cluster.kv_nodes[4].data_path,index_path=self.cluster.kv_nodes[4].index_path,cbas_path=self.cluster.kv_nodes[4].cbas_path)
         result = self.add_node(self.cluster.kv_nodes[4], services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
-                 
+
         self.log.info("Add a CBAS nodes")
         result = self.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=True)
         self.assertTrue(result, msg="Failed to add CBAS node.")
-         
+
         nodes_in_cluster = nodes_in_cluster + [self.query_node, self.cluster.kv_nodes[1], self.cluster.kv_nodes[3], self.cluster.kv_nodes[4], self.cluster.cbas_nodes[0]]
         ########################################################################################################################
         self.log.info("Step 2: Create Couchbase buckets.")
         self.create_required_buckets()
-        
+
         ########################################################################################################################
         self.log.info("Step 3: Create 10M docs average of 1k docs for 8 couchbase buckets.")
-        env = DefaultCouchbaseEnvironment.builder().mutationTokensEnabled(True).computationPoolSize(5).socketConnectTimeout(100000).connectTimeout(100000).maxRequestLifetime(TimeUnit.SECONDS.toMillis(300)).build();
-        cluster = CouchbaseCluster.create(env, self.master.ip);
+        env = DefaultCouchbaseEnvironment.builder().mutationTokensEnabled(True).computationPoolSize(5).socketConnectTimeout(100000).connectTimeout(100000).maxRequestLifetime(TimeUnit.SECONDS.toMillis(300)).build()
+        cluster = CouchbaseCluster.create(env, self.master.ip)
         cluster.authenticate("Administrator","password")
-        bucket = cluster.openBucket("GleambookUsers");
+        bucket = cluster.openBucket("GleambookUsers")
         msg_bucket = cluster.openBucket("GleambookMessages")
-         
+
         pool = Executors.newFixedThreadPool(5)
         items_start_from = 0
         total_num_items = self.input.param("num_items",5000)
@@ -582,27 +579,27 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-           
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
         items_start_from += total_num_items
         ########################################################################################################################
         self.log.info("Step 4: Create 8 analytics buckets and 8 datasets and connect.")
         self.setup_cbas()
-         
+
         ########################################################################################################################
         self.log.info("Step 5: Wait for ingestion to complete.")
         self.sleep(10,"Wait for the ingestion to complete")
-         
+
         ########################################################################################################################
         self.log.info("Step 6: Verify the items count.")
         self.validate_items_count()
-        
+
         ########################################################################################################################
         self.log.info("Step 7: Disconnect CBAS bucket and create secondary indexes.")
         self.disconnect_cbas_buckets()
         self.create_cbas_indexes()
-         
+
         ########################################################################################################################
         self.log.info("Step 8: Delete 1M docs. Update 1M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -611,7 +608,7 @@ class analytics(CBASBaseTest):
         num_executors = 5
         doc_executors = 4
         query_executors = num_executors - doc_executors
-          
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
@@ -627,11 +624,11 @@ class analytics(CBASBaseTest):
         self.log.info("Step 9: Connect cbas buckets.")
         self.connect_cbas_buckets()
         self.sleep(10,"Wait for the ingestion to complete")
-         
+
         ########################################################################################################################
         self.log.info("Step 10: Verify the items count.")
         self.validate_items_count()
-         
+
         ########################################################################################################################
         self.log.info("Step 12: When 11 is in progress do a KV Rebalance in of 1 nodes.")
         rest = RestConnection(self.cluster.kv_nodes[2])
@@ -657,22 +654,22 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
- 
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
         items_start_from += total_num_items
-                 
+
         ########################################################################################################################
         self.log.info("Step 13: Wait for rebalance to complete.")
         self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
-         
+
         ########################################################################################################################
         self.log.info("Step 14: Verify the items count.")
         self.validate_items_count()
-         
+
         ########################################################################################################################
         self.log.info("Step 15: Delete 1M docs. Update 1M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -681,12 +678,12 @@ class analytics(CBASBaseTest):
         num_executors = 5
         doc_executors = 4
         query_executors = num_executors - doc_executors
-         
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, deletes_from,"delete"))
-         
+
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
         futures = pool.invokeAll(executors)
@@ -697,11 +694,11 @@ class analytics(CBASBaseTest):
         ########################################################################################################################
         self.log.info("Step 16: Verify Results that 1M docs gets deleted from analytics datasets.")
         self.validate_items_count()
-         
+
         ########################################################################################################################
         self.log.info("Step 17: Disconnect CBAS buckets.")
         self.disconnect_cbas_buckets()
-         
+
         ########################################################################################################################
         self.log.info("Step 18: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -721,11 +718,11 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
- 
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
         items_start_from += total_num_items
-         
+
         ########################################################################################################################
         self.log.info("Step 19: Multiple Connect/Disconnect CBAS buckets during ingestion in step 18.")
         self.connect_cbas_buckets()
@@ -741,7 +738,7 @@ class analytics(CBASBaseTest):
         ########################################################################################################################
         self.log.info("Step 20: Verify the docs count.")
         self.validate_items_count()
-         
+
         ########################################################################################################################
         self.log.info("Step 21: Run 500 complex queries concurrently and verify the results.")
         pool = Executors.newFixedThreadPool(5)
@@ -751,23 +748,23 @@ class analytics(CBASBaseTest):
         query_executors = num_executors
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
-         
+
         self.log.info("Step 22: When 21 is in progress do a KV Rebalance out of 2 nodes.")
         rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cluster.kv_nodes[1:3])
         nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.kv_nodes[1:3]]
-         
+
         futures = pool.invokeAll(executors)
         self.log.info("Step 23: Wait for rebalance.")
         self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
-         
+
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.log.info("Step 24: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -783,11 +780,11 @@ class analytics(CBASBaseTest):
             executors.append(GleambookMessages_Docloader(msg_bucket, num_items, items_start_from+i*num_items))
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
-         
+
         self.log.info("Step 26: Run 500 complex queries concurrently and verify the results.")
         executors.append(QueryRunner(bucket,random.choice(queries),500,self.cbas_util))
-         
-         
+
+
         ##################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 25: When 24 is in progress do a CBAS Rebalance in of 2 nodes.")
         for node in self.cluster.cbas_nodes[2:]:
@@ -800,20 +797,20 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
- 
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
         items_start_from += total_num_items
- 
+
         self.log.info("Step 27: Wait for rebalance to complete.")
         self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-         
+
         ########################################################################################################################
         self.log.info("Step 28: Verify the docs count.")
         self.validate_items_count()
-         
+
         ########################################################################################################################
         self.log.info("Step 29: Delete 1M docs. Update 1M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -822,12 +819,12 @@ class analytics(CBASBaseTest):
         num_executors = 5
         doc_executors = 4
         query_executors = num_executors - doc_executors
-         
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, deletes_from,"delete"))
-         
+
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
         futures = pool.invokeAll(executors)
@@ -838,7 +835,7 @@ class analytics(CBASBaseTest):
         ########################################################################################################################
         self.log.info("Step 30: Verify the docs count.")
         self.validate_items_count()
- 
+
         ########################################################################################################################
         self.log.info("Step 31: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -854,8 +851,8 @@ class analytics(CBASBaseTest):
             executors.append(GleambookMessages_Docloader(msg_bucket, num_items, items_start_from+i*num_items))
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
-         
- 
+
+
         ###################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 32: When 31 is in progress do a CBAS Rebalance out of 2 nodes.")
         rebalance = self.cluster.async_rebalance(nodes_in_cluster, [], self.cluster.cbas_nodes[1:])
@@ -865,7 +862,7 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
- 
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
         items_start_from += total_num_items
@@ -875,11 +872,11 @@ class analytics(CBASBaseTest):
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
- 
+
         ########################################################################################################################
         self.log.info("Step 34: Verify the docs count.")
         self.validate_items_count()
-         
+
         ########################################################################################################################
         self.log.info("Step 35: Delete 1M docs. Update 1M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -888,12 +885,12 @@ class analytics(CBASBaseTest):
         num_executors = 5
         doc_executors = 4
         query_executors = num_executors - doc_executors
-         
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, deletes_from,"delete"))
-        
+
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
         futures = pool.invokeAll(executors)
@@ -901,11 +898,11 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.log.info("Step 36: Verify the docs count.")
         self.validate_items_count()
-         
+
         ########################################################################################################################
         self.log.info("Step 37: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -921,7 +918,7 @@ class analytics(CBASBaseTest):
             executors.append(GleambookMessages_Docloader(msg_bucket, num_items, items_start_from+i*num_items))
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
-         
+
         ###################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 38: When 37 is in progress do a CBAS SWAP Rebalance of 2 nodes.")
         for node in self.cluster.cbas_nodes[-1:]:
@@ -935,22 +932,22 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.log.info("Step 39: Wait for rebalance to complete.")
         self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
-         
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
         items_start_from += total_num_items
-         
+
         ########################################################################################################################
         self.log.info("Step 40: Verify the docs count.")
         self.validate_items_count()
- 
+
         ########################################################################################################################
         self.log.info("Step 41: Delete 1M docs. Update 1M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -959,12 +956,12 @@ class analytics(CBASBaseTest):
         num_executors = 5
         doc_executors = 4
         query_executors = num_executors - doc_executors
-         
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, deletes_from,"delete"))
-         
+
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
         futures = pool.invokeAll(executors)
@@ -972,11 +969,11 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.log.info("Step 42: Verify the docs count.")
-        self.validate_items_count() 
-         
+        self.validate_items_count()
+
         ########################################################################################################################
         self.log.info("Step 43: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -992,7 +989,7 @@ class analytics(CBASBaseTest):
             executors.append(GleambookMessages_Docloader(msg_bucket, num_items, items_start_from+i*num_items))
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
-         
+
         ###################################################### NEED TO BE UPDATED ##################################################################
         self.log.info("Step 44: When 43 is in progress do a KV+CBAS Rebalance IN.")
         rest = RestConnection(self.cbas_node)
@@ -1009,22 +1006,22 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.log.info("Step 45: Wait for rebalance to complete.")
         self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
-         
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
-        items_start_from += total_num_items        
-         
+        items_start_from += total_num_items
+
         ########################################################################################################################
         self.log.info("Step 46: Verify the docs count.")
-        self.validate_items_count() 
-         
+        self.validate_items_count()
+
         ########################################################################################################################
         self.log.info("Step 47: Delete 1M docs. Update 1M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -1033,12 +1030,12 @@ class analytics(CBASBaseTest):
         num_executors = 5
         doc_executors = 4
         query_executors = num_executors - doc_executors
-        
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, deletes_from,"delete"))
-         
+
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
         futures = pool.invokeAll(executors)
@@ -1046,11 +1043,11 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
- 
+
         ########################################################################################################################
         self.log.info("Step 48: Verify the docs count.")
-        self.validate_items_count() 
- 
+        self.validate_items_count()
+
         ########################################################################################################################
         self.log.info("Step 49: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -1066,7 +1063,7 @@ class analytics(CBASBaseTest):
             executors.append(GleambookMessages_Docloader(msg_bucket, num_items, items_start_from+i*num_items))
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
-         
+
         ########################################################################################################################
         self.log.info("Step 50: When 49 is in progress do a KV+CBAS Rebalance OUT.")
         rest = RestConnection(self.cluster.kv_nodes[2])
@@ -1075,13 +1072,13 @@ class analytics(CBASBaseTest):
 #         self.task_manager.get_task_result(rebalance)
         nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.cbas_nodes[-1:]] + [self.cluster.kv_nodes[2]]
         nodes_in_cluster.remove(self.cluster.kv_nodes[1])
-        
+
         futures = pool.invokeAll(executors)
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.log.info("Step 51: Wait for rebalance to complete.")
         self.task_manager.get_task_result(rebalance)
@@ -1090,12 +1087,12 @@ class analytics(CBASBaseTest):
         self.sleep(20)
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
-        items_start_from += total_num_items  
- 
+        items_start_from += total_num_items
+
         ########################################################################################################################
         self.log.info("Step 52: Verify the docs count.")
-        self.validate_items_count() 
- 
+        self.validate_items_count()
+
         ########################################################################################################################
         self.log.info("Step 53: Delete 1M docs. Update 1M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -1104,12 +1101,12 @@ class analytics(CBASBaseTest):
         num_executors = 5
         doc_executors = 4
         query_executors = num_executors - doc_executors
-         
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, deletes_from,"delete"))
-         
+
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
         futures = pool.invokeAll(executors)
@@ -1117,12 +1114,12 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
- 
+
         ########################################################################################################################
         self.log.info("Step 54: Verify the docs count.")
-        self.validate_items_count() 
-         
-         
+        self.validate_items_count()
+
+
         ########################################################################################################################
         self.log.info("Step 55: Create 10M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -1138,7 +1135,7 @@ class analytics(CBASBaseTest):
             executors.append(GleambookMessages_Docloader(msg_bucket, num_items, items_start_from+i*num_items))
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
-         
+
         ########################################################################################################################
         self.log.info("Step 56: When 55 is in progress do a KV+CBAS SWAP Rebalance .")
         for node in self.cluster.cbas_nodes[-1:]:
@@ -1152,28 +1149,28 @@ class analytics(CBASBaseTest):
         nodes_in_cluster.remove(self.cluster.kv_nodes[2])
         nodes_in_cluster = [node for node in nodes_in_cluster if node not in self.cluster.cbas_nodes[-1:]]
         nodes_in_cluster += [self.cluster.kv_nodes[1]]
-         
+
         futures = pool.invokeAll(executors)
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.log.info("Step 57: Wait for rebalance to complete.")
         self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=240)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
         self.sleep(20)
-         
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
-        items_start_from += total_num_items  
- 
+        items_start_from += total_num_items
+
         ########################################################################################################################
         self.log.info("Step 58: Verify the docs count.")
-        self.validate_items_count() 
-         
+        self.validate_items_count()
+
         ########################################################################################################################
         self.log.info("Step 59: Delete 1M docs. Update 1M docs.")
         pool = Executors.newFixedThreadPool(5)
@@ -1182,12 +1179,12 @@ class analytics(CBASBaseTest):
         num_executors = 5
         doc_executors = 4
         query_executors = num_executors - doc_executors
-         
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookMessages_Docloader(msg_bucket, num_items/10, deletes_from,"delete"))
-        
+
         for i in xrange(query_executors):
             executors.append(QueryRunner(bucket,random.choice(queries),num_query,self.cbas_util))
         futures = pool.invokeAll(executors)
@@ -1195,15 +1192,15 @@ class analytics(CBASBaseTest):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
- 
+
         ########################################################################################################################
         self.log.info("Step 60: Verify the docs count.")
-        self.validate_items_count() 
-                 
- 
+        self.validate_items_count()
+
+
         bucket.close()
         msg_bucket.close()
         cluster.disconnect()
-        
+
         print "End Time: %s"%str(time.strftime("%H:%M:%S", time.gmtime(time.time())))
 

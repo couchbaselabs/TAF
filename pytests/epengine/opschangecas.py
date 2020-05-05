@@ -1,6 +1,5 @@
 import copy
 import json
-import time
 
 from castest.cas_base import CasBaseTest
 from cb_tools.cbstats import Cbstats
@@ -112,7 +111,7 @@ class OpsChangeCasTests(CasBaseTest):
         rebalance = self.cluster.async_rebalance(self.servers[:], [] ,[self.master])
 
         rebalance.result()
-        time.sleep(60)
+        self.sleep(60)
 
         replica_CAS = mc_replica.getMeta(KEY_NAME)[4]
         #print 'replica CAS {0}'.format(replica_CAS)
@@ -193,7 +192,7 @@ class OpsChangeCasTests(CasBaseTest):
         # reboot nodes
         self._reboot_server()
 
-        time.sleep(60)
+        self.sleep(60)
         # verify the CAS is good
         mc_active = client.memcached(KEY_NAME)
         cas_post = mc_active.getMeta(KEY_NAME)[4]
@@ -409,13 +408,13 @@ class OpsChangeCasTests(CasBaseTest):
 
         # load 20 kvs and check the CAS
         self._load_ops(ops='set', mutations=20)
-        time.sleep(60)
+        self.sleep(60)
         self._check_cas(check_conflict_resolution=False)
 
-        k=0
+        k = 0
         test_cas = 456
 
-        while k<1:
+        while k < 1:
 
             key = "{0}{1}".format(self.prefix, k)
             k += 1
@@ -735,7 +734,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         rebalance = self.cluster.async_rebalance(self.servers[-1:], [] ,[self.master])
         rebalance.result()
-        time.sleep(120)
+        self.sleep(120)
         replica_CAS = mc_replica.getMeta(key)[4]
         get_meta_resp = mc_replica.getMeta(key,request_extended_meta_data=False)
         #print 'replica CAS {0}'.format(replica_CAS)
@@ -806,7 +805,7 @@ class OpsChangeCasTests(CasBaseTest):
         rebalance = self.cluster.async_rebalance(self.servers[:], [] ,[self.master])
 
         rebalance.result()
-        time.sleep(120)
+        self.sleep(120)
         replica_CAS = mc_replica.getMeta(key)[4]
         get_meta_resp = mc_replica.getMeta(key,request_extended_meta_data=False)
         #print 'replica CAS {0}'.format(replica_CAS)

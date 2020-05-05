@@ -3,6 +3,7 @@ import time
 import json
 
 from cbas.cbas_base import CBASBaseTest
+from common_lib import sleep
 from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
@@ -15,7 +16,7 @@ class CBASBugAutomation(CBASBaseTest):
 
     def setUp(self):
         # Invoke CBAS setUp method
-        super(CBASBugAutomation, self).setUp()  
+        super(CBASBugAutomation, self).setUp()
 
     @staticmethod
     def generate_documents(start_at, end_at):
@@ -25,7 +26,7 @@ class CBASBugAutomation(CBASBaseTest):
         template = '{{ "number": {0}, "first_name": "{1}" , "profession":"{2}", "mutated":0}}'
         documents = DocumentGenerator('test_docs', template, age, first, profession, start=start_at, end=end_at)
         return documents
-    
+
     def test_multiple_cbas_data_set_creation(self):
 
         '''
@@ -288,7 +289,8 @@ class CBASBugAutomation(CBASBaseTest):
                 items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
                 self.assertTrue(items_in_cbas_bucket == start_from,
                                 "Roll-back happened while it should not.")
-                time.sleep(1)
+                # Sleep before retry
+                sleep(1)
 
         self.log.info("Verify connect to second CBAS Bucket succeeds post long failure logs")
         self.assertTrue(self.cbas_util.connect_to_bucket(
@@ -304,18 +306,18 @@ class CBASBugAutomation(CBASBaseTest):
         self.log.info("Load data in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items, exp=0)
         self.bucket_util.verify_stats_all_buckets(self.num_items)
-        
+
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
-        
+
         self.log.info("Create additional CBAS bucket and connect after failover logs are generated")
         secondary_cbas_bucket_name = self.cbas_bucket_name + "_secondary"
         secondary_dataset = self.cbas_dataset_name + "_secondary"
-        
+
         self.log.info("Create dataset on the CBAS bucket")
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
                                                 cbas_dataset_name=self.cbas_dataset_name)
-        
+
         self.log.info("Create dataset on the CBAS secondary bucket")
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
                                                 cbas_dataset_name=secondary_dataset)
@@ -323,98 +325,98 @@ class CBASBugAutomation(CBASBaseTest):
         self.log.info("Connect to Bucket")
         self.cbas_util.connect_to_bucket(cbas_bucket_name=self.cbas_bucket_name,
                                          cb_bucket_password=self.cb_bucket_password)
-        
+
         self.log.info("Validate count on CBAS")
         self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items)
-        
+
         self.log.info("Establish remote shell to master node")
         shell = RemoteMachineShellConnection(self.cluster.master)
-        
+
         number_of_times_memcached_restart = self.input.param("number_of_times_memcached_restart", 16)
         for i in range(number_of_times_memcached_restart):
-            
+
             self.log.info("Stop persistance on KV node")
             mem_client = MemcachedClientHelper.direct_client(self.cluster.master,
                                                          self.cb_bucket_name)
             mem_client.stop_persistence()
-            
+
             self.log.info("Add documents with persistance stopped")
             self.perform_doc_ops_in_all_cb_buckets("create", self.num_items, self.num_items + (self.num_items / 2), exp=0)
-            
+
             self.log.info("Validate count on CBAS")
             self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items+ (self.num_items / 2))
-            
+
             self.log.info("Kill memcached on KV node %s" %str(i))
             shell.kill_memcached()
             self.sleep(2, "Wait for for DCP rollback sent to CBAS and memcached restart")
-            
+
             self.log.info("Validate count on CBAS")
             self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items), msg="Count mismatch")
-        
+
         self.log.info("Verify connect to second CBAS Bucket succeeds post long failure logs")
         self.assertTrue(self.cbas_util.connect_to_bucket(cbas_bucket_name=secondary_cbas_bucket_name,
                                          cb_bucket_password=self.cb_bucket_password), msg="Failed to connect CBAS bucket after long failover logs")
-    
+
     '''
     cbas.cbas_bug_automation.CBASBugAutomation.test_rebalance_while_running_queries_on_all_active_dataset,cb_bucket_name=default,items=10,cbas_bucket_name=default_cbas,cbas_dataset_name=ds,active_dataset=8,mode=async,num_queries=10
     '''
     def test_rebalance_while_running_queries_on_all_active_dataset(self):
         self.log.info("Load data in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
-        
+
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
-        
+
         self.log.info("Create 8 dataset on the CBAS bucket")
         dataset_count = self.input.param("active_dataset", 8)
         for i in range(dataset_count):
             self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
                                                     cbas_dataset_name=self.cbas_dataset_name + str(i))
-        
+
         self.log.info("Connect to Bucket")
         self.cbas_util.connect_to_bucket(cbas_bucket_name=self.cbas_bucket_name,
                                          cb_bucket_password=self.cb_bucket_password)
-        
+
         self.log.info("Validate count on CBAS")
         for i in range(dataset_count):
             self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name+str(i), self.num_items)
-        
+
         self.log.info("Run concurrent queries to simulate busy system on all datasets")
         all_handles = []
         for i in range(dataset_count):
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name + str(i))
             all_handles.append(self.cbas_util._run_concurrent_queries(statement, self.mode, self.num_concurrent_queries))
-        
+
         self.log.info("Rebalance in a CBAS node while queries are running")
         node_services = []
         node_services.append(self.input.param('service', "cbas"))
         self.assertTrue(self.cluster_util.add_node(node=self.cluster.cbas_nodes[0], services=node_services))
-        
+
         for handles in all_handles:
             self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
-    
+
     '''
     cbas.cbas_bug_automation.CBASBugAutomation.test_auto_failure_on_kv_busy_system,cb_bucket_name=custom,cbas_bucket_name=custom_cbas_bucket,cbas_dataset_name=custom_ds,items=100000,service=kv,default_bucket=False,replicas=1
     cbas.cbas_bug_automation.CBASBugAutomation.test_auto_failure_on_kv_busy_system,cb_bucket_name=custom,cbas_bucket_name=custom_cbas_bucket,cbas_dataset_name=custom_ds,items=100000,service=kv,default_bucket=False,replicas=2
     '''
     def test_auto_failure_on_kv_busy_system(self):
-        
+
         self.log.info('Read service input param')
         node_services = []
         node_services.append(self.input.param('service', "cbas"))
-        
+
         self.log.info("Add KV node so we can auto failover a KV node later")
         self.cluster_util.add_node(self.servers[1], node_services, rebalance=False)
         self.cluster_util.add_node(self.cluster.cbas_nodes[0], node_services, rebalance=True)
-        
+
         self.log.info("Perform Async doc operations on KV")
         json_generator = JsonGenerator()
         generators = json_generator.generate_docs_simple(docs_per_day=self.num_items)
         kv_task = self.bucket_util._async_load_all_buckets(self.cluster, generators, "create", 0, batch_size=1000)
-        
+
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
-        
+
         self.log.info("Create dataset on the CBAS bucket")
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
                                                 cbas_dataset_name=self.cbas_dataset_name)
@@ -422,7 +424,7 @@ class CBASBugAutomation(CBASBaseTest):
         self.log.info("Connect to Bucket")
         self.cbas_util.connect_to_bucket(cbas_bucket_name=self.cbas_bucket_name,
                                          cb_bucket_password=self.cb_bucket_password)
-        
+
         self.log.info("Auto fail over KV node")
         autofailover_timeout = 40
         status = RestConnection(self.cluster.master).update_autofailover_settings(True, autofailover_timeout)
@@ -436,30 +438,30 @@ class CBASBugAutomation(CBASBaseTest):
         finally:
             remote = RemoteMachineShellConnection(servr_out[0])
             remote.start_server()
-                
+
         self.log.info("Get KV ops result")
         for task in kv_task:
             self.task_manager.get_task_result(task)
-        
+
         self.log.info("Assert document count on CBAS")
         count_n1ql = self.rest.query_tool('select count(*) from `%s`' % (self.cb_bucket_name))['results'][0]['$1']
         self.log.info("Document count on CB %d" % count_n1ql)
-        
+
         self.log.info("Validate count on CBAS")
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, count_n1ql), msg="Count mismatch")
-    
+
     '''
     cbas.cbas_bug_automation.CBASBugAutomation.test_heavy_dgm_on_kv_and_then_rebalance,items=500000,default_bucket=False,cb_bucket_name=custom,cbas_bucket_name=custom_cbas_bucket,cbas_dataset_name=custom_ds,service=kv,rebalance_type=in,bucket_ram=100
     cbas.cbas_bug_automation.CBASBugAutomation.test_heavy_dgm_on_kv_and_then_rebalance,items=500000,default_bucket=False,cb_bucket_name=custom,cbas_bucket_name=custom_cbas_bucket,cbas_dataset_name=custom_ds,service=kv,rebalance_type=out,bucket_ram=100
     cbas.cbas_bug_automation.CBASBugAutomation.test_heavy_dgm_on_kv_and_then_rebalance,items=500000,default_bucket=False,cb_bucket_name=custom,cbas_bucket_name=custom_cbas_bucket,cbas_dataset_name=custom_ds,service=kv,rebalance_type=swap,bucket_ram=100
     '''
     def test_heavy_dgm_on_kv_and_then_rebalance(self):
-        
+
         self.log.info('Read input param')
         node_services = []
         node_services.append(self.input.param('service', "kv"))
         bucket_ram = self.input.param('bucket_ram', 100)
-        
+
         self.log.info("Pick the incoming and outgoing nodes during rebalance")
         self.rebalance_type = self.input.param("rebalance_type", "in")
         nodes_to_add = [self.servers[1]]
@@ -471,11 +473,11 @@ class CBASBugAutomation(CBASBaseTest):
         elif self.rebalance_type == 'swap':
             self.cluster_util.add_node(self.servers[3], node_services)
             nodes_to_remove.append(self.servers[3])
-        self.log.info("Incoming nodes - %s, outgoing nodes - %s. For rebalance type %s " %(nodes_to_add, nodes_to_remove, self.rebalance_type))    
-        
+        self.log.info("Incoming nodes - %s, outgoing nodes - %s. For rebalance type %s " %(nodes_to_add, nodes_to_remove, self.rebalance_type))
+
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
-        
+
         self.log.info("Create dataset on the CBAS bucket")
         self.cbas_util.create_dataset_on_bucket(cbas_bucket_name=self.cb_bucket_name,
                                                 cbas_dataset_name=self.cbas_dataset_name)
@@ -520,7 +522,7 @@ class CBASBugAutomation(CBASBaseTest):
         config_dict = json.loads((content.decode("utf-8")))
         io_devices = len(config_dict["iodevices"])
         self.log.info("Number of IO devices on cluster %d" % io_devices)
-       
+
         self.log.info("Fetch number of partitions")
         response = self.cbas_util.fetch_analytics_cluster_response(shell)
         if 'partitions' in response:
@@ -596,7 +598,7 @@ class CBASBugAutomation(CBASBaseTest):
     cbas.cbas_bug_automation.CBASBugAutomation.test_analytics_request_exceeding_max_request_size_is_rejected,default_bucket=False
     """
     def test_analytics_request_exceeding_max_request_size_is_rejected(self):
-        
+
         self.log.info("Fetch maxWebRequestSize value")
         status, content, _ = self.cbas_util.fetch_service_parameter_configuration_on_cbas()
         self.assertTrue(status, msg="Failed to fetch configs")
@@ -619,7 +621,7 @@ class CBASBugAutomation(CBASBaseTest):
         url = "http://{0}:{1}/analytics/service".format(self.cbas_node.ip, 8095)
         _, error = shell.execute_command("curl -v -X POST {0} -u {1}:{2} -d 'statement={3}'".format(url, "Administrator", "password", 'select "a"'))
         self.assertTrue("413 Request Entity Too Large" in str(error), msg="Request must be rejected")
-    
+
     '''
     test_query_running_into_overflow,default_bucket=False
     https://issues.couchbase.com/browse/MB-29640
@@ -750,22 +752,22 @@ class CBASBugAutomation(CBASBaseTest):
         _, _, _, results, _ = self.cbas_util.execute_statement_on_cbas_util(dataset_count_query)
         dataset_count = results[0]["$1"]
         self.assertEqual(dataset_count, 0, msg="Dataset count mismatch. Number of dataset must be 0")
-    
+
     """
     cbas.cbas_bug_automation.CBASBugAutomation.test_bucket_listeners_are_unregistered_on_dataverse_drop,cb_bucket_name=default,cbas_dataset_name=ds,items=1000,dataverse=custom
     """
     def test_bucket_listeners_are_unregistered_on_dataverse_drop(self):
-        
+
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
 
         self.log.info("Load documents in KV")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
-        
+
         self.log.info("Create dataverse custom")
         dataverse = self.input.param("dataverse")
         self.cbas_util.create_dataverse_on_cbas(dataverse_name=dataverse)
-        
+
         self.log.info("Create dataset")
         self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, self.cbas_dataset_name, dataverse=dataverse)
         dataset = dataverse + "." + self.cbas_dataset_name
@@ -773,74 +775,74 @@ class CBASBugAutomation(CBASBaseTest):
         self.cbas_util.connect_link(link_name=dataverse + ".Local")
 
         self.log.info("Validate document count on CBAS")
-        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(dataset, self.num_items), msg="Count mismatch on CBAS")  
-        
+        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(dataset, self.num_items), msg="Count mismatch on CBAS")
+
         self.log.info("Disconnect to Local link on dataverse custom")
         self.cbas_util.disconnect_link(link_name=dataverse + ".Local")
 
         self.log.info("Drop dataverse")
         self.cbas_util.drop_dataverse_on_cbas(dataverse_name=dataverse)
-        
+
         self.log.info("Re-create dataverse custom")
         self.cbas_util.create_dataverse_on_cbas(dataverse_name=dataverse)
-        
+
         self.log.info("Create dataset with different name")
         self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, self.cbas_dataset_name + "_sec", dataverse=dataverse)
         dataset = dataverse + "." + self.cbas_dataset_name
-        
+
         self.log.info("Connect to Local link on dataverse")
         self.assertTrue(self.cbas_util.connect_link(link_name=dataverse + ".Local"), msg="Failed to connect link")
 
         self.log.info("Validate document count on CBAS")
-        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(dataset + "_sec", self.num_items), msg="Count mismatch on CBAS")  
-    
+        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(dataset + "_sec", self.num_items), msg="Count mismatch on CBAS")
+
     """
     cbas.cbas_bug_automation.CBASBugAutomation.test_drop_dataset_memory_deallocation,cb_bucket_name=default,cbas_dataset_name=ds_,items=10000,dataverse=custom
     """
     def test_drop_dataset_memory_deallocation(self):
-        
+
         self.log.info("Add CBAS nodes")
         self.cluster_util.add_node(self.servers[1], services=["cbas"], rebalance=True)
-        
+
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
 
         self.log.info("Load documents in KV")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
-        
+
         for i in range(10):
             self.log.info("----------- Test run : {0} -----------".format(i))
-            
+
             self.log.info("Create dataverse custom")
             dataverse = self.input.param("dataverse", "universe")
             self.assertTrue(self.cbas_util.create_dataverse_on_cbas(dataverse_name=dataverse), msg="Fail to create dataverse")
-            
+
             self.log.info("Create dataset")
             for x in range(8):
                 cbas_dataset_name = self.cbas_dataset_name + str(x)
                 self.assertTrue(self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, cbas_dataset_name, dataverse=dataverse), msg="Fail to create dataset")
                 dataset = dataverse + "." + cbas_dataset_name
-            
+
             self.log.info("Connect to Local link on dataverse")
             self.assertTrue(self.cbas_util.connect_link(link_name=dataverse + ".Local"), msg="Fail to connect link")
-            
+
             self.log.info("Validate dataset count")
             for x in range(8):
                 cbas_dataset_name = self.cbas_dataset_name + str(x)
                 self.log.info("Validate document count on CBAS")
                 self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(dataverse + "." + cbas_dataset_name, self.num_items), msg="Count mismatch on CBAS")
-            
+
             self.log.info("Disconnect to Local link on dataverse custom")
             self.assertTrue(self.cbas_util.disconnect_link(link_name=dataverse + ".Local"), msg="Fail to disconnect link")
-    
+
             self.log.info("Drop dataverse")
             self.assertTrue(self.cbas_util.drop_dataverse_on_cbas(dataverse_name=dataverse), msg="Fail to drop dataverse")
-    
+
     """
     cbas.cbas_bug_automation.CBASBugAutomation.test_array_intersect_on_large_dataset,default_bucket=False
     """
     def test_array_intersect_on_large_dataset(self):
-        
+
         self.log.info('Verify result for array intersect with count')
         statement = """from array_range(1, 1000000) t
                        let p = array_count(array_intersect([t, t+1], [t+1, t+2]))
@@ -848,7 +850,7 @@ class CBASBugAutomation(CBASBaseTest):
         response, _, _, results, _ = self.cbas_util.execute_statement_on_cbas_util(statement, analytics_timeout=200)
         self.assertTrue(response == "success", "Query %s failed." % statement)
         self.assertEqual(results[0], 999999, msg="Query result mismatch for array_count")
-        
+
         self.log.info('Verify result for array intersect with maxh')
         statement = """from array_range(1, 1000000) t
                        let p = array_max(array_intersect([t, t+1], [t+1, t+2]))

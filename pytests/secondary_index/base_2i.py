@@ -944,7 +944,7 @@ class BaseSecondaryIndexingTests(QueryTests):
                         check = True
                     else:
                         check = False
-                        time.sleep(1)
+                        self.sleep(1, "Will retry getting index status")
                         next_time = time.time()
                         break
             check = check or (next_time - init_time > timeout)

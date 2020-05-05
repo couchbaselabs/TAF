@@ -1,4 +1,3 @@
-import time
 from TestInput import TestInputSingleton
 
 from basetestcase import BaseTestCase
@@ -38,7 +37,7 @@ class DCPBase(BaseTestCase):
             self.assertTrue(self.crm.clean(), msg="Failed during crm.clean")
             self.assertTrue(self.crm.start_nodes(),
                             msg="Failed during start_nodes")
-            time.sleep(5)
+            self.sleep(5, "Wait in cluster_run case")
 
         self.is_setup = False
 

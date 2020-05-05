@@ -3,7 +3,6 @@ Basic test cases with commit,rollback scenarios
 """
 
 import threading
-import time
 
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
@@ -27,7 +26,9 @@ class basic_ops(BaseTestCase):
             self.bucket_util.create_default_bucket(
                 replica=self.num_replicas,
                 compression_mode=self.compression_mode, ram_quota=100)
-        time.sleep(10)
+
+        self.sleep(10, "Wait for bucket to become ready for ops")
+
         self.def_bucket = self.bucket_util.get_all_buckets()
         self.client = SDKClient([self.cluster.master], self.def_bucket[0])
         self.__durability_level()
@@ -185,7 +186,7 @@ class basic_ops(BaseTestCase):
         for thread in threads:
             thread.join()
 
-        self.sleep(60)
+        self.sleep(60, "Wait for transactions to complete")
         if self.update_retry:
             for key in self.keys:
                 result = self.client.read(key)
@@ -222,7 +223,7 @@ class basic_ops(BaseTestCase):
             transaction_timeout=self.transaction_timeout,
             commit=True, durability=self.durability_level, sync=self.sync)
         self.task.jython_task_manager.get_task_result(task)
-        self.log.info("get all the keys in the cluster")
+        self.log.info("Get all the keys in the cluster")
         self.doc_gen(self.num_items)
 
         threads = []
@@ -239,7 +240,7 @@ class basic_ops(BaseTestCase):
 
         for thread in threads:
             thread.start()
-            self.sleep(2)
+            self.sleep(2, "Wait for transaction thread to start")
 
         for thread in threads:
             thread.join()
@@ -279,19 +280,20 @@ class basic_ops(BaseTestCase):
                                         self.transaction_commit,
                                         self.update_count, True, False))
         thread.start()
-        self.sleep(1)
+        self.sleep(1, "Wait for transaction thread to start")
 
         if self.crash:
             self.client.cluster.disconnect()
             self.transaction.close()
             self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
             self.create_Transaction(self.client1)
-            self.sleep(self.transaction_timeout+60)
+            self.sleep(self.transaction_timeout+60,
+                       "Wait for transaction cleanup to complete")
             exception = Transaction().RunTransaction(
                 self.transaction, [self.client1.collection], self.docs, [], [],
                 self.transaction_commit, self.sync, self.update_count)
             if exception:
-                time.sleep(60)
+                self.sleep(60, "Wait for transaction cleanup to happen")
 
             self.verify_doc(self.num_items, self.client1)
             self.client1.close()
@@ -340,7 +342,7 @@ class basic_ops(BaseTestCase):
         self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
         self.create_Transaction(self.client1)
         self.sleep(self.transaction_timeout+60,
-                   "Wait for trasaction cleanup to happen")
+                   "Wait for transaction cleanup to happen")
 
         self.log.info("going to start the load")
         for doc in docs:
@@ -348,7 +350,7 @@ class basic_ops(BaseTestCase):
                 self.transaction, [self.client1.collection], doc, [], [],
                 self.transaction_commit, self.sync, self.update_count)
             if exception:
-                time.sleep(60)
+                self.sleep(60, "Wait for transaction cleanup to happen")
 
         self.verify_doc(self.num_items, self.client1)
         self.client1.close()
@@ -391,13 +393,13 @@ class basic_ops(BaseTestCase):
                                          self.docs, self.transaction_commit,
                                          self.update_count))
         threads.start()
-        self.sleep(1)
+        self.sleep(1, "Wait for transaction thread to start")
         self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
                                            xattr_key, val)
         threads.join()
         if self.transaction_commit:
             self.__read_doc_and_validate("test_docs-0", val, xattr_key)
-        self.sleep(60)
+        self.sleep(60, "Wait for transaction to complete")
         self.verify_doc(self.num_items, self.client)
 
     def test_TxnWithMultipleXattr(self):
@@ -410,7 +412,7 @@ class basic_ops(BaseTestCase):
                                          self.docs, self.transaction_commit,
                                          self.update_count))
         threads.start()
-        self.sleep(1)
+        self.sleep(1, "Wait for transaction thread to start")
         for key, val in xattrs_to_insert:
             self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
                                                key, val)
@@ -418,5 +420,5 @@ class basic_ops(BaseTestCase):
         if self.transaction_commit:
             for key, val in xattrs_to_insert:
                 self.__read_doc_and_validate("test_docs-0", val, key)
-        self.sleep(60)
+        self.sleep(60, "Wait for transaction to complete")
         self.verify_doc(self.num_items, self.client)

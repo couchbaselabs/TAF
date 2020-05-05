@@ -354,11 +354,11 @@ class OpsChangeCasTests(CasBaseTest):
         # CAS should be 0 now, do some gets and sets to verify
         # that nothing bad happens
         # self._restart_memcache('default')
-        remote = RemoteMachineShellConnection(self.master)
+        remote = RemoteMachineShellConnection(self.cluster.master)
         remote.stop_server()
-        time.sleep(30)
+        self.sleep(30, "Wait for server to stop")
         remote.start_server()
-        time.sleep(30)
+        self.sleep(30, "Wait for server to start")
 
         client = SDKClient([self.cluster.master], 'default')
         mc_active = client.memcached(KEY_NAME)

@@ -558,7 +558,7 @@ class AutoCompactionTests(CollectionBase):
 
         # Rename here and restart Couchbase server
         remote_client.stop_couchbase()
-        time.sleep(5)
+        self.sleep(5)
         remote_client.execute_command(
             "cd /opt/couchbase/var/lib/couchbase/data/default; "
             "rename .1 .65535 *.1")

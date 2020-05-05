@@ -13,6 +13,7 @@ import testconstants
 from Cb_constants import constants
 from Jython_tasks.task import MonitorActiveTask
 from TestInput import TestInputSingleton
+from common_lib import sleep
 from couchbase_cli import CouchbaseCLI
 from global_vars import logger
 from membase.api.rest_client import RestConnection, RestHelper
@@ -154,14 +155,14 @@ class ClusterUtils:
                                    "rebalance out for ejected nodes, will "
                                    "retry after 10 seconds according to "
                                    "MB-8430: {0}".format(ex))
-                    time.sleep(10)
+                    sleep(10, "MB-8430")
                     rest = RestConnection(removed)
                 start = time.time()
                 while time.time() - start < 30:
                     if len(rest.get_pools_info()["pools"]) == 0:
                         success_cleaned.append(removed)
                         break
-                    time.sleep(1)
+                    sleep(1)
                 if time.time() - start > 10:
                     self.log.error("'pools' on node {0}:{1} - {2}"
                                    .format(removed.ip, removed.port,
@@ -272,9 +273,9 @@ class ClusterUtils:
                     remote_client.disconnect()
             self.log.debug("========= CHANGED ENVIRONMENT SETTING ===========")
 
-        self.log.debug("Sleeping for some time so that all the \
-        services are up")
-        time.sleep(10)
+        self.log.debug("Wait for all the services to come up after "
+                       "change_env_vars update")
+        sleep(10, log_type="infra")
 
     def reset_env_variables(self):
         if self.vbuckets != 1024 or self.upr is not None:
@@ -413,7 +414,7 @@ class ClusterUtils:
                 # Start node
                 rest = RestConnection(node)
                 data_path = rest.get_data_path()
-                core_path= str(rest.get_data_path()).split("data")[0] + "crash/"
+                core_path = str(rest.get_data_path()).split("data")[0] + "crash/"
                 if not os.path.isdir(core_path):
                     core_path = "/opt/couchbase/var/lib/couchbase/crash/"
 
@@ -421,11 +422,12 @@ class ClusterUtils:
                 self.stop_server(node)
                 # Delete Path
                 shell.cleanup_data_config(data_path)
-                shell.cleanup_data_config(core_path);
+                shell.cleanup_data_config(core_path)
 
                 self.start_server(node)
                 shell.disconnect()
-            time.sleep(10)
+            # Wait after reset of cluster nodes
+            sleep(10)
         except Exception, ex:
             self.log.error(ex)
 
@@ -697,7 +699,7 @@ class ClusterUtils:
         except Exception as e:
             self.log.error("First time rebalance failed on Removal. "
                            "Wait and try again. THIS IS A BUG.")
-            time.sleep(5)
+            sleep(5)
             removed = helper.remove_nodes(
                 knownNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in otpnode],

@@ -1,18 +1,20 @@
 import time
+
 from math import ceil
+
 from BucketLib.bucket import Bucket
+from BucketLib.BucketOperations import BucketHelper
+from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
+from collections_helper.collections_spec_constants import \
+    MetaConstants, MetaCrudParams
 from couchbase_cli import CouchbaseCLI
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
-from BucketLib.BucketOperations import BucketHelper
-from collections_helper.collections_spec_constants import \
-    MetaConstants, MetaCrudParams
 from sdk_exceptions import SDKException
 
 
@@ -757,7 +759,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             actual_failover_count = self.get_failover_count()
             if actual_failover_count == expected_failover_count:
                 break
-            time.sleep(20)
+            self.sleep(20)
         time_end = time.time()
         self.assertTrue(actual_failover_count == expected_failover_count,
                         "{0} nodes failed over, expected : {1}"

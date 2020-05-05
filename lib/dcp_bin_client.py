@@ -1,4 +1,6 @@
 import random
+
+from common_lib import sleep
 from mc_bin_client import MemcachedClient,decodeCollectionID
 from memcacheConstants import *
 import Queue
@@ -185,8 +187,7 @@ class DcpClient(MemcachedClient):
             if response:
                 break
             retries -= 1
-            time.sleep(1)
-
+            sleep(1, "Retrying recv_op..")
         return response
 
     def send_op(self, op):

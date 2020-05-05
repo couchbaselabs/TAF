@@ -1,8 +1,6 @@
-#this class will contain methods which we
-#use later to
-# map a version # -> rpm url
+# Contains methods which we
+# use later to map a version # -> rpm url
 from datetime import datetime
-import time
 import urllib2
 import re
 import socket
@@ -11,6 +9,7 @@ import testconstants
 import traceback
 import sys
 
+from common_lib import sleep
 from global_vars import logger
 from testconstants import WIN_CB_VERSION_3
 from testconstants import SHERLOCK_VERSION
@@ -513,18 +512,19 @@ class BuildQuery(object):
                     index_url = "/index_" + version[:version.find("-")] + ".html"
                 else:
                     index_url = "/index_" + version + ".html"
+
+            self.log.info("Try collecting build info from url: %s"
+                          % (build_page + index_url))
             # Try this ten times
             for _ in range(0, 10):
                 try:
-                    self.log.info("Try collecting build info from url: %s"
-                                  % (build_page + index_url))
                     if timeout:
                         socket.setdefaulttimeout(timeout)
                     page = urllib2.urlopen(build_page + index_url)
                     soup = BeautifulSoup.BeautifulSoup(page)
                     break
                 except:
-                    time.sleep(5)
+                    sleep(5, "Retry fetching build info from URL")
             if not page:
                 raise Exception('unable to connect to %s' % (build_page + index_url))
             query = BuildQuery()

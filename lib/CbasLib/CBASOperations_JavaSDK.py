@@ -6,7 +6,6 @@ Created on Sep 25, 2017
 
 import json
 import sys
-import time
 import traceback
 
 from com.couchbase.client.java.analytics import AnalyticsQuery, AnalyticsParams
@@ -16,11 +15,11 @@ from java.lang import System, RuntimeException
 from java.util.concurrent import TimeoutException, RejectedExecutionException,\
                                  TimeUnit
 from CbasLib.CBASOperations_Rest import CBASHelper as CBAS_helper_rest
+from common_lib import sleep
 from sdk_client3 import SDKClient
 
 
 class CBASHelper(CBAS_helper_rest, SDKClient):
-
     def __init__(self, master, cbas_node):
         self.server = master
         super(CBASHelper, self).__init__(master, cbas_node)
@@ -34,8 +33,8 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
             self.password = password
 
         self.connectCluster(username, password)
-        System.setProperty("com.couchbase.analyticsEnabled", "true");
-        self.bucket = self.cluster.openBucket(bucket);
+        System.setProperty("com.couchbase.analyticsEnabled", "true")
+        self.bucket = self.cluster.openBucket(bucket)
         self.connectionLive = True
 
     def closeConn(self):
@@ -45,8 +44,9 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                 self.disconnectCluster()
                 self.connectionLive = False
             except CouchbaseException as e:
+                # Wait before closing bucket connection
+                sleep(5)
                 try:
-                    time.sleep(5)
                     self.bucket.close()
                 except:
                     pass
@@ -55,8 +55,9 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                 self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
             except TimeoutException as e:
+                # Wait before closing bucket connection
+                sleep(5)
                 try:
-                    time.sleep(5)
                     self.bucket.close()
                 except:
                     pass
@@ -65,9 +66,9 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
                 self.log.error("%s" % e)
                 traceback.print_exception(*sys.exc_info())
             except RuntimeException as e:
-                self.log.info("RuntimeException from Java SDK. %s" % str(e))
+                sleep(5, "RuntimeException from Java SDK: %s" % str(e),
+                      log_type="infra")
                 try:
-                    time.sleep(5)
                     self.bucket.close()
                 except:
                     pass

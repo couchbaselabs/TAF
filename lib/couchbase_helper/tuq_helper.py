@@ -2,6 +2,7 @@ import json
 import time
 
 import testconstants
+from common_lib import sleep
 from couchbase_helper.tuq_generators import TuqGenerators
 from membase.api.exception import CBQError
 from membase.api.rest_client import RestConnection
@@ -513,19 +514,22 @@ class N1QLHelper:
             index_names.append(item['name'])
         return index_names
 
-    def is_index_online_and_in_list(self, bucket, index_name, server=None, timeout=600.0):
+    def is_index_online_and_in_list(self, bucket, index_name, server=None,
+                                    timeout=600.0):
         check = self._is_index_in_list(bucket, index_name, server=server)
         init_time = time.time()
         while not check:
-            time.sleep(1)
+            # Wait before checking index_in_list
+            sleep(1)
             check = self._is_index_in_list(bucket, index_name, server=server)
             next_time = time.time()
             if check or (next_time - init_time > timeout):
                 return check
         return check
 
-    def is_index_ready_and_in_list(self, bucket, index_name, server=None, timeout=600.0):
-        query = "SELECT * FROM system:indexes where name = \'{0}\'".format(index_name)
+    def is_index_ready_and_in_list(self, bucket, index_name, server=None,
+                                   timeout=600.0):
+        query = "SELECT * FROM system:indexes where name = \'%s\'" % index_name
         if server is None:
             server = self.master
         init_time = time.time()
@@ -539,7 +543,8 @@ class N1QLHelper:
                         and item['indexes']['name'] == index_name \
                         and item['indexes']['state'] == "online":
                     check = True
-            time.sleep(1)
+            # Wait before running cbq_query again
+            sleep(1)
             next_time = time.time()
             check = check or (next_time - init_time > timeout)
         return check

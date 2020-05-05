@@ -3,28 +3,27 @@ Created on Apr 23, 2018
 @author: riteshagarwal
 
 To run:
-/opt/jython/bin/jython -J-cp 'Couchbase-Java-Client-2.5.6/*:jsch-0.1.54.jar:doc_ops.jar' testrunner.py 
+/opt/jython/bin/jython -J-cp 'Couchbase-Java-Client-2.5.6/*:jsch-0.1.54.jar:doc_ops.jar' testrunner.py
 -i INI_FILE.ini num_query=100,num_items=10000 -t cbas.cursor_drop_test.volume.test_volume,num_query=100,num_items=10000000
 
 '''
 import bulk_doc_operations.doc_ops as doc_op
 from com.couchbase.client.java.env import DefaultCouchbaseEnvironment
-import copy
-from com.couchbase.client.java import *;
+from com.couchbase.client.java import *
 from com.couchbase.client.java.transcoder import JsonTranscoder
-from com.couchbase.client.java.document import *;
-from com.couchbase.client.java.document.json import *;
-from com.couchbase.client.java.query import *;
+from com.couchbase.client.java.document import *
+from com.couchbase.client.java.document.json import *
+from com.couchbase.client.java.query import *
 import threading
-import string
 import random
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
-import json
 from lib.CbasLib.CBASOperations import CBASHelper
 import json
 from com.couchbase.client.java.analytics import AnalyticsQuery, AnalyticsParams
-import sys, time, traceback
+import sys, time
+
+from common_lib import sleep
 from pytests.cbas.cbas_base import CBASBaseTest
 from lib.membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
@@ -32,6 +31,7 @@ from bucket_utils.bucket_ready_functions import bucket_utils
 from basetestcase import BaseTestCase
 from lib.remote.remote_util import RemoteMachineShellConnection
 from node_utils.node_ready_functions import NodeHelper
+
 
 class GleambookUser_Docloader(Callable):
     def __init__(self, bucket, num_items, start_from,op_type="create", batch_size=2000):
@@ -51,7 +51,7 @@ class GleambookUser_Docloader(Callable):
         self.min = range(0,60)
         self.sec = range(0,60)
         self.batch_size = batch_size
-        
+
     def generate_GleambookUser(self, num=None):
         organization = ["Wipro","Infosys","TCS","Tech Mahindra","CTS","Microsoft"]
         date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
@@ -59,16 +59,16 @@ class GleambookUser_Docloader(Callable):
         employment = []
         start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
         end_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
-        
+
         for i in xrange(3):
 #             start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
 #             end_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
- 
+
             EmploymentType = {"organization":random.choice(organization),"start_date":start_date,"end_date":end_date}
             employment.append(EmploymentType)
- 
+
 #             start_date = "%04d"%random.choice(self.year) + "-" + "%02d"%random.choice(self.month) + "-" + "%02d"%random.choice(self.day)
-             
+
             EmploymentType = {"organization":random.choice(organization),"start_date":start_date}
             employment.append(EmploymentType)
 
@@ -112,8 +112,7 @@ class GleambookUser_Docloader(Callable):
                         try:
                             doc_op().bulkSet(self.bucket, docs)
                         except:
-                            print "Exception from Java SDK - create"
-                            time.sleep(20)
+                            sleep(20, "Exception from SDK create. Will retry")
                             try:
                                 doc_op().bulkUpsert(self.bucket, docs)
                             except:
@@ -132,8 +131,7 @@ class GleambookUser_Docloader(Callable):
                         try:
                             doc_op().bulkUpsert(self.bucket, docs)
                         except:
-                            print "Exception from Java SDK - create"
-                            time.sleep(20)
+                            sleep(20, "Exception from SDK create. Will retry")
                             try:
                                 doc_op().bulkUpsert(self.bucket, docs)
                             except:
@@ -141,7 +139,7 @@ class GleambookUser_Docloader(Callable):
                                 pass
                         temp = 0
                         docs=[]
-                    
+
                 elif self.op_type == "delete":
                     try:
                         response = self.bucket.remove(str(i+self.start_from));
@@ -156,7 +154,7 @@ class GleambookUser_Docloader(Callable):
             self.exception = ex
         self.completed = time.time()
         return self
-    
+
 def shutdown_and_await_termination(pool, timeout):
     pool.shutdown()
     try:
@@ -169,7 +167,7 @@ def shutdown_and_await_termination(pool, timeout):
         pool.shutdownNow()
         # Preserve interrupt status
         Thread.currentThread().interrupt()
- 
+
 class volume(BaseTestCase):
     def setUp(self, add_defualt_cbas_node=True):
         self.input = TestInputSingleton.input
@@ -196,7 +194,7 @@ class volume(BaseTestCase):
             total_available_memory_in_mb -= self.info.cbasMemoryQuota
         if "eventing" in active_service:
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
-        
+
         print(total_memory_in_mb)
         available_memory =  total_available_memory_in_mb - threadhold_memory
         self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=available_memory)
@@ -214,11 +212,11 @@ class volume(BaseTestCase):
         self.sleep(10, "wait for index creation.")
         self.assertTrue(result['status'] == "success")
 
- 
+
     def test_volume(self):
         nodes_in_cluster= [self.servers[0]]
         print "Start Time: %s"%str(time.strftime("%H:%M:%S", time.gmtime(time.time())))
-        
+
         ########################################################################################################################
         self.log.info("Add a N1QL/Index nodes")
         self.query_node = self.servers[1]
@@ -226,11 +224,11 @@ class volume(BaseTestCase):
         rest.set_data_path(data_path=self.query_node.data_path,index_path=self.query_node.index_path,cbas_path=self.query_node.cbas_path)
         result = self.add_node(self.query_node, rebalance=False)
         self.assertTrue(result, msg="Failed to add N1QL/Index node.")
-        
+
         self.log.info("Add a KV nodes")
         result = self.add_node(self.servers[2], services=["kv"], rebalance=True)
         self.assertTrue(result, msg="Failed to add KV node.")
-         
+
         nodes_in_cluster = nodes_in_cluster + [self.servers[1], self.servers[2]]
         ########################################################################################################################
         self.log.info("Step 2: Create Couchbase buckets.")
@@ -244,11 +242,11 @@ class volume(BaseTestCase):
         cluster = CouchbaseCluster.create(env, self.master.ip);
         cluster.authenticate("Administrator","password")
         bucket = cluster.openBucket("GleambookUsers");
-        
+
         pool = Executors.newFixedThreadPool(5)
         items_start_from = 0
         total_num_items = self.input.param("num_items",5000)
-        
+
         executors=[]
         num_executors = 5
         doc_executors = 5
@@ -259,8 +257,8 @@ class volume(BaseTestCase):
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
-        shutdown_and_await_termination(pool, num_executors)   
-        
+        shutdown_and_await_termination(pool, num_executors)
+
         updates_from = items_start_from
         deletes_from = items_start_from + total_num_items/10
         items_start_from += total_num_items
@@ -272,7 +270,7 @@ class volume(BaseTestCase):
         executors=[]
         num_executors = 5
         doc_executors = 4
-          
+
         executors.append(GleambookUser_Docloader(bucket, num_items/10, updates_from,"update"))
         executors.append(GleambookUser_Docloader(bucket, num_items/10, deletes_from,"delete"))
         futures = pool.invokeAll(executors)
@@ -280,7 +278,7 @@ class volume(BaseTestCase):
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
         shutdown_and_await_termination(pool, num_executors)
-         
+
         ########################################################################################################################
         self.sleep(120,"Sleeping after 2nd cycle.")
         pool = Executors.newFixedThreadPool(5)
@@ -289,21 +287,21 @@ class volume(BaseTestCase):
         num_executors = 5
         doc_executors = 5
         num_items = total_num_items / doc_executors
-        
+
         for i in xrange(doc_executors):
             executors.append(GleambookUser_Docloader(bucket, num_items, items_start_from+i*num_items,batch_size=2000))
         rebalance = self.cluster.async_rebalance(nodes_in_cluster, [self.servers[3]], [])
         futures = pool.invokeAll(executors)
-        
+
         for future in futures:
             print future.get(num_executors, TimeUnit.SECONDS)
         print "Executors completed!!"
-        shutdown_and_await_termination(pool, num_executors)  
+        shutdown_and_await_termination(pool, num_executors)
         self.task_manager.get_task_result(rebalance)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
         self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-        
+
         bucket.close()
         cluster.disconnect()
-        
+
         print "End Time: %s"%str(time.strftime("%H:%M:%S", time.gmtime(time.time())))

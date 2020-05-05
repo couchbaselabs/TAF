@@ -11,6 +11,7 @@ import time
 
 from Cb_constants import constants
 from TestInput import TestInputSingleton
+from common_lib import sleep
 from global_vars import logger
 from membase.api import httplib2
 from membase.api.exception import ServerUnavailableException
@@ -117,7 +118,7 @@ class RestConnection(object):
                     or http_res.find(unexpected_server_err_msg) > -1):
                 self.log.error("Error {0}, 5 seconds sleep before retry"
                                .format(http_res))
-                time.sleep(5)
+                sleep(5, log_type="infra")
                 if iteration == 2:
                     self.log.error("Node {0}:{1} is in a broken state!"
                                    .format(self.ip, port))
@@ -125,10 +126,6 @@ class RestConnection(object):
                 continue
             else:
                 break
-
-    def sleep(self, time_in_sec, message=""):
-        self.log.debug("%s. Sleep for %s seconds" % (message, time_in_sec))
-        time.sleep(time_in_sec)
 
     def init_http_request(self, api):
         content = None
@@ -209,7 +206,7 @@ class RestConnection(object):
                                "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
-            time.sleep(3)
+            sleep(3, log_type="infra")
 
     def _create_headers(self):
         authorization = base64.encodestring('%s:%s'

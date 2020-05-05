@@ -5,7 +5,6 @@ from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
-import time
 
 
 class RebalanceOutTests(RebalanceBaseTest):
@@ -23,7 +22,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         servs_out = [self.cluster.servers[len(self.cluster.nodes_in_cluster) - i - 1] for i in range(self.nodes_out)]
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], servs_out)
-        time.sleep(10)
+        self.sleep(10)
 
         tasks_info = self.bucket_util._async_load_all_buckets(
             self.cluster, self.gen_create, "create", 0,

@@ -4,6 +4,7 @@ import traceback
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
+from common_lib import sleep
 from global_vars import logger
 from membase.api.exception import FailoverFailedException, \
     ServerUnavailableException, BucketFlushFailed
@@ -110,7 +111,7 @@ class Task(Callable):
         while not condition(value):
             now = time.time()
             if timeout_secs < 0 or now < stop_time:
-                time.sleep(2**attempt * interval)
+                sleep(2**attempt * interval, log_type="infra")
                 attempt += 1
                 value = value_getter()
             else:
@@ -295,7 +296,7 @@ class FailoverTask(Task):
             self._failover_nodes(self.task_manager)
             self.test_log.debug("{0} seconds sleep after failover for nodes to go pending...."
                                 .format(self.wait_for_pending))
-            time.sleep(self.wait_for_pending)
+            sleep(self.wait_for_pending)
             self.state = FINISHED
             self.set_result(True)
 

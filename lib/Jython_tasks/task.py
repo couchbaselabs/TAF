@@ -21,6 +21,7 @@ from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from Cb_constants import constants, CbServer
+from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     doc_generator, SubdocDocumentGenerator
@@ -73,10 +74,6 @@ class Task(Callable):
         else:
             return "[%s] not yet scheduled" % self.thread_name
 
-    def sleep(self, time_in_sec, message):
-        self.log.info("%s. Sleep for %s seconds.." % (message, time_in_sec))
-        time.sleep(time_in_sec)
-
     def start_task(self):
         self.started = True
         self.start_time = time.time()
@@ -124,10 +121,12 @@ class Task(Callable):
         interval = 0.01
         attempt = 0
         value = value_getter()
+        logger.get("infra").debug(
+            "Wait for expected condition to get satisfied")
         while not condition(value):
             now = time.time()
             if timeout_secs < 0 or now < stop_time:
-                time.sleep(2**attempt * interval)
+                sleep(2**attempt * interval)
                 attempt += 1
                 value = value_getter()
             else:
@@ -342,7 +341,8 @@ class RebalanceTask(Task):
         # before we declare ourselves done
         if progress != -1 and status != 'none':
             if self.retry_get_progress < self.retry_get_process_num:
-                time.sleep(5)
+                self.log.debug("Wait before next rebalance progress check")
+                sleep(5, log_type="infra")
                 self.check()
             else:
                 self.result = False
@@ -363,7 +363,6 @@ class RebalanceTask(Task):
                                 (len(rest.get_pools_info()["pools"]) == 0):
                             success_cleaned.append(removed)
                             break
-                        time.sleep(0.5)
                     except (ServerUnavailableException, IncompleteRead), e:
                         self.test_log.error(e)
 
@@ -449,7 +448,8 @@ class GenericLoadingTask(Task):
                     failed_item_table.set_headers(["Create doc_Id",
                                                    "Exception"])
                 if not skip_read_on_error:
-                    # Sleep before reading the doc for verification
+                    self.log.debug(
+                        "Sleep before reading the doc for verification")
                     Thread.sleep(timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
@@ -491,7 +491,8 @@ class GenericLoadingTask(Task):
                     failed_item_table.set_headers(["Update doc_Id",
                                                    "Exception"])
                 if not skip_read_on_error:
-                    # Sleep before reading the doc for verification
+                    self.log.debug(
+                        "Sleep before reading the doc for verification")
                     Thread.sleep(timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
@@ -534,7 +535,8 @@ class GenericLoadingTask(Task):
                     failed_item_table.set_headers(["Replace doc_Id",
                                                    "Exception"])
                 if not skip_read_on_error:
-                    # Sleep before reading the doc for verification
+                    self.log.debug(
+                        "Sleep before reading the doc for verification")
                     Thread.sleep(timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
@@ -1466,9 +1468,10 @@ class LoadDocumentsGeneratorsTask(Task):
                     while task.docs_loaded < (task.generator._doc_gen.end -
                                               task.generator._doc_gen.start) \
                             and i < 60:
-                        self.sleep(1, "Bug in java futures task. "
-                                      "Items loaded in task %s is %s"
-                                      % (task.thread_name, task.docs_loaded))
+                        sleep(1, "Bug in java futures task. "
+                                 "Items loaded in task %s: %s"
+                                 % (task.thread_name, task.docs_loaded),
+                              log_type="infra")
                         i += 1
                 except Exception as e:
                     self.test_log.error(e)
@@ -2201,8 +2204,8 @@ class StatsWaitTask(Task):
                                 "Received: %s for bucket '%s'"
                                 % (self.stat, stat_result, self.comparison,
                                    self.value, val_dict, self.bucket.name))
-            # Required to avoid unnecessary logs
-            time.sleep(5)
+            self.log.debug("Wait before next StatWaitTask check")
+            sleep(5, log_type="infra")
             return False
         else:
             self.test_log.debug("Ready: %s %s %s %s. "
@@ -2400,13 +2403,13 @@ class ViewCreateTask(Task):
                         self.test_log.debug("Design Doc {0} version is not updated on node {1}:{2}. Retrying."
                                             .format(self.design_doc_name,
                                                     node.ip, node.port))
-                        time.sleep(2)
+                        sleep(2)
                 except ReadDocumentException as e:
                     if count < retry_count:
                         self.test_log.debug("Design Doc {0} not yet available on node {1}:{2}. Retrying."
                                             .format(self.design_doc_name,
                                                     node.ip, node.port))
-                        time.sleep(2)
+                        sleep(2)
                     else:
                         self.test_log.error("Design Doc {0} failed to replicate on node {1}:{2}"
                                             .format(self.design_doc_name, node.ip, node.port))
@@ -2414,16 +2417,16 @@ class ViewCreateTask(Task):
                         break
                 except Exception as e:
                     if count < retry_count:
-                        self.test_log.error("Retrying.. Unexpected Exception {0}"
-                                            .format(e))
-                        time.sleep(2)
+                        self.test_log.error("Unexpected exception: %s. "
+                                            "Will retry after sleep.." % e)
+                        sleep(2)
                     else:
                         self.set_exception(e)
                         break
             else:
                 self.set_exception(Exception(
                     "Design Doc {0} version mismatch on node {1}:{2}"
-                        .format(self.design_doc_name, node.ip, node.port)))
+                    .format(self.design_doc_name, node.ip, node.port)))
 
 
 class ViewDeleteTask(Task):
@@ -2537,10 +2540,10 @@ class ViewQueryTask(Task):
                     self.result = return_value
                     self.complete_task()
                     return return_value
-
             except QueryViewException as e:
-                # initial query failed, try again
-                time.sleep(self.retry_time)
+                self.test_log.debug("Initial query failed. "
+                                    "Will retry after sleep..")
+                sleep(self.retry_time)
                 retries += 1
 
             # catch and set all unexpected exceptions
@@ -2584,8 +2587,9 @@ class ViewQueryTask(Task):
                     if self.query["stale"].lower() == "false":
                         return False
 
-                # retry until expected results or task times out
-                time.sleep(self.retry_time)
+                self.test_log.debug("Retry until expected results "
+                                    "or task times out")
+                sleep(self.retry_time)
                 self.check()
         except QueryViewException as e:
             # subsequent query failed! exit
@@ -2644,10 +2648,10 @@ class N1QLQueryTask(Task):
             self.complete_task()
             return return_value
         except N1QLQueryException:
-            # initial query failed, try again
+            self.test_log.debug("Initial query failed, will retry..")
             if self.retried < self.retry_time:
                 self.retried += 1
-                time.sleep(self.retry_time)
+                sleep(self.retry_time)
                 self.call()
 
         # catch and set all unexpected exceptions
@@ -2709,10 +2713,10 @@ class CreateIndexTask(Task):
             self.complete_task()
             return self.result
         except CreateIndexException as e:
-            # initial query failed, try again
+            self.test_log.debug("Initial query failed. Will retry..")
             if self.retried < self.retry_time:
                 self.retried += 1
-                time.sleep(self.retry_time)
+                sleep(self.retry_time)
                 self.call()
         # catch and set all unexpected exceptions
         except Exception as e:
@@ -2763,10 +2767,10 @@ class BuildIndexTask(Task):
             self.complete_task()
             return self.result
         except CreateIndexException as e:
-            # initial query failed, try again
+            self.test_log.debug("Initial query failed, will retry..")
             if self.retried < self.retry_time:
                 self.retried += 1
-                time.sleep(self.retry_time)
+                sleep(self.retry_time)
                 self.call()
 
         # catch and set all unexpected exceptions
@@ -2853,10 +2857,10 @@ class DropIndexTask(Task):
             self.n1ql_helper.run_cbq_query(query=self.query, server=self.server)
             return_value = self.check()
         except N1QLQueryException as e:
-            # initial query failed, try again
+            self.test_log.debug("Initial query failed, will retry..")
             if self.retried < self.retry_time:
                 self.retried += 1
-                time.sleep(self.retry_time)
+                sleep(self.retry_timlib/membase/api/rest_client.pye)
                 self.call()
         # catch and set all unexpected exceptions
         except DropIndexException as e:
@@ -2927,8 +2931,8 @@ class PrintBucketStats(Task):
             except Exception as e:
                 self.log.warning("Exception while fetching bucket stats: %s"
                                  % e)
-                # Case when cluster.master is rebalance out of the cluster
-                time.sleep(2)
+                sleep(2, message="Updating BucketHelper with new master",
+                      log_type="infra")
                 self.bucket_helper = BucketHelper(self.cluster.master)
                 continue
 
@@ -2937,7 +2941,8 @@ class PrintBucketStats(Task):
             elif "drain_rate" in self.monitor_stats:
                 self.record_drain_rate(bucket_stats)
 
-            time.sleep(self.sleep)
+            # Sleep before fetching next stats
+            sleep(self.sleep, log_type="infra")
 
         if ops_rate:
             self.ops_rate_trend.append(ops_rate)
@@ -3020,7 +3025,7 @@ class BucketCreateTask(Task):
             if self.retries >= 5:
                 self.set_exception(e)
         self.retries = self.retris + 1
-        time.sleep(5)
+        sleep(5, "Wait for vBucket map to be ready", log_type="infra")
         self.check()
 
 
@@ -3123,9 +3128,9 @@ class BucketCreateFromSpecTask(Task):
                 args=[scope_spec["name"], collection_spec])
             collection_create_thread.start()
             collection_create_thread.join(30)
-            self.sleep(self.wait_for_collection,
-                       "MB-38073: Wait after collection %s creation" %
-                       collection_name)
+            sleep(self.wait_for_collection,
+                  "MB-38073: Wait after collection %s creation" %
+                  collection_name)
 
     def create_collection_from_spec(self, scope_name, collection_spec):
         self.test_log.debug("Creating collection for '%s:%s' - %s"
@@ -3193,9 +3198,10 @@ class MutateDocsFromSpecTask(Task):
                     while task.docs_loaded < (task.generator._doc_gen.end -
                                               task.generator._doc_gen.start) \
                             and i < 60:
-                        self.sleep(1, "Bug in java futures task. "
-                                      "Items loaded in task %s is %s"
-                                   % (task.thread_name, task.docs_loaded))
+                        sleep(1, "Bug in java futures task. "
+                                 "Items loaded in task %s: %s"
+                                 % (task.thread_name, task.docs_loaded),
+                              log_type="infra")
                         i += 1
                 except Exception as e:
                     self.test_log.error(e)
@@ -3426,7 +3432,8 @@ class MonitorActiveTask(Task):
                     # progress value was not changed
                     elif task["progress"] == self.current_progress:
                         if self.current_iter < self.num_iterations:
-                            self.sleep(2, "Wait for next progress update")
+                            sleep(2, "Wait for next progress update",
+                                  log_type="infra")
                             self.current_iter += 1
                             self.check()
                         else:
@@ -3498,7 +3505,8 @@ class MonitorDBFragmentationTask(Task):
             except Exception, ex:
                 self.set_result(False)
                 self.set_exception(ex)
-            time.sleep(2)
+            self.test_log.debug("Wait for expected fragmentation level")
+            sleep(2)
         self.complete_task()
 
 
@@ -3536,7 +3544,7 @@ class AutoFailoverNodesFailureTask(Task):
 
     def check_failure_timer_task_start(self, timer_task, retry_count=5):
         while retry_count != 0 and not timer_task.started:
-            self.sleep(1, "Wait for failover timer to start")
+            sleep(1, "Wait for failover timer to start", log_type="infra")
             retry_count -= 1
         if retry_count == 0:
             self.task_manager.stop_task(timer_task)
@@ -3642,7 +3650,8 @@ class AutoFailoverNodesFailureTask(Task):
 
     def next(self):
         if self.pause != 0:
-            time.sleep(self.pause)
+            self.test_log.debug("Wait before reset_auto_failover")
+            sleep(self.pause)
             if self.pause > self.timeout and self.itr != 0:
                 rest = RestConnection(self.master)
                 status = rest.reset_autofailover()
@@ -4511,7 +4520,7 @@ class MonitorViewFragmentationTask(Task):
                 self.result = True
                 break
             timeout -= 1
-            self.sleep(1, "Wait for fragmentation_level to reach")
+            sleep(1, "Wait for fragmentation_level to reach", log_type="infra")
 
     @staticmethod
     def aggregate_ddoc_info(rest, design_doc_name, bucket="default",
@@ -4651,9 +4660,9 @@ class ViewCompactionTask(Task):
                 else:
                     self.set_result(True)
             else:
-                # Sometimes the compacting is not started immediately
                 for i in xrange(20):
-                    time.sleep(2)
+                    self.test_log.debug("Wait for compaction to start")
+                    sleep(2)
                     if self._is_compacting():
                         self.check()
                     else:
@@ -4735,7 +4744,7 @@ class CompactBucketTask(Task):
                 if self.result is True:
                     break
                 self.retries -= 1
-                time.sleep(30)
+                sleep(30, "Wait for compaction to complete", log_type="infra")
 
             if self.result is False:
                 self.test_log.error("Compaction failed to complete within "
