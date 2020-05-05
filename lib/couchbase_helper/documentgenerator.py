@@ -396,7 +396,7 @@ class SubdocDocumentGenerator(KVGenerator):
         for path, value in json_val.items():
             return_val.append((path, value))
 
-        doc_key = self.next_key(self.itr)
+        doc_key = self.next_key()
 
         return doc_key, return_val
 
