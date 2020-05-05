@@ -41,6 +41,7 @@ from Jython_tasks.task_manager import TaskManager
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from reactor.util.function import Tuples
+from com.couchbase.client.java.json import JsonObject
 
 
 class Task(Callable):
@@ -1997,7 +1998,10 @@ class ValidateDocumentsTask(GenericLoadingTask):
         wrong_values = []
         for key, value in key_value.items():
             if key in map:
-                expected_val = Json.loads(value.toString())
+                if type(value) == JsonObject:
+                    expected_val = Json.loads(value.toString())
+                else:
+                    expected_val = Json.loads(value)
                 actual_val = {}
                 if map[key]['cas'] != 0:
                     actual_val = Json.loads(map[key][
