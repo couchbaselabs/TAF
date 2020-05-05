@@ -2,7 +2,6 @@ import base64
 import json
 import urllib
 import httplib2
-import logging
 import traceback
 import socket
 import time
@@ -13,6 +12,7 @@ from threading import Thread
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
 from Cb_constants import constants
+from global_vars import logger
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
 from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
 from exception import \
@@ -38,7 +38,7 @@ from membase.api.exception import \
 class RestHelper(object):
     def __init__(self, rest_connection):
         self.rest = rest_connection
-        self.test_log = logging.getLogger("test")
+        self.test_log = logger.get("test")
 
     def is_ns_server_running(self, timeout_in_seconds=360):
         self.test_log.debug(
@@ -197,8 +197,8 @@ class RestHelper(object):
 
 class RestConnection(object):
     def __init__(self, serverInfo):
-        self.log = logging.getLogger("infra")
-        self.test_log = logging.getLogger("test")
+        self.log = logger.get("infra")
+        self.test_log = logger.get("test")
 
         self.index_port = constants.index_port
         self.fts_port = constants.fts_port

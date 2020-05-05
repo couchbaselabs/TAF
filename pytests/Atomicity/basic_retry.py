@@ -2,7 +2,6 @@
 Basic test cases with commit,rollback scenarios
 """
 
-import logging
 import threading
 import time
 
@@ -19,7 +18,6 @@ from reactor.util.function import Tuples
 class basic_ops(BaseTestCase):
     def setUp(self):
         super(basic_ops, self).setUp()
-        self.test_log = logging.getLogger("test")
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -104,7 +102,7 @@ class basic_ops(BaseTestCase):
                 transaction, [client.collection], doc, [], [],
                 txn_commit, sync, update_count)
         elif op_type == "update":
-            self.test_log.info("updating all the keys through threads")
+            self.log.info("updating all the keys through threads")
             exception = Transaction().RunTransaction(
                 transaction, [client.collection], [], doc, [],
                 txn_commit, sync, update_count)
@@ -211,7 +209,7 @@ class basic_ops(BaseTestCase):
         """
         self.write_conflict = self.input.param("write_conflict", 2)
 
-        self.test_log.info("going to create and execute the task")
+        self.log.info("going to create and execute the task")
         self.gen_create = self.get_doc_generator(0, self.num_items)
         task = self.task.async_load_gen_docs_atomicity(
             self.cluster, self.def_bucket,
@@ -224,7 +222,7 @@ class basic_ops(BaseTestCase):
             transaction_timeout=self.transaction_timeout,
             commit=True, durability=self.durability_level, sync=self.sync)
         self.task.jython_task_manager.get_task_result(task)
-        self.test_log.info("get all the keys in the cluster")
+        self.log.info("get all the keys in the cluster")
         self.doc_gen(self.num_items)
 
         threads = []
@@ -247,7 +245,7 @@ class basic_ops(BaseTestCase):
             thread.join()
 
     def test_basic_retry_async(self):
-        self.test_log.info("going to create and execute the task")
+        self.log.info("going to create and execute the task")
         self.gen_create = self.get_doc_generator(0, self.num_items)
         task = self.task.async_load_gen_docs_atomicity(
             self.cluster, self.def_bucket,
@@ -261,7 +259,7 @@ class basic_ops(BaseTestCase):
             commit=True, durability=self.durability_level,
             sync=True, num_threads=1)
         self.task.jython_task_manager.get_task_result(task)
-        self.test_log.info("get all the keys in the cluster")
+        self.log.info("get all the keys in the cluster")
         keys = ["test_docs-0"]*2
 
         exception = Transaction().RunTransaction(
@@ -344,7 +342,7 @@ class basic_ops(BaseTestCase):
         self.sleep(self.transaction_timeout+60,
                    "Wait for trasaction cleanup to happen")
 
-        self.test_log.info("going to start the load")
+        self.log.info("going to start the load")
         for doc in docs:
             exception = Transaction().RunTransaction(
                 self.transaction, [self.client1.collection], doc, [], [],

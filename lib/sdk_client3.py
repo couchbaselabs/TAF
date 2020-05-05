@@ -6,7 +6,6 @@ Created on Mar 14, 2019
 """
 
 import json as pyJson
-import logging
 
 from _threading import Lock
 from com.couchbase.client.core.env import \
@@ -64,6 +63,8 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from com.couchbase.client.core.deps.io.netty.buffer import Unpooled
 from com.couchbase.client.core.deps.io.netty.util import CharsetUtil
 
+from global_vars import logger
+
 
 class SDKClientPool(object):
     """
@@ -71,7 +72,7 @@ class SDKClientPool(object):
     reused / shared across multiple tasks
     """
     def __init__(self):
-        self.log = logging.getLogger("infra")
+        self.log = logger.get("infra")
         self.clients = dict()
 
     def shutdown(self):
@@ -207,7 +208,7 @@ class SDKClient(object):
         self.collection = None
         self.compression = compression_settings
         self.cert_path = cert_path
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
         for server in servers:
             self.servers += (server.ip, int(server.port))

@@ -8,9 +8,10 @@ import re
 import socket
 import BeautifulSoup
 import testconstants
-import logging
 import traceback
 import sys
+
+from global_vars import logger
 from testconstants import WIN_CB_VERSION_3
 from testconstants import SHERLOCK_VERSION
 from testconstants import COUCHBASE_VERSION_2
@@ -42,7 +43,7 @@ class MembaseBuild(object):
     def __repr__(self):
         return self.__str__()
 
-    #let's also have a json object for all these classes
+    # let's also have a json object for all these classes
     def __str__(self):
         url = 'url : {0}'.format(self.url)
         name = 'name : {0}'.format(self.name)
@@ -55,8 +56,9 @@ class MembaseBuild(object):
             toy = 'toy : {0}'.format(self.toy)
         else:
             toy = ''
-        return '{0} {1} {2} {3} {4} {5} {6} {7}'.format(url, name, product, product_version, os, deliverable_type,
-                                                    architecture_type, toy)
+        return '{0} {1} {2} {3} {4} {5} {6} {7}'.format(
+            url, name, product, product_version, os, deliverable_type,
+            architecture_type, toy)
 
 
 class MembaseChange(object):
@@ -69,7 +71,7 @@ class MembaseChange(object):
 
 class BuildQuery(object):
     def __init__(self):
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
     # let's look at buildlatets or latest/sustaining or any other
     # location

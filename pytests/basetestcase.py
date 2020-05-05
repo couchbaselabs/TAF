@@ -1,5 +1,4 @@
 import datetime
-import logging
 import os
 import time
 import traceback
@@ -11,6 +10,7 @@ from Cb_constants import ClusterRun, CbServer
 from cb_tools.cb_cli import CbCli
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
+from global_vars import logger
 from membase.api.rest_client import RestHelper, RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
@@ -173,8 +173,8 @@ class BaseTestCase(unittest.TestCase):
             self.init_sdk_pool_object()
 
         # Initiate logging variables
-        self.log = logging.getLogger("test")
-        self.infra_log = logging.getLogger("infra")
+        self.log = logger.get("test")
+        self.infra_log = logger.get("infra")
 
         # Configure loggers
         self.log.setLevel(self.log_level)
@@ -527,7 +527,7 @@ class BaseTestCase(unittest.TestCase):
                 remote_client = RemoteMachineShellConnection(node)
                 if 'perNode' in cb_collect_response:
                     cb_collect_path = \
-                    cb_collect_response['perNode'][params['nodes']]['path']
+                        cb_collect_response['perNode'][params['nodes']]['path']
                     zip_file_copied = remote_client.get_file(
                         os.path.dirname(cb_collect_path),
                         os.path.basename(cb_collect_path),
@@ -536,11 +536,13 @@ class BaseTestCase(unittest.TestCase):
                         "%s node cb collect zip coped on client : %s"
                         % (node.ip, zip_file_copied))
                     if zip_file_copied:
-                        remote_client.execute_command("rm -f %s" % cb_collect_path)
+                        remote_client.execute_command("rm -f %s"
+                                                      % cb_collect_path)
                         remote_client.disconnect()
                 else:
-                    self.log.error("Failed to retrieve zip file path on node {}\
-                    ".format(node.ip))
+                    self.log.error(
+                        "Failed to retrieve zip file path on node %s"
+                        % node.ip)
             else:
                 self.log.error("API perform_cb_collect returned False")
 

@@ -1,17 +1,17 @@
 import json
 import os
-import logging
 
 from couchbase_helper.data_analysis_helper import DataAnalyzer, \
                                                   DataAnalysisResultAnalyzer, \
                                                   DataCollector
+from global_vars import logger
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
 
 class BackupRestoreValidationBase:
     def __init__(self):
-        self.log = logging.getLogger("test")
+        self.log = logger["test"]
 
     @staticmethod
     def compare_vbucket_stats(prev_vbucket_stats, cur_vbucket_stats,

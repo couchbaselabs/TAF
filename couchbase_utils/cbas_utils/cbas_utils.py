@@ -5,18 +5,18 @@ Created on Nov 15, 2017
 """
 
 import json
-import logging
 import threading
 import time
 from threading import Thread
 
 from CbasLib.CBASOperations import CBASHelper
+from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
 
 
 class CbasUtil:
     def __init__(self, master, cbas_node, server_task=None):
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
         self.cbas_node = cbas_node
         self.master = master
         self.task = server_task
@@ -1321,7 +1321,7 @@ class CbasUtil:
 
     def wait_for_cbas_to_recover(self, timeout=180):
         """
-        Returns True if analytics service is recovered/available. 
+        Returns True if analytics service is recovered/available.
         False if service is unavailable despite waiting for specified "timeout" period.
         """
         analytics_recovered = False
@@ -1350,7 +1350,7 @@ class CbasUtil:
                               username=None, password=None):
         if metadata is None:
             raise ValueError("Missing metadata")
-        response = self.cbas_helper.restore_cbas_metadata(metadata, 
+        response = self.cbas_helper.restore_cbas_metadata(metadata,
                                                           bucket_name,
                                                           username=username,
                                                           password=password)

@@ -1,9 +1,9 @@
-import logging
 import time
 import Queue
 from threading import Thread
 
 from Cb_constants import constants
+from global_vars import logger
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
@@ -21,20 +21,25 @@ class ClusterOperationHelper(object):
         master = servers[0]
         all_nodes_added = True
         rebalanced = True
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         if len(servers) > 1:
             for serverInfo in servers[1:]:
                 log.info('adding node : {0}:{1} to the cluster'.format(
                         serverInfo.ip, serverInfo.port))
-                otpNode = rest.add_node(master.rest_username, master.rest_password, serverInfo.ip, port=serverInfo.port)
-                if otpNode:
-                    log.info('added node : {0} to the cluster'.format(otpNode.id))
+                otp_node = rest.add_node(master.rest_username,
+                                         master.rest_password,
+                                         serverInfo.ip,
+                                         port=serverInfo.port)
+                if otp_node:
+                    log.info('Added node: %s to the cluster' % otp_node.id)
                 else:
                     all_nodes_added = False
                     break
             if all_nodes_added:
-                rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()], ejectedNodes=[])
+                rest.rebalance(
+                    otpNodes=[node.id for node in rest.node_statuses()],
+                    ejectedNodes=[])
                 if wait_for_rebalance:
                     rebalanced &= rest.monitorRebalance()
                 else:
@@ -43,34 +48,35 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def add_all_nodes_or_assert(master, all_servers, rest_settings, test_case):
-        otpNodes = []
+        otp_nodes = []
         all_nodes_added = True
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         for serverInfo in all_servers:
             if serverInfo.ip != master.ip:
-                log.info('adding node : {0}:{1} to the cluster'.format(
-                        serverInfo.ip, serverInfo.port))
-                otpNode = rest.add_node(rest_settings.rest_username,
-                                        rest_settings.rest_password,
-                                        serverInfo.ip)
-                if otpNode:
-                    log.info('added node : {0} to the cluster'.format(otpNode.id))
-                    otpNodes.append(otpNode)
+                log.info('Adding node %s:%s to the cluster'
+                         % (serverInfo.ip, serverInfo.port))
+                otp_node = rest.add_node(rest_settings.rest_username,
+                                         rest_settings.rest_password,
+                                         serverInfo.ip)
+                if otp_node:
+                    log.info("Added node '%s' to the cluster" % otp_node.id)
+                    otp_nodes.append(otp_node)
                 else:
                     all_nodes_added = False
+        assert_msg = "Failed to add all nodes to the cluster"
         if not all_nodes_added:
             if test_case:
-                test_case.assertTrue(all_nodes_added,
-                                     msg="unable to add all the nodes to the cluster")
+                test_case.assertTrue(all_nodes_added, msg=assert_msg)
             else:
-                log.error("unable to add all the nodes to the cluster")
-        return otpNodes
+                log.error(assert_msg)
+        return otp_nodes
 
     @staticmethod
-    def verify_persistence(servers, test, keys_count=400000, timeout_in_seconds=300):
+    def verify_persistence(servers, test, keys_count=400000,
+                           timeout_in_seconds=300):
         master = servers[0]
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         log.info("Verifying Persistence")
         buckets = rest.get_buckets()
@@ -81,7 +87,8 @@ class ClusterOperationHelper(object):
                 {1024: 0.50, 512: 0.50}, 2, -1, True, True)
             [t.start() for t in l_threads]
             # Do persistence verification
-            ready = ClusterOperationHelper.persistence_verification(servers, bucket.name, timeout_in_seconds)
+            ready = ClusterOperationHelper.persistence_verification(
+                servers, bucket.name, timeout_in_seconds)
             log.info("Persistence Verification returned ? {0}".format(ready))
             log.info("waiting for persistence threads to finish...")
             for t in l_threads:
@@ -94,7 +101,7 @@ class ClusterOperationHelper(object):
     @staticmethod
     def persistence_verification(servers, bucket, timeout_in_seconds=1260):
         verification_threads = []
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         queue = Queue.Queue()
         rest = RestConnection(servers[0])
         nodes = rest.get_nodes()
@@ -127,7 +134,7 @@ class ClusterOperationHelper(object):
         stat_key = 'ep_flusher_todo'
         start = time.time()
         stats = []
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         # Collect stats data points
         while time.time() - start <= timeout:
             _new_stats = rest.get_bucket_stats(bucket)
@@ -190,13 +197,12 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def flush_os_caches(servers):
-        log = logging.getLogger("infra")
         for server in servers:
+            shell = RemoteMachineShellConnection(server)
             try:
-                shell = RemoteMachineShellConnection(server)
                 shell.flush_os_caches()
-                log.info("Clearing os caches on {0}".format(server))
-            except:
+                logger.get("infra").info("Clearing os caches on %s" % server)
+            except Exception:
                 pass
             finally:
                 shell.disconnect()
@@ -215,7 +221,7 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def flushctl_set_per_node(server, key, val, bucket='default'):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(server)
         node = rest.get_nodes_self()
         mc = MemcachedClientHelper.direct_client(server, bucket)
@@ -227,12 +233,12 @@ class ClusterOperationHelper(object):
             # Indicates non 2.0 build
             rv = mc.set_flush_param(key, str(val))
         else:
-            type = ClusterOperationHelper._get_engine_param_type(key)
+            param_type = ClusterOperationHelper._get_engine_param_type(key)
 
             if val == 'true' or val == 'false':
-                rv = mc.set_param(key, val, type)
+                rv = mc.set_param(key, val, param_type)
             else:
-                rv = mc.set_param(key, str(val), type)
+                rv = mc.set_param(key, str(val), param_type)
 
         log.info("Setting flush param on server {0}, {1} to {2}, result: {3}"
                  .format(server, key, val, rv))
@@ -261,7 +267,7 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def set_expiry_pager_sleep_time(master, bucket, value=30):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         servers = rest.get_nodes()
         for server in servers:
@@ -282,7 +288,7 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def get_mb_stats(servers, key):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         for server in servers:
             c = MemcachedClient(server.ip, constants.memcached_port)
             log.info("Get flush param on server {0}, {1}".format(server, key))
@@ -300,7 +306,7 @@ class ClusterOperationHelper(object):
 
         Default: +S 16:16
         """
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         for server in servers:
             sh = RemoteMachineShellConnection(server)
             product = "membase"
@@ -309,8 +315,9 @@ class ClusterOperationHelper(object):
 
             sync_type = sync_threads and "S" or "A"
 
-            command = "sed -i 's/+[A,S] .*/+%s %s \\\/g' /opt/%s/bin/%s-server" % \
-                 (sync_type, num_threads, product, product)
+            command = \
+                "sed -i 's/+[A,S] .*/+%s %s \\\/g' /opt/%s/bin/%s-server" % \
+                (sync_type, num_threads, product, product)
             o, r = sh.execute_command(command)
             sh.log_command_output(o, r)
             msg = "modified erlang +%s to %s for server %s"
@@ -323,7 +330,7 @@ class ClusterOperationHelper(object):
         Set num of erlang schedulers.
         Also erase async option (+A)
         """
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         ClusterOperationHelper.stop_cluster(servers)
 
         for server in servers:
@@ -331,7 +338,7 @@ class ClusterOperationHelper(object):
             product = "membase"
             if sh.is_couchbase_installed():
                 product = "couchbase"
-            command = "sed -i 's/S\+ 128:128/S %s/' /opt/%s/bin/%s-server"\
+            command = "sed -i 's/S\+ 128:128/S %s/' /opt/%s/bin/%s-server" \
                       % (value, product, product)
             o, r = sh.execute_command(command)
             sh.log_command_output(o, r)
@@ -348,7 +355,7 @@ class ClusterOperationHelper(object):
 
         Default: None
         """
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         if value is None:
             return
         for server in servers:

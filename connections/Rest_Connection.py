@@ -5,23 +5,22 @@ Created on Sep 25, 2017
 """
 import base64
 import json
-import logging
 import traceback
 import socket
 import time
-from TestInput import TestInputSingleton
-from Cb_constants import constants
 
+from Cb_constants import constants
+from TestInput import TestInputSingleton
+from global_vars import logger
 from membase.api import httplib2
 from membase.api.exception import ServerUnavailableException
 
 
 class RestConnection(object):
-
     def __new__(self, serverInfo={}, node=None):
         # allow port to determine
         # behavior of rest connection
-        self.log = logging.getLogger("infra")
+        self.log = logger.get("infra")
         port = None
         if isinstance(serverInfo, dict):
             if 'port' in serverInfo:

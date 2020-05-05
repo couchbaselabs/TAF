@@ -1,15 +1,15 @@
 import random
-import logging
 import time
 
-from couchbase_helper.documentgenerator import doc_generator
 from java.util.concurrent import ExecutionException
+
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from xdcrbasetest import XDCRNewBaseTest
 from xdcr_utils.xdcr_ready_functions import XDCRUtils
 
-class XDCRTransactions(XDCRNewBaseTest):
 
+class XDCRTransactions(XDCRNewBaseTest):
     def setUp(self):
         super(XDCRTransactions, self).setUp()
         self.xdcr_util = XDCRUtils(self.clusters, self.task, self.taskmgr)
@@ -20,10 +20,10 @@ class XDCRTransactions(XDCRNewBaseTest):
         self.src_rest = RestConnection(self.src_master)
         self.dest_rest = RestConnection(self.dest_master)
         self.rdirection = self.input.param("rdirection", "unidirection")
-        self.initial_xdcr = self.input.param("initial", random.choice([True, False]))
+        self.initial_xdcr = self.input.param("initial",
+                                             random.choice([True, False]))
         self.atomicity = self.input.param("atomicity", True)
         self.doc_ops = ["create"]
-        self.log = logging.getLogger("test")
         if self.initial_xdcr:
             self.mutate(self.doc_ops)
             self.xdcr_util.setup_xdcr_and_load()
@@ -87,11 +87,12 @@ class XDCRTransactions(XDCRNewBaseTest):
     def load_all_buckets(self, gen, op, commit):
         tasks = []
         if self.atomicity:
-            tasks.append(self.task.async_load_gen_docs_atomicity(self.src_cluster,
-                                                                 self.src_cluster.bucket_util.buckets,
-                                                                 gen, op, exp=0, commit=commit,
-                                                                 batch_size=10,
-                                                                 process_concurrency=8))
+            tasks.append(self.task.async_load_gen_docs_atomicity(
+                self.src_cluster,
+                self.src_cluster.bucket_util.buckets,
+                gen, op, exp=0, commit=commit,
+                batch_size=10,
+                process_concurrency=8))
         else:
             for bucket in self.src_cluster.bucket_util.buckets:
                 tasks.append(self.task.async_load_gen_docs(
@@ -120,8 +121,9 @@ class XDCRTransactions(XDCRNewBaseTest):
 
         if failover:
             for cluster in self.get_cluster_objects_for_input(failover):
-                tasks.append(cluster.failover_and_rebalance_nodes(graceful=graceful,
-                                                                  rebalance=True))
+                tasks.append(cluster.failover_and_rebalance_nodes(
+                    graceful=graceful,
+                    rebalance=True))
 
         if rebalance_out:
             for cluster in self.get_cluster_objects_for_input(rebalance_out):

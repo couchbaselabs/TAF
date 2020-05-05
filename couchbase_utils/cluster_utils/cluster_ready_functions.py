@@ -5,22 +5,22 @@ Created on Sep 26, 2017
 """
 
 import copy
-import logging
 import time
 import os
 
 import testconstants
-from couchbase_cli import CouchbaseCLI
+
 from Cb_constants import constants
+from Jython_tasks.task import MonitorActiveTask
+from TestInput import TestInputSingleton
+from couchbase_cli import CouchbaseCLI
+from global_vars import logger
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from table_view import TableView
-from Jython_tasks.task import MonitorActiveTask
-from TestInput import TestInputSingleton
 
 
 class CBCluster:
-
     def __init__(self, name="default", username="Administrator",
                  password="password", paths=None, servers=None):
         self.name = name
@@ -73,7 +73,6 @@ class CBCluster:
 
 
 class ClusterUtils:
-
     def __init__(self, cluster, task_manager):
         self.input = TestInputSingleton.input
         self.cluster = cluster
@@ -81,7 +80,7 @@ class ClusterUtils:
         self.rest = RestConnection(cluster.master)
         self.vbuckets = self.input.param("vbuckets", 1024)
         self.upr = self.input.param("upr", None)
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
     def find_orchestrator(self, node=None):
         status, content = self.cluster.update_master(node)
@@ -94,7 +93,8 @@ class ClusterUtils:
         rest = RestConnection(self.cluster.master)
         if rest._rebalance_progress_status() == 'running':
             self.kill_memcached()
-            self.log.warning("Rebalance still running, test should be verified")
+            self.log.warning("Rebalance still running, "
+                             "test should be verified")
             stopped = rest.stop_rebalance()
             if not stopped:
                 raise Exception("Unable to stop rebalance")
@@ -138,9 +138,11 @@ class ClusterUtils:
             self.log.debug("Rebalancing all nodes in order to remove nodes")
             rest.log_client_error("Starting rebalance from test, ejected nodes %s" %
                                   [node.id for node in nodes if node.id != master_id])
-            removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
-                                          ejectedNodes=[node.id for node in nodes if node.id != master_id],
-                                          wait_for_rebalance=wait_for_rebalance)
+            removed = helper.remove_nodes(
+                knownNodes=[node.id for node in nodes],
+                ejectedNodes=[node.id for node in nodes
+                              if node.id != master_id],
+                wait_for_rebalance=wait_for_rebalance)
             success_cleaned = []
             for removed in [node for node in nodes if (node.id != master_id)]:
                 removed.rest_password = self.cluster.master.rest_password
@@ -841,7 +843,7 @@ class ClusterUtils:
         return _tasks
 
     def pick_node(self, master):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         nodes = rest.node_statuses()
         node_picked = None

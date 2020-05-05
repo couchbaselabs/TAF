@@ -1,7 +1,7 @@
-import logging
 import re
 import time
 
+from global_vars import logger
 from membase.api.exception import XDCRException
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -188,7 +188,7 @@ class XDCRUtils:
         self.input = TestInputSingleton.input
         self.init_parameters()
         self.create_buckets()
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
     def __is_test_failed(self):
         return (hasattr(self, '_resultForDoCleanups')
@@ -941,7 +941,7 @@ class XDCReplication:
         self.__updated_params = {}
 
         self.__parse_test_xdcr_params()
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
         # Response from REST API
         self.__rep_id = None

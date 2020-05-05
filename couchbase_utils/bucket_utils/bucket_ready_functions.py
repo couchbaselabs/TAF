@@ -6,7 +6,6 @@ Created on Sep 26, 2017
 
 import copy
 import importlib
-import logging
 import threading
 from random import sample
 
@@ -44,6 +43,8 @@ from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator, sub_doc_generator_for_edit
 from error_simulation.cb_error import CouchbaseError
+from global_vars import logger
+
 from membase.api.exception import StatsUnavailableException
 from membase.api.rest_client import Node, RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
@@ -77,7 +78,7 @@ Parameters:
 
 
 class DocLoaderUtils(object):
-    log = logging.getLogger("test")
+    log = logger.get("test")
     sdk_client_pool = None
 
     @staticmethod

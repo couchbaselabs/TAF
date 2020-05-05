@@ -8,7 +8,6 @@ import zlib
 import copy
 import json as Json
 import os
-import logging
 import random
 import socket
 import string
@@ -25,7 +24,7 @@ from Cb_constants import constants, CbServer
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     doc_generator, SubdocDocumentGenerator
-from couchbase_helper.durability_helper import DurabilityHelper
+from global_vars import logger
 from membase.api.exception import \
     N1QLQueryException, DropIndexException, CreateIndexException, \
     DesignDocCreationException, QueryViewException, ReadDocumentException, \
@@ -52,8 +51,8 @@ class Task(Callable):
         self.started = False
         self.start_time = None
         self.end_time = None
-        self.log = logging.getLogger("infra")
-        self.test_log = logging.getLogger("test")
+        self.log = logger.get("infra")
+        self.test_log = logger.get("test")
         self.result = False
 
     def __str__(self):
@@ -63,7 +62,7 @@ class Task(Callable):
             self.log.info("Task %s completed on: %s"
                           % (self.thread_name,
                              str(time.strftime("%H:%M:%S",
-                                                time.gmtime(self.end_time)))))
+                                               time.gmtime(self.end_time)))))
             return "%s task completed in %.2fs" % \
                    (self.thread_name, self.completed - self.started,)
         elif self.started:
@@ -212,7 +211,8 @@ class RebalanceTask(Task):
                     self.old_vbuckets = BucketHelper(self.servers[0])._get_vbuckets(non_swap_servers, None)
                 if self.old_vbuckets and self.check_vbucket_shuffling:
                     self.monitor_vbuckets_shuffling = True
-                if self.monitor_vbuckets_shuffling and node_version_check and self.services:
+                if self.monitor_vbuckets_shuffling \
+                        and node_version_check and self.services:
                     for service_group in self.services:
                         if "kv" not in service_group:
                             self.monitor_vbuckets_shuffling = False
@@ -4516,8 +4516,7 @@ class MonitorViewFragmentationTask(Task):
     @staticmethod
     def aggregate_ddoc_info(rest, design_doc_name, bucket="default",
                             with_rebalance=False):
-
-        infra_log = logging.getLogger("infra")
+        infra_log = logger.get("infra")
         nodes = rest.node_statuses()
         info = []
         for node in nodes:

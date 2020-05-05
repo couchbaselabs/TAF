@@ -1,4 +1,3 @@
-import logging
 import tasks.tasks as conc
 import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
@@ -7,7 +6,7 @@ from Jython_tasks.task import MutateDocsFromSpecTask
 
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
-from couchbase_helper.durability_helper import DurabilityHelper
+from global_vars import logger
 from sdk_client3 import SDKClient
 from BucketLib.BucketOperations import BucketHelper
 
@@ -27,8 +26,8 @@ class ServerTasks(object):
 
     def __init__(self, task_manager):
         self.jython_task_manager = task_manager
-        self.log = logging.getLogger("infra")
-        self.test_log = logging.getLogger("test")
+        self.log = logger.get("infra")
+        self.test_log = logger.get("test")
         self.log.debug("Initiating ServerTasks")
 
     def async_failover(self, servers=[], failover_nodes=[], graceful=False,

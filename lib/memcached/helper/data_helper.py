@@ -2,7 +2,6 @@ import copy
 import crc32
 import hashlib
 import json
-import logging
 import random
 import socket
 # from multiprocessing.process import Process
@@ -16,24 +15,23 @@ from TestInput import TestInputServer
 from TestInput import TestInputSingleton
 from Queue import Queue
 
+from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import constants
+from global_vars import logger
 from mc_bin_client import MemcachedClient, MemcachedError
 from mc_ascii_client import MemcachedAsciiClient
 from memcached.helper.old_kvstore import ClientKeyValueStore
 from membase.api.rest_client import RestConnection
 from memcacheConstants import ERR_NOT_MY_VBUCKET, ERR_ETMPFAIL, ERR_EINVAL
 # from perf_engines import mcsoda
-from BucketLib.BucketOperations import BucketHelper
 
 try:
     import concurrent.futures
 except ImportError:
-    logging.getLogger().warn(
-        "Can not import concurrent module. "
-        "Data for each server will be loaded/retrieved sequentially")
+    print("WARNING: Failed to import concurrent.futures module")
 
 
-class MemcachedClientHelperExcetion(Exception):
+class MemcachedClientHelperException(Exception):
     def __init__(self, errorcode, message):
         Exception.__init__(self, errorcode, message)
         self._message = message
@@ -49,7 +47,7 @@ class MemcachedClientHelper(object):
                        number_of_items=-1, value_size_distribution=None,
                        number_of_threads=50, override_vBucketId=-1, write_only=False,
                        moxi=True, async_write=False, delete_ratio=0, expiry_ratio=0):
-        log = logging.getLogger("test")
+        log = logger.get("test")
         if not servers:
             raise MemcachedClientHelperExcetion(errorcode='invalid_argument',
                                                 message="servers is not set")
@@ -112,7 +110,7 @@ class MemcachedClientHelper(object):
                                        override_vBucketId=-1,
                                        write_only=False, moxi=True,
                                        delete_ratio=0, expiry_ratio=0):
-        log = logging.getLogger("test")
+        log = logger.get("test")
         if not serverInfo:
             raise MemcachedClientHelperExcetion(errorcode='invalid_argument',
                                                 message="serverInfo is not set")
@@ -169,7 +167,7 @@ class MemcachedClientHelper(object):
                                         delete_ratio=0, expiry_ratio=0):
         inserted_keys = []
         rejected_keys = []
-        log = logging.getLogger("test")
+        log = logger.get("test")
         threads = MemcachedClientHelper.create_threads(
             servers, name, ram_load_ratio, number_of_items,
             value_size_distribution, number_of_threads, override_vBucketId,
@@ -213,7 +211,7 @@ class MemcachedClientHelper(object):
                     moxi=True):
         inserted_keys_count = 0
         rejected_keys_count = 0
-        log = logging.getLogger("test")
+        log = logger.get("test")
         threads = MemcachedClientHelper.create_threads(
             servers, name, ram_load_ratio, number_of_items,
             value_size_distribution, number_of_threads, override_vBucketId,
@@ -247,7 +245,7 @@ class MemcachedClientHelper(object):
     @staticmethod
     def direct_client(server, bucket, timeout=30,
                       admin_user='cbadminbucket', admin_pass='password'):
-        log = logging.getLogger("test")
+        log = logger.get("test")
         rest = RestConnection(server)
         node = None
         try:
@@ -291,7 +289,7 @@ class MemcachedClientHelper(object):
         # for this bucket on this node what is the proxy ?
         bucket_info = BucketHelper(server).get_bucket_json(bucket.name)
         nodes = bucket_info["nodes"]
-        log = logging.getLogger("test")
+        log = logger.get("test")
 
         if (TestInputSingleton.input
                 and "ascii" in TestInputSingleton.input.test_params
@@ -333,7 +331,7 @@ class MemcachedClientHelper(object):
 
     @staticmethod
     def standalone_moxi_client(server, bucket, timeout=30, moxi_port=None):
-        log = logging.getLogger("test")
+        log = logger.get("test")
         if isinstance(server, dict):
             log.info("creating proxy client {0}:{1} {2}".format(server["ip"], moxi_port, bucket.name))
             client = MemcachedClient(server["ip"], moxi_port, timeout=timeout)
@@ -352,7 +350,7 @@ class MemcachedClientHelper(object):
     @staticmethod
     def flush_bucket(server, bucket, admin_user='cbadminbucket',admin_pass='password'):
         # if memcached throws OOM error try again ?
-        log = logging.getLogger("test")
+        log = logger.get("test")
         client = MemcachedClientHelper.direct_client(server, bucket, admin_user=admin_user, admin_pass=admin_pass)
         retry_attempt = 5
         while retry_attempt > 0:
@@ -406,7 +404,7 @@ class MutationThread(threading.Thread):
         self._mutated_count = 0
         self._rejected_count = 0
         self._rejected_keys = []
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
 
 class ReaderThread(object):
@@ -484,7 +482,7 @@ class WorkerThread(threading.Thread):
         self.write_only = write_only
         self.aborted = False
         self.async_write = async_write
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
     def inserted_keys_count(self):
         return self._inserted_keys_count
@@ -716,7 +714,7 @@ class VBucketAwareMemcached(object):
         self.rest = rest
         self.reset(rest)
         self.collections = collections
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
     def reset(self, rest=None):
         if not rest:
@@ -1153,7 +1151,7 @@ class VBucketAwareMemcached(object):
         server_keys = self._get_server_keys_dic(keys_lst)
         tasks = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(server_keys)) as executor:
-            for server_str , keys in server_keys.items() :
+            for server_str, keys in server_keys.items():
                 mc = self.memcacheds[server_str]
                 tasks.append(executor.submit(self._getMulti_from_mc , mc, keys, pause_sec, timeout_sec, self._getMulti_parallel))
             keys_vals = self._reduce_getMulti_values(tasks, pause_sec, timeout_sec)
@@ -1610,8 +1608,8 @@ class DocumentGenerator(object):
                                          ram_load_ratio=1,
                                          value_size_distribution=None,
                                          seed=None):
-        log = logging.getLogger("test")
-        if ram_load_ratio < 0 :
+        log = logger.get("test")
+        if ram_load_ratio < 0:
             raise MemcachedClientHelperExcetion(errorcode='invalid_argument',
                                                 message="ram_load_ratio")
         if not value_size_distribution:

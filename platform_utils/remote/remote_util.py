@@ -1,5 +1,4 @@
 import copy
-import logging
 import os
 import re
 import sys
@@ -13,6 +12,7 @@ from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
 from Cb_constants import constants
+from global_vars import logger
 from testconstants import VERSION_FILE
 from testconstants import MEMBASE_VERSIONS
 from testconstants import MISSING_UBUNTU_LIB
@@ -46,15 +46,8 @@ from membase.api.rest_client import RestConnection, RestHelper
 from com.jcraft.jsch import JSchException, JSchAuthCancelException, \
                             JSchPartialAuthException, SftpException
 
-try:
-    from com.jcraft.jsch import JSch
-    from org.python.core.util import FileUtil
-    from java.lang import System
-except ImportError:
-    log = logging.getLogger()
-    log.warn("Warning: proceeding without importing "
-             "paramiko due to import error. "
-             "ssh connections to remote machines will fail!")
+from com.jcraft.jsch import JSch
+from org.python.core.util import FileUtil
 
 
 class OS:
@@ -166,8 +159,8 @@ class RemoteMachineShellConnection:
         self.jsch = None
         self.session = None
         self.input = TestInput.TestInputParser.get_test_input(sys.argv)
-        self.log = logging.getLogger("infra")
-        self.test_log = logging.getLogger("test")
+        self.log = logger.get("infra")
+        self.test_log = logger.get("test")
 
         self.ip = serverInfo.ip
         self.username = serverInfo.ssh_username

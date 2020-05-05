@@ -1,10 +1,9 @@
 import json
-import logging
 import os
-import threading
 import time
-from threading import Thread
-from membase.api.rest_client import RestHelper, RestConnection
+
+from global_vars import logger
+from membase.api.rest_client import RestConnection
 from EventingLib.EventingOperations_Rest import EventingHelper
 from remote.remote_util import RemoteMachineShellConnection
 import inspect
@@ -17,7 +16,7 @@ class EventingUtils:
                  use_memory_manager=True, timer_storage_chan_size=10000, dcp_gen_chan_size=10000, is_sbm=False,
                  is_curl=False, hostname='https://postman-echo.com/', auth_type='no-auth',
                  curl_username=None, curl_password=None, cookies=False, print_eventing_handler_code_in_logs=True):
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
         self.eventing_nodes = eventing_nodes
         self.master = master
         self.eventing_helper = EventingHelper(self.eventing_nodes[0])

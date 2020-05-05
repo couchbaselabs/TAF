@@ -3,7 +3,6 @@ from cluster_utils.cluster_ready_functions import ClusterUtils
 
 
 class XDCRNewBaseTest(BaseTestCase):
-
     def setUp(self):
         super(XDCRNewBaseTest, self).setUp()
         self.clusters = self.get_clusters()

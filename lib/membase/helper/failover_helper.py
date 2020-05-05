@@ -1,7 +1,7 @@
-import logging
 from random import shuffle
 
 from Cb_constants import constants
+from global_vars import logger
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -15,7 +15,7 @@ class FailoverHelper(object):
     def __init__(self, servers, test):
         self.servers = servers
         self.test = test
-        self.log = logging.getLogger("test")
+        self.log = logger.get("test")
 
     # failover any node except self.servers[0]
     # assuming that replica = howmany
@@ -49,8 +49,11 @@ class FailoverHelper(object):
 
             for f in failed:
                 if f.port == constants.port:
-                    self.test.assertTrue(RestHelper(rest).wait_for_node_status(f, "unhealthy", 300),
-                                         msg="node status is not unhealthy even after waiting for 5 minutes")
+                    self.test.assertTrue(
+                        RestHelper(rest).wait_for_node_status(f, "unhealthy",
+                                                              300),
+                        msg="node status is not unhealthy even "
+                            "after waiting for 5 minutes")
                 self.test.assertTrue(rest.fail_over(f.id),
                                      msg="failover did not complete")
                 self.log.info("failed over node : {0}".format(f.id))
@@ -63,9 +66,10 @@ class FailoverHelper(object):
         rest = RestConnection(self.servers[0])
 
         self._start_servers(failover_nodes)
-        rest.rebalance(otpNodes=set([node.id for node in rest.node_statuses()] +
-                                    [node.id for node in failover_nodes]),
-                       ejectedNodes=[])
+        rest.rebalance(
+            otpNodes=set([node.id for node in rest.node_statuses()] +
+                         [node.id for node in failover_nodes]),
+            ejectedNodes=[])
         rest.monitorRebalance()
 
     def _stop_server(self, node):

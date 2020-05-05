@@ -1,14 +1,15 @@
-import logging
 import threading
 import time
 
 from java.util.concurrent import Executors, TimeUnit
 from threading import InterruptedException
 
+from global_vars import logger
+
 
 class TaskManager:
     def __init__(self, number_of_threads=10):
-        self.log = logging.getLogger("infra")
+        self.log = logger.get("infra")
         self.log.info("Initiating TaskManager with %d threads"
                       % number_of_threads)
         self.number_of_threads = number_of_threads

@@ -1,9 +1,10 @@
 import copy
-import logging
 import time
 import traceback
+
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
+from global_vars import logger
 from membase.api.exception import FailoverFailedException, \
     ServerUnavailableException, BucketFlushFailed
 from membase.api.rest_client import RestConnection
@@ -29,8 +30,8 @@ class Task(Callable):
         self.state = EXECUTING
         self.result = None
         self.future = None
-        self.log = logging.getLogger("infra")
-        self.test_log = logging.getLogger("test")
+        self.log = logger.get("infra")
+        self.test_log = logger.get("test")
         self.log.debug("*** TASK {0} Scheduled...".format(self.name))
 
     def call(self):

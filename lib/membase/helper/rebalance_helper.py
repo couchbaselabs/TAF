@@ -1,9 +1,9 @@
-import logging
 import time
 from random import shuffle
 
 from BucketLib.bucket import Bucket
 from Cb_constants import constants
+from global_vars import logger
 from membase.api.exception import StatsUnavailableException, \
     ServerAlreadyJoinedException, RebalanceFailedException, \
     InvalidArgumentException, ServerSelfJoinException, \
@@ -14,12 +14,12 @@ from memcached.helper.data_helper import MemcachedClientHelper, \
 from mc_bin_client import MemcachedClient
 
 
-class RebalanceHelper:
+class RebalanceHelper(object):
     @staticmethod
     # bucket is a json object that contains name,port,password
     def wait_for_mc_stats_all_nodes(master, bucket, stat_key, stat_value,
                                     timeout_in_seconds=120, verbose=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
         time_to_timeout = 0
@@ -80,7 +80,7 @@ class RebalanceHelper:
     @staticmethod
     # bucket is a json object that contains name,port,password
     def wait_for_stats(master, bucket, stat_key, stat_value, timeout_in_seconds=120, verbose=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
         time_to_timeout = 0
@@ -128,7 +128,7 @@ class RebalanceHelper:
 
     @staticmethod
     def wait_for_stats_no_timeout(master, bucket, stat_key, stat_value, timeout_in_seconds=-1, verbose=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         log.info("waiting for bucket {0} stat: {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
         rest = RestConnection(master)
@@ -144,7 +144,7 @@ class RebalanceHelper:
     @staticmethod
     #bucket is a json object that contains name,port,password
     def wait_for_mc_stats(master, bucket, stat_key, stat_value, timeout_in_seconds=120, verbose=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
         start = time.time()
@@ -171,7 +171,7 @@ class RebalanceHelper:
     @staticmethod
     def wait_for_mc_stats_no_timeout(master, bucket, stat_key, stat_value,
                                      timeout_in_seconds=-1, verbose=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         log.info("waiting for bucket {0} stat : {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
         # keep retrying until reaches the server
@@ -201,7 +201,7 @@ class RebalanceHelper:
     @staticmethod
     #bucket is a json object that contains name,port,password
     def wait_for_stats_int_value(master, bucket, stat_key, stat_value, option="==", timeout_in_seconds=120, verbose=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         log.info("waiting for bucket {0} stat : {1} to {2} {3} on {4}".format(bucket, stat_key, option, \
                                                                                 stat_value, master.ip))
         start = time.time()
@@ -234,7 +234,7 @@ class RebalanceHelper:
     #bucket is a json object that contains name,port,password
     def wait_for_stats_on_all(master, bucket, stat_key, stat_value, timeout_in_seconds=120,
                               fn=None):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         fn = fn or RebalanceHelper.wait_for_stats
         rest = RestConnection(master)
         servers = rest.get_nodes()
@@ -253,7 +253,7 @@ class RebalanceHelper:
     @staticmethod
     def verify_items_count(master, bucket, num_attempt=3, timeout=2):
         # get the #of buckets from rest
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         if isinstance(bucket, Bucket):
             bucket = bucket.name
@@ -355,7 +355,7 @@ class RebalanceHelper:
     def print_taps_from_all_nodes(rest, bucket='default'):
         #get the port number from rest ?
 
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         nodes_for_stats = rest.get_nodes()
         for node_for_stat in nodes_for_stats:
             try:
@@ -369,21 +369,23 @@ class RebalanceHelper:
                 log.error("error {0} while getting stats...".format(ex))
 
     @staticmethod
-    def log_interesting_taps(node, tap_stats, logger):
-        interesting_stats = ['ack_log_size', 'ack_seqno', 'ack_window_full', 'has_item', 'has_queued_item',
-                             'idle', 'paused', 'backfill_completed', 'pending_backfill', 'pending_disk_backfill', 'recv_ack_seqno',
-                             'ep_num_new_']
-        log = logging.getLogger("infra")
+    def log_interesting_taps(node, tap_stats, log):
+        interesting_stats = ['ack_log_size', 'ack_seqno', 'ack_window_full',
+                             'has_item', 'has_queued_item',
+                             'idle', 'paused', 'backfill_completed',
+                             'pending_backfill', 'pending_disk_backfill',
+                             'recv_ack_seqno', 'ep_num_new_']
         for name in tap_stats:
             for interesting_stat in interesting_stats:
                 if name.find(interesting_stat) != -1:
-                    log.info("TAP {0} :{1} {2}".format(node.id, name, tap_stats[name]))
+                    log.info("TAP {0}: {1} {2}"
+                                .format(node.id, name, tap_stats[name]))
                     break
 
     @staticmethod
     def verify_maps(vbucket_map_before, vbucket_map_after):
         #for each bucket check the replicas
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         for i in range(0, len(vbucket_map_before)):
             if not vbucket_map_before[i].master == vbucket_map_after[i].master:
                 log.error(
@@ -407,7 +409,7 @@ class RebalanceHelper:
 
     @staticmethod
     def rebalance_in(servers, how_many, do_shuffle=True, monitor=True, do_check=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         servers_rebalanced = []
         rest = RestConnection(servers[0])
         nodes = rest.node_statuses()
@@ -466,7 +468,7 @@ class RebalanceHelper:
 
     @staticmethod
     def rebalance_out(servers, how_many, monitor=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(servers[0])
         cur_ips = map(lambda node: node.ip, rest.node_statuses())
         servers = filter(lambda server: server.ip in cur_ips, servers) or servers
@@ -490,7 +492,7 @@ class RebalanceHelper:
 
     @staticmethod
     def rebalance_swap(servers, how_many, monitor=True):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         if how_many < 1:
             log.error("failed to swap rebalance %s servers - invalid count"
                       % how_many)
@@ -541,7 +543,7 @@ class RebalanceHelper:
 
     @staticmethod
     def begin_rebalance_in(master, servers, timeout=5):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         otpNode = None
 
@@ -563,11 +565,10 @@ class RebalanceHelper:
 
     @staticmethod
     def begin_rebalance_out(master, servers, timeout=5):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         master_node = rest.get_nodes_self()
 
-        allNodes = []
         ejectedNodes = []
         nodes = rest.node_statuses()
         for server in servers:
@@ -580,13 +581,14 @@ class RebalanceHelper:
                     ejectedNodes.append(node.id)
         log.info("beginning rebalance out")
         try:
-            rest.rebalance(otpNodes=[node.id for node in nodes], ejectedNodes=ejectedNodes)
+            rest.rebalance(otpNodes=[node.id for node in nodes],
+                           ejectedNodes=ejectedNodes)
         except:
             log.error("rebalance failed, trying again after {0} seconds".format(timeout))
 
     @staticmethod
     def end_rebalance(master):
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         result = False
         try:
@@ -608,7 +610,7 @@ class RebalanceHelper:
         '''
         verify vBuckets' state and items count(for active/replica) in them related to vBucketMap for all nodes in cluster
         '''
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         awareness = VBucketAwareMemcached(RestConnection(master), bucket)
         vb_map = awareness.vBucketMap
         vb_mapReplica = awareness.vBucketMapReplica
@@ -657,7 +659,7 @@ class RebalanceHelper:
         return state and count items for all vbuckets for each node
         format: dict: {u'1node_ip1': {'vb_79': ['replica', '0'], 'vb_78': ['active', '0']..}, u'1node_ip1':....}
         """
-        log = logging.getLogger("infra")
+        log = logger.get("infra")
         rest = RestConnection(master)
         port = rest.get_nodes_self().memcached
         nodes = rest.node_statuses()

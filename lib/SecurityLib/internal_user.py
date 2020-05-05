@@ -1,4 +1,4 @@
-import logging
+from global_vars import logger
 from user_base_abc import UserBase
 from membase.api.rest_client import RestConnection
 
@@ -9,7 +9,7 @@ class InternalUser(UserBase):
         self.password = ""
         self.payload = payload
         self.host = host
-        self.log = logging.getLogger("infra")
+        self.log = logger.get("infra")
 
     '''
     payload=name=<nameofuser>&roles=admin,cluster_admin&password=<password>
