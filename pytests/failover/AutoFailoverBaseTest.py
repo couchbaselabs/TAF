@@ -478,7 +478,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.timeout_buffer, failure_timers=node_down_timer_tasks,
             auto_reprovision=self.auto_reprovision)
         self.task_manager.add_new_task(task)
-        self.sleep(30, "Waiting for couchbase-server to come up")
+        # self.sleep(30, "Waiting for couchbase-server to come up")
         try:
             self.task_manager.get_task_result(task)
         except Exception, e:
@@ -568,9 +568,8 @@ class AutoFailoverBaseTest(BaseTestCase):
 
             self.fail("Exception: {}".format(e))
         finally:
-            self.sleep(120, "Sleeping for 2 min for the machines to restart")
             for node in self.server_to_fail:
-                for _ in range(0, 2):
+                for _ in range(0, 6):
                     try:
                         shell = RemoteMachineShellConnection(node)
                         shell.disconnect()
@@ -610,7 +609,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                 auto_reprovision=self.auto_reprovision)
             self.task_manager.add_new_task(task)
             self.task_manager.get_task_result(task)
-            self.sleep(60)
+            # self.sleep(60)
 
     def split_network(self):
         """
