@@ -228,7 +228,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
-    def test__disk_autofailover_and_addback_of_node(self):
+    def test_disk_autofailover_and_addback_of_node(self):
         """
         Test autofailover of nodes and then addback of the node after failover
         1. Enable autofailover and validate
