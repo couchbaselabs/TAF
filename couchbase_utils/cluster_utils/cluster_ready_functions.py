@@ -272,6 +272,10 @@ class ClusterUtils:
                     remote_client.disconnect()
             self.log.debug("========= CHANGED ENVIRONMENT SETTING ===========")
 
+        self.log.debug("Sleeping for some time so that all the \
+        services are up")
+        time.sleep(10)
+
     def reset_env_variables(self):
         if self.vbuckets != 1024 or self.upr is not None:
             for server in self.cluster.servers:
