@@ -6,8 +6,8 @@ Created on Mar 14, 2019
 """
 
 import json as pyJson
-
 from _threading import Lock
+
 from com.couchbase.client.core.env import \
     CompressionConfig, \
     SeedNode, \
@@ -57,12 +57,11 @@ from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
-
-from Cb_constants import ClusterRun, CbServer
-from couchbase_helper.durability_helper import DurabilityHelper
 from com.couchbase.client.core.deps.io.netty.buffer import Unpooled
 from com.couchbase.client.core.deps.io.netty.util import CharsetUtil
 
+from Cb_constants import ClusterRun, CbServer
+from couchbase_helper.durability_helper import DurabilityHelper
 from global_vars import logger
 
 
@@ -227,9 +226,9 @@ class SDKClient(object):
             self.log.debug("Creating SDK connection for '%s'" %
                            self.bucket.name)
             System.setProperty("com.couchbase.forceIPv4", "false")
-            logger = Logger.getLogger("com.couchbase.client")
-            logger.setLevel(Level.SEVERE)
-            for h in logger.getParent().getHandlers():
+            sdk_logger = Logger.getLogger("com.couchbase.client")
+            sdk_logger.setLevel(Level.SEVERE)
+            for h in sdk_logger.getParent().getHandlers():
                 if isinstance(h, ConsoleHandler):
                     h.setLevel(Level.SEVERE)
             cluster_env = \
@@ -281,7 +280,7 @@ class SDKClient(object):
                     i += 1
 
             self.bucketObj = self.cluster.bucket(self.bucket.name)
-            self.bucketObj.waitUntilReady(self.getDuration(60, "seconds"))
+            self.bucketObj.waitUntilReady(self.get_duration(60, "seconds"))
             self.select_collection(self.scope_name, self.collection_name)
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))
@@ -295,7 +294,8 @@ class SDKClient(object):
             SDKClient.sdk_disconnections += 1
 
     # Translate APIs for document operations
-    def translate_to_json_object(self, value, doc_type="json"):
+    @staticmethod
+    def translate_to_json_object(value, doc_type="json"):
         if type(value) == JsonObject and doc_type == "json":
             return value
         json_obj = JsonObject.create()
@@ -311,39 +311,52 @@ class SDKClient(object):
                 return value.getBytes(StandardCharsets.UTF_8)
             else:
                 return value
-        except Exception as e:
+        except Exception:
             pass
 
         return json_obj
 
-    def __translate_upsert_multi_results(self, data):
+    @staticmethod
+    def populate_crud_failure_reason(failed_key, error):
+        try:
+            failed_key['error'] += \
+                " | " \
+                + str(error.context().requestContext().lastDispatchedTo())
+            failed_key['error'] += \
+                " | retryAttempts:" \
+                + str(error.context().requestContext().retryAttempts())
+            failed_key['error'] += \
+                " | retryReasons:" \
+                + str(error.context().requestContext().retryReasons())
+        except Exception:
+            pass
+
+    @staticmethod
+    def __translate_upsert_multi_results(data):
         success = dict()
         fail = dict()
         if data is None:
             return success, fail
-        for item in data:
-            result = item['status']
-            key = item['id']
-            json_object = item["document"]
+        for result in data:
+            result = result['status']
+            key = result['id']
+            json_object = result["document"]
             if result:
                 success[key] = dict()
                 success[key]['value'] = json_object
-                success[key]['cas'] = item['cas']
+                success[key]['cas'] = result['cas']
             else:
                 fail[key] = dict()
-                fail[key]['cas'] = item['cas']
+                fail[key]['cas'] = result['cas']
                 fail[key]['value'] = json_object
-                fail[key]['error'] = str(item['error'].getClass().getName() +
-                                         " | " + item['error'].getMessage())
-                try:
-                    fail[key]['error'] += " | " + str(item['error'].context().requestContext().lastDispatchedTo())
-                    fail[key]['error'] += " | retryAttempts:" + str(item['error'].context().requestContext().retryAttempts())
-                    fail[key]['error'] += " | retryReasons:" + str(item['error'].context().requestContext().retryReasons())
-                except Exception:
-                    pass
+                fail[key]['error'] = str(result['error'].getClass().getName() +
+                                         " | " + result['error'].getMessage())
+                SDKClient.populate_crud_failure_reason(fail[key],
+                                                       result['error'])
         return success, fail
 
-    def __tranlate_delete_multi_results(self, data):
+    @staticmethod
+    def __translate_delete_multi_results(data):
         success = dict()
         fail = dict()
         if data is None:
@@ -359,15 +372,12 @@ class SDKClient(object):
                 fail[key]['value'] = dict()
                 fail[key]['error'] = str(result['error'].getClass().getName() +
                                          " | " + result['error'].getMessage())
-                try:
-                    fail[key]['error'] += " | " + str(result['error'].context().requestContext().lastDispatchedTo())
-                    fail[key]['error'] += " | retryAttempts:" + str(result['error'].context().requestContext().retryAttempts())
-                    fail[key]['error'] += " | retryReasons:" + str(result['error'].context().requestContext().retryReasons())
-                except Exception:
-                    pass
+                SDKClient.populate_crud_failure_reason(fail[key],
+                                                       result['error'])
         return success, fail
 
-    def __translate_get_multi_results(self, data):
+    @staticmethod
+    def __translate_get_multi_results(data):
         success = dict()
         fail = dict()
         if data is None:
@@ -384,16 +394,13 @@ class SDKClient(object):
                 fail[key]['value'] = dict()
                 fail[key]['error'] = str(result['error'].getClass().getName() +
                                          " | " + result['error'].getMessage())
-                try:
-                    fail[key]['error'] += " | " + str(result['error'].context().requestContext().lastDispatchedTo())
-                    fail[key]['error'] += " | retryAttempts:" + str(result['error'].context().requestContext().retryAttempts())
-                    fail[key]['error'] += " | retryReasons:" + str(result['error'].context().requestContext().retryReasons())
-                except Exception:
-                    pass
+                SDKClient.populate_crud_failure_reason(fail[key],
+                                                       result['error'])
         return success, fail
 
     # Translate APIs for sub-document operations
-    def __translate_upsert_multi_sub_doc_result(self, data):
+    @staticmethod
+    def __translate_upsert_multi_sub_doc_result(data):
         success = dict()
         fail = dict()
         if data is None:
@@ -414,49 +421,49 @@ class SDKClient(object):
         return success, fail
 
     # Document operations' getOptions APIs
-    def getInsertOptions(self, exp=0, exp_unit="seconds",
-                         persist_to=0, replicate_to=0,
-                         timeout=5, time_unit="seconds",
-                         durability=""):
+    def get_insert_options(self, exp=0, exp_unit="seconds",
+                           persist_to=0, replicate_to=0,
+                           timeout=5, time_unit="seconds",
+                           durability=""):
         if durability:
             options = InsertOptions.insertOptions() \
-                .timeout(self.getDuration(timeout, time_unit)) \
-                .expiry(self.getDuration(exp, exp_unit)) \
+                .timeout(self.get_duration(timeout, time_unit)) \
+                .expiry(self.get_duration(exp, exp_unit)) \
                 .durability(DurabilityHelper.getDurabilityLevel(durability))
         else:
             options = InsertOptions.insertOptions() \
-                .timeout(self.getDuration(timeout, time_unit)) \
-                .expiry(self.getDuration(exp, exp_unit)) \
-                .durability(self.getPersistTo(persist_to),
-                            self.getReplicateTo(replicate_to))
+                .timeout(self.get_duration(timeout, time_unit)) \
+                .expiry(self.get_duration(exp, exp_unit)) \
+                .durability(self.get_persist_to(persist_to),
+                            self.get_replicate_to(replicate_to))
         return options
 
-    def getReadOptions(self, timeout, time_unit="seconds"):
+    def get_read_options(self, timeout, time_unit="seconds"):
         return GetOptions.getOptions() \
-            .timeout(self.getDuration(timeout, time_unit))
+            .timeout(self.get_duration(timeout, time_unit))
 
-    def getUpsertOptions(self, exp=0, exp_unit="seconds",
-                         persist_to=0, replicate_to=0,
-                         timeout=5, time_unit="seconds",
-                         durability=""):
+    def get_upsert_options(self, exp=0, exp_unit="seconds",
+                           persist_to=0, replicate_to=0,
+                           timeout=5, time_unit="seconds",
+                           durability=""):
         if durability:
             options = UpsertOptions.upsertOptions() \
-                .timeout(self.getDuration(timeout, time_unit)) \
-                .expiry(self.getDuration(exp, exp_unit)) \
+                .timeout(self.get_duration(timeout, time_unit)) \
+                .expiry(self.get_duration(exp, exp_unit)) \
                 .durability(DurabilityHelper.getDurabilityLevel(durability))
         else:
             options = UpsertOptions.upsertOptions() \
-                .timeout(self.getDuration(timeout, time_unit)) \
-                .expiry(self.getDuration(exp, exp_unit)) \
-                .durability(self.getPersistTo(persist_to),
-                            self.getReplicateTo(replicate_to))
+                .timeout(self.get_duration(timeout, time_unit)) \
+                .expiry(self.get_duration(exp, exp_unit)) \
+                .durability(self.get_persist_to(persist_to),
+                            self.get_replicate_to(replicate_to))
         return options
 
-    def getRemoveOptions(self, persist_to=0, replicate_to=0,
-                         timeout=5, time_unit="seconds",
-                         durability="", cas=0):
+    def get_remove_options(self, persist_to=0, replicate_to=0,
+                           timeout=5, time_unit="seconds",
+                           durability="", cas=0):
         options = RemoveOptions.removeOptions() \
-                  .timeout(self.getDuration(timeout, time_unit))
+                  .timeout(self.get_duration(timeout, time_unit))
 
         if cas > 0:
             options = options.cas(cas)
@@ -466,16 +473,16 @@ class SDKClient(object):
                 .durability(DurabilityHelper.getDurabilityLevel(durability))
         else:
             options = options \
-                .durability(self.getPersistTo(persist_to),
-                            self.getReplicateTo(replicate_to))
+                .durability(self.get_persist_to(persist_to),
+                            self.get_replicate_to(replicate_to))
 
         return options
 
-    def getReplaceOptions(self, persist_to=0, replicate_to=0,
-                          timeout=5, time_unit="seconds",
-                          durability="", cas=0):
+    def get_replace_options(self, persist_to=0, replicate_to=0,
+                            timeout=5, time_unit="seconds",
+                            durability="", cas=0):
         options = ReplaceOptions.replaceOptions() \
-            .timeout(self.getDuration(timeout, time_unit))
+            .timeout(self.get_duration(timeout, time_unit))
 
         if cas > 0:
             options = options.cas(cas)
@@ -485,41 +492,43 @@ class SDKClient(object):
                 .durability(DurabilityHelper.getDurabilityLevel(durability))
         else:
             options = options \
-                .durability(self.getPersistTo(persist_to),
-                            self.getReplicateTo(replicate_to))
+                .durability(self.get_persist_to(persist_to),
+                            self.get_replicate_to(replicate_to))
 
         return options
 
-    def getTouchOptions(self, timeout=5, time_unit="seconds"):
+    def get_touch_options(self, timeout=5, time_unit="seconds"):
         return TouchOptions.touchOptions() \
-            .timeout(self.getDuration(timeout, time_unit))
+            .timeout(self.get_duration(timeout, time_unit))
 
-    def getMutateInOptions(self, exp=0, exp_unit="seconds",
-                           persist_to=0, replicate_to=0, timeout=5,
-                           time_unit="seconds", durability=""):
+    def get_mutate_in_options(self, exp=0, exp_unit="seconds",
+                              persist_to=0, replicate_to=0, timeout=5,
+                              time_unit="seconds", durability=""):
         if persist_to != 0 or replicate_to != 0:
             return MutateInOptions.mutateInOptions().durability(
-                self.getPersistTo(persist_to), self.getReplicateTo(
+                self.get_persist_to(persist_to), self.get_replicate_to(
                     replicate_to)).expiry(
-                self.getDuration(exp, exp_unit)).timeout(
-                self.getDuration(timeout, time_unit))
+                self.get_duration(exp, exp_unit)).timeout(
+                self.get_duration(timeout, time_unit))
         else:
             return MutateInOptions.mutateInOptions()\
                 .durability(DurabilityHelper.getDurabilityLevel(durability))\
-                .expiry(self.getDuration(exp, exp_unit))\
-                .timeout(self.getDuration(timeout, time_unit))
+                .expiry(self.get_duration(exp, exp_unit))\
+                .timeout(self.get_duration(timeout, time_unit))
 
-    def getPersistTo(self, persist_to):
+    @staticmethod
+    def get_persist_to(persist_to):
         try:
             persist_list = [PersistTo.NONE, PersistTo.ONE, PersistTo.TWO,
                             PersistTo.THREE, PersistTo.FOUR]
             return persist_list[persist_to]
-        except Exception as e:
+        except Exception:
             pass
 
         return PersistTo.ACTIVE
 
-    def getReplicateTo(self, replicate_to):
+    @staticmethod
+    def get_replicate_to(replicate_to):
         try:
             replicate_list = [ReplicateTo.NONE, ReplicateTo.ONE,
                               ReplicateTo.TWO, ReplicateTo.THREE]
@@ -529,7 +538,8 @@ class SDKClient(object):
 
         return ReplicateTo.NONE
 
-    def getDuration(self, time, time_unit):
+    @staticmethod
+    def get_duration(time, time_unit):
         time_unit = time_unit.lower()
         if time_unit == "milliseconds":
             temporal_unit = ChronoUnit.MILLIS
@@ -627,12 +637,12 @@ class SDKClient(object):
         result = dict()
         result["cas"] = -1
         try:
-            options = self.getRemoveOptions(persist_to=persist_to,
-                                            replicate_to=replicate_to,
-                                            timeout=timeout,
-                                            time_unit=time_unit,
-                                            durability=durability,
-                                            cas=cas)
+            options = self.get_remove_options(persist_to=persist_to,
+                                              replicate_to=replicate_to,
+                                              timeout=timeout,
+                                              time_unit=time_unit,
+                                              durability=durability,
+                                              cas=cas)
             if fail_fast:
                 options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
             delete_result = self.collection.remove(key, options)
@@ -656,7 +666,7 @@ class SDKClient(object):
                            "error": str(e), "status": False})
         except CouchbaseException as e:
             self.log.warning("Generic exception for doc {0} - {1}"
-                            .format(key, e))
+                             .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
@@ -679,12 +689,12 @@ class SDKClient(object):
         result["cas"] = 0
         content = self.translate_to_json_object(value)
         try:
-            options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
-                                            persist_to=persist_to,
-                                            replicate_to=replicate_to,
-                                            timeout=timeout,
-                                            time_unit=time_unit,
-                                            durability=durability)
+            options = self.get_insert_options(exp=exp, exp_unit=exp_unit,
+                                              persist_to=persist_to,
+                                              replicate_to=replicate_to,
+                                              timeout=timeout,
+                                              time_unit=time_unit,
+                                              durability=durability)
             if doc_type == "binary":
                 options = options.transcoder(RawBinaryTranscoder.INSTANCE)
             elif doc_type == "string":
@@ -721,9 +731,15 @@ class SDKClient(object):
             result["error"] = str(ex.getClass().getName() +
                                   " | " + ex.getMessage())
             try:
-                result["error"] += " | " + str(ex.context().requestContext().lastDispatchedTo())
-                result["error"] += " | retryAttempts:" + str(ex.context().requestContext().retryAttempts())
-                result["error"] += " | retryReasons:" + str(ex.context().requestContext().retryReasons())
+                result["error"] += \
+                    " | " \
+                    + str(ex.context().requestContext().lastDispatchedTo())
+                result["error"] += \
+                    " | retryAttempts:" \
+                    + str(ex.context().requestContext().retryAttempts())
+                result["error"] += \
+                    " | retryReasons:" \
+                    + str(ex.context().requestContext().retryReasons())
             except Exception:
                 pass
         return result
@@ -736,12 +752,12 @@ class SDKClient(object):
         result["cas"] = 0
         content = self.translate_to_json_object(value)
         try:
-            options = self.getReplaceOptions(persist_to=persist_to,
-                                             replicate_to=replicate_to,
-                                             timeout=timeout,
-                                             time_unit=time_unit,
-                                             durability=durability,
-                                             cas=cas)
+            options = self.get_replace_options(persist_to=persist_to,
+                                               replicate_to=replicate_to,
+                                               timeout=timeout,
+                                               time_unit=time_unit,
+                                               durability=durability,
+                                               cas=cas)
             if fail_fast:
                 options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
@@ -787,14 +803,14 @@ class SDKClient(object):
             "status": False,
             "error": None
         }
-        touch_options = self.getTouchOptions(timeout, time_unit)
+        touch_options = self.get_touch_options(timeout, time_unit)
         if fail_fast:
             touch_options = touch_options.retryStrategy(
                 FailFastRetryStrategy.INSTANCE)
         try:
             touch_result = self.collection.touch(
                 key,
-                self.getDuration(exp, exp_unit),
+                self.get_duration(exp, exp_unit),
                 touch_options)
             result.update({"status": True, "cas": touch_result.cas()})
         except DocumentNotFoundException as e:
@@ -818,7 +834,7 @@ class SDKClient(object):
             "status": False,
             "error": None
         }
-        read_options = self.getReadOptions(timeout, time_unit)
+        read_options = self.get_read_options(timeout, time_unit)
         if fail_fast:
             read_options = read_options.retryStrategy(
                 FailFastRetryStrategy.INSTANCE)
@@ -844,17 +860,18 @@ class SDKClient(object):
                            "error": str(ex), "status": False})
         return result
 
-    def getFromAllReplica(self, key):
+    def get_from_all_replicas(self, key):
         result = []
-        getResult = self.collection.getAllReplicas(key, GetAllReplicasOptions.getAllReplicasOptions())
+        get_result = self.collection.getAllReplicas(
+            key, GetAllReplicasOptions.getAllReplicasOptions())
         try:
-            getResult = getResult.toArray()
-            if getResult:
-                for item in getResult:
+            get_result = get_result.toArray()
+            if get_result:
+                for item in get_result:
                     result.append({"key": key,
                                    "value": item.contentAsObject(),
                                    "cas": item.cas(), "status": True})
-        except:
+        except Exception:
             pass
         return result
 
@@ -866,19 +883,19 @@ class SDKClient(object):
         result = dict()
         result["cas"] = 0
         try:
-            options = self.getUpsertOptions(exp=exp, exp_unit=exp_unit,
-                                            persist_to=persist_to,
-                                            replicate_to=replicate_to,
-                                            timeout=timeout,
-                                            time_unit=time_unit,
-                                            durability=durability)
+            options = self.get_upsert_options(exp=exp, exp_unit=exp_unit,
+                                              persist_to=persist_to,
+                                              replicate_to=replicate_to,
+                                              timeout=timeout,
+                                              time_unit=time_unit,
+                                              durability=durability)
             if fail_fast:
                 options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
-            upsertResult = self.collection.upsert(key, content, options)
+            upsert_result = self.collection.upsert(key, content, options)
             result.update({"key": key, "value": content,
                            "error": None, "status": True,
-                           "cas": upsertResult.cas()})
+                           "cas": upsert_result.cas()})
         except DocumentExistsException as ex:
             self.log.warning("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
@@ -947,11 +964,13 @@ class SDKClient(object):
             mutate_in_specs.append(SDKClient.sub_doc_op.getInsertMutateInSpec(
                 sub_key, value, create_path, xattr))
             if not xattr:
-                mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1))
+                mutate_in_specs.append(
+                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
-                                              timeout, time_unit, durability)
+            options = self.get_mutate_in_options(exp, time_unit,
+                                                 persist_to, replicate_to,
+                                                 timeout, time_unit,
+                                                 durability)
             if cas > 0:
                 options = options.cas(cas)
 
@@ -964,11 +983,13 @@ class SDKClient(object):
             mutate_in_specs.append(SDKClient.sub_doc_op.getUpsertMutateInSpec(
                 sub_key, value, create_path, xattr))
             if not xattr:
-                mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1))
+                mutate_in_specs.append(
+                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
-                                              timeout, time_unit, durability)
+            options = self.get_mutate_in_options(exp, time_unit,
+                                                 persist_to, replicate_to,
+                                                 timeout, time_unit,
+                                                 durability)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -979,11 +1000,13 @@ class SDKClient(object):
             mutate_in_specs.append(SDKClient.sub_doc_op.getRemoveMutateInSpec(
                 value, xattr))
             if not xattr:
-                mutate_in_specs.append(SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1))
+                mutate_in_specs.append(
+                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
-                                              timeout, time_unit, durability)
+            options = self.get_mutate_in_options(exp, time_unit,
+                                                 persist_to, replicate_to,
+                                                 timeout, time_unit,
+                                                 durability)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -998,8 +1021,10 @@ class SDKClient(object):
                 mutate_in_specs.append(
                     SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.getMutateInOptions(exp, time_unit, persist_to, replicate_to,
-                                              timeout, time_unit, durability)
+            options = self.get_mutate_in_options(exp, time_unit,
+                                                 persist_to, replicate_to,
+                                                 timeout, time_unit,
+                                                 durability)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1021,35 +1046,35 @@ class SDKClient(object):
     def delete_multi(self, keys, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
                      durability=""):
-        options = self.getRemoveOptions(persist_to=persist_to,
-                                        replicate_to=replicate_to,
-                                        timeout=timeout,
-                                        time_unit=time_unit,
-                                        durability=durability)
+        options = self.get_remove_options(persist_to=persist_to,
+                                          replicate_to=replicate_to,
+                                          timeout=timeout,
+                                          time_unit=time_unit,
+                                          durability=durability)
         result = SDKClient.doc_op.bulkDelete(
             self.collection, keys, options)
-        return self.__tranlate_delete_multi_results(result)
+        return self.__translate_delete_multi_results(result)
 
     def touch_multi(self, keys, exp=0,
                     timeout=5, time_unit="seconds"):
-        touch_options = self.getTouchOptions(timeout, time_unit)
-        exp_duration = self.getDuration(exp, "seconds");
+        touch_options = self.get_touch_options(timeout, time_unit)
+        exp_duration = self.get_duration(exp, "seconds")
         result = SDKClient.doc_op.bulkTouch(
             self.collection, keys, exp,
             touch_options, exp_duration)
-        return self.__tranlate_delete_multi_results(result)
+        return self.__translate_delete_multi_results(result)
 
-    def setMulti(self, items, exp=0, exp_unit="seconds",
-                 persist_to=0, replicate_to=0,
-                 timeout=5, time_unit="seconds", retry=5,
-                 doc_type="json", durability=""):
+    def set_multi(self, items, exp=0, exp_unit="seconds",
+                  persist_to=0, replicate_to=0,
+                  timeout=5, time_unit="seconds", retry=5,
+                  doc_type="json", durability=""):
 
-        options = self.getInsertOptions(exp=exp, exp_unit=exp_unit,
-                                        persist_to=persist_to,
-                                        replicate_to=replicate_to,
-                                        timeout=timeout,
-                                        time_unit=time_unit,
-                                        durability=durability)
+        options = self.get_insert_options(exp=exp, exp_unit=exp_unit,
+                                          persist_to=persist_to,
+                                          replicate_to=replicate_to,
+                                          timeout=timeout,
+                                          time_unit=time_unit,
+                                          durability=durability)
         if doc_type.lower() == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
         elif doc_type.lower() == "string":
@@ -1058,16 +1083,16 @@ class SDKClient(object):
             self.collection, items, options)
         return self.__translate_upsert_multi_results(result)
 
-    def upsertMulti(self, docs, exp=0, exp_unit="seconds",
-                    persist_to=0, replicate_to=0,
-                    timeout=5, time_unit="seconds", retry=5,
-                    doc_type="json", durability=""):
-        options = self.getUpsertOptions(exp=exp, exp_unit=exp_unit,
-                                        persist_to=persist_to,
-                                        replicate_to=replicate_to,
-                                        timeout=timeout,
-                                        time_unit=time_unit,
-                                        durability=durability)
+    def upsert_multi(self, docs, exp=0, exp_unit="seconds",
+                     persist_to=0, replicate_to=0,
+                     timeout=5, time_unit="seconds", retry=5,
+                     doc_type="json", durability=""):
+        options = self.get_upsert_options(exp=exp, exp_unit=exp_unit,
+                                          persist_to=persist_to,
+                                          replicate_to=replicate_to,
+                                          timeout=timeout,
+                                          time_unit=time_unit,
+                                          durability=durability)
         if doc_type.lower() == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
         elif doc_type.lower() == "string":
@@ -1076,15 +1101,15 @@ class SDKClient(object):
             self.collection, docs, options)
         return self.__translate_upsert_multi_results(result)
 
-    def replaceMulti(self, docs, exp=0, exp_unit="seconds",
-                     persist_to=0, replicate_to=0,
-                     timeout=5, time_unit="seconds",
-                     doc_type="json", durability=""):
-        options = self.getReplaceOptions(persist_to=persist_to,
-                                         replicate_to=replicate_to,
-                                         timeout=timeout,
-                                         time_unit=time_unit,
-                                         durability=durability)
+    def replace_multi(self, docs, exp=0, exp_unit="seconds",
+                      persist_to=0, replicate_to=0,
+                      timeout=5, time_unit="seconds",
+                      doc_type="json", durability=""):
+        options = self.get_replace_options(persist_to=persist_to,
+                                           replicate_to=replicate_to,
+                                           timeout=timeout,
+                                           time_unit=time_unit,
+                                           durability=durability)
         if doc_type.lower() == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
         elif doc_type.lower() == "string":
@@ -1094,8 +1119,8 @@ class SDKClient(object):
             options)
         return self.__translate_upsert_multi_results(result)
 
-    def getMulti(self, keys, timeout=5, time_unit="seconds"):
-        read_options = self.getReadOptions(timeout, time_unit)
+    def get_multi(self, keys, timeout=5, time_unit="seconds"):
+        read_options = self.get_read_options(timeout, time_unit)
         result = SDKClient.doc_op.bulkGet(self.collection, keys, read_options)
         return self.__translate_get_multi_results(result)
 
@@ -1141,8 +1166,10 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        options = self.getMutateInOptions(exp, exp_unit, persist_to, replicate_to,
-                                          timeout, time_unit, durability)
+        options = self.get_mutate_in_options(exp, exp_unit,
+                                             persist_to, replicate_to,
+                                             timeout, time_unit,
+                                             durability)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1189,8 +1216,10 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        options = self.getMutateInOptions(exp, exp_unit, persist_to, replicate_to,
-                                          timeout, time_unit, durability)
+        options = self.get_mutate_in_options(exp, exp_unit,
+                                             persist_to, replicate_to,
+                                             timeout, time_unit,
+                                             durability)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1203,6 +1232,7 @@ class SDKClient(object):
         :param keys: List of tuples (key,value)
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
+        :param xattr: Bool to enable xattr read
         :return:
         """
         mutate_in_specs = []
@@ -1261,8 +1291,10 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        options = self.getMutateInOptions(exp, exp_unit, persist_to, replicate_to,
-                                          timeout, time_unit, durability)
+        options = self.get_mutate_in_options(exp, exp_unit,
+                                             persist_to, replicate_to,
+                                             timeout, time_unit,
+                                             durability)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1308,8 +1340,10 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
-        options = self.getMutateInOptions(exp, exp_unit, persist_to, replicate_to,
-                                          timeout, time_unit, durability)
+        options = self.get_mutate_in_options(exp, exp_unit,
+                                             persist_to, replicate_to,
+                                             timeout, time_unit,
+                                             durability)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1317,13 +1351,16 @@ class SDKClient(object):
         return self.__translate_upsert_multi_sub_doc_result(result)
 
     def insert_binary_document(self, keys):
-        options = self.getInsertOptions().transcoder(RawBinaryTranscoder.INSTANCE)
+        options = self.get_insert_options().transcoder(
+            RawBinaryTranscoder.INSTANCE)
         for key in keys:
-            binary_value = Unpooled.copiedBuffer('{value":"' + key + '"}', CharsetUtil.UTF_8)
+            binary_value = Unpooled.copiedBuffer('{value":"' + key + '"}',
+                                                 CharsetUtil.UTF_8)
             self.collection.upsert(key, binary_value, options)
 
     def insert_string_document(self, keys):
-        options = self.getInsertOptions().transcoder(RawStringTranscoder.INSTANCE)
+        options = self.get_insert_options().transcoder(
+            RawStringTranscoder.INSTANCE)
         for key in keys:
             self.collection.upsert(key, '{value":"' + key + '"}', options)
 
@@ -1332,7 +1369,8 @@ class SDKClient(object):
             self.collection.insert(key_prefix+str(index),
                                    JsonObject.create().put("content", data))
 
-    def insert_xattr_attribute(self, document_id, path, value, xattr=True, create_parents=True):
+    def insert_xattr_attribute(self, document_id, path, value, xattr=True,
+                               create_parents=True):
         self.crud("subdoc_insert",
                   document_id,
                   [path, value],
@@ -1340,7 +1378,8 @@ class SDKClient(object):
                   create_path=create_parents,
                   xattr=xattr)
 
-    def update_xattr_attribute(self, document_id, path, value, xattr=True, create_parents=True):
+    def update_xattr_attribute(self, document_id, path, value, xattr=True,
+                               create_parents=True):
         self.crud("subdoc_upsert",
                   document_id,
                   [path, value],
@@ -1350,4 +1389,5 @@ class SDKClient(object):
 
     def insert_json_documents(self, key_prefix, documents):
         for index, data in enumerate(documents):
-            self.collection.insert(key_prefix+str(index), JsonObject.fromJson(data))
+            self.collection.insert(key_prefix+str(index),
+                                   JsonObject.fromJson(data))

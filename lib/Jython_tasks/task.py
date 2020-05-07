@@ -436,7 +436,7 @@ class GenericLoadingTask(Task):
         fail = dict()
         try:
             client = shared_client or self.client
-            success, fail = client.setMulti(
+            success, fail = client.set_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
@@ -478,7 +478,7 @@ class GenericLoadingTask(Task):
         fail = dict()
         try:
             client = self.client or shared_client
-            success, fail = client.upsertMulti(
+            success, fail = client.upsert_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
@@ -523,7 +523,7 @@ class GenericLoadingTask(Task):
         fail = dict()
         try:
             client = self.client or shared_client
-            success, fail = client.replaceMulti(
+            success, fail = client.replace_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
@@ -596,7 +596,7 @@ class GenericLoadingTask(Task):
         fail = dict()
         self.client = self.client or shared_client
         try:
-            success, fail = self.client.getMulti(keys, self.timeout)
+            success, fail = self.client.get_multi(keys, self.timeout)
         except Exception as error:
             self.set_exception(error)
         return success, fail
@@ -1247,7 +1247,6 @@ class Durability(Task):
                                 except:
                                     pass
                                 if not count > 0:
-                                # if count < self.majority_value:
                                     self.sdk_acked_pers_failed.update({key: val})
                                     self.test_log.error("Key isn't persisted although SDK reports Durable, Key = %s getFromAllReplica = %s"%key)
                         if self.op_type == 'delete':
@@ -1299,7 +1298,7 @@ class Durability(Task):
                         doc = self.generator_reader._doc_gen.next()
                         key, val = doc[0], doc[1]
                         if self.op_type == 'create':
-                            result = self.client.getFromAllReplica(key)
+                            result = self.client.get_from_all_replicas(key)
                             self.test_log.debug("Key = %s getFromAllReplica = %s" % (key, result))
                             if key not in self.create_failed.keys():
                                 if len(result) == 0:
@@ -1320,7 +1319,7 @@ class Durability(Task):
                                     "Document is rolled back to nothing during create -> %s:%s"
                                     % (key, result))
                         if self.op_type == 'update':
-                            result = self.client.getFromAllReplica(key)
+                            result = self.client.get_from_all_replicas(key)
                             if key not in self.update_failed.keys():
                                 if len(result) == 0:
                                     # if len(result) < self.majority_value:
@@ -1353,9 +1352,9 @@ class Durability(Task):
                                             "Doc content is updated although SDK threw exception, Key = %s getFromAllReplica = %s"
                                             % (key, result))
                         if self.op_type == 'delete':
-                            result = self.client.getFromAllReplica(key)
+                            result = self.client.get_from_all_replicas(key)
                             if key not in self.delete_failed.keys():
-                                if len(result) > (self.bucket.replicaNumber):
+                                if len(result) > self.bucket.replicaNumber:
                                     self.sdk_acked_curd_failed.update(result[0])
                                     self.test_log.error(
                                         "Key isn't durably deleted although SDK reports Durable, Key = %s getFromAllReplica = %s"
@@ -1943,7 +1942,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
             self.failed_reads = dict()
             for key in key_value.keys():
                 try:
-                    result = self.client.getFromAllReplica(key)
+                    result = self.client.get_from_all_replicas(key)
                     if all(_result for _result in result) \
                             and len(result) == min(self.replicas+1,
                                                    len(self.cluster.nodes_in_cluster)):

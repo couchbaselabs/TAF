@@ -126,7 +126,7 @@ class BasicCrudTests(MagmaBaseTest):
                         print str(e)
             except DocumentUnretrievableException as e:
                 pass
-            if len(self.client.getFromAllReplica(key)) > 0:
+            if len(self.client.get_from_all_replicas(key)) > 0:
                 result = False
         self.client.close()
         self.assertTrue(result, "SDK is able to retrieve expired documents")
@@ -744,8 +744,8 @@ class BasicCrudTests(MagmaBaseTest):
                               self.disk_usage[
                                   self.disk_usage.keys()[0]]))
 
-        success, fail = self.client.getMulti([key],
-                                             self.wait_timeout)
+        success, fail = self.client.get_multi([key],
+                                              self.wait_timeout)
 
         self.assertIs(key in success, True,
                       msg="key {} doesn't exist\

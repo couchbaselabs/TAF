@@ -1,5 +1,4 @@
 import json
-import time
 
 from cb_tools.cbstats import Cbstats
 from castest.cas_base import CasBaseTest
@@ -123,7 +122,7 @@ class OpsChangeCasTests(CasBaseTest):
                         poll_count = 0
                         max_retry = 5
                         while poll_count < max_retry:
-                            replica_read = client.getFromAllReplica(key)[0]
+                            replica_read = client.get_from_all_replicas(key)[0]
                             replica_cas = replica_read["cas"]
                             if active_cas == replica_cas \
                                     or self.durability_level:

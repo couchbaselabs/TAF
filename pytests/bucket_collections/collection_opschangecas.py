@@ -1,12 +1,9 @@
-from Cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
-from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
-from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 
 
@@ -117,7 +114,7 @@ class OpsChangeCasTests(CollectionBase):
                         poll_count = 0
                         max_retry = 5
                         while poll_count < max_retry:
-                            replica_read = client.getFromAllReplica(key)[0]
+                            replica_read = client.get_from_all_replicas(key)[0]
                             replica_cas = replica_read["cas"]
                             if active_cas == replica_cas \
                                     or self.durability_level:

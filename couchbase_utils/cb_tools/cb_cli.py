@@ -1,4 +1,3 @@
-from Cb_constants import CbServer
 from cb_tools.cb_tools_base import CbCmdBase
 
 
