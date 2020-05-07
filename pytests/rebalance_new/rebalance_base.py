@@ -88,7 +88,8 @@ class RebalanceBaseTest(BaseTestCase):
 
             # Verify initial doc load count
             self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                timeout=self.wait_timeout)
 
             self.cluster_util.print_cluster_stats()
             self.bucket_util.print_bucket_stats()
@@ -139,7 +140,7 @@ class RebalanceBaseTest(BaseTestCase):
                 self.log.info("Verifying num_items counts after doc_ops")
                 self.bucket_util._wait_for_stats_all_buckets()
                 self.bucket_util.validate_docs_per_collections_all_buckets(
-                    timeout=120)
+                    timeout=self.wait_timeout)
             else:
                 self.transaction_commit = True
                 self._load_all_buckets_atomicty(self.gen_create, "create")
