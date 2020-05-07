@@ -482,7 +482,7 @@ class BasicOps(CollectionBase):
                                     mix_key_size=False,
                                     randomize_doc_size=False)
         max_doc_gen = doc_generator("test_max_key_size", 0, self.num_items,
-                                    key_size=250,
+                                    key_size=245,
                                     doc_size=self.doc_size,
                                     mix_key_size=False,
                                     randomize_doc_size=False)
