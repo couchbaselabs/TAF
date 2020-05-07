@@ -24,6 +24,7 @@ import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer, DocLoading
+from Cb_constants.DocLoading import Bucket
 from Jython_tasks.task import \
     BucketCreateTask, \
     BucketCreateFromSpecTask, \
@@ -511,6 +512,80 @@ class DocLoaderUtils(object):
                         if op_data["fail"]:
                             doc_loading_task.result = False
                             break
+
+    @staticmethod
+    def update_num_items_based_on_expired_docs(buckets, doc_loading_task,
+                                               ttl_level="document"):
+        """
+        :param buckets: List of buckets to consider to fetch the TTL values
+        :param doc_loading_task: Task object returned from
+                                 DocLoaderUtils.create_doc_gens_for_spec call
+        :param ttl_level: Target TTL value to consider.
+                          Valid options: document, collection, bucket
+                          Default is "document". TTL set during doc_loading.
+        :return:
+        """
+        # Variable used to sleep until doc_expiry happens
+        doc_expiry_time = 0
+        BucketUtils.log.debug(
+            "Updating collection's num_items as per TTL settings")
+        if ttl_level == "document":
+            for b_name, scope_dict in doc_loading_task.loader_spec.items():
+                bucket = BucketUtils.get_bucket_obj(buckets, b_name)
+                for s_name, c_dict in scope_dict["scopes"].items():
+                    num_items_updated = False
+                    for c_name, c_data in c_dict["collections"].items():
+                        c_obj = bucket.scopes[s_name].collections[c_name]
+                        for op_type, op_data in c_data.items():
+                            if op_data["doc_ttl"] > doc_expiry_time:
+                                doc_expiry_time = op_data["doc_ttl"]
+
+                            if op_data["doc_ttl"] != 0 \
+                                    and op_type in [Bucket.DocOps.CREATE,
+                                                    Bucket.DocOps.TOUCH,
+                                                    Bucket.DocOps.UPDATE,
+                                                    Bucket.DocOps.REPLACE]:
+                                # Calculate num_items affected for this CRUD
+                                affected_items = op_data["doc_gen"].end \
+                                                 - op_data["doc_gen"].start
+                                # Resetting the doc_index to make sure
+                                # further Updates/Deletes won't break the
+                                # Doc loading tasks
+                                if op_type == Bucket.DocOps.CREATE:
+                                    reset_end = c_obj.doc_index[0] \
+                                                - affected_items
+                                    c_obj.doc_index = (c_obj.doc_index[0],
+                                                       reset_end)
+                                    c_obj.num_items -= affected_items
+                                # We use same doc indexes for
+                                # UPDATE/TOUCH/REPLACE ops. So updating
+                                # the data only once is a correct approach
+                                elif not num_items_updated:
+                                    num_items_updated = True
+                                    new_start = c_obj.doc_index[0] \
+                                        + affected_items
+                                    c_obj.doc_index = (new_start,
+                                                       c_obj.doc_index[1])
+                                    c_obj.num_items -= affected_items
+        elif ttl_level == "collection":
+            for bucket in buckets:
+                for _, scope in bucket.scopes.items():
+                    for _, collection in scope.collections.items():
+                        if collection.maxTTL > doc_expiry_time:
+                            doc_expiry_time = collection.maxTTL
+                            collection.num_items = 0
+        elif ttl_level == "bucket":
+            for bucket in buckets:
+                if bucket.maxTTL > doc_expiry_time:
+                    doc_expiry_time = bucket.maxTTL
+                for _, scope in bucket.scopes.items():
+                    for _, collection in scope.collections.items():
+                        collection.num_items = 0
+        else:
+            DocLoaderUtils.log.error("Unsupported ttl_level value: %s"
+                                     % ttl_level)
+
+        sleep(doc_expiry_time, "Wait for docs to get expire as per TTL")
 
     @staticmethod
     def run_scenario_from_spec(task_manager, cluster, buckets,
