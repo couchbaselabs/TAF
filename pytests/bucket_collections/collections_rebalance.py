@@ -1,5 +1,5 @@
 import time
-
+from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection, RestHelper
@@ -25,7 +25,8 @@ class CollectionsRebalance(CollectionBase):
         self.compaction = self.input.param("compaction", False)
         self.warmup = self.input.param("warmup", False)
         self.update_replica = self.input.param("update_replica", False)  # for replica + rebalance tests
-        self.num_replicas = self.input.param("num_replicas", 1)  # for replica + rebalance tests
+        self.num_replicas = self.input.param("num_replicas", 1)  # for replica + rebalance tests, forced hard failover
+        self.forced_hard_failover = self.input.param("forced_hard_failover", False) # for forced hard failover tests
         self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster", False) # To change during rebalance
         if (self.compaction):
             self.compaction_tasks = list()
@@ -53,8 +54,8 @@ class CollectionsRebalance(CollectionBase):
         self.sleep(45, "Wait for rebalance have some progress")
         self.log.info("Changing cluster RAM size")
         status = self.rest.init_cluster_memoryQuota(self.cluster.master.rest_username,
-                                           self.cluster.master.rest_password,
-                                           memoryQuota=3000)
+                                                    self.cluster.master.rest_password,
+                                                    memoryQuota=3000)
         self.assertTrue(status, "RAM quota wasn't changed")
 
     def data_load_after_failover(self):
@@ -62,8 +63,7 @@ class CollectionsRebalance(CollectionBase):
         self.subsequent_data_load()  # sync data load
         self.data_validation_collection()
 
-    def wait_for_failover_or_assert(self, expected_failover_count,
-                                    timeout=180):
+    def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
         time_start = time.time()
         time_max_end = time_start + timeout
         actual_failover_count = 0
@@ -71,7 +71,7 @@ class CollectionsRebalance(CollectionBase):
             actual_failover_count = self.get_failover_count()
             if actual_failover_count == expected_failover_count:
                 break
-            self.sleep(20)
+            time.sleep(20)
         time_end = time.time()
         self.assertTrue(actual_failover_count == expected_failover_count,
                         "{0} nodes failed over, expected : {1}"
@@ -89,6 +89,19 @@ class CollectionsRebalance(CollectionBase):
             if node['clusterMembership'] == "inactiveFailed":
                 failover_count += 1
         return failover_count
+
+    def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
+        self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
+        self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+        failover_count = 0
+        for failover_node in failover_nodes:
+            failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
+                                                          graceful=False, wait_for_pending=wait_for_pending)
+            failover_count = failover_count + 1
+            self.wait_for_failover_or_assert(failover_count)
+        operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+        self.data_load_after_failover()
+        return operation
 
     def rebalance_operation(self, rebalance_operation, known_nodes=None, add_nodes=None, remove_nodes=None,
                             failover_nodes=None, wait_for_pending=120):
@@ -187,7 +200,7 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "swap_rebalance":
-            if(step_count == -1):
+            if (step_count == -1):
                 if self.warmup:
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
@@ -219,7 +232,7 @@ class CollectionsRebalance(CollectionBase):
                     if self.change_ram_quota_cluster:
                         self.set_ram_quota_cluster()
             else:
-                #list of lists each of length step_count
+                # list of lists each of length step_count
                 add_list = []
                 remove_list = []
                 for i in range(0, len(add_nodes), step_count):
@@ -277,7 +290,7 @@ class CollectionsRebalance(CollectionBase):
                 failover_count = 0
                 for failover_node in failover_nodes:
                     failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                         graceful=True, wait_for_pending=wait_for_pending)
+                                                                  graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
                 if self.compaction:
@@ -349,11 +362,11 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "graceful_failover_recovery":
-            if(step_count == -1):
+            if (step_count == -1):
                 failover_count = 0
                 for failover_node in failover_nodes:
                     failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                         graceful=True, wait_for_pending=wait_for_pending)
+                                                                  graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
                 self.data_load_after_failover()
@@ -446,12 +459,15 @@ class CollectionsRebalance(CollectionBase):
 
     def subsequent_data_load(self, async_load=False):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        if self.forced_hard_failover and self.spec_name == "multi_bucket.buckets_for_rebalance_tests_more_collections":
+            # create collections, else if other bucket_spec - then just "create" ops
+            doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                self.cluster,
-                                                self.bucket_util.buckets,
-                                                doc_loading_spec,
-                                                mutation_num=0,
-                                                async_load=async_load)
+                                                        self.cluster,
+                                                        self.bucket_util.buckets,
+                                                        doc_loading_spec,
+                                                        mutation_num=0,
+                                                        async_load=async_load)
         return tasks
 
     def async_data_load(self):
@@ -494,6 +510,8 @@ class CollectionsRebalance(CollectionBase):
                 items = items + self.bucket_helper_obj.get_active_key_count(bucket)
             if items != 0:
                 self.fail("TTL + rebalance failed")
+        elif self.forced_hard_failover:
+            pass
         else:
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.validate_docs_per_collections_all_buckets()
@@ -507,25 +525,25 @@ class CollectionsRebalance(CollectionBase):
                 tasks = self.async_data_load()
             else:
                 self.sync_data_load()
-        if rebalance_operation =="rebalance_in":
+        if rebalance_operation == "rebalance_in":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
                                                  add_nodes=self.cluster.servers[
                                                            self.nodes_init:self.nodes_init + self.nodes_in],
                                                  )
-        elif rebalance_operation =="rebalance_out":
+        elif rebalance_operation == "rebalance_out":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_out",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
                                                  remove_nodes=self.cluster.servers[:self.nodes_init][-self.nodes_out:],
                                                  )
-        elif rebalance_operation =="swap_rebalance":
+        elif rebalance_operation == "swap_rebalance":
             rebalance = self.rebalance_operation(rebalance_operation="swap_rebalance",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
                                                  add_nodes=self.cluster.servers[
                                                            self.nodes_init:self.nodes_init + self.nodes_swap],
                                                  remove_nodes=self.cluster.servers[:self.nodes_init][-self.nodes_swap:],
                                                  )
-        elif rebalance_operation =="rebalance_in_out":
+        elif rebalance_operation == "rebalance_in_out":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in_out",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
                                                  add_nodes=self.cluster.servers[
@@ -556,6 +574,12 @@ class CollectionsRebalance(CollectionBase):
                                                  failover_nodes=self.cluster.servers[:self.nodes_init]
                                                  [-self.nodes_failover:],
                                                  )
+        elif rebalance_operation == "forced_hard_failover_rebalance_out":
+            rebalance = self.forced_failover_operation(known_nodes=self.cluster.servers[:self.nodes_init],
+                                                       failover_nodes=self.cluster.servers[:self.nodes_init]
+                                                       [-self.nodes_failover:],
+                                                       )
+
         if self.data_load_stage == "during":
             if self.data_load_type == "async":
                 tasks = self.async_data_load()
@@ -598,3 +622,6 @@ class CollectionsRebalance(CollectionBase):
 
     def test_data_load_collections_with_hard_failover_recovery(self):
         self.load_collections_with_rebalance(rebalance_operation="hard_failover_recovery")
+
+    def test_data_load_collections_with_forced_hard_failover_rebalance_out(self):
+        self.load_collections_with_rebalance(rebalance_operation="forced_hard_failover_rebalance_out")
