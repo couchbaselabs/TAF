@@ -149,7 +149,7 @@ class BaseTestCase(unittest.TestCase):
         self.nodes_out = self.input.param("nodes_out", 1)
         self.services_in = self.input.param("services_in", None)
         self.forceEject = self.input.param("forceEject", False)
-        self.wait_timeout = self.input.param("wait_timeout", 60)
+        self.wait_timeout = self.input.param("wait_timeout", 120)
         self.dgm_run = self.input.param("dgm_run", False)
         self.verify_unacked_bytes = \
             self.input.param("verify_unacked_bytes", False)

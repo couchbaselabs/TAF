@@ -51,7 +51,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
         if not self.atomicity:
             self.bucket_util.validate_docs_per_collections_all_buckets(
-                timeout=120)
+                timeout=self.wait_timeout)
             self.bucket_util._wait_for_stats_all_buckets()
             self.sleep(20)
             prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
@@ -65,7 +65,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.sleep(30)
         if not self.atomicity:
             self.bucket_util.validate_docs_per_collections_all_buckets(
-                timeout=120)
+                timeout=self.wait_timeout)
             self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
             new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats, result_nodes, self.bucket_util.buckets)
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(prev_vbucket_stats, result_nodes, self.bucket_util.buckets,
@@ -115,7 +115,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
             self.bucket_util.validate_docs_per_collections_all_buckets(
-                    timeout=120)
+                    timeout=self.wait_timeout)
             self.bucket_util._wait_for_stats_all_buckets()
 
         # Update replica value before performing rebalance in/out as given in conf file
@@ -195,7 +195,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
             self.bucket_util.validate_docs_per_collections_all_buckets(
-                timeout=120)
+                timeout=self.wait_timeout)
             self.bucket_util._wait_for_stats_all_buckets()
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:
@@ -745,7 +745,8 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         msg="rebalance operation failed after adding node {0}"
                         .format(toBeEjectedNodes))
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            timeout=self.wait_timeout)
 
         for vb_num in range(0, self.cluster_util.vbuckets, 128):
             self.target_vbucket = [vb_num]
