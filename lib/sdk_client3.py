@@ -338,10 +338,9 @@ class SDKClient(object):
         if data is None:
             return success, fail
         for result in data:
-            result = result['status']
             key = result['id']
             json_object = result["document"]
-            if result:
+            if result['status']:
                 success[key] = dict()
                 success[key]['value'] = json_object
                 success[key]['cas'] = result['cas']
@@ -1068,7 +1067,6 @@ class SDKClient(object):
                   persist_to=0, replicate_to=0,
                   timeout=5, time_unit="seconds", retry=5,
                   doc_type="json", durability=""):
-
         options = self.get_insert_options(exp=exp, exp_unit=exp_unit,
                                           persist_to=persist_to,
                                           replicate_to=replicate_to,
