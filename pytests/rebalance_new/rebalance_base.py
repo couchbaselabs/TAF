@@ -31,25 +31,29 @@ class RebalanceBaseTest(BaseTestCase):
                                  None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-        self.flusher_total_batch_limit = self.input.param("flusher_total_batch_limit", None)
+        self.flusher_total_batch_limit = self.input.param(
+            "flusher_total_batch_limit", None)
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
         self.items = self.num_items
-        node_ram_ratio = self.bucket_util.base_bucket_ratio(self.cluster.servers)
+        node_ram_ratio = self.bucket_util.base_bucket_ratio(
+            self.cluster.servers)
         info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
-        self.rest.init_cluster_memoryQuota(memoryQuota=int(info.mcdMemoryReserved*node_ram_ratio))
+        self.rest.init_cluster_memoryQuota(
+            memoryQuota=int(info.mcdMemoryReserved*node_ram_ratio))
         self.check_temporary_failure_exception = False
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
         if nodes_init:
             result = self.task.rebalance([self.cluster.master], nodes_init, [])
             self.assertTrue(result, "Initial rebalance failed")
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.check_replica = self.input.param("check_replica", False)
         self.spec_name = self.input.param("bucket_spec", None)
 
-        # If buckets creation and initial data load is to be done by bucket_spec
+        # Buckets creation and initial data load done by bucket_spec
         if self.spec_name is not None:
             self.log.info("Creating buckets from spec")
             # Create bucket(s) and add rbac user
@@ -94,7 +98,6 @@ class RebalanceBaseTest(BaseTestCase):
             self.cluster_util.print_cluster_stats()
             self.bucket_util.print_bucket_stats()
             self.bucket_helper_obj = BucketHelper(self.cluster.master)
-            self.log.info("==========Finished rebalance base setup========")
         else:
             self.bucket_util.add_rbac_user()
             if self.standard_buckets > 10:
@@ -110,15 +113,15 @@ class RebalanceBaseTest(BaseTestCase):
                                              {"name": self.scope_name})
                 if self.collection_name != CbServer.default_collection:
                     self.collection_name = BucketUtils.get_random_name()
-                    BucketUtils.create_collection(self.cluster.master,
-                                                  bucket,
-                                                  self.scope_name,
-                                                  {"name": self.collection_name,
-                                                   "num_items": self.num_items})
-                    self.log.info("Bucket %s using scope::collection - '%s::%s'"
-                                  % (bucket.name,
-                                     self.scope_name,
-                                     self.collection_name))
+                    BucketUtils.create_collection(
+                        self.cluster.master,
+                        bucket,
+                        self.scope_name,
+                        {"name": self.collection_name,
+                         "num_items": self.num_items})
+                    self.log.info(
+                        "Bucket %s using scope::collection - '%s::%s'"
+                        % (bucket.name, self.scope_name, self.collection_name))
 
                 # Update required num_items under default collection
                 bucket.scopes[self.scope_name] \
@@ -134,9 +137,16 @@ class RebalanceBaseTest(BaseTestCase):
             self.gen_create = self.get_doc_generator(0, self.num_items)
             if self.active_resident_threshold < 100:
                 self.check_temporary_failure_exception = True
+                # Reset num_items=0 since the num_items will be populated
+                # by the DGM load task
+                for bucket in self.bucket_util.buckets:
+                    bucket.scopes[self.scope_name] \
+                        .collections[self.collection_name] \
+                        .num_items = 0
             if not self.atomicity:
                 _ = self._load_all_buckets(self.cluster, self.gen_create,
-                                           "create", 0, batch_size=self.batch_size)
+                                           "create", 0,
+                                           batch_size=self.batch_size)
                 self.log.info("Verifying num_items counts after doc_ops")
                 self.bucket_util._wait_for_stats_all_buckets()
                 self.bucket_util.validate_docs_per_collections_all_buckets(
@@ -144,8 +154,8 @@ class RebalanceBaseTest(BaseTestCase):
             else:
                 self.transaction_commit = True
                 self._load_all_buckets_atomicty(self.gen_create, "create")
-                self.transaction_commit = self.input.param("transaction_commit",
-                                                           True)
+                self.transaction_commit = self.input.param(
+                    "transaction_commit", True)
 
             # Initialize doc_generators
             self.active_resident_threshold = 100
@@ -158,7 +168,7 @@ class RebalanceBaseTest(BaseTestCase):
                 replicate_to=self.replicate_to, persist_to=self.persist_to)
             self.cluster_util.print_cluster_stats()
             self.bucket_util.print_bucket_stats()
-            self.log.info("==========Finished rebalance base setup========")
+        self.log_setup_status("RebalanceBase", "complete")
 
     def _create_default_bucket(self, bucket_size):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
@@ -225,7 +235,8 @@ class RebalanceBaseTest(BaseTestCase):
                     rest.add_zone(zones[i])
                 nodes_in_zone[zones[i]] = []
             # Divide the nodes between zones.
-            nodes_in_cluster = [node.ip for node in self.cluster_util.get_nodes_in_cluster()]
+            nodes_in_cluster = \
+                [node.ip for node in self.cluster_util.get_nodes_in_cluster()]
             nodes_to_remove = [node.ip for node in to_remove]
             for i in range(1, len(self.servers)):
                 if self.servers[i].ip in nodes_in_cluster \
@@ -372,7 +383,8 @@ class RebalanceBaseTest(BaseTestCase):
         tasks_info = dict()
         if "update" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_update, "update", 0, batch_size=self.batch_size,
+                self.cluster, self.gen_update, "update", 0,
+                batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
@@ -383,7 +395,8 @@ class RebalanceBaseTest(BaseTestCase):
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_create, "create", 0, batch_size=self.batch_size,
+                self.cluster, self.gen_create, "create", 0,
+                batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
@@ -400,7 +413,8 @@ class RebalanceBaseTest(BaseTestCase):
                     .num_items += (self.gen_create.end - self.gen_create.start)
         if "delete" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_delete, "delete", 0, batch_size=self.batch_size,
+                self.cluster, self.gen_delete, "delete", 0,
+                batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
                 durability=self.durability_level, pause_secs=5,
@@ -429,7 +443,6 @@ class RebalanceBaseTest(BaseTestCase):
 
     def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[],
                      task_verification=False):
-        loaders = []
         retry_exceptions = \
             list(set(retry_exceptions +
                      [SDKException.AmbiguousTimeoutException,

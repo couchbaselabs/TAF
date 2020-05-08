@@ -1431,9 +1431,8 @@ class RestConnection(object):
                 sleep_time = 5
             self.test_log.info("Rebalance done. Taken %s seconds to complete"
                                % duration)
-            self.test_log.info("Sleep for %s seconds after rebalance" % sleep)
             # Sleep required for ns_server to be ready for further actions
-            sleep(sleep_time)
+            sleep(sleep_time, "Wait after rebalance complete")
             return True
 
     def _rebalance_progress_status(self):

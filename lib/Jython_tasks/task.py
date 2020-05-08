@@ -1803,8 +1803,9 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  process_concurrency=4, print_ops_rate=True,
                  active_resident_threshold=99,
                  dgm_batch=5000,
+                 scope=CbServer.default_scope,
+                 collection=CbServer.default_collection,
                  task_identifier=""):
-
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
             "create", exp,
@@ -1830,10 +1831,13 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.op_type = "create"
         self.rest_client = BucketHelper(self.cluster.master)
         self.doc_index = doc_index
+        self.docs_loaded_per_bucket = dict()
         if isinstance(bucket, list):
             self.buckets = bucket
         else:
             self.buckets = [bucket]
+        self.scope = scope
+        self.collection = collection
 
     def _get_bucket_dgm(self, bucket):
         return self.rest_client.fetch_bucket_stats(
@@ -1847,6 +1851,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
             doc_gens.append(doc_generator(
                 self.key, self.doc_index, self.doc_index+self.dgm_batch))
             self.doc_index += self.dgm_batch
+            self.docs_loaded_per_bucket[bucket] += self.dgm_batch
 
         # Start doc_loading tasks
         for index, generator in enumerate(doc_gens):
@@ -1854,6 +1859,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
             task = LoadDocumentsTask(
                 self.cluster, bucket, self.clients[index], batch_gen,
                 "create", self.exp,
+                scope=self.scope,
+                collection=self.collection,
                 task_identifier=self.thread_name,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
@@ -1876,14 +1883,20 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                                .format(bucket.name, dgm_value))
             self._load_next_batch_of_docs(bucket)
             dgm_value = self._get_bucket_dgm(bucket)
-        self.test_log.info("DGM %s%% achieved for '%s'"
-                           % (dgm_value, bucket.name))
+        self.test_log.info("DGM %s%% achieved for '%s'. Loaded docs: %s"
+                           % (dgm_value, bucket.name,
+                              self.docs_loaded_per_bucket[bucket]))
 
     def call(self):
         self.test_log.info("Starting DGM doc loading task")
         self.start_task()
         for bucket in self.buckets:
+            self.docs_loaded_per_bucket[bucket] = 0
             self._load_bucket_into_dgm(bucket)
+            bucket.scopes[
+                self.scope].collections[
+                self.collection] \
+                .num_items += self.docs_loaded_per_bucket[bucket]
         self.complete_task()
         self.test_log.info("Done loading docs for DGM")
 
