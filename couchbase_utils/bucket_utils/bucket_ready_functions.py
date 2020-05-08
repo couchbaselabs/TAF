@@ -3397,6 +3397,16 @@ class BucketUtils(ScopeUtils):
             bucket_list.append(self.parse_get_bucket_json(item))
         return bucket_list
 
+    def get_fragmentation_kv(self, bucket=None, server=None):
+        if bucket is None:
+            bucket = self.get_all_buckets()[0]
+        if server is None:
+            server = self.cluster.master
+        bucket_helper = BucketHelper(server)
+        stats = bucket_helper.fetch_bucket_stats(bucket.name)
+        frag_val = float(stats["op"]["samples"]["couch_docs_fragmentation"][-1])
+        return frag_val
+
     def parse_get_bucket_json(self, parsed):
         bucket = None
         for bucket in self.buckets:

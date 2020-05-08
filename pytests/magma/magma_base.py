@@ -355,3 +355,24 @@ class MagmaBaseTest(BaseTestCase):
             if max(value) > self.fragmentation:
                 return False
         return True
+
+    def check_fragmentation_using_bucket_stats(self, bucket, servers=None):
+        result = dict()
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+        for server in servers:
+            frag_val = self.bucket_util.get_fragmentation_kv(
+                bucket, server)
+            self.log.debug("Current Fragmentation for node {} is {} \
+            ".format(server.ip, frag_val))
+            result.update({server.ip: frag_val})
+        self.log.debug("fragmentation values of each server {}".format(result))
+        for key, value in result.items():
+            self.assertIs(value < self.fragmentation, True,
+                          "For Node {} Fragmentation value {}'\n\ \
+                          exceeds configured fragmentation level of {} \
+                          ".format(key, value,
+                                   self.fragmentation))
+        return
