@@ -660,6 +660,7 @@ class BasicOps(CollectionBase):
         self.validate_test_failure()
 
     def test_create_delete_recreate_scope(self):
+        scope_drop_fails = False
         bucket_dict = BucketUtils.get_random_scopes(
                                     self.bucket_util.buckets, "all", 1)
         # Delete scopes
@@ -667,7 +668,19 @@ class BasicOps(CollectionBase):
             bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
                                                 bucket_name)
             for scope_name, _ in scope_dict["scopes"].items():
-                BucketUtils.drop_scope(self.cluster.master, bucket, scope_name)
+                if scope_name == CbServer.default_scope:
+                    scope_drop_fails = True
+                try:
+                    BucketUtils.drop_scope(self.cluster.master,
+                                           bucket, scope_name)
+                    if scope_drop_fails:
+                        raise Exception("default scope deleted")
+                except Exception as drop_exception:
+                    if scope_drop_fails \
+                            and "delete_scope failed" in str(drop_exception):
+                        pass
+                    else:
+                        raise drop_exception
 
         # Recreate scopes
         for bucket_name, scope_dict in bucket_dict.items():
@@ -745,6 +758,11 @@ class BasicOps(CollectionBase):
                                  0, self.num_items,
                                  mutate=0,
                                  target_vbucket=self.target_vbucket)
+
+        # Add num_items which are about to be loaded into
+        # collection's num_items for validation
+        self.bucket.scopes[CbServer.default_scope].collections[
+            CbServer.default_collection].num_items += self.num_items
 
         self.log.info("Loading %s docs into '%s::%s' collection"
                       % (self.num_items,
