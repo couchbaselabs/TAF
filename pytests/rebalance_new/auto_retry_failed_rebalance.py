@@ -1,12 +1,12 @@
-import time, os, json
+import json
 import random
+
 from rebalance_base import RebalanceBaseTest
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
-from membase.helper.cluster_helper import ClusterOperationHelper
+
 
 class AutoRetryFailedRebalance(RebalanceBaseTest):
-
     def setUp(self):
         super(AutoRetryFailedRebalance, self).setUp()
         self.rest = RestConnection(self.cluster.master)
@@ -15,16 +15,23 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         self.afterTimePeriod = self.input.param("afterTimePeriod", 300)
         self.maxAttempts = self.input.param("maxAttempts", 1)
         self.log.info("Changing the retry rebalance settings ....")
-        self.change_retry_rebalance_settings(enabled=self.enabled, afterTimePeriod=self.afterTimePeriod,
-                                             maxAttempts=self.maxAttempts)
-        self.rebalance_operation = self.input.param("rebalance_operation", "rebalance_out")
-        self.disable_auto_failover = self.input.param("disable_auto_failover", True)
-        self.auto_failover_timeout = self.input.param("auto_failover_timeout", 120)
+        self.change_retry_rebalance_settings(
+            enabled=self.enabled,
+            afterTimePeriod=self.afterTimePeriod,
+            maxAttempts=self.maxAttempts)
+        self.rebalance_operation = self.input.param("rebalance_operation",
+                                                    "rebalance_out")
+        self.disable_auto_failover = self.input.param("disable_auto_failover",
+                                                      True)
+        self.auto_failover_timeout = self.input.param("auto_failover_timeout",
+                                                      120)
         if self.disable_auto_failover:
             self.rest.update_autofailover_settings(False, 120)
         else:
-            self.rest.update_autofailover_settings(True, self.auto_failover_timeout)
-        self.data_load = self.input.param("data_load", False)  # To support data load during auto retry op
+            self.rest.update_autofailover_settings(True,
+                                                   self.auto_failover_timeout)
+        # To support data load during auto retry op
+        self.data_load = self.input.param("data_load", False)
 
     def tearDown(self):
         self.reset_retry_rebalance_settings()
@@ -37,13 +44,15 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 rest.delete_zone(zone)
 
     def async_data_load(self):
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package("volume_test_load")
-        tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                        self.cluster,
-                                                        self.bucket_util.buckets,
-                                                        doc_loading_spec,
-                                                        mutation_num=0,
-                                                        async_load=True)
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+            "volume_test_load")
+        tasks = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.bucket_util.buckets,
+            doc_loading_spec,
+            mutation_num=0,
+            async_load=True)
         return tasks
 
     def data_validation(self, tasks):
@@ -56,7 +65,6 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.bucket_util.print_bucket_stats()
-
 
     def test_auto_retry_of_failed_rebalance_where_failure_happens_before_rebalance(self):
         before_rebalance_failure = self.input.param("before_rebalance_failure", "stop_server")
