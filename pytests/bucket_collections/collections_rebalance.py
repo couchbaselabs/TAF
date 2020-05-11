@@ -585,13 +585,9 @@ class CollectionsRebalance(CollectionBase):
                 tasks = self.async_data_load()
             else:
                 self.sync_data_load()
-        if self.data_load_stage == "before":
-            if self.data_load_type == "async":
-                self.wait_for_async_data_load_to_complete(tasks)
-            self.data_validation_collection()
         if not self.warmup:
             self.wait_for_rebalance_to_complete(rebalance)
-        if self.data_load_stage == "during":
+        if self.data_load_stage == "during" or self.data_load_stage == "before":
             if self.data_load_type == "async":
                 self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
