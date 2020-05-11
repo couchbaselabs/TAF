@@ -270,13 +270,20 @@ class BasicCrudTests(MagmaBaseTest):
                     _sync=True)
                 self.log.info("Waiting for ep-queues to get drained")
                 self.bucket_util._wait_for_stats_all_buckets()
-
+            # Space Amplification check
             _result = self.check_fragmentation_using_magma_stats(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
                           the configured fragementaion value")
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.servers)
+            self.assertIs(_r, True,
+                          "Fragmentation value exceeds from '\n' \
+                          the configured fragementaion value")
+
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
@@ -298,6 +305,7 @@ class BasicCrudTests(MagmaBaseTest):
                     _res, count,
                     self.disk_usage[self.disk_usage.keys()[0]],
                     usage_factor))
+            # Spcae Amplification check ends
             count += 1
         data_validation = self.task.async_validate_docs(
             self.cluster, self.bucket_util.buckets[0],
@@ -365,6 +373,13 @@ class BasicCrudTests(MagmaBaseTest):
                 self.assertIs(_result, True,
                               "Fragmentation value exceeds from '\n' \
                               the configured fragementaion value")
+
+                _r = self.check_fragmentation_using_bucket_stats(
+                    self.buckets[0], self.servers)
+                self.assertIs(_r, True,
+                              "Fragmentation value exceeds from '\n' \
+                              the configured fragementaion value")
+
                 disk_usage = self.get_disk_usage(
                     self.bucket_util.get_all_buckets()[0],
                     self.servers)
@@ -426,6 +441,13 @@ class BasicCrudTests(MagmaBaseTest):
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
                           the configured fragementaion value")
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                 self.buckets[0], self.servers)
+            self.assertIs(_r, True,
+                          "Fragmentation value exceeds from '\n' \
+                          the configured fragementaion value")
+
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
@@ -459,6 +481,13 @@ class BasicCrudTests(MagmaBaseTest):
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
                           the configured fragementaion value")
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.servers)
+            self.assertIs(_r, True,
+                          "Fragmentation value exceeds from '\n' \
+                          the configured fragementaion value")
+
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
@@ -626,6 +655,13 @@ class BasicCrudTests(MagmaBaseTest):
                 self.assertIs(_result, True,
                               "Fragmentation value exceeds from '\n' \
                               the configured fragementaion value")
+
+                _r = self.check_fragmentation_using_bucket_stats(
+                    self.buckets[0], self.servers)
+                self.assertIs(_r, True,
+                              "Fragmentation value exceeds from '\n' \
+                              the configured fragementaion value")
+
                 disk_usage = self.get_disk_usage(
                     self.bucket_util.get_all_buckets()[0],
                     self.servers)
@@ -672,6 +708,13 @@ class BasicCrudTests(MagmaBaseTest):
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
                           the configured fragementaion value")
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.servers)
+            self.assertIs(_r, True,
+                          "Fragmentation value exceeds from '\n' \
+                          the configured fragementaion value")
+
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
@@ -707,6 +750,13 @@ class BasicCrudTests(MagmaBaseTest):
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
                           the configured fragementaion value")
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.servers)
+            self.assertIs(_r, True,
+                          "Fragmentation value exceeds from '\n' \
+                          the configured fragementaion value")
+
             disk_usage = self.get_disk_usage(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
@@ -790,6 +840,13 @@ class BasicCrudTests(MagmaBaseTest):
         self.assertIs(_result, True,
                       "Fragmentation value exceeds from '\n' \
                       the configured fragementaion value")
+
+        _r = self.check_fragmentation_using_bucket_stats(
+            self.buckets[0], self.servers)
+        self.assertIs(_r, True,
+                      "Fragmentation value exceeds from '\n' \
+                      the configured fragementaion value")
+
         disk_usage = self.get_disk_usage(
             self.bucket_util.get_all_buckets()[0],
             self.servers)
@@ -953,12 +1010,20 @@ class BasicCrudTests(MagmaBaseTest):
             self.log.info("Verifying doc counts after delete doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
+            #Space Amplification check
             _res = self.check_fragmentation_using_magma_stats(
                 self.bucket_util.get_all_buckets()[0],
                 self.servers)
             self.assertIs(_res, True,
                           "Fragmentation value exceeds from '\n' \
                           the configured fragementaion value")
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.servers)
+            self.assertIs(_r, True,
+                          "Fragmentation value exceeds from '\n' \
+                          the configured fragementaion value")
+            #Space Amplification check ends
             self.doc_ops = "create"
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,

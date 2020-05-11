@@ -94,6 +94,7 @@ class MagmaBaseTest(BaseTestCase):
         self.gen_delete = None
         self.gen_read = None
         self.gen_update = None
+        self.buckets = self.bucket_util.get_all_buckets()
 
         # self.thread_count is used to define number of thread use
         # to read same number of documents parallelly
@@ -369,10 +370,7 @@ class MagmaBaseTest(BaseTestCase):
             ".format(server.ip, frag_val))
             result.update({server.ip: frag_val})
         self.log.debug("fragmentation values of each server {}".format(result))
-        for key, value in result.items():
-            self.assertIs(value < self.fragmentation, True,
-                          "For Node {} Fragmentation value {}'\n\ \
-                          exceeds configured fragmentation level of {} \
-                          ".format(key, value,
-                                   self.fragmentation))
-        return
+        for value in result.values():
+            if value > self.fragmentation:
+                return False
+        return True
