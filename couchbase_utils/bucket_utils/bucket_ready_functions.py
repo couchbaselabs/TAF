@@ -24,7 +24,6 @@ import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer, DocLoading
-from Cb_constants.DocLoading import Bucket
 from Jython_tasks.task import \
     BucketCreateTask, \
     BucketCreateFromSpecTask, \
@@ -530,8 +529,7 @@ class DocLoaderUtils(object):
         BucketUtils.log.debug(
             "Updating collection's num_items as per TTL settings")
         if ttl_level == "document":
-            for b_name, scope_dict in doc_loading_task.loader_spec.items():
-                bucket = BucketUtils.get_bucket_obj(buckets, b_name)
+            for bucket, scope_dict in doc_loading_task.loader_spec.items():
                 for s_name, c_dict in scope_dict["scopes"].items():
                     num_items_updated = False
                     for c_name, c_data in c_dict["collections"].items():
@@ -541,18 +539,18 @@ class DocLoaderUtils(object):
                                 doc_expiry_time = op_data["doc_ttl"]
 
                             if op_data["doc_ttl"] != 0 \
-                                    and op_type in [Bucket.DocOps.CREATE,
-                                                    Bucket.DocOps.TOUCH,
-                                                    Bucket.DocOps.UPDATE,
-                                                    Bucket.DocOps.REPLACE]:
+                                    and op_type in [DocLoading.Bucket.DocOps.CREATE,
+                                                    DocLoading.Bucket.DocOps.TOUCH,
+                                                    DocLoading.Bucket.DocOps.UPDATE,
+                                                    DocLoading.Bucket.DocOps.REPLACE]:
                                 # Calculate num_items affected for this CRUD
                                 affected_items = op_data["doc_gen"].end \
                                                  - op_data["doc_gen"].start
                                 # Resetting the doc_index to make sure
                                 # further Updates/Deletes won't break the
                                 # Doc loading tasks
-                                if op_type == Bucket.DocOps.CREATE:
-                                    reset_end = c_obj.doc_index[0] \
+                                if op_type == DocLoading.Bucket.DocOps.CREATE:
+                                    reset_end = c_obj.doc_index[1] \
                                                 - affected_items
                                     c_obj.doc_index = (c_obj.doc_index[0],
                                                        reset_end)
