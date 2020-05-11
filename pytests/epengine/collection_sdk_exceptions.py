@@ -18,9 +18,9 @@ from sdk_exceptions import SDKException
 from table_view import TableView
 
 
-class TimeoutTests(CollectionBase):
+class SDKExceptionTests(CollectionBase):
     def setUp(self):
-        super(TimeoutTests, self).setUp()
+        super(SDKExceptionTests, self).setUp()
         self.bucket = self.bucket_util.buckets[0]
         self.subdoc_test = self.input.param("subdoc_test", False)
         self.log_setup_status("TimeoutTests", "complete")
@@ -31,7 +31,7 @@ class TimeoutTests(CollectionBase):
         self.log_setup_status("TimeoutTests", "complete")
 
     def tearDown(self):
-        super(TimeoutTests, self).tearDown()
+        super(SDKExceptionTests, self).tearDown()
 
     @staticmethod
     def __get_random_doc_ttl_and_durability_level():
@@ -94,7 +94,8 @@ class TimeoutTests(CollectionBase):
             self.scope_name,
             self.collection_name)
 
-        doc_ttl, _ = TimeoutTests.__get_random_doc_ttl_and_durability_level()
+        doc_ttl, _ = \
+            SDKExceptionTests.__get_random_doc_ttl_and_durability_level()
         self.log.info("Creating docs with doc_ttl %s into %s:%s:%s"
                       % (doc_ttl,
                          self.bucket.name,
@@ -136,7 +137,8 @@ class TimeoutTests(CollectionBase):
 
         # Reset doc_gen itr value for retry purpose
         doc_gen.reset()
-        doc_ttl, _ = TimeoutTests.__get_random_doc_ttl_and_durability_level()
+        doc_ttl, _ = \
+            SDKExceptionTests.__get_random_doc_ttl_and_durability_level()
         self.log.info("Creating docs with doc_ttl %s into %s:%s:%s"
                       % (doc_ttl,
                          self.bucket.name,
