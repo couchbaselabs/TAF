@@ -275,7 +275,7 @@ class BasicCrudTests(MagmaBaseTest):
                 self.bucket_util._wait_for_stats_all_buckets()
             # Space Amplification check
             _result = self.check_fragmentation_using_magma_stats(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
@@ -288,7 +288,7 @@ class BasicCrudTests(MagmaBaseTest):
                           the configured fragementaion value")
 
             disk_usage = self.get_disk_usage(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             _res = disk_usage[0]
             self.log.info("After update count {} disk usage is {}\
@@ -371,7 +371,7 @@ class BasicCrudTests(MagmaBaseTest):
                 self.bucket_util._wait_for_stats_all_buckets()
                 # Space amplification check
                 _result = self.check_fragmentation_using_magma_stats(
-                    self.bucket_util.get_all_buckets()[0],
+                    self.buckets[0],
                     self.servers)
                 self.assertIs(_result, True,
                               "Fragmentation value exceeds from '\n' \
@@ -384,7 +384,7 @@ class BasicCrudTests(MagmaBaseTest):
                               the configured fragementaion value")
 
                 disk_usage = self.get_disk_usage(
-                    self.bucket_util.get_all_buckets()[0],
+                    self.buckets[0],
                     self.servers)
                 _res = disk_usage[0]
                 self.log.info("After update count {} disk usage is {}MB\
@@ -439,7 +439,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             # Space amplification check 
             _result = self.check_fragmentation_using_magma_stats(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
@@ -452,7 +452,7 @@ class BasicCrudTests(MagmaBaseTest):
                           the configured fragementaion value")
 
             disk_usage = self.get_disk_usage(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             _res = disk_usage[0]
             self.log.info("After delete count {} disk usage is {}MB\
@@ -479,7 +479,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             # Space amplification check
             _result = self.check_fragmentation_using_magma_stats(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
@@ -492,7 +492,7 @@ class BasicCrudTests(MagmaBaseTest):
                           the configured fragementaion value")
 
             disk_usage = self.get_disk_usage(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             _res = disk_usage[0]
             self.log.info("disk usage after new create \
@@ -653,7 +653,7 @@ class BasicCrudTests(MagmaBaseTest):
                     self.task.jython_task_manager.get_task_result(task)
                 # Spcae amplification check
                 _result = self.check_fragmentation_using_magma_stats(
-                    self.bucket_util.get_all_buckets()[0],
+                    self.buckets[0],
                     self.servers)
                 self.assertIs(_result, True,
                               "Fragmentation value exceeds from '\n' \
@@ -666,7 +666,7 @@ class BasicCrudTests(MagmaBaseTest):
                               the configured fragementaion value")
 
                 disk_usage = self.get_disk_usage(
-                    self.bucket_util.get_all_buckets()[0],
+                    self.buckets[0],
                     self.servers)
                 _res = disk_usage[0] - disk_usage[1]
                 self.log.info("disk usage after update count {}\
@@ -706,7 +706,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             # Space amplifcation check
             _result = self.check_fragmentation_using_magma_stats(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
@@ -719,7 +719,7 @@ class BasicCrudTests(MagmaBaseTest):
                           the configured fragementaion value")
 
             disk_usage = self.get_disk_usage(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             _res = disk_usage[0] - disk_usage[1]
             self.log.info("disk usage after delete is {}".format(_res))
@@ -748,7 +748,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.task.jython_task_manager.get_task_result(d_validation)
             # Space amplification check
             _result = self.check_fragmentation_using_magma_stats(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             self.assertIs(_result, True,
                           "Fragmentation value exceeds from '\n' \
@@ -761,7 +761,7 @@ class BasicCrudTests(MagmaBaseTest):
                           the configured fragementaion value")
 
             disk_usage = self.get_disk_usage(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             _res = disk_usage[0] - disk_usage[1]
             self.log.info("disk usage after new create \
@@ -838,7 +838,7 @@ class BasicCrudTests(MagmaBaseTest):
 
         # Space amplification check
         _result = self.check_fragmentation_using_magma_stats(
-            self.bucket_util.get_all_buckets()[0],
+            self.buckets[0],
             self.servers)
         self.assertIs(_result, True,
                       "Fragmentation value exceeds from '\n' \
@@ -851,7 +851,7 @@ class BasicCrudTests(MagmaBaseTest):
                       the configured fragementaion value")
 
         disk_usage = self.get_disk_usage(
-            self.bucket_util.get_all_buckets()[0],
+            self.buckets[0],
             self.servers)
         self.log.debug("Disk usage after updates {}".format(
             disk_usage))
@@ -986,7 +986,7 @@ class BasicCrudTests(MagmaBaseTest):
         self.log.info("Cretaing  and Deletes docs n times ")
 
         keyTree, seqTree = (self.get_disk_usage(
-                        self.bucket_util.get_all_buckets()[0],
+                        self.buckets[0],
                         self.servers)[2:4])
         self.log.debug("Initial Disk usage for keyTree and SeqTree is '\n'\
         {}MB and {} MB".format(keyTree, seqTree))
@@ -1015,7 +1015,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             #Space Amplification check
             _res = self.check_fragmentation_using_magma_stats(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             self.assertIs(_res, True,
                           "Fragmentation value exceeds from '\n' \
@@ -1050,7 +1050,7 @@ class BasicCrudTests(MagmaBaseTest):
         """
         count = 0
         keyTree, seqTree = (self.get_disk_usage(
-                        self.bucket_util.get_all_buckets()[0],
+                        self.buckets[0],
                         self.servers)[2:4])
         self.log.debug("DIsk usage after pure creates {}".format((
             self.disk_usage, keyTree, seqTree)))
@@ -1097,7 +1097,7 @@ class BasicCrudTests(MagmaBaseTest):
 
             if upsert_size <= 32:
                 disk_usage = self.get_disk_usage(
-                    self.bucket_util.get_all_buckets()[0],
+                    self.buckets[0],
                     self.servers)
                 self.assertIs(
                     disk_usage[2] >= disk_usage[3], True,
@@ -1138,7 +1138,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.bucket_util._wait_for_stats_all_buckets()
 
             disk_usage = self.get_disk_usage(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             self.log.info("disk usage after upsert count {} is {} \
             ".format(count+1, disk_usage))
@@ -1225,7 +1225,7 @@ class BasicCrudTests(MagmaBaseTest):
                 mix_key_size=self.mix_key_size,
                 deep_copy=self.deep_copy)
             disk_usage = self.get_disk_usage(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             if self.doc_size <= 32:
                 self.assertIs(
@@ -1312,7 +1312,7 @@ class BasicCrudTests(MagmaBaseTest):
                 mix_key_size=self.mix_key_size,
                 deep_copy=self.deep_copy)
             disk_usage = self.get_disk_usage(
-                self.bucket_util.get_all_buckets()[0],
+                self.buckets[0],
                 self.servers)
             if self.doc_size <= 32:
                 self.assertIs(
@@ -1350,7 +1350,7 @@ class BasicCrudTests(MagmaBaseTest):
 
         # # # # Non Default Scope creation # # # #
         if self.num_scopes > 1:
-            scope_name = "FucntionScope"
+            scope_name = "FunctionScope"
             self.bucket_util.create_scope(self.cluster.master,
                                           self.buckets[0],
                                           {"name": scope_name})
