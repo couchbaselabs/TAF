@@ -20,6 +20,7 @@ class volume(CollectionBase):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket": False})
         super(volume, self).setUp()
+        self.bucket_util._expiry_pager()
         self.rest = RestConnection(self.servers[0])
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
@@ -31,6 +32,7 @@ class volume(CollectionBase):
         # "before" - start and finish before rebalance/failover starts at each step
         # "during" - during rebalance/failover at each step
         self.data_load_stage = self.input.param("data_load_stage", "during")
+        self.use_doc_ttl = self.input.param("use_doc_ttl", "False")
 
     # Stopping and restarting the memcached process
     def stop_process(self):
@@ -87,6 +89,9 @@ class volume(CollectionBase):
         self.bucket_util.validate_doc_loading_results(task)
         if task.result is False:
             self.fail("Doc_loading failed")
+        if self.use_doc_ttl:
+            self.bucket_util._expiry_pager()
+            self.bucket_util.update_num_items_based_on_expired_docs(self.bucket_util.buckets, task)
 
     def data_validation_collection(self):
         self.bucket_util._wait_for_stats_all_buckets()
