@@ -136,15 +136,12 @@ class CollectionsTTL(CollectionBase):
             collection="collection_2")
         self.bucket_util._expiry_pager()
         # Validate the bucket doc count is '0' after drop collection
-        self.sleep(100, "waiting for collection maxTTL to complete")
+        self.sleep(120, "waiting for collection maxTTL to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
-        if items != self.num_items:
-            self.fail("collection_ttl value was considered instead of the doc_expiry. Num docs : {0}".format(items))
-        self.sleep(300, "waiting for doc expiry to complete")
-        items = self.bucket_helper_obj.get_active_key_count("default")
-        if items != self.remaining_docs:
-            self.fail("collection_ttl value was considered instead of the doc_expiry. Num docs : {0}".format(items))
-
+        if items != 0:
+            self.fail("collection_ttl value was not considered, instead of the doc_expiry was considered."
+                      " Num docs : {0}".format(items))
+            
     def test_docs_which_has_bucket_collection_ttl_and_doc_expiry_set(self):
         self.task.load_gen_docs(
             self.cluster, self.bucket, self.load_gen, "create", exp=2,
