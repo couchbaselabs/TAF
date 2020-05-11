@@ -1,5 +1,6 @@
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
+from couchbase_helper.documentgenerator import doc_generator
 from sdk_client3 import SDKClient
 from Cb_constants import CbServer
 
@@ -7,6 +8,7 @@ from Cb_constants import CbServer
 class CollectionsNegativeTc(CollectionBase):
     def setUp(self):
         super(CollectionsNegativeTc, self).setUp()
+        self.use_default_collection = self.input.param("use_default_collection", False)
         self.bucket = self.bucket_util.buckets[0]
         self.invalid = ["_a", "%%", "a~", "a`", "a!", "a@", "a#", "a$", "a^", "a&", "a*", "a(", "a)", "a=", "a+", "a{",
                         "a}", "a|", "a:", "a;", "a'", "a,", "a<", "a.", "a>", "a?", "a/",
@@ -136,3 +138,32 @@ class CollectionsNegativeTc(CollectionBase):
             self.fail("CRUD succeeded second time when it should have not")
         elif result["status"] is False:
             self.log.info("CRUD didn't succeed for duplicate key as expected")
+
+    def test_max_key_size(self):
+        if self.use_default_collection:
+            self.key_size = 251
+            self.collection_name = CbServer.default_collection
+        else:
+            self.key_size = 247
+            self.collection_name = "collection-1"
+            BucketUtils.create_collection(self.cluster.master,
+                                          self.bucket,
+                                          scope_name=CbServer.default_scope,
+                                          collection_spec={"name": self.collection_name})
+        gen_load = doc_generator("test-max-key-size", 0, 1,
+                                 key_size=self.key_size,
+                                 vbuckets=self.cluster_util.vbuckets)
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_load, "create", self.maxttl,
+            batch_size=20,
+            persist_to=self.persist_to,
+            replicate_to=self.replicate_to,
+            durability=self.durability_level,
+            pause_secs=5, timeout_secs=self.sdk_timeout,
+            retries=self.sdk_retries,
+            collection=self.collection_name)
+        self.task.jython_task_manager.get_task_result(task)
+        if task.fail:
+            self.log.info("inserting doc key greater than max key size failed as expected")
+        else:
+            self.fail("inserting doc key greater than max key size succeeded when it should have failed")
