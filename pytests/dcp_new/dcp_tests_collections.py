@@ -138,7 +138,6 @@ class DcpTestCase(DCPBase):
 
         elif self.operation == "recreate_scope":
             self.scope_name = self.drop_scope()
-            print self.scope_name
             self.bucket_util.create_scope(self.cluster.master,
                                          self.bucket,
                                          {"name": self.scope_name})
@@ -148,7 +147,6 @@ class DcpTestCase(DCPBase):
 
         elif self.operation == "recreate_collection":
             self.scope_name, self.collection_name = self.drop_collection()
-            print(self.scope_name, self.collection_name)
             self.bucket_util.create_collection(self.cluster.master,
                                            self.bucket_util.buckets[0],
                                            self.scope_name,
@@ -379,6 +377,7 @@ class DcpTestCase(DCPBase):
     def test_dcp_stream_disconnect(self):
         # needs single vbucket load
         self.operation = self.input.param("operation", "load_data")
+        self.vbuckets = [100]
         proc1 = Thread(target=self.get_dcp_event,
                        args=())
 
@@ -396,3 +395,45 @@ class DcpTestCase(DCPBase):
         self.verify_operation(self.operation, expected_item_count)
         self.validate_test_failure()
 
+    def test_stream_expired_doc(self):
+        self.doc_expiry = self.input.param("doc_expiry", 0)
+        self.num_items = self.input.param("num_items", 1000)
+
+        collections = self.bucket_util.get_random_collections(
+                                    [self.bucket], 1, 1, 1)
+        scope_dict = collections[self.bucket.name]["scopes"]
+        scope_name = scope_dict.keys()[0]
+        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+
+        self.load_gen = doc_generator(self.key, 0, self.num_items)
+        self.task.load_gen_docs(
+            self.cluster, self.bucket, self.load_gen, "create", exp=self.doc_expiry,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            scope=scope_name,
+            collection=collection_name)
+
+        self.sleep(200, "wait for maxTTL/doc to expire")
+
+        self.bucket_util._expiry_pager()
+        output_string = self.get_dcp_event()
+        if self.enable_expiry:
+            actual_item_count = \
+                len(list(filter(lambda x: "CMD_EXPIRATION" in x, output_string)))
+        else:
+            actual_item_count = \
+                len(list(filter(lambda x: "CMD_DELETION" in x, output_string)))
+
+        if self.doc_expiry == 0:
+            bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
+                                                    self.bucket_name)
+            self.num_items += bucket.scopes[scope_name] \
+                                .collections[collection_name].num_items
+
+        if self.num_items == actual_item_count:
+            self.log.info("total item count matches after expiry")
+        else:
+            self.log_failure("item count mismatch after expiry, expected:%s, actual:%s"
+                             %(self.num_items, actual_item_count))
