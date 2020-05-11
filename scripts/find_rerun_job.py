@@ -6,6 +6,7 @@ from com.couchbase.client.java.kv import UpsertOptions
 from java.time import Duration
 import argparse
 import json
+import time
 import get_jenkins_params as jenkins_api
 
 host = '172.23.121.84'
@@ -197,6 +198,7 @@ def find_rerun_job(args):
     cluster = Cluster.connect(host, 'Administrator', 'password')
     rerun_jobs = cluster.bucket(bucket_name)
     collection = rerun_jobs.defaultCollection()
+    time.sleep(10)
     rerun = False
     doc_id = "{}_{}".format(name, version_build)
     try:
