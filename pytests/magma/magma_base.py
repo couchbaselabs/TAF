@@ -9,6 +9,7 @@ from sdk_exceptions import SDKException
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
 from testconstants import INDEX_QUOTA, CBAS_QUOTA, FTS_QUOTA
+from Cb_constants.CBServer import CbServer
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -95,6 +96,8 @@ class MagmaBaseTest(BaseTestCase):
         self.gen_read = None
         self.gen_update = None
         self.buckets = self.bucket_util.get_all_buckets()
+        self.num_collections = self.input.param("num_collections", 2)
+        self.num_scopes = self.input.param("num_scopes", 1)
 
         # self.thread_count is used to define number of thread use
         # to read same number of documents parallelly
@@ -163,6 +166,8 @@ class MagmaBaseTest(BaseTestCase):
                              ignore_exceptions=[],
                              skip_read_on_error=False,
                              suppress_error_table=False,
+                             scope=None,
+                             collection=None,
                              _sync=True):
         tasks_info = dict()
         read_tasks_info = dict()
@@ -178,7 +183,9 @@ class MagmaBaseTest(BaseTestCase):
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
                 skip_read_on_error=skip_read_on_error,
-                suppress_error_table=suppress_error_table)
+                suppress_error_table=suppress_error_table,
+                scope=scope,
+                collection=collection)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -191,7 +198,9 @@ class MagmaBaseTest(BaseTestCase):
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
                 skip_read_on_error=skip_read_on_error,
-                suppress_error_table=suppress_error_table)
+                suppress_error_table=suppress_error_table,
+                scope=scope,
+                collection=collection)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "read" in self.doc_ops and self.gen_read is not None:
@@ -201,7 +210,9 @@ class MagmaBaseTest(BaseTestCase):
                process_concurrency=self.process_concurrency,
                pause_secs=5, timeout_secs=self.sdk_timeout,
                retry_exceptions=retry_exceptions,
-               ignore_exceptions=ignore_exceptions)
+               ignore_exceptions=ignore_exceptions,
+               scope=scope,
+               collection=collection)
             read_task = True
         if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -214,7 +225,9 @@ class MagmaBaseTest(BaseTestCase):
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
                 skip_read_on_error=skip_read_on_error,
-                suppress_error_table=suppress_error_table)
+                suppress_error_table=suppress_error_table,
+                scope=scope,
+                collection=collection)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
@@ -241,6 +254,8 @@ class MagmaBaseTest(BaseTestCase):
                      ignore_exceptions=[],
                      skip_read_on_error=False,
                      suppress_error_table=False,
+                     scope=CbServer.default_scope,
+                     collection=CbServer.default_collection,
                      _sync=True):
 
         if self.check_temporary_failure_exception:
@@ -249,7 +264,9 @@ class MagmaBaseTest(BaseTestCase):
                                             ignore_exceptions,
                                             skip_read_on_error=skip_read_on_error,
                                             suppress_error_table=suppress_error_table,
-                                            _sync=_sync)
+                                            _sync=_sync,
+                                            scope=scope,
+                                            collection=collection)
         return loaders
 
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
