@@ -141,7 +141,7 @@ class MagmaBaseTest(BaseTestCase):
                           skip_read_on_error=False,
                           suppress_error_table=False):
 
-        retry_exceptions = list([SDKException.AmbiguousTimeoutException])
+        retry_exceptions = self.retry_exceptions
         tasks_info = self.bucket_util.sync_load_all_buckets(
             cluster, kv_gen, op_type, exp, flag,
             persist_to=self.persist_to, replicate_to=self.replicate_to,

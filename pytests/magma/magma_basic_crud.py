@@ -1105,6 +1105,12 @@ class BasicCrudTests(MagmaBaseTest):
                     exceeds keyIndex {}MB disk usage'\n' \
                     ".format(disk_usage[3],
                              disk_usage[2]))
+            else:
+                seqTree_update = (self.get_disk_usage(
+                        self.buckets[0],
+                        self.servers)[-1])
+                self.log.info("For upsert_size > 32 seqIndex usage-{}\
+                ".format(seqTree_update))
 
             data_validation = self.task.async_validate_docs(
                 self.cluster, self.bucket_util.buckets[0],
@@ -1137,23 +1143,38 @@ class BasicCrudTests(MagmaBaseTest):
             self.log.info("Waiting for ep-queues to get drained")
             self.bucket_util._wait_for_stats_all_buckets()
 
+            # Space amplification check
+            _result = self.check_fragmentation_using_magma_stats(
+                self.buckets[0], self.servers)
+            self.assertIs(_result, True,
+                          "Fragmentation value exceeds from '\n' \
+                          the configured fragementaion value")
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.servers)
+            self.assertIs(_r, True,
+                          "Fragmentation value exceeds from '\n' \
+                          the configured fragementaion value")
             disk_usage = self.get_disk_usage(
-                self.buckets[0],
-                self.servers)
-            self.log.info("disk usage after upsert count {} is {} \
-            ".format(count+1, disk_usage))
-            self.assertEqual((
-                self.disk_usage[self.disk_usage.keys()[0]],
-                keyTree, seqTree), (disk_usage[0],
-                                    disk_usage[2],
-                                    disk_usage[3]),
-                msg="DISK USAGE differs from initial usage {} {}'\n' \
-                ".format((
-                    self.disk_usage, keyTree,
-                    seqTree), (
-                        disk_usage[0],
-                        disk_usage[2],
-                        disk_usage[3])))
+                self.buckets[0], self.servers)
+            _res = disk_usage[0]
+            self.log.info("disk usage after upsert count {} is {}MB \
+                ".format(count+1, _res))
+            if self.doc_size > 32:
+                self.assertIs(
+                    _res > 1.5 * self.disk_usage[self.disk_usage.keys()[0]],
+                    False, "Disk Usage {} After \
+                    update count {} exceeds \
+                    Actual disk usage {} by 1.5 \
+                    times".format(_res, count+1,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
+            else:
+                self.assertIs(disk_usage[3] > 0.5 * seqTree_update,
+                              False, " Current seqTree usage-{} exceeds by'\n'\
+                               0.5 times from the earlier '\n' \
+                               seqTree usage (after update) -{} \
+                              ".format(disk_usage[3], seqTree_update))
+            # Space Amplification check ends
             count += 1
         data_validation = self.task.async_validate_docs(
             self.cluster, self.bucket_util.buckets[0],
