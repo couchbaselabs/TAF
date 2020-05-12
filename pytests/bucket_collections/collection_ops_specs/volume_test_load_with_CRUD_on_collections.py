@@ -7,9 +7,9 @@ spec = {
 
     MetaCrudParams.SCOPES_TO_DROP: 2,
     MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 3,
-    MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 10,
+    MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 2,
 
-    MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 50,
+    MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 2,
 
     MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
     MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS: "all",
@@ -18,7 +18,7 @@ spec = {
     # Doc loading params
     "doc_crud": {
 
-        MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 500,
+        MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 5000,
 
         MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
         MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 20,
