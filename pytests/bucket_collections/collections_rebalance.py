@@ -502,9 +502,9 @@ class CollectionsRebalance(CollectionBase):
 
     def data_validation_collection(self):
         if self.data_load_spec == "ttl_load":
+            self.bucket_util._expiry_pager()
             self.sleep(300, "wait for maxttl to finish")
             items = 0
-            self.bucket_util._expiry_pager()
             self.bucket_util._wait_for_stats_all_buckets()
             for bucket in self.bucket_util.buckets:
                 items = items + self.bucket_helper_obj.get_active_key_count(bucket)
