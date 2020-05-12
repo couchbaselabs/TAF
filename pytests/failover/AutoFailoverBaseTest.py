@@ -964,6 +964,10 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
 
+        # Init sdk_client_pool if not initialized before
+        if self.sdk_client_pool is None:
+            self.init_sdk_pool_object()
+
         # Create clients in SDK client pool
         if self.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
