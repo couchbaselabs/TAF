@@ -2251,10 +2251,8 @@ class BucketUtils(ScopeUtils):
                         in str(exception) \
                         or SDKException.TimeoutException \
                         in str(exception) \
-                        or (SDKException.RequestCanceledException
-                            in str(exception) and
-                            "CHANNEL_CLOSED_WHILE_IN_FLIGHT"
-                            in str(exception)):
+                        or SDKException.RequestCanceledException \
+                        in str(exception):
                     ambiguous_state = True
 
                 result = client.crud(
