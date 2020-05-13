@@ -368,7 +368,8 @@ class MagmaBaseTest(BaseTestCase):
                     float(_res[server.ip][grep_field][
                         "Fragmentation"]))
             result.update({server.ip: fragmentation_values})
-        self.log.debug("result is {}".format(result))
+        self.log.info("magma stats fragmentation result {} \
+        ".format(result))
         for value in result.values():
             if max(value) > self.fragmentation:
                 return False
@@ -386,7 +387,7 @@ class MagmaBaseTest(BaseTestCase):
             self.log.debug("Current Fragmentation for node {} is {} \
             ".format(server.ip, frag_val))
             result.update({server.ip: frag_val})
-        self.log.debug("fragmentation values of each server {}".format(result))
+        self.log.info("KV stats fragmentation values {}".format(result))
         for value in result.values():
             if value > self.fragmentation:
                 return False
