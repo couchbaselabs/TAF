@@ -235,7 +235,7 @@ class DocumentGenerator(KVGenerator):
             seed_hash = self.name + '-' + str(abs(self.itr))
             self.random.seed(seed_hash)
             doc_key = "{}-{}".format(self.name, str(abs(self.itr)).zfill(
-                self.random.randint(self.key_size, 250)
+                self.random.randint(self.key_size, 240)
                 - self.key_len
                 - 1))
         else:
