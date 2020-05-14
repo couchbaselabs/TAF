@@ -294,7 +294,6 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.log.info("Stop the rebalance")
             stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
             self.assertTrue(stopped, msg="Unable to stop rebalance")
-            self.validate_docs()
         self.shuffle_nodes_between_zones_and_rebalance()
         self.validate_docs()
         self.sleep(30)
