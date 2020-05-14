@@ -612,6 +612,8 @@ class DocLoaderUtils(object):
                                                             input_spec,
                                                             mutation_num,
                                                             op_details)
+        # TODO: remove this once the bug is fixed
+        sleep(60, "MB-38497")
         doc_loading_task = DocLoaderUtils.perform_doc_loading_for_spec(
             task_manager,
             cluster,
