@@ -1302,7 +1302,7 @@ class BasicCrudTests(MagmaBaseTest):
             if self.rev_write:
                 start = -int(self.num_items+init_items - 1)
                 end = -int(self.num_items - 1)
-            if self.rev_delete:
+            if self.rev_del:
                 start_del = -int(self.num_items+init_items - 1)
                 end_del = -int(self.num_items - 1)
             self.gen_create = doc_generator(
