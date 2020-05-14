@@ -61,7 +61,8 @@ class CollectionsRebalance(CollectionBase):
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
         self.subsequent_data_load()  # sync data load
-        self.data_validation_collection()
+        # Until we recover/rebalance-out, we can't call - self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets()
 
     def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
         time_start = time.time()
