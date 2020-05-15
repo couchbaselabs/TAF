@@ -28,6 +28,7 @@ class CollectionsRebalance(CollectionBase):
         self.num_replicas = self.input.param("num_replicas", 1)  # for replica + rebalance tests, forced hard failover
         self.forced_hard_failover = self.input.param("forced_hard_failover", False) # for forced hard failover tests
         self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster", False) # To change during rebalance
+        self.skip_validations = self.input.param("skip_validations", True)
         if (self.compaction):
             self.compaction_tasks = list()
 
@@ -480,9 +481,10 @@ class CollectionsRebalance(CollectionBase):
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(task)
-        if task.result is False:
-            self.fail("Doc_loading failed")
+        if not self.skip_validations:
+            self.bucket_util.validate_doc_loading_results(task)
+            if task.result is False:
+                self.fail("Doc_loading failed")
 
     def wait_for_compaction_to_complete(self):
         # Strictly, we should be doing this
@@ -502,20 +504,21 @@ class CollectionsRebalance(CollectionBase):
             self.wait_for_compaction_to_complete()
 
     def data_validation_collection(self):
-        if self.data_load_spec == "ttl_load":
-            self.bucket_util._expiry_pager()
-            self.sleep(300, "wait for maxttl to finish")
-            items = 0
-            self.bucket_util._wait_for_stats_all_buckets()
-            for bucket in self.bucket_util.buckets:
-                items = items + self.bucket_helper_obj.get_active_key_count(bucket)
-            if items != 0:
-                self.fail("TTL + rebalance failed")
-        elif self.forced_hard_failover:
-            pass
-        else:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+        if not self.skip_validations:
+            if self.data_load_spec == "ttl_load":
+                self.bucket_util._expiry_pager()
+                self.sleep(300, "wait for maxttl to finish")
+                items = 0
+                self.bucket_util._wait_for_stats_all_buckets()
+                for bucket in self.bucket_util.buckets:
+                    items = items + self.bucket_helper_obj.get_active_key_count(bucket)
+                if items != 0:
+                    self.fail("TTL + rebalance failed")
+            elif self.forced_hard_failover:
+                pass
+            else:
+                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None

@@ -83,7 +83,7 @@ class CollectionBase(BaseTestCase):
                 compression_settings=self.sdk_compression)
 
         # TODO: remove this once the bug is fixed
-        self.sleep(60, "MB-38497")
+        self.sleep(120, "MB-38497")
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
