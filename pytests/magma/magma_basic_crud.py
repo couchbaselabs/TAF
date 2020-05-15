@@ -1095,17 +1095,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.log.info("Waiting for ep-queues to get drained")
             self.bucket_util._wait_for_stats_all_buckets()
 
-            if upsert_size <= 32:
-                disk_usage = self.get_disk_usage(
-                    self.buckets[0],
-                    self.servers)
-                self.assertIs(
-                    disk_usage[2] >= disk_usage[3], True,
-                    "Disk Usage for seqIndex {}MB'\n' \
-                    exceeds keyIndex {}MB disk usage'\n' \
-                    ".format(disk_usage[3],
-                             disk_usage[2]))
-            else:
+            if upsert_size > 32:
                 seqTree_update = (self.get_disk_usage(
                         self.buckets[0],
                         self.servers)[-1])
