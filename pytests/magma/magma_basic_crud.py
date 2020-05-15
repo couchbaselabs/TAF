@@ -1386,7 +1386,7 @@ class BasicCrudTests(MagmaBaseTest):
                 scope_name, {"name": collection_name})
             self.sleep(2)
         collections = self.buckets[0].scopes[scope_name].collections.keys()
-        if self.num_collections > 1:
+        if self.num_collections > 1 and scope_name is CbServer.default_scope:
             collections.remove(CbServer.default_collection)
         self.log.info("List of collections {}".format(collections))
 
