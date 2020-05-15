@@ -520,6 +520,7 @@ class RebalanceBaseTest(BaseTestCase):
             shell.disconnect()
 
     def check_retry_rebalance_succeeded(self):
+        self.sleep(30)
         result = json.loads(self.rest.get_pending_rebalance_info())
         self.log.debug("Result from get_pending_rebalance_info: {0}"
                        .format(result))
