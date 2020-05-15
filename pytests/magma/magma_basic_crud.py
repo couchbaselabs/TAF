@@ -237,14 +237,14 @@ class BasicCrudTests(MagmaBaseTest):
             num_update.append(update_doc_count)
         while count < self.test_itr:
             self.log.info("Update Iteration count == {}".format(count))
-            for node in self.cluster.nodes_in_cluster:
-                shell = RemoteMachineShellConnection(node)
-                shell.kill_memcached()
-                shell.disconnect()
-                self.assertTrue(self.bucket_util._wait_warmup_completed(
-                                [self.cluster_util.cluster.master],
-                                self.bucket_util.buckets[0],
-                                wait_time=self.wait_timeout * 10))
+            #for node in self.cluster.nodes_in_cluster:
+            #    shell = RemoteMachineShellConnection(node)
+            #    shell.kill_memcached()
+            #    shell.disconnect()
+            #    self.assertTrue(self.bucket_util._wait_warmup_completed(
+            #                    [self.cluster_util.cluster.master],
+            #                    self.bucket_util.buckets[0],
+            #                    wait_time=self.wait_timeout * 10))
             self.log.debug("List of docs to be updated {}\
             ".format(num_update))
             for itr in num_update:
@@ -337,14 +337,14 @@ class BasicCrudTests(MagmaBaseTest):
             while count < self.update_itr:
                 self.log.debug("Iteration {}: Step 1 of test_multi_update_delete \
                 ".format(self.test_itr+1))
-                for node in self.cluster.nodes_in_cluster:
-                    shell = RemoteMachineShellConnection(node)
-                    shell.kill_memcached()
-                    shell.disconnect()
-                    self.assertTrue(self.bucket_util._wait_warmup_completed(
-                                    [self.cluster_util.cluster.master],
-                                    self.bucket_util.buckets[0],
-                                    wait_time=self.wait_timeout * 10))
+                #for node in self.cluster.nodes_in_cluster:
+                #    shell = RemoteMachineShellConnection(node)
+                #    shell.kill_memcached()
+                #    shell.disconnect()
+                #    self.assertTrue(self.bucket_util._wait_warmup_completed(
+                #                    [self.cluster_util.cluster.master],
+                #                    self.bucket_util.buckets[0],
+                #                    wait_time=self.wait_timeout * 10))
                 self.doc_ops = "update"
                 start = 0
                 end = self.num_items
@@ -523,14 +523,14 @@ class BasicCrudTests(MagmaBaseTest):
         mutated = 1
         for i in range(self.test_itr):
             while count < self.update_itr:
-                for node in self.cluster.nodes_in_cluster:
-                    shell = RemoteMachineShellConnection(node)
-                    shell.kill_memcached()
-                    shell.disconnect()
-                    self.assertTrue(self.bucket_util._wait_warmup_completed(
-                                    [self.cluster_util.cluster.master],
-                                    self.bucket_util.buckets[0],
-                                    wait_time=self.wait_timeout * 10))
+                #for node in self.cluster.nodes_in_cluster:
+                #    shell = RemoteMachineShellConnection(node)
+                #    shell.kill_memcached()
+                #    shell.disconnect()
+                #    self.assertTrue(self.bucket_util._wait_warmup_completed(
+                #                    [self.cluster_util.cluster.master],
+                #                    self.bucket_util.buckets[0],
+                #                    wait_time=self.wait_timeout * 10))
                 tasks_info = dict()
                 data_validation = []
                 g_update = doc_generator(
