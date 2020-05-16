@@ -59,10 +59,6 @@ class CollectionBase(BaseTestCase):
         self.over_ride_template_params(buckets_spec)
         self.over_ride_template_params(doc_loading_spec)
 
-        # MB-38438, adding CollectionNotFoundException in retry exception
-        # doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
-        #     SDKException.CollectionNotFoundException)
-
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
 
@@ -93,6 +89,8 @@ class CollectionBase(BaseTestCase):
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:
+            # Explicit tearDown call since assert in setUp will skip tearDown
+            self.tearDown()
             self.fail("Initial doc_loading failed")
 
         self.cluster_util.print_cluster_stats()
