@@ -29,7 +29,7 @@ class CollectionsRebalance(CollectionBase):
         self.forced_hard_failover = self.input.param("forced_hard_failover", False) # for forced hard failover tests
         self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster", False) # To change during rebalance
         self.skip_validations = self.input.param("skip_validations", True)
-        if (self.compaction):
+        if self.compaction:
             self.compaction_tasks = list()
 
     def tearDown(self):

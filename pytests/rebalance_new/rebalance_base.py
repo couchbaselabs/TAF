@@ -53,59 +53,15 @@ class RebalanceBaseTest(BaseTestCase):
         self.check_replica = self.input.param("check_replica", False)
         self.spec_name = self.input.param("bucket_spec", None)
 
+        self.bucket_util.add_rbac_user()
         # Buckets creation and initial data load done by bucket_spec
         if self.spec_name is not None:
-            self.log.info("Creating buckets from spec")
-            # Create bucket(s) and add rbac user
-            buckets_spec = self.bucket_util.get_bucket_template_from_package(
-                self.spec_name)
-            doc_loading_spec = \
-                self.bucket_util.get_crud_template_from_package("initial_load")
-
-            self.bucket_util.create_buckets_using_json_data(buckets_spec)
-            self.bucket_util.wait_for_collection_creation_to_complete()
-
-            # Init sdk_client_pool if not initialized before
-            if self.sdk_client_pool is None:
-                self.init_sdk_pool_object()
-
-            # Create clients in SDK client pool
-            if self.sdk_client_pool:
-                self.log.info("Creating required SDK clients for client_pool")
-                bucket_count = len(self.bucket_util.buckets)
-                max_clients = self.task_manager.number_of_threads
-                clients_per_bucket = int(ceil(max_clients / bucket_count))
-                for bucket in self.bucket_util.buckets:
-                    self.sdk_client_pool.create_clients(
-                        bucket,
-                        [self.cluster.master],
-                        clients_per_bucket,
-                        compression_settings=self.sdk_compression)
-
-            doc_loading_task = \
-                self.bucket_util.run_scenario_from_spec(
-                    self.task,
-                    self.cluster,
-                    self.bucket_util.buckets,
-                    doc_loading_spec,
-                    mutation_num=0)
-            if doc_loading_task.result is False:
-                self.tearDown()
-                self.fail("Initial doc_loading failed")
-            self.bucket_util.add_rbac_user()
-
-            self.cluster_util.print_cluster_stats()
-
-            # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets(
-                timeout=self.wait_timeout)
-
-            self.cluster_util.print_cluster_stats()
-            self.bucket_util.print_bucket_stats()
-            self.bucket_helper_obj = BucketHelper(self.cluster.master)
+            try:
+                self.collection_setup()
+            except Exception as exception:
+                self.sdk_client_pool.shutdown()
+                raise exception
         else:
-            self.bucket_util.add_rbac_user()
             if self.standard_buckets > 10:
                 self.bucket_util.change_max_buckets(self.standard_buckets)
             self.create_buckets(self.bucket_size)
@@ -216,6 +172,55 @@ class RebalanceBaseTest(BaseTestCase):
     def tearDown(self):
         self.cluster_util.print_cluster_stats()
         super(RebalanceBaseTest, self).tearDown()
+
+    def collection_setup(self):
+        self.log.info("Creating buckets from spec")
+        # Create bucket(s) and add rbac user
+        buckets_spec = self.bucket_util.get_bucket_template_from_package(
+            self.spec_name)
+        doc_loading_spec = \
+            self.bucket_util.get_crud_template_from_package("initial_load")
+
+        self.bucket_util.create_buckets_using_json_data(buckets_spec)
+        self.bucket_util.wait_for_collection_creation_to_complete()
+
+        # Init sdk_client_pool if not initialized before
+        if self.sdk_client_pool is None:
+            self.init_sdk_pool_object()
+
+        # Create clients in SDK client pool
+        if self.sdk_client_pool:
+            self.log.info("Creating required SDK clients for client_pool")
+            bucket_count = len(self.bucket_util.buckets)
+            max_clients = self.task_manager.number_of_threads
+            clients_per_bucket = int(ceil(max_clients / bucket_count))
+            for bucket in self.bucket_util.buckets:
+                self.sdk_client_pool.create_clients(
+                    bucket,
+                    [self.cluster.master],
+                    clients_per_bucket,
+                    compression_settings=self.sdk_compression)
+
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.bucket_util.buckets,
+                doc_loading_spec,
+                mutation_num=0)
+        if doc_loading_task.result is False:
+            self.fail("Initial doc_loading failed")
+
+        self.cluster_util.print_cluster_stats()
+
+        # Verify initial doc load count
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            timeout=self.wait_timeout)
+
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
+        self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
     def shuffle_nodes_between_zones_and_rebalance(self, to_remove=None):
         """

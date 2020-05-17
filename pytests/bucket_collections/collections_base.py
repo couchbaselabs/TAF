@@ -14,6 +14,20 @@ class CollectionBase(BaseTestCase):
     def setUp(self):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
+        try:
+            self.collection_setup()
+        except Exception as exception:
+            # Shutdown client pool in case of any error before failing
+            self.sdk_client_pool.shutdown()
+            # Throw the exception so that the test will fail at setUp
+            raise exception
+        self.log_setup_status("CollectionBase", "complete")
+
+    def tearDown(self):
+        self.bucket_util.remove_scope_collections_and_validate()
+        super(CollectionBase, self).tearDown()
+
+    def collection_setup(self):
         self.key = 'test_collection'.rjust(self.key_size, '0')
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
@@ -89,8 +103,6 @@ class CollectionBase(BaseTestCase):
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:
-            # Explicit tearDown call since assert in setUp will skip tearDown
-            self.tearDown()
             self.fail("Initial doc_loading failed")
 
         self.cluster_util.print_cluster_stats()
@@ -101,11 +113,6 @@ class CollectionBase(BaseTestCase):
 
         self.bucket_util.print_bucket_stats()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
-        self.log_setup_status("CollectionBase", "complete")
-
-    def tearDown(self):
-        self.bucket_util.remove_scope_collections_and_validate()
-        super(CollectionBase, self).tearDown()
 
     def over_ride_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
