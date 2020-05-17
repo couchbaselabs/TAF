@@ -150,6 +150,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:
+            self.tearDown()
             self.fail("Initial doc_loading failed")
 
         self.cluster_util.print_cluster_stats()
@@ -989,6 +990,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:
+            self.tearDown()
             self.fail("Initial doc_loading failed")
 
         self.cluster_util.print_cluster_stats()

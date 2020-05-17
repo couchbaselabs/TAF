@@ -90,6 +90,7 @@ class RebalanceBaseTest(BaseTestCase):
                     doc_loading_spec,
                     mutation_num=0)
             if doc_loading_task.result is False:
+                self.tearDown()
                 self.fail("Initial doc_loading failed")
             self.bucket_util.add_rbac_user()
 
