@@ -158,7 +158,7 @@ class MagmaBaseTest(BaseTestCase):
             for task, _ in tasks_info.items():
                 self.num_items = task.doc_index
         self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
-                        "Doc_ops failed in rebalance_base._load_all_buckets")
+                        "Doc_ops failed in MagmaBase._load_all_buckets")
         return tasks_info
 
     def start_parallel_cruds(self,
