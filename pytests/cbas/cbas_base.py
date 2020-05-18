@@ -6,27 +6,23 @@ from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.rest_client import RestHelper, RestConnection
 from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 
+from com.couchbase.client.java.json import JsonObject
+from cluster_utils.cluster_ready_functions import ClusterUtils
+from bucket_utils.bucket_ready_functions import BucketUtils
+
 
 class CBASBaseTest(BaseTestCase):
     def setUp(self, add_default_cbas_node=True):
         super(CBASBaseTest, self).setUp()
+        
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
                           % (self._testMethodName, self._testMethodDoc))
         else:
             self.log.info("Starting Test: %s" % self._testMethodName)
-
-        for server in self.cluster.servers:
-            if "cbas" in server.services:
-                self.cluster.cbas_nodes.append(server)
-            if "kv" in server.services:
-                self.cluster.kv_nodes.append(server)
-            rest = RestConnection(server)
-            rest.set_data_path(data_path=server.data_path,
-                               index_path=server.index_path,
-                               cbas_path=server.cbas_path)
-
+        
         invalid_ip = '10.111.151.109'
+
         self._cb_cluster = self.task
         self.cb_bucket_name = self.input.param('cb_bucket_name',
                                                'travel-sample')
@@ -35,36 +31,20 @@ class CBASBaseTest(BaseTestCase):
         self.sample_bucket = None
         self.cbas_bucket_name = self.input.param('cbas_bucket_name', 'travel')
         self.cb_bucket_password = self.input.param('cb_bucket_password', None)
-        self.expected_error = self.input.param("error", None)
-        if self.expected_error:
-            self.expected_error = self.expected_error.replace("INVALID_IP",
-                                                              invalid_ip)
-            self.expected_error = \
-                self.expected_error.replace("PORT", self.cluster.master.port)
         self.cb_server_ip = self.input.param("cb_server_ip", None)
-        self.cb_server_ip = \
-            self.cb_server_ip.replace('INVALID_IP', invalid_ip) \
-            if self.cb_server_ip is not None else None
-        self.cbas_dataset_name = self.input.param("cbas_dataset_name",
-                                                  'travel_ds')
-        self.cbas_bucket_name_invalid = \
-            self.input.param('cbas_bucket_name_invalid', self.cbas_bucket_name)
+        self.cb_server_ip = self.cb_server_ip.replace('INVALID_IP', invalid_ip) if self.cb_server_ip is not None else None
+        self.cbas_dataset_name = self.input.param("cbas_dataset_name", 'travel_ds')
+        self.cbas_bucket_name_invalid = self.input.param('cbas_bucket_name_invalid', self.cbas_bucket_name)
         self.cbas_dataset2_name = self.input.param('cbas_dataset2_name', None)
-        self.skip_create_dataset = self.input.param('skip_create_dataset',
-                                                    False)
-        self.disconnect_if_connected = \
-            self.input.param('disconnect_if_connected', False)
-        self.cbas_dataset_name_invalid = \
-            self.input.param('cbas_dataset_name_invalid',
-                             self.cbas_dataset_name)
-        self.skip_drop_connection = self.input.param('skip_drop_connection',
-                                                     False)
+        self.skip_create_dataset = self.input.param('skip_create_dataset', False)
+        self.disconnect_if_connected = self.input.param('disconnect_if_connected', False)
+        self.cbas_dataset_name_invalid = self.input.param('cbas_dataset_name_invalid', self.cbas_dataset_name)
+        self.skip_drop_connection = self.input.param('skip_drop_connection', False)
         self.skip_drop_dataset = self.input.param('skip_drop_dataset', False)
         self.query_id = self.input.param('query_id', None)
         self.mode = self.input.param('mode', None)
         self.num_concurrent_queries = self.input.param('num_queries', 5000)
-        self.concurrent_batch_size = self.input.param('concurrent_batch_size',
-                                                      100)
+        self.concurrent_batch_size = self.input.param('concurrent_batch_size', 100)
         self.compiler_param = self.input.param('compiler_param', None)
         self.compiler_param_val = self.input.param('compiler_param_val', None)
         self.expect_reject = self.input.param('expect_reject', False)
@@ -79,122 +59,135 @@ class CBASBaseTest(BaseTestCase):
                                                     False)
         if self.index_fields:
             self.index_fields = self.index_fields.split("-")
-        self.otpNodes = list()
-        self.cbas_path = server.cbas_path
+        self.beer_sample_docs_count = 7303
+        self.travel_sample_docs_count = 31591
+ 
+        self.clusters = self.get_clusters()
+        self.expected_error = self.input.param("error", None)
+        for cluster in self.clusters:
+            
+            cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
+            cluster.bucket_util = BucketUtils(cluster, cluster.cluster_util, self.task)
+            
+            for server in cluster.servers:
+                if "cbas" in server.services:
+                    cluster.cbas_nodes.append(server)
+                if "kv" in server.services:
+                    cluster.kv_nodes.append(server)
+                rest = RestConnection(server)
+                rest.set_data_path(data_path=server.data_path,
+                                   index_path=server.index_path,
+                                   cbas_path=server.cbas_path)
+            
+            if self.expected_error:
+                self.expected_error = self.expected_error.replace("INVALID_IP", invalid_ip)
+                self.expected_error = self.expected_error.replace("PORT", cluster.master.port)
+            
+            cluster.otpNodes = list()
+            cluster.cbas_path = server.cbas_path
+            
+            cluster.rest = RestConnection(cluster.master)
+            self.log.info("Setting the min possible memory quota so that adding "
+                          "more nodes to the cluster wouldn't be a problem.")
+            cluster.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=MIN_KV_QUOTA)
+            cluster.rest.set_service_memoryQuota(service='ftsMemoryQuota', memoryQuota=FTS_QUOTA)
+            cluster.rest.set_service_memoryQuota(service='indexMemoryQuota', memoryQuota=INDEX_QUOTA)
+            cluster.set_cbas_memory_from_available_free_memory = self.input.param('set_cbas_memory_from_available_free_memory', False)
+    
+            
+            if cluster.set_cbas_memory_from_available_free_memory:
+                info = cluster.rest.get_nodes_self()
+                cluster.cbas_memory_quota = int((info.memoryFree // 1024 ** 2) * 0.9)
+                self.log.info("Setting %d memory quota for CBAS" % cluster.cbas_memory_quota)
+                cluster.rest.set_service_memoryQuota(service='cbasMemoryQuota', memoryQuota=cluster.cbas_memory_quota)
+            else:
+                self.log.info("Setting %d memory quota for CBAS" % CBAS_QUOTA)
+                cluster.cbas_memory_quota = CBAS_QUOTA
+                cluster.rest.set_service_memoryQuota(service='cbasMemoryQuota', memoryQuota=CBAS_QUOTA)
+            
+            
+            cluster.cbas_util = None
+            # Drop any existing buckets and datasets
+            if cluster.cbas_nodes:
+                cluster.cbas_node = cluster.cbas_nodes[0]
+                cluster.cbas_util = CbasUtil(cluster.master, cluster.cbas_node, self.task)
+                if "cbas" in cluster.master.services:
+                    self.cleanup_cbas(cluster.cbas_util)
+                if add_default_cbas_node:
+                    if cluster.master.ip != cluster.cbas_node.ip:
+                        cluster.otpNodes.append(cluster.cluster_util.add_node(cluster.cbas_node))
+                    else:
+                        cluster.otpNodes = cluster.rest.node_statuses()
+                    """
+                    This cbas cleanup is actually not needed.
+                    When a node is added to the cluster,
+                    it is automatically cleaned-up.
+                    """
+                    self.cleanup_cbas(cluster.cbas_util)
+                    cluster.cbas_nodes.remove(cluster.cbas_node)
+            if self.default_bucket:
+                cluster.bucket_util.create_default_bucket(
+                    bucket_type=self.bucket_type,
+                    ram_quota=self.bucket_size,
+                    replica=self.num_replicas,
+                    conflict_resolution=self.bucket_conflict_resolution_type,
+                    replica_index=self.bucket_replica_index,
+                    storage=self.bucket_storage,
+                    eviction_policy=self.bucket_eviction_policy,
+                    flush_enabled=self.flush_enabled)
+            elif self.cb_bucket_name in self.sample_bucket_dict.keys():
+                self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
 
-        self.rest = RestConnection(self.cluster.master)
-        self.log.info("Setting the min possible memory quota so that adding "
-                      "more nodes to the cluster wouldn't be a problem.")
-        self.rest.set_service_memoryQuota(service='memoryQuota',
-                                          memoryQuota=MIN_KV_QUOTA)
-        self.rest.set_service_memoryQuota(service='ftsMemoryQuota',
-                                          memoryQuota=FTS_QUOTA)
-        self.rest.set_service_memoryQuota(service='indexMemoryQuota',
-                                          memoryQuota=INDEX_QUOTA)
-
-        self.set_cbas_memory_from_available_free_memory = \
-            self.input.param('set_cbas_memory_from_available_free_memory',
-                             False)
-        if self.set_cbas_memory_from_available_free_memory:
-            info = self.rest.get_nodes_self()
-            self.cbas_memory_quota = int((info.memoryFree // 1024 ** 2) * 0.9)
-            self.log.info("Setting %d memory quota for CBAS"
-                          % self.cbas_memory_quota)
-            self.rest.set_service_memoryQuota(
-                service='cbasMemoryQuota',
-                memoryQuota=self.cbas_memory_quota)
-        else:
-            self.log.info("Setting %d memory quota for CBAS" % CBAS_QUOTA)
-            self.cbas_memory_quota = CBAS_QUOTA
-            self.rest.set_service_memoryQuota(service='cbasMemoryQuota',
-                                              memoryQuota=CBAS_QUOTA)
-
-        self.cbas_util = None
-        # Drop any existing buckets and datasets
-        if self.cluster.cbas_nodes:
-            self.cbas_node = self.cluster.cbas_nodes[0]
-            self.cbas_util = CbasUtil(self.cluster.master, self.cbas_node,
-                                      self.task)
-            if "cbas" in self.cluster.master.services:
-                self.cleanup_cbas()
-            if add_default_cbas_node:
-                if self.cluster.master.ip != self.cbas_node.ip:
-                    self.otpNodes.append(
-                        self.cluster_util.add_node(self.cbas_node))
-                else:
-                    self.otpNodes = self.rest.node_statuses()
-                """
-                This cbas cleanup is actually not needed.
-                When a node is added to the cluster,
-                it is automatically cleaned-up.
-                """
-                self.cleanup_cbas()
-                self.cluster.cbas_nodes.remove(self.cbas_node)
-        if self.default_bucket:
-            self.bucket_util.create_default_bucket(
-                bucket_type=self.bucket_type,
-                ram_quota=self.bucket_size,
-                replica=self.num_replicas,
-                conflict_resolution=self.bucket_conflict_resolution_type,
-                replica_index=self.bucket_replica_index,
-                storage=self.bucket_storage,
-                eviction_policy=self.bucket_eviction_policy,
-                flush_enabled=self.flush_enabled)
-        elif self.cb_bucket_name in self.sample_bucket_dict.keys():
-            self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
-
-        self.bucket_util.add_rbac_user()
+            cluster.bucket_util.add_rbac_user()
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 
     def tearDown(self):
+        for cluster in self.clusters:
+            cluster.cbas_util.closeConn()
         super(CBASBaseTest, self).tearDown()
 
-    def cleanup_cbas(self):
+    def cleanup_cbas(self, cbas_util):
         """
         Drops all connections, datasets and buckets from CBAS
         """
         try:
             # Disconnect from all connected buckets
             cmd_get_buckets = "select Name from Metadata.`Bucket`;"
-            status, metrics, errors, results, _ = \
-                self.cbas_util.execute_statement_on_cbas_util(cmd_get_buckets)
+            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_buckets)
             if (results is not None) & (len(results) > 0):
                 for row in results:
-                    self.cbas_util.disconnect_from_bucket(
-                        row['Name'],
-                        disconnect_if_connected=True)
+                    cbas_util.disconnect_from_bucket(row['Name'], disconnect_if_connected=True)
                     self.log.info("******* Disconnected all buckets *******")
             else:
                 self.log.info("******* No buckets to disconnect *******")
 
             # Drop all datasets
             cmd_get_datasets = "select DatasetName from Metadata.`Dataset` where DataverseName != \"Metadata\";"
-            status, metrics, errors, results, _ = \
-                self.cbas_util.execute_statement_on_cbas_util(cmd_get_datasets)
+            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_datasets)
             if (results is not None) & (len(results) > 0):
                 for row in results:
-                    self.cbas_util.drop_dataset(row['DatasetName'])
+                    cbas_util.drop_dataset("`" + row['DatasetName'] + "`")
                     self.log.info("********* Dropped all datasets *********")
             else:
                 self.log.info("********* No datasets to drop *********")
 
             # Drop all buckets
-            status, metrics, errors, results, _ = \
-                self.cbas_util.execute_statement_on_cbas_util(cmd_get_buckets)
+            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_buckets)
             if (results is not None) & (len(results) > 0):
                 for row in results:
-                    self.cbas_util.drop_cbas_bucket(row['Name'])
+                    cbas_util.drop_cbas_bucket("`" + row['Name'] + "`")
                     self.log.info("********* Dropped all buckets *********")
             else:
                 self.log.info("********* No buckets to drop *********")
+            
             self.log.info("Drop Dataverse other than Default and Metadata")
             cmd_get_dataverse = 'select DataverseName from Metadata.`Dataverse` where DataverseName != "Metadata" and DataverseName != "Default";'
-            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(cmd_get_dataverse)
+            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_dataverse)
             if (results != None) & (len(results) > 0):
                 for row in results:
-                    self.cbas_util.disconnect_link("`" + row['DataverseName'] + "`" + ".Local")
-                    self.cbas_util.drop_dataverse_on_cbas(dataverse_name="`" + row['DataverseName'] + "`")
+                    cbas_util.disconnect_link("`" + row['DataverseName'] + "`" + ".Local")
+                    cbas_util.drop_dataverse_on_cbas(dataverse_name="`" + row['DataverseName'] + "`")
                 self.log.info("********* Dropped all dataverse except Default and Metadata *********")
             else:
                 self.log.info("********* No dataverse to drop *********")
