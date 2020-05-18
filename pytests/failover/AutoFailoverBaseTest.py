@@ -27,7 +27,11 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.spec_name = self.input.param("bucket_spec",
                                           None)
         if self.spec_name is not None:
-            self.collectionSetUp()
+            try:
+                self.collectionSetUp()
+            except Exception as exception:
+                self.sdk_client_pool.shutdown()
+                raise exception
         else:
             self.auto_reprovision = self.input.param("auto_reprovision", False)
             self._get_params()
@@ -150,7 +154,6 @@ class AutoFailoverBaseTest(BaseTestCase):
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:
-            self.tearDown()
             self.fail("Initial doc_loading failed")
 
         self.cluster_util.print_cluster_stats()
@@ -568,7 +571,6 @@ class AutoFailoverBaseTest(BaseTestCase):
         try:
             self.task_manager.get_task_result(task)
         except Exception, e:
-
             self.fail("Exception: {}".format(e))
         finally:
             for node in self.server_to_fail:
@@ -891,7 +893,8 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.bucket = self.bucket_util.buckets[0]
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets, gen_create, "create", 0,
+                self.cluster, self.bucket_util.buckets,
+                gen_create, "create", 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
@@ -923,7 +926,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.data_location = "{0}/data".format(self.disk_location)
         self.disk_timeout = self.input.param("disk_timeout", 120)
         self.read_loadgen = self.input.param("read_loadgen", False)
-        self.log.info("Cleanup the cluster and set the data location to the one specified by the test.")
+        self.log.info("Cleanup the cluster and set the data location "
+                      "to the one specified by the test.")
         for server in self.cluster.servers:
             self._create_data_locations(server)
             if server == self.cluster.master:
@@ -935,7 +939,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 master_services = master_services[0].split(",")
             self._initialize_node_with_new_data_location(
                 server, self.data_location, master_services)
-        self.services = self.cluster_util.get_services(self.cluster.servers[:self.nodes_init], None)
+        self.services = self.cluster_util.get_services(
+            self.cluster.servers[:self.nodes_init], None)
         self.task.rebalance(self.cluster.servers[:1],
                             self.cluster.servers[1:self.nodes_init],
                             [], services=self.services)
@@ -947,7 +952,11 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                                                    replica=self.num_replicas)
             self.load_all_buckets(self.initial_load_gen, "create", 0)
         else:
-            self.collectionSetUp()
+            try:
+                self.collectionSetUp()
+            except Exception as exception:
+                self.sdk_client_pool.shutdown()
+                raise exception
 
         # If updated, update in 'DurabilityHelper.durability_succeeds' as well
         self.failover_actions['disk_failure'] = self.fail_disk_via_disk_failure
@@ -990,7 +999,6 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:
-            self.tearDown()
             self.fail("Initial doc_loading failed")
 
         self.cluster_util.print_cluster_stats()
@@ -1002,7 +1010,6 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.bucket_util.print_bucket_stats()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
-
     def tearDown(self):
         self.log.info("=========Starting Diskautofailover teardown ==========")
         self.targetMaster = True
@@ -1010,7 +1017,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.bring_back_failed_nodes_up()
             self.reset_cluster()
             for server in self.cluster.servers:
-                self._initialize_node_with_new_data_location(server, self.original_data_path)
+                self._initialize_node_with_new_data_location(
+                    server, self.original_data_path)
         self.log.info("=========Finished Diskautofailover teardown ==========")
 
     def enable_disk_autofailover(self):
@@ -1046,7 +1054,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             disk_timeout=self.disk_timeout)
         return status
 
-    def disable_disk_autofailover_and_validate(self, disable_autofailover=False):
+    def disable_disk_autofailover_and_validate(self,
+                                               disable_autofailover=False):
         status = self.disable_disk_autofailover(disable_autofailover)
         self.assertTrue(status, "Failed to update autofailover settings. "
                                 "Failed to disable disk failover settings")
