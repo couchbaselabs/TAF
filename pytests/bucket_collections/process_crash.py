@@ -204,8 +204,9 @@ class CrashTest(CollectionBase):
         crash_type = self.input.param("simulate_error",
                                       CouchbaseError.KILL_MEMCACHED)
 
-        if self.scope_name != CbServer.default_scope:
-            self.scope_name = BucketUtils.get_random_name()
+        # Always use a random scope name to create/remove
+        # since CREATE/DROP not supported for default scope
+        self.scope_name = BucketUtils.get_random_name()
 
         # Select a KV node other than master node from the cluster
         node_to_crash = kv_nodes[sample(range(1, len(kv_nodes)), 1)[0]]
