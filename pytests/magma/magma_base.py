@@ -84,6 +84,10 @@ class MagmaBaseTest(BaseTestCase):
                     "backend", props,
                     self.bucket_util.buckets)
 
+        self.ep_queue_stats = self.input.param("ep_queue_stats", True)
+        self.monitor_stats =["doc_ops", "ep_queue_size"]
+        if not self.ep_queue_stats:
+            self.monitor_stats =["doc_ops"]
         self.doc_size = self.input.param("doc_size", 2048)
         self.test_itr = self.input.param("test_itr", 4)
         self.update_itr = self.input.param("update_itr", 10)
@@ -153,7 +157,8 @@ class MagmaBaseTest(BaseTestCase):
             active_resident_threshold=self.active_resident_threshold,
             skip_read_on_error=skip_read_on_error,
             suppress_error_table=suppress_error_table,
-            dgm_batch=dgm_batch)
+            dgm_batch=dgm_batch,
+            monitor_stats=self.monitor_stats)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
                 self.num_items = task.doc_index
@@ -185,7 +190,8 @@ class MagmaBaseTest(BaseTestCase):
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
                 scope=scope,
-                collection=collection)
+                collection=collection,
+                monitor_stats=self.monitor_stats)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -200,7 +206,8 @@ class MagmaBaseTest(BaseTestCase):
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
                 scope=scope,
-                collection=collection)
+                collection=collection,
+                monitor_stats=self.monitor_stats)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "read" in self.doc_ops and self.gen_read is not None:
@@ -227,7 +234,8 @@ class MagmaBaseTest(BaseTestCase):
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
                 scope=scope,
-                collection=collection)
+                collection=collection,
+                monitor_stats=self.monitor_stats)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 

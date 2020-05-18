@@ -1378,7 +1378,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False,
-                 sdk_client_pool=None):
+                 sdk_client_pool=None,
+                 monitor_stats=["doc_ops"]):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "DocumentsLoadGenTask_%s_%s_%s"
             % (bucket, task_identifier, time.time()))
@@ -1408,6 +1409,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.task_identifier = task_identifier
         self.skip_read_on_error = skip_read_on_error
         self.suppress_error_table = suppress_error_table
+        self.monitor_stats = monitor_stats
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1453,7 +1455,7 @@ class LoadDocumentsGeneratorsTask(Task):
                     "start", self.task_manager,
                     cluster=self.cluster,
                     bucket=bucket,
-                    monitor_stats=["doc_ops"],
+                    monitor_stats=self.monitor_stats,
                     sleep=1)
         try:
             for task in tasks:
@@ -2927,6 +2929,14 @@ class PrintBucketStats(Task):
             ops_rate.append(ops)
         return ops_rate
 
+    def print_ep_queue_size(self, bucket_stats):
+        if 'op' in bucket_stats and \
+        'samples' in bucket_stats['op'] and \
+        'ep_queue_size' in bucket_stats['op']['samples']:
+            ep_q_size = bucket_stats['op']['samples']['ep_queue_size'][-1]
+            self.log.info("ep_queue_size for {}: {}\
+            ".format(self.bucket.name, ep_q_size))
+
     def plot_all_graphs(self):
         plot_graph(self.test_log, self.bucket.name, self.ops_rate_trend)
 
@@ -2952,6 +2962,8 @@ class PrintBucketStats(Task):
                 ops_rate = self.record_bucket_ops(bucket_stats, ops_rate)
             elif "drain_rate" in self.monitor_stats:
                 self.record_drain_rate(bucket_stats)
+            if "ep_queue_size" in self.monitor_stats:
+                self.print_ep_queue_size(bucket_stats)
 
             # Sleep before fetching next stats
             sleep(self.sleep, log_type="infra")
