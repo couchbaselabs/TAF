@@ -556,7 +556,6 @@ class SDKExceptionTests(CollectionBase):
                     self.cluster, self.bucket, doc_gen[op_type], op_type, 0,
                     scope=self.scope_name,
                     collection=self.collection_name,
-                    sdk_client_pool=self.sdk_client_pool,
                     batch_size=1, process_concurrency=8,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,

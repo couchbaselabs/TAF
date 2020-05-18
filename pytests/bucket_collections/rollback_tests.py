@@ -81,7 +81,6 @@ class RollbackTests(CollectionBase):
         cbstats = self.node_shells[self.cluster.master]["cbstat"]
         self.target_vbucket = cbstats.vbucket_list(self.bucket.name)
         start = self.num_items
-        self.gen_validate = self.gen_create
 
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
@@ -130,7 +129,7 @@ class RollbackTests(CollectionBase):
             self.bucket_util.verify_stats_all_buckets(items, timeout=300)
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
-
+            self.gen_validate = self.gen_create
             data_validation = self.task.async_validate_docs(
                 self.cluster, self.bucket,
                 self.gen_validate, "create", 0, batch_size=10)
