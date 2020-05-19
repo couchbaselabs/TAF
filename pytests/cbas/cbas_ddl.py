@@ -2,17 +2,16 @@ import json
 import time
 
 from BucketLib.BucketOperations import BucketHelper
-from cbas_base import CBASBaseTest
 from BucketLib.bucket import TravelSample, BeerSample
-from TestInput import TestInputSingleton
+from cbas_base import CBASBaseTest
 
 
 class CBASDDLTests(CBASBaseTest):
     def setUp(self, add_default_cbas_node=True):
-        self.input = TestInputSingleton.input
+        super(CBASDDLTests, self).setUp(add_default_cbas_node)
+
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
-        super(CBASDDLTests, self).setUp(add_default_cbas_node)
 
         self.validate_error = False
         if self.expected_error:
