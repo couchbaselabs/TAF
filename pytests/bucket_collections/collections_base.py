@@ -41,6 +41,8 @@ class CollectionBase(BaseTestCase):
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
         self.skip_collections_cleanup = self.input.param("skip_collections_cleanup", False)
+        self.batch_size = self.input.param("batch_size", 200)
+
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
         if self.num_replicas > 1:
@@ -103,7 +105,8 @@ class CollectionBase(BaseTestCase):
                 self.cluster,
                 self.bucket_util.buckets,
                 doc_loading_spec,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
@@ -143,6 +146,7 @@ class CollectionBase(BaseTestCase):
                 self.cluster,
                 self.bucket_util.buckets,
                 new_data_load_template,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Extra doc loading task failed")

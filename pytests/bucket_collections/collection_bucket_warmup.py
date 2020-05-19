@@ -42,7 +42,8 @@ class BucketWarmup(CollectionBase):
                                             self.cluster,
                                             self.bucket_util.buckets,
                                             doc_loading_spec,
-                                            mutation_num=0)
+                                            mutation_num=0,
+                                            batch_size=self.batch_size)
 
     def perform_operation_during_bucket_warmup(self, during_warmup="default"):
         # stop memcached in master node

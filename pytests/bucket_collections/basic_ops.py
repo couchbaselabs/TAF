@@ -730,7 +730,8 @@ class BasicOps(CollectionBase):
                                                     self.cluster,
                                                     self.bucket_util.buckets,
                                                     doc_loading_spec,
-                                                    mutation_num=0)
+                                                    mutation_num=0,
+                                                    batch_size=self.batch_size)
             collection_count = cb_stat.get_collections(self.bucket)["count"]
         self.bucket_util.validate_docs_per_collections_all_buckets()
 
@@ -743,7 +744,8 @@ class BasicOps(CollectionBase):
                                                     self.cluster,
                                                     self.bucket,
                                                     doc_loading_spec,
-                                                    mutation_num=0)
+                                                    mutation_num=0,
+                                                    batch_size=self.batch_size)
             collection_count = cb_stat.get_collections(self.bucket[0])["count"]
 
         # Validate doc count as per bucket collections
@@ -787,7 +789,8 @@ class BasicOps(CollectionBase):
                                                     self.cluster,
                                                     self.bucket_util.buckets,
                                                     doc_loading_spec,
-                                                    mutation_num=0)
+                                                    mutation_num=0,
+                                                    batch_size=self.batch_size)
         self.task_manager.get_task_result(task)
         # Data validation
         self.bucket_util._wait_for_stats_all_buckets()
@@ -847,7 +850,8 @@ class BasicOps(CollectionBase):
                                                 self.cluster,
                                                 self.bucket_util.buckets,
                                                 doc_loading_spec,
-                                                mutation_num=0)
+                                                mutation_num=0,
+                                                batch_size=self.batch_size)
 
         if run_compaction:
             compaction_task = self.task.async_compact_bucket(
