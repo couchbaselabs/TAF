@@ -319,15 +319,16 @@ class SDKClient(object):
     @staticmethod
     def populate_crud_failure_reason(failed_key, error):
         try:
+            req_context = error.context().requestContext()
             failed_key['error'] += \
-                " | " \
-                + str(error.context().requestContext().lastDispatchedTo())
+                " | " + str(req_context.lastDispatchedTo())
             failed_key['error'] += \
-                " | retryAttempts:" \
-                + str(error.context().requestContext().retryAttempts())
+                " | reason:" \
+                + str(req_context.request().cancellationReason())
             failed_key['error'] += \
-                " | retryReasons:" \
-                + str(error.context().requestContext().retryReasons())
+                " | retryAttempts:" + str(req_context.retryAttempts())
+            failed_key['error'] += \
+                " | retryReasons:" + str(req_context.retryReasons())
         except Exception:
             pass
 
@@ -729,18 +730,7 @@ class SDKClient(object):
         if result["error"]:
             result["error"] = str(ex.getClass().getName() +
                                   " | " + ex.getMessage())
-            try:
-                result["error"] += \
-                    " | " \
-                    + str(ex.context().requestContext().lastDispatchedTo())
-                result["error"] += \
-                    " | retryAttempts:" \
-                    + str(ex.context().requestContext().retryAttempts())
-                result["error"] += \
-                    " | retryReasons:" \
-                    + str(ex.context().requestContext().retryReasons())
-            except Exception:
-                pass
+            SDKClient.populate_crud_failure_reason(result, ex)
         return result
 
     def replace(self, key, value, exp=0, exp_unit="seconds",
