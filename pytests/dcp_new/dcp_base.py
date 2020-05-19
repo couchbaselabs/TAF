@@ -14,6 +14,7 @@ from mc_bin_client import MemcachedClient as McdClient
 from dcp_data_persist import LogData
 import uuid
 
+
 class DCPBase(CollectionBase):
     def setUp(self):
         super(DCPBase, self).setUp()
@@ -48,6 +49,9 @@ class DCPBase(CollectionBase):
         self.docs = self.input.param("docs", False)
         self.dcp_client = self.initialise_cluster_connections()
         self.output_string = list()
+
+    def tearDown(self):
+        super(DCPBase, self).tearDown()
 
     def initialise_cluster_connections(self):
         init_dcp_client = self.initiate_connection()

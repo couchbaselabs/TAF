@@ -3,6 +3,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from Cb_constants import CbServer
 from error_simulation.cb_error import CouchbaseError
 
+
 class BucketWarmup(CollectionBase):
     def setUp(self):
         super(BucketWarmup, self).setUp()
@@ -132,3 +133,5 @@ class BucketWarmup(CollectionBase):
 
     def tearDown(self):
         self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
+        super(BucketWarmup, self).tearDown()
+

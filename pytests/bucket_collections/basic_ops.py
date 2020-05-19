@@ -19,6 +19,9 @@ class BasicOps(CollectionBase):
         # To override default num_items to '0'
         self.num_items = self.input.param("num_items", 10000)
 
+    def tearDown(self):
+        super(BasicOps, self).tearDown()
+
     def __dockey_data_ops(self, dockey="dockey"):
         target_vb = None
         if self.target_vbucket is not None:

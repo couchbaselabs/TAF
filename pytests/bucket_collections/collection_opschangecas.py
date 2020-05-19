@@ -21,6 +21,9 @@ class OpsChangeCasTests(CollectionBase):
         if self.doc_ops is not None:
             self.doc_ops = self.doc_ops.split(";")
 
+    def tearDown(self):
+        super(OpsChangeCasTests, self).tearDown()
+
     def verify_cas(self, ops, generator, scope, collection):
         """
         Verify CAS value manipulation.

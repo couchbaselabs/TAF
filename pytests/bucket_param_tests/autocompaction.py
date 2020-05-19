@@ -32,6 +32,9 @@ class AutoCompactionTests(CollectionBase):
         self.bucket = self.bucket_util.buckets[0]
         self.log.info("======= Finished Autocompaction base setup =========")
 
+    def tearDown(self):
+        super(AutoCompactionTests, self).tearDown()
+
     @staticmethod
     def insert_key(node, bucket_name, count, size):
         rest = RestConnection(node)
