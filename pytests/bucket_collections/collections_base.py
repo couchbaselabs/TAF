@@ -8,6 +8,8 @@ from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
+import traceback
+
 
 
 class CollectionBase(BaseTestCase):
@@ -19,6 +21,8 @@ class CollectionBase(BaseTestCase):
         except Exception as exception:
             # Shutdown client pool in case of any error before failing
             self.sdk_client_pool.shutdown()
+            # print the tracback of the failure
+            traceback.print_exc()
             # Throw the exception so that the test will fail at setUp
             raise exception
         self.log_setup_status("CollectionBase", "complete")
