@@ -69,6 +69,8 @@ class volume(BaseTestCase):
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
         self.fragmentation = int(self.input.param("fragmentation", 50))
+        self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
+                                                       False)
 
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
@@ -445,9 +447,10 @@ class volume(BaseTestCase):
         self.get_bucket_dgm(self.bucket)
         crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if len(crashes) > 0:
+            self.PrintStep("Crashes found on server: %s" % crashes)
+        if self.assert_crashes_on_load:
             self.task.jython_task_manager.abort_all_tasks()
-
-        self.assertTrue(len(crashes) == 0, "Found servers having crashes")
+            self.assertTrue(len(crashes) == 0, "Found servers having crashes")
 
     def get_magma_disk_usage(self, bucket=None):
         if bucket is None:
