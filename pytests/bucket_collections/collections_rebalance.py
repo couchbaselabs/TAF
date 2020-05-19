@@ -56,7 +56,7 @@ class CollectionsRebalance(CollectionBase):
         self.log.info("Changing cluster RAM size")
         status = self.rest.init_cluster_memoryQuota(self.cluster.master.rest_username,
                                                     self.cluster.master.rest_password,
-                                                    memoryQuota=3000)
+                                                    memoryQuota=2500)
         self.assertTrue(status, "RAM quota wasn't changed")
 
     def data_load_after_failover(self):
