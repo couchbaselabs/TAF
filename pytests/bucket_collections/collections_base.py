@@ -24,7 +24,8 @@ class CollectionBase(BaseTestCase):
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
-        self.bucket_util.remove_scope_collections_and_validate()
+        if not self.skip_collections_cleanup:
+            self.bucket_util.remove_scope_collections_and_validate()
         super(CollectionBase, self).tearDown()
 
     def collection_setup(self):
@@ -39,6 +40,7 @@ class CollectionBase(BaseTestCase):
 
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
+        self.skip_collections_cleanup = self.input.param("skip_collections_cleanup", False)
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
         if self.num_replicas > 1:

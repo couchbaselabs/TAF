@@ -33,6 +33,12 @@ class volume(CollectionBase):
         # "during" - during rebalance/failover at each step
         self.data_load_stage = self.input.param("data_load_stage", "during")
         self.use_doc_ttl = self.input.param("use_doc_ttl", "False")
+        self.skip_collections_cleanup = True
+
+    def tearDown(self):
+        self.log.info("Printing bucket stats before teardown")
+        self.bucket_util.print_bucket_stats()
+        super(volume, self).tearDown()
 
     # Stopping and restarting the memcached process
     def stop_process(self):
@@ -67,11 +73,11 @@ class volume(CollectionBase):
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         return rebalance_task
 
-    def rebalance_validation(self, tasks_info, rebalance_task):
-        if not rebalance_task.result:
-            for task, _ in tasks_info.items():
-                self.task.jython_task_manager.get_task_result(task)
-            self.fail("Rebalance Failed")
+    def wait_for_rebalance_to_complete(self, task, wait_step=120):
+        self.task.jython_task_manager.get_task_result(task)
+        reached = RestHelper(self.rest).rebalance_reached(wait_step=wait_step)
+        self.assertTrue(reached, "Rebalance failed, stuck or did not complete")
+        self.assertTrue(task.result, "Rebalance Failed")
 
     def data_load_collection(self, async_load=True):
         doc_loading_spec = \
@@ -107,8 +113,7 @@ class volume(CollectionBase):
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             if self.data_load_stage == "during":
                 self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
@@ -120,8 +125,7 @@ class volume(CollectionBase):
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             if self.data_load_stage == "during":
                 self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
@@ -133,8 +137,7 @@ class volume(CollectionBase):
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             if self.data_load_stage == "during":
                 self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
@@ -146,8 +149,7 @@ class volume(CollectionBase):
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             if self.data_load_stage == "during":
                 self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
@@ -164,8 +166,7 @@ class volume(CollectionBase):
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             if self.data_load_stage == "during":
                 self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
@@ -180,8 +181,7 @@ class volume(CollectionBase):
                 rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
                 if self.data_load_stage == "during":
                     task = self.data_load_collection()
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+                self.wait_for_rebalance_to_complete(rebalance_task)
                 self.stop_process()
                 if self.data_load_stage == "during":
                     self.wait_for_async_data_load_to_complete(task)
@@ -244,8 +244,7 @@ class volume(CollectionBase):
             self.tasks = []
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             # self.sleep(600)
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
             self.log.info("Step 12: Failover a node and FullRecovery that node")
@@ -281,8 +280,7 @@ class volume(CollectionBase):
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             self.sleep(10)
 
             if self.data_load_stage == "during":
@@ -338,8 +336,7 @@ class volume(CollectionBase):
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
 
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             self.sleep(10)
 
             if self.data_load_stage == "during":
@@ -371,8 +368,7 @@ class volume(CollectionBase):
             rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
+            self.wait_for_rebalance_to_complete(rebalance_task)
             if self.data_load_stage == "during":
                 self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
@@ -392,10 +388,9 @@ class volume(CollectionBase):
                                               int(len(self.cluster.nodes_in_cluster) - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
                         self.cluster.servers[:self.nodes_init], [], servs_out)
-                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.wait_for_rebalance_to_complete(rebalance_task)
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-                    self.assertTrue(rebalance_task.result, "rebalance failed, stuck or did not complete")
             else:
                 self.log.info("Volume Test Run Complete")
         ############################################################################################################################
