@@ -6,9 +6,10 @@ from collections_helper.collections_spec_constants import \
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
-from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
 import traceback
+
+from java.lang import Exception as Java_base_exception
 
 
 class CollectionBase(BaseTestCase):
@@ -17,19 +18,24 @@ class CollectionBase(BaseTestCase):
         self.log_setup_status("CollectionBase", "started")
         try:
             self.collection_setup()
+        except Java_base_exception as exception:
+            self.handle_collection_setup_exception(exception)
         except Exception as exception:
-            # Shutdown client pool in case of any error before failing
-            self.sdk_client_pool.shutdown()
-            # print the tracback of the failure
-            traceback.print_exc()
-            # Throw the exception so that the test will fail at setUp
-            raise exception
+            self.handle_collection_setup_exception(exception)
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
         if not self.skip_collections_cleanup:
             self.bucket_util.remove_scope_collections_and_validate()
         super(CollectionBase, self).tearDown()
+
+    def handle_collection_setup_exception(self, exception_obj):
+        # Shutdown client pool in case of any error before failing
+        self.sdk_client_pool.shutdown()
+        # print the tracback of the failure
+        traceback.print_exc()
+        # Throw the exception so that the test will fail at setUp
+        raise exception_obj
 
     def collection_setup(self):
         self.key = 'test_collection'.rjust(self.key_size, '0')

@@ -18,6 +18,8 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 import traceback
 
+from java.lang import Exception as Java_base_exception
+
 
 class AutoFailoverBaseTest(BaseTestCase):
     MAX_FAIL_DETECT_TIME = 120
@@ -30,10 +32,10 @@ class AutoFailoverBaseTest(BaseTestCase):
         if self.spec_name is not None:
             try:
                 self.collectionSetUp()
+            except Java_base_exception as exception:
+                self.handle_collection_setup_exception(exception)
             except Exception as exception:
-                self.sdk_client_pool.shutdown()
-                traceback.print_exc()
-                raise exception
+                self.handle_collection_setup_exception(exception)
         else:
             self.auto_reprovision = self.input.param("auto_reprovision", False)
             self._get_params()
@@ -79,6 +81,11 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.get_vbucket_info_from_failover_nodes()
             self.cluster_util.print_cluster_stats()
             self.bucket_util.print_bucket_stats()
+
+    def handle_collection_setup_exception(self, exception_obj):
+        self.sdk_client_pool.shutdown()
+        traceback.print_exc()
+        raise exception_obj
 
     def collectionSetUp(self):
         self.auto_reprovision = self.input.param("auto_reprovision", False)
