@@ -38,6 +38,8 @@ class CollectionBase(BaseTestCase):
         self.doc_ops = self.input.param("doc_ops", None)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
+        ttl_buckets = ["multi_bucket.buckets_for_rebalance_tests_with_ttl",
+                       "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl"]
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
 
@@ -62,7 +64,7 @@ class CollectionBase(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
@@ -117,7 +119,8 @@ class CollectionBase(BaseTestCase):
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        if self.spec_name not in ttl_buckets:
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
         self.bucket_util.print_bucket_stats()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
