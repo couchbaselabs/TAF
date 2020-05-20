@@ -11,7 +11,6 @@ from BucketLib.bucket import Bucket
 import traceback
 
 
-
 class CollectionBase(BaseTestCase):
     def setUp(self):
         super(CollectionBase, self).setUp()
