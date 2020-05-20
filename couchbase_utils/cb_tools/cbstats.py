@@ -49,14 +49,10 @@ class Cbstats(CbCmdBase):
         output = str(output)
 
         # Fetch general scope stats
-        scope_count_pattern = "[ \t]*scopes:[ \t]+([0-9]+)"
-        scope_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
-        scope_count_pattern = re.compile(scope_count_pattern)
-        scope_uid_pattern = re.compile(scope_uid_pattern)
-        scope_count = scope_count_pattern.findall(str(output))[0]
-        scope_uid = scope_uid_pattern.findall(str(output))[0]
-        scope_data["count"] = int(scope_count)
-        scope_data["uid"] = scope_uid
+        manifest_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
+        manifest_uid_pattern = re.compile(manifest_uid_pattern)
+        manifest_uid = manifest_uid_pattern.findall(str(output))[0]
+        scope_data["manifest_uid"] = int(manifest_uid)
 
         scope_names_pattern = "[ \t]+([0-9xa-f]+):name:" \
                               "[ \t]+([0-9A-Za-z_%-]+)"
@@ -67,6 +63,7 @@ class Cbstats(CbCmdBase):
         scope_names = scope_names_pattern.findall(output)
 
         # Populate specific scope stats
+        scope_data["count"] = 0
         for s_name_match in scope_names:
             s_id = s_name_match[0]
             s_name = s_name_match[1]
@@ -84,6 +81,7 @@ class Cbstats(CbCmdBase):
             scope_data[s_name]["id"] = s_id
             scope_data[s_name]["collections"] = int(collection_count)
             scope_data[s_name]["num_items"] = int(items_count)
+            scope_data["count"] += 1
 
         return scope_data
 
@@ -155,10 +153,7 @@ class Cbstats(CbCmdBase):
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        collection_count_pattern = "[ \t]*collections:[ \t]+([0-9]+)"
-        default_collection_exist_pattern = "[ \t]*default_exists:" \
-                                           "[ \t]+([truefals]+)"
-        collection_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
+        manifest_uid_pattern = "[ \t]*manifest_uid:[ \t]+([0-9]+)"
 
         scope_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):scope_name:" \
                              "[ \t]+([a-zA-Z_0-9%-]+)"
@@ -167,23 +162,13 @@ class Cbstats(CbCmdBase):
         collection_items_pattern = \
             "[ \t]*%s:%s:items:[ \t]+([0-9]+)"
 
-        collection_count_pattern = re.compile(collection_count_pattern)
-        default_collection_exist_pattern = re.compile(
-            default_collection_exist_pattern)
-        collection_uid_pattern = re.compile(collection_uid_pattern)
+        manifest_uid_pattern = re.compile(manifest_uid_pattern)
         scope_name_pattern = re.compile(scope_name_pattern)
         col_name_pattern = re.compile(col_name_pattern)
 
         # Populate generic manifest stats
-        collection_count = collection_count_pattern.findall(str(output))[0]
-        default_collection_exist = \
-            default_collection_exist_pattern.findall(str(output))[0]
-        collection_uid = collection_uid_pattern.findall(str(output))[0]
-        collection_data["default_exists"] = True
-        if default_collection_exist == "false":
-            collection_data["default_exists"] = False
-        collection_data["uid"] = int(collection_uid)
-        collection_data["count"] = int(collection_count)
+        manifest_uid = manifest_uid_pattern.findall(str(output))[0]
+        collection_data["manifest_uid"] = int(manifest_uid)
 
         # Fetch all available collection names
         scope_names = scope_name_pattern.findall(str(output))
