@@ -367,6 +367,7 @@ class MagmaBaseTest(BaseTestCase):
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
+        stats = list()
         if servers is None:
             servers = self.cluster.nodes_in_cluster
         if type(servers) is not list:
@@ -387,11 +388,13 @@ class MagmaBaseTest(BaseTestCase):
                 fragmentation_values.append(
                     float(_res[server.ip][grep_field][
                         "Fragmentation"]))
+                stats.append(_res)
             result.update({server.ip: fragmentation_values})
         self.log.info("magma stats fragmentation result {} \
         ".format(result))
         for value in result.values():
             if max(value) > self.fragmentation:
+                self.log.info(stats)
                 return False
         return True
 
