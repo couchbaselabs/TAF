@@ -83,7 +83,8 @@ class FlushTests(CollectionBase):
                 self.cluster,
                 self.bucket_util.buckets,
                 mutate_spec,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
@@ -121,7 +122,8 @@ class FlushTests(CollectionBase):
                 self.cluster,
                 self.bucket_util.buckets,
                 doc_loading_spec,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size)
 
         # Print bucket stats
         self.bucket_util.print_bucket_stats()
@@ -229,7 +231,8 @@ class FlushTests(CollectionBase):
                 mutate_spec,
                 mutation_num=0,
                 async_load=True,
-                validate_task=False)
+                validate_task=False,
+                batch_size=self.batch_size)
 
         self.sleep(5, "Wait for mutation task to start")
 
@@ -285,6 +288,7 @@ class FlushTests(CollectionBase):
                 self.cluster,
                 self.bucket_util.buckets,
                 mutate_spec,
-                mutation_num=mutate_num)
+                mutation_num=mutate_num,
+                batch_size=self.batch_size)
             if mutate_task.result is False:
                 self.fail("Collection mutation failed")

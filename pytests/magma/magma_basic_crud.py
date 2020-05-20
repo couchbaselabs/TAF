@@ -1,17 +1,14 @@
 import copy
-import math
 import threading
-import json as Json
 
+from Cb_constants.CBServer import CbServer
+from com.couchbase.client.core.error import DocumentUnretrievableException
+from com.couchbase.client.java.kv import GetAnyReplicaOptions
 from couchbase_helper.documentgenerator import doc_generator
+import json as Json
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from Cb_constants.CBServer import CbServer
-from com.couchbase.client.java.kv import GetAllReplicasOptions,\
-    GetAnyReplicaOptions
-from com.couchbase.client.core.error import DocumentUnretrievableException
-from Cb_constants.CBServer import CbServer
 
 
 class BasicCrudTests(MagmaBaseTest):
@@ -19,27 +16,33 @@ class BasicCrudTests(MagmaBaseTest):
         super(BasicCrudTests, self).setUp()
         self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
         self.disk_usage = dict()
-        start = 0
-        end = self.num_items
-        start_read = 0
-        end_read = self.num_items
+
+        self.create_start = 0
+        self.create_end = self.num_items
         if self.rev_write:
-            start = -int(self.num_items - 1)
-            end = 1
+            self.create_start = -int(self.num_items - 1)
+            self.create_end = 1
+
+        self.read_start = 0
+        self.read_end = self.num_items
         if self.rev_read:
-            start_read = -int(self.num_items - 1)
-            end_read = 1
-        self.gen_create = doc_generator(
-            self.key, start, end,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            key_size=self.key_size,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size,
-            deep_copy=self.deep_copy)
+            self.read_start = -int(self.num_items - 1)
+            self.read_end = 1
+
+        self.delete_start = 0
+        self.delete_end = self.num_items
+        if self.rev_del:
+            self.delete_start = -int(self.num_items - 1)
+            self.delete_end = 1
+
+        self.update_start = 0
+        self.update_end = self.num_items
+        if self.rev_update:
+            self.update_start = -int(self.num_items - 1)
+            self.update_end = 1
+
+        self.generate_docs(doc_ops="create")
+
         self.init_loading = self.input.param("init_loading", True)
         if self.init_loading:
             self.result_task = self._load_all_buckets(
@@ -50,9 +53,11 @@ class BasicCrudTests(MagmaBaseTest):
             if self.active_resident_threshold != 100:
                 for task in self.result_task.keys():
                     self.num_items = task.doc_index
+
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
+
             if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
                 for bucket in self.bucket_util.get_all_buckets():
                     disk_usage = self.get_disk_usage(
@@ -62,29 +67,11 @@ class BasicCrudTests(MagmaBaseTest):
                         "For bucket {} disk usage after initial creation is {}MB\
                         ".format(bucket.name,
                                  self.disk_usage[bucket.name]))
-        self.gen_read = doc_generator(
-            self.key, start_read, end_read,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            key_size=self.key_size,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size,
-            deep_copy=self.deep_copy)
-        self.gen_update = doc_generator(
-            self.key, start, end,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            key_size=self.key_size,
-            mutate=1,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size,
-            deep_copy=self.deep_copy)
+            self.init_items = self.num_items
+            self.end = self.num_items
+
+        self.generate_docs(doc_ops="update:read:delete")
+
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
 
@@ -146,6 +133,7 @@ class BasicCrudTests(MagmaBaseTest):
         self.log.info("Loading and Reading docs parallel")
         count = 0
         init_items = self.num_items
+
         while count < self.test_itr:
             self.log.info("Create Iteration count == {}".format(count))
             for node in self.cluster.nodes_in_cluster:
@@ -153,91 +141,65 @@ class BasicCrudTests(MagmaBaseTest):
                 shell.kill_memcached()
                 shell.disconnect()
             self.doc_ops = "create:read"
-            start = self.num_items
-            end = self.num_items+init_items
-            start_read = self.num_items
-            end_read = self.num_items+init_items
+            self.create_start = self.num_items
+            self.create_end = self.num_items+init_items
+            self.read_start = self.num_items
+            self.read_end = self.num_items+init_items
+
             if self.rev_write:
-                start = -int(self.num_items+init_items - 1)
-                end = -int(self.num_items - 1)
+                self.create_start = -int(self.num_items+init_items - 1)
+                self.create_end = -int(self.num_items - 1)
             if self.rev_read:
-                start_read = -int(self.num_items+init_items - 1)
-                end_read = -int(self.num_items - 1)
-            self.gen_create = doc_generator(
-                self.key, start, end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
+                self.read_start = -int(self.num_items+init_items - 1)
+                self.read_end = -int(self.num_items - 1)
+
+            self.generate_docs(doc_ops="create")
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
             self.log.info("Verifying doc counts after create doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
-            self.gen_read = doc_generator(
-                self.key, start_read, end_read,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
+
+            self.generate_docs(doc_ops="read")
+
             if self.doc_size <= 32:
                 for bucket in self.bucket_util.get_all_buckets():
                     disk_usage = self.get_disk_usage(
                         bucket, self.cluster.nodes_in_cluster)
+                    msg = "Bucket= {}, For Iteration= {},\
+                    SeqTree= {}MB > keyTree= {}MB"
                     self.assertIs(
                         disk_usage[2] > disk_usage[3], True,
-                        "For Bucket {} , Disk Usage for seqIndex'\n' \
-                        After new Creates count {}'\n' \
-                        exceeds keyIndex disk'\n' \
-                        usage".format(bucket.name, count+1))
-            if self.standard_buckets > 1 and self.standard_buckets == self.magma_buckets:
-                disk_usage = dict()
-                for bucket in self.bucket_util.get_all_buckets():
-                    usage = self.get_disk_usage(
-                        bucket, self.cluster.nodes_in_cluster)
-                    disk_usage[bucket.name] = usage[0]
-                    self.assertTrue(
-                        all([disk_usage[disk_usage.keys()[0]] == disk_usage[
-                            key] for key in disk_usage.keys()]),
-                        '''Disk Usage for magma buckets
-                        is not equal for same number of docs ''')
+                        msg.format(bucket.name, count+1,
+                                   disk_usage[3], disk_usage[2]))
             count += 1
         self.log.info("====test_basic_create_read ends====")
 
     def test_update_multi(self):
         """
-        Update all the docs n times, and after each iteration
-        check for space amplificationa and data validation
+        1) Update docs n times, where n gets calculated
+        from fragmentataion value
+        2) After each iteration check for space amplification
+        3) After all iterations validate the data
         """
-        count = 0
-        mutated = 1
-        update_doc_count = int(
-            math.ceil(
-                float(
-                    self.fragmentation * self.num_items) / (
-                        100 - self.fragmentation)))
-        self.log.info("Count of docs to be updated is {}\
-        ".format(update_doc_count))
-        num_update = list()
+        self.log.info("test_update_multi starts")
+
+        update_doc_count = self.get_fragmentation_upsert_doc_count()
+        self.log.info("Upsert doc count={}".format(update_doc_count))
+
+        upsert_list = list()
         while update_doc_count > self.num_items:
-            num_update.append(self.num_items)
+            upsert_list.append(self.num_items)
             update_doc_count -= self.num_items
         if update_doc_count > 0:
-            num_update.append(update_doc_count)
+            upsert_list.append(update_doc_count)
+
+        count = 0
+        self.mutate = 0
         while count < self.test_itr:
-            self.log.info("Update Iteration count == {}".format(count))
-            #for node in self.cluster.nodes_in_cluster:
+            self.log.info("Iteration == {}".format(count+1))
+            # for node in self.cluster.nodes_in_cluster:
             #    shell = RemoteMachineShellConnection(node)
             #    shell.kill_memcached()
             #    shell.disconnect()
@@ -245,79 +207,65 @@ class BasicCrudTests(MagmaBaseTest):
             #                    [self.cluster_util.cluster.master],
             #                    self.bucket_util.buckets[0],
             #                    wait_time=self.wait_timeout * 10))
-            self.log.debug("List of docs to be updated {}\
-            ".format(num_update))
-            for itr in num_update:
+
+            self.log.debug("Upsert list {}".format(upsert_list))
+
+            for itr in upsert_list:
                 self.doc_ops = "update"
-                start = 0
-                end = itr
+                self.update_start = 0
+                self.update_end = itr
+
                 if self.rev_update:
-                    start = -int(itr - 1)
-                    end = 1
-                self.gen_update = doc_generator(
-                    self.key, start, end,
-                    doc_size=self.doc_size,
-                    doc_type=self.doc_type,
-                    target_vbucket=self.target_vbucket,
-                    vbuckets=self.cluster_util.vbuckets,
-                    key_size=self.key_size,
-                    mutate=mutated,
-                    randomize_doc_size=self.randomize_doc_size,
-                    randomize_value=self.randomize_value,
-                    mix_key_size=self.mix_key_size,
-                    deep_copy=self.deep_copy)
-                mutated += 1
-                _ = self.loadgen_docs(
-                    self.retry_exceptions,
-                    self.ignore_exceptions,
-                    _sync=True)
+                    self.update_start = -int(itr - 1)
+                    self.update_end = 1
+
+                self.generate_docs(doc_ops="update")
+
+                _ = self.loadgen_docs(self.retry_exceptions,
+                                      self.ignore_exceptions,
+                                      _sync=True)
+
                 self.log.info("Waiting for ep-queues to get drained")
                 self.bucket_util._wait_for_stats_all_buckets()
+
             # Space Amplification check
+            msg = "Fragmentation value for {} stats exceeds\
+            the configured value"
             _result = self.check_fragmentation_using_magma_stats(
                 self.buckets[0],
                 self.cluster.nodes_in_cluster)
             self.assertIs(_result, True,
-                          "Fragmentation value exceeds from '\n' \
-                          the configured fragementaion value")
+                          msg.format("magma"))
 
             _r = self.check_fragmentation_using_bucket_stats(
                 self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
-                          "Fragmentation value exceeds from '\n' \
-                          the configured fragementaion value")
+                          msg.format("KV"))
 
-            disk_usage = self.get_disk_usage(
-                self.buckets[0],
-                self.cluster.nodes_in_cluster)
+            disk_usage = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)
             _res = disk_usage[0]
-            self.log.info("After update count {} disk usage is {}\
-            ".format(count + 1, _res))
-            usage_factor = (
-                (float(
-                    self.num_items + sum(num_update)
+            self.log.info("Update Iteration- {}, Disk Usage- {}MB\
+            ".format(count+1, _res))
+
+            usage_factor = ((float(
+                    self.num_items + sum(upsert_list)
                     ) / self.num_items) + 0.5)
-            self.log.debug("Disk usage factor is {}".format(usage_factor))
-            self.assertIs(
-                _res > usage_factor * self.disk_usage[
-                    self.disk_usage.keys()[0]],
-                False, "Disk Usage {}MB After Update'\n' \
-                Count {} exceeds Actual'\n' \
-                disk usage {}MB by {}'\n' \
-                times".format(
-                    _res, count,
-                    self.disk_usage[self.disk_usage.keys()[0]],
-                    usage_factor))
+            self.log.debug("Disk usage factor = {}".format(usage_factor))
+
+            msg = "Iteration= {}, Disk Usage = {}MB\
+            exceeds {} times from Actual disk usage = {}MB"
+            self.assertIs(_res > usage_factor * self.disk_usage[
+                self.disk_usage.keys()[0]],
+                False, msg.format(count+1, _res, usage_factor,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
             # Spcae Amplification check ends
             count += 1
-        data_validation = self.task.async_validate_docs(
-            self.cluster, self.bucket_util.buckets[0],
-            self.gen_update, "update", 0,
-            batch_size=self.batch_size,
-            process_concurrency=self.process_concurrency,
-            pause_secs=5, timeout_secs=self.sdk_timeout)
-        self.task.jython_task_manager.get_task_result(data_validation)
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster, disable=False)
+
+        self.validate_data("update", self.gen_update)
+
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
         self.log.info("====test_update_multi ends====")
 
     def test_multi_update_delete(self):
@@ -331,12 +279,18 @@ class BasicCrudTests(MagmaBaseTest):
         Repeat all above steps test_itr times
         Step 4 : Do data validation for newly create docs
         """
+        self.log.info("==== test_multi_update_delete starts =====")
+
         count = 0
-        mutated = 1
+        msg_stats = "Fragmentation value for {} stats exceeds\
+        the configured value"
+        msg = "{} Iteration= {}, Disk Usage = {}MB\
+         exceeds 2.5 times from Actual disk usage = {}MB"
+
+        self.mutate = 0
         for i in range(self.test_itr):
+            self.log.info("Step 1, Iteration= {}".format(i+1))
             while count < self.update_itr:
-                self.log.debug("Iteration {}: Step 1 of test_multi_update_delete \
-                ".format(self.test_itr+1))
                 #for node in self.cluster.nodes_in_cluster:
                 #    shell = RemoteMachineShellConnection(node)
                 #    shell.kill_memcached()
@@ -346,176 +300,131 @@ class BasicCrudTests(MagmaBaseTest):
                 #                    self.bucket_util.buckets[0],
                 #                    wait_time=self.wait_timeout * 10))
                 self.doc_ops = "update"
-                start = 0
-                end = self.num_items
+                self.update_start = 0
+                self.update_end = self.num_items
                 if self.rev_update:
-                    start = -int(self.num_items - 1)
-                    end = 1
-                self.gen_update = doc_generator(
-                    self.key, start, end,
-                    doc_size=self.doc_size,
-                    doc_type=self.doc_type,
-                    target_vbucket=self.target_vbucket,
-                    vbuckets=self.cluster_util.vbuckets,
-                    key_size=self.key_size,
-                    mutate=mutated,
-                    randomize_doc_size=self.randomize_doc_size,
-                    randomize_value=self.randomize_value,
-                    mix_key_size=self.mix_key_size,
-                    deep_copy=self.deep_copy)
-                mutated += 1
+                    self.update_start = -int(self.num_items - 1)
+                    self.update_end = 1
+
+                self.generate_docs(doc_ops="update")
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
                                       _sync=True)
+
                 self.log.info("Waiting for ep-queues to get drained")
                 self.bucket_util._wait_for_stats_all_buckets()
+
                 # Space amplification check
                 _result = self.check_fragmentation_using_magma_stats(
                     self.buckets[0],
                     self.cluster.nodes_in_cluster)
                 self.assertIs(_result, True,
-                              "Fragmentation value exceeds from '\n' \
-                              the configured fragementaion value")
+                              msg_stats.format("magma"))
 
                 _r = self.check_fragmentation_using_bucket_stats(
                     self.buckets[0], self.cluster.nodes_in_cluster)
                 self.assertIs(_r, True,
-                              "Fragmentation value exceeds from '\n' \
-                              the configured fragementaion value")
+                              msg_stats.format("KV"))
 
-                disk_usage = self.get_disk_usage(
-                    self.buckets[0],
-                    self.cluster.nodes_in_cluster)
+                disk_usage = self.get_disk_usage(self.buckets[0],
+                                                 self.cluster.nodes_in_cluster)
+
                 _res = disk_usage[0]
-                self.log.info("After update count {} disk usage is {}MB\
+
+                self.log.info("Update Iteration- {}, Disk Usage- {}MB\
                 ".format(count+1, _res))
                 self.assertIs(
                     _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
-                    False, "Disk Usage {}MB After \
-                    Update Count {} exceeds Actual \
-                    disk usage {}MB by 2.5\
-                    times".format(_res, count,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
-                # Spcae amplification check ends
+                    False, msg.format("update", count+1, _res,
+                                      self.disk_usage[self.disk_usage.keys()[0]]))
+                # Spcae Amplification check ends
+
                 count += 1
-            # Will check data validatio only in the last
-            # iteration of test_tr to avoid multiple
-            # data validation, that is why below if check
-            if i+1 == self.test_itr:
-                data_validation = self.task.async_validate_docs(
-                    self.cluster, self.bucket_util.buckets[0],
-                    self.gen_update, "update", 0,
-                    batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency,
-                    pause_secs=5,
-                    timeout_secs=self.sdk_timeout)
-                self.task.jython_task_manager.get_task_result(data_validation)
-
             self.update_itr += self.update_itr
-            self.log.debug("Iteration {}: Step 2 of test_multi_update_delete \
-            ".format(self.test_itr+1))
-            start_del = 0
-            end_del = self.num_items//2
-            if self.rev_del:
-                start_del = -int(self.num_items//2 - 1)
-                end_del = 1
-            self.gen_delete = doc_generator(
-                self.key, start_del, end_del,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
-            self.log.info("Deleting num_items//2 docs")
+
+            # data validation is done only for the last iteration
+            if i+1 == self.test_itr:
+                self.validate_data("update", self.gen_update)
+
+            self.log.debug("Step 2, Iteration {}".format(i+1))
             self.doc_ops = "delete"
+
+            self.delete_start = 0
+            self.delete_end = self.num_items//2
+            if self.rev_del:
+                self.delete_start = -int(self.num_items//2 - 1)
+                self.delete_end = 1
+
+            self.generate_docs(doc_ops="delete")
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
+
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
-            # Space amplification check 
-            _result = self.check_fragmentation_using_magma_stats(
-                self.buckets[0],
-                self.cluster.nodes_in_cluster)
-            self.assertIs(_result, True,
-                          "Fragmentation value exceeds from '\n' \
-                          the configured fragementaion value")
 
-            _r = self.check_fragmentation_using_bucket_stats(
-                 self.buckets[0], self.cluster.nodes_in_cluster)
-            self.assertIs(_r, True,
-                          "Fragmentation value exceeds from '\n' \
-                          the configured fragementaion value")
-
-            disk_usage = self.get_disk_usage(
-                self.buckets[0],
-                self.cluster.nodes_in_cluster)
-            _res = disk_usage[0]
-            self.log.info("After delete count {} disk usage is {}MB\
-            ".format(i+1, _res))
-            self.assertIs(
-                _res > 2.5 * self.disk_usage[
-                    self.disk_usage.keys()[0]],
-                False, "Disk Usage {}MB After \
-                Delete count {} exceeds Actual \
-                disk usage {}MB by 2.5 \
-                times".format(_res, i+1,
-                              self.disk_usage[self.disk_usage.keys()[0]]))
-            # Space amplification check ends
-
-            self.log.debug("Iteration{}: Step 3 of test_multi_update_delete \
-            ".format(self.test_itr+1))
-            self.gen_create = copy.deepcopy(self.gen_delete)
-            self.log.info("Recreating num_items//2 docs")
-            self.doc_ops = "create"
-            _ = self.loadgen_docs(self.retry_exceptions,
-                                  self.ignore_exceptions,
-                                  _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
             # Space amplification check
             _result = self.check_fragmentation_using_magma_stats(
                 self.buckets[0],
                 self.cluster.nodes_in_cluster)
             self.assertIs(_result, True,
-                          "Fragmentation value exceeds from '\n' \
-                          the configured fragementaion value")
+                          msg_stats.format("magma"))
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                 self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_r, True,
+                          msg_stats.format("KV"))
+
+            disk_usage = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)
+            _res = disk_usage[0]
+            self.log.info("Delete Iteration {}, Disk Usage- {}MB\
+            ".format(i+1, _res))
+            self.assertIs(
+                _res > 2.5 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                False, msg.format(
+                    "delete", i+1, _res,
+                    self.disk_usage[self.disk_usage.keys()[0]]))
+            # Space amplification check ends
+
+            self.log.debug("Step 3, Iteration= {}\
+            ".format(i+1))
+
+            self.gen_create = copy.deepcopy(self.gen_delete)
+            self.doc_ops = "create"
+
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+            # Space amplification check
+            _result = self.check_fragmentation_using_magma_stats(
+                self.buckets[0],
+                self.cluster.nodes_in_cluster)
+            self.assertIs(_result, True,
+                          msg_stats.format("magma"))
 
             _r = self.check_fragmentation_using_bucket_stats(
                 self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
-                          "Fragmentation value exceeds from '\n' \
-                          the configured fragementaion value")
+                          msg_stats.format("KV"))
 
-            disk_usage = self.get_disk_usage(
-                self.buckets[0],
-                self.cluster.nodes_in_cluster)
+            disk_usage = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)
             _res = disk_usage[0]
-            self.log.info("disk usage after new create \
-            is {}".format(_res))
-            self.assertIs(
-                _res > 2.5 * self.disk_usage[
-                    self.disk_usage.keys()[0]],
-                False, "Disk Usage {}MB After \
-                new Creates count {} exceeds \
-                Actual disk usage {}MB by \
-                2.5 times".format(_res, i+1,
+            self.log.info("Create Iteration{}, Disk Usage= {}MB \
+            ".format(i+1, _res))
+            self.assertIs(_res > 2.5 * self.disk_usage[
+                self.disk_usage.keys()[0]],
+                False, msg.format("Create", _res, i+1,
                                   self.disk_usage[self.disk_usage.keys()[0]]))
-            # Space amplification ends
-        self.log.debug("Iteration{}: Step 4 of test_multi_update_delete \
-        ".format(self.test_itr+1))
-        data_validation = self.task.async_validate_docs(
-            self.cluster, self.bucket_util.buckets[0],
-            self.gen_create, "create", 0,
-            batch_size=self.batch_size,
-            process_concurrency=self.process_concurrency,
-            pause_secs=5,
-            timeout_secs=self.sdk_timeout)
-        self.task.jython_task_manager.get_task_result(data_validation)
+            # Space amplification Check  ends
+
+        self.validate_data("create", self.gen_create)
         self.log.info("====test_multiUpdate_delete ends====")
 
     def test_update_rev_update(self):
@@ -783,8 +692,7 @@ class BasicCrudTests(MagmaBaseTest):
         single doc, since we are not worried about what
         should be the final val of mutate in doc
         semaphores have been avoided(also to speed up
-        the execution of test)
-        v
+        the execution of test
         """
         self.doc_ops = "update"
 
@@ -792,18 +700,9 @@ class BasicCrudTests(MagmaBaseTest):
                                 self.bucket_util.buckets[0],
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection)
-        self.gen_update = doc_generator(
-                self.key, 0, 1,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                mutate=0,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
+
+        self.gen_update = self.genrate_docs_basic(start=0, end=1)
+
         key, val = self.gen_update.next()
         for node in self.cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(node)
@@ -823,7 +722,7 @@ class BasicCrudTests(MagmaBaseTest):
         threads = []
         start = 0
         end = 0
-        for t in range(10):
+        for _ in range(10):
             start = end
             end += 100000
             th = threading.Thread(
@@ -837,18 +736,18 @@ class BasicCrudTests(MagmaBaseTest):
         self.bucket_util._wait_for_stats_all_buckets()
 
         # Space amplification check
+        msg_stats = "Fragmentation value for {} stats exceeds\
+        the configured value"
         _result = self.check_fragmentation_using_magma_stats(
             self.buckets[0],
             self.cluster.nodes_in_cluster)
         self.assertIs(_result, True,
-                      "Fragmentation value exceeds from '\n' \
-                      the configured fragementaion value")
+                      msg_stats.format("magma"))
 
         _r = self.check_fragmentation_using_bucket_stats(
             self.buckets[0], self.cluster.nodes_in_cluster)
         self.assertIs(_r, True,
-                      "Fragmentation value exceeds from '\n' \
-                      the configured fragementaion value")
+                      msg_stats.format("KV"))
 
         disk_usage = self.get_disk_usage(
             self.buckets[0],
@@ -856,15 +755,13 @@ class BasicCrudTests(MagmaBaseTest):
         self.log.debug("Disk usage after updates {}".format(
             disk_usage))
         _res = disk_usage[0]
+        msg = "Disk Usage = {}MB exceeds 2.2 times \
+        from Actual disk usage = {}MB"
         self.assertIs(
             _res > 2.2 * self.disk_usage[
                 self.disk_usage.keys()[0]],
-            False, "Disk Usage {}MB After '\n\'\
-            Updates exceeds '\n\'\
-            Actual disk usage {}MB by '\n'\
-            2.2 times".format(_res,
-                              self.disk_usage[
-                                  self.disk_usage.keys()[0]]))
+            False,
+            msg.format(_res, self.disk_usage[self.disk_usage.keys()[0]]))
         # Space amplification check ends
 
         success, fail = self.client.get_multi([key],
@@ -880,11 +777,11 @@ class BasicCrudTests(MagmaBaseTest):
         self.log.debug("Expected_val= {} and actual_val = {}\
         ".format(expected_val, actual_val))
         self.assertIs(expected_val == actual_val, True,
-                      msg="Expected and Actual value differs'\n' \
-                      expected_val== {} and Actual_val =={}\
+                      msg="expected_val-{} != Actual_val-{}\
                       ".format(expected_val, actual_val))
 
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster, disable=False)
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
         self.log.info("====test_update_single_doc_n_times====")
 
     def test_read_docs_using_multithreads(self):
@@ -893,35 +790,23 @@ class BasicCrudTests(MagmaBaseTest):
         """
         self.log.info("Reading docs parallelly using multi threading")
         tasks_info = dict()
-        update_doc_count = int(
-            math.ceil(
-                float(
-                    self.fragmentation * self.num_items) / (
-                        100 - self.fragmentation)))
-        self.log.info("Count of docs to be updated is {}\
-        ".format(update_doc_count))
-        num_update = list()
+        update_doc_count = self.get_fragmentation_upsert_doc_count()
+        self.log.info("Upsert doc count={}".format(update_doc_count))
+
+        upsert_list = list()
         while update_doc_count > self.num_items:
-            num_update.append(self.num_items)
+            upsert_list.append(self.num_items)
             update_doc_count -= self.num_items
         if update_doc_count > 0:
-            num_update.append(update_doc_count)
-        for itr in num_update:
+            upsert_list.append(update_doc_count)
+
+        for itr in upsert_list:
             self.doc_ops = "update"
-            start = 0
-            end = itr
-            self.gen_update = doc_generator(
-                self.key, start, end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                mutate=0,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
+            self.update_start = 0
+            self.update_end = itr
+            self.mutate = -1
+            self.generate_docs(doc_ops="update")
+
             update_task_info = self.loadgen_docs(
                 self.retry_exceptions,
                 self.ignore_exceptions,
@@ -961,7 +846,7 @@ class BasicCrudTests(MagmaBaseTest):
             tasks_info.update(read_task_info.items())
             count += 1
             if self.next_half and count < self.read_thread_count:
-                read_tasks_info = self.bucket_util._async_validate_docs(
+                read_task_info = self.bucket_util._async_validate_docs(
                     self.cluster, g_read, "read", 0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
@@ -990,21 +875,11 @@ class BasicCrudTests(MagmaBaseTest):
                         self.cluster.nodes_in_cluster)[2:4])
         self.log.debug("Initial Disk usage for keyTree and SeqTree is '\n'\
         {}MB and {} MB".format(keyTree, seqTree))
-        count = 0
-        start = 0
-        end = self.num_items
-        self.gen_delete = doc_generator(
-            self.key, start, end,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            key_size=self.key_size,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size,
-            deep_copy=self.deep_copy)
+        self.delete_start = 0
+        self.delete_end = self.num_items
+        self.generate_docs(doc_ops="delete")
 
+        count = 0
         while count < self.test_itr:
             self.doc_ops = "delete"
             _ = self.loadgen_docs(self.retry_exceptions,
@@ -1269,82 +1144,64 @@ class BasicCrudTests(MagmaBaseTest):
         Check disk_usage after each Iteration
         """
         self.log.info("Deletion and Creation of docs parallelly")
-        count = 0
         init_items = self.num_items
-        self.gen_delete = doc_generator(
-            self.key, 0, self.num_items,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            key_size=self.key_size,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value,
-            mix_key_size=self.mix_key_size,
-            deep_copy=self.deep_copy)
+
+        self.create_end = self.num_items
+        self.delete_end = self.num_items
+
         self.doc_ops = "create:delete"
+
+        count = 0
         while count < self.test_itr:
             self.log.info("Iteration {}".format(count+1))
-            start = self.num_items
-            end = self.num_items+init_items
-            start_del = self.num_items
-            end_del = self.num_items+init_items
             if self.rev_write:
-                start = -int(self.num_items+init_items - 1)
-                end = -int(self.num_items - 1)
+                self.create_start = -int(self.create_end + init_items - 1)
+                self.create_end = -int(self.create_end - 1)
+            else:
+                self.create_start = self.create_end
+                self.create_end += init_items
+
             if self.rev_del:
-                start_del = -int(self.num_items+init_items - 1)
-                end_del = -int(self.num_items - 1)
-            self.gen_create = doc_generator(
-                self.key, start, end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
+                self.delete_start = -int(self.delete_end + init_items - 1)
+                self.delete_end = -int(self.delete_end - 1)
+            else:
+                self.delete_start = self.delete_end
+                self.delete_end += init_items
+
+            self.generate_docs(doc_ops="create")
+
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
+
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
-            self.gen_delete = doc_generator(
-                self.key, start_del, end_del,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy)
+
+            self.generate_docs(doc_ops="delete")
+
+            if self.rev_write:
+                self.create_end = -(self.create_start-1)
+            if self.rev_del:
+                self.delete_end = -(self.delete_start-1)
+
             disk_usage = self.get_disk_usage(
                 self.buckets[0],
                 self.cluster.nodes_in_cluster)
             if self.doc_size <= 32:
+                msg = "Iteration={}, SeqTree={}MB exceeds keyTree={}MB"
                 self.assertIs(
                     disk_usage[2] >= disk_usage[3], True,
-                    "seqIndex usage = {}MB'\n' \
-                    after Iteration {}'\n' \
-                    exceeds keyIndex usage={}MB'\n' \
-                    ".format(disk_usage[3],
-                             count+1,
-                             disk_usage[2]))
-            self.assertIs(
-                disk_usage[0] > 2.2 * self.disk_usage[
+                    msg.format(count+1, disk_usage[3], disk_usage[2]))
+            else:
+                msg = "Iteration={}, Disk Usage={}MB exceeds by {} times\
+                from  Usage={}MB"
+                self.assertIs(disk_usage[0] > 1.4 * self.disk_usage[
                     self.disk_usage.keys()[0]],
-                False, "Disk Usage {}MB After '\n\'\
-                Updates exceeds '\n\'\
-                Actual disk usage {}MB by '\n'\
-                2.2 times".format(disk_usage[0],
-                                  self.disk_usage[
-                                      self.disk_usage.keys()[0]]))
+                False, msg.format(count+1, disk_usage[0], 1.4,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
             count += 1
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster, disable=False)
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
         self.log.info("====test_parallel_create_delete ends====")
 
     def test_drop_collections_after_upserts(self):

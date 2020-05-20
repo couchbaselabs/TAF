@@ -16,6 +16,7 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+import traceback
 
 
 class AutoFailoverBaseTest(BaseTestCase):
@@ -31,6 +32,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                 self.collectionSetUp()
             except Exception as exception:
                 self.sdk_client_pool.shutdown()
+                traceback.print_exc()
                 raise exception
         else:
             self.auto_reprovision = self.input.param("auto_reprovision", False)
@@ -956,6 +958,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 self.collectionSetUp()
             except Exception as exception:
                 self.sdk_client_pool.shutdown()
+                traceback.print_exc()
                 raise exception
 
         # If updated, update in 'DurabilityHelper.durability_succeeds' as well

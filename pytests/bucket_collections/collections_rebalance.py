@@ -469,7 +469,8 @@ class CollectionsRebalance(CollectionBase):
                                                         self.bucket_util.buckets,
                                                         doc_loading_spec,
                                                         mutation_num=0,
-                                                        async_load=async_load)
+                                                        async_load=async_load,
+                                                        batch_size=self.batch_size)
         return tasks
 
     def async_data_load(self):

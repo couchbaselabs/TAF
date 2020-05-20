@@ -2934,7 +2934,7 @@ class PrintBucketStats(Task):
         'samples' in bucket_stats['op'] and \
         'ep_queue_size' in bucket_stats['op']['samples']:
             ep_q_size = bucket_stats['op']['samples']['ep_queue_size'][-1]
-            self.log.info("ep_queue_size for {}: {}\
+            self.test_log.info("ep_queue_size for {}: {}\
             ".format(self.bucket.name, ep_q_size))
 
     def plot_all_graphs(self):

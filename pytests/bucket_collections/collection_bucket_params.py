@@ -75,7 +75,7 @@ class BucketParams(CollectionBase):
     def load_docs(self, task, cluster, buckets, load_spec):
         # Load docs
         doc_loading_task = self.bucket_util.run_scenario_from_spec(task, cluster,
-                                                buckets, load_spec)
+                                                buckets, load_spec, batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Doc_loading failed")
 

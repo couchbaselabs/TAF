@@ -66,6 +66,12 @@ class volume(BaseTestCase):
         self.skip_read_on_error = False
         self.suppress_error_table = False
 
+        self.disable_magma_commit_points = self.input.param(
+            "disable_magma_commit_points", False)
+        self.fragmentation = int(self.input.param("fragmentation", 50))
+        self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
+                                                       False)
+
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
         self.info = self.rest.get_nodes_self()
@@ -441,9 +447,10 @@ class volume(BaseTestCase):
         self.get_bucket_dgm(self.bucket)
         crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if len(crashes) > 0:
+            self.PrintStep("Crashes found on server: %s" % crashes)
+        if self.assert_crashes_on_load:
             self.task.jython_task_manager.abort_all_tasks()
-
-        self.assertTrue(len(crashes) == 0, "Found servers having crashes")
+            self.assertTrue(len(crashes) == 0, "Found servers having crashes")
 
     def get_magma_disk_usage(self, bucket=None):
         if bucket is None:
@@ -1044,9 +1051,21 @@ class volume(BaseTestCase):
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and 10 collections.")
         self.bucket = self.create_required_buckets()
-        self.bucket_util.update_bucket_props(
-                "backend", "magma;magma_max_commit_points=0",
-                self.bucket_util.buckets)
+        props = "magma"
+        update_bucket_props = False
+
+        if self.disable_magma_commit_points:
+            props += ";magma_max_commit_points=0"
+            update_bucket_props = True
+
+        if self.fragmentation != 50:
+            props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
+            update_bucket_props = True
+
+        if update_bucket_props:
+            self.bucket_util.update_bucket_props(
+                    "backend", props,
+                    self.bucket_util.buckets)
 
         self.scope_name = "VolumeScope"
         collection_prefix = "VolumeCollection"

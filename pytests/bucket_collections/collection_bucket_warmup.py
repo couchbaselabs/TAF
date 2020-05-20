@@ -3,6 +3,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from Cb_constants import CbServer
 from error_simulation.cb_error import CouchbaseError
 
+
 class BucketWarmup(CollectionBase):
     def setUp(self):
         super(BucketWarmup, self).setUp()
@@ -42,7 +43,8 @@ class BucketWarmup(CollectionBase):
                                             self.cluster,
                                             self.bucket_util.buckets,
                                             doc_loading_spec,
-                                            mutation_num=0)
+                                            mutation_num=0,
+                                            batch_size=self.batch_size)
 
     def perform_operation_during_bucket_warmup(self, during_warmup="default"):
         # stop memcached in master node
@@ -131,3 +133,5 @@ class BucketWarmup(CollectionBase):
 
     def tearDown(self):
         self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
+        super(BucketWarmup, self).tearDown()
+

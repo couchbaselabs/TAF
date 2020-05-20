@@ -1,15 +1,15 @@
+import math
 import os
-import copy
 
 from BucketLib.bucket import Bucket
+from Cb_constants.CBServer import CbServer
 from basetestcase import BaseTestCase
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
-from sdk_exceptions import SDKException
 from remote.remote_util import RemoteMachineShellConnection
-from cb_tools.cbstats import Cbstats
+from sdk_exceptions import SDKException
 from testconstants import INDEX_QUOTA, CBAS_QUOTA, FTS_QUOTA
-from Cb_constants.CBServer import CbServer
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -99,6 +99,18 @@ class MagmaBaseTest(BaseTestCase):
         self.gen_delete = None
         self.gen_read = None
         self.gen_update = None
+        self.mutate = 0
+        self.start = 0
+        self.init_items = 0
+        self.end = 0
+        self.create_end = 0
+        self.create_start = 0
+        self.update_end = 0
+        self.update_start = 0
+        self.delete_end = 0
+        self.delete_start = 0
+        self.read_end = 0
+        self.read_start = 0
         self.buckets = self.bucket_util.get_all_buckets()
         self.num_collections = self.input.param("num_collections", 2)
         self.num_scopes = self.input.param("num_scopes", 1)
@@ -400,3 +412,89 @@ class MagmaBaseTest(BaseTestCase):
             if value > self.fragmentation:
                 return False
         return True
+
+    def genrate_docs_basic(self, start, end, mutate=0):
+        return doc_generator(self.key, start, end,
+                             doc_size=self.doc_size,
+                             doc_type=self.doc_type,
+                             target_vbucket=self.target_vbucket,
+                             vbuckets=self.cluster_util.vbuckets,
+                             key_size=self.key_size,
+                             randomize_doc_size=self.randomize_doc_size,
+                             randomize_value=self.randomize_value,
+                             mix_key_size=self.mix_key_size,
+                             mutate=mutate,
+                             deep_copy=self.deep_copy)
+
+    def generate_docs(self, doc_ops=None,
+                      create_end=None, create_start=None,
+                      create_mutate=0,
+                      update_end=None, update_start=None,
+                      update_mutate=0,
+                      read_end=None, read_start=None,
+                      read_mutate=0,
+                      delete_end=None, delete_start=None):
+
+        if doc_ops is None:
+            doc_ops = self.doc_ops
+
+        if "update" in doc_ops:
+            if update_start is not None:
+                self.update_start = update_start
+            if update_end is not None:
+                self.update_end = update_end
+
+            self.mutate += 1
+            self.gen_update = self.genrate_docs_basic(self.update_start,
+                                                      self.update_end,
+                                                      self.mutate)
+
+        if "delete" in doc_ops:
+            if delete_start is not None:
+                self.delete_start = delete_start
+            if delete_end is not None:
+                self.delete_end = delete_end
+
+            self.gen_delete = self.genrate_docs_basic(self.delete_start,
+                                                      self.delete_end,
+                                                      read_mutate)
+
+        if "create" in doc_ops:
+            if create_start is not None:
+                self.create_start = create_start
+            if create_end is not None:
+                self.create_end = create_end
+
+            self.gen_create = self.genrate_docs_basic(self.create_start,
+                                                      self.create_end,
+                                                      create_mutate)
+
+        if "read" in doc_ops:
+            if read_start is not None:
+                self.read_start = read_start
+            if read_end is not None:
+                self.read_end = read_end
+
+            self.gen_read = self.genrate_docs_basic(self.read_start,
+                                                    self.read_end)
+
+    def get_fragmentation_upsert_doc_count(self):
+        """
+         This function gives the doc count need to be updated
+         to touch the given fragmentation value
+        """
+        update_doc_count = int(math.ceil(float(
+                    self.fragmentation * self.num_items) / (
+                        100 - self.fragmentation)))
+        return update_doc_count
+
+    def validate_data(self,  op_type, kv_gen):
+        self.log.info("Validating Docs")
+        for bucket in self.bucket_util.buckets:
+            task = self.task.async_validate_docs(
+                    self.cluster, bucket, kv_gen, op_type, 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    pause_secs=5, timeout_secs=self.sdk_timeout)
+
+        self.task.jython_task_manager.get_task_result(task)

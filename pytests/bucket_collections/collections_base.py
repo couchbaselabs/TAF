@@ -8,6 +8,7 @@ from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
+import traceback
 
 
 class CollectionBase(BaseTestCase):
@@ -19,12 +20,15 @@ class CollectionBase(BaseTestCase):
         except Exception as exception:
             # Shutdown client pool in case of any error before failing
             self.sdk_client_pool.shutdown()
+            # print the tracback of the failure
+            traceback.print_exc()
             # Throw the exception so that the test will fail at setUp
             raise exception
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
-        self.bucket_util.remove_scope_collections_and_validate()
+        if not self.skip_collections_cleanup:
+            self.bucket_util.remove_scope_collections_and_validate()
         super(CollectionBase, self).tearDown()
 
     def collection_setup(self):
@@ -39,6 +43,9 @@ class CollectionBase(BaseTestCase):
 
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
+        self.skip_collections_cleanup = self.input.param("skip_collections_cleanup", False)
+        self.batch_size = self.input.param("batch_size", 200)
+
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
         if self.num_replicas > 1:
@@ -101,7 +108,8 @@ class CollectionBase(BaseTestCase):
                 self.cluster,
                 self.bucket_util.buckets,
                 doc_loading_spec,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
@@ -141,6 +149,7 @@ class CollectionBase(BaseTestCase):
                 self.cluster,
                 self.bucket_util.buckets,
                 new_data_load_template,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Extra doc loading task failed")

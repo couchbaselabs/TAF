@@ -198,7 +198,8 @@ class CBASBaseTest(BaseTestCase):
                                           start_key=0, end_key=1000,
                                           batch_size=10, exp=0,
                                           _async=False,
-                                          durability=""):
+                                          durability="",
+                                          mutation_num=0):
         """
         Create/Update/Delete docs in all cb buckets
         :param operation: String - "create","update","delete"
@@ -208,6 +209,7 @@ class CBASBaseTest(BaseTestCase):
         :param exp: MaxTTL used for doc operations
         :param _async: Boolean to decide whether to start ops in parallel
         :param durability: Durability level to use for doc operation
+        :param mutation_num: Mutation count to keep track per doc_loading
         :return:
         """
         first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
@@ -217,9 +219,7 @@ class CBASBaseTest(BaseTestCase):
         template_obj.put("number", 0)
         template_obj.put("first_name", "")
         template_obj.put("profession", "")
-        template_obj.put("mutated", 0)
-        if operation == "update":
-            template_obj.put("mutated", 1)
+        template_obj.put("mutated", mutation_num)
         template_obj.put("mutation_type", "ADD")
 
         doc_gen = DocumentGenerator('test_docs', template_obj,

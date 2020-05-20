@@ -11,6 +11,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from BucketLib.BucketOperations import BucketHelper
 from math import ceil
+import traceback
 
 retry_exceptions = list([SDKException.AmbiguousTimeoutException,
                          SDKException.DurabilityImpossibleException,
@@ -60,6 +61,7 @@ class RebalanceBaseTest(BaseTestCase):
                 self.collection_setup()
             except Exception as exception:
                 self.sdk_client_pool.shutdown()
+                traceback.print_exc()
                 raise exception
         else:
             if self.standard_buckets > 10:
