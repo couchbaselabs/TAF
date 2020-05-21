@@ -2199,20 +2199,26 @@ class StatsWaitTask(Task):
     def _get_all_stats_and_compare(self):
         stat_result = 0
         val_dict = dict()
-        try:
-            for cb_stat_obj in self.cbstatObjList:
-                tem_stat = cb_stat_obj.all_stats(self.bucket.name,
-                                                 field_to_grep=self.stat,
-                                                 stat_name=self.statCmd)
-                val_dict[cb_stat_obj.shellConn.ip] = tem_stat
-                if tem_stat and tem_stat != "None":
-                    stat_result += int(tem_stat)
-        except Exception as error:
-            for shell in self.shellConnList:
-                shell.disconnect()
-            self.set_exception(error)
-            self.stop = True
-            return False
+        retry = 10
+        while retry > 0:
+            try:
+                for cb_stat_obj in self.cbstatObjList:
+                    tem_stat = cb_stat_obj.all_stats(self.bucket.name,
+                                                     field_to_grep=self.stat,
+                                                     stat_name=self.statCmd)
+                    val_dict[cb_stat_obj.shellConn.ip] = tem_stat
+                    if tem_stat and tem_stat != "None":
+                        stat_result += int(tem_stat)
+            except Exception as error:
+                if retry > 0:
+                    retry -= 1
+                    sleep(5, "MC is down. Retrying.. %s" % str(error))
+                    continue
+                for shell in self.shellConnList:
+                    shell.disconnect()
+                self.set_exception(error)
+                self.stop = True
+                return False
         if not self._compare(self.comparison, str(stat_result), self.value):
             self.test_log.debug("Not Ready: %s %s %s %s. "
                                 "Received: %s for bucket '%s'"
