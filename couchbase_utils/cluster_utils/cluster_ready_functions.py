@@ -257,8 +257,15 @@ class ClusterUtils:
                     break
 
     def change_env_variables(self):
-        if self.vbuckets != 1024 or self.upr is not None:
-            for server in self.cluster.servers:
+        for server in self.cluster.servers:
+            remote_client = RemoteMachineShellConnection(server)
+            vb_on_node, _ = remote_client.execute_command("grep ^COUCHBASE_NUM_VBUCKETS \
+            /opt/couchbase/bin/couchbase-server | cut -d \"=\" -f 2",)
+            if vb_on_node:
+                vb_on_node = int(vb_on_node[0])
+            else:
+                vb_on_node = 1024
+            if self.vbuckets != vb_on_node or self.upr is not None:
                 env_dict = {}
                 if self.vbuckets:
                     env_dict["COUCHBASE_NUM_VBUCKETS"] = self.vbuckets
@@ -268,9 +275,8 @@ class ClusterUtils:
                     else:
                         env_dict["COUCHBASE_REPL_TYPE"] = "tap"
                 if len(env_dict) >= 1:
-                    remote_client = RemoteMachineShellConnection(server)
                     remote_client.change_env_variables(env_dict)
-                    remote_client.disconnect()
+            remote_client.disconnect()
             self.log.debug("========= CHANGED ENVIRONMENT SETTING ===========")
 
         self.log.debug("Wait for all the services to come up after "
@@ -278,9 +284,9 @@ class ClusterUtils:
         sleep(10, log_type="infra")
 
     def reset_env_variables(self):
-        if self.vbuckets != 1024 or self.upr is not None:
+        if self.upr is not None:
             for server in self.cluster.servers:
-                if self.upr or self.vbuckets:
+                if self.upr:
                     remote_client = RemoteMachineShellConnection(server)
                     remote_client.reset_env_variables()
                     remote_client.disconnect()
