@@ -1,5 +1,8 @@
 import json
+from math import ceil
 
+import traceback
+from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from bucket_utils.bucket_ready_functions import BucketUtils
@@ -9,9 +12,8 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
-from BucketLib.BucketOperations import BucketHelper
-from math import ceil
-import traceback
+
+from java.lang import Exception as Java_base_exception
 
 retry_exceptions = list([SDKException.AmbiguousTimeoutException,
                          SDKException.DurabilityImpossibleException,
@@ -59,10 +61,10 @@ class RebalanceBaseTest(BaseTestCase):
         if self.spec_name is not None:
             try:
                 self.collection_setup()
+            except Java_base_exception as exception:
+                self.handle_collection_setup_exception(exception)
             except Exception as exception:
-                self.sdk_client_pool.shutdown()
-                traceback.print_exc()
-                raise exception
+                self.handle_collection_setup_exception(exception)
         else:
             if self.standard_buckets > 10:
                 self.bucket_util.change_max_buckets(self.standard_buckets)
@@ -174,6 +176,11 @@ class RebalanceBaseTest(BaseTestCase):
     def tearDown(self):
         self.cluster_util.print_cluster_stats()
         super(RebalanceBaseTest, self).tearDown()
+
+    def handle_collection_setup_exception(self, exception_obj):
+        self.sdk_client_pool.shutdown()
+        traceback.print_exc()
+        raise exception_obj
 
     def collection_setup(self):
         self.log.info("Creating buckets from spec")

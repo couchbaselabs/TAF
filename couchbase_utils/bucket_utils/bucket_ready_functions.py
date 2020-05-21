@@ -4167,22 +4167,8 @@ class BucketUtils(ScopeUtils):
             shell = RemoteMachineShellConnection(node)
             cb_stat_objects.append(Cbstats(shell))
 
-        # Fetch aggregated collection's doc_count from cbstats
-        def_collection_exists = True
-        if bucket \
-                .scopes[CbServer.default_scope] \
-                .collections[CbServer.default_collection].is_dropped:
-            def_collection_exists = False
-
         for cb_stat in cb_stat_objects:
             tem_collection_data = cb_stat.get_collections(bucket)
-            if tem_collection_data["default_exists"] != def_collection_exists:
-                status = False
-                self.log.error("%s - Mismatch in 'default_exists' field. "
-                               "Expected: %s, Actual: %s"
-                               % (cb_stat.shellConn.ip,
-                                  tem_collection_data["default_exists"],
-                                  def_collection_exists))
             if collection_data is None:
                 collection_data = tem_collection_data
             else:

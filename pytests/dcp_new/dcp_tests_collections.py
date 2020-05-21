@@ -11,9 +11,14 @@ import json
 from cb_tools.cbstats import Cbstats
 from threading import Thread
 
+
 class DcpTestCase(DCPBase):
     def setUp(self):
         super(DcpTestCase, self).setUp()
+
+    def tearDown(self):
+        self.dcp_client.close()
+        super(DcpTestCase, self).tearDown()
 
     def check_dcp_event(self, collection_name, output_string, event="create_collection", count=1):
         if event == "create_collection":
