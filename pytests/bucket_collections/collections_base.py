@@ -121,6 +121,7 @@ class CollectionBase(BaseTestCase):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
+        self.sleep(20, "Sleep for sometime before printing cluster stats")
         self.cluster_util.print_cluster_stats()
 
         # Verify initial doc load count
