@@ -114,7 +114,6 @@ class MagmaBaseTest(BaseTestCase):
         self.buckets = self.bucket_util.get_all_buckets()
         self.num_collections = self.input.param("num_collections", 2)
         self.num_scopes = self.input.param("num_scopes", 1)
-        self.num_items = self.num_items // 2
 
         # self.thread_count is used to define number of thread use
         # to read same number of documents parallelly

@@ -1184,6 +1184,16 @@ class BasicCrudTests(MagmaBaseTest):
             if self.rev_del:
                 self.delete_end = -(self.delete_start-1)
 
+            # Space Amplification Check
+            msg_stats = "{} stats fragmentation exceeds configured value"
+            _result = self.check_fragmentation_using_magma_stats(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_result, True, msg_stats.format("magma"))
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_r, True, msg_stats.format("KV"))
+
             disk_usage = self.get_disk_usage(
                 self.buckets[0],
                 self.cluster.nodes_in_cluster)
@@ -1193,13 +1203,39 @@ class BasicCrudTests(MagmaBaseTest):
                     disk_usage[2] >= disk_usage[3], True,
                     msg.format(count+1, disk_usage[3], disk_usage[2]))
             else:
-                msg = "Iteration={}, Disk Usage={}MB exceeds by {} times\
-                from  Usage={}MB"
-                self.assertIs(disk_usage[0] > 1.4 * self.disk_usage[
+                msg = "Iteration={}, Disk Usage={}MB > {} * init_Usage={}MB"
+                self.assertIs(disk_usage[0] > 2.5 * self.disk_usage[
                     self.disk_usage.keys()[0]],
-                False, msg.format(count+1, disk_usage[0], 1.4,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
+                    False, msg.format(count+1, disk_usage[0], 2.5,
+                                      self.disk_usage[self.disk_usage.keys()[0]]))
+            #Space Amplifacation check Ends
             count += 1
+
+        self.doc_ops = "delete"
+        self.gen_delete = copy.deepcopy(self.gen_create)
+        _ = self.loadgen_docs(self.retry_exceptions,
+                              self.ignore_exceptions,
+                              _sync=True)
+
+        #Space Amplifaction check after all deletes
+        _result = self.check_fragmentation_using_magma_stats(
+            self.buckets[0], self.cluster.nodes_in_cluster)
+        self.assertIs(_result, True, msg_stats.format("magma"))
+
+        _r = self.check_fragmentation_using_bucket_stats(
+            self.buckets[0], self.cluster.nodes_in_cluster)
+        self.assertIs(_r, True, msg_stats.format("KV"))
+
+        disk_usage = self.get_disk_usage(
+                self.buckets[0],
+                self.cluster.nodes_in_cluster)
+        msg = "Disk Usage={}MB > {} * init_Usage={}MB"
+        self.assertIs(disk_usage[0] > 0.4 * self.disk_usage[
+            self.disk_usage.keys()[0]], False,
+            msg.format(disk_usage[0], 0.4,
+                       self.disk_usage[self.disk_usage.keys()[0]]))
+        # Space Amplifiaction check ends
+
         self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
                                        disable=False)
         self.log.info("====test_parallel_create_delete ends====")
