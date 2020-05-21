@@ -10,6 +10,7 @@ from couchbase_helper.documentgenerator import doc_generator
 import json
 from cb_tools.cbstats import Cbstats
 from threading import Thread
+from BucketLib.BucketOperations import BucketHelper
 
 
 class DcpTestCase(DCPBase):
@@ -70,15 +71,18 @@ class DcpTestCase(DCPBase):
             client_stream['stream'].close()
 
     def get_collection_id(self, bucket_name, scope_name, collection_name=None):
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstats = Cbstats(shell)
-        if collection_name:
-            field = scope_name + ':' + collection_name + ':' + 'id:'
-            cid_stat = cbstats.get_stats(bucket_name, "collections", field)[0][0]
-        else:
-            field = scope_name + ':id:'
-            cid_stat = cbstats.get_stats(bucket_name, "scopes", field)[0][0]
-        return cid_stat.split('0x')[-1].strip()
+        status, content = BucketHelper(self.cluster.master).list_collections(bucket_name)
+        content = json.loads(content)
+        for scope in content["scopes"]:
+            if scope["name"] == scope_name:
+                uid = scope["uid"]
+                if collection_name:
+                    collection_list = scope["collections"]
+                    for collection in collection_list:
+                        if collection["name"] == collection_name:
+                            uid = collection["uid"]
+                            break
+        return uid
 
     def get_total_items_scope(self, bucket, scope_name):
         scope_items= 0
