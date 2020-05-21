@@ -2219,6 +2219,7 @@ class StatsWaitTask(Task):
                 self.set_exception(error)
                 self.stop = True
                 return False
+            break
         if not self._compare(self.comparison, str(stat_result), self.value):
             self.test_log.debug("Not Ready: %s %s %s %s. "
                                 "Received: %s for bucket '%s'"
