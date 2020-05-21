@@ -188,8 +188,9 @@ class CrashTest(CollectionBase):
             if client_type == "sdk":
                 client.drop_scope(scope)
             elif client_type == "rest":
-                self.bucket_util.drop_scope(self.cluster.master, bucket_obj,
-                                            {"name": scope})
+                self.bucket_util.drop_scope(self.cluster.master,
+                                            bucket_obj,
+                                            scope)
             else:
                 self.log_failure("Invalid client_type provided")
 
@@ -198,7 +199,7 @@ class CrashTest(CollectionBase):
             self.fail("Need atleast two KV nodes to run this test")
 
         client = None
-        scope_action = self.input.param("scope_action", "create")
+        action = self.input.param("action", "create")
         crash_during = self.input.param("crash_during", "pre_action")
         data_load_option = self.input.param("data_load_option", None)
         crash_type = self.input.param("simulate_error",
@@ -215,7 +216,7 @@ class CrashTest(CollectionBase):
         if self.client_type == "sdk":
             client = SDKClient([self.cluster.master], self.bucket)
 
-        if scope_action == "remove":
+        if action == "remove":
             # Create a scope to be removed
             use_client = sample(["sdk", "rest"], 1)[0]
             create_scope(use_client, self.bucket, self.scope_name)
@@ -234,9 +235,9 @@ class CrashTest(CollectionBase):
         if crash_during == "pre_action":
             cb_error.create(crash_type)
 
-        if scope_action == "create":
+        if action == "create":
             create_scope(self.client_type, self.bucket, self.scope_name)
-        elif scope_action == "remove":
+        elif action == "remove":
             remove_scope(self.client_type, self.bucket, self.scope_name)
 
         if crash_during == "post_action":
@@ -283,8 +284,9 @@ class CrashTest(CollectionBase):
             if client_type == "sdk":
                 client.drop_collection(scope, collection)
             elif client_type == "rest":
-                self.bucket_util.drop_scope(self.cluster.master, bucket_obj,
-                                            {"name": scope})
+                self.bucket_util.drop_scope(self.cluster.master,
+                                            bucket_obj,
+                                            scope)
             else:
                 self.log_failure("Invalid client_type provided")
 
@@ -293,7 +295,7 @@ class CrashTest(CollectionBase):
             self.fail("Need atleast two KV nodes to run this test")
 
         client = None
-        scope_action = self.input.param("scope_action", "create")
+        action = self.input.param("action", "create")
         crash_during = self.input.param("crash_during", "pre_action")
         data_load_option = self.input.param("data_load_option", None)
         crash_type = self.input.param("simulate_error",
@@ -313,8 +315,9 @@ class CrashTest(CollectionBase):
         if self.client_type == "sdk":
             client = SDKClient([self.cluster.master], self.bucket)
 
-        if scope_action == "remove":
-            # Create a scope to be removed
+        if action == "remove" \
+                and self.collection_name != CbServer.default_collection:
+            # Create a collection to be removed
             use_client = sample(["sdk", "rest"], 1)[0]
             create_collection(use_client, self.bucket,
                               self.scope_name, self.collection_name)
@@ -334,10 +337,10 @@ class CrashTest(CollectionBase):
         if crash_during == "pre_action":
             cb_error.create(crash_type)
 
-        if scope_action == "create":
+        if action == "create":
             create_collection(self.client_type, self.bucket,
                               self.scope_name, self.collection_name)
-        elif scope_action == "remove":
+        elif action == "remove":
             remove_collection(self.client_type, self.bucket,
                               self.scope_name, self.collection_name)
 
