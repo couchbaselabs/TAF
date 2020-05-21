@@ -24,16 +24,17 @@ class DcpTestCase(DCPBase):
     def check_dcp_event(self, collection_name, output_string, event="create_collection", count=1):
         if event == "create_collection":
             cmd = "CollectionCREATED, name:"+ collection_name
-            event_count = len(list(filter(lambda x: cmd in x, output_string))) * count
-            if event_count == len(self.vbuckets):
+            event_count = len(list(filter(lambda x: cmd in x, output_string)))
+            if event_count == (len(self.vbuckets) * count):
                 self.log.info("number of collection creation event matches %s"% event_count)
             else:
                 self.log_failure("mismatch in collection creation event, " \
                 "expected:%s but actual %s"% (len(self.vbuckets), event_count))
 
         if event == "drop_collection":
-            event_count = len(list(filter(lambda x: "CollectionDROPPED" in x, output_string)))
-            if event_count == len(self.vbuckets):
+            event_count = \
+                len(list(filter(lambda x: "CollectionDROPPED" in x, output_string)))
+            if event_count == (len(self.vbuckets) * count):
                 self.log.info("number of collection drop event matches %s"% event_count)
             else:
                 self.log_failure("mismatch in collection drop events, " \
@@ -71,7 +72,7 @@ class DcpTestCase(DCPBase):
             client_stream['stream'].close()
 
     def get_collection_id(self, bucket_name, scope_name, collection_name=None):
-        status, content = BucketHelper(self.cluster.master).list_collections(bucket_name)
+        status, content = self.bucket_helper_obj.list_collections(bucket_name)
         content = json.loads(content)
         for scope in content["scopes"]:
             if scope["name"] == scope_name:
@@ -216,6 +217,7 @@ class DcpTestCase(DCPBase):
     def test_stream_entire_bucket(self):
         # get all the scopes
         scope_list = self.bucket_util.get_active_scopes(self.bucket)
+        expected_item_count = self.bucket_util.get_expected_total_num_items(self.bucket)
 
         # drop scope before streaming dcp events
         scope_name = self.get_scope_name()
@@ -227,8 +229,6 @@ class DcpTestCase(DCPBase):
 
         # stream dcp events and verify events
         output_string = self.get_dcp_event()
-        rest = RestConnection(self.cluster.master)
-        expected_item_count = sum(rest.get_buckets_itemCount().values())
         actual_item_count = len(list(filter(lambda x: 'CMD_MUTATION' in x, output_string)))
         if expected_item_count != actual_item_count:
             self.log_failure("item count mismatch, expected %s actual %s"\
@@ -244,8 +244,7 @@ class DcpTestCase(DCPBase):
 
         if scope_name != CbServer.default_scope:
             self.check_dcp_event(scope_name, output_string, "drop_scope")
-            for collection in self.collection_list:
-                self.check_dcp_event(collection.name, output_string, "drop_collection")
+            self.check_dcp_event(collection.name, output_string, "drop_collection", len(self.collection_list))
 
         self.validate_test_failure()
 
