@@ -1034,6 +1034,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             for server in self.cluster.servers:
                 self._initialize_node_with_new_data_location(
                     server, self.original_data_path)
+        if self.sdk_client_pool:
+            self.sdk_client_pool.shutdown()
         self.log.info("=========Finished Diskautofailover teardown ==========")
 
     def enable_disk_autofailover(self):
