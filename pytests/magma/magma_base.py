@@ -483,15 +483,23 @@ class MagmaBaseTest(BaseTestCase):
             self.gen_read = self.genrate_docs_basic(self.read_start,
                                                     self.read_end)
 
-    def get_fragmentation_upsert_doc_count(self):
+    def get_fragmentation_upsert_docs_list(self):
         """
-         This function gives the doc count need to be updated
-         to touch the given fragmentation value
+         This function gives the list of "number of docs" need
+         to be updated to touch the given fragmentation value
         """
         update_doc_count = int(math.ceil(float(
                     self.fragmentation * self.num_items) / (
                         100 - self.fragmentation)))
-        return update_doc_count
+
+        upsert_doc_list = list()
+        while update_doc_count > self.num_items:
+            upsert_doc_list.append(self.num_items)
+            update_doc_count -= self.num_items
+        if update_doc_count > 0:
+            upsert_doc_list.append(update_doc_count)
+        self.log.info("Upsert list {}".format(upsert_doc_list))
+        return upsert_doc_list
 
     def validate_data(self,  op_type, kv_gen):
         self.log.info("Validating Docs")
@@ -503,3 +511,18 @@ class MagmaBaseTest(BaseTestCase):
                     pause_secs=5, timeout_secs=self.sdk_timeout)
 
         self.task.jython_task_manager.get_task_result(task)
+
+    def sigkill_memcached(self, nodes=None, graceful=False):
+        if not nodes:
+            nodes = self.cluster.nodes_in_cluster
+            for node in nodes:
+                shell = RemoteMachineShellConnection(node)
+                if graceful:
+                    shell.restart_couchbase()
+                else:
+                    shell.kill_memcached()
+                shell.disconnect()
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    [self.cluster_util.cluster.master],
+                    self.bucket_util.buckets[0],
+                    wait_time=self.wait_timeout * 20))
