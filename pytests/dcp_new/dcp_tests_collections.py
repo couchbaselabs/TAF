@@ -175,11 +175,10 @@ class DcpTestCase(DCPBase):
         elif self.operation == "kill_memcached":
             self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
             if self.remote_shell.info.type.lower()== 'windows':
-                self._execute_command('taskkill /F /T /IM memcached*')
+                self.remote_shell.execute_command('taskkill /F /T /IM memcached*')
             else:
-                self._execute_command('killall -9 memcached')
-            # wait for server to be up
-            self.wait_for_warmup(self.cluster.master.ip,  self.cluster.master.port)
+                self.remote_shell.execute_command('killall -9 memcached')
+            self.sleep(10)
 
     def verify_operation(self, operation, mutation_count):
         self.dcp_client = self.initialise_cluster_connections()
@@ -319,7 +318,7 @@ class DcpTestCase(DCPBase):
             self.bucket_util.create_collection(self.cluster.master,
                                            self.bucket,
                                            scope_name,
-                                           collection_name)
+                                           {"name": collection_name})
 
         # get scope id and create a filter file
         scope_id = self.get_collection_id(self.bucket.name, scope_name)
