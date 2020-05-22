@@ -45,7 +45,8 @@ class CollectionBase(BaseTestCase):
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
         ttl_buckets = ["multi_bucket.buckets_for_rebalance_tests_with_ttl",
-                       "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl"]
+                       "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
+                       "multi_bucket.buckets_for_volume_tests_with_ttl"]
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
 
