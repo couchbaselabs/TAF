@@ -559,8 +559,7 @@ class SDKExceptionTests(CollectionBase):
                     batch_size=1, process_concurrency=8,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,
-                    print_ops_rate=False,
-                    skip_read_on_error=True)
+                    print_ops_rate=False)
 
         # Start the doc_ops tasks
         for op_type in doc_gen.keys():
