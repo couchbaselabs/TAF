@@ -32,7 +32,7 @@ class volume(CollectionBase):
         # "before" - start and finish before rebalance/failover starts at each step
         # "during" - during rebalance/failover at each step
         self.data_load_stage = self.input.param("data_load_stage", "during")
-        self.use_doc_ttl = self.input.param("use_doc_ttl", "False")
+        self.use_doc_ttl = self.input.param("use_doc_ttl", False)
         self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
         self.skip_collections_cleanup = True
 
