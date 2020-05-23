@@ -168,6 +168,7 @@ class Cbstats(CbCmdBase):
 
         # Populate generic manifest stats
         manifest_uid = manifest_uid_pattern.findall(str(output))[0]
+        collection_data["count"] = 0
         collection_data["manifest_uid"] = int(manifest_uid)
 
         # Fetch all available collection names
@@ -195,6 +196,7 @@ class Cbstats(CbCmdBase):
             collection_data[scope_name][c_name] = dict()
             collection_data[scope_name][c_name]["id"] = c_id
             collection_data[scope_name][c_name]["num_items"] = items_match
+            collection_data["count"] += 1
 
         return collection_data
 
