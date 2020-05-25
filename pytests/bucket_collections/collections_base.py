@@ -31,7 +31,8 @@ class CollectionBase(BaseTestCase):
 
     def handle_collection_setup_exception(self, exception_obj):
         # Shutdown client pool in case of any error before failing
-        self.sdk_client_pool.shutdown()
+        if self.sdk_client_pool is not None:
+            self.sdk_client_pool.shutdown()
         # print the tracback of the failure
         traceback.print_exc()
         # Throw the exception so that the test will fail at setUp

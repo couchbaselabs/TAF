@@ -178,7 +178,8 @@ class RebalanceBaseTest(BaseTestCase):
         super(RebalanceBaseTest, self).tearDown()
 
     def handle_collection_setup_exception(self, exception_obj):
-        self.sdk_client_pool.shutdown()
+        if self.sdk_client_pool is not None:
+            self.sdk_client_pool.shutdown()
         traceback.print_exc()
         raise exception_obj
 
