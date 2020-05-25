@@ -95,9 +95,22 @@ def merge_xmls(rerun_document):
             relative_paths.append(artifact["relativePath"])
     logs = []
     for rel_path in relative_paths:
-        xml_data = get_jenkins_params.download_url_data("{0}artifact/"
-                                                        "{1}".format(
-            job_url, rel_path))
+        got_data = False
+        retries = 5
+        xml_data = None
+        while not got_data and retries > 0:
+            xml_data = get_jenkins_params.download_url_data(
+                "{0}artifact/"
+                "{1}".format(
+                    job_url, rel_path))
+            if xml_data:
+                got_data = True
+            else:
+                retries -= 1
+        if not xml_data:
+            print("Could not reach the URL. Skipping for now. "
+                  "Reconcile with data from %s" % (job_url))
+            continue
         try:
             file_name = rel_path.split('/')[-1]
             file_name = "Old_Report_{0}".format(file_name)

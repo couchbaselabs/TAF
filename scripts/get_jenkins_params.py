@@ -72,7 +72,8 @@ def download_url_data(url, params=None):
         res = urllib2.urlopen(full_url)
         raw_data = res.read()
         return raw_data
-    except:
+    except Exception as e:
         print("[Error] url unreachable: %s" % url)
+        print(e)
         res = None
     return res
