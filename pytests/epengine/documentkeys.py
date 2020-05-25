@@ -9,7 +9,6 @@ from couchbase_helper.document import View
 class DocumentKeysTests(BaseTestCase):
     def setUp(self):
         super(DocumentKeysTests, self).setUp()
-        self.key_length = self.input.param("key_length", None)
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -139,23 +138,23 @@ class DocumentKeysTests(BaseTestCase):
 
     def test_dockey_whitespace_data_ops(self):
         generic_key = "d o c k e y"
-        if self.key_length:
-            self.key_length = self.key_length-len(generic_key)
-            generic_key = generic_key + "_" * self.key_length
+        if self.key_size:
+            self.key_size = self.key_size-len(generic_key)
+            generic_key = generic_key + "_" * self.key_size
         self._dockey_data_ops(generic_key)
 
     def test_dockey_binary_data_ops(self):
         generic_key = "d\ro\nckey"
-        if self.key_length:
-            self.key_length = self.key_length-len(generic_key)
-            generic_key = generic_key + "\n" * self.key_length
+        if self.key_size:
+            self.key_size = self.key_size-len(generic_key)
+            generic_key = generic_key + "\n" * self.key_size
         self._dockey_data_ops(generic_key)
 
     def test_dockey_unicode_data_ops(self):
         generic_key = "\u00CA"
-        if self.key_length:
-            self.key_length = self.key_length-len(generic_key)
-            generic_key = generic_key + "é" * self.key_length
+        if self.key_size:
+            self.key_size = self.key_size-len(generic_key)
+            generic_key = generic_key + "é" * self.key_size
         self._dockey_data_ops(generic_key)
 
     def test_dockey_whitespace_views(self):

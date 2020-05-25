@@ -454,23 +454,23 @@ class BasicOps(CollectionBase):
 
     def test_dockey_whitespace_data_ops(self):
         generic_key = "d o c k e y"
-        if self.key_length:
-            self.key_length = self.key_length-len(generic_key)
-            generic_key = generic_key + "_" * self.key_length
+        if self.key_size:
+            self.key_size = self.key_size-len(generic_key)
+            generic_key = generic_key + "_" * self.key_size
         self.__dockey_data_ops(generic_key)
 
     def test_dockey_binary_data_ops(self):
         generic_key = "d\ro\nckey"
-        if self.key_length:
-            self.key_length = self.key_length-len(generic_key)
-            generic_key = generic_key + "\n" * self.key_length
+        if self.key_size:
+            self.key_size = self.key_size-len(generic_key)
+            generic_key = generic_key + "\n" * self.key_size
         self.__dockey_data_ops(generic_key)
 
     def test_dockey_unicode_data_ops(self):
         generic_key = "\u00CA"
-        if self.key_length:
-            self.key_length = self.key_length-len(generic_key)
-            generic_key = generic_key + "é" * self.key_length
+        if self.key_size:
+            self.key_size = self.key_size-len(generic_key)
+            generic_key = generic_key + "é" * self.key_size
         self.__dockey_data_ops(generic_key)
 
     def test_doc_key_size(self):

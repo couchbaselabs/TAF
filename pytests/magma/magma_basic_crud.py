@@ -14,7 +14,7 @@ from sdk_client3 import SDKClient
 class BasicCrudTests(MagmaBaseTest):
     def setUp(self):
         super(BasicCrudTests, self).setUp()
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
+        #self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
         self.disk_usage = dict()
 
         self.create_start = 0
@@ -185,32 +185,14 @@ class BasicCrudTests(MagmaBaseTest):
         """
         self.log.info("test_update_multi starts")
 
-        update_doc_count = self.get_fragmentation_upsert_doc_count()
-        self.log.info("Upsert doc count={}".format(update_doc_count))
-
-        upsert_list = list()
-        while update_doc_count > self.num_items:
-            upsert_list.append(self.num_items)
-            update_doc_count -= self.num_items
-        if update_doc_count > 0:
-            upsert_list.append(update_doc_count)
+        upsert_doc_list = self.get_fragmentation_upsert_docs_list()
 
         count = 0
         self.mutate = 0
         while count < self.test_itr:
             self.log.info("Iteration == {}".format(count+1))
-            # for node in self.cluster.nodes_in_cluster:
-            #    shell = RemoteMachineShellConnection(node)
-            #    shell.kill_memcached()
-            #    shell.disconnect()
-            #    self.assertTrue(self.bucket_util._wait_warmup_completed(
-            #                    [self.cluster_util.cluster.master],
-            #                    self.bucket_util.buckets[0],
-            #                    wait_time=self.wait_timeout * 10))
 
-            self.log.debug("Upsert list {}".format(upsert_list))
-
-            for itr in upsert_list:
+            for itr in upsert_doc_list:
                 self.doc_ops = "update"
                 self.update_start = 0
                 self.update_end = itr
@@ -220,11 +202,9 @@ class BasicCrudTests(MagmaBaseTest):
                     self.update_end = 1
 
                 self.generate_docs(doc_ops="update")
-
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
                                       _sync=True)
-
                 self.log.info("Waiting for ep-queues to get drained")
                 self.bucket_util._wait_for_stats_all_buckets()
 
@@ -249,7 +229,7 @@ class BasicCrudTests(MagmaBaseTest):
             ".format(count+1, _res))
 
             usage_factor = ((float(
-                    self.num_items + sum(upsert_list)
+                    self.num_items + sum(upsert_doc_list)
                     ) / self.num_items) + 0.5)
             self.log.debug("Disk usage factor = {}".format(usage_factor))
 
@@ -790,17 +770,9 @@ class BasicCrudTests(MagmaBaseTest):
         """
         self.log.info("Reading docs parallelly using multi threading")
         tasks_info = dict()
-        update_doc_count = self.get_fragmentation_upsert_doc_count()
-        self.log.info("Upsert doc count={}".format(update_doc_count))
+        update_doc_list = self.get_fragmentation_upsert_docs_list()
 
-        upsert_list = list()
-        while update_doc_count > self.num_items:
-            upsert_list.append(self.num_items)
-            update_doc_count -= self.num_items
-        if update_doc_count > 0:
-            upsert_list.append(update_doc_count)
-
-        for itr in upsert_list:
+        for itr in upsert_doc_list:
             self.doc_ops = "update"
             self.update_start = 0
             self.update_end = itr
@@ -1184,6 +1156,16 @@ class BasicCrudTests(MagmaBaseTest):
             if self.rev_del:
                 self.delete_end = -(self.delete_start-1)
 
+            # Space Amplification Check
+            msg_stats = "{} stats fragmentation exceeds configured value"
+            _result = self.check_fragmentation_using_magma_stats(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_result, True, msg_stats.format("magma"))
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_r, True, msg_stats.format("KV"))
+
             disk_usage = self.get_disk_usage(
                 self.buckets[0],
                 self.cluster.nodes_in_cluster)
@@ -1193,13 +1175,39 @@ class BasicCrudTests(MagmaBaseTest):
                     disk_usage[2] >= disk_usage[3], True,
                     msg.format(count+1, disk_usage[3], disk_usage[2]))
             else:
-                msg = "Iteration={}, Disk Usage={}MB exceeds by {} times\
-                from  Usage={}MB"
-                self.assertIs(disk_usage[0] > 1.4 * self.disk_usage[
+                msg = "Iteration={}, Disk Usage={}MB > {} * init_Usage={}MB"
+                self.assertIs(disk_usage[0] > 2.5 * self.disk_usage[
                     self.disk_usage.keys()[0]],
-                False, msg.format(count+1, disk_usage[0], 1.4,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
+                    False, msg.format(count+1, disk_usage[0], 2.5,
+                                      self.disk_usage[self.disk_usage.keys()[0]]))
+            #Space Amplifacation check Ends
             count += 1
+
+        self.doc_ops = "delete"
+        self.gen_delete = copy.deepcopy(self.gen_create)
+        _ = self.loadgen_docs(self.retry_exceptions,
+                              self.ignore_exceptions,
+                              _sync=True)
+
+        #Space Amplifaction check after all deletes
+        _result = self.check_fragmentation_using_magma_stats(
+            self.buckets[0], self.cluster.nodes_in_cluster)
+        self.assertIs(_result, True, msg_stats.format("magma"))
+
+        _r = self.check_fragmentation_using_bucket_stats(
+            self.buckets[0], self.cluster.nodes_in_cluster)
+        self.assertIs(_r, True, msg_stats.format("KV"))
+
+        disk_usage = self.get_disk_usage(
+                self.buckets[0],
+                self.cluster.nodes_in_cluster)
+        msg = "Disk Usage={}MB > {} * init_Usage={}MB"
+        self.assertIs(disk_usage[0] > 0.4 * self.disk_usage[
+            self.disk_usage.keys()[0]], False,
+            msg.format(disk_usage[0], 0.4,
+                       self.disk_usage[self.disk_usage.keys()[0]]))
+        # Space Amplifiaction check ends
+
         self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
                                        disable=False)
         self.log.info("====test_parallel_create_delete ends====")

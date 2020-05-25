@@ -32,7 +32,8 @@ class volume(CollectionBase):
         # "before" - start and finish before rebalance/failover starts at each step
         # "during" - during rebalance/failover at each step
         self.data_load_stage = self.input.param("data_load_stage", "during")
-        self.use_doc_ttl = self.input.param("use_doc_ttl", "False")
+        self.use_doc_ttl = self.input.param("use_doc_ttl", False)
+        self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
         self.skip_collections_cleanup = True
 
     def tearDown(self):
@@ -101,7 +102,17 @@ class volume(CollectionBase):
 
     def data_validation_collection(self):
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        if self.doc_and_collection_ttl:
+            self.bucket_util._expiry_pager()
+            self.sleep(400, "wait for doc/collection maxttl to finish")
+            items = 0
+            self.bucket_util._wait_for_stats_all_buckets()
+            for bucket in self.bucket_util.buckets:
+                items = items + self.bucket_helper_obj.get_active_key_count(bucket)
+            if items != 0:
+                self.fail("doc count!=0, TTL + rebalance failed")
+        else:
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_volume_taf(self):
         self.loop = 0

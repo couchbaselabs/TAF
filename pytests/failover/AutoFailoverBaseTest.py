@@ -83,7 +83,8 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.bucket_util.print_bucket_stats()
 
     def handle_collection_setup_exception(self, exception_obj):
-        self.sdk_client_pool.shutdown()
+        if self.sdk_client_pool is not None:
+            self.sdk_client_pool.shutdown()
         traceback.print_exc()
         raise exception_obj
 
@@ -981,6 +982,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         raise exception_obj
 
     def collectionSetUp(self):
+        self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.bucket_util.add_rbac_user()
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)

@@ -51,7 +51,7 @@ def get_js(url, params=None):
         return None
 
 
-def download_url_data(url, params=None):
+def download_url_data(url, json_api=False, params=None):
     """
     Download the data from the given url and with given parameters
     from the jenkins job
@@ -65,14 +65,18 @@ def download_url_data(url, params=None):
     res = None
     try:
         url = url.rstrip("/")
-        if params:
-            full_url = '{0}/api/json?{1}'.format(url, params)
+        if json_api:
+            if params:
+                full_url = '{0}/api/json?{1}'.format(url, params)
+            else:
+                full_url = '{0}/api/json'.format(url)
         else:
-            full_url = '{0}/api/json'.format(url)
+            full_url = url
         res = urllib2.urlopen(full_url)
         raw_data = res.read()
         return raw_data
-    except:
+    except Exception as e:
         print("[Error] url unreachable: %s" % url)
+        print(e)
         res = None
     return res

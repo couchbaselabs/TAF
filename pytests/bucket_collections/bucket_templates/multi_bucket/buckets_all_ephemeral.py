@@ -5,7 +5,7 @@ spec = {
     MetaConstants.NUM_BUCKETS: 3,
     MetaConstants.NUM_SCOPES_PER_BUCKET: 3,
     MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 2,
-    MetaConstants.NUM_ITEMS_PER_COLLECTION: 50,
+    MetaConstants.NUM_ITEMS_PER_COLLECTION: 25,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
 
     Bucket.bucketType: Bucket.Type.EPHEMERAL,
@@ -24,7 +24,7 @@ spec = {
         "default": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 10,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
             Bucket.ramQuotaMB: 1500,
             Bucket.bucketType: Bucket.Type.EPHEMERAL,
             "privileges": [
@@ -38,12 +38,12 @@ spec = {
                     "collections": {
                         "collection_1": {
                             "rbac": "rbac1",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         },
                         "collections_2": {
                             "rbac": "rbac2",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         }
                     }
@@ -55,12 +55,12 @@ spec = {
                     "collections": {
                         "collection1": {
                             "rbac": "rbac1",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         },
                         "collection2": {
                             "rbac": "rbac2",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         }
                     }
@@ -80,12 +80,12 @@ spec = {
                     "collections": {
                         "collection1": {
                             "rbac": "rbac1",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         },
                         "collection2": {
                             "rbac": "rbac2",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         }
                     }
@@ -97,12 +97,12 @@ spec = {
                     "collections": {
                         "collection1": {
                             "rbac": "rbac1",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         },
                         "collection2": {
                             "rbac": "rbac2",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         }
                     }
@@ -123,7 +123,7 @@ spec = {
                     "collections": {
                         "collection1": {
                             "rbac": "rbac1",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         }
                     }
@@ -135,12 +135,12 @@ spec = {
                     "collections": {
                         "collection1": {
                             "rbac": "rbac1",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         },
                         "collection2": {
                             "rbac": "rbac2",
-                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         }
                     }

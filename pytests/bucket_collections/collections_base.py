@@ -31,7 +31,8 @@ class CollectionBase(BaseTestCase):
 
     def handle_collection_setup_exception(self, exception_obj):
         # Shutdown client pool in case of any error before failing
-        self.sdk_client_pool.shutdown()
+        if self.sdk_client_pool is not None:
+            self.sdk_client_pool.shutdown()
         # print the tracback of the failure
         traceback.print_exc()
         # Throw the exception so that the test will fail at setUp
@@ -45,7 +46,8 @@ class CollectionBase(BaseTestCase):
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
         ttl_buckets = ["multi_bucket.buckets_for_rebalance_tests_with_ttl",
-                       "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl"]
+                       "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
+                       "multi_bucket.buckets_for_volume_tests_with_ttl"]
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
 
@@ -121,6 +123,7 @@ class CollectionBase(BaseTestCase):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
+        self.sleep(20, "Sleep for sometime before printing cluster stats")
         self.cluster_util.print_cluster_stats()
 
         # Verify initial doc load count

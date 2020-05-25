@@ -186,6 +186,37 @@ class MagmaCrashTests(MagmaFailures):
         self.stop_crash = True
         th.join()
 
+    def test_crash_before_upserts(self):
+        self.log.info("test_update_multi starts")
+
+        upsert_doc_list = self.get_fragmentation_upsert_docs_list()
+
+        count = 0
+        self.mutate = 0
+        while count < self.test_itr:
+            self.log.info("Iteration == {}".format(count+1))
+
+            self.sigkill_memcached()
+
+            for itr in upsert_doc_list:
+                self.doc_ops = "update"
+                self.update_start = 0
+                self.update_end = itr
+
+                if self.rev_update:
+                    self.update_start = -int(itr - 1)
+                    self.update_end = 1
+
+                self.generate_docs(doc_ops="update")
+                _ = self.loadgen_docs(self.retry_exceptions,
+                                      self.ignore_exceptions,
+                                      _sync=True)
+                self.bucket_util._wait_for_stats_all_buckets()
+
+            count += 1
+
+        self.validate_data("update", self.gen_update)
+        self.log.info("====test_update_multi ends====")
 
 class MagmaRollbackTests(MagmaFailures):
 

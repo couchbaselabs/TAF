@@ -5,7 +5,7 @@ spec = {
     MetaConstants.NUM_BUCKETS: 3,
     MetaConstants.NUM_SCOPES_PER_BUCKET: 5,
     MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 40,
-    MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+    MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
 
     Bucket.bucketType: Bucket.Type.MEMBASE,
@@ -22,7 +22,7 @@ spec = {
 
     "buckets": {
         "default": {
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 2500,
             Bucket.ramQuotaMB: 2000,
             Bucket.bucketType: Bucket.Type.MEMBASE,
             "privileges": [
@@ -63,7 +63,7 @@ spec = {
         },
         "bucket1": {
             Bucket.bucketType: Bucket.Type.MEMBASE,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 30,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 15,
             "privileges": [
                 "Perm2"
             ],
@@ -102,7 +102,7 @@ spec = {
         },
         "bucket2": {
             Bucket.bucketType: Bucket.Type.EPHEMERAL,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 30,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 15,
             Bucket.evictionPolicy: Bucket.EvictionPolicy.NO_EVICTION,
             "privileges": [
                 "Perm3"
