@@ -413,7 +413,7 @@ class ClusterUtils:
                 remote_client.disable_firewall()
                 remote_client.disconnect()
 
-    def reset_cluster(self):
+    def reset_cluster(self, crash_warning=False):
         try:
             for node in self.cluster.servers:
                 shell = RemoteMachineShellConnection(node)
@@ -428,7 +428,8 @@ class ClusterUtils:
                 self.stop_server(node)
                 # Delete Path
                 shell.cleanup_data_config(data_path)
-                shell.cleanup_data_config(core_path)
+                if not crash_warning:
+                    shell.cleanup_data_config(core_path)
 
                 self.start_server(node)
                 shell.disconnect()
