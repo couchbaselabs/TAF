@@ -218,6 +218,62 @@ class MagmaCrashTests(MagmaFailures):
         self.validate_data("update", self.gen_update)
         self.log.info("====test_update_multi ends====")
 
+    def test_crash_before_multi_update_deletes(self):
+        self.log.info("===test_crash_before_multi_update_deletes starts===")
+
+        count = 0
+        self.mutate = 0
+        for i in range(self.test_itr):
+            self.log.info("Step 1, Iteration= {}".format(i+1))
+            while count < self.update_itr:
+                self.sigkill_memcached()
+
+                self.doc_ops = "update"
+                self.update_start = 0
+                self.update_end = self.num_items
+
+                self.generate_docs(doc_ops="update")
+                _ = self.loadgen_docs(self.retry_exceptions,
+                                      self.ignore_exceptions,
+                                      _sync=True)
+                self.bucket_util._wait_for_stats_all_buckets()
+
+                count += 1
+            self.update_itr += self.update_itr
+
+            # data validation is done only for the last iteration
+            if i+1 == self.test_itr:
+                self.validate_data("update", self.gen_update)
+
+            self.log.debug("Step 2, Iteration {}".format(i+1))
+            self.sigkill_memcached()
+
+            self.doc_ops = "delete"
+            self.delete_start = 0
+            self.delete_end = self.num_items//2
+
+            self.generate_docs(doc_ops="delete")
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+            self.log.debug("Step 3, Iteration= {}".format(i+1))
+            self.sigkill_memcached()
+
+            self.gen_create = copy.deepcopy(self.gen_delete)
+            self.doc_ops = "create"
+
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        self.validate_data("create", self.gen_create)
+        self.log.info("===test_crash_before_multi_update_deletes ends===")
+
 class MagmaRollbackTests(MagmaFailures):
 
     def test_magma_rollback_n_times(self):
