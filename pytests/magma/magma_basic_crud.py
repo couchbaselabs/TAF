@@ -770,7 +770,7 @@ class BasicCrudTests(MagmaBaseTest):
         """
         self.log.info("Reading docs parallelly using multi threading")
         tasks_info = dict()
-        update_doc_list = self.get_fragmentation_upsert_docs_list()
+        upsert_doc_list = self.get_fragmentation_upsert_docs_list()
 
         for itr in upsert_doc_list:
             self.doc_ops = "update"
