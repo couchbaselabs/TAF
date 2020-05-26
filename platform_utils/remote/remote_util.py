@@ -3496,6 +3496,15 @@ class RemoteMachineShellConnection:
                             os_distro = 'CentOS'
                             os_version = "CentOS 7"
                             is_linux_distro = True
+                    elif redhat_release.lower().find('release 8') != -1:
+                        os_distro = 'CentOS'
+                        os_version = "CentOS 8"
+                        is_linux_distro = True
+                    elif redhat_release.lower().find('red hat enterprise') != -1:
+                        if "8.0" in redhat_release.lower():
+                            os_distro = "Red Hat"
+                            os_version = "rhel8"
+                            is_linux_distro = True
                     else:
                         self.log.error("Could not find OS name."
                                   "It could be unsupport OS")
