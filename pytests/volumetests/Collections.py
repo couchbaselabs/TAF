@@ -121,6 +121,8 @@ class volume(CollectionBase):
             self.log.info("Step 5: Rebalance in with Loading of docs")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
@@ -133,6 +135,8 @@ class volume(CollectionBase):
             self.log.info("Step 6: Rebalance Out with Loading of docs")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
@@ -145,6 +149,8 @@ class volume(CollectionBase):
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
@@ -157,6 +163,8 @@ class volume(CollectionBase):
             self.log.info("Step 8: Swap with Loading of docs")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
@@ -170,6 +178,8 @@ class volume(CollectionBase):
             self.log.info("Step 9: Updating the bucket replica to 2")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
@@ -189,6 +199,8 @@ class volume(CollectionBase):
                 self.log.info("Step 10: Stopping and restarting memcached process")
                 if self.data_load_stage == "before":
                     task = self.data_load_collection(async_load=False)
+                    if task.result is False:
+                        self.fail("Doc loading failed")
                 rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
                 if self.data_load_stage == "during":
                     task = self.data_load_collection()
@@ -202,6 +214,8 @@ class volume(CollectionBase):
             self.log.info("Step 11: Failover a node and RebalanceOut that node with loading in parallel")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
@@ -262,6 +276,8 @@ class volume(CollectionBase):
 
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
@@ -319,6 +335,8 @@ class volume(CollectionBase):
 
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
@@ -372,6 +390,8 @@ class volume(CollectionBase):
             self.log.info("Step 14: Updating the bucket replica to 1")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
+                if task.result is False:
+                    self.fail("Doc loading failed")
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
