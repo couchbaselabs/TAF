@@ -14,7 +14,7 @@ from sdk_client3 import SDKClient
 class BasicCrudTests(MagmaBaseTest):
     def setUp(self):
         super(BasicCrudTests, self).setUp()
-        #self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
         self.disk_usage = dict()
 
         self.create_start = 0
