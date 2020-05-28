@@ -4051,8 +4051,15 @@ class Atomicity(Task):
                  update_count=1, transaction_timeout=5,
                  commit=True, durability=None, sync=True, num_threads=5,
                  record_fail=False, defer=False):
-        super(Atomicity, self).__init__("AtomicityDocLoadTask_%s_%s_%s"
-                                        % (bucket.name, op_type, time.time()))
+
+        t_name = "AtomicityDocLoadTask_"
+        if type(bucket) is list:
+            t_name += '_'.join([b.name for b in bucket])
+        else:
+            t_name += bucket.name
+        t_name += "_%s_%s" % (op_type, time.time())
+
+        super(Atomicity, self).__init__(t_name)
 
         self.generators = generator
         self.cluster = cluster
