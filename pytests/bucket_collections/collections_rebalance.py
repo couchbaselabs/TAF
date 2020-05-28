@@ -168,7 +168,7 @@ class CollectionsRebalance(CollectionBase):
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                             [node], bucket))
                         self.log.info("second attempt to rebalance")
-                        operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                        operation = self.task.async_rebalance(known_nodes + add_nodes, [], [])
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
                 else:
@@ -461,6 +461,7 @@ class CollectionsRebalance(CollectionBase):
 
     def subsequent_data_load(self, async_load=False):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        self.over_ride_template_params(doc_loading_spec)
         if self.forced_hard_failover and self.spec_name == "multi_bucket.buckets_for_rebalance_tests_more_collections":
             # create collections, else if other bucket_spec - then just "create" ops
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
@@ -479,6 +480,12 @@ class CollectionsRebalance(CollectionBase):
 
     def sync_data_load(self):
         self.subsequent_data_load()
+
+    def over_ride_template_params(self, target_spec):
+        for over_ride_param in self.over_ride_spec_params:
+            if over_ride_param == "durability":
+                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
+                    self.durability_level
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)

@@ -2941,7 +2941,7 @@ class PrintBucketStats(Task):
         'samples' in bucket_stats['op'] and \
         'ep_queue_size' in bucket_stats['op']['samples']:
             ep_q_size = bucket_stats['op']['samples']['ep_queue_size'][-1]
-            self.test_log.info("ep_queue_size for {}: {}\
+            self.test_log.debug("ep_queue_size for {}: {}\
             ".format(self.bucket.name, ep_q_size))
 
     def plot_all_graphs(self):
@@ -4051,7 +4051,8 @@ class Atomicity(Task):
                  update_count=1, transaction_timeout=5,
                  commit=True, durability=None, sync=True, num_threads=5,
                  record_fail=False, defer=False):
-        super(Atomicity, self).__init__("AtomicityDocumentsLoadGenTask")
+        super(Atomicity, self).__init__("AtomicityDocLoadTask_%s_%s"
+                                        % (op_type, time.time()))
 
         self.generators = generator
         self.cluster = cluster
@@ -4257,25 +4258,23 @@ class Atomicity(Task):
                                               op_type="create")
                     if not commit:
                         self.all_keys = []
-
-                if op_type == "update" or op_type == "rebalance_only_update":
+                elif op_type == "update" or op_type == "rebalance_only_update":
                     for doc in self.list_docs:
                         self.transaction_load(doc, self.commit,
                                               op_type="update")
                     if self.commit:
                         self.update_keys = self.all_keys
-
-                if op_type == "update_Rollback":
-                    exception = Transaction().RunTransaction(self.transaction, self.bucket, [], self.update_keys, [], False, True, Atomicity.updatecount )
-
-                if op_type == "delete" or op_type == "rebalance_delete":
+                elif op_type == "update_Rollback":
+                    exception = Transaction().RunTransaction(
+                        self.transaction, self.bucket, [], self.update_keys,
+                        [], False, True, Atomicity.updatecount)
+                elif op_type == "delete" or op_type == "rebalance_delete":
                     for doc in self.list_docs:
                         self.transaction_load(doc, self.commit,
                                               op_type="delete")
                     if self.commit:
                         self.delete_keys = self.all_keys
-
-                if op_type == "general_update":
+                elif op_type == "general_update":
                     for client in Atomicity.clients:
                         self.batch_update(self.batch, client,
                                           persist_to=self.persist_to,
@@ -4283,8 +4282,7 @@ class Atomicity(Task):
                                           timeout=self.timeout,
                                           time_unit=self.time_unit,
                                           doc_type=self.generator.doc_type)
-
-                if op_type == "general_delete":
+                elif op_type == "general_delete":
                     self.test_log.debug("Performing delete for keys %s"
                                         % last_batch.keys())
                     for client in Atomicity.clients:
@@ -4296,16 +4294,14 @@ class Atomicity(Task):
                             timeunit=self.time_unit,
                             durability="")
                     self.delete_keys = last_batch.keys()
-
-                if op_type == "rebalance_update" or op_type == "create_update":
+                elif op_type == "rebalance_update" or op_type == "create_update":
                     for i in range(len(self.docs)):
                         self.transaction_load(self.docs[i], self.commit,
                                               self.list_docs[i],
                                               op_type="create")
                     if self.commit:
                        self.update_keys = self.all_keys
-
-                if op_type == "time_out":
+                elif op_type == "time_out":
                     err = Transaction().RunTransaction(
                         self.transaction, self.bucket, docs, [], [],
                         True, True, Atomicity.updatecount)
@@ -4465,9 +4461,9 @@ class Atomicity(Task):
                     except ValueError:
                         self.random.seed(key)
                         index = self.random.choice(range(len(value)))
-                        value = value[0:index] + \
-                                self.random.choice(string.ascii_uppercase) + \
-                                value[index + 1:]
+                        value = value[0:index] \
+                            + self.random.choice(string.ascii_uppercase) \
+                            + value[index + 1:]
                     finally:
                         key_val.remove(item)
                         item = Tuples.of(key, value)
@@ -4476,13 +4472,13 @@ class Atomicity(Task):
 
 class MonitorViewFragmentationTask(Task):
     """
-        Attempt to monitor fragmentation that is occurring for a given design_doc.
-        execute stage is just for preliminary sanity checking of values and environment.
-        Check function looks at index file accross all nodes and attempts to calculate
-        total fragmentation occurring by the views within the design_doc.
-        Note: If autocompaction is enabled and user attempts to monitor for fragmentation
-        value higher than level at which auto_compaction kicks in a warning is sent and
-        it is best user to use lower value as this can lead to infinite monitoring.
+    Attempt to monitor fragmentation that is occurring for a given design_doc.
+    execute stage is just for preliminary sanity checking of values and environment.
+    Check function looks at index file accross all nodes and attempts to calculate
+    total fragmentation occurring by the views within the design_doc.
+    Note: If autocompaction is enabled and user attempts to monitor for fragmentation
+    value higher than level at which auto_compaction kicks in a warning is sent and
+    it is best user to use lower value as this can lead to infinite monitoring.
     """
 
     def __init__(self, server, design_doc_name, fragmentation_value=10,

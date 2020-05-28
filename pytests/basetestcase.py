@@ -189,6 +189,7 @@ class BaseTestCase(unittest.TestCase):
         self.cleanup = False
         self.nonroot = False
         self.test_failure = None
+        self.crash_warning = self.input.param("crash_warning", False)
 
         # Populate memcached_port in case of cluster_run
         cluster_run_base_port = ClusterRun.port
@@ -354,9 +355,13 @@ class BaseTestCase(unittest.TestCase):
             self.sdk_client_pool.shutdown()
         server_with_crashes = self.check_coredump_exist(self.servers)
         self.tearDownEverything()
-        self.assertEqual(len(server_with_crashes), 0,
-                         msg="Test failed, Coredump found on servers {}"
-                         .format(server_with_crashes))
+        if not self.crash_warning:
+            self.assertEqual(len(server_with_crashes), 0,
+                             msg="Test failed, Coredump found on servers {}"
+                             .format(server_with_crashes))
+        if self.crash_warning and len(server_with_crashes) > 0:
+            self.log.warn("Coredump found on servers {}\
+            ".format(server_with_crashes))
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
@@ -420,7 +425,7 @@ class BaseTestCase(unittest.TestCase):
                 self.case_number += 1000
             finally:
                 if not self.input.param("skip_cleanup", False):
-                    cluster_util.reset_cluster()
+                    cluster_util.reset_cluster(crash_warning=self.crash_warning)
                 # stop all existing task manager threads
                 if self.cleanup:
                     self.cleanup = False

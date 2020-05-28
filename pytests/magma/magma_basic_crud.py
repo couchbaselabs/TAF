@@ -14,7 +14,7 @@ from sdk_client3 import SDKClient
 class BasicCrudTests(MagmaBaseTest):
     def setUp(self):
         super(BasicCrudTests, self).setUp()
-        #self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
         self.disk_usage = dict()
 
         self.create_start = 0
@@ -770,7 +770,7 @@ class BasicCrudTests(MagmaBaseTest):
         """
         self.log.info("Reading docs parallelly using multi threading")
         tasks_info = dict()
-        update_doc_list = self.get_fragmentation_upsert_docs_list()
+        upsert_doc_list = self.get_fragmentation_upsert_docs_list()
 
         for itr in upsert_doc_list:
             self.doc_ops = "update"

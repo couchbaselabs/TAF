@@ -12,7 +12,7 @@ import testconstants
 
 from Cb_constants import constants
 from Jython_tasks.task import MonitorActiveTask
-from TestInput import TestInputSingleton
+from TestInput import TestInputSingleton, TestInputServer
 from common_lib import sleep
 from couchbase_cli import CouchbaseCLI
 from global_vars import logger
@@ -413,7 +413,7 @@ class ClusterUtils:
                 remote_client.disable_firewall()
                 remote_client.disconnect()
 
-    def reset_cluster(self):
+    def reset_cluster(self, crash_warning=False):
         try:
             for node in self.cluster.servers:
                 shell = RemoteMachineShellConnection(node)
@@ -428,7 +428,8 @@ class ClusterUtils:
                 self.stop_server(node)
                 # Delete Path
                 shell.cleanup_data_config(data_path)
-                shell.cleanup_data_config(core_path)
+                if not crash_warning:
+                    shell.cleanup_data_config(core_path)
 
                 self.start_server(node)
                 shell.disconnect()
@@ -451,7 +452,7 @@ class ClusterUtils:
         else:
             node_list = []
             for server_info in services_map[service_type]:
-                tokens = server_info.split(":")
+                tokens = server_info.rsplit(":", 1)
                 ip = tokens[0]
                 port = int(tokens[1])
                 for server in servers:
@@ -464,6 +465,24 @@ class ClusterUtils:
                         self.log.debug("convert IP: {0} to hostname: {1}"
                                        .format(server.ip, hostname))
                         server.ip = hostname
+                        shell.disconnect()
+                    elif "couchbase.com" in server.ip and "couchbase.com" not in ip:
+                        node = TestInputServer()
+                        node.ip = ip
+                        """ match node.ip to server in ini file to get correct credential """
+                        for server in servers:
+                            shell = RemoteMachineShellConnection(server)
+                            ips = shell.get_ip_address()
+                            if node.ip in ips:
+                                node.ssh_username = server.ssh_username
+                                node.ssh_password = server.ssh_password
+                                break
+
+                        shell = RemoteMachineShellConnection(node)
+                        hostname = shell.get_full_hostname()
+                        self.log.info("convert IP: {0} to hostname: {1}" \
+                                      .format(ip, hostname))
+                        ip = hostname
                         shell.disconnect()
                     if (port != constants.port and port == int(server.port)) \
                             or (port == constants.port and server.ip == ip):

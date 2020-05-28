@@ -205,6 +205,10 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         else:
             task = self.data_load_from_spec(async_load=True)
         self.failover_actions[self.failover_action]()
+        count = 0
+        while self.get_failover_count() != self.num_node_failures and count < 5:
+            self.sleep(30)
+            count += 1
         for node in self.servers_to_add:
             self.rest.add_node(user=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
