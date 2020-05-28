@@ -1,4 +1,3 @@
-import time
 from basetestcase import BaseTestCase
 from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
@@ -95,7 +94,7 @@ class basic_ops(BaseTestCase):
             output, _ = shell.execute_command('date')
             self.log.info('Date after is set behind {0}'.format(output))
 
-        self.log.info("going to create a task")
+        self.log.info("Loading docs using AtomicityTask")
         task = self.task.async_load_gen_docs_atomicity(
             self.cluster, self.bucket_util.buckets,
             gen_create, self.op_type, exp=0,

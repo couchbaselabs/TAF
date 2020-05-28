@@ -291,7 +291,6 @@ class ServerTasks(object):
                                       collection=CbServer.default_collection,
                                       start_task=True):
 
-        self.log.info("Loading documents ")
         bucket_list = list()
         client_list = list()
         gen_start = int(generator.start)
