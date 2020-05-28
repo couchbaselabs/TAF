@@ -149,7 +149,8 @@ class RebalanceBaseTest(BaseTestCase):
             bucket_type=self.bucket_type,
             replica=self.num_replicas,
             storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
+            eviction_policy=self.bucket_eviction_policy,
+            bucket_durability=self.bucket_durability_level)
 
     def _create_multiple_buckets(self):
         buckets_created = self.bucket_util.create_multiple_buckets(
@@ -158,7 +159,8 @@ class RebalanceBaseTest(BaseTestCase):
             bucket_count=self.standard_buckets,
             bucket_type=self.bucket_type,
             storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
+            eviction_policy=self.bucket_eviction_policy,
+            bucket_durability=self.bucket_durability_level)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         for bucket in self.bucket_util.buckets:

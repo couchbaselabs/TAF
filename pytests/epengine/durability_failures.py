@@ -63,7 +63,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.cluster, self.bucket, gen_load, "create",
                 batch_size=10, process_concurrency=8,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, skip_read_on_error=True)
+                timeout_secs=self.sdk_timeout, skip_read_on_error=True,
+                suppress_error_table=True)
             self.task.jython_task_manager.get_task_result(d_create_task)
 
             # Fetch vbucket seq_no status from cbstats after CREATE task
