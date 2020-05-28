@@ -52,6 +52,7 @@ class MagmaFailures(MagmaBaseTest):
 
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
+        self.graceful = self.input.param("graceful", False)
 
     def tearDown(self):
         super(MagmaFailures, self).tearDown()
@@ -273,6 +274,61 @@ class MagmaCrashTests(MagmaFailures):
 
         self.validate_data("create", self.gen_create)
         self.log.info("===test_crash_before_multi_update_deletes ends===")
+
+    def test_crash_during_get_ops(self):
+
+        self.log.info("test_crash_during_get_ops starts")
+        tasks_info = dict()
+        upsert_doc_list = self.get_fragmentation_upsert_docs_list()
+
+        for itr in upsert_doc_list:
+            self.doc_ops = "update"
+            self.update_start = 0
+            self.update_end = itr
+            self.mutate = -1
+            self.generate_docs(doc_ops="update")
+
+            update_task_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                _sync=False)
+            tasks_info.update(update_task_info.items())
+
+        self.doc_ops = "read"
+        self.generate_docs(doc_ops="read")
+        start = -int(self.num_items - 1)
+        end = 1
+        reverse_read_gen = self.genrate_docs_basic(start, end)
+
+        th = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
+        th.start()
+
+        count = 0
+        while count < self.read_thread_count:
+            read_task_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                _sync=False)
+            tasks_info.update(read_task_info.items())
+            count += 1
+            if count < self.read_thread_count:
+                read_task_info = self.bucket_util._async_validate_docs(
+                    self.cluster, reverse_read_gen, "read", 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    pause_secs=5, timeout_secs=self.sdk_timeout,
+                    retry_exceptions=self.retry_exceptions,
+                    ignore_exceptions=self.ignore_exceptions)
+                tasks_info.update(read_task_info.items())
+                count += 1
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+
+        self.stop_crash = True
+        th.join()
+
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.log.info("test_crash_during_get_ops ends")
 
 class MagmaRollbackTests(MagmaFailures):
 
