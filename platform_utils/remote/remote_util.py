@@ -3400,7 +3400,6 @@ class RemoteMachineShellConnection:
             is_linux_distro = False
             for name in filenames:
                 if name.rstrip('\n') == 'os-release':
-                    self.log.info("inside os-release")
                     # /etc/os-release seems like standard across linux distributions
                     filename = 'etc-os-release-{0}'.format(uuid.uuid4())
                     self.get_file('/etc', 'os-release', "./%s" % filename)
