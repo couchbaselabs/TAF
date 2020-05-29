@@ -32,14 +32,14 @@ class DCPBase(CollectionBase):
         self.opcode_dump = self.input.param("opcode_dump", False)
         self.enable_expiry = self.input.param("enable_expiry", False)
         self.enable_stream_id = self.input.param("enable_stream_id", False)
-#         vbuckets = self.input.param("vbuckets", 0)
-#         if len(vbuckets) == 1:
+        #         vbuckets = self.input.param("vbuckets", 0)
+        #         if len(vbuckets) == 1:
         self.vbuckets = range(1024)
-#         else:
-#             self.vbuckets = vbuckets.split(",")
-        self.start_seq_no_list = self.input.param("start", [0]*len(self.vbuckets))
+        #         else:
+        #             self.vbuckets = vbuckets.split(",")
+        self.start_seq_no_list = self.input.param("start", [0] * len(self.vbuckets))
         self.end_seq_no = self.input.param("end", 0xffffffffffffffff)
-        self.vb_uuid_list = self.input.param("vb_uuid_list", ['0']*len(self.vbuckets))
+        self.vb_uuid_list = self.input.param("vb_uuid_list", ['0'] * len(self.vbuckets))
         self.vb_retry = self.input.param("retry_limit", 10)
         self.filter_file = self.input.param("filter", None)
         self.stream_req_info = self.input.param("stream_req_info", False)
@@ -78,10 +78,10 @@ class DCPBase(CollectionBase):
                 node = '{0}:{1}'.format(host, port)
                 if 'thisNode' in config_json['nodesExt'][index]:
                     self.dcp_client_dict[index] = {'stream': init_dcp_client,
-                                              'node': node}
+                                                   'node': node}
                 else:
                     self.dcp_client_dict[index] = {'stream': self.initiate_connection(),
-                                              'node': node}
+                                                   'node': node}
         return init_dcp_client
 
     def initiate_connection(self):
@@ -94,8 +94,8 @@ class DCPBase(CollectionBase):
 
         try:
             response = dcp_client.sasl_auth_plain(
-                            self.cluster.master.rest_username,
-                            self.cluster.master.rest_password)
+                self.cluster.master.rest_username,
+                self.cluster.master.rest_password)
         except MemcachedError as err:
             self.log.info("DCP connection failure")
 
@@ -120,7 +120,7 @@ class DCPBase(CollectionBase):
             noop_interval = str(self.noop_interval)
             response2 = dcp_client.general_control("set_noop_interval", noop_interval)
             assert response2['status'] == SUCCESS
-            self.log.info("NOOP interval set to %s"% noop_interval)
+            self.log.info("NOOP interval set to %s" % noop_interval)
 
         if self.opcode_dump:
             dcp_client.opcode_dump_control(True)
@@ -155,7 +155,7 @@ class DCPBase(CollectionBase):
 
     def handle_stream_create_response(self, dcpStream):
         if dcpStream.status == SUCCESS:
-            self.log.debug('Stream Opened Successfully on vb %s'% dcpStream.vbucket)
+            self.log.debug('Stream Opened Successfully on vb %s' % dcpStream.vbucket)
 
             if self.failover_logging and not self.keep_logs:
                 # keep_logs implies that there is a set of JSON log files
@@ -164,13 +164,13 @@ class DCPBase(CollectionBase):
             return None
 
         elif dcpStream.status == ERR_NOT_MY_VBUCKET:
-            self.log_failure('NOT MY VBUCKET -%s does not live on this node'\
+            self.log_failure('NOT MY VBUCKET -%s does not live on this node' \
                              % dcpStream.vbucket)
             # TODO: Handle that vbucket not entering the stream list
 
         elif dcpStream.status == ERR_ROLLBACK:
             self.log.info("Server requests Rollback to sequence number: %s" \
-                           % dcpStream.rollback_seqno)
+                          % dcpStream.rollback_seqno)
             dcpStream = self.handle_rollback(dcpStream)
             return dcpStream
 
@@ -179,7 +179,7 @@ class DCPBase(CollectionBase):
 
         else:
             self.log_failure("Unhandled Stream Create Response %s" \
-                             %(dcpStream.status))
+                             % (dcpStream.status))
 
     def handleSystemEvent(self, response, manifest):
         # Unpack a DCP system event
@@ -190,13 +190,13 @@ class DCPBase(CollectionBase):
                 sid = format(sid, 'x')
                 cid = format(cid, 'x')
                 string = "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:{}, id:{}, scope:{}, manifest:{}," \
-                      " seqno:{}".format(response['vbucket'],
-                                         response['streamId'],
-                                         response['key'],
-                                         cid,
-                                         sid,
-                                         uid,
-                                         response['by_seqno'])
+                         " seqno:{}".format(response['vbucket'],
+                                            response['streamId'],
+                                            response['key'],
+                                            cid,
+                                            sid,
+                                            uid,
+                                            response['by_seqno'])
                 self.output_string.append(string)
                 manifest['uid'] = uid
                 for e in manifest['scopes']:
@@ -210,14 +210,14 @@ class DCPBase(CollectionBase):
                 sid = format(sid, 'x')
                 cid = format(cid, 'x')
                 string = "DCP Event: vb:{}, sid:{}, what:CollectionCREATED, name:{}, id:{}, scope:{}, ttl:{}, " \
-                      "manifest:{}, seqno:{}".format(response['vbucket'],
-                                                     response['streamId'],
-                                                     response['key'],
-                                                     cid,
-                                                     sid,
-                                                     ttl,
-                                                     uid,
-                                                     response['by_seqno'])
+                         "manifest:{}, seqno:{}".format(response['vbucket'],
+                                                        response['streamId'],
+                                                        response['key'],
+                                                        cid,
+                                                        sid,
+                                                        ttl,
+                                                        uid,
+                                                        response['by_seqno'])
                 self.output_string.append(string)
                 manifest['uid'] = uid
                 for e in manifest['scopes']:
@@ -226,7 +226,7 @@ class DCPBase(CollectionBase):
                                                  'uid': cid,
                                                  'max_ttl': 0});
             else:
-                self.log.info("Unknown DCP Event version: %s"% response['version'])
+                self.log.info("Unknown DCP Event version: %s" % response['version'])
 
         elif response['event'] == EVENT_DELETE_COLLECTION:
             # We can receive delete collection without a corresponding create, this
@@ -236,10 +236,10 @@ class DCPBase(CollectionBase):
             sid = format(sid, 'x')
             cid = format(cid, 'x')
             string = "DCP Event: vb:{}, sid:{}, what:CollectionDROPPED, id:{}, scope:{},  manifest:{}, " \
-                  "seqno:{}".format(response['vbucket'],
-                                    response['streamId'],
-                                    cid, sid, uid,
-                                    response['by_seqno'])
+                     "seqno:{}".format(response['vbucket'],
+                                       response['streamId'],
+                                       cid, sid, uid,
+                                       response['by_seqno'])
             self.output_string.append(string)
             manifest['uid'] = uid
             collections = []
@@ -258,12 +258,12 @@ class DCPBase(CollectionBase):
             uid = format(uid, 'x')
             sid = format(sid, 'x')
             string = "DCP Event: vb:{}, sid:{}, what:ScopeCREATED, name:{}, id:{}, manifest:{}, " \
-                  "seqno:{}".format(response['vbucket'],
-                                    response['streamId'],
-                                    response['key'],
-                                    sid,
-                                    uid,
-                                    response['by_seqno'])
+                     "seqno:{}".format(response['vbucket'],
+                                       response['streamId'],
+                                       response['key'],
+                                       sid,
+                                       uid,
+                                       response['by_seqno'])
             self.output_string.append(string)
 
             # Record the scope
@@ -278,9 +278,9 @@ class DCPBase(CollectionBase):
             uid, sid = struct.unpack(">QI", response['value'])
             uid = format(uid, 'x')
             sid = format(sid, 'x')
-            string ="DCP Event: vb:{}, sid:{}, what:ScopeDROPPED, id:{}, manifest:{}, " \
-                  "seqno:{}".format(response['vbucket'], response['streamId'],
-                                     sid, uid, response['by_seqno'])
+            string = "DCP Event: vb:{}, sid:{}, what:ScopeDROPPED, id:{}, manifest:{}, " \
+                     "seqno:{}".format(response['vbucket'], response['streamId'],
+                                       sid, uid, response['by_seqno'])
             self.output_string.append(string)
             manifest['uid'] = uid
             scopes = []
@@ -289,7 +289,7 @@ class DCPBase(CollectionBase):
                     scopes.append(e)
             manifest['scopes'] = scopes
         else:
-            self.log.info("Unknown DCP Event:%s "% response['event'])
+            self.log.info("Unknown DCP Event:%s " % response['event'])
         return manifest
 
     def handleMutation(self, response):
@@ -314,17 +314,17 @@ class DCPBase(CollectionBase):
 
     def handleMarker(self, response):
         self.log.info("Snapshot Marker vb:{}, sid:{}, " \
-              "start:{}, end:{}, flag:{}".format(response['vbucket'],
-                                                 response['streamId'],
-                                                 response['snap_start_seqno'],
-                                                 response['snap_end_seqno'],
-                                                 response['flag']))
+                      "start:{}, end:{}, flag:{}".format(response['vbucket'],
+                                                         response['streamId'],
+                                                         response['snap_start_seqno'],
+                                                         response['snap_end_seqno'],
+                                                         response['flag']))
         return int(response['snap_start_seqno']), int(response['snap_end_seqno'])
 
     def checkSnapshot(self, vb, se, current, stream):
         if se == current:
             self.log.info("Snapshot for vb:%s has completed, end:%s, " \
-                  "stream.mutation_count:%s"%(vb, se, stream.mutation_count))
+                          "stream.mutation_count:%s" % (vb, se, stream.mutation_count))
 
     def process_dcp_traffic(self, streams):
         active_streams = len(streams)
@@ -338,7 +338,7 @@ class DCPBase(CollectionBase):
                     if stream.has_response():
                         response = stream.next_response()
                         if response == None:
-                            self.log.debug("No response from vbucket %s"% vb['id'])
+                            self.log.debug("No response from vbucket %s" % vb['id'])
                             vb['complete'] = True
                             active_streams -= 1
                             self.dcp_log_data.push_sequence_no(vb['id'])
@@ -352,26 +352,26 @@ class DCPBase(CollectionBase):
                             self.output_string.append(output_string)
                             if self.failover_logging:
                                 self.dcp_log_data.upsert_sequence_no(response['vbucket'],
-                                                                response['by_seqno'])
+                                                                     response['by_seqno'])
 
                             vb['timed-out'] = self.vb_retry
 
                             self.checkSnapshot(response['vbucket'],
-                                          vb['snap_end'],
-                                          response['by_seqno'],
-                                          stream)
+                                               vb['snap_end'],
+                                               response['by_seqno'],
+                                               stream)
                         elif opcode == CMD_SNAPSHOT_MARKER:
                             vb['snap_start'], vb['snap_end'] = self.handleMarker(response)
                         elif opcode == CMD_SYSTEM_EVENT:
                             vb['manifest'] = self.handleSystemEvent(response,
-                                                               vb['manifest'])
+                                                                    vb['manifest'])
                             self.checkSnapshot(response['vbucket'],
-                                          vb['snap_end'],
-                                          response['by_seqno'],
-                                          stream)
+                                               vb['snap_end'],
+                                               response['by_seqno'],
+                                               stream)
                         elif opcode == CMD_STREAM_END:
                             self.log.info("Received stream end. Stream complete with " \
-                                  "reason {}.".format(response['flags']))
+                                          "reason {}.".format(response['flags']))
                             vb['complete'] = True
                             active_streams -= 1
                             self.dcp_log_data.push_sequence_no(response['vbucket'])
@@ -396,13 +396,13 @@ class DCPBase(CollectionBase):
                             self.select_dcp_client(vb['id']).s.sendall(header)
                             vb['stream_open'] = False
                             if self.stream_req_info:
-                                self.log.info('Stream to vbucket(s) closed'% str(vb['id']))
+                                self.log.info('Stream to vbucket(s) closed' % str(vb['id']))
 
         # Dump each VB manifest if collections were enabled
         if self.collections:
             for vb in streams:
                 self.log.info("vb:{} The following manifest state was created from the " \
-                      "system events".format(vb['id']))
+                              "system events".format(vb['id']))
                 self.log.info(json.dumps(vb['manifest'], sort_keys=True, indent=2))
                 break
         return self.output_string
@@ -421,8 +421,8 @@ class DCPBase(CollectionBase):
         # stream-request value, or an array of many values. Use of many values
         # is intended to be used in conjunction with enable_stream_id and sid
         if self.collections and self.filter_file != None:
-#             filter_file = open(self.filter_file, "r")
-#             jsonData = filter_file.read()
+            #             filter_file = open(self.filter_file, "r")
+            #             jsonData = filter_file.read()
             parsed = json.loads(self.filter_file)
 
             # Is this an array or singular filter?
@@ -439,17 +439,17 @@ class DCPBase(CollectionBase):
         for f in filter_json:
             for index in xrange(0, len(self.vb_list)):
                 if self.stream_req_info:
-                    self.log.info('Stream to vbucket %s on node %s with seq no %s and uuid %s'\
+                    self.log.info('Stream to vbucket %s on node %s with seq no %s and uuid %s' \
                                   % (self.vb_list[index], self.get_node_of_dcp_client_connection(
-                                      self.vb_list[index]), self.start_seq_no_list[index],
-                                      self.vb_uuid_list[index]))
+                        self.vb_list[index]), self.start_seq_no_list[index],
+                                     self.vb_uuid_list[index]))
                 vb = int(self.vb_list[index])
                 stream = self.select_dcp_client(vb).stream_req(vbucket=vb,
-                                                          takeover=0,
-                                                          start_seqno=int(self.start_seq_no_list[index]),
-                                                          end_seqno=self.end_seq_no,
-                                                          vb_uuid=int(self.vb_uuid_list[index]),
-                                                          json=f)
+                                                               takeover=0,
+                                                               start_seqno=int(self.start_seq_no_list[index]),
+                                                               end_seqno=self.end_seq_no,
+                                                               vb_uuid=int(self.vb_uuid_list[index]),
+                                                               json=f)
                 handle_response = self.handle_stream_create_response(stream)
                 if handle_response is None:
                     vb_stream = {"id": self.vb_list[index],
@@ -481,7 +481,7 @@ class DCPBase(CollectionBase):
         # If argument to use JSON log files
         if self.failover_logging:
             log_fetch = self.dcp_log_data.get_failover_logs([vb])
-            if log_fetch.get(str(vb), None) is not None:  
+            if log_fetch.get(str(vb), None) is not None:
                 # If the failover log is not empty, use it
                 data = log_fetch[str(vb)]
                 failover_values = sorted(data, key=lambda x: x[1], reverse=True)
@@ -507,12 +507,11 @@ class DCPBase(CollectionBase):
         new_seq_no.append(failover_seq_num)
         new_uuid.append(failover_vbucket_uuid)
 
-        self.log.info('Retrying stream add on vb %s with seqs %s and uuids %s' %(vb, new_seq_no, new_uuid))
+        self.log.info('Retrying stream add on vb %s with seqs %s and uuids %s' % (vb, new_seq_no, new_uuid))
 
         # NOTE: This can cause continuous rollbacks making client side recursive dependent on failover logs.
         self.log.info("check for recursive loop")
         return self.add_streams([vb], new_seq_no, self.end_seq_no, new_uuid, self.vb_retry, self.filter_file)
-
 
     def select_dcp_client(self, vb):
         main_node_id = self.vb_map[vb][0]
@@ -583,10 +582,9 @@ class DCPBase(CollectionBase):
                 response = client.stats()
                 # check the old style or new style (as of 4.5) results
                 mode = response.get('ep_degraded_mode')
-                if  mode is not None:
+                if mode is not None:
                     if mode == '0' or mode == 'false':
                         break
             except Exception as ex:
                 pass
             self.sleep(1)
-
