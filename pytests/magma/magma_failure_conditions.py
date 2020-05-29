@@ -12,7 +12,10 @@ from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 import copy
+import json as Json
 from sdk_exceptions import SDKException
+from sdk_client3 import SDKClient
+from Cb_constants.CBServer import CbServer
 import threading
 
 retry_exceptions = [SDKException.TimeoutException,
@@ -359,6 +362,61 @@ class MagmaCrashTests(MagmaFailures):
 
         self.bucket_util._wait_for_stats_all_buckets()
         self.log.info("test_crash_during_upserts_using_multithreads ends")
+
+    def test_crash_during_multi_updates_of_single_doc(self):
+
+        self.log.info("==test_crash_during_multi_updates_of_single_doc starts==")
+
+        self.client = SDKClient([self.cluster.master],
+                                self.bucket_util.buckets[0],
+                                scope=CbServer.default_scope,
+                                collection=CbServer.default_collection)
+
+        self.doc_ops = "update"
+        self.gen_update = self.genrate_docs_basic(start=0, end=1)
+        key, val = self.gen_update.next()
+
+        def upsert_doc(start_num, end_num, key_obj, val_obj):
+            for i in range(start_num, end_num):
+                val_obj.put("mutated", i)
+                self.client.upsert(key_obj, val_obj)
+
+        th1 = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
+        th1.start()
+
+        threads = []
+        start = 0
+        end = 0
+        for _ in range(10):
+            start = end
+            end += 10
+            th = threading.Thread(
+                target=upsert_doc, args=[start, end, key, val])
+            th.start()
+            threads.append(th)
+
+        for th in threads:
+            th.join()
+
+        self.stop_crash = True
+        th1.join()
+
+        self.bucket_util._wait_for_stats_all_buckets()
+
+        success, _ = self.client.get_multi([key],
+                                           self.wait_timeout)
+        self.assertIs(key in success, True,
+                      msg="key {} doesn't exist\
+                      ".format(key))
+
+        expected_val = Json.loads(val.toString())
+        actual_val = Json.loads(success[key][
+            'value'].toString())
+        self.assertIs(expected_val == actual_val, True,
+                      msg="expected_val-{} != Actual_val-{}\
+                      ".format(expected_val, actual_val))
+
+        self.log.info("==test_crash_during_multi_updates_of_single_doc ends==")
 
 class MagmaRollbackTests(MagmaFailures):
 
