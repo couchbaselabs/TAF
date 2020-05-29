@@ -51,11 +51,11 @@ class BasicOps(CollectionBase):
                     self.task.jython_task_manager.get_task_result(task)
                     if op_type == "create":
                         bucket.scopes[scope.name] \
-                            .collections[collection.name]["num_items"] \
+                            .collections[collection.name].num_items\
                             += self.num_items
                     elif op_type == "delete":
                         bucket.scopes[scope.name] \
-                            .collections[collection.name]["num_items"] \
+                            .collections[collection.name].num_items\
                             -= self.num_items
                     # Doc count validation
                     self.bucket_util._wait_for_stats_all_buckets()
