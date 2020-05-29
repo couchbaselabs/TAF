@@ -1,16 +1,12 @@
 from dcp_new.dcp_base import DCPBase
 from dcp_new.constants import *
-from dcp_bin_client import *
 from memcacheConstants import *
 from remote.remote_util import RemoteMachineShellConnection
-from membase.api.rest_client import Node, RestConnection
-from itertools import count
+from membase.api.rest_client import RestConnection
 from Cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 import json
-from cb_tools.cbstats import Cbstats
 from threading import Thread
-from BucketLib.BucketOperations import BucketHelper
 
 
 class DcpTestCase(DCPBase):
@@ -72,6 +68,7 @@ class DcpTestCase(DCPBase):
             client_stream['stream'].close()
 
     def get_collection_id(self, bucket_name, scope_name, collection_name=None):
+        uid = None
         status, content = self.bucket_helper_obj.list_collections(bucket_name)
         content = json.loads(content)
         for scope in content["scopes"]:
@@ -96,6 +93,7 @@ class DcpTestCase(DCPBase):
         return scope_items
 
     def get_scope_name(self):
+        scope_name = None
         retry =5
         while retry > 0:
             scope_dict = self.bucket_util.get_random_scopes(
@@ -435,7 +433,7 @@ class DcpTestCase(DCPBase):
 
         if self.doc_expiry == 0:
             bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
-                                                    self.bucket_name)
+                                                     self.bucket.name)
             self.num_items += bucket.scopes[scope_name] \
                                 .collections[collection_name].num_items
 

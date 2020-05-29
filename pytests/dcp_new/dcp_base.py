@@ -13,6 +13,7 @@ from dcp_bin_client import DcpClient
 from mc_bin_client import MemcachedClient as McdClient
 from dcp_data_persist import LogData
 import uuid
+from mc_bin_client import MemcachedError
 
 
 class DCPBase(CollectionBase):
@@ -116,7 +117,7 @@ class DCPBase(CollectionBase):
         self.log.info("Enabled NOOP")
 
         if self.noop_interval:
-            noop_interval = str(args.noop_interval)
+            noop_interval = str(self.noop_interval)
             response2 = dcp_client.general_control("set_noop_interval", noop_interval)
             assert response2['status'] == SUCCESS
             self.log.info("NOOP interval set to %s"% noop_interval)
@@ -177,8 +178,8 @@ class DCPBase(CollectionBase):
             self.log_failure("Error: Stream Create Request Not Supported")
 
         else:
-            self.log_failure("Unhandled Stream Create Response %s %s" \
-                             %(dcpStream.status, error_to_str(dcpStream.status)))
+            self.log_failure("Unhandled Stream Create Response %s" \
+                             %(dcpStream.status))
 
     def handleSystemEvent(self, response, manifest):
         # Unpack a DCP system event
@@ -439,7 +440,7 @@ class DCPBase(CollectionBase):
             for index in xrange(0, len(self.vb_list)):
                 if self.stream_req_info:
                     self.log.info('Stream to vbucket %s on node %s with seq no %s and uuid %s'\
-                                  % (self.vb_list[index], get_node_of_dcp_client_connection(
+                                  % (self.vb_list[index], self.get_node_of_dcp_client_connection(
                                       self.vb_list[index]), self.start_seq_no_list[index],
                                       self.vb_uuid_list[index]))
                 vb = int(self.vb_list[index])
@@ -485,12 +486,12 @@ class DCPBase(CollectionBase):
                 data = log_fetch[str(vb)]
                 failover_values = sorted(data, key=lambda x: x[1], reverse=True)
             else:
-                failover_fetch = DcpClient.get_failover_log(select_dcp_client(vb), vb)
+                failover_fetch = DcpClient.get_failover_log(self.select_dcp_client(vb), vb)
                 failover_values = failover_fetch.get('value')
 
         # Otherwise get failover log from server
         else:
-            failover_fetch = DcpClient.get_failover_log(select_dcp_client(vb), vb)
+            failover_fetch = DcpClient.get_failover_log(self.select_dcp_client(vb), vb)
             failover_values = failover_fetch.get('value')
 
         new_seq_no = []
@@ -510,7 +511,7 @@ class DCPBase(CollectionBase):
 
         # NOTE: This can cause continuous rollbacks making client side recursive dependent on failover logs.
         self.log.info("check for recursive loop")
-        return add_streams([vb], new_seq_no, self.end_seq_no, new_uuid, self.vb_retry, self.filter_file)
+        return self.add_streams([vb], new_seq_no, self.end_seq_no, new_uuid, self.vb_retry, self.filter_file)
 
 
     def select_dcp_client(self, vb):
@@ -546,7 +547,7 @@ class DCPBase(CollectionBase):
                 raise StandardError("Invalid host input", host, "Error origin:", errorOrigin)
 
     def get_node_of_dcp_client_connection(self, vb):
-        node_id = vb_map[vb][0]
+        node_id = self.vb_map[vb][0]
         return self.dcp_client_dict[node_id]['node']
 
     def all_vbucket_ids(self, type_=None):
