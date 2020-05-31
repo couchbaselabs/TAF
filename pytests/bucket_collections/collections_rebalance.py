@@ -481,12 +481,6 @@ class CollectionsRebalance(CollectionBase):
     def sync_data_load(self):
         self.subsequent_data_load()
 
-    def over_ride_template_params(self, target_spec):
-        for over_ride_param in self.over_ride_spec_params:
-            if over_ride_param == "durability":
-                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
-                    self.durability_level
-
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         if not self.skip_validations:
