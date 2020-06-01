@@ -144,7 +144,7 @@ class CollectionBase(BaseTestCase):
                     self.durability_level
             elif over_ride_param == "replicas":
                 target_spec[Bucket.replicaNumber] = \
-                    eval(self.num_replicas)
+                    eval(self.input.param("replicas"))
 
     def load_data_for_sub_doc_ops(self):
         new_data_load_template = \
