@@ -200,7 +200,7 @@ class MagmaCrashTests(MagmaFailures):
         while count < self.test_itr:
             self.log.info("Iteration == {}".format(count+1))
 
-            self.sigkill_memcached()
+            self.sigkill_memcached(graceful=self.graceful)
 
             for itr in upsert_doc_list:
                 self.doc_ops = "update"
@@ -230,7 +230,7 @@ class MagmaCrashTests(MagmaFailures):
         for i in range(self.test_itr):
             self.log.info("Step 1, Iteration= {}".format(i+1))
             while count < self.update_itr:
-                self.sigkill_memcached()
+                self.sigkill_memcached(graceful=self.graceful)
 
                 self.doc_ops = "update"
                 self.update_start = 0
