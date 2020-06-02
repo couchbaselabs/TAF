@@ -165,6 +165,8 @@ class BasicCrudTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             self.generate_docs(doc_ops="read")
+            if self.stop:
+                break;
 
             if self.doc_size <= 32:
                 for bucket in self.bucket_util.get_all_buckets():
