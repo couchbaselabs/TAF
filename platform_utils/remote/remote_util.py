@@ -43,18 +43,10 @@ from testconstants import RPM_DIS_NAME, SYSTEMD_SERVER
 from testconstants import NR_INSTALL_LOCATION_FILE
 
 from membase.api.rest_client import RestConnection, RestHelper
-from com.jcraft.jsch import JSchException, JSchAuthCancelException, \
+from com.jcraft.jsch import JSch, JSchException, JSchAuthCancelException, \
                             JSchPartialAuthException, SftpException
 
-try:
-    from com.jcraft.jsch import JSch
-    from org.python.core.util import FileUtil
-    from java.lang import System
-except ImportError:
-    log = logging.getLogger()
-    log.warn("Warning: proceeding without importing "
-             "paramiko due to import error. "
-             "ssh connections to remote machines will fail!")
+from org.python.core.util import FileUtil
 
 
 class OS:
@@ -463,7 +455,7 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
         if self.info.type.lower() == "linux":
             fv, sv, bn = self.get_cbversion("linux")
-            if "centos 7" in self.info.distribution_version.lower() \
+            if self.info.distribution_version.lower() in SYSTEMD_SERVER \
                     and sv in COUCHBASE_FROM_WATSON:
                 # from watson, systemd is used in centos 7
                 self.log.debug("%s - this node is centos 7.x" % self.ip)
@@ -1789,7 +1781,7 @@ class RemoteMachineShellConnection:
             self.couchbase_upgrade_win(self.info.architecture_type,
                                        self.info.windows_name,
                                        build.product_version)
-            log.info('********* continue upgrade process **********')
+            self.log.info('********* continue upgrade process **********')
 
         elif self.info.deliverable_type == 'rpm':
             # run rpm -i to install
@@ -3195,7 +3187,6 @@ class RemoteMachineShellConnection:
             p = Popen(main_command, shell=True, stdout=PIPE, stderr=PIPE)
             stdout, stderro = p.communicate()
             output = stdout
-            print output
             time.sleep(1)
         """
         for cmd in subcommands:
@@ -3388,66 +3379,45 @@ class RemoteMachineShellConnection:
             os_version = ""
             is_linux_distro = False
             for name in filenames:
-                if name.rstrip('\n') == 'issue':
-                    # it's a linux_distro . let's downlaod this file
-                    # format Ubuntu 10.04 LTS \n \l
-                    filename = 'etc-issue-{0}'.format(uuid.uuid4())
-                    self.get_file('/etc', "issue", "./%s" % filename)
+                if name.rstrip('\n') == 'os-release':
+                    # /etc/os-release seems like standard across linux distributions
+                    filename = 'etc-os-release-{0}'.format(uuid.uuid4())
+                    self.get_file('/etc', 'os-release', "./%s" % filename)
                     file = open(filename)
-                    etc_issue = ''
-                    # let's only read the first line
-                    for line in file.xreadlines():
-                        # for SuSE that has blank first line
-                        if line.rstrip('\n'):
-                            etc_issue = line
-                            break
-                        # strip all extra characters
-                    etc_issue = etc_issue = etc_issue.rstrip('\n').rstrip(' ').rstrip('\\l').rstrip(' ').rstrip('\\n').rstrip(' ')
-                    if etc_issue.lower().find('ubuntu') != -1:
-                        os_distro = 'Ubuntu'
-                        os_version = etc_issue
-                        tmp_str = etc_issue.split()
-                        if tmp_str and tmp_str[1][:2].isdigit():
-                            os_version = "Ubuntu %s" % tmp_str[1][:5]
-                        is_linux_distro = True
-                    elif etc_issue.lower().find('debian') != -1:
-                        os_distro = 'Ubuntu'
-                        os_version = etc_issue
-                        is_linux_distro = True
-                    elif etc_issue.lower().find('mint') != -1:
-                        os_distro = 'Ubuntu'
-                        os_version = etc_issue
-                        is_linux_distro = True
-                    elif etc_issue.lower().find('amazon linux ami') != -1:
-                        os_distro = 'CentOS'
-                        os_version = etc_issue
-                        is_linux_distro = True
-                    elif etc_issue.lower().find('centos') != -1:
-                        os_distro = 'CentOS'
-                        os_version = etc_issue
-                        is_linux_distro = True
-                    elif etc_issue.lower().find('red hat') != -1:
-                        os_distro = 'Red Hat'
-                        os_version = etc_issue
-                        is_linux_distro = True
-                    elif etc_issue.lower().find('opensuse') != -1:
-                        os_distro = 'openSUSE'
-                        os_version = etc_issue
-                        is_linux_distro = True
-                    elif etc_issue.lower().find('suse linux') != -1:
-                        os_distro = 'SUSE'
-                        os_version = etc_issue
-                        tmp_str = etc_issue.split()
-                        if tmp_str and tmp_str[6].isdigit():
-                            os_version = "SUSE %s" % tmp_str[6]
-                        is_linux_distro = True
-                    elif etc_issue.lower().find('oracle linux') != -1:
-                        os_distro = 'Oracle Linux'
-                        os_version = etc_issue
-                        is_linux_distro = True
-                    else:
-                        self.log.debug("It could be other operating system. "
-                                       "Go to check at other location")
+                    line = file.readline()
+                    is_version_id = False
+                    is_pretty_name = False
+                    os_pretty_name = ''
+                    while line and (not is_version_id or not is_pretty_name):
+                        self.log.debug(line)
+                        if line.startswith('VERSION_ID'):
+                            os_version = line.split('=')[1].replace('"', '')
+                            os_version = os_version.rstrip('\n').rstrip(' ').rstrip('\\l').rstrip(
+                                ' ').rstrip('\\n').rstrip(' ')
+                            is_version_id = True
+                        elif line.startswith('PRETTY_NAME'):
+                            os_pretty_name = line.split('=')[1].replace('"', '')
+                            is_pretty_name = True
+                        line = file.readline()
+
+                    os_distro_dict = {'ubuntu': 'Ubuntu', 'debian': 'Ubuntu', 'mint': 'Ubuntu',
+                                      'amazon linux ami': 'CentOS', 'centos': 'CentOS', 'opensuse': 'openSUSE',
+                                      'red': 'Red Hat', 'suse': 'SUSE', 'oracle': 'Oracle Linux'}
+                    os_shortname_dict = {'ubuntu': 'ubuntu', 'debian': 'debian', 'mint': 'ubuntu',
+                                         'amazon linux ami': 'amzn2', 'centos': 'centos', 'opensuse': 'suse',
+                                         'red': 'rhel', 'suse': 'suse', 'oracle': 'oel'}
+                    self.log.debug("os_pretty_name:" + os_pretty_name)
+                    if os_pretty_name:
+                        os_name = os_pretty_name.split(' ')[0].lower()
+                        os_distro = os_distro_dict[os_name]
+                        if os_name != 'ubuntu':
+                            os_version = os_shortname_dict[os_name] + " " + os_version.split('.')[0]
+                        else:
+                            os_version = os_shortname_dict[os_name] + " " + os_version
+                        if os_distro:
+                            is_linux_distro = True
+                    self.log.info("os_distro: " + os_distro + ", os_version: " + os_version +
+                                  ", is_linux_distro: " + str(is_linux_distro))
                     file.close()
                     # now remove this file
                     os.remove(filename)
@@ -3463,7 +3433,7 @@ class RemoteMachineShellConnection:
                 filenames = []
             """ for centos 7 only """
             for name in filenames:
-                if name.rstrip('\n') == "redhat-release":
+                if name.rstrip('\n') == "redhat-release" and os_distro == "":
                     filename = 'redhat-release-{0}'.format(uuid.uuid4())
                     if self.remote:
                         self.get_file('/etc','redhat-release', "./%s" % filename)
@@ -3485,6 +3455,15 @@ class RemoteMachineShellConnection:
                             os_distro = 'CentOS'
                             os_version = "CentOS 7"
                             is_linux_distro = True
+                        elif redhat_release.lower().find('release 8') != -1:
+                            os_distro = 'CentOS'
+                            os_version = "CentOS 8"
+                            is_linux_distro = True
+                        elif redhat_release.lower().find('red hat enterprise') != -1:
+                            if "8.0" in redhat_release.lower():
+                                os_distro = "Red Hat"
+                                os_version = "rhel8"
+                                is_linux_distro = True
                     else:
                         self.log.error("Could not find OS name."
                                   "It could be unsupport OS")
@@ -4010,7 +3989,7 @@ class RemoteMachineShellConnection:
         o, r = self.execute_command("mv " + backupfile + " " + sourceFile)
         self.log_command_output(o, r)
         if self.info.type.lower() == "linux":
-            if "centos 7" in self.info.distribution_version.lower():
+            if self.info.distribution_version.lower() in SYSTEMD_SERVER:
                 """from watson, systemd is used in centos 7 """
                 self.log.info("this node is centos 7.x")
                 o, r = self.execute_command("service couchbase-server restart")
@@ -5019,7 +4998,6 @@ class RemoteUtilHelper(object):
         shell = RemoteMachineShellConnection(server)
         info = shell.extract_remote_info()
         version = RestConnection(server).get_nodes_self().version
-        time.sleep(5)
         hostname = shell.get_full_hostname()
         if version.startswith("1.8.") or version.startswith("2.0"):
             shell.stop_couchbase()
@@ -5042,7 +5020,6 @@ class RemoteUtilHelper(object):
                         /opt/couchbase/bin/couchbase-server".format(hostname)
                 o, r = shell.execute_command(cmd)
                 shell.log_command_output(o, r)
-                time.sleep(2)
                 cmd = 'rm -rf /opt/couchbase/var/lib/couchbase/data/*'
                 shell.execute_command(cmd)
                 cmd = 'rm -rf /opt/couchbase/var/lib/couchbase/mnesia/*'
