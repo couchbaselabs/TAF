@@ -4328,6 +4328,7 @@ class Atomicity(Task):
                                         in str(err):
                                     self.retries -= 1
                                     self.test_log.info("DurabilityImpossibleException seen while transaction defer")
+                                    sleep(60)
                                     err = Transaction().DefferedTransaction(
                                         self.transaction, self.commit, encoded)
                                     if err:
@@ -4409,6 +4410,7 @@ class Atomicity(Task):
                 elif SDKException.DurabilityImpossibleException in str(err) \
                         and self.retries > 0:
                     self.test_log.info("DurabilityImpossibleException seen so retrying...")
+                    sleep(60)
                     self.transaction_load(doc, commit, update_keys, op_type)
                     self.retries -= 1
                 else:
