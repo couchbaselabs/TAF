@@ -526,3 +526,17 @@ class MagmaBaseTest(BaseTestCase):
                     [self.cluster_util.cluster.master],
                     self.bucket_util.buckets[0],
                     wait_time=self.wait_timeout * 20))
+
+    def abort_tasks_after_crash(self):
+        self.stop = False
+
+        while not self.stop:
+            self.log.info("Crash check")
+            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+
+            if len(crashes) > 0:
+                self.stop = True
+                self.task.jython_task_manager.abort_all_tasks()
+                self.assertEqual(len(crashes), 0,
+                                 msg="Coredump found on servers {}"
+                                 .format(crashes))
