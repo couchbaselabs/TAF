@@ -4202,7 +4202,8 @@ class BucketUtils(ScopeUtils):
         # Validate total expected doc_count matches with the overall bucket
         for bucket in self.buckets:
             status = self.validate_manifest_uid(bucket)
-            self.assertTrue(status, "Bucket manifest UID mismatch!")
+            if not status:
+                self.log.warn("Bucket manifest UID mismatch!")
 
             expected_num_items = self.get_expected_total_num_items(bucket)
             self.verify_stats_for_bucket(bucket, expected_num_items,

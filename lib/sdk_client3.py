@@ -194,7 +194,7 @@ class SDKClient(object):
         self.hosts = list()
 
         # Used while creating connection for Cluster_run
-        self.servers = tuple()
+        self.servers = list()
 
         self.scope_name = scope
         self.collection_name = collection
@@ -210,7 +210,7 @@ class SDKClient(object):
         self.log = logger.get("test")
 
         for server in servers:
-            self.servers += (server.ip, int(server.port))
+            self.servers.append((server.ip, int(server.port)))
             if server.ip == "127.0.0.1":
                 self.hosts.append("%s:%s" % (server.ip, server.port))
                 self.scheme = "http"
@@ -252,7 +252,6 @@ class SDKClient(object):
                         self.compression["minRatio"])
 
                 cluster_env = cluster_env.compressionConfig(compression_config)
-
             cluster_options = \
                 ClusterOptions \
                 .clusterOptions(self.username, self.password) \

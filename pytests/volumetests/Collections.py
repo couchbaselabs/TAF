@@ -101,7 +101,18 @@ class volume(CollectionBase):
             self.bucket_util.update_num_items_based_on_expired_docs(self.bucket_util.buckets, task)
 
     def data_validation_collection(self):
-        self.bucket_util._wait_for_stats_all_buckets()
+        retry_count = 0
+        while retry_count < 10:
+            try:
+                self.bucket_util._wait_for_stats_all_buckets()
+            except:
+                retry_count = retry_count + 1
+                self.log.info("ep-queue hasn't drained yet. Retry count: {0}".format(retry_count))
+            else:
+                break
+        if retry_count == 10:
+            self.log.info("Attempting last retry for ep-queue to drain")
+            self.bucket_util._wait_for_stats_all_buckets()
         if self.doc_and_collection_ttl:
             self.bucket_util._expiry_pager()
             self.sleep(400, "wait for doc/collection maxttl to finish")

@@ -604,7 +604,7 @@ class BaseTestCase(unittest.TestCase):
 
             elif shell.info.type.lower() == "windows":
                 core_path = 'c://CrashDumps'
-            o, e = shell.execute_command("ls -l %s | grep '.dmp' | wc -l"
+            o, _ = shell.execute_command("ls -l %s | grep '.dmp' | wc -l"
                                          % core_path)
             output = o[0].split('\n')[0]
             if int(output) == 0:

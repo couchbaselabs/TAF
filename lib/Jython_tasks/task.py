@@ -4221,33 +4221,32 @@ class Atomicity(Task):
             self.update_keys = list()
             self.delete_keys = list()
             docs = list()
-            self.key_value = list()
+            self.key_value_list = list()
 
             doc_gen = self.generator
             while self.has_next():
                 self.batch = doc_gen.next_batch()
-                self.key_value.extend(self.batch)
+                self.key_value_list.extend(self.batch)
 
-                for op_type in self.op_type:
-                    if op_type == 'general_create':
-                        for client in Atomicity.clients:
-                            self.batch_create(
-                                self.batch, client,
-                                persist_to=self.persist_to,
-                                replicate_to=self.replicate_to,
-                                timeout=self.timeout, time_unit=self.time_unit,
-                                doc_type=self.generator.doc_type)
-                for tuple in self.batch:
-                    docs.append(tuple)
-                last_batch = dict(self.batch)
+            for tuple in self.key_value_list:
+                docs.append(tuple)
+            last_batch = dict(self.key_value_list[-10:])
 
-            self.all_keys = dict(self.key_value).keys()
+            self.all_keys = dict(self.key_value_list).keys()
             self.list_docs = list(self.__chunks(self.all_keys,
                                                 Atomicity.num_docs))
-            self.docs = list(self.__chunks(self.key_value, Atomicity.num_docs))
+            self.docs = list(self.__chunks(self.key_value_list, Atomicity.num_docs))
 
             for op_type in self.op_type:
                 self.encoding = list()
+                if op_type == 'general_create':
+                    for client in Atomicity.clients:
+                        self.batch_create(
+                            self.key_value_list, client,
+                            persist_to=self.persist_to,
+                            replicate_to=self.replicate_to,
+                            timeout=self.timeout, time_unit=self.time_unit,
+                            doc_type=self.generator.doc_type)
                 if op_type == "create":
                     if len(self.op_type) != 1:
                         commit = True
@@ -4329,6 +4328,7 @@ class Atomicity(Task):
                                         in str(err):
                                     self.retries -= 1
                                     self.test_log.info("DurabilityImpossibleException seen while transaction defer")
+                                    sleep(60)
                                     err = Transaction().DefferedTransaction(
                                         self.transaction, self.commit, encoded)
                                     if err:
@@ -4352,11 +4352,11 @@ class Atomicity(Task):
                 self.inserted_keys[client].extend(self.all_keys)
 
             self.test_log.info("Starting Atomicity Verification thread")
-            self.process_values_for_verification(self.key_value)
+            self.process_values_for_verification(self.key_value_list)
             for client in Atomicity.clients:
                 result_map = self.batch_read(self.all_keys, client)
                 wrong_values = self.validate_key_val(result_map[0],
-                                                     self.key_value,
+                                                     self.key_value_list,
                                                      client)
 
                 if wrong_values:
@@ -4410,6 +4410,7 @@ class Atomicity(Task):
                 elif SDKException.DurabilityImpossibleException in str(err) \
                         and self.retries > 0:
                     self.test_log.info("DurabilityImpossibleException seen so retrying...")
+                    sleep(60)
                     self.transaction_load(doc, commit, update_keys, op_type)
                     self.retries -= 1
                 else:
@@ -4459,16 +4460,11 @@ class Atomicity(Task):
                         value = item.getT2()
                         value.put('mutated', Atomicity.updatecount)
                     except ValueError:
-                        self.random.seed(key)
-                        index = self.random.choice(range(len(value)))
-                        value = value[0:index] \
-                            + self.random.choice(string.ascii_uppercase) \
-                            + value[index + 1:]
+                        pass
                     finally:
                         key_val.remove(item)
                         item = Tuples.of(key, value)
                         key_val.append(item)
-
 
 class MonitorViewFragmentationTask(Task):
     """

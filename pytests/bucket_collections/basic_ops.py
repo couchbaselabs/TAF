@@ -51,11 +51,11 @@ class BasicOps(CollectionBase):
                     self.task.jython_task_manager.get_task_result(task)
                     if op_type == "create":
                         bucket.scopes[scope.name] \
-                            .collections[collection.name]["num_items"] \
+                            .collections[collection.name].num_items\
                             += self.num_items
                     elif op_type == "delete":
                         bucket.scopes[scope.name] \
-                            .collections[collection.name]["num_items"] \
+                            .collections[collection.name].num_items\
                             -= self.num_items
                     # Doc count validation
                     self.bucket_util._wait_for_stats_all_buckets()
@@ -153,7 +153,7 @@ class BasicOps(CollectionBase):
                                  % (node.ip,
                                     expected_collection_count,
                                     c_data["count"]))
-            if c_data["default_exists"]:
+            if "_default" in c_data:
                 self.log_failure("%s: _default collection exists in cbstats"
                                  % node.ip)
 
@@ -250,7 +250,7 @@ class BasicOps(CollectionBase):
             if c_data["count"] != 1:
                 self.log_failure("%s - Expected scope count is '1'."
                                  "Actual: %s" % (node.ip, c_data["count"]))
-            if not c_data["default_exists"]:
+            if "_default" not in c_data:
                 self.log_failure("%s: _default collection missing in cbstats"
                                  % node.ip)
 

@@ -54,14 +54,9 @@ class BucketWarmup(CollectionBase):
         self.log.info("memcached stopped on master node")
 
         if during_warmup == "create_scope":
-            try:
-                self.scope_name = self.bucket_util.get_random_name()
-                self.create_scope()
-                self.log_failure("drop scope succeeded")
-            except Exception as e:
-                self.log.info(e)
-                self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
-                self.create_scope()
+            self.scope_name = self.bucket_util.get_random_name()
+            self.create_scope()
+            self.log.info("drop scope succeeded")
 
         elif during_warmup == "drop_scope":
             retry =5
@@ -72,23 +67,13 @@ class BucketWarmup(CollectionBase):
                 if self.scope_name != "_default":
                     break
                 retry -= 1
-            try:
-                self.drop_scope()
-                self.log_failure("drop scope succeeded")
-            except Exception as e:
-                self.log.info(e)
-                self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
-                self.drop_scope()
+            self.drop_scope()
+            self.log.info("drop scope succeeded")
 
         elif during_warmup == "create_collection":
             self.collection_name = self.bucket_util.get_random_name()
-            try:
-                self.create_collection()
-                self.log_failure("create collection succeeded")
-            except Exception as e:
-                self.log.info(e)
-                self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
-                self.create_collection()
+            self.create_collection()
+            self.log.info("create collection succeeded")
 
         elif during_warmup == "drop_collection":
             collections = self.bucket_util.get_random_collections(
@@ -96,13 +81,8 @@ class BucketWarmup(CollectionBase):
             scope_dict = collections[self.bucket.name]["scopes"]
             self.scope_name = scope_dict.keys()[0]
             self.collection_name = scope_dict[self.scope_name]["collections"].keys()[0]
-            try:
-                self.drop_collection()
-                self.log_failure("drop collection succeeded")
-            except Exception as e:
-                self.log.info(e)
-                self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
-                self.drop_collection()
+            self.drop_collection()
+            self.log.info("drop collection succeeded")
 
         else:
             try:
@@ -113,6 +93,7 @@ class BucketWarmup(CollectionBase):
                 self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
                 self.random_load()
 
+        self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
 

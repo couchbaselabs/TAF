@@ -17,7 +17,7 @@ spec = {
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
     Bucket.maxTTL: 0,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
-    Bucket.evictionPolicy: Bucket.EvictionPolicy.NO_EVICTION,
+    Bucket.evictionPolicy: Bucket.EvictionPolicy.NRU_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
 
     "buckets": {

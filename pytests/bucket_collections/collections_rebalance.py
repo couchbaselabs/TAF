@@ -25,7 +25,7 @@ class CollectionsRebalance(CollectionBase):
         self.compaction = self.input.param("compaction", False)
         self.warmup = self.input.param("warmup", False)
         self.update_replica = self.input.param("update_replica", False)  # for replica + rebalance tests
-        self.num_replicas = self.input.param("num_replicas", 1)  # for replica + rebalance tests, forced hard failover
+        self.updated_num_replicas = self.input.param("updated_num_replicas", 1)  # for replica + rebalance tests, forced hard failover
         self.forced_hard_failover = self.input.param("forced_hard_failover", False) # for forced hard failover tests
         self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster", False) # To change during rebalance
         self.skip_validations = self.input.param("skip_validations", True)
@@ -93,8 +93,8 @@ class CollectionsRebalance(CollectionBase):
         return failover_count
 
     def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
-        self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
-        self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+        self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
+        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
         failover_count = 0
         for failover_node in failover_nodes:
             failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
@@ -127,8 +127,8 @@ class CollectionsRebalance(CollectionBase):
                     self.sleep(60)
                 else:
                     if self.update_replica:
-                        self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+                        self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
+                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats()
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
@@ -173,8 +173,8 @@ class CollectionsRebalance(CollectionBase):
                     self.sleep(60)
                 else:
                     if self.update_replica:
-                        self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+                        self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
+                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats()
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [])
@@ -222,8 +222,8 @@ class CollectionsRebalance(CollectionBase):
                     self.sleep(60)
                 else:
                     if self.update_replica:
-                        self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+                        self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
+                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats()
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
@@ -276,8 +276,8 @@ class CollectionsRebalance(CollectionBase):
                 self.sleep(60)
             else:
                 if self.update_replica:
-                    self.log.info("Updating all the bucket replicas to {0}".format(self.num_replicas))
-                    self.bucket_util.update_all_bucket_replicas(self.num_replicas)
+                    self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
+                    self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
                     self.bucket_util.print_bucket_stats()
                 for node in add_nodes:
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
@@ -480,12 +480,6 @@ class CollectionsRebalance(CollectionBase):
 
     def sync_data_load(self):
         self.subsequent_data_load()
-
-    def over_ride_template_params(self, target_spec):
-        for over_ride_param in self.over_ride_spec_params:
-            if over_ride_param == "durability":
-                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
-                    self.durability_level
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)

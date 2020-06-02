@@ -134,6 +134,9 @@ class BasicCrudTests(MagmaBaseTest):
         count = 0
         init_items = self.num_items
 
+        th = threading.Thread(target=self.abort_tasks_after_crash)
+        th.start()
+
         while count < self.test_itr:
             self.log.info("Create Iteration count == {}".format(count))
             for node in self.cluster.nodes_in_cluster:
@@ -174,6 +177,8 @@ class BasicCrudTests(MagmaBaseTest):
                         msg.format(bucket.name, count+1,
                                    disk_usage[3], disk_usage[2]))
             count += 1
+        self.stop = True
+        th.join()
         self.log.info("====test_basic_create_read ends====")
 
     def test_update_multi(self):
