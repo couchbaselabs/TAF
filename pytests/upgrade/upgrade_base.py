@@ -105,6 +105,7 @@ class UpgradeBase(BaseTestCase):
                                       doc_size=self.doc_size)
         async_load_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, self.gen_load, "create",
+            durability=self.durability_level,
             timeout_secs=self.sdk_timeout)
         self.task_manager.get_task_result(async_load_task)
 
@@ -119,6 +120,7 @@ class UpgradeBase(BaseTestCase):
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
+        self.summary.display()
 
     def __validate_upgrade_type(self):
         """
@@ -176,7 +178,7 @@ class UpgradeBase(BaseTestCase):
         install_params['num_nodes'] = len(nodes)
         install_params['product'] = "cb"
         install_params['version'] = version
-        install_params['vbuckets'] = [self.vbuckets]
+        install_params['vbuckets'] = [self.cluster_util.vbuckets]
         install_params['init_nodes'] = False
         install_params['debug_logs'] = False
         self.installer_job.parallel_install(nodes, install_params)
