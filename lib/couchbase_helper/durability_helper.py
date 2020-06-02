@@ -2,27 +2,33 @@ from json import loads as json_loads
 from math import floor
 
 from BucketLib.BucketOperations import BucketHelper
+from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
 
 from com.couchbase.client.core.msg.kv import DurabilityLevel
 
+# Required since the str(values) are different for bucket-create
+BucketDurability = dict()
+BucketDurability[Bucket.DurabilityLevel.NONE] = "none"
+BucketDurability[Bucket.DurabilityLevel.MAJORITY] = "majority"
+BucketDurability[Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE] = \
+    "majorityAndPersistActive"
+BucketDurability[Bucket.DurabilityLevel.PERSIST_TO_MAJORITY] = \
+    "persistToMajority"
+
 
 class DurabilityHelper:
-
     EQUAL = '=='
     GREATER_THAN_EQ = '>='
 
-    SupportedDurability = ["MAJORITY",
-                           "MAJORITY_AND_PERSIST_TO_ACTIVE",
-                           "PERSIST_TO_MAJORITY"]
+    SupportedDurability = [
+        Bucket.DurabilityLevel.MAJORITY,
+        Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+        Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]
 
-    class SupportedLevel(object):
-        MAJORITY = "MAJORITY"
-        MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
-        PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
-
-    def __init__(self, logger, cluster_len, durability="MAJORITY",
+    def __init__(self, logger, cluster_len,
+                 durability=Bucket.DurabilityLevel.MAJORITY,
                  replicate_to=0, persist_to=0):
         """
         :param logger:       Logger object to log the errors/warnings
@@ -61,15 +67,15 @@ class DurabilityHelper:
     @staticmethod
     def getDurabilityLevel(durability_level):
         durability_level = durability_level.upper()
-        if durability_level == DurabilityHelper.SupportedLevel.MAJORITY:
+        if durability_level == Bucket.DurabilityLevel.MAJORITY:
             return DurabilityLevel.MAJORITY
 
         if durability_level == \
-                DurabilityHelper.SupportedLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             return DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         if durability_level == \
-                DurabilityHelper.SupportedLevel.PERSIST_TO_MAJORITY:
+                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
             return DurabilityLevel.PERSIST_TO_MAJORITY
 
         return DurabilityLevel.NONE
@@ -252,7 +258,7 @@ class DurabilityHelper:
         # Verification block
         for op_type in ops_val.keys():
             self.log.debug("%s for %s: %s" % (op_type, bucket.name,
-                                             ops_val[op_type]))
+                                              ops_val[op_type]))
 
             if op_type in expected_val \
                     and not DurabilityHelper.__compare(ops_val[op_type],

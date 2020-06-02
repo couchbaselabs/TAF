@@ -1,6 +1,5 @@
 class Bucket(object):
     name = "name"
-    replicas = "replicas"
     ramQuotaMB = "ramQuotaMB"
     bucketType = "bucketType"
     replicaNumber = "replicaNumber"
@@ -15,10 +14,11 @@ class Bucket(object):
     threadsNumber = "threadsNumber"
     compressionMode = "compressionMode"
     uuid = "uuid"
+    durability_level = "durability_level"
 
     class Type(object):
         EPHEMERAL = "ephemeral"
-        MEMBASE = "membase"
+        MEMBASE = "couchbase"
         MEMCACHED = "memcached"
 
     class EvictionPolicy(object):
@@ -42,6 +42,12 @@ class Bucket(object):
             self.replica = []
             self.id = -1
 
+    class DurabilityLevel(object):
+        NONE = "NONE"
+        MAJORITY = "MAJORITY"
+        MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
+        PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
+
     class StorageBackend(object):
         magma = "magma"
         couchstore = "couchstore"
@@ -62,6 +68,9 @@ class Bucket(object):
         self.replicaNumber = new_params.get(Bucket.replicaNumber, 0)
         self.replicaServers = new_params.get(Bucket.replicaServers, [])
         self.ramQuotaMB = new_params.get(Bucket.ramQuotaMB, 100)
+        self.durability_level = new_params.get(
+            Bucket.durability_level,
+            Bucket.DurabilityLevel.NONE.lower())
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(

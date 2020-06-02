@@ -2893,7 +2893,8 @@ class BucketCreateTask(Task):
         super(BucketCreateTask, self).__init__("bucket_create_task")
         self.server = server
         self.bucket = bucket
-        if self.bucket.priority is None or self.bucket.priority.lower() is 'low':
+        if self.bucket.priority is None \
+                or self.bucket.priority.lower() is 'low':
             self.bucket_priority = 3
         else:
             self.bucket_priority = 8
@@ -2933,13 +2934,12 @@ class BucketCreateTask(Task):
             self.result = True
             return
         except BucketCreationException as e:
+            self.result = False
             self.test_log.error(str(e))
-            self.set_exception(e)
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False
             self.test_log.error(str(e))
-            self.set_exception(e)
 
     def check(self):
         try:
@@ -2959,7 +2959,8 @@ class BucketCreateTask(Task):
             self.test_log.warn("Exception: {0}. vbucket map not ready after try {1}"
                                .format(e, self.retries))
             if self.retries >= 5:
-                self.set_exception(e)
+                self.result = False
+                self.test_log.error(str(e))
         self.retries = self.retris + 1
         time.sleep(5)
         self.check()

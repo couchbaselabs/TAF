@@ -297,7 +297,9 @@ class BucketHelper(RestConnection):
                        'flushEnabled': bucket_params.get('flushEnabled'),
                        'evictionPolicy': bucket_params.get('evictionPolicy'),
                        'compressionMode': bucket_params.get('compressionMode'),
-                       'maxTTL': bucket_params.get('maxTTL')}
+                       'maxTTL': bucket_params.get('maxTTL'),
+                       'durabilityMinLevel': bucket_params.get(
+                           'durability_level')}
 
         # Remove 'replicaNumber' in case of MEMCACHED bucket
         if bucket_params.get("bucketType") == Bucket.Type.MEMCACHED:
@@ -364,7 +366,8 @@ class BucketHelper(RestConnection):
                             saslPassword=None, replicaNumber=None,
                             proxyPort=None, replicaIndex=None,
                             flushEnabled=None, timeSynchronization=None,
-                            maxTTL=None, compressionMode=None):
+                            maxTTL=None, compressionMode=None,
+                            bucket_durability=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  bucket)
@@ -390,6 +393,8 @@ class BucketHelper(RestConnection):
             params_dict["maxTTL"] = maxTTL
         if compressionMode:
             params_dict["compressionMode"] = compressionMode
+        if bucket_durability:
+            params_dict["durabilityMinLevel"] = bucket_durability
         params = urllib.urlencode(params_dict)
 
         self.log.info("Updating bucket properties for %s" % bucket)
@@ -400,8 +405,8 @@ class BucketHelper(RestConnection):
                 raise Exception("Erroneously able to set bucket settings %s for bucket on time-sync" % (params, bucket))
             return status, content
         if not status:
-            raise Exception("Unable to set bucket settings %s for bucket"
-                            % (params, bucket))
+            raise Exception("Failure while setting bucket %s param %s: %s"
+                            % (bucket, params, content))
         self.log.debug("Bucket %s updated" % bucket)
         bucket.__dict__.update(params_dict)
         return status

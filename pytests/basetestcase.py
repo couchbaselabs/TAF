@@ -10,12 +10,14 @@ from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
+from couchbase_helper.durability_helper import BucketDurability
 from membase.api.rest_client import RestHelper, RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cb_cli import CbCli
+from test_summary import TestSummary
 
 
 class BaseTestCase(unittest.TestCase):
@@ -24,9 +26,11 @@ class BaseTestCase(unittest.TestCase):
 
         # Framework specific parameters
         self.log_level = self.input.param("log_level", "info").upper()
-        self.infra_log_level = self.input.param("infra_log_level", "error").upper()
+        self.infra_log_level = self.input.param("infra_log_level",
+                                                "error").upper()
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
-        self.tear_down_while_setup = self.input.param("tear_down_while_setup", True)
+        self.tear_down_while_setup = self.input.param("tear_down_while_setup",
+                                                      True)
         self.test_timeout = self.input.param("test_timeout", 3600)
         self.thread_to_use = self.input.param("threads_to_use", 10)
         self.case_number = self.input.param("case_number", 0)
@@ -70,8 +74,8 @@ class BaseTestCase(unittest.TestCase):
         self.compression_mode = \
             self.input.param("compression_mode",
                              Bucket.CompressionMode.PASSIVE)
-        self.bucket_storage = self.input.param("bucket_storage",
-                                               Bucket.StorageBackend.couchstore)
+        self.bucket_storage = self.input.param(
+            "bucket_storage", Bucket.StorageBackend.couchstore)
         if self.bucket_storage == Bucket.StorageBackend.magma:
             self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
         # End of bucket parameters
@@ -105,7 +109,11 @@ class BaseTestCase(unittest.TestCase):
         self.persist_to = self.input.param("persist_to", 0)
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
+        self.bucket_durability_level = self.input.param(
+            "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
         self.durability_level = self.input.param("durability", "").upper()
+        self.bucket_durability_level = \
+            BucketDurability[self.bucket_durability_level]
 
         # Doc Loader Params
         self.process_concurrency = self.input.param("process_concurrency", 8)
@@ -155,6 +163,7 @@ class BaseTestCase(unittest.TestCase):
         self.cleanup = False
         self.nonroot = False
         self.test_failure = None
+        self.summary = TestSummary(self.log)
 
         # Populate memcached_port in case of cluster_run
         cluster_run_base_port = ClusterRun.port
@@ -237,14 +246,16 @@ class BaseTestCase(unittest.TestCase):
                     str(self.__class__).find('upgradeXDCR') != -1 or \
                     str(self.__class__).find('Upgrade_EpTests') != -1 or \
                     self.skip_buckets_handle:
-                self.log.warning("any cluster operation in setup will be skipped")
+                self.log.warning(
+                    "Any cluster operation in setup will be skipped")
                 self.primary_index_created = True
                 self.__log_setup_status("finished")
                 return
             # avoid clean up if the previous test has been tear down
             if self.case_number == 1 or self.case_number > 1000:
                 if self.case_number > 1000:
-                    self.log.warn("TearDown for previous test failed. will retry..")
+                    self.log.warn(
+                        "TearDown for previous test failed. will retry..")
                     self.case_number -= 1000
                 self.cleanup = True
                 if not self.skip_init_check_cbserver:
@@ -315,7 +326,9 @@ class BaseTestCase(unittest.TestCase):
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         self.tearDownEverything()
-        self.assertEqual(len(server_with_crashes), 0, msg="Test failed, Coredump found on servers {}".format(server_with_crashes));
+        self.assertEqual(len(server_with_crashes), 0,
+                         msg="Test failed, Coredump found on servers {}"
+                             .format(server_with_crashes))
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
@@ -478,7 +491,8 @@ class BaseTestCase(unittest.TestCase):
 
                 self.log.info("Copying cbcollect ZIP file to Client")
                 remote_client = RemoteMachineShellConnection(node)
-                cb_collect_path = cb_collect_response['perNode'][params['nodes']]['path']
+                cb_collect_path = \
+                    cb_collect_response['perNode'][params['nodes']]['path']
                 zip_file_copied = remote_client.get_file(
                     os.path.dirname(cb_collect_path),
                     os.path.basename(cb_collect_path),
@@ -497,12 +511,12 @@ class BaseTestCase(unittest.TestCase):
                        % (inspect.stack()[1][1],
                           inspect.stack()[1][3],
                           inspect.stack()[1][2]))
-        self.log.info("Reason: %s. Sleep for %s secs ..." % (message,
-                                                             timeout))
+        self.log.info("Reason: %s. Sleep for %s secs ..." % (message, timeout))
         time.sleep(timeout)
 
     def log_failure(self, message):
         self.log.error(message)
+        self.summary.set_status("FAILED")
         if self.test_failure is None:
             self.test_failure = message
 
@@ -521,15 +535,16 @@ class BaseTestCase(unittest.TestCase):
 
     def check_coredump_exist(self, servers):
         """checks coredump on the given nodes/node
-        return: a list (list of servers with crashes or a empty list if no core dump exists)
+        return: a list (list of servers with crashes
+                or a empty list if no core dump exists)
         Args: list of servers
         """
 
-        self.log.info("Initializing core dump check on all the nodes");
-        servers_with_crashes = [];
+        self.log.info("Initializing core dump check on all the nodes")
+        servers_with_crashes = []
         for server in servers:
-            shell = RemoteMachineShellConnection(server);
-            shell.extract_remote_info();
+            shell = RemoteMachineShellConnection(server)
+            shell.extract_remote_info()
             if shell.info.type.lower() == "linux":
                 rest = RestConnection(server)
                 core_path = str(rest.get_data_path()).split("data")[0] \
@@ -539,17 +554,18 @@ class BaseTestCase(unittest.TestCase):
 
             elif shell.info.type.lower() == "windows":
                 core_path = 'c://CrashDumps'
-            o, e = shell.execute_command("ls -l {} | grep '.dmp' | wc -l".format(core_path));
-            output = o[0].split('\n')[0];
+            o, e = shell.execute_command("ls -l %s | grep '.dmp' | wc -l"
+                                         % core_path)
+            output = o[0].split('\n')[0]
             if int(output) == 0:
-                print("=== No core exists on node {}".format(server.ip));
-                shell.disconnect();
-                pass;
+                self.log.debug("Node %s: No core exists" % server.ip)
+                shell.disconnect()
             else:
-                self.log.error(" === CORE DUMPS SEEN ON SERVER {} : {} crashes seen === ".format(server.ip, output));
+                self.log.error("Node %s: Core dumps seen for crashes %s"
+                               % (server.ip, output))
                 if TestInputSingleton.input.param("get-cbcollect-info", True):
-                    servers_with_crashes.append(server.ip);
-                shell.disconnect();
+                    servers_with_crashes.append(server.ip)
+                shell.disconnect()
         if servers_with_crashes:
-            self.fetch_cb_collect_logs();
-        return (servers_with_crashes);
+            self.fetch_cb_collect_logs()
+        return servers_with_crashes
