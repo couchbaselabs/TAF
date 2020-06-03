@@ -231,7 +231,6 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.rest = RestConnection(self.orchestrator)
         self.rest.reset_autofailover()
         self.disable_autofailover()
-        self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
         self._cleanup_cluster()
         super(AutoFailoverBaseTest, self).tearDown()
 
@@ -1036,8 +1035,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             for server in self.cluster.servers:
                 self._initialize_node_with_new_data_location(
                     server, self.original_data_path)
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
+        super(DiskAutoFailoverBasetest, self).tearDown()
         self.log.info("=========Finished Diskautofailover teardown ==========")
 
     def enable_disk_autofailover(self):
