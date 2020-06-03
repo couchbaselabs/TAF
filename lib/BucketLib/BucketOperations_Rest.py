@@ -369,7 +369,7 @@ class BucketHelper(RestConnection):
                             maxTTL=None, compressionMode=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
-                                 urllib.quote_plus(bucket))
+                                 urllib.quote_plus("%s" % bucket))
         params_dict = {}
         if ramQuotaMB:
             params_dict["ramQuotaMB"] = ramQuotaMB
