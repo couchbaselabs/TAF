@@ -6,6 +6,7 @@ from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 class AutoFailoverTests(AutoFailoverBaseTest):
     def setUp(self):
         super(AutoFailoverTests, self).setUp()
+        self.skip_validations = self.input.param("skip_validations", True)
         if self.spec_name is None:
             if self.atomicity:
                 self.run_time_create_load_gen = doc_generator(
@@ -41,18 +42,20 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         return tasks
 
     def data_validation_collection(self):
-        if self.durability_level:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
-        else:
-            # No data validation for doc loading without durability level
-            pass
+        if not self.skip_validations:
+            if self.durability_level:
+                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util.validate_docs_per_collections_all_buckets()
+            else:
+                # No data validation for doc loading without durability level
+                pass
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util.validate_doc_loading_results(task)
-        if self.durability_level and task.result is False:
-            self.fail("Doc_loading failed")
+        if not self.skip_validations:
+            if self.durability_level and task.result is False:
+                self.fail("Doc_loading failed")
 
 
     def test_autofailover(self):
