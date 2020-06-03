@@ -230,8 +230,8 @@ class RebalanceOutTests(RebalanceBaseTest):
         # allows multiple of them but one by one
         tasks_info = self.loadgen_docs()
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
-        self.bucket_util.validate_docs_per_collections_all_buckets()
         self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets()
         self.rest = RestConnection(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         self.sleep(20)
@@ -289,8 +289,8 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks_info = self.loadgen_docs()
         ejectedNode = self.cluster_util.find_node_info(self.cluster.master, self.cluster.servers[self.nodes_init - 1])
         if not self.atomicity:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
             self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets()
         self.sleep(20)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
