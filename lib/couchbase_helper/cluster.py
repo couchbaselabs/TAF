@@ -158,6 +158,7 @@ class ServerTasks(object):
                     skip_read_on_error=skip_read_on_error,
                     suppress_error_table=suppress_error_table,
                     sdk_client_pool=sdk_client_pool,
+                    scope=scope, collection=collection,
                     monitor_stats=monitor_stats)
             else:
                 majority_value = (bucket.replicaNumber + 1)/2 + 1

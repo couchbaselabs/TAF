@@ -262,7 +262,7 @@ class DurabilityHelper:
         # Verification block
         for op_type in ops_val.keys():
             self.log.debug("%s for %s: %s" % (op_type, bucket.name,
-                                             ops_val[op_type]))
+                                              ops_val[op_type]))
 
             if op_type in expected_val \
                     and not DurabilityHelper.__compare(ops_val[op_type],

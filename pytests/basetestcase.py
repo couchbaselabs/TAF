@@ -270,8 +270,7 @@ class BaseTestCase(unittest.TestCase):
                                               self.task)
                     cluster_util.cluster_cleanup(bucket_util)
 
-            # avoid any cluster operations in setup for new upgrade
-            #  & upgradeXDCR tests
+            # Avoid cluster operations in setup for new upgrade / upgradeXDCR
             if str(self.__class__).find('newupgradetests') != -1 or \
                     str(self.__class__).find('upgradeXDCR') != -1 or \
                     str(self.__class__).find('Upgrade_EpTests') != -1 or \

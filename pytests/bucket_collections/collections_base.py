@@ -123,7 +123,6 @@ class CollectionBase(BaseTestCase):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
-        self.sleep(20, "Sleep for sometime before printing cluster stats")
         self.cluster_util.print_cluster_stats()
 
         # Verify initial doc load count
@@ -149,8 +148,7 @@ class CollectionBase(BaseTestCase):
     def load_data_for_sub_doc_ops(self):
         new_data_load_template = \
             self.bucket_util.get_crud_template_from_package("initial_load")
-        new_data_load_template[MetaCrudParams.DURABILITY_LEVEL] = \
-            self.durability_level
+        new_data_load_template[MetaCrudParams.DURABILITY_LEVEL] = ""
         new_data_load_template["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 100
         new_data_load_template["subdoc_crud"][

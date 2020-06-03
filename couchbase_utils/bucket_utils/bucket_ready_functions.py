@@ -93,6 +93,31 @@ class DocLoaderUtils(object):
         return int((collection_obj.num_items * target_percent) / 100)
 
     @staticmethod
+    def rewind_doc_index(collection_obj, op_type, doc_gen):
+        """
+        Used to reset collection.num_items, in case of known failure scenarios
+        :param collection_obj: Collection object from Bucket.scope.collection
+        :param op_type: CRUD type used for by the generator
+        :param doc_gen: Doc_generator to compute num_items from (start, end)
+        :return:
+        """
+        num_items = doc_gen.end - doc_gen.start
+        if op_type == "create":
+            collection_obj.doc_index = (collection_obj.doc_index[0],
+                                        collection_obj.doc_index[1]-num_items)
+        elif op_type == "delete":
+            collection_obj.doc_index = (collection_obj.doc_index[0]-num_items,
+                                        collection_obj.doc_index[1])
+        elif op_type == "insert":
+            collection_obj.sub_doc_index = (
+                collection_obj.sub_doc_index[0],
+                collection_obj.sub_doc_index[1]-num_items)
+        elif op_type == "remove":
+            collection_obj.sub_doc_index = (
+                collection_obj.sub_doc_index[0]-num_items,
+                collection_obj.sub_doc_index[1])
+
+    @staticmethod
     def get_doc_generator(op_type, collection_obj, num_items,
                           generic_key, mutation_num=0,
                           target_vbuckets="all"):
@@ -124,6 +149,10 @@ class DocLoaderUtils(object):
 
         if target_vbuckets == "all":
             target_vbuckets = None
+        else:
+            # Target_vbuckets doc_gen require only total items to be created
+            # Hence subtracting to get only the num_items back
+            end -= start
 
         return doc_generator(generic_key, start, end,
                              target_vbucket=target_vbuckets,
@@ -139,7 +168,7 @@ class DocLoaderUtils(object):
             collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
                                             end)
             return sub_doc_generator(generic_key, start, end)
-        elif op_type == "delete":
+        elif op_type == "remove":
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
             collection_obj.sub_doc_index = (end,
@@ -330,6 +359,10 @@ class DocLoaderUtils(object):
         spec_percent_data["touch"] = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.TOUCH_PERCENTAGE_PER_COLLECTION, 0)
 
+        # Create subdoc spec if not provided by user
+        if "subdoc_crud" not in input_spec:
+            input_spec["subdoc_crud"] = dict()
+
         # Fetch sub_doc CRUD percentage from given spec
         xattr_test = input_spec["subdoc_crud"].get(
             MetaCrudParams.SubDocCrud.XATTR_TEST, False)
@@ -391,7 +424,7 @@ class DocLoaderUtils(object):
 
             if failed_keys:
                 DocLoaderUtils.log.warning(
-                    "%s:%s:%s %s failed keys: %s"
+                    "%s:%s:%s %s failed keys from task: %s"
                     % (bucket.name, scope_name, collection_name,
                        op_type, failed_keys))
                 for key, failed_doc in op_data["fail"].items():
@@ -399,8 +432,14 @@ class DocLoaderUtils(object):
                     exception = failed_doc["error"]
                     for tem_exception in op_data["ignore_exceptions"]:
                         if str(exception).find(tem_exception) != -1:
-                            bucket.scopes[scope_name] \
-                                .collections[collection_name].num_items -= 1
+                            if op_type == DocLoading.Bucket.DocOps.CREATE:
+                                bucket.scopes[scope_name] \
+                                    .collections[collection_name].num_items \
+                                    -= 1
+                            elif op_type == DocLoading.Bucket.DocOps.DELETE:
+                                bucket.scopes[scope_name] \
+                                    .collections[collection_name].num_items \
+                                    += 1
                             is_key_to_ignore = True
                             break
                     if is_key_to_ignore:
@@ -448,8 +487,14 @@ class DocLoaderUtils(object):
                         if retry_strategy == "retried":
                             op_data["fail"].pop(key)
                     else:
-                        bucket.scopes[scope_name] \
-                            .collections[collection_name].num_items -= 1
+                        if op_type == DocLoading.Bucket.DocOps.CREATE:
+                            bucket.scopes[scope_name] \
+                                .collections[collection_name].num_items \
+                                -= 1
+                        elif op_type == DocLoading.Bucket.DocOps.DELETE:
+                            bucket.scopes[scope_name] \
+                                .collections[collection_name].num_items \
+                                += 1
                         op_data[retry_strategy]["fail"][key] = result
 
                 generic_string = "%s:%s:%s %s" \
@@ -1125,19 +1170,14 @@ class BucketUtils(ScopeUtils):
                              This is the same dict returned by this function
         :return selected_buckets: Dict with keys as bucket_names
         """
-        selected_bucket_names = list()
         selected_buckets = dict()
-
+        available_buckets = [bucket.name for bucket in buckets]
         if req_num == "all" or req_num >= len(buckets):
-            for bucket in buckets:
-                if bucket.name not in exclude_from.keys():
-                    selected_bucket_names.append(bucket.name)
+            selected_bucket_names = available_buckets
         else:
-            while len(selected_bucket_names) != req_num:
-                bucket = sample(buckets, 1)[0]
-                if bucket.name \
-                        not in selected_bucket_names + exclude_from.keys():
-                    selected_bucket_names.append(bucket.name)
+            available_buckets = list(set([bucket.name for bucket in buckets])
+                                     - set(exclude_from.keys()))
+            selected_bucket_names = sample(available_buckets, req_num)
 
         for bucket_name in selected_bucket_names:
             selected_buckets[bucket_name] = dict()
@@ -1193,10 +1233,9 @@ class BucketUtils(ScopeUtils):
         if req_num == "all" or req_num >= len(available_scopes):
             selected_scopes = available_scopes
         else:
-            while len(selected_scopes) != req_num:
-                t_scope = sample(available_scopes, 1)[0]
-                if t_scope not in selected_scopes + exclude_scopes:
-                    selected_scopes.append(t_scope)
+            available_scopes = list(set(available_scopes)
+                                    - set(exclude_scopes))
+            selected_scopes = sample(available_scopes, req_num)
 
         for scope_name in selected_scopes:
             scope_name = scope_name.split(":")
@@ -1237,7 +1276,6 @@ class BucketUtils(ScopeUtils):
                                           consider_scopes,
                                           consider_buckets)
         available_collections = list()
-        selected_collections = list()
         exclude_collections = list()
 
         for b_name, scope_dict in exclude_from.items():
@@ -1246,11 +1284,9 @@ class BucketUtils(ScopeUtils):
                     exclude_collections.append("%s:%s:%s"
                                                % (b_name, scope_name, c_name))
 
-        for bucket_name in selected_buckets.keys():
+        for bucket_name, scope_dict in selected_buckets.items():
             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
-            active_scopes = BucketUtils.get_active_scopes(bucket,
-                                                          only_names=True)
-            for scope_name in active_scopes:
+            for scope_name in scope_dict["scopes"].keys():
                 active_collections = BucketUtils.get_active_collections(
                     bucket, scope_name, only_names=True)
                 if consider_only_dropped:
@@ -1266,11 +1302,9 @@ class BucketUtils(ScopeUtils):
         if req_num == "all" or req_num >= len(available_collections):
             selected_collections = available_collections
         else:
-            while len(selected_collections) != req_num:
-                collection = sample(available_collections, 1)[0]
-                if collection \
-                        not in selected_collections + exclude_collections:
-                    selected_collections.append(collection)
+            available_collections = list(set(available_collections)
+                                         - set(exclude_collections))
+            selected_collections = sample(available_collections, req_num)
 
         for collection in selected_collections:
             collection_name = collection.split(":")

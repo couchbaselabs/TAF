@@ -20,7 +20,7 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
-from Cb_constants import constants, CbServer
+from Cb_constants import constants, CbServer, DocLoading
 from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
@@ -401,6 +401,7 @@ class GenericLoadingTask(Task):
         self.compression = compression
         self.retries = retries
         self.suppress_error_table = suppress_error_table
+        self.docs_loaded = 0
 
     def call(self):
         self.start_task()
@@ -754,7 +755,6 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.durability = durability
         self.fail = dict()
         self.success = dict()
-        self.docs_loaded = 0
         self.skip_read_on_error = skip_read_on_error
 
         if proxy_client:
@@ -881,6 +881,11 @@ class LoadSubDocumentsTask(GenericLoadingTask):
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch(self.op_type)
+        if self.sdk_client_pool is not None:
+            self.client = \
+                self.sdk_client_pool.get_client_for_bucket(self.bucket,
+                                                           self.scope,
+                                                           self.collection)
         if self.op_type == 'insert':
             success, fail = self.batch_sub_doc_insert(
                 key_value,
@@ -936,6 +941,12 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
+
+        self.docs_loaded += len(key_value)
+
+        if self.sdk_client_pool is not None:
+            self.sdk_client_pool.release_client(self.client)
+            self.client = None
 
 
 class Durability(Task):
@@ -1379,10 +1390,12 @@ class LoadDocumentsGeneratorsTask(Task):
                  task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False,
                  sdk_client_pool=None,
+                 scope=CbServer.default_scope,
+                 collection=CbServer.default_collection,
                  monitor_stats=["doc_ops"]):
         super(LoadDocumentsGeneratorsTask, self).__init__(
-            "DocumentsLoadGenTask_%s_%s_%s"
-            % (bucket, task_identifier, time.time()))
+            "DocumentsLoadGenTask_%s_%s_%s_%s_%s"
+            % (bucket, scope, collection, task_identifier, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.exp_unit = exp_unit
@@ -1410,6 +1423,8 @@ class LoadDocumentsGeneratorsTask(Task):
         self.skip_read_on_error = skip_read_on_error
         self.suppress_error_table = suppress_error_table
         self.monitor_stats = monitor_stats
+        self.scope = scope
+        self.collection = collection
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1536,7 +1551,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 task_identifier=self.thread_name,
                 skip_read_on_error=self.skip_read_on_error,
                 suppress_error_table=self.suppress_error_table,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                scope=self.scope, collection=self.collection)
             tasks.append(task)
         return tasks
 
@@ -3327,18 +3343,32 @@ class MutateDocsFromSpecTask(Task):
                     self.batch_size)
                 generators.append(batch_gen)
             for doc_gen in generators:
-                doc_load_task = LoadDocumentsTask(
-                    self.cluster, bucket, None, doc_gen,
-                    op_type, op_data["doc_ttl"],
-                    scope=scope_name, collection=col_name,
-                    task_identifier=self.thread_name,
-                    sdk_client_pool=self.sdk_client_pool,
-                    batch_size=self.batch_size,
-                    durability=op_data["durability_level"],
-                    timeout_secs=op_data["sdk_timeout"],
-                    time_unit=op_data["sdk_timeout_unit"],
-                    skip_read_on_error=op_data["skip_read_on_error"],
-                    suppress_error_table=self.suppress_error_table)
+                if op_type in DocLoading.Bucket.DOC_OPS:
+                    doc_load_task = LoadDocumentsTask(
+                        self.cluster, bucket, None, doc_gen,
+                        op_type, op_data["doc_ttl"],
+                        scope=scope_name, collection=col_name,
+                        task_identifier=self.thread_name,
+                        sdk_client_pool=self.sdk_client_pool,
+                        batch_size=self.batch_size,
+                        durability=op_data["durability_level"],
+                        timeout_secs=op_data["sdk_timeout"],
+                        time_unit=op_data["sdk_timeout_unit"],
+                        skip_read_on_error=op_data["skip_read_on_error"],
+                        suppress_error_table=self.suppress_error_table)
+                else:
+                    doc_load_task = LoadSubDocumentsTask(
+                        self.cluster, bucket, None, doc_gen,
+                        op_type, op_data["doc_ttl"],
+                        create_paths=True,
+                        xattr=op_data["xattr_test"],
+                        scope=scope_name, collection=col_name,
+                        task_identifier=self.thread_name,
+                        sdk_client_pool=self.sdk_client_pool,
+                        batch_size=self.batch_size,
+                        durability=op_data["durability_level"],
+                        timeout_secs=op_data["sdk_timeout"],
+                        time_unit=op_data["sdk_timeout_unit"])
                 self.load_gen_tasks.append(doc_load_task)
 
     def get_tasks(self):
