@@ -194,6 +194,9 @@ class BasicCrudTests(MagmaBaseTest):
 
         upsert_doc_list = self.get_fragmentation_upsert_docs_list()
 
+        th = threading.Thread(target=self.abort_tasks_after_crash)
+        th.start()
+
         count = 0
         self.mutate = 0
         while count < self.test_itr:
@@ -247,7 +250,13 @@ class BasicCrudTests(MagmaBaseTest):
                 False, msg.format(count+1, _res, usage_factor,
                                   self.disk_usage[self.disk_usage.keys()[0]]))
             # Spcae Amplification check ends
+
+            if self.stop:
+                break;
             count += 1
+
+        self.stop = True
+        th.join()
 
         self.validate_data("update", self.gen_update)
 
