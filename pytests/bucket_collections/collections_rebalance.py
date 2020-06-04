@@ -92,13 +92,13 @@ class CollectionsRebalance(CollectionBase):
                 failover_count += 1
         return failover_count
 
-    def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
+    def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=300):
         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
         self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
         failover_count = 0
         for failover_node in failover_nodes:
-            failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                          graceful=False, wait_for_pending=wait_for_pending)
+            failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                    graceful=False, wait_for_pending=wait_for_pending)
             failover_count = failover_count + 1
             self.wait_for_failover_or_assert(failover_count)
         operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
@@ -106,7 +106,7 @@ class CollectionsRebalance(CollectionBase):
         return operation
 
     def rebalance_operation(self, rebalance_operation, known_nodes=None, add_nodes=None, remove_nodes=None,
-                            failover_nodes=None, wait_for_pending=120):
+                            failover_nodes=None, wait_for_pending=300):
         self.log.info("Starting rebalance operation of type : {0}".format(rebalance_operation))
         step_count = self.step_count
         if rebalance_operation == "rebalance_out":
@@ -291,8 +291,8 @@ class CollectionsRebalance(CollectionBase):
             if step_count == -1:
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                                  graceful=True, wait_for_pending=wait_for_pending)
+                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                            graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
                 if self.compaction:
@@ -314,8 +314,8 @@ class CollectionsRebalance(CollectionBase):
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                                      graceful=True, wait_for_pending=wait_for_pending)
+                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                                graceful=True, wait_for_pending=wait_for_pending)
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
                     self.data_load_after_failover()
@@ -329,8 +329,8 @@ class CollectionsRebalance(CollectionBase):
             if step_count == -1:
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                                  graceful=False, wait_for_pending=wait_for_pending)
+                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                            graceful=False, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
                 if self.compaction:
@@ -352,8 +352,8 @@ class CollectionsRebalance(CollectionBase):
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                                      graceful=False, wait_for_pending=wait_for_pending)
+                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                                graceful=False, wait_for_pending=wait_for_pending)
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
                     self.data_load_after_failover()
@@ -367,8 +367,8 @@ class CollectionsRebalance(CollectionBase):
             if (step_count == -1):
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                                  graceful=True, wait_for_pending=wait_for_pending)
+                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                            graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
                 self.data_load_after_failover()
@@ -394,8 +394,8 @@ class CollectionsRebalance(CollectionBase):
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                                      graceful=True, wait_for_pending=wait_for_pending)
+                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                                graceful=True, wait_for_pending=wait_for_pending)
 
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
@@ -413,8 +413,8 @@ class CollectionsRebalance(CollectionBase):
             if (step_count == -1):
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                                  graceful=False, wait_for_pending=wait_for_pending)
+                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                            graceful=False, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
                 self.data_load_after_failover()
@@ -440,8 +440,8 @@ class CollectionsRebalance(CollectionBase):
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.async_failover(known_nodes, failover_nodes=[failover_node],
-                                                                      graceful=False, wait_for_pending=wait_for_pending)
+                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                                graceful=False, wait_for_pending=wait_for_pending)
 
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)

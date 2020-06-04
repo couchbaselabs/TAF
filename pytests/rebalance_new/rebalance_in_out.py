@@ -50,9 +50,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
         servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
         if not self.atomicity:
+            self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 timeout=self.wait_timeout)
-            self.bucket_util._wait_for_stats_all_buckets()
             self.sleep(20)
             prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
                 self.cluster.servers[:self.nodes_init], self.bucket_util.buckets)
@@ -114,10 +114,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
+            self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.validate_docs_per_collections_all_buckets(
                     timeout=self.wait_timeout)
-            self.bucket_util._wait_for_stats_all_buckets()
-
         # Update replica value before performing rebalance in/out as given in conf file
         if self.replica_to_update:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -194,9 +193,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 self.assertFalse(
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
+            self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 timeout=self.wait_timeout)
-            self.bucket_util._wait_for_stats_all_buckets()
         # Update replica value before performing rebalance in/out
         if self.replica_to_update:
             bucket_helper = BucketHelper(self.cluster.master)

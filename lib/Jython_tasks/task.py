@@ -2956,7 +2956,7 @@ class PrintBucketStats(Task):
         while not self.stop_task:
             try:
                 bucket_stats = \
-                    self.bucket_helper.fetch_bucket_stats(self.bucket)
+                    self.bucket_helper.fetch_bucket_stats(self.bucket.name)
             except Exception as e:
                 self.log.warning("Exception while fetching bucket stats: %s"
                                  % e)

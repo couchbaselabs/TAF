@@ -863,7 +863,7 @@ class ServerTasks(object):
         return self.jython_task_manager.get_task_result(_task)
 
     def failover(self, servers=[], failover_nodes=[], graceful=False,
-                 use_hostnames=False, timeout=None):
+                 use_hostnames=False, wait_for_pending=0):
         """Synchronously flushes a bucket
 
         Parameters:
@@ -874,8 +874,9 @@ class ServerTasks(object):
         Returns:
             boolean - Whether or not the bucket was flushed."""
         _task = self.async_failover(servers, failover_nodes, graceful,
-                                    use_hostnames)
-        return _task.result(timeout)
+                                    use_hostnames, wait_for_pending)
+        self.jython_task_manager.get_task_result(_task)
+        return _task.result
 
     def async_bucket_flush(self, server, bucket='default'):
         """
