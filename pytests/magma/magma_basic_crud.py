@@ -876,24 +876,38 @@ class BasicCrudTests(MagmaBaseTest):
             self.log.info("Verifying doc counts after delete doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
+
             #Space Amplification check
             _res = self.check_fragmentation_using_magma_stats(
                 self.buckets[0],
                 self.cluster.nodes_in_cluster)
             self.assertIs(_res, True,
                           "Fragmentation value exceeds from '\n' \
-                          the configured fragementaion value")
+                          the configured fragementation value")
 
             _r = self.check_fragmentation_using_bucket_stats(
                 self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                           "Fragmentation value exceeds from '\n' \
-                          the configured fragementaion value")
+                          the configured fragementation value")
+
+            disk_usage = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)
+            _result = disk_usage[0]
+            self.log.info("Iteration- {}, Disk Usage- {}MB\
+            ".format(count+1, _result))
+            msg = "Disk Usage={}MB > {} * init_Usage={}MB"
+            self.assertIs(disk_usage[0] > 0.5 * self.disk_usage[
+                self.disk_usage.keys()[0]], False,
+                msg.format(disk_usage[0], 0.5,
+                           self.disk_usage[self.disk_usage.keys()[0]]))
             #Space Amplification check ends
-            self.doc_ops = "create"
-            _ = self.loadgen_docs(self.retry_exceptions,
-                                  self.ignore_exceptions,
-                                  _sync=True)
+
+            if count != self.test_itr - 1:
+                self.doc_ops = "create"
+                _ = self.loadgen_docs(self.retry_exceptions,
+                                      self.ignore_exceptions,
+                                      _sync=True)
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             count += 1
