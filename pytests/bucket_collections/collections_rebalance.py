@@ -75,6 +75,8 @@ class CollectionsRebalance(CollectionBase):
                 break
             time.sleep(20)
         time_end = time.time()
+        if actual_failover_count != expected_failover_count:
+            self.log.info(self.rest.print_UI_logs())
         self.assertTrue(actual_failover_count == expected_failover_count,
                         "{0} nodes failed over, expected : {1}"
                         .format(actual_failover_count,
@@ -92,7 +94,7 @@ class CollectionsRebalance(CollectionBase):
                 failover_count += 1
         return failover_count
 
-    def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=300):
+    def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
         self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
         failover_count = 0
@@ -106,7 +108,7 @@ class CollectionsRebalance(CollectionBase):
         return operation
 
     def rebalance_operation(self, rebalance_operation, known_nodes=None, add_nodes=None, remove_nodes=None,
-                            failover_nodes=None, wait_for_pending=300):
+                            failover_nodes=None, wait_for_pending=120):
         self.log.info("Starting rebalance operation of type : {0}".format(rebalance_operation))
         step_count = self.step_count
         if rebalance_operation == "rebalance_out":
