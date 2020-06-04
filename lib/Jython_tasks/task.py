@@ -4208,6 +4208,7 @@ class Atomicity(Task):
             self.exp_unit = "seconds"
             self.retries = retries
             self.keys_values = dict()
+            sleep(10, "wait before txn load")
 
         def has_next(self):
             return self.generator.has_next()
