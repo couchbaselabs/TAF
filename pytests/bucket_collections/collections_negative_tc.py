@@ -96,30 +96,39 @@ class CollectionsNegativeTc(CollectionBase):
     def test_more_than_max_collections_single_scope(self):
         BucketUtils.create_scope(self.cluster.master, self.bucket,
                                  {"name": "scope1"})
-        # Max_collections count, after considering default collection in setup
-        max_collections = 1000
-        BucketUtils.create_collections(self.cluster, self.bucket, max_collections - 1, "scope1")
+        # create max collections under single scope
+        collects_dict = BucketUtils.create_collections(self.cluster, self.bucket, self.MAX_COLLECTIONS, "scope1")
+        actual_count = len(collects_dict)
+        if actual_count != self.MAX_COLLECTIONS:
+            self.fail("failed to create max number of collections")
         try:
-            BucketUtils.create_collections(self.cluster, self.bucket, 500, "scope1")
+            # create one more than the max allowed
+            BucketUtils.create_collections(self.cluster, self.bucket, 1, "scope1")
         except Exception as e:
             self.log.info("Creating more than max collections failed as expected")
         else:
             self.fail("Creating more than max collections did not fail")
 
     def test_more_than_max_collections_multiple_scopes(self):
+        # create max collections across 10 scopes
+        BucketUtils.create_scopes(self.cluster, self.bucket, 10, collection_count=120)
         try:
-            BucketUtils.create_scopes(self.cluster, self.bucket, 10, collection_count=200)
+            # create one more collection under a new scope
+            BucketUtils.create_scopes(self.cluster, self.bucket, 1, collection_count=1)
         except Exception as e:
             self.log.info("Creating more than max collections failed as expected")
         else:
             self.fail("Creating more than max collections did not fail")
 
     def test_more_than_max_scopes(self):
-        # Max_scopes count, after considering default scope in setup
-        max_scopes = 1000
-        BucketUtils.create_scopes(self.cluster, self.bucket, max_scopes - 1)
+        # create max scopes
+        scopes_dict = BucketUtils.create_scopes(self.cluster, self.bucket, self.MAX_SCOPES)
+        actual_count = len(scopes_dict)
+        if actual_count != self.MAX_SCOPES:
+            self.fail("failed to create max number of scopes")
         try:
-            BucketUtils.create_scopes(self.cluster, self.bucket, 500)
+            # create one more than the max allowed
+            BucketUtils.create_scopes(self.cluster, self.bucket, 1)
         except Exception as e:
             self.log.info("Creating more than max scopes failed as expected")
         else:

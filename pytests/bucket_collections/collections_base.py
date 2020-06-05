@@ -39,6 +39,8 @@ class CollectionBase(BaseTestCase):
         raise exception_obj
 
     def collection_setup(self):
+        self.MAX_SCOPES = 1200  # excluding the default scope
+        self.MAX_COLLECTIONS = 1200  # excluding the default collection
         self.key = 'test_collection'.rjust(self.key_size, '0')
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
