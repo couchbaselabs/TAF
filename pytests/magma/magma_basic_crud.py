@@ -252,7 +252,7 @@ class BasicCrudTests(MagmaBaseTest):
             # Spcae Amplification check ends
 
             if self.stop:
-                break;
+                break
             count += 1
 
         self.stop = True
@@ -282,6 +282,9 @@ class BasicCrudTests(MagmaBaseTest):
         the configured value"
         msg = "{} Iteration= {}, Disk Usage = {}MB\
          exceeds 2.5 times from Actual disk usage = {}MB"
+
+        th = threading.Thread(target=self.abort_tasks_after_crash)
+        th.start()
 
         self.mutate = 0
         for i in range(self.test_itr):
@@ -335,6 +338,8 @@ class BasicCrudTests(MagmaBaseTest):
                                       self.disk_usage[self.disk_usage.keys()[0]]))
                 # Spcae Amplification check ends
 
+                if self.stop:
+                    break
                 count += 1
             self.update_itr += self.update_itr
 
@@ -355,6 +360,8 @@ class BasicCrudTests(MagmaBaseTest):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
+            if self.stop:
+                break
 
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -394,6 +401,9 @@ class BasicCrudTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=True)
 
+            if self.stop:
+                break
+
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
@@ -420,10 +430,18 @@ class BasicCrudTests(MagmaBaseTest):
                                   self.disk_usage[self.disk_usage.keys()[0]]))
             # Space amplification Check  ends
 
+        self.stop = True
+        th.join()
+
         self.validate_data("create", self.gen_create)
         self.log.info("====test_multiUpdate_delete ends====")
 
     def test_update_rev_update(self):
+        self.log.info("==== test_update_rev_update starts =====")
+
+        th = threading.Thread(target=self.abort_tasks_after_crash)
+        th.start()
+
         count = 0
         mutated = 1
         for i in range(self.test_itr):
@@ -584,6 +602,8 @@ class BasicCrudTests(MagmaBaseTest):
                     times".format(_res, count,
                                   self.disk_usage[self.disk_usage.keys()[0]]))
                 # Spcae amplification check ends
+                if self.stop:
+                    break
                 count += 1
             self.update_itr += self.update_itr
             start_del = 0
@@ -607,6 +627,9 @@ class BasicCrudTests(MagmaBaseTest):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
+            if self.stop:
+                break
+
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             # Space amplifcation check
@@ -642,6 +665,10 @@ class BasicCrudTests(MagmaBaseTest):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
+
+            if self.stop:
+                break
+
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             d_validation = self.task.async_validate_docs(
@@ -679,6 +706,9 @@ class BasicCrudTests(MagmaBaseTest):
                 times".format(_res, i+1,
                               self.disk_usage[self.disk_usage.keys()[0]]))
             # Space amplification check ends
+
+        self.stop = True
+        th.join()
         self.log.info("====test_update_rev_update ends====")
 
     def test_update_single_doc_n_times(self):
