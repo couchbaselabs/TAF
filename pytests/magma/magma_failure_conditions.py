@@ -574,14 +574,8 @@ class MagmaRollbackTests(MagmaFailures):
         shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
         cbstats = Cbstats(shell)
         self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].name)
-
-        self.gen_create = doc_generator(
-                self.key, 0, self.num_items,
-                doc_size=self.doc_size, doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value)
+        self.gen_create = self.gen_docs_basic_for_target_vbucket(0, self.num_items,
+                                                                 self.target_vbucket)
 
         self.doc_ops = "create"
         self.loadgen_docs(_sync=True,
@@ -595,14 +589,6 @@ class MagmaRollbackTests(MagmaFailures):
         mem_only_items = self.input.param("rollback_items", 100000)
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
 
-        self.gen_read = doc_generator(
-                self.key, 0, self.num_items,
-                doc_size=self.doc_size, doc_type=self.doc_type,
-                target_vbucket=None,
-                vbuckets=self.cluster_util.vbuckets,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value)
-
         self.doc_ops = "delete"
         start = 0
         for i in range(1, self.num_rollbacks+1):
@@ -613,13 +599,8 @@ class MagmaRollbackTests(MagmaFailures):
                 self.input.servers[0], self.bucket_util.buckets[0])
             mem_client.stop_persistence()
 
-            self.gen_delete = doc_generator(
-                self.key, start, mem_only_items,
-                doc_size=self.doc_size, doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value)
+            self.gen_delete = self.gen_docs_basic_for_target_vbucket(start, mem_only_items,
+                                                                     self.target_vbucket)
 
             self.loadgen_docs(_sync=True,
                               retry_exceptions=retry_exceptions)
@@ -639,13 +620,8 @@ class MagmaRollbackTests(MagmaFailures):
                     bucket,
                     vb_replica_queue_size_map,
                     stat_name="vb_replica_queue_size")
-            data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_delete, "delete", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
-            self.task.jython_task_manager.get_task_result(data_validation)
+
+            self.validate_data("delete", self.gen_delete)
 
             # Kill memcached on NodeA to trigger rollback on other Nodes
             # replica vBuckets
@@ -664,6 +640,7 @@ class MagmaRollbackTests(MagmaFailures):
                 self.log.debug(cbstats.failover_stats(bucket.name))
 
         shell.disconnect()
+        self.log.info("test_magma_rollback_n_times_with_del_op ends")
 
     def test_magma_rollback_to_0(self):
         items = self.num_items

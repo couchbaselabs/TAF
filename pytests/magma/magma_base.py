@@ -431,6 +431,18 @@ class MagmaBaseTest(BaseTestCase):
                              mutate=mutate,
                              deep_copy=self.deep_copy)
 
+    def gen_docs_basic_for_target_vbucket(self, start, end,
+                                               target_vbucket, mutate=0):
+        return doc_generator(
+                self.key, start, end,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mutate=mutate)
+
     def generate_docs(self, doc_ops=None,
                       create_end=None, create_start=None,
                       create_mutate=0,
