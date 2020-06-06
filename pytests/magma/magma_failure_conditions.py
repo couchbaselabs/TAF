@@ -604,7 +604,7 @@ class MagmaRollbackTests(MagmaFailures):
 
             self.loadgen_docs(_sync=True,
                               retry_exceptions=retry_exceptions)
-            start = self.gen_delete.key_counter
+            #start = self.gen_delete.key_counter
 
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                                  mem_only_items}
