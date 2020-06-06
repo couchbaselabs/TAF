@@ -14,6 +14,6 @@ class CbServer(object):
 
     total_vbuckets = 1024
 
-    max_scope = 100
-    max_collections = 1000
-
+    # Count excluding the default scope/collection
+    max_scopes = 1200
+    max_collections = 1200

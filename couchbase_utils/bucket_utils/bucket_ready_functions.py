@@ -93,21 +93,30 @@ class DocLoaderUtils(object):
         return int((collection_obj.num_items * target_percent) / 100)
 
     @staticmethod
-    def rewind_doc_index(collection_obj, op_type, doc_gen):
+    def rewind_doc_index(collection_obj, op_type, doc_gen,
+                         update_num_items=False):
         """
         Used to reset collection.num_items, in case of known failure scenarios
         :param collection_obj: Collection object from Bucket.scope.collection
         :param op_type: CRUD type used for by the generator
         :param doc_gen: Doc_generator to compute num_items from (start, end)
+        :param update_num_items: If 'True', will update collection's num_items
+                                 accordingly. This is optional since this is
+                                 required only during rollback / validate_doc
+                                 is not getting called.
         :return:
         """
         num_items = doc_gen.end - doc_gen.start
         if op_type == "create":
             collection_obj.doc_index = (collection_obj.doc_index[0],
                                         collection_obj.doc_index[1]-num_items)
+            if update_num_items:
+                collection_obj.num_items -= num_items
         elif op_type == "delete":
             collection_obj.doc_index = (collection_obj.doc_index[0]-num_items,
                                         collection_obj.doc_index[1])
+            if update_num_items:
+                collection_obj.num_items += num_items
         elif op_type == "insert":
             collection_obj.sub_doc_index = (
                 collection_obj.sub_doc_index[0],
@@ -4249,7 +4258,7 @@ class BucketUtils(ScopeUtils):
 
             self.validate_doc_count_as_per_collections(bucket)
 
-    def remove_scope_collections_and_validate(self):
+    def remove_scope_collections_and_validate(self, validate_docs_count=False):
         """
         Delete all created scope-collection and validate the stats
         """
@@ -4265,7 +4274,8 @@ class BucketUtils(ScopeUtils):
                     self.drop_scope(self.cluster.master,
                                     bucket,
                                     scope_name=scope.name)
-        # self.validate_docs_per_collections_all_buckets()
+        if validate_docs_count:
+            self.validate_docs_per_collections_all_buckets()
 
     @staticmethod
     def perform_tasks_from_spec(cluster, buckets, input_spec):

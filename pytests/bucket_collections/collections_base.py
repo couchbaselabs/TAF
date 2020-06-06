@@ -1,5 +1,6 @@
 from math import ceil
 
+from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
@@ -26,7 +27,8 @@ class CollectionBase(BaseTestCase):
 
     def tearDown(self):
         if not self.skip_collections_cleanup:
-            self.bucket_util.remove_scope_collections_and_validate()
+            self.bucket_util.remove_scope_collections_and_validate(
+                validate_docs_count=self.validate_docs_count_during_teardown)
         super(CollectionBase, self).tearDown()
 
     def handle_collection_setup_exception(self, exception_obj):
@@ -39,8 +41,8 @@ class CollectionBase(BaseTestCase):
         raise exception_obj
 
     def collection_setup(self):
-        self.MAX_SCOPES = 1200  # excluding the default scope
-        self.MAX_COLLECTIONS = 1200  # excluding the default collection
+        self.MAX_SCOPES = CbServer.max_scopes
+        self.MAX_COLLECTIONS = CbServer.max_collections
         self.key = 'test_collection'.rjust(self.key_size, '0')
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
@@ -56,6 +58,8 @@ class CollectionBase(BaseTestCase):
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
         self.skip_collections_cleanup = self.input.param("skip_collections_cleanup", False)
+        self.validate_docs_count_during_teardown = \
+            self.input.param("validate_docs_count_during_teardown", False)
         self.batch_size = self.input.param("batch_size", 200)
 
         self.crud_batch_size = 100
