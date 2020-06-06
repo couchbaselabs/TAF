@@ -39,19 +39,21 @@ class MagmaFailures(MagmaBaseTest):
             mix_key_size=self.mix_key_size,
             deep_copy=self.deep_copy)
 
-        self.result_task = self._load_all_buckets(
-            self.cluster, self.gen_create,
-            "create", 0,
-            batch_size=self.batch_size,
-            dgm_batch=self.dgm_batch)
+        self.init_loading = self.input.param("init_loading", True)
+        if self.init_loading:
+            self.result_task = self._load_all_buckets(
+                self.cluster, self.gen_create,
+                "create", 0,
+                batch_size=self.batch_size,
+                dgm_batch=self.dgm_batch)
 
-        if self.active_resident_threshold != 100:
-            for task in self.result_task.keys():
-                self.num_items = task.doc_index
+            if self.active_resident_threshold != 100:
+                for task in self.result_task.keys():
+                    self.num_items = task.doc_index
 
-        self.log.info("Verifying num_items counts after doc_ops")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.log.info("Verifying num_items counts after doc_ops")
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
@@ -362,6 +364,7 @@ class MagmaCrashTests(MagmaFailures):
                 _sync=False)
             tasks_info.update(update_task_info.items())
             count += 1
+            self.sleep(5)
 
         for task in tasks_info:
             self.task_manager.get_task_result(task)
@@ -560,6 +563,108 @@ class MagmaRollbackTests(MagmaFailures):
 
         shell.disconnect()
 
+    def test_magma_rollback_n_times_with_del_op(self):
+        self.log.info("test_magma_rollback_n_times_with_del_op starts")
+
+        if self.nodes_init < 2 or self.num_replicas < 1:
+            self.fail("Not enough nodes/replicas in the cluster/bucket \
+            to test rollback")
+
+        items = self.num_items
+        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
+        cbstats = Cbstats(shell)
+        self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].name)
+
+        self.gen_create = doc_generator(
+                self.key, 0, self.num_items,
+                doc_size=self.doc_size, doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value)
+
+        self.doc_ops = "create"
+        self.loadgen_docs(_sync=True,
+                              retry_exceptions=retry_exceptions)
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(items)
+
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
+
+        mem_only_items = self.input.param("rollback_items", 100000)
+        self.num_rollbacks = self.input.param("num_rollbacks", 10)
+
+        self.gen_read = doc_generator(
+                self.key, 0, self.num_items,
+                doc_size=self.doc_size, doc_type=self.doc_type,
+                target_vbucket=None,
+                vbuckets=self.cluster_util.vbuckets,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value)
+
+        self.doc_ops = "delete"
+        start = 0
+        for i in range(1, self.num_rollbacks+1):
+            # Stopping persistence on NodeA
+            self.log.info("Iteration=={}".format(i))
+
+            mem_client = MemcachedClientHelper.direct_client(
+                self.input.servers[0], self.bucket_util.buckets[0])
+            mem_client.stop_persistence()
+
+            self.gen_delete = doc_generator(
+                self.key, start, mem_only_items,
+                doc_size=self.doc_size, doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value)
+
+            self.loadgen_docs(_sync=True,
+                              retry_exceptions=retry_exceptions)
+            start = self.gen_delete.key_counter
+
+            ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
+                                 mem_only_items}
+            vb_replica_queue_size_map = {self.cluster.nodes_in_cluster[0]: 0}
+
+            for node in self.cluster.nodes_in_cluster[1:]:
+                ep_queue_size_map.update({node: 0})
+                vb_replica_queue_size_map.update({node: 0})
+
+            for bucket in self.bucket_util.buckets:
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(
+                    bucket,
+                    vb_replica_queue_size_map,
+                    stat_name="vb_replica_queue_size")
+            data_validation = self.task.async_validate_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                self.gen_delete, "delete", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                pause_secs=5, timeout_secs=self.sdk_timeout)
+            self.task.jython_task_manager.get_task_result(data_validation)
+
+            # Kill memcached on NodeA to trigger rollback on other Nodes
+            # replica vBuckets
+            for bucket in self.bucket_util.buckets:
+                self.log.debug(cbstats.failover_stats(bucket.name))
+            shell.kill_memcached()
+
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                [self.cluster_util.cluster.master],
+                self.bucket_util.buckets[0],
+                wait_time=self.wait_timeout * 10))
+            self.sleep(10, "Not Required, but waiting for 10s after warm up")
+
+            self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+            for bucket in self.bucket_util.buckets:
+                self.log.debug(cbstats.failover_stats(bucket.name))
+
+        shell.disconnect()
+
     def test_magma_rollback_to_0(self):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
@@ -606,6 +711,7 @@ class MagmaRollbackTests(MagmaFailures):
             wait_time=self.wait_timeout * 10))
         self.bucket_util.verify_stats_all_buckets(items)
         shell.disconnect()
+        self.log.info("test_magma_rollback_n_times_during_del_op starts")
 
 
 class MagmaSpaceAmplification(MagmaFailures):
