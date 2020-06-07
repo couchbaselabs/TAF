@@ -194,6 +194,7 @@ class MagmaCrashTests(MagmaFailures):
 
     def test_crash_before_upserts(self):
         self.log.info("test_update_multi starts")
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
 
         upsert_doc_list = self.get_fragmentation_upsert_docs_list()
 
@@ -231,10 +232,13 @@ class MagmaCrashTests(MagmaFailures):
         th.join()
 
         self.validate_data("update", self.gen_update)
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
         self.log.info("====test_update_multi ends====")
 
     def test_crash_before_multi_update_deletes(self):
         self.log.info("===test_crash_before_multi_update_deletes starts===")
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
 
         count = 0
         self.mutate = 0
@@ -287,11 +291,15 @@ class MagmaCrashTests(MagmaFailures):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         self.validate_data("create", self.gen_create)
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
         self.log.info("===test_crash_before_multi_update_deletes ends===")
 
     def test_crash_during_get_ops(self):
 
         self.log.info("test_crash_during_get_ops starts")
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
+
         tasks_info = dict()
         upsert_doc_list = self.get_fragmentation_upsert_docs_list()
 
@@ -342,11 +350,15 @@ class MagmaCrashTests(MagmaFailures):
         th.join()
 
         self.bucket_util._wait_for_stats_all_buckets()
+
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
         self.log.info("test_crash_during_get_ops ends")
 
     def test_crash_during_upserts_using_multithreads(self):
-
         self.log.info("test_crash_during_upserts_using_multithreads starts")
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
+
         tasks_info = dict()
         self.doc_ops = "update"
         self.update_start = 0
@@ -373,11 +385,15 @@ class MagmaCrashTests(MagmaFailures):
         th.join()
 
         self.bucket_util._wait_for_stats_all_buckets()
+
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
         self.log.info("test_crash_during_upserts_using_multithreads ends")
 
     def test_crash_during_multi_updates_of_single_doc(self):
 
         self.log.info("==test_crash_during_multi_updates_of_single_doc starts==")
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
 
         self.client = SDKClient([self.cluster.master],
                                 self.bucket_util.buckets[0],
@@ -428,12 +444,13 @@ class MagmaCrashTests(MagmaFailures):
                       msg="expected_val-{} != Actual_val-{}\
                       ".format(expected_val, actual_val))
 
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
         self.log.info("==test_crash_during_multi_updates_of_single_doc ends==")
 
     def test_crash_during_val_movement_across_trees(self):
 
         self.log.info("==test_crash_during_val_movement_across_trees starts==")
-
         self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
 
         upsert_size = 0
