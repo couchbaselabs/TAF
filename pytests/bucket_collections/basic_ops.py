@@ -745,7 +745,7 @@ class BasicOps(CollectionBase):
                     "def_drop_collection")
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
-                                                    self.bucket,
+                                                    self.bucket_util.buckets,
                                                     doc_loading_spec,
                                                     mutation_num=0,
                                                     batch_size=self.batch_size)
