@@ -52,8 +52,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(task)
         if not self.skip_validations:
+            self.bucket_util.validate_doc_loading_results(task)
             if self.durability_level and task.result is False:
                 self.fail("Doc_loading failed")
 
