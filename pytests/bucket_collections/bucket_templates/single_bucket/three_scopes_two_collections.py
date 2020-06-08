@@ -10,5 +10,4 @@ spec = {
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
 
     Bucket.replicaNumber: Bucket.ReplicaNum.TWO,
-
 }

@@ -173,6 +173,8 @@ class RollbackTests(CollectionBase):
 
         keys_to_verify = ["high_completed_seqno",
                           "purge_seqno"]
+        # Override num_items to load data into each collection
+        self.num_items = 10000
 
         # Set values to num_items to support loading through
         # collection loading task
