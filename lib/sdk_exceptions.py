@@ -38,6 +38,9 @@ class SDKException:
     ValueTooLargeException = \
         "com.couchbase.client.core.error.ValueTooLargeException"
 
+    RetryExhaustedException = \
+        "com.couchbase.client.core.retry.reactor.RetryExhaustedException"
+
     def __init__(self):
         pass
 
