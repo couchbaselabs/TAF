@@ -38,6 +38,9 @@ class SDKException(object):
     ValueTooLargeException = \
         "com.couchbase.client.core.error.ValueTooLargeException"
 
+    RetryExhaustedException = \
+        "com.couchbase.client.core.retry.reactor.RetryExhaustedException"
+
     class RetryReason(object):
         KV_SYNC_WRITE_IN_PROGRESS = \
             "KV_SYNC_WRITE_IN_PROGRESS"

@@ -1,5 +1,3 @@
-
-
 package com.couchbase.test.transactions;
 
 import java.time.Duration;
@@ -37,7 +35,7 @@ import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 public class SimpleTransaction {
-
+	Queue<String> queue=new LinkedList<>();
 
 	public Transactions createTansaction(Cluster cluster, TransactionConfig config) {
 		Event.Severity logLevel = Event.Severity.INFO;
@@ -57,7 +55,6 @@ public class SimpleTransaction {
 		});
 		return Transactions.create(cluster, config);
 	}
-	Queue<String> queue=new LinkedList<>();
 
 	public TransactionConfig createTransactionConfig(int expiryTimeout, int changedurability) {
 		TransactionConfigBuilder config = TransactionConfigBuilder.create().logDirectly(Event.Severity.VERBOSE);
@@ -85,7 +82,6 @@ public class SimpleTransaction {
 	public List<Tuple2<String, JsonObject>> ReadTransaction(Transactions transaction, List<Collection> collections, List<String> Readkeys) {
 		List<Tuple2<String, JsonObject>> res = null;
 		try {
-
 			TransactionResult result = transaction.run(ctx -> {
 				for (String key: Readkeys) {
 					for (Collection bucket:collections) {
@@ -102,7 +98,6 @@ public class SimpleTransaction {
 				}
 
 			});
-
 		}
 		catch (TransactionFailed err) {
 			// This per-txn log allows the app to only log failures
@@ -113,83 +108,79 @@ public class SimpleTransaction {
 	}
 
 	public List<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String,
-		JsonObject>> Createkeys, Boolean commit, String operation, Boolean fail)
+		JsonObject>> Docs, String op_type, Boolean commit, String operation, int max_fail_count)
 	{
 		AtomicInteger attempt = new AtomicInteger(0);
-		AtomicBoolean first = new AtomicBoolean(true);
 		List<LogDefer> res = new ArrayList<LogDefer>();
 
 		try (Transactions transactions = Transactions.create(cluster, config)) {
-
 		    TransactionMock mock = new TransactionMock();
 		    TestAttemptContextFactory factory = new TestAttemptContextFactory(mock);
 	    	transactions.reactive().setAttemptContextFactory(factory);
 
 		    if (operation.equals("beforeAtrPending")) {
 			    mock.beforeAtrPending = (ctx) -> {
-			       if (attempt.get() == 1) return Mono.error(new TemporaryFailureException(null));
-			       else return Mono.just(1);
-			    };
+					if (max_fail_count > 0) {
+						if (attempt.get() <= max_fail_count) {
+							return Mono.error(new TemporaryFailureException(null));
+						}
+					}
+					return Mono.just(1);
+				};
 		    }
 
 		    if (operation.equals("afterAtrPending")) {
 			    mock.afterAtrPending = (ctx) -> {
-			       if (attempt.get() == 1) return Mono.error(new TemporaryFailureException(null));
-			       else return Mono.just(1);
+					if (max_fail_count > 0) {
+						if (attempt.get() <= max_fail_count) {
+							return Mono.error(new TemporaryFailureException(null));
+						}
+					}
+			    	return Mono.just(1);
 			    };
 		    }
 
 		    if (operation.equals("beforeAtrComplete")) {
 			    mock.beforeAtrComplete = (ctx) -> {
-			    	System.out.println("Inside beforeAtrComplete");
-			       if (fail)
-			    	   if (attempt.get() == 1)
-			    		   return Mono.error(new TemporaryFailureException(null));
-			       else if (first.get() && attempt.get() == 1) {
-				    	   first.set(false);
-				    	   return Mono.error(new TemporaryFailureException(null));
-				       }
-			       return Mono.just(1);
+					if (max_fail_count > 0) {
+						if (attempt.get() <= max_fail_count) {
+							return Mono.error(new TemporaryFailureException(null));
+						}
+					}
+			    	return Mono.just(1);
 			    };
 		    }
 
 		    if (operation.equals("beforeAtrRolledBack")) {
 			    mock.beforeAtrRolledBack = (ctx) -> {
-			    	if (fail)
-				    	   if (attempt.get() == 1)
-				    		   return Mono.error(new TemporaryFailureException(null));
-				       else if (first.get() && attempt.get() == 1) {
-					    	   first.set(false);
-					    	   return Mono.error(new TemporaryFailureException(null));
-					       }
-				       return Mono.just(1);
+					if (max_fail_count > 0) {
+						if (attempt.get() <= max_fail_count) {
+							return Mono.error(new TemporaryFailureException(null));
+						}
+					}
+					return Mono.just(1);
 			    };
 		    }
 
 		    if (operation.equals("afterAtrCommit")) {
 			    mock.afterAtrCommit = (ctx) -> {
-			    	if (fail)
-				    	   if (attempt.get() == 1)
-				    		   return Mono.error(new TemporaryFailureException(null));
-				       else if (first.get() && attempt.get() == 1) {
-					    	   first.set(false);
-					    	   return Mono.error(new TemporaryFailureException(null));
-					       }
-				       return Mono.just(1);
+					if (max_fail_count > 0) {
+						if (attempt.get() <= max_fail_count) {
+							return Mono.error(new TemporaryFailureException(null));
+						}
+					}
+					return Mono.just(1);
 			    };
 		    }
 
 		    if (operation.equals("afterAtrComplete")) {
 			    mock.afterAtrComplete = (ctx) -> {
-
-			    	if (fail)
-				    	   if (attempt.get() == 1)
-				    		   return Mono.error(new TemporaryFailureException(null));
-				       else if (first.get() && attempt.get() == 1) {
-					    	   first.set(false);
-					    	   return Mono.error(new TemporaryFailureException(null));
-					       }
-				       return Mono.just(1);
+					if (max_fail_count > 0) {
+						if (attempt.get() <= max_fail_count) {
+							return Mono.error(new TemporaryFailureException(null));
+						}
+					}
+					return Mono.just(1);
 			    };
 		    }
 
@@ -206,13 +197,36 @@ public class SimpleTransaction {
 		    TransactionResult result = transactions.run((ctx1) -> {
 		        attempt.set(attempt.get() + 1);
 
-		        for (Tuple2<String, JsonObject> document : Createkeys) {
-					TransactionGetResult doc=ctx1.insert(collection, document.getT1(), document.getT2());
+				for (Tuple2<String, JsonObject> document : Docs) {
+					TransactionGetResult doc;
+				    switch (op_type) {
+				    	case "create":
+							doc = ctx1.insert(collection, document.getT1(), document.getT2());
+							break;
+						case "update":
+							doc=ctx1.getOptional(collection, document.getT1()).get();
+							JsonObject content = doc.contentAs(JsonObject.class);
+							if (content.containsKey("mutated")) {
+								content.put("mutated", content.getInt("mutated")+1);
+							}
+							else {
+								content.put("mutated", 1);
+							}
+							ctx1.replace(doc, content);
+							break;
+						case "delete":
+							doc=ctx1.getOptional(collection, document.getT1()).get();
+							ctx1.remove(doc);
+							break;
 					}
+				}
 
-		        if (commit) ctx1.commit();
-			    else ctx1.rollback();
-
+				if (commit) {
+					ctx1.commit();
+				}
+			    else {
+			    	ctx1.rollback();
+				}
 		    });
 
 		    result.log().logs().forEach(System.err::println);
@@ -226,32 +240,31 @@ public class SimpleTransaction {
 		        }
 				return res ;
 			}
-
-
 	}
 
 	public List<LogDefer> MockRunTransaction(Cluster cluster, TransactionConfig config, Collection collection, List<Tuple2<String,
-			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys, Boolean commit, String operation, String docId, Boolean fail)
-		{
+			JsonObject>> CreateDocs, List<String> Updatekeys, List<String> Deletekeys, Boolean commit, String operation,
+			String docId, Boolean fail)
+	{
 		List<LogDefer> res = new ArrayList<LogDefer>();
 			try (Transactions transactions = Transactions.create(cluster, config)) {
-
 				AtomicBoolean first = new AtomicBoolean(true);
 			    TransactionMock mock = new TransactionMock();
 			    TestAttemptContextFactory factory = new TestAttemptContextFactory(mock);
 		    	transactions.reactive().setAttemptContextFactory(factory);
 
-
 			    if (operation.equals("afterStagedInsertComplete")) {
                     mock.afterStagedInsertComplete = (ctx, id) -> {
-                    if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
-                    return Mono.just(1);
-                    };
+						if (fail) {
+							if (id.equals(docId))
+								return Mono.error(new TemporaryFailureException(null));
+						}
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TemporaryFailureException(null));
+						}
+						return Mono.just(1);
+					};
                 }
 
 			    if (operation.equals("afterStagedReplaceComplete")) {
@@ -375,37 +388,39 @@ public class SimpleTransaction {
                 }
 
 			    TransactionResult result = transactions.run((ctx1) -> {
-
-			        for (Tuple2<String, JsonObject> document : Createkeys) {
-						TransactionGetResult doc=ctx1.insert(collection, document.getT1(), document.getT2());
-						 }
+					TransactionGetResult doc;
+			        for (Tuple2<String, JsonObject> document : CreateDocs) {
+						doc=ctx1.insert(collection, document.getT1(), document.getT2());
+					}
 
 			        for (String key: Updatekeys) {
 				        try {
-							TransactionGetResult doc2=ctx1.getOptional(collection, key).get();
-							JsonObject content = doc2.contentAs(JsonObject.class);
+							doc=ctx1.getOptional(collection, key).get();
+							JsonObject content = doc.contentAs(JsonObject.class);
 							content.put("mutated", 1 );
-							ctx1.replace(doc2, content);
-							}
+							ctx1.replace(doc, content);
+						}
 				        catch (TransactionFailed err) {
 							System.out.println("Document not present");
 						}
-						}
+					}
 
 			        for (String key: Deletekeys) {
 						try {
-							TransactionGetResult doc1=ctx1.getOptional(collection, key).get();
-							ctx1.remove(doc1);
+							doc=ctx1.getOptional(collection, key).get();
+							ctx1.remove(doc);
 						}
 						catch (TransactionFailed err) {
 							System.out.println("Document not present");
 						}
 					}
 
-			        if (commit) { System.out.println("commiting document");
-			        ctx1.commit();}
-				    else { System.out.println("rolling back document");
-				    ctx1.rollback();}
+			        if (commit) {
+						ctx1.commit();
+			        }
+				    else {
+				    	ctx1.rollback();
+				    }
 
 			    });
 			    result.log().logs().forEach(System.err::println);
@@ -421,17 +436,14 @@ public class SimpleTransaction {
 			return res;
 		}
 
-
 	public List<LogDefer> RunTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
-											  List<String> Deletekeys, Boolean commit, boolean sync, int updatecount) {
+										 List<String> Deletekeys, Boolean commit, boolean sync, int updatecount) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
-//		synchronous API - transactions
+  		// synchronous API - transactions
 		if (sync) {
 			try {
-
 				TransactionResult result = transaction.run(ctx -> {
-					//				creation of docs
-
+					// creation of docs
 					for (Collection bucket:collections) {
 						for (Tuple2<String, JsonObject> document : Createkeys) {
 							TransactionGetResult doc=ctx.insert(bucket, document.getT1(), document.getT2());
@@ -443,7 +455,7 @@ public class SimpleTransaction {
 						}
 
 					}
-					//				update of docs
+					// update of docs
 					for (String key: Updatekeys) {
 						for (Collection bucket:collections) {
 							try {
@@ -461,7 +473,7 @@ public class SimpleTransaction {
 							}
 						}
 					}
-					//			   delete the docs
+					// delete the docs
 					for (String key: Deletekeys) {
 						for (Collection bucket:collections) {
 							try {
@@ -473,16 +485,13 @@ public class SimpleTransaction {
 							}
 						}
 					}
-					//				commit ot rollback the docs
+					// commit ot rollback the docs
 					if (commit) {  ctx.commit(); }
 					else { ctx.rollback(); 	 }
 
 //					transaction.close();
-
-
 				});
 //				result.log().logs().forEach(System.err::println);
-
 			}
 			catch (TransactionFailed err) {
 				res = err.result().log().logs();
@@ -518,7 +527,6 @@ public class SimpleTransaction {
 		ReactiveCollection rc = collection.reactive();
 
 		List<LogDefer> result = transaction.reactive((ctx) -> {
-
 			if (commit)
 			{
 				// The first mutation must be done in serial
@@ -575,7 +583,6 @@ public class SimpleTransaction {
 		return res;
 	}
 
-
 	public List<LogDefer> multiUpdateSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
 		ReactiveCollection reactiveCollection=collection.reactive();
@@ -625,7 +632,6 @@ public class SimpleTransaction {
         return res;
 	}
 
-
 	public List<LogDefer> multiDeleteSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
 		ReactiveCollection reactiveCollection=collection.reactive();
@@ -674,7 +680,6 @@ public class SimpleTransaction {
 		return res;
 	}
 
-
 	public List<String> getQueue(int n){
 		return this.queue.stream().skip(queue.size() - n).collect(Collectors.toList());
 	}
@@ -694,14 +699,19 @@ public class SimpleTransaction {
 					}
 				}
 
-//				update of docs
+  			 	// update of docs
 				for (String key: Updatekeys) {
 					for (Collection bucket:collections) {
 						try {
 							TransactionGetResult doc2=ctx.getOptional(bucket, key).get();
 							for (int i=1; i<=updatecount; i++) {
 								JsonObject content = doc2.contentAs(JsonObject.class);
-								content.put("mutated", i);
+								if (content.containsKey("mutated")) {
+									content.put("mutated", content.getInt("mutated")+1);
+								}
+								else {
+									content.put("mutated", 1);
+								}
 								ctx.replace(doc2, content);
 //										TransactionGetResult doc1=ctx.get(bucket, key).get();
 //										JsonObject read_content = doc1.contentAs(JsonObject.class);
@@ -712,7 +722,7 @@ public class SimpleTransaction {
 							}
 					}
 				}
-				//			   delete the docs
+				// delete the docs
 				for (String key: Deletekeys) {
 					for (Collection bucket:collections) {
 						try {
@@ -724,13 +734,12 @@ public class SimpleTransaction {
 						}
 					}
 				}
-
 				ctx.defer();
 			});
 			if(result.serialized().isPresent()) {
-
 			    TransactionSerializedContext serialized = result.serialized().get();
-			    encoded = serialized.encodeAsBytes();}
+			    encoded = serialized.encodeAsBytes();
+			}
 		}
 		catch (TransactionFailed err) {
 			res = err.result().log().logs();
@@ -744,7 +753,6 @@ public class SimpleTransaction {
 		}
 		Tuple2<byte[], List<LogDefer>>mp = Tuples.of(encoded, res);
 		return mp;
-//		return encoded;
 	}
 
 	public List<LogDefer> DefferedTransaction(Transactions transaction, Boolean commit, byte[] encoded) {
@@ -752,9 +760,12 @@ public class SimpleTransaction {
 		TransactionSerializedContext serialized = TransactionSerializedContext.createFrom(encoded);
 
 		try {
-			if (commit) { TransactionResult result = transaction.commit(serialized);}
-			else { TransactionResult result = transaction.rollback(serialized); }
-
+			if (commit) {
+				TransactionResult result = transaction.commit(serialized);
+			}
+			else {
+				TransactionResult result = transaction.rollback(serialized);
+			}
 		}
 		catch (TransactionFailed err) {
 			res = err.result().log().logs();
@@ -768,8 +779,4 @@ public class SimpleTransaction {
 		}
 		return res;
 	}
-
-
 }
-
-

@@ -1,5 +1,3 @@
-import time
-
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
@@ -16,7 +14,6 @@ Basic test cases with commit,rollback scenarios
 class basic_ops(BaseTestCase):
     def setUp(self):
         super(basic_ops, self).setUp()
-        self.fail = self.input.param("fail", False)
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -38,6 +35,9 @@ class basic_ops(BaseTestCase):
         self.__durability_level()
 
         self.operation = self.input.param("operation", "afterAtrPending")
+        self.always_fail = self.input.param("fail", False)
+        self.verify = self.input.param("verify", True)
+
         # create load
         self.value = {'value': 'value1'}
         self.content = self.client.translate_to_json_object(self.value)
@@ -76,36 +76,35 @@ class basic_ops(BaseTestCase):
         raise BaseException(exception)
 
     def test_txnwithhooks(self):
-        self.verify = self.input.param("verify", True)
         # transaction load
         if "Atr" in self.operation:
             exception = Transaction().MockRunTransaction(
                 self.client.cluster, self.transaction_config,
-                self.client.collection, self.docs,
-                self.transaction_commit, self.operation, self.fail)
-
+                self.client.collection, self.docs, "create",
+                self.transaction_commit,
+                self.operation, 1)
         else:
             if "Replace" in self.operation:
                 exception = Transaction().MockRunTransaction(
                     self.client.cluster, self.transaction_config,
                     self.client.collection, self.docs, self.keys, [],
-                    self.transaction_commit, self.operation,
-                    self.keys[-1], self.fail)
+                    self.transaction_commit, self.operation, self.keys[-1],
+                    self.always_fail)
                 self.value = {'mutated': 1, 'value': 'value1'}
                 self.content = self.client.translate_to_json_object(self.value)
             else:
                 exception = Transaction().MockRunTransaction(
                     self.client.cluster, self.transaction_config,
                     self.client.collection, self.docs, [], [],
-                    self.transaction_commit, self.operation,
-                    self.keys[-1], self.fail)
+                    self.transaction_commit, self.operation, self.keys[-1],
+                    self.always_fail)
 
             if "Remove" in self.operation:
                 exception = Transaction().MockRunTransaction(
                     self.client.cluster, self.transaction_config,
                     self.client.collection, [], [], self.keys,
-                    self.transaction_commit, self.operation,
-                    self.keys[-1], self.fail)
+                    self.transaction_commit, self.operation, self.keys[-1],
+                    self.always_fail)
 
         # verify the values
         for key in self.keys:
@@ -114,20 +113,21 @@ class basic_ops(BaseTestCase):
                     or self.transaction_commit is False \
                     or self.verify is False:
                 if result['status']:
-                    actual_val = \
-                        self.client.translate_to_json_object(result['value'])
-                    self.log.info("actual value for key %s is %s"
+                    actual_val = self.client.translate_to_json_object(
+                        result['value'])
+                    self.log.info("Actual value for key %s is %s"
                                   % (key, actual_val))
-                    msg = "Key '%s' should be deleted but still exists" % key
+                    msg = \
+                        "Key '%s' should be deleted but present in the bucket"\
+                        % key
                     self.set_exception(msg)
             else:
-                actual_val = \
-                    self.client.translate_to_json_object(result['value'])
+                actual_val = self.client.translate_to_json_object(
+                    result['value'])
                 if self.content != actual_val:
-                    self.log.info("Key '%s' - Actual value: %s,"
-                                  "Expected value: %s"
+                    self.log.info("Key %s Actual: %s, Expected: %s"
                                   % (key, actual_val, self.content))
-                    self.set_exception("Mismatch in expected values")
+                    self.set_exception("Mismatch in doc content")
 
         if exception and self.fail is not True:
             self.set_exception(exception)
