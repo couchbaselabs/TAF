@@ -202,6 +202,7 @@ class BaseTestCase(unittest.TestCase):
                     self.nonroot = True
                     shell.disconnect()
                     break
+            shell.disconnect()
 
         """ some tests need to bypass checking cb server at set up
             to run installation """
@@ -210,7 +211,6 @@ class BaseTestCase(unittest.TestCase):
 
         try:
             if self.skip_setup_cleanup:
-                self.buckets = self.bucket_util.get_all_buckets()
                 return
             if not self.skip_init_check_cbserver:
                 for cluster in self.__cb_clusters:
@@ -559,13 +559,12 @@ class BaseTestCase(unittest.TestCase):
             output = o[0].split('\n')[0]
             if int(output) == 0:
                 self.log.debug("Node %s: No core exists" % server.ip)
-                shell.disconnect()
             else:
                 self.log.error("Node %s: Core dumps seen for crashes %s"
                                % (server.ip, output))
                 if TestInputSingleton.input.param("get-cbcollect-info", True):
                     servers_with_crashes.append(server.ip)
-                shell.disconnect()
+            shell.disconnect()
         if servers_with_crashes:
             self.fetch_cb_collect_logs()
         return servers_with_crashes
