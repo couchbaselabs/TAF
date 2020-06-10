@@ -124,6 +124,7 @@ class CollectionsRebalance(CollectionBase):
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                             [node], bucket))
                         self.log.info("second attempt to rebalance")
+                        self.sleep(60, "wait before starting rebalance after warmup")
                         operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -170,6 +171,7 @@ class CollectionsRebalance(CollectionBase):
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                             [node], bucket))
                         self.log.info("second attempt to rebalance")
+                        self.sleep(60, "wait before starting rebalance after warmup")
                         operation = self.task.async_rebalance(known_nodes + add_nodes, [], [])
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -219,6 +221,7 @@ class CollectionsRebalance(CollectionBase):
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
+                        self.sleep(60, "wait before starting rebalance after warmup")
                         operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -273,6 +276,7 @@ class CollectionsRebalance(CollectionBase):
                         self.assertTrue(self.bucket_util._wait_warmup_completed(
                             [node], bucket))
                     self.log.info("second attempt to rebalance")
+                    self.sleep(60, "wait before starting rebalance after warmup")
                     operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
                     self.wait_for_rebalance_to_complete(operation)
                 self.sleep(60)
