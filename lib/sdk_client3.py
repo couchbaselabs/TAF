@@ -835,7 +835,6 @@ class SDKClient(object):
             result["value"] = str(get_result.contentAsObject())
             result["cas"] = get_result.cas()
         except DocumentNotFoundException as e:
-            self.log.warning("Document key '%s' not found!" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:

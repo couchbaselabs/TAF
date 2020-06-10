@@ -4178,6 +4178,7 @@ class Atomicity(Task):
         self.bucket = bucket
         self.clients = clients
         self.gen = list()
+        self.retries = retries
         Atomicity.clients = clients[0]
         Atomicity.generator = generator
         Atomicity.updatecount = update_count
@@ -4192,6 +4193,7 @@ class Atomicity(Task):
             Atomicity.durability = 4
         else:
             Atomicity.durability = 0
+        sleep(10, "Wait before txn load")
 
     def call(self):
         tasks = list()
@@ -4248,15 +4250,18 @@ class Atomicity(Task):
         for i in range(0, len(generators)):
             task = self.Loader(self.cluster, self.bucket[i], self.client,
                                generators[i], self.op_type,
-                               self.exp, self.flag, persist_to=self.persit_to,
+                               self.exp, self.flag,
+                               persist_to=self.persit_to,
                                replicate_to=self.replicate_to,
                                time_unit=self.time_unit,
                                batch_size=self.batch_size,
                                pause_secs=self.pause_secs,
                                timeout_secs=self.timeout_secs,
                                compression=self.compression,
-                               instance_num=1, transaction=self.transaction,
-                               commit=self.commit)
+                               instance_num=1,
+                               transaction=self.transaction,
+                               commit=self.commit,
+                               retries=self.retries)
             tasks.append(task)
         return tasks
 
@@ -4270,7 +4275,7 @@ class Atomicity(Task):
         def __init__(self, cluster, bucket, client, generator, op_type, exp,
                      flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
-                     compression=None, throughput_concurrency=4, retries=5,
+                     compression=None, retries=5,
                      instance_num=0, transaction=None, commit=True,
                      sdk_client_pool=None,
                      scope=CbServer.default_scope,
@@ -4306,7 +4311,6 @@ class Atomicity(Task):
             self.exp_unit = "seconds"
             self.retries = retries
             self.keys_values = dict()
-            sleep(10, "wait before txn load")
 
         def has_next(self):
             return self.generator.has_next()
@@ -4315,7 +4319,6 @@ class Atomicity(Task):
             self.start_task()
             self.test_log.info("Starting Atomicity load generation thread")
             exception = None
-            last_batch = dict()
             self.all_keys = list()
             self.update_keys = list()
             self.delete_keys = list()
