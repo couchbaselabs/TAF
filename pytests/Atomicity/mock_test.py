@@ -1,8 +1,7 @@
 import time
 
 from basetestcase import BaseTestCase
-from membase.api.rest_client import RestConnection
-from sdk_client3 import SDKClient as VBucketAwareMemcached
+from sdk_client3 import SDKClient
 
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from reactor.util.function import Tuples
@@ -28,9 +27,8 @@ class basic_ops(BaseTestCase):
                 ram_quota=100, bucket_type=self.bucket_type)
 
         time.sleep(10)
-        self.def_bucket = self.bucket_util.get_all_buckets()
-        self.client = VBucketAwareMemcached(
-            RestConnection(self.cluster.master), self.def_bucket[0])
+        self.client = SDKClient([self.cluster.master],
+                                self.bucket_util.buckets[0])
         self.__durability_level()
 
         self.operation = self.input.param("operation", "afterAtrPending")
