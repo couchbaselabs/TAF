@@ -3632,11 +3632,16 @@ class Atomicity(Task):
 
     task_manager = []
     write_offset = []
-    def __init__(self, cluster, task_manager, bucket, client, clients, generator, op_type, exp, flag=0,
+
+    def __init__(self, cluster, task_manager, bucket, client, clients,
+                 generator, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1, timeout_secs=5, compression=True,
-                 process_concurrency=8, print_ops_rate=True, retries=5,update_count=1, transaction_timeout=5,
-                 commit=True, durability=None, sync=True, num_threads=5, record_fail=False, defer=False):
+                 only_store_hash=True, batch_size=1, pause_secs=1,
+                 timeout_secs=5, compression=True,
+                 process_concurrency=8, print_ops_rate=True, retries=5,
+                 update_count=1, transaction_timeout=5,
+                 commit=True, durability=None, sync=True, num_threads=5,
+                 record_fail=False, defer=False):
         super(Atomicity, self).__init__("AtomicityDocumentsLoadGenTask")
 
         self.generators = generator
@@ -3664,6 +3669,7 @@ class Atomicity(Task):
         self.op_type = op_type
         self.bucket = bucket
         self.clients = clients
+        self.retries = retries
         Atomicity.clients = clients[0]
         Atomicity.generator = generator
         Atomicity.updatecount = update_count
@@ -3731,12 +3737,20 @@ class Atomicity(Task):
             generators.append(batch_gen)
 
         for i in range(0, len(generators)):
-            task = self.Loader(self.cluster, self.bucket[i], self.client, generators[i], self.op_type,
-                                         self.exp, self.flag, persist_to=self.persit_to, replicate_to=self.replicate_to,
-                                         time_unit=self.time_unit, batch_size=self.batch_size,
-                                         pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
-                                         compression=self.compression,
-                                         instance_num = 1,transaction=self.transaction, commit=self.commit)
+            task = self.Loader(self.cluster, self.bucket[i], self.client,
+                               generators[i], self.op_type,
+                               self.exp, self.flag,
+                               persist_to=self.persit_to,
+                               replicate_to=self.replicate_to,
+                               time_unit=self.time_unit,
+                               batch_size=self.batch_size,
+                               pause_secs=self.pause_secs,
+                               timeout_secs=self.timeout_secs,
+                               compression=self.compression,
+                               instance_num=1,
+                               transaction=self.transaction,
+                               commit=self.commit,
+                               retries=self.retries)
             tasks.append(task)
         return tasks
 
@@ -3750,7 +3764,7 @@ class Atomicity(Task):
         def __init__(self, cluster, bucket, client, generator, op_type, exp,
                      flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, pause_secs=1, timeout_secs=5,
-                     compression=True, throughput_concurrency=4, retries=5,
+                     compression=True, retries=5,
                      instance_num=0, transaction=None, commit=True):
             super(Atomicity.Loader, self).__init__(
                 cluster, bucket, client, batch_size=batch_size,
@@ -3781,7 +3795,6 @@ class Atomicity(Task):
             self.exp_unit = "seconds"
             self.retries = retries
 
-
         def has_next(self):
             return self.generator.has_next()
 
@@ -3805,7 +3818,6 @@ class Atomicity(Task):
                 self.keys_values.update(self.key_value)
 
                 for op_type in self.op_type:
-
                     if op_type == 'general_create':
                         for client in Atomicity.clients:
                             self.batch_create(
@@ -3856,7 +3868,6 @@ class Atomicity(Task):
                     for client in Atomicity.clients:
                         self.batch_update(last_batch, client, persist_to=self.persist_to, replicate_to=self.replicate_to,
                                   timeout=self.timeout, time_unit=self.time_unit, doc_type=self.generator.doc_type)
-
 
                 if op_type == "general_delete":
                     self.test_log.debug("performing delete for keys {}".format(last_batch.keys()))
@@ -3965,12 +3976,12 @@ class Atomicity(Task):
                     err = Transaction().RunTransaction(self.transaction, self.bucket, [], [], doc, commit, Atomicity.sync, Atomicity.updatecount)
             if err:
                 if Atomicity.record_fail:
-                    self.all_keys=[]
+                    self.all_keys = []
                 elif "DurabilityImpossibleException" in str(err) and self.retries > 0:
                     self.test_log.info("DurabilityImpossibleException seen so retrying...")
                     time.sleep(60)
-                    self.transaction_load( doc, commit, update_keys, op_type)
-                    self.retries -=1
+                    self.transaction_load(doc, commit, update_keys, op_type)
+                    self.retries -= 1
                 else:
                     exception = err
                     self.test_log.info("Sleep for 60 seconds so that the txn gets cleaned up")
