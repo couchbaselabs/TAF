@@ -71,27 +71,35 @@ class MagmaFailures(MagmaBaseTest):
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
-    def crash(self, nodes=None, graceful=False):
+    def crash(self, nodes=None, kill_itr=1, graceful=False):
         self.stop_crash = False
         if not nodes:
             nodes = self.cluster.nodes_in_cluster
+
+        connections = list()
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            connections.append(shell)
 
         while not self.stop_crash:
             sleep = random.randint(30, 60)
             self.sleep(sleep,
                        "waiting for %s sec to kill memcached on all nodes" %
                        sleep)
-            for node in nodes:
-                shell = RemoteMachineShellConnection(node)
+            for shell in connections:
                 if graceful:
                     shell.restart_couchbase()
                 else:
-                    shell.kill_memcached()
-                shell.disconnect()
+                    while kill_itr > 0:
+                        shell.kill_memcached()
+                        self.sleep(1)
+                        kill_itr -= 1
 
             crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
             if len(crashes) > 0:
                 self.task.jython_task_manager.abort_all_tasks()
+                for shell in connections:
+                    shell.disconnect()
 
             self.assertTrue(len(crashes) == 0,
                             "Found servers having crashes")
@@ -101,6 +109,8 @@ class MagmaFailures(MagmaBaseTest):
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 20))
 
+        for shell in connections:
+            shell.disconnect()
 
 class MagmaCrashTests(MagmaFailures):
 
@@ -189,6 +199,32 @@ class MagmaCrashTests(MagmaFailures):
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+        self.stop_crash = True
+        th.join()
+
+    def test_crash_during_recovery(self):
+        self.stop_crash = False
+
+        self.create_start = self.num_items
+        self.create_end = self.num_items * 2
+        self.update_start = 0
+        self.update_end = self.num_items // 2
+        self.delete_start = self.num_items // 2
+        self.delete_end = self.num_items
+
+        self.generate_docs(doc_ops="create:update:delete")
+
+        tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                  skip_read_on_error=True,
+                                  suppress_error_table=True,
+                                  _sync=False)
+
+        th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
+        th.start()
+
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+
         self.stop_crash = True
         th.join()
 

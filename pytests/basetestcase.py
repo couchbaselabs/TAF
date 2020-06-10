@@ -607,7 +607,6 @@ class BaseTestCase(unittest.TestCase):
                                          % core_path)
             output = o[0].split('\n')[0]
             if int(output) == 0:
-                self.log.info("Node %s - no core exists" % server.ip)
                 shell.disconnect()
             else:
                 self.log.error("Node %s - Core dump seen: %s"
