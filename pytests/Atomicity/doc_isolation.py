@@ -1,3 +1,4 @@
+import json
 from threading import Thread
 
 from basetestcase import BaseTestCase
@@ -100,7 +101,7 @@ class IsolationDocTest(BaseTestCase):
             if self.read_failed[bucket]:
                 break
 
-    def __perform_query_on_doc_keys(self, bucket, keys, expected_val=None):
+    def __perform_query_on_doc_keys(self, bucket, keys, expected_val):
         self.read_failed[bucket] = False
         client = self.sdk_clients[bucket.name]
         while not self.stop_thread:
@@ -111,12 +112,12 @@ class IsolationDocTest(BaseTestCase):
                 if result.metaData().status().toString() != "SUCCESS":
                     self.read_failed[bucket] = True
                     self.log_failure("Query %s failed: %s" % (query, result))
-                elif expected_val is None:
+                elif key not in expected_val:
                     if result.rowsAsObject().size() != 0:
                         self.read_failed[bucket] = True
                         self.log_failure("Index found for key %s: %s"
                                          % (key, result))
-                elif expected_val is not None:
+                elif key in expected_val:
                     # Return type of rowsAsObject - java.util.ArrayList
                     rows = result.rowsAsObject()
                     if rows.size() != 1:
@@ -124,12 +125,12 @@ class IsolationDocTest(BaseTestCase):
                         self.log_failure("Index not found for key %s: %s"
                                          % (key, result))
                     else:
-                        value = rows.get(0)
-                        if value != expected_val:
+                        value = json.loads(str(rows.get(0)))[bucket.name]
+                        if value != expected_val[key]:
                             self.read_failed[bucket] = True
                             self.log_failure("Mismatch in value for key %s."
                                              "Expected: %s, Got: %s"
-                                             % (key, expected_val, value))
+                                             % (key, expected_val[key], value))
             if self.read_failed[bucket]:
                 break
 
@@ -213,6 +214,8 @@ class IsolationDocTest(BaseTestCase):
 
         self.transaction_fail_count = 2
         exception = self.__run_mock_test(client, self.doc_op)
+        if exception:
+            self.log_failure(exception)
 
         # verify the values
         for key in self.keys:
@@ -248,18 +251,27 @@ class IsolationDocTest(BaseTestCase):
             self.log_failure("Failure in read thread for bucket: %s"
                              % self.bucket_util.buckets[0].name)
 
-        if exception:
-            self.log_failure(exception)
-
         self.validate_test_failure()
 
     def test_staged_doc_query_from_index(self):
         self.verify = self.input.param("verify", True)
 
+        expected_val = dict()
         bucket = self.bucket_util.buckets[0]
 
         # Create SDK client for transactions
         client = SDKClient([self.cluster.master], bucket)
+
+        if self.doc_op in ["update", "delete"]:
+            for doc in self.docs:
+                result = client.crud("create", doc.getT1(), doc.getT2(),
+                                     durability=self.durability_level,
+                                     timeout=60)
+                if result["status"] is False:
+                    self.log_failure("Key %s create failed: %s"
+                                     % (doc.getT1(), result))
+                    break
+                expected_val[doc.getT1()] = json.loads(str(doc.getT2()))
 
         # Create primary Index on all buckets
         for t_bucket in self.bucket_util.buckets:
@@ -272,16 +284,22 @@ class IsolationDocTest(BaseTestCase):
         self.sleep(10, "Wait for primary indexes to get warmed up")
 
         query_thread = Thread(target=self.__perform_query_on_doc_keys,
-                              args=(bucket, self.keys))
+                              args=(bucket, self.keys, expected_val))
         query_thread.start()
 
         # Transaction load
-        self.__run_mock_test(client, self.doc_op)
-        self.log_failure("Expected exception not found")
+        exception = self.__run_mock_test(client, self.doc_op)
+        if SDKException.TransactionExpired not in str(exception):
+            self.log_failure("Expected exception not found")
 
         self.log.info("Terminating query thread")
         self.stop_thread = True
         query_thread.join()
+
+        self.transaction_fail_count = 2
+        exception = self.__run_mock_test(client, self.doc_op)
+        if exception:
+            self.log_failure(exception)
 
         # verify the values
         for key in self.keys:
@@ -300,6 +318,12 @@ class IsolationDocTest(BaseTestCase):
             else:
                 actual_val = client.translate_to_json_object(
                     result['value'])
+
+                if self.doc_op == "update":
+                    self.content.put("mutated", 1)
+                elif self.doc_op == "delete":
+                    self.content.removeKey("value")
+
                 if self.content != actual_val:
                     self.log.info("Key %s Actual: %s, Expected: %s"
                                   % (key, actual_val, self.content))
@@ -308,11 +332,9 @@ class IsolationDocTest(BaseTestCase):
         # Close SDK client
         client.close()
 
-        self.stop_thread = True
         if self.read_failed[self.bucket_util.buckets[0]] is True:
             self.log_failure("Failure in read thread for bucket: %s"
                              % self.bucket_util.buckets[0].name)
-
         self.validate_test_failure()
 
     def test_run_purger_during_transaction(self):
