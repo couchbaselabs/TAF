@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import com.couchbase.client.core.cnc.Event;
-import com.couchbase.client.core.error.TemporaryFailureException;
+import com.couchbase.transactions.error.internal.TestFailTransient;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
@@ -122,7 +122,7 @@ public class SimpleTransaction {
 			    mock.beforeAtrPending = (ctx) -> {
 					if (max_fail_count > 0) {
 						if (attempt.get() <= max_fail_count) {
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
 						}
 					}
 					return Mono.just(1);
@@ -133,7 +133,7 @@ public class SimpleTransaction {
 			    mock.afterAtrPending = (ctx) -> {
 					if (max_fail_count > 0) {
 						if (attempt.get() <= max_fail_count) {
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
 						}
 					}
 			    	return Mono.just(1);
@@ -141,10 +141,10 @@ public class SimpleTransaction {
 		    }
 
 		    if (operation.equals("beforeAtrComplete")) {
-			    mock.beforeAtrComplete = (ctx) -> {
+				mock.beforeAtrComplete = (ctx) -> {
 					if (max_fail_count > 0) {
 						if (attempt.get() <= max_fail_count) {
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
 						}
 					}
 			    	return Mono.just(1);
@@ -155,7 +155,7 @@ public class SimpleTransaction {
 			    mock.beforeAtrRolledBack = (ctx) -> {
 					if (max_fail_count > 0) {
 						if (attempt.get() <= max_fail_count) {
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
 						}
 					}
 					return Mono.just(1);
@@ -166,7 +166,7 @@ public class SimpleTransaction {
 			    mock.afterAtrCommit = (ctx) -> {
 					if (max_fail_count > 0) {
 						if (attempt.get() <= max_fail_count) {
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
 						}
 					}
 					return Mono.just(1);
@@ -177,7 +177,7 @@ public class SimpleTransaction {
 			    mock.afterAtrComplete = (ctx) -> {
 					if (max_fail_count > 0) {
 						if (attempt.get() <= max_fail_count) {
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
 						}
 					}
 					return Mono.just(1);
@@ -188,7 +188,7 @@ public class SimpleTransaction {
 //			    mock.afterAtrRolledBack = (ctx) -> {
 //			       if (attempt.get() == 1&& first.get()) {
 //			    	   first.set(false);
-//			    	   return Mono.error(new TemporaryFailureException(null));
+//			    	   return Mono.error(new TestFailTransient(null));
 //			       }
 //			       else return Mono.just(1);
 //			    };
@@ -257,11 +257,11 @@ public class SimpleTransaction {
                     mock.afterStagedInsertComplete = (ctx, id) -> {
 						if (fail) {
 							if (id.equals(docId))
-								return Mono.error(new TemporaryFailureException(null));
+								return Mono.error(new TestFailTransient(null));
 						}
 						else if (first.get() && id.equals(docId))  {
 						   first.set(false);
-						   return Mono.error(new TemporaryFailureException(null));
+						   return Mono.error(new TestFailTransient(null));
 						}
 						return Mono.just(1);
 					};
@@ -271,10 +271,10 @@ public class SimpleTransaction {
                     mock.afterStagedReplaceComplete = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -283,10 +283,10 @@ public class SimpleTransaction {
                     mock.afterStagedRemoveComplete = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -295,10 +295,10 @@ public class SimpleTransaction {
                     mock.afterDocCommitted = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -307,10 +307,10 @@ public class SimpleTransaction {
                     mock.afterGetComplete = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -319,10 +319,10 @@ public class SimpleTransaction {
                     mock.beforeDocCommitted = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -331,10 +331,10 @@ public class SimpleTransaction {
                     mock.beforeStagedInsert = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -343,10 +343,10 @@ public class SimpleTransaction {
                     mock.beforeStagedReplace = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -355,10 +355,10 @@ public class SimpleTransaction {
                     mock.beforeStagedRemove = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -367,10 +367,10 @@ public class SimpleTransaction {
                     mock.beforeDocRemoved = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }
@@ -379,10 +379,10 @@ public class SimpleTransaction {
                     mock.beforeDocRolledBack = (ctx, id) -> {
                 	if (fail)
                     	if (id.equals(docId))
-							return Mono.error(new TemporaryFailureException(null));
+							return Mono.error(new TestFailTransient(null));
                     else if (first.get() && id.equals(docId))  {
                        first.set(false);
-                       return Mono.error(new TemporaryFailureException(null));}
+                       return Mono.error(new TestFailTransient(null));}
                     return Mono.just(1);
                     };
                 }

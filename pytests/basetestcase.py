@@ -86,6 +86,10 @@ class BaseTestCase(unittest.TestCase):
         self.scope_name = self.input.param("scope", CbServer.default_scope)
         self.collection_name = self.input.param("collection",
                                                 CbServer.default_collection)
+        self.bucket_durability_level = self.input.param(
+            "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
+        self.bucket_durability_level = \
+            BucketDurability[self.bucket_durability_level]
         # End of bucket parameters
 
         # Doc specific params
@@ -124,8 +128,6 @@ class BaseTestCase(unittest.TestCase):
         self.persist_to = self.input.param("persist_to", 0)
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
-        self.bucket_durability_level = self.input.param(
-            "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
         self.durability_level = self.input.param("durability", "").upper()
         self.sdk_client_pool = self.input.param("sdk_client_pool", None)
         # Client compression settings
@@ -247,7 +249,7 @@ class BaseTestCase(unittest.TestCase):
                     self.nonroot = True
                     shell.disconnect()
                     break
-                shell.disconnect()
+            shell.disconnect()
 
         """ some tests need to bypass checking cb server at set up
             to run installation """
@@ -313,7 +315,7 @@ class BaseTestCase(unittest.TestCase):
                     master_services = cluster_util.get_services(
                         cluster.servers[:1], self.services_init, start_node=0)
                     if master_services is not None:
-                        master_services = master_services[0].split(",")
+                        master_services = master_services[0].split(";")
 
                     self.quota = self._initialize_nodes(
                         self.task,

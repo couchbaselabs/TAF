@@ -40,6 +40,7 @@ class SDKException(object):
 
     RetryExhaustedException = \
         "com.couchbase.client.core.retry.reactor.RetryExhaustedException"
+    TransactionExpired = "com.couchbase.transactions.error.TransactionExpired"
 
     class RetryReason(object):
         KV_SYNC_WRITE_IN_PROGRESS = \
