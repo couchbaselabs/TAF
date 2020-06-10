@@ -1,3 +1,6 @@
+from random import choice
+from threading import Thread
+
 from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper, \
@@ -42,6 +45,8 @@ class UpgradeTests(UpgradeBase):
                           % node_to_upgrade.ip)
             self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                      self.upgrade_version)
+            self.cluster_util.print_cluster_stats()
+
             try:
                 self.cluster.update_master(self.cluster.servers[0])
             except Exception:
@@ -99,18 +104,14 @@ class UpgradeTests(UpgradeBase):
                             self.log_failure("Invalid exception for %s: %s"
                                              % (doc_id, doc_result))
 
-            self.cluster_util.print_cluster_stats()
-
             # Halt further upgrade if test has failed during current upgrade
             if self.test_failure is True:
                 break
 
         if self.upgrade_with_data_load:
             # Wait for update_task to complete
-            self.task_manager.end_task(update_task)
+            update_task.end_task()
             self.task_manager.get_task_result(update_task)
-
-        self.log.info("Verifying async_writes")
 
         self.validate_test_failure()
 
@@ -190,7 +191,6 @@ class UpgradeTests(UpgradeBase):
             self.cluster_util.print_cluster_stats()
 
             self.verification_dict["ops_create"] += create_batch_size
-
             self.summary.add_step("Upgrade %s" % node_to_upgrade.ip)
 
             # Halt further upgrade if test has failed during current upgrade
@@ -201,7 +201,7 @@ class UpgradeTests(UpgradeBase):
 
         if self.upgrade_with_data_load:
             # Wait for update_task to complete
-            self.task_manager.end_task(update_task)
+            update_task.end_task()
             self.task_manager.get_task_result(update_task)
         else:
             self.verification_dict["ops_update"] = 0
@@ -280,4 +280,80 @@ class UpgradeTests(UpgradeBase):
         if failed:
             self.log_failure("Cbstat vbucket-details validation failed")
         self.summary.add_step("Cbstats vb-details verification")
+        self.validate_test_failure()
+
+    def test_transaction_doc_isolation(self):
+        def run_transaction_updates():
+            self.log.info("Starting transaction updates in parallel")
+            while not stop_thread:
+                commit_trans = choice([True, False])
+                trans_update_task = self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.bucket_util.buckets,
+                    self.gen_load, "update", exp=self.maxttl,
+                    batch_size=50,
+                    process_concurrency=3,
+                    timeout_secs=self.sdk_timeout,
+                    update_count=self.update_count,
+                    transaction_timeout=self.transaction_timeout,
+                    commit=commit_trans,
+                    durability=self.durability_level,
+                    sync=self.sync, defer=self.defer,
+                    retries=0)
+                self.task_manager.get_task_result(trans_update_task)
+
+        stop_thread = False
+        update_task = None
+        self.sdk_timeout = 60
+        create_batch_size = 10000
+
+        self.log.info("Upgrading cluster nodes to target version")
+        node_to_upgrade = self.fetch_node_to_upgrade()
+        while node_to_upgrade is not None:
+            self.log.info("Selected node for upgrade: %s"
+                          % node_to_upgrade.ip)
+            if self.upgrade_with_data_load:
+                update_task = Thread(target=run_transaction_updates)
+                update_task.start()
+
+            self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                     self.upgrade_version)
+            try:
+                self.cluster.update_master(self.cluster.servers[0])
+            except Exception:
+                self.cluster.update_master(
+                    self.cluster.servers[self.nodes_init-1])
+
+            if self.upgrade_with_data_load:
+                stop_thread = True
+                update_task.join()
+
+            create_gen = doc_generator(self.key, self.num_items,
+                                       self.num_items+create_batch_size)
+            # Start transaction load after node upgrade
+            trans_task = self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets,
+                create_gen, "create", exp=self.maxttl,
+                batch_size=50,
+                process_concurrency=3,
+                timeout_secs=self.sdk_timeout,
+                update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
+                commit=True,
+                durability=self.durability_level,
+                sync=self.sync, defer=self.defer,
+                retries=0)
+
+            self.task_manager.get_task_result(trans_task)
+
+            self.cluster_util.print_cluster_stats()
+            self.bucket_util.print_bucket_stats()
+
+            self.summary.add_step("Upgrade %s" % node_to_upgrade.ip)
+
+            # Halt further upgrade if test has failed during current upgrade
+            if self.test_failure:
+                break
+
+            node_to_upgrade = self.fetch_node_to_upgrade()
+
         self.validate_test_failure()

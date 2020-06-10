@@ -40,6 +40,7 @@ class SDKException:
 
     RetryExhaustedException = \
         "com.couchbase.client.core.retry.reactor.RetryExhaustedException"
+    TransactionExpired = "com.couchbase.transactions.error.TransactionExpired"
 
     def __init__(self):
         pass

@@ -78,6 +78,10 @@ class BaseTestCase(unittest.TestCase):
             "bucket_storage", Bucket.StorageBackend.couchstore)
         if self.bucket_storage == Bucket.StorageBackend.magma:
             self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
+        self.bucket_durability_level = self.input.param(
+            "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
+        self.bucket_durability_level = \
+            BucketDurability[self.bucket_durability_level]
         # End of bucket parameters
 
         # Doc specific params
@@ -109,12 +113,7 @@ class BaseTestCase(unittest.TestCase):
         self.persist_to = self.input.param("persist_to", 0)
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
-        self.bucket_durability_level = self.input.param(
-            "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
         self.durability_level = self.input.param("durability", "").upper()
-        self.bucket_durability_level = \
-            BucketDurability[self.bucket_durability_level]
-
         # Doc Loader Params
         self.process_concurrency = self.input.param("process_concurrency", 8)
         self.batch_size = self.input.param("batch_size", 20)

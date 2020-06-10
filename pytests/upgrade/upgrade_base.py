@@ -58,7 +58,8 @@ class UpgradeBase(BaseTestCase):
 
         self.__validate_upgrade_type()
 
-        self.log.info("Installing initial version into the servers")
+        self.log.info("Installing initial version %s on servers"
+                      % self.initial_version)
         self.install_version_on_node(
             self.cluster.servers[0:self.nodes_init],
             self.initial_version)
@@ -105,7 +106,6 @@ class UpgradeBase(BaseTestCase):
                                       doc_size=self.doc_size)
         async_load_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, self.gen_load, "create",
-            durability=self.durability_level,
             timeout_secs=self.sdk_timeout)
         self.task_manager.get_task_result(async_load_task)
 
@@ -188,7 +188,8 @@ class UpgradeBase(BaseTestCase):
             if node.ip == node_obj.ip:
                 return node
 
-    def __get_otp_node(self, rest, target_node):
+    @staticmethod
+    def __get_otp_node(rest, target_node):
         """
         Get the OtpNode for the 'target_node'
 
