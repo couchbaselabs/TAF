@@ -473,7 +473,8 @@ class CollectionsRebalance(CollectionBase):
                                                         doc_loading_spec,
                                                         mutation_num=0,
                                                         async_load=async_load,
-                                                        batch_size=self.batch_size)
+                                                        batch_size=self.batch_size,
+                                                        validate_task=self.skip_validations)
         return tasks
 
     def async_data_load(self):
