@@ -3,8 +3,7 @@ import json
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper, \
-    BucketDurability
+from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
@@ -109,7 +108,7 @@ class RebalanceBaseTest(BaseTestCase):
             bucket_type=self.bucket_type,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
-            bucket_durability=BucketDurability[self.bucket_durability_level])
+            bucket_durability=self.bucket_durability_level)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         for bucket in self.bucket_util.buckets:
