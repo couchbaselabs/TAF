@@ -222,6 +222,23 @@ class MagmaBaseTest(BaseTestCase):
                 monitor_stats=self.monitor_stats)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
+        if "expiry" in self.doc_ops and self.gen_expiry is not None and self.maxttl:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_expriy, "update", self.maxttl,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level, pause_secs=5,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table,
+                scope=scope,
+                collection=collection,
+                monitor_stats=self.monitor_stats)
+            tasks_info.update(tem_tasks_info.items())
+            self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
         if "read" in self.doc_ops and self.gen_read is not None:
             read_tasks_info = self.bucket_util._async_validate_docs(
                self.cluster, self.gen_read, "read", 0,
@@ -450,7 +467,9 @@ class MagmaBaseTest(BaseTestCase):
                       update_mutate=0,
                       read_end=None, read_start=None,
                       read_mutate=0,
-                      delete_end=None, delete_start=None):
+                      delete_end=None, delete_start=None,
+                      expiry_end=None, expiry_start=None,
+                      expiry_mutate=0):
 
         if doc_ops is None:
             doc_ops = self.doc_ops
@@ -493,7 +512,17 @@ class MagmaBaseTest(BaseTestCase):
                 self.read_end = read_end
 
             self.gen_read = self.genrate_docs_basic(self.read_start,
-                                                    self.read_end)
+                                                    self.read_end,
+                                                    read_mutate)
+        if "expiry" in doc_ops:
+            if expiry_start is not None:
+                self.expiry_start = expiry_start
+            if expiry_end is not None:
+                self.expiry_end = expiry_end
+
+            self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
+                                                      self.expiry_end,
+                                                      expiry_mutate)
 
     def get_fragmentation_upsert_docs_list(self):
         """

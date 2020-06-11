@@ -162,32 +162,38 @@ class MagmaCrashTests(MagmaFailures):
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
 
-        self.gen_create = doc_generator(
-            self.key, self.num_items, self.num_items * 20,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value)
+        ops_len= len(self.doc_ops.split(":"))
 
-        self.gen_update = doc_generator(
-            self.key, 0, self.num_items/2,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value)
+        self.create_start = self.num_items
+        self.create_end = self.num_items * 2
 
-        self.gen_delete = doc_generator(
-            self.key, self.num_items/2, self.num_items,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets,
-            randomize_doc_size=self.randomize_doc_size,
-            randomize_value=self.randomize_value)
+        if ops_len == 1:
+            self.update_start = 0
+            self.update_end = self.num_items
+            self.expiry_start = 0
+            self.expiry_end =  self.num_items
+            self.delete_start = 0
+            self.delete_end = self.num_items
+        elif ops_len == 2:
+            self.update_start = 0
+            self.update_end = self.num_items // 2
+            self.delete_start = self.num_items // 2
+            self.delete_end = self.num_items
+
+            if "expiry" in self.doc_ops:
+                self.delete_start = 0
+                self.delete_end = self.num_items // 2
+                self.expiry_start = self.num_items // 2
+                self.expiry_end = self.num_item
+        else:
+            self.update_start = 0
+            self.update_start = self.num_items // 3
+            self.expiry_start = self.num_items // 3
+            self.expiry_end = (2 * self.num_items) // 3
+            self.delete_start = (2 * self.num_items) // 3
+            self.delete_end = self.num_items
+
+        self.generate_docs(doc_ops=self.doc_ops)
 
         th = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
         th.start()
@@ -199,6 +205,7 @@ class MagmaCrashTests(MagmaFailures):
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+
         self.stop_crash = True
         th.join()
 
@@ -541,7 +548,6 @@ class MagmaCrashTests(MagmaFailures):
 
         self.log.info("==test_crash_during_val_movement_across_trees ends==")
 
-
 class MagmaRollbackTests(MagmaFailures):
 
     def test_magma_rollback_n_times(self):
@@ -742,7 +748,6 @@ class MagmaRollbackTests(MagmaFailures):
         self.bucket_util.verify_stats_all_buckets(items)
         shell.disconnect()
         self.log.info("test_magma_rollback_n_times_during_del_op starts")
-
 
 class MagmaSpaceAmplification(MagmaFailures):
 
