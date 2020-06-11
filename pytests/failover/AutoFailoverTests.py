@@ -38,7 +38,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                                                         self.bucket_util.buckets,
                                                         doc_loading_spec,
                                                         mutation_num=0,
-                                                        async_load=async_load)
+                                                        async_load=async_load,
+                                                        validate_task=self.skip_validations)
         return tasks
 
     def data_validation_collection(self):
