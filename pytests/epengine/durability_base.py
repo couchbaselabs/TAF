@@ -132,6 +132,10 @@ class BucketDurabilityBase(BaseTestCase):
         self.assertTrue(status, msg="Failure during disabling auto-failover")
         self.bucket_util.add_rbac_user()
 
+        self.durability_helper = DurabilityHelper(
+            self.log,
+            len(self.cluster.nodes_in_cluster))
+        self.kv_nodes = self.cluster_util.get_kv_nodes()
         self.num_nodes_affected = 1
         if self.num_replicas > 1:
             self.num_nodes_affected = 2
@@ -357,3 +361,13 @@ class BucketDurabilityBase(BaseTestCase):
         else:
             node_list.append(self.cluster.master)
         return node_list
+
+    def cb_stat_verify(self, verification_dict):
+        failed = self.durability_helper.verify_vbucket_details_stats(
+            self.bucket_util.buckets[0],
+            self.kv_nodes,
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=verification_dict)
+        if failed:
+            self.log_failure("Cbstat vbucket-details validation failed")
+        self.summary.add_step("Cbstat vb-details validation")

@@ -4,8 +4,7 @@ from random import sample, choice
 from BucketLib.bucket import Bucket
 from cb_tools.cb_cli import CbCli
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper, \
-    BucketDurability
+from couchbase_helper.durability_helper import BucketDurability
 from epengine.durability_base import BucketDurabilityBase
 from error_simulation.cb_error import CouchbaseError
 from sdk_client3 import SDKClient
@@ -49,7 +48,7 @@ class CreateBucketTests(BucketDurabilityBase):
             if "SUCCESS: Bucket created" not in str(output):
                 create_failed = True
                 if d_level in self.possible_d_levels[self.bucket_type]:
-                    self.log_failure("Create failed for %s bucket " 
+                    self.log_failure("Create failed for %s bucket "
                                      "with min_durability_level %s"
                                      % (self.bucket_type, d_level))
 
@@ -58,24 +57,13 @@ class CreateBucketTests(BucketDurabilityBase):
 
             # Perform CRUDs to validate bucket_creation with durability
             if not create_failed:
-                durability_helper = DurabilityHelper(
-                    self.log,
-                    len(self.cluster.nodes_in_cluster),
-                    durability=d_level)
                 verification_dict = self.get_cb_stat_verification_dict()
                 self.validate_durability_with_crud(bucket_obj, d_level,
                                                    verification_dict)
                 self.summary.add_step("Validate_CRUD_operation")
-                # Cbstats vbucket details validation
-                failed = durability_helper.verify_vbucket_details_stats(
-                    self.bucket_util.buckets[0],
-                    self.cluster_util.get_kv_nodes(),
-                    vbuckets=self.cluster_util.vbuckets,
-                    expected_val=verification_dict)
-                if failed:
-                    self.log_failure(
-                        "Cbstat vbucket-details validation failed")
-                self.summary.add_step("Cbstat validation")
+
+                # Cbstats vbucket-details validation
+                self.cb_stat_verify(verification_dict)
 
             output = cb_cli.delete_bucket(bucket_obj.name)
             if create_failed:
@@ -112,26 +100,14 @@ class CreateBucketTests(BucketDurabilityBase):
 
             # Perform CRUDs to validate bucket_creation with durability
             if not create_failed:
-                durability_helper = DurabilityHelper(
-                    self.log,
-                    len(self.cluster.nodes_in_cluster),
-                    durability=d_level)
                 verification_dict = self.get_cb_stat_verification_dict()
 
                 self.validate_durability_with_crud(bucket_obj, d_level,
                                                    verification_dict)
                 self.summary.add_step("Validate CRUD operation")
 
-                # Cbstats vbucket details validation
-                failed = durability_helper.verify_vbucket_details_stats(
-                    self.bucket_util.buckets[0],
-                    self.cluster_util.get_kv_nodes(),
-                    vbuckets=self.cluster_util.vbuckets,
-                    expected_val=verification_dict)
-                if failed:
-                    self.log_failure(
-                        "Cbstat vbucket-details validation failed")
-                self.summary.add_step("Cbstat validation")
+                # Cbstats vbucket-details validation
+                self.cb_stat_verify(verification_dict)
 
             self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
             self.summary.add_step("Bucket deletion")
@@ -168,26 +144,15 @@ class BucketDurabilityTests(BucketDurabilityBase):
         # Index for doc_gen to avoid creating/deleting same docs across d_level
         index = 0
         for d_level in self.bucket_util.get_supported_durability_levels():
-            durability_helper = DurabilityHelper(
-                self.log,
-                len(self.cluster.nodes_in_cluster),
-                durability=d_level)
-
             self.validate_durability_with_crud(bucket_obj, b_durability,
                                                verification_dict,
                                                doc_durability=d_level,
                                                doc_start_index=index)
             self.summary.add_step("CRUD with doc_durability %s" % d_level)
 
-            # Cbstats vbucket details validation
-            failed = durability_helper.verify_vbucket_details_stats(
-                self.bucket_util.buckets[0], self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
-                expected_val=verification_dict)
-            if failed:
-                self.log_failure("Cbstat vbucket-details verification failed")
+            # Cbstats vbucket-details validation
+            self.cb_stat_verify(verification_dict)
             index += 10
-            self.summary.add_step("Cbstat vbucket-details verification")
 
     def test_ops_only_with_bucket_level_durability(self):
         """
@@ -200,16 +165,11 @@ class BucketDurabilityTests(BucketDurabilityBase):
             if d_level == Bucket.DurabilityLevel.NONE:
                 continue
 
-            verification_dict = self.get_cb_stat_verification_dict()
-            durability_helper = DurabilityHelper(
-                self.log,
-                len(self.cluster.nodes_in_cluster),
-                durability=d_level)
-
             step_desc = "Creating %s bucket with level '%s'" \
                         % (self.bucket_type, d_level)
-            self.log.info(step_desc)
+            verification_dict = self.get_cb_stat_verification_dict()
 
+            self.log.info(step_desc)
             # Object to support performing CRUDs and create Bucket
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             bucket_obj = Bucket(bucket_dict)
@@ -223,13 +183,95 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.summary.add_step("Async write with bucket durability %s"
                                   % d_level)
 
-            # Cbstats vbucket details validation
-            failed = durability_helper.verify_vbucket_details_stats(
-                self.bucket_util.buckets[0], self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
-                expected_val=verification_dict)
-            if failed:
-                self.log_failure("Cbstat vbucket-details verification failed")
+            # Cbstats vbucket-details validation
+            self.cb_stat_verify(verification_dict)
+
+            # Delete the bucket on server
+            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.summary.add_step("Delete %s bucket" % self.bucket_type)
+
+    def test_sub_doc_op_with_bucket_level_durability(self):
+        """
+        Create Buckets with durability_levels set and perform
+        Sub_doc CRUDs from client without durability settings and
+        validate the ops to make sure respective durability is honored
+        """
+        key, value = doc_generator("test_key", 0, 1).next()
+        sub_doc_key = "sub_doc_key"
+        sub_doc_vals = ["val_1", "val_2", "val_3", "val_4", "val_5"]
+        for d_level in self.bucket_util.get_supported_durability_levels():
+            # Avoid creating bucket with durability=None
+            if d_level == Bucket.DurabilityLevel.NONE:
+                continue
+
+            step_desc = "Creating %s bucket with level '%s'" \
+                        % (self.bucket_type, d_level)
+            verification_dict = self.get_cb_stat_verification_dict()
+
+            self.log.info(step_desc)
+            # Object to support performing CRUDs and create Bucket
+            bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
+            bucket_obj = Bucket(bucket_dict)
+            self.bucket_util.create_bucket(bucket_obj,
+                                           wait_for_warmup=True)
+            self.summary.add_step(step_desc)
+
+            # SDK client to perform sub_doc ops
+            client = SDKClient([self.cluster.master], bucket_obj)
+
+            result = client.crud("create", key, value)
+            verification_dict["ops_create"] += 1
+            verification_dict["sync_write_committed_count"] += 1
+            if result["status"] is False:
+                self.log_failure("Doc insert failed for key: %s" % key)
+
+            # Perform sub_doc CRUD
+            for sub_doc_op in ["subdoc_insert", "subdoc_upsert",
+                               "subdoc_replace"]:
+                sub_doc_val = choice(sub_doc_vals)
+                _, fail = client.crud(sub_doc_op, key,
+                                      [sub_doc_key, sub_doc_val])
+                if fail:
+                    self.log_failure("%s failure. Key %s, sub_doc (%s, %s): %s"
+                                     % (sub_doc_op, key,
+                                        sub_doc_key, sub_doc_val, result))
+                else:
+                    verification_dict["ops_update"] += 1
+                    verification_dict["ops_get"] += 1
+                    verification_dict["sync_write_committed_count"] += 1
+
+                success, fail = client.crud("subdoc_read", key, sub_doc_key)
+                if fail or str(success[key]["value"].get(0)) != sub_doc_val:
+                    self.log_failure("%s failed. Expected: %s, Actual: %s"
+                                     % (sub_doc_op, sub_doc_val,
+                                        success[key]["value"].get(0)))
+                verification_dict["ops_get"] += 1
+                self.summary.add_step("%s for key %s" % (sub_doc_op, key))
+
+            # Subdoc_delete and verify
+            sub_doc_op = "subdoc_delete"
+            _, fail = client.crud(sub_doc_op, key, sub_doc_key)
+            if fail:
+                self.log_failure("%s failure. Key %s, sub_doc (%s, %s): %s"
+                                 % (sub_doc_op, key,
+                                    sub_doc_key, sub_doc_val, result))
+            verification_dict["ops_update"] += 1
+            verification_dict["ops_get"] += 1
+            verification_dict["sync_write_committed_count"] += 1
+
+            _, fail = client.crud(sub_doc_op, key, sub_doc_key)
+            if SDKException.PathNotFoundException \
+                    not in str(fail[key]["error"]):
+                self.log_failure("Invalid error after sub_doc_delete")
+
+            verification_dict["ops_get"] += 1
+            self.summary.add_step("%s for key %s" % (sub_doc_op, key))
+
+            # Cbstats vbucket-details validation
+            self.cb_stat_verify(verification_dict)
+
+            # Close SDK client
+            client.close()
 
             # Delete the bucket on server
             self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
@@ -245,10 +287,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
             create_desc = "Creating %s bucket with level '%s'" \
                           % (self.bucket_type, d_level)
             verification_dict = self.get_cb_stat_verification_dict()
-            durability_helper = DurabilityHelper(
-                self.log,
-                len(self.cluster.nodes_in_cluster),
-                durability=d_level)
 
             self.log.info(create_desc)
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
@@ -278,14 +316,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 durability_index += 1
                 index += 10
 
-            # Cbstats vbucket details validation
-            failed = durability_helper.verify_vbucket_details_stats(
-                self.bucket_util.buckets[0], self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
-                expected_val=verification_dict)
-            if failed:
-                self.log_failure("Cbstat vbucket-details verification failed")
-            self.summary.add_step("Cbstat verification")
+            # Cbstats vbucket-details validation
+            self.cb_stat_verify(verification_dict)
 
             # Delete the bucket on server
             self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
@@ -301,10 +333,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
                           % (self.bucket_type, d_level)
 
             verification_dict = self.get_cb_stat_verification_dict()
-            durability_helper = DurabilityHelper(
-                self.log,
-                len(self.cluster.nodes_in_cluster),
-                durability=d_level)
 
             self.log.info(create_desc)
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
@@ -334,14 +362,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 durability_index -= 1
                 index += 10
 
-            # Cbstats vbucket details validation
-            failed = durability_helper.verify_vbucket_details_stats(
-                self.bucket_util.buckets[0], self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
-                expected_val=verification_dict)
-            if failed:
-                self.log_failure("Cbstat vbucket-details verification failed")
-            self.summary.add_step("Cbstat verification")
+            # Cbstats vbucket-details validation
+            self.cb_stat_verify(verification_dict)
 
             # Delete the bucket on server
             self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
@@ -357,7 +379,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         supported_d_levels = self.bucket_util.get_supported_durability_levels()
         supported_bucket_d_levels = self.possible_d_levels[self.bucket_type]
         create_gen_1 = doc_generator(self.key, 0, self.num_items)
-        create_gen_2 = doc_generator("random", self.num_items,
+        create_gen_2 = doc_generator("random_keys", self.num_items,
                                      self.num_items*2)
         update_gen = doc_generator(self.key, 0, self.num_items/2)
         delete_gen = doc_generator(self.key, self.num_items/2, self.num_items)
@@ -757,31 +779,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             verification_dict["sync_write_committed_count"] \
                 += crud_batch_size
 
-            # Cannot retry for CREATE/DELETE operation. So only for UPDATE
-            # if doc_ops[0] == "update":
-            #     # Retry doc_op after reverting the induced error
-            #     while gen_loader_2.has_next():
-            #         key, value = gen_loader_2.next()
-            #         if with_sync_write_val:
-            #             fail = client.crud(doc_ops[0], key,
-            #                                value=value, exp=0,
-            #                                durability=with_sync_write_val,
-            #                                timeout=self.sdk_timeout,
-            #                                time_unit="seconds")
-            #         else:
-            #             fail = client.crud(doc_ops[0], key,
-            #                                value=value, exp=0)
-            #         if fail["error"] or fail["status"] is False:
-            #             self.log_failure(
-            #                 "CRUD failed without error condition: {0}"
-            #                 .format(fail))
-
             # Disconnect the client
             client.close()
-
-            # Verify initial doc load count
-            # self.bucket_util._wait_for_stats_all_buckets()
-            # self.bucket_util.verify_stats_all_buckets(crud_batch_size)
 
         crud_variations = [
             ["create", "create", ""],
@@ -806,10 +805,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 continue
 
             verification_dict = self.get_cb_stat_verification_dict()
-            durability_helper = DurabilityHelper(
-                self.log,
-                len(self.cluster.nodes_in_cluster),
-                durability=b_d_level)
 
             create_desc = "Creating %s bucket with level '%s'" \
                           % (self.bucket_type, b_d_level)
@@ -828,14 +823,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 self.summary.add_step("SyncWriteInProgress for [%s, %s]"
                                       % (doc_op[0], doc_op[1]))
 
-            # Cbstats vbucket details validation
-            failed = durability_helper.verify_vbucket_details_stats(
-                self.bucket_util.buckets[0], self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
-                expected_val=verification_dict)
-            if failed:
-                self.log_failure("Cbstat vbucket-details verification failed")
-            self.summary.add_step("Cbstat verification")
+            # Cbstats vbucket-details validation
+            self.cb_stat_verify(verification_dict)
 
             # Bucket deletion
             self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
@@ -897,24 +886,13 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.bucket_util.create_bucket(bucket_obj, wait_for_warmup=True)
             self.summary.add_step(create_desc)
 
-            durability_helper = DurabilityHelper(
-                self.log,
-                len(self.cluster.nodes_in_cluster),
-                durability=self.durability_level)
-
             verification_dict = self.get_cb_stat_verification_dict()
 
             # Test CRUD operations
             perform_crud_ops()
 
-            # Cbstats vbucket details validation
-            failed = durability_helper.verify_vbucket_details_stats(
-                self.bucket_util.buckets[0], self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
-                expected_val=verification_dict)
-            if failed:
-                self.log_failure("Cbstat vbucket-details verification failed")
-            self.summary.add_step("Cbstat vbucket-details verification")
+            # Cbstats vbucket-details validation
+            self.cb_stat_verify(verification_dict)
 
             # Delete the created bucket
             self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
@@ -941,11 +919,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.summary.add_step("Create bucket with durability %s"
                                   % d_level)
 
-            durability_helper = DurabilityHelper(
-                self.log,
-                len(self.cluster.nodes_in_cluster),
-                durability=d_level)
-
             client = SDKClient([self.cluster.master], bucket_obj)
             result = client.crud("create", key, value, timeout=3)
             if result["status"] is True \
@@ -955,15 +928,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                  "without enough nodes")
             client.close()
 
-            # Cbstats vbucket details validation
-            failed = durability_helper.verify_vbucket_details_stats(
-                self.bucket_util.buckets[0], self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
-                expected_val=verification_dict)
-            if failed:
-                self.log_failure("Cbstat vbucket-details verification failed")
-
-            self.summary.add_step("Cbstat vbucket-details verification")
+            # Cbstats vbucket-details validation
+            self.cb_stat_verify(verification_dict)
 
             # Delete the created bucket
             self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)

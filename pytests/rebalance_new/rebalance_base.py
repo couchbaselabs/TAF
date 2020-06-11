@@ -99,7 +99,7 @@ class RebalanceBaseTest(BaseTestCase):
             replica=self.num_replicas,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
-            bucket_durability=BucketDurability[self.bucket_durability_level])
+            bucket_durability=self.bucket_durability_level)
 
     def _create_multiple_buckets(self):
         buckets_created = self.bucket_util.create_multiple_buckets(
