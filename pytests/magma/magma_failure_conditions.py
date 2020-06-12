@@ -210,16 +210,38 @@ class MagmaCrashTests(MagmaFailures):
         th.join()
 
     def test_crash_during_recovery(self):
-        self.stop_crash = False
+        ops_len= len(self.doc_ops.split(":"))
 
         self.create_start = self.num_items
         self.create_end = self.num_items * 2
-        self.update_start = 0
-        self.update_end = self.num_items // 2
-        self.delete_start = self.num_items // 2
-        self.delete_end = self.num_items
 
-        self.generate_docs(doc_ops="create:update:delete")
+        if ops_len == 1:
+            self.update_start = 0
+            self.update_end = self.num_items
+            self.expiry_start = 0
+            self.expiry_end =  self.num_items
+            self.delete_start = 0
+            self.delete_end = self.num_items
+        elif ops_len == 2:
+            self.update_start = 0
+            self.update_end = self.num_items // 2
+            self.delete_start = self.num_items // 2
+            self.delete_end = self.num_items
+
+            if "expiry" in self.doc_ops:
+                self.delete_start = 0
+                self.delete_end = self.num_items // 2
+                self.expiry_start = self.num_items // 2
+                self.expiry_end = self.num_item
+        else:
+            self.update_start = 0
+            self.update_start = self.num_items // 3
+            self.expiry_start = self.num_items // 3
+            self.expiry_end = (2 * self.num_items) // 3
+            self.delete_start = (2 * self.num_items) // 3
+            self.delete_end = self.num_items
+
+        self.generate_docs(doc_ops=self.doc_ops)
 
         tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                   skip_read_on_error=True,
