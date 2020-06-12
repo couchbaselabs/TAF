@@ -187,7 +187,7 @@ class MagmaCrashTests(MagmaFailures):
                 self.expiry_end = self.num_item
         else:
             self.update_start = 0
-            self.update_start = self.num_items // 3
+            self.update_end = self.num_items // 3
             self.expiry_start = self.num_items // 3
             self.expiry_end = (2 * self.num_items) // 3
             self.delete_start = (2 * self.num_items) // 3
@@ -235,7 +235,7 @@ class MagmaCrashTests(MagmaFailures):
                 self.expiry_end = self.num_item
         else:
             self.update_start = 0
-            self.update_start = self.num_items // 3
+            self.update_end = self.num_items // 3
             self.expiry_start = self.num_items // 3
             self.expiry_end = (2 * self.num_items) // 3
             self.delete_start = (2 * self.num_items) // 3
