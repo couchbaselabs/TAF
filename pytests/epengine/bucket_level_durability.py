@@ -143,7 +143,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
         # Index for doc_gen to avoid creating/deleting same docs across d_level
         index = 0
-        for d_level in self.bucket_util.get_supported_durability_levels():
+        for d_level in self.get_supported_durability_for_bucket():
             self.validate_durability_with_crud(bucket_obj, b_durability,
                                                verification_dict,
                                                doc_durability=d_level,
@@ -160,7 +160,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         CRUDs from client without explicitly setting the durability and
         validate the ops to make sure respective durability is honored
         """
-        for d_level in self.bucket_util.get_supported_durability_levels():
+        for d_level in self.get_supported_durability_for_bucket():
             # Avoid creating bucket with durability=None
             if d_level == Bucket.DurabilityLevel.NONE:
                 continue
@@ -199,7 +199,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         key, value = doc_generator("test_key", 0, 1).next()
         sub_doc_key = "sub_doc_key"
         sub_doc_vals = ["val_1", "val_2", "val_3", "val_4", "val_5"]
-        for d_level in self.bucket_util.get_supported_durability_levels():
+        for d_level in self.get_supported_durability_for_bucket():
             # Avoid creating bucket with durability=None
             if d_level == Bucket.DurabilityLevel.NONE:
                 continue
@@ -267,6 +267,10 @@ class BucketDurabilityTests(BucketDurabilityBase):
             verification_dict["ops_get"] += 1
             self.summary.add_step("%s for key %s" % (sub_doc_op, key))
 
+            # Validate doc_count
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(1)
+
             # Cbstats vbucket-details validation
             self.cb_stat_verify(verification_dict)
 
@@ -283,7 +287,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
         durability_level > the bucket's durability_level and validate
         """
         d_level_order_len = len(self.d_level_order)
-        for d_level in self.bucket_util.get_supported_durability_levels():
+        supported_d_levels = self.get_supported_durability_for_bucket()
+        for d_level in supported_d_levels:
             create_desc = "Creating %s bucket with level '%s'" \
                           % (self.bucket_type, d_level)
             verification_dict = self.get_cb_stat_verification_dict()
@@ -301,7 +306,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
             index = 0
             op_type = "create"
             durability_index = self.d_level_order.index(d_level) + 1
+
             while durability_index < d_level_order_len:
+                # Ephemeral case
+                if self.d_level_order[durability_index] not in supported_d_levels:
+                    durability_index += 1
+                    continue
                 self.validate_durability_with_crud(
                     bucket_obj,
                     d_level,
@@ -328,7 +338,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         Create bucket with durability_levels set and perform CRUDs using
         durability_level > the bucket's d_level and validate
         """
-        for d_level in self.bucket_util.get_supported_durability_levels():
+        for d_level in self.get_supported_durability_for_bucket():
             create_desc = "Creating %s bucket with level '%s'" \
                           % (self.bucket_type, d_level)
 
@@ -376,7 +386,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         parallel and validate the doc_ops results.
         """
         update_during_ops = self.input.param("update_during_ops", False)
-        supported_d_levels = self.bucket_util.get_supported_durability_levels()
+        supported_d_levels = self.get_supported_durability_for_bucket()
         supported_bucket_d_levels = self.possible_d_levels[self.bucket_type]
         create_gen_1 = doc_generator(self.key, 0, self.num_items)
         create_gen_2 = doc_generator("random_keys", self.num_items,
@@ -462,16 +472,23 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             # Start CRUD and update bucket-durability as specified
             # by config param 'update_during_ops'
-            for task in [create_task, update_task,
-                         read_task, delete_task]:
-                new_d_level = BucketDurability[b_durability_to_update.pop()]
+            tasks_to_run = [create_task, update_task,
+                            read_task, delete_task]
+            if self.bucket_type == Bucket.Type.EPHEMERAL:
+                tasks_to_run = [create_task,
+                                choice([update_task, delete_task])]
+                clients = read_task.clients
 
-                # Work around for MB-39608
-                level_to_set = new_d_level
-                if new_d_level == "majorityAndPersistActive":
-                    level_to_set = "majority_and_persist_on_master"
-                elif new_d_level == "persistToMajority":
-                    level_to_set = "persist_to_majority"
+                # Close clients in unused tasks
+                if tasks_to_run[1].op_type == "delete":
+                    clients += update_task.clients
+                else:
+                    clients += delete_task.clients
+                for client in clients:
+                    client.close()
+
+            for task in tasks_to_run:
+                new_d_level = BucketDurability[b_durability_to_update.pop()]
 
                 self.log.info("Starting %s task" % task.op_type)
                 self.task_manager.add_new_task(task)
@@ -479,30 +496,20 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 if update_during_ops:
                     self.sleep(5, "Wait for load_task to start before "
                                   "setting durability=%s" % new_d_level)
-                    # Using cbepctl with doc_ops since restart memcached
-                    # is not possible with doc_ops for diag_eval update
-                    self.bucket_util.update_bucket_property(
-                        bucket_obj,
-                        bucket_durability=new_d_level)
                 else:
                     self.task_manager.get_task_result(task)
 
-                    # Wait for queues to get drained before diag-eval restart
-                    self.bucket_util._wait_for_stats_all_buckets()
-
-                    # Using diag_eval - we can restart memcached
-                    # since no doc_ops is running in background
-                    self.bucket_util.update_bucket_props(
-                        "durability_min_level",
-                        level_to_set,
-                        [bucket_obj])
+                # Update bucket durability
+                self.bucket_util.update_bucket_property(
+                    bucket_obj,
+                    bucket_durability=new_d_level)
 
                 buckets = self.bucket_util.get_all_buckets()
                 if buckets[0].durability_level != new_d_level:
                     self.log_failure("Failed to update bucket_d_level to %s"
                                      % new_d_level)
                 self.summary.add_step("Set bucket-durability=%s"
-                                      % level_to_set)
+                                      % new_d_level)
 
                 self.bucket_util.print_bucket_stats()
 
@@ -530,6 +537,9 @@ class BucketDurabilityTests(BucketDurabilityBase):
         # Starting from max_durability levels because to iterate
         # all lower levels for doc_ops with level update
         supported_d_levels = deepcopy(self.d_level_order)
+        if self.bucket_type == Bucket.Type.EPHEMERAL:
+            supported_d_levels = supported_d_levels[0:2]
+
         supported_d_levels.reverse()
         supported_d_levels += [supported_d_levels[0]]
 
@@ -842,7 +852,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             old_cas = 0
             client = SDKClient([self.cluster.master], bucket_obj)
 
-            for op_type in ["create", "update", "read", "replace" "delete"]:
+            for op_type in ["create", "update", "read", "replace", "delete"]:
                 crud_desc = "Key %s, doc_op: %s" % (key, op_type)
                 self.log.info(crud_desc)
                 result = client.crud(op_type, key, value,
@@ -852,6 +862,9 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 if op_type != "read":
                     if op_type != "replace":
                         dict_key = "ops_%s" % op_type
+                        # MB-39572
+                        if op_type == "delete":
+                            verification_dict["ops_get"] += 1
                     else:
                         dict_key = "ops_update"
 
@@ -890,6 +903,10 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             # Test CRUD operations
             perform_crud_ops()
+
+            # Validate doc_count
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(0)
 
             # Cbstats vbucket-details validation
             self.cb_stat_verify(verification_dict)

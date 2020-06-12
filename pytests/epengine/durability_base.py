@@ -218,6 +218,12 @@ class BucketDurabilityBase(BaseTestCase):
 
         return bucket_dict
 
+    def get_supported_durability_for_bucket(self):
+        if self.bucket_type == Bucket.Type.EPHEMERAL:
+            return [Bucket.DurabilityLevel.NONE,
+                    Bucket.DurabilityLevel.MAJORITY]
+        return self.bucket_util.get_supported_durability_levels()
+
     @staticmethod
     def get_vb_and_error_type(d_level):
         # Select target_vb type for testing with CRUDs
