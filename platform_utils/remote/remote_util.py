@@ -3409,7 +3409,7 @@ class RemoteMachineShellConnection:
                     is_pretty_name = False
                     os_pretty_name = ''
                     while line and (not is_version_id or not is_pretty_name):
-                        self.log.debug(line)
+                        #self.log.debug(line)
                         if line.startswith('VERSION_ID'):
                             os_version = line.split('=')[1].replace('"', '')
                             os_version = os_version.rstrip('\n').rstrip(' ').rstrip('\\l').rstrip(
@@ -3426,7 +3426,7 @@ class RemoteMachineShellConnection:
                     os_shortname_dict = {'ubuntu': 'ubuntu', 'debian': 'debian', 'mint': 'ubuntu',
                                          'amazon linux ami': 'amzn2', 'centos': 'centos', 'opensuse': 'suse',
                                          'red': 'rhel', 'suse': 'suse', 'oracle': 'oel'}
-                    self.log.debug("os_pretty_name:" + os_pretty_name)
+                    #self.log.debug("os_pretty_name:" + os_pretty_name)
                     if os_pretty_name:
                         os_name = os_pretty_name.split(' ')[0].lower()
                         os_distro = os_distro_dict[os_name]
