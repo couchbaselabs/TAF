@@ -22,6 +22,7 @@ class CollectionsSuccessTests(CollectionBase):
 
     def __perform_collection_crud(self):
         collection_crud_spec = dict()
+        collection_crud_spec["doc_crud"] = dict()
         collection_crud_spec[
             MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET] = 2
         collection_crud_spec[

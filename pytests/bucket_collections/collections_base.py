@@ -99,6 +99,9 @@ class CollectionBase(BaseTestCase):
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
 
+        # Prints bucket stats before doc_ops
+        self.bucket_util.print_bucket_stats()
+
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()
@@ -136,6 +139,7 @@ class CollectionBase(BaseTestCase):
         if self.spec_name not in ttl_buckets:
             self.bucket_util.validate_docs_per_collections_all_buckets()
 
+        # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
