@@ -1,0 +1,101 @@
+{
+	"Users": {
+		"read_only_user": {
+			"access": "read",
+			"username": "S3_readonly@couchbase.com",
+			"password": "wp92Rs|dG&jq",
+			"accessKeyId": "AKIAXQQ2DIGA455334OV",
+			"secretAccessKey": "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",
+			"serviceEndpoint": null,
+			"service":"s3",
+			"resource":"s3"
+		},
+		"full_access_user": {
+			"access": "full_access",
+			"username": "S3_fullaccess@couchbase.com",
+			"password": "71asL{D|h&vh",
+			"accessKeyId": "AKIAXQQ2DIGA5QEB2KAS",
+			"secretAccessKey": "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",
+			"serviceEndpoint": null,
+			"service":"s3",
+			"resource":"s3"
+		}
+	},
+	"Buckets": {
+		"us-west-1": {
+			"cbas-regression-1": {
+				"json": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				},
+				"csv": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				},
+				"tsv": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				}
+			}
+		},
+		"ap-south-1": {
+			"cbas-regression-2": {
+				"json": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				},
+				"csv": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				},
+				"tsv": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				}
+			}
+		},
+		"eu-west-1": {
+			"cbas-regression-3": {
+				"json": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				},
+				"csv": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				},
+				"tsv": {
+					"<path_name>": {
+						"total_num_records": "",
+						"object_construction_def": null,
+						"null_string": null
+						}
+				}
+			}
+		}
+	}
+}
