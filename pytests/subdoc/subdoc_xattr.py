@@ -3,7 +3,7 @@ import json
 import sys
 
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import \
@@ -1618,7 +1618,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
     def test_durability_impossible(self):
         # Create document without durability
-        result = self.client.crud("create", self.doc_id, {"test": "val"},
+        result = self.client.crud(DocLoading.Bucket.DocOps.CREATE,
+                                  self.doc_id, {"test": "val"},
                                   timeout=10)
         self.assertTrue(result["status"], "Doc create failed")
 
@@ -1636,11 +1637,15 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
     def test_doc_sync_write_in_progress(self):
         shell = None
-        doc_tasks = ["create", "update", "replace", "delete"]
-        basic_ops = ["create", "update",
+        doc_tasks = [DocLoading.Bucket.DocOps.CREATE,
+                     DocLoading.Bucket.DocOps.UPDATE,
+                     DocLoading.Bucket.DocOps.REPLACE,
+                     DocLoading.Bucket.DocOps.DELETE]
+        basic_ops = [DocLoading.Bucket.DocOps.CREATE,
+                     DocLoading.Bucket.DocOps.UPDATE,
                      "subdoc_insert", "subdoc_upsert",
                      "subdoc_replace", "subdoc_delete",
-                     "delete"]
+                     DocLoading.Bucket.DocOps.DELETE]
         doc_gen = dict()
         doc_gen["doc_crud"] = doc_generator(self.doc_id, 0, 1)
 
@@ -1663,7 +1668,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
         error_sim = CouchbaseError(self.log, shell)
 
-        for op_type in ["create", "update", "delete"]:
+        for op_type in [DocLoading.Bucket.DocOps.CREATE,
+                        DocLoading.Bucket.DocOps.UPDATE,
+                        DocLoading.Bucket.DocOps.DELETE]:
             sync_write_task = self.task.async_load_gen_docs(
                 self.cluster, self.bucket_util.buckets[0],
                 doc_gen["doc_crud"], op_type,
@@ -1676,13 +1683,14 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 task_identifier="sw_docTask",
                 start_task=False)
 
-            doc_cas = self.client.crud("read", doc_key)["cas"]
+            doc_cas = self.client.crud(DocLoading.Bucket.DocOps.READ,
+                                       doc_key)["cas"]
 
             error_sim.create(CouchbaseError.STOP_MEMCACHED)
             self.task_manager.add_new_task(sync_write_task)
             self.sleep(5, "Wait for doc_op task to start")
 
-            for sw_test_op in basic_ops + ["replace"]:
+            for sw_test_op in basic_ops + [DocLoading.Bucket.DocOps.REPLACE]:
                 self.log.info("Testing %s over %s" % (sw_test_op, op_type))
                 value = "test_val"
                 if sw_test_op not in doc_tasks:
@@ -1706,8 +1714,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                     SDKException.RequestCanceledException
                 retry_reason = SDKException.RetryReason \
                     .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
-                if op_type == "create":
-                    if sw_test_op in ["delete", "replace"] \
+                if op_type == DocLoading.Bucket.DocOps.CREATE:
+                    if sw_test_op in [DocLoading.Bucket.DocOps.DELETE,
+                                      DocLoading.Bucket.DocOps.REPLACE] \
                             or (sw_test_op not in doc_tasks):
                         expected_exception = \
                             SDKException.DocumentNotFoundException
@@ -1724,13 +1733,14 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                     self.log_failure("Retry reason missing: %s" % result)
 
                 # Validate CAS doesn't change after sync_write failure
-                curr_cas = self.client.crud("read", doc_key)["cas"]
+                curr_cas = self.client.crud(DocLoading.Bucket.DocOps.READ,
+                                            doc_key)["cas"]
                 if curr_cas != doc_cas:
                     self.log_failure("CAS mismatch. %s != %s"
                                      % (curr_cas, doc_cas))
             error_sim.revert(CouchbaseError.STOP_MEMCACHED)
             self.task_manager.get_task_result(sync_write_task)
-            if op_type != "delete":
+            if op_type != DocLoading.Bucket.DocOps.DELETE:
                 self.client.crud("subdoc_insert",
                                  doc_key, ["exists_path", 1],
                                  durability=self.durability_level,
@@ -1761,7 +1771,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
         error_sim = CouchbaseError(self.log, shell)
 
-        self.client.crud("create", doc_key, "{}",
+        self.client.crud(DocLoading.Bucket.DocOps.CREATE, doc_key, "{}",
                          timeout=3, time_unit="seconds")
         self.client.crud("subdoc_insert",
                          doc_key, ["exists_path", 1],
@@ -1784,9 +1794,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         for op_type in sub_doc_op_dict.keys():
             self.log.info("Testing SyncWriteInProgress with %s" % op_type)
             value = ["new_path", "new_value"]
-            if op_type != "insert":
+            if op_type != DocLoading.Bucket.SubDocOps.INSERT:
                 doc_gen[op_type].template = '{{ "exists_path": 0 }}'
-                if op_type == "remove":
+                if op_type == DocLoading.Bucket.SubDocOps.REMOVE:
                     value = "exists_path"
                 else:
                     value = ["exists_path", [0, 1]]
@@ -1804,7 +1814,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 task_identifier="sw_subdocTask",
                 start_task=False)
 
-            doc_cas = self.client.crud("read", doc_key)["cas"]
+            doc_cas = self.client.crud(DocLoading.Bucket.DocOps.READ,
+                                       doc_key)["cas"]
 
             error_sim.create(CouchbaseError.STOP_MEMCACHED)
             self.task_manager.add_new_task(sync_write_task)
@@ -1824,7 +1835,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 self.log_failure("Retry reason missing: %s" % failed_item)
 
             # Validate CAS doesn't change after sync_write failure
-            curr_cas = self.client.crud("read", doc_key)["cas"]
+            curr_cas = self.client.crud(DocLoading.Bucket.DocOps.READ,
+                                        doc_key)["cas"]
             if curr_cas != doc_cas:
                 self.log_failure("CAS mismatch. %s != %s"
                                  % (curr_cas, doc_cas))

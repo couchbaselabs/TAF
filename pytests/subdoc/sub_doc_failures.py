@@ -2,6 +2,7 @@ import json
 import time
 
 from BucketLib.bucket import Bucket
+from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import \
     doc_generator, \
@@ -29,7 +30,8 @@ class SubDocTimeouts(DurabilityTestsBase):
         self.log.info("Loading {0} Sub-docs into the bucket: {1}"
                       .format(self.num_items/2, self.bucket))
         task = self.task.async_load_gen_sub_docs(
-            self.cluster, self.bucket, doc_create, "insert", self.maxttl,
+            self.cluster, self.bucket, doc_create,
+            DocLoading.Bucket.SubDocOps.INSERT, self.maxttl,
             path_create=True,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -536,7 +538,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for _ in range(2):
             # Perform durable SET operation
             d_create_task = self.task.async_load_gen_sub_docs(
-                self.cluster, self.bucket, gen_subdoc_load, "insert",
+                self.cluster, self.bucket, gen_subdoc_load,
+                DocLoading.Bucket.SubDocOps.INSERT,
                 path_create=True,
                 batch_size=10,
                 process_concurrency=8,
@@ -566,7 +569,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         validate_doc_mutated_value(0)
         # Perform aync_write to create the documents
         async_create_task = self.task.async_load_gen_sub_docs(
-            self.cluster, self.bucket, gen_subdoc_load, "insert",
+            self.cluster, self.bucket, gen_subdoc_load,
+            DocLoading.Bucket.SubDocOps.INSERT,
             path_create=True,
             batch_size=10,
             process_concurrency=8,
@@ -590,14 +594,16 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         # Start durable UPDATE operation
         tasks.append(self.task.async_load_gen_sub_docs(
-            self.cluster, self.bucket, gen_subdoc_load, "upsert",
+            self.cluster, self.bucket, gen_subdoc_load,
+            DocLoading.Bucket.SubDocOps.UPSERT,
             path_create=True,
             batch_size=10, process_concurrency=4,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout))
         # Start durable DELETE operation
         tasks.append(self.task.async_load_gen_sub_docs(
-            self.cluster, self.bucket, gen_subdoc_load, "remove",
+            self.cluster, self.bucket, gen_subdoc_load,
+            DocLoading.Bucket.SubDocOps.REMOVE,
             batch_size=10, process_concurrency=4,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout))
@@ -706,23 +712,29 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Done creating doc_generators")
 
         # Start CRUD operation based on the given 'doc_op' type
-        if self.doc_ops[0] == "create":
+        if self.doc_ops[0] == DocLoading.Bucket.DocOps.CREATE:
             self.num_items += self.crud_batch_size
             gen_loader[0] = gen_create
-        elif self.doc_ops[0] in "update":
+        elif self.doc_ops[0] in DocLoading.Bucket.DocOps.UPDATE:
             gen_loader[0] = gen_update_delete
-        elif self.doc_ops[0] == "delete":
+        elif self.doc_ops[0] == DocLoading.Bucket.DocOps.DELETE:
             gen_loader[0] = gen_update_delete
             self.num_items -= self.crud_batch_size
-        elif self.doc_ops[0] in ["insert", "upsert", "remove"]:
+        elif self.doc_ops[0] in [DocLoading.Bucket.SubDocOps.INSERT,
+                                 DocLoading.Bucket.SubDocOps.UPSERT,
+                                 DocLoading.Bucket.SubDocOps.REMOVE]:
             gen_loader[0] = gen_subdoc
 
-        if self.doc_ops[1] == "create":
+        if self.doc_ops[1] == DocLoading.Bucket.DocOps.CREATE:
             gen_loader[1] = gen_create
-        elif self.doc_ops[1] in ["update", "delete"]:
+        elif self.doc_ops[1] in [DocLoading.Bucket.DocOps.UPDATE,
+                                 DocLoading.Bucket.DocOps.DELETE]:
             gen_loader[1] = gen_update_delete
-        elif self.doc_ops[1] in ["insert", "upsert", "remove"]:
-            if self.doc_ops[1] == "insert" and self.doc_ops[0] == "create":
+        elif self.doc_ops[1] in [DocLoading.Bucket.SubDocOps.INSERT,
+                                 DocLoading.Bucket.SubDocOps.UPSERT,
+                                 DocLoading.Bucket.SubDocOps.REMOVE]:
+            if self.doc_ops[1] == DocLoading.Bucket.SubDocOps.INSERT \
+                    and self.doc_ops[0] == DocLoading.Bucket.DocOps.CREATE:
                 gen_subdoc = sub_doc_generator(
                     self.key, self.num_items, self.crud_batch_size,
                     key_size=self.key_size,
@@ -732,10 +744,13 @@ class DurabilityFailureTests(DurabilityTestsBase):
             gen_loader[1] = gen_subdoc
 
         # Load task for further upsert / remove operations
-        if (self.doc_ops[0] in ["upsert", "remove"]) or (
-                self.doc_ops[1] in ["upsert", "remove"]):
+        if (self.doc_ops[0] in [DocLoading.Bucket.SubDocOps.UPSERT,
+                                DocLoading.Bucket.SubDocOps.REMOVE]) or (
+                self.doc_ops[1] in [DocLoading.Bucket.SubDocOps.UPSERT,
+                                    DocLoading.Bucket.SubDocOps.REMOVE]):
             subdoc_load_task = self.task.async_load_gen_sub_docs(
-                self.cluster, self.bucket, gen_subdoc, "insert",
+                self.cluster, self.bucket, gen_subdoc,
+                DocLoading.Bucket.SubDocOps.INSERT,
                 path_create=True,
                 batch_size=self.crud_batch_size, process_concurrency=8,
                 durability=self.durability_level,
@@ -747,7 +762,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
             tem_durability = "NONE"
 
         # Initialize tasks and store the task objects
-        if self.doc_ops[0] in ["create", "update", "delete"]:
+        if self.doc_ops[0] in [DocLoading.Bucket.DocOps.CREATE,
+                               DocLoading.Bucket.DocOps.UPDATE,
+                               DocLoading.Bucket.DocOps.DELETE]:
             doc_loader_task_1 = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_loader[0], self.doc_ops[0], 0,
                 batch_size=1,
@@ -756,7 +773,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 timeout_secs=self.sdk_timeout,
                 print_ops_rate=False,
                 start_task=False)
-        elif self.doc_ops[0] in ["insert", "upsert", "remove"]:
+        elif self.doc_ops[0] in [DocLoading.Bucket.SubDocOps.INSERT,
+                                 DocLoading.Bucket.SubDocOps.UPSERT,
+                                 DocLoading.Bucket.SubDocOps.REMOVE]:
             doc_loader_task_1 = self.task.async_load_gen_sub_docs(
                 self.cluster, self.bucket, gen_loader[0], self.doc_ops[0], 0,
                 path_create=True,
@@ -768,7 +787,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 start_task=False)
 
         # This will support both sync-write and non-sync-writes
-        if self.doc_ops[1] in ["create", "update", "delete"]:
+        if self.doc_ops[1] in [DocLoading.Bucket.DocOps.CREATE,
+                               DocLoading.Bucket.DocOps.UPDATE,
+                               DocLoading.Bucket.DocOps.DELETE]:
             doc_loader_task_2 = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_loader[1], self.doc_ops[1], 0,
                 batch_size=self.crud_batch_size, process_concurrency=1,
@@ -777,7 +798,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 task_identifier="parallel_task2",
                 print_ops_rate=False,
                 start_task=False)
-        elif self.doc_ops[1] in ["insert", "upsert", "remove"]:
+        elif self.doc_ops[1] in [DocLoading.Bucket.SubDocOps.INSERT,
+                                 DocLoading.Bucket.SubDocOps.UPSERT,
+                                 DocLoading.Bucket.SubDocOps.REMOVE]:
             doc_loader_task_2 = self.task.async_load_gen_sub_docs(
                 self.cluster, self.bucket, gen_loader[1], self.doc_ops[1], 0,
                 path_create=True,
@@ -819,7 +842,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         expected_exception = SDKException.AmbiguousTimeoutException
         retry_reason = SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
-        if self.doc_ops[0] in "create":
+        if self.doc_ops[0] in DocLoading.Bucket.DocOps.CREATE:
             expected_exception = SDKException.DocumentNotFoundException
             retry_reason = None
         valid_exception = self.durability_helper.validate_durability_exception(
@@ -831,9 +854,10 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure("Got invalid exception")
 
         # Validate docs for update success or not
-        if self.doc_ops[0] == "update":
+        if self.doc_ops[0] == DocLoading.Bucket.DocOps.UPDATE:
             read_task = self.task.async_load_gen_docs(
-                self.cluster, self.bucket, gen_loader[0], "read",
+                self.cluster, self.bucket, gen_loader[0],
+                DocLoading.Bucket.DocOps.READ,
                 batch_size=self.crud_batch_size, process_concurrency=1,
                 timeout_secs=self.sdk_timeout)
             self.task_manager.get_task_result(read_task)

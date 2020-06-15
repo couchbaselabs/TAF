@@ -60,7 +60,7 @@ import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 from com.couchbase.client.core.deps.io.netty.buffer import Unpooled
 from com.couchbase.client.core.deps.io.netty.util import CharsetUtil
 
-from Cb_constants import ClusterRun, CbServer
+from Cb_constants import ClusterRun, CbServer, DocLoading
 from couchbase_helper.durability_helper import DurabilityHelper
 from global_vars import logger
 
@@ -905,28 +905,28 @@ class SDKClient(object):
              persist_to=0, durability="", timeout=5, time_unit="seconds",
              create_path=True, xattr=False, cas=0, fail_fast=False):
         result = None
-        if op_type == "update":
+        if op_type == DocLoading.Bucket.DocOps.UPDATE:
             result = self.upsert(
                 key, value, exp=exp,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
                 timeout=timeout, time_unit=time_unit,
                 fail_fast=fail_fast)
-        elif op_type == "create":
+        elif op_type == DocLoading.Bucket.DocOps.CREATE:
             result = self.insert(
                 key, value, exp=exp,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
                 timeout=timeout, time_unit=time_unit,
                 fail_fast=fail_fast)
-        elif op_type == "delete":
+        elif op_type == DocLoading.Bucket.DocOps.DELETE:
             result = self.delete(
                 key,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
                 timeout=timeout, time_unit=time_unit,
                 fail_fast=fail_fast)
-        elif op_type == "replace":
+        elif op_type == DocLoading.Bucket.DocOps.REPLACE:
             result = self.replace(
                 key, value, exp=exp,
                 persist_to=persist_to, replicate_to=replicate_to,
@@ -934,14 +934,14 @@ class SDKClient(object):
                 timeout=timeout, time_unit=time_unit,
                 cas=cas,
                 fail_fast=fail_fast)
-        elif op_type == "touch":
+        elif op_type == DocLoading.Bucket.DocOps.TOUCH:
             result = self.touch(
                 key, exp=exp,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
                 timeout=timeout, time_unit=time_unit,
                 fail_fast=fail_fast)
-        elif op_type == "read":
+        elif op_type == DocLoading.Bucket.DocOps.READ:
             result = self.read(
                 key, timeout=timeout, time_unit=time_unit,
                 fail_fast=fail_fast)

@@ -107,21 +107,21 @@ class DocLoaderUtils(object):
         :return:
         """
         num_items = doc_gen.end - doc_gen.start
-        if op_type == "create":
+        if op_type == DocLoading.Bucket.DocOps.CREATE:
             collection_obj.doc_index = (collection_obj.doc_index[0],
                                         collection_obj.doc_index[1]-num_items)
             if update_num_items:
                 collection_obj.num_items -= num_items
-        elif op_type == "delete":
+        elif op_type == DocLoading.Bucket.DocOps.DELETE:
             collection_obj.doc_index = (collection_obj.doc_index[0]-num_items,
                                         collection_obj.doc_index[1])
             if update_num_items:
                 collection_obj.num_items += num_items
-        elif op_type == "insert":
+        elif op_type == DocLoading.Bucket.SubDocOps.INSERT:
             collection_obj.sub_doc_index = (
                 collection_obj.sub_doc_index[0],
                 collection_obj.sub_doc_index[1]-num_items)
-        elif op_type == "remove":
+        elif op_type == DocLoading.Bucket.SubDocOps.REMOVE:
             collection_obj.sub_doc_index = (
                 collection_obj.sub_doc_index[0]-num_items,
                 collection_obj.sub_doc_index[1])
@@ -171,13 +171,13 @@ class DocLoaderUtils(object):
     @staticmethod
     def get_subdoc_generator(op_type, collection_obj, num_items,
                              generic_key):
-        if op_type == "insert":
+        if op_type == DocLoading.Bucket.SubDocOps.INSERT:
             start = collection_obj.sub_doc_index[1]
             end = start + num_items
             collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
                                             end)
             return sub_doc_generator(generic_key, start, end)
-        elif op_type == "remove":
+        elif op_type == DocLoading.Bucket.SubDocOps.REMOVE:
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
             collection_obj.sub_doc_index = (end,
