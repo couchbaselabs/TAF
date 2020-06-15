@@ -399,3 +399,21 @@ class CBASHelper(RestConnection):
 
         status, content, header = self._http_request(url, 'PUT', setting, headers=headers)
         return status
+    
+    def analytics_link_operations(self,method="GET", params="", timeout=120, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        api = self.cbas_base_url + "/analytics/link"
+        headers = self._create_headers(username, password)
+        status, content, header = self._http_request(
+            api, method, headers=headers, params=params, timeout=timeout)
+        if content:
+            if isinstance(content, str):
+                content = json.loads(content)
+        if not status and not content:
+            content = dict()
+            content["error"] = "Request Rejected"
+        return status, header['status'], content
+        
