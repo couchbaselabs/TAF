@@ -19,6 +19,7 @@ class ServerInfo():
                  port,
                  ssh_username,
                  ssh_password,
+                 memcached_port,
                  ssh_key=''):
 
         self.ip = ip
@@ -26,6 +27,7 @@ class ServerInfo():
         self.ssh_password = ssh_password
         self.port = port
         self.ssh_key = ssh_key
+        self.memcached_port = memcached_port
 
 
 class x509main:
@@ -41,7 +43,7 @@ class x509main:
     CHAINFILEPATH = "inbox"
     GOCERTGENFILE = "gencert.go"
     INCORRECT_ROOT_CERT = "incorrect_root_cert.crt"
-    SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase')
+    SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase',11210)
     CLIENT_CERT_AUTH_JSON = 'client_cert_auth1.json'
     CLIENT_CERT_AUTH_TEMPLATE = 'client_cert_config_template.txt'
     IP_ADDRESS = '172.16.1.174'
@@ -50,6 +52,7 @@ class x509main:
     CLIENT_CERT_KEY = CACERTFILEPATH + IP_ADDRESS + ".key"
     CLIENT_CERT_PEM = CACERTFILEPATH + IP_ADDRESS + ".pem"
     SRC_CHAIN_FILE = CACERTFILEPATH + "long_chain" + IP_ADDRESS + ".pem"
+    SECURITY_UTIL_PATH = "./couchbase_utils/security_utils/"
 
     def __init__(self,
                  host=None,
@@ -78,7 +81,7 @@ class x509main:
         
         if type == 'go':
             files = []
-            cert_file = "./utils/security_utils/" + x509main.GOCERTGENFILE
+            cert_file = x509main.SECURITY_UTIL_PATH + x509main.GOCERTGENFILE
             output,error = shell.execute_command("go run " + cert_file + " -store-to=" + x509main.CACERTFILEPATH + "root -common-name="+root_cn)
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
             output,error = shell.execute_command("go run " + cert_file + " -store-to=" + x509main.CACERTFILEPATH + "interm -sign-with=" + x509main.CACERTFILEPATH + "root -common-name=Intemediate\ Authority")
@@ -94,7 +97,7 @@ class x509main:
             shell.execute_command("go run " + cert_file + " -store-to=" + x509main.CACERTFILEPATH + "incorrect_root_cert -common-name=Incorrect\ Authority")
         elif type == 'openssl':
             files = []
-            v3_ca = "./utils/security_utils/v3_ca.crt"
+            v3_ca = x509main.SECURITY_UTIL_PATH + "v3_ca.ext"
             output, error = shell.execute_command("openssl genrsa " + encryption + " -out " + x509main.CACERTFILEPATH + "ca.key " + str(key_length))
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
             output,error = shell.execute_command("openssl req -new -x509  -days 3650 -sha256 -key " + x509main.CACERTFILEPATH + "ca.key -out " + x509main.CACERTFILEPATH + "ca.pem -subj '/C=UA/O=My Company/CN=My Company Root CA'")
@@ -104,7 +107,7 @@ class x509main:
             output, error = shell.execute_command("openssl req -new -key " + x509main.CACERTFILEPATH + "int.key -out " + x509main.CACERTFILEPATH + "int.csr -subj '/C=UA/O=My Company/CN=My Company Intermediate CA'")
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
             output, error = shell.execute_command("openssl x509 -req -in " + x509main.CACERTFILEPATH + "int.csr -CA " + x509main.CACERTFILEPATH + "ca.pem -CAkey " + x509main.CACERTFILEPATH + "ca.key -CAcreateserial -CAserial " \
-                            + x509main.CACERTFILEPATH + "rootCA.srl -extfile ./utils/security_utils/v3_ca.ext -out " + x509main.CACERTFILEPATH +"int.pem -days 365 -sha256")
+                            + x509main.CACERTFILEPATH + "rootCA.srl -extfile " + v3_ca + " -out " + x509main.CACERTFILEPATH +"int.pem -days 365 -sha256")
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
 
 
@@ -113,8 +116,8 @@ class x509main:
                 if "[" in server.ip:
                     server.ip = server.ip.replace("[", "").replace("]", "")
                 from shutil import copyfile
-                copyfile("./utils/security_utils/clientconf.conf", "./utils/security_utils/clientconf3.conf")
-                fin = open("./utils/security_utils/clientconf3.conf", "a+")
+                copyfile(x509main.SECURITY_UTIL_PATH + "clientconf.conf", x509main.SECURITY_UTIL_PATH + "clientconf3.conf")
+                fin = open(x509main.SECURITY_UTIL_PATH + "clientconf3.conf", "a+")
                 if ".com" in server.ip:
                     fin.write("\nDNS.0 = {0}".format(server.ip))
                 else:
@@ -123,14 +126,14 @@ class x509main:
                     
                 import fileinput
                 import sys
-                for line in fileinput.input("./utils/security_utils/clientconf3.conf", inplace=1):
+                for line in fileinput.input(x509main.SECURITY_UTIL_PATH + "clientconf3.conf", inplace=1):
                     if "ip_address" in line:
                         line = line.replace("ip_address",server.ip)
                     sys.stdout.write(line)
                         
     
                 # print file contents for easy debugging
-                fout = open("./utils/security_utils/clientconf3.conf", "r")
+                fout = open(x509main.SECURITY_UTIL_PATH + "clientconf3.conf", "r")
                 print fout.read()
                 fout.close()
                 
@@ -138,35 +141,27 @@ class x509main:
                 output, error = shell.execute_command("openssl genrsa " + encryption + " -out " + x509main.CACERTFILEPATH +server.ip + ".key " + str(key_length))
                 log.info ('Output message is {0} and error message is {1}'.format(output,error))
                 
-                output, error= shell.execute_command("openssl req -new -key " + x509main.CACERTFILEPATH + server.ip + ".key -out " + x509main.CACERTFILEPATH + server.ip + ".csr -config ./utils/security_utils/clientconf3.conf")
+                output, error= shell.execute_command("openssl req -new -key " + x509main.CACERTFILEPATH + server.ip + ".key -out " + x509main.CACERTFILEPATH + server.ip + ".csr -config " + x509main.SECURITY_UTIL_PATH + "clientconf3.conf")
                 log.info ('Output message is {0} and error message is {1}'.format(output,error))
                 output, error = shell.execute_command("openssl x509 -req -in "+ x509main.CACERTFILEPATH + server.ip + ".csr -CA " + x509main.CACERTFILEPATH + "int.pem -CAkey " + \
-                                x509main.CACERTFILEPATH + "int.key -CAcreateserial -CAserial " + x509main.CACERTFILEPATH + "intermediateCA.srl -out " + x509main.CACERTFILEPATH + server.ip + ".pem -days 365 -sha256 -extfile ./utils/security_utils/clientconf3.conf -extensions req_ext")
+                                x509main.CACERTFILEPATH + "int.key -CAcreateserial -CAserial " + x509main.CACERTFILEPATH + "intermediateCA.srl -out " + x509main.CACERTFILEPATH + server.ip + ".pem -days 365 -sha256 -extfile " + x509main.SECURITY_UTIL_PATH + "clientconf3.conf -extensions req_ext")
                 
                 log.info ('Output message is {0} and error message is {1}'.format(output, error))
-                output, error = shell.execute_command("openssl x509 -req -days 300 -in " + x509main.CACERTFILEPATH + server.ip + ".csr -CA " + x509main.CACERTFILEPATH + "int.pem -CAkey " + \
-                                x509main.CACERTFILEPATH + "int.key -set_serial 01 -out " + x509main.CACERTFILEPATH + server.ip + ".pem -extfile ./pytests/security/clientconf3.conf -extensions req_ext")
-                
-                log.info ('Output message is {0} and error message is {1}'.format(output,error))
-                output, error = shell.execute_command("openssl x509 -req -days 300 -in " + x509main.CACERTFILEPATH  + server.ip + ".csr -CA " + x509main.CACERTFILEPATH + "int.pem -CAkey " + \
-                                x509main.CACERTFILEPATH + "int.key -set_serial 01 -out " + x509main.CACERTFILEPATH + server.ip + ".pem -extfile ./utils/security_utils/clientconf3.conf -extensions req_ext")
-                
-                log.info ('Output message is {0} and error message is {1}'.format(output,error))
                 output, error = shell.execute_command("cat " + x509main.CACERTFILEPATH + server.ip + ".pem " + x509main.CACERTFILEPATH + "int.pem " + x509main.CACERTFILEPATH + "ca.pem > " + x509main.CACERTFILEPATH + "long_chain"+server.ip+".pem")
                 log.info ('Output message is {0} and error message is {1}'.format(output,error))
 
             output, error = shell.execute_command("cp " + x509main.CACERTFILEPATH + "ca.pem " + x509main.CACERTFILEPATH + "root.crt")
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
             
-            os.remove("./utils/security_utils/clientconf3.conf")
+            os.remove(x509main.SECURITY_UTIL_PATH + "clientconf3.conf")
             #Check if client_ip is ipv6, remove []
             
             if "[" in client_ip:
                 client_ip = client_ip.replace("[", "").replace("]", "")
             
             from shutil import copyfile
-            copyfile("./utils/security_utils/clientconf.conf", "./utils/security_utils/clientconf2.conf")
-            fin = open("./utils/security_utils/clientconf2.conf", "a+")
+            copyfile(x509main.SECURITY_UTIL_PATH + "clientconf.conf", x509main.SECURITY_UTIL_PATH + "clientconf2.conf")
+            fin = open(x509main.SECURITY_UTIL_PATH + "clientconf2.conf", "a+")
             if alt_names == 'default':
                 fin.write("\nDNS.1 = us.cbadminbucket.com")
                 fin.write("\nURI.1 = www.cbadminbucket.com")
@@ -184,21 +179,21 @@ class x509main:
             fin.close()
 
             # print file contents for easy debugging
-            fout = open("./utils/security_utils/clientconf2.conf", "r")
+            fout = open(x509main.SECURITY_UTIL_PATH + "clientconf2.conf", "r")
             print fout.read()
             fout.close()
             
             #Generate Certificate for the client
             output, error = shell.execute_command("openssl genrsa " + encryption + " -out " + x509main.CACERTFILEPATH +client_ip + ".key " + str(key_length))
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
-            output, error= shell.execute_command("openssl req -new -key " + x509main.CACERTFILEPATH + client_ip + ".key -out " + x509main.CACERTFILEPATH + client_ip + ".csr -config ./utils/security_utils/clientconf2.conf")
+            output, error= shell.execute_command("openssl req -new -key " + x509main.CACERTFILEPATH + client_ip + ".key -out " + x509main.CACERTFILEPATH + client_ip + ".csr -config "+ x509main.SECURITY_UTIL_PATH + "clientconf2.conf")
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
             output, error = shell.execute_command("openssl x509 -req -in "+ x509main.CACERTFILEPATH + client_ip + ".csr -CA " + x509main.CACERTFILEPATH + "int.pem -CAkey " + \
-                                x509main.CACERTFILEPATH + "int.key -CAcreateserial -CAserial " + x509main.CACERTFILEPATH + "intermediateCA.srl -out " + x509main.CACERTFILEPATH + client_ip + ".pem -days 365 -sha256 -extfile ./utils/security_utils/clientconf2.conf -extensions req_ext")
+                                x509main.CACERTFILEPATH + "int.key -CAcreateserial -CAserial " + x509main.CACERTFILEPATH + "intermediateCA.srl -out " + x509main.CACERTFILEPATH + client_ip + ".pem -days 365 -sha256 -extfile " + x509main.SECURITY_UTIL_PATH + "clientconf2.conf -extensions req_ext")
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
             output, error = shell.execute_command("cat " + x509main.CACERTFILEPATH + client_ip + ".pem " + x509main.CACERTFILEPATH + "int.pem " + x509main.CACERTFILEPATH + "ca.pem > " + x509main.CACERTFILEPATH + "long_chain"+client_ip+".pem")
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
-            os.remove("./utils/security_utils/clientconf2.conf")
+            os.remove(x509main.SECURITY_UTIL_PATH + "clientconf2.conf")
 
     #Top level method for setup of nodes in the cluster
     def setup_cluster_nodes_ssl(self,servers=[],reload_cert=False):
@@ -441,7 +436,7 @@ class x509main:
         
     #write a new config json file based on state, paths, perfixes and delimeters
     def write_client_cert_json_new(self, state, paths, prefixs, delimeters):
-        template_path = './utils/security_utils/' + x509main.CLIENT_CERT_AUTH_TEMPLATE
+        template_path = x509main.SECURITY_UTIL_PATH + x509main.CLIENT_CERT_AUTH_TEMPLATE
         config_json = x509main.CACERTFILEPATH + x509main.CLIENT_CERT_AUTH_JSON
         target_file = open(config_json, 'w')
         source_file = open(template_path, 'r')
