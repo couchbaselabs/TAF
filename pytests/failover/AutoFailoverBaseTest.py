@@ -953,8 +953,10 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.task.rebalance(self.cluster.servers[:1],
                             self.cluster.servers[1:self.nodes_init],
                             [], services=self.services)
+        self.auto_reprovision = self.input.param("auto_reprovision", False)
+        self.bucket_util.add_rbac_user()
+
         if self.spec_name is None:
-            self.bucket_util.add_rbac_user()
             if self.read_loadgen:
                 self.bucket_size = 100
             self.bucket_util.create_default_bucket(ram_quota=self.bucket_size,
@@ -981,8 +983,6 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         raise exception_obj
 
     def collectionSetUp(self):
-        self.auto_reprovision = self.input.param("auto_reprovision", False)
-        self.bucket_util.add_rbac_user()
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
         doc_loading_spec = \
