@@ -7,7 +7,7 @@ Created on Sep 26, 2017
 import copy
 import importlib
 import threading
-from random import sample
+from random import sample, choice
 
 import crc32
 import exceptions
@@ -186,7 +186,7 @@ class DocLoaderUtils(object):
         else:
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
-            subdoc_gen_template_num = (sample([0, 1], 1))[0]
+            subdoc_gen_template_num = choice([0, 1])
         return sub_doc_generator_for_edit(generic_key, start, end,
                                           subdoc_gen_template_num)
 
@@ -329,6 +329,12 @@ class DocLoaderUtils(object):
         num_buckets_to_consider = input_spec.get(
             MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD, 1)
 
+        # Create dict if not provided by user
+        if "doc_crud" not in input_spec.keys():
+            input_spec["doc_crud"] = dict()
+        if "subdoc_crud" not in input_spec:
+            input_spec["subdoc_crud"] = dict()
+
         # Fetch common doc_key to use while doc_loading
         doc_key = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_docs")
@@ -367,10 +373,6 @@ class DocLoaderUtils(object):
             MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION, 0)
         spec_percent_data["touch"] = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.TOUCH_PERCENTAGE_PER_COLLECTION, 0)
-
-        # Create subdoc spec if not provided by user
-        if "subdoc_crud" not in input_spec:
-            input_spec["subdoc_crud"] = dict()
 
         # Fetch sub_doc CRUD percentage from given spec
         xattr_test = input_spec["subdoc_crud"].get(
@@ -920,7 +922,7 @@ class CollectionUtils(DocLoaderUtils):
                         CollectionUtils.log.info(
                             "Collection creation with duplicate "
                             "name '%s' failed as expected. Will "
-                            "retry with different name")
+                            "retry with different name" % col_name)
                     else:
                         CollectionUtils.log.error(
                             "Collection creation failed!")
@@ -4179,14 +4181,15 @@ class BucketUtils(ScopeUtils):
 
             # Validate expected collection values
             for collection in active_collections:
-                if collection_data[scope.name][collection.name]["num_items"] \
-                        != collection.num_items:
+                expected_items = collection_data[scope.name][
+                    collection.name]["num_items"]
+                if expected_items != collection.num_items:
                     status = False
                     self.log.error(
                         "Mismatch in %s::%s doc_count. "
                         "Expected: %s, Actual: %s"
                         % (scope.name, collection.name,
-                           collection_data[collection.name]["num_items"],
+                           expected_items,
                            collection.num_items))
         return status
 

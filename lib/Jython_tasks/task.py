@@ -10,7 +10,6 @@ import json as Json
 import os
 import random
 import socket
-import string
 import time
 from httplib import IncompleteRead
 
@@ -1920,13 +1919,13 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
 
 
 class ValidateDocumentsTask(GenericLoadingTask):
-
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  flag=0, proxy_client=None, batch_size=1, pause_secs=1,
                  timeout_secs=30, compression=None, check_replica=False,
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
-                 collection=CbServer.default_collection):
+                 collection=CbServer.default_collection,
+                 is_sub_doc=False):
         super(ValidateDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
@@ -1936,8 +1935,9 @@ class ValidateDocumentsTask(GenericLoadingTask):
             bucket.name,
             self.scope,
             self.collection,
-            generator._doc_gen.start, generator._doc_gen.end,
-            op_type,time.time())
+            generator._doc_gen.start,
+            generator._doc_gen.end,
+            op_type, time.time())
 
         self.generator = generator
         self.op_type = op_type
@@ -1955,12 +1955,71 @@ class ValidateDocumentsTask(GenericLoadingTask):
         self.check_replica = check_replica
         self.replicas = bucket.replicaNumber
         self.client = client
+        self.is_sub_doc = is_sub_doc
 
     def has_next(self):
         return self.generator.has_next()
 
-    def next(self, override_generator=None):
-        doc_gen = override_generator or self.generator
+    def __validate_sub_docs(self, doc_gen):
+        if self.sdk_client_pool is not None:
+            self.client = \
+                self.sdk_client_pool.get_client_for_bucket(self.bucket,
+                                                           self.scope,
+                                                           self.collection)
+        key_value = dict(doc_gen.next_batch(self.op_type))
+        self.test_log.info(key_value)
+        result_map, self.failed_reads = self.batch_read(key_value.keys())
+        self.test_log.info(result_map)
+        self.test_log.info(self.failed_reads)
+
+        if self.sdk_client_pool:
+            self.sdk_client_pool.release_client(self.client)
+            self.client = None
+        return
+
+        op_failed_tbl = TableView(self.log.error)
+        op_failed_tbl.set_headers(["Update failed key",
+                                   "Value"])
+        for key, value in task.success.items():
+            doc_value = value["value"]
+            failed_row = [key, doc_value]
+            if doc_value[0] != 0:
+                op_failed_tbl.add_row(failed_row)
+            elif doc_value[1] != "LastNameUpdate":
+                op_failed_tbl.add_row(failed_row)
+            elif doc_value[2] != "TypeChange":
+                op_failed_tbl.add_row(failed_row)
+            elif doc_value[3] != "CityUpdate":
+                op_failed_tbl.add_row(failed_row)
+            elif Json.loads(str(doc_value[4])) \
+                    != ["get", "up"]:
+                op_failed_tbl.add_row(failed_row)
+
+        op_failed_tbl.display("Update failed for keys:")
+        if len(op_failed_tbl.rows) != 0:
+            self.fail("Update failed for few keys")
+
+        op_failed_tbl = TableView(self.log.error)
+        op_failed_tbl.set_headers(["Delete failed key",
+                                   "Value"])
+
+        for key, value in task.success.items():
+            doc_value = value["value"]
+            failed_row = [key, doc_value]
+        if doc_value[0] != 2:
+            op_failed_tbl.add_row(failed_row)
+        for index in range(1, len(doc_value)):
+            if doc_value[index] != "PATH_NOT_FOUND":
+                op_failed_tbl.add_row(failed_row)
+
+        for key, value in task.fail.items():
+            op_failed_tbl.add_row([key, value["value"]])
+
+        op_failed_tbl.display("Delete failed for keys:")
+        if len(op_failed_tbl.rows) != 0:
+            self.fail("Delete failed for few keys")
+
+    def __validate_docs(self, doc_gen):
         if self.sdk_client_pool is not None:
             self.client = \
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
@@ -2026,6 +2085,13 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                              .format(','.join(wrong_values))))
                 self.wrong_values.extend(wrong_values)
 
+    def next(self, override_generator=None):
+        doc_gen = override_generator or self.generator
+        if self.is_sub_doc:
+            self.__validate_sub_docs()
+        else:
+            self.__validate_docs()
+
     def validate_key_val(self, map, key_value):
         missing_keys = []
         wrong_values = []
@@ -2035,7 +2101,6 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     expected_val = Json.loads(value.toString())
                 else:
                     expected_val = Json.loads(value)
-                actual_val = {}
                 if map[key]['cas'] != 0:
                     actual_val = Json.loads(map[key][
                                                 'value'].toString())
@@ -2065,7 +2130,8 @@ class DocumentsValidatorTask(Task):
                  process_concurrency=4, check_replica=False,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 sdk_client_pool=None):
+                 sdk_client_pool=None,
+                 is_sub_doc=False):
         super(DocumentsValidatorTask, self).__init__(
             "DocumentsValidatorTask_%s_%s_%s" % (
                 bucket.name, op_type, time.time()))
@@ -2096,6 +2162,7 @@ class DocumentsValidatorTask(Task):
         self.scope = scope
         self.collection = collection
         self.check_replica = check_replica
+        self.is_sub_doc = is_sub_doc
 
     def call(self):
         self.start_task()
@@ -2160,7 +2227,8 @@ class DocumentsValidatorTask(Task):
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression, check_replica=self.check_replica,
                 scope=self.scope, collection=self.collection,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                is_sub_doc=self.is_sub_doc)
             tasks.append(task)
         return tasks
 

@@ -1,6 +1,6 @@
 from math import ceil
 
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from basetestcase import BaseTestCase
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
@@ -23,6 +23,8 @@ class CollectionBase(BaseTestCase):
             self.handle_collection_setup_exception(exception)
         except Exception as exception:
             self.handle_collection_setup_exception(exception)
+        self.supported_d_levels = \
+            self.bucket_util.get_supported_durability_levels()
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
@@ -119,7 +121,7 @@ class CollectionBase(BaseTestCase):
                 compression_settings=self.sdk_compression)
 
         # TODO: remove this once the bug is fixed
-        self.sleep(120, "MB-38497")
+        self.sleep(10, "MB-38497")
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
@@ -154,6 +156,8 @@ class CollectionBase(BaseTestCase):
             elif over_ride_param == "replicas":
                 target_spec[Bucket.replicaNumber] = \
                     eval(self.num_replicas)
+            elif over_ride_param == "sdk_timeout":
+                target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
 
     def load_data_for_sub_doc_ops(self):
         new_data_load_template = \
@@ -173,3 +177,52 @@ class CollectionBase(BaseTestCase):
                 batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Extra doc loading task failed")
+
+    def update_verification_dict_from_collection_task(self,
+                                                      verification_dict,
+                                                      doc_loading_task):
+        for bucket, s_dict in doc_loading_task.loader_spec.items():
+            for s_name, c_dict in s_dict["scopes"].items():
+                for c_name, _ in c_dict["collections"].items():
+                    c_crud_data = doc_loading_task.loader_spec[
+                        bucket]["scopes"][
+                        s_name]["collections"][c_name]
+                    for op_type in c_crud_data.keys():
+                        total_mutation = \
+                            c_crud_data[op_type]["doc_gen"].end \
+                            - c_crud_data[op_type]["doc_gen"].start
+                        if op_type in DocLoading.Bucket.DOC_OPS:
+                            verification_dict["ops_%s" % op_type] \
+                                += total_mutation
+                        elif op_type in DocLoading.Bucket.SUB_DOC_OPS:
+                            verification_dict["ops_update"] \
+                                += total_mutation
+                        if c_crud_data[op_type]["durability_level"] \
+                                in self.supported_d_levels:
+                            verification_dict["sync_write_committed_count"] \
+                                += total_mutation
+
+    def validate_cruds_from_collection_mutation(self, doc_loading_task):
+        # Read all the values to validate the CRUDs
+        for bucket, s_dict in doc_loading_task.loader_spec.items():
+            client = self.sdk_client_pool.get_client_for_bucket(bucket)
+            for s_name, c_dict in s_dict["scopes"].items():
+                for c_name, _ in c_dict["collections"].items():
+                    c_crud_data = doc_loading_task.loader_spec[
+                        bucket]["scopes"][
+                        s_name]["collections"][c_name]
+                    client.select_collection(s_name, c_name)
+                    for op_type in c_crud_data.keys():
+                        doc_gen = c_crud_data[op_type]["doc_gen"]
+                        is_sub_doc = False
+                        if op_type in DocLoading.Bucket.SUB_DOC_OPS:
+                            is_sub_doc = True
+                        task = self.task.async_validate_docs(
+                            self.cluster, bucket,
+                            doc_gen, op_type,
+                            scope=s_name, collection=c_name,
+                            batch_size=self.batch_size,
+                            process_concurrency=self.process_concurrency,
+                            sdk_client_pool=self.sdk_client_pool,
+                            is_sub_doc=is_sub_doc)
+                        self.task_manager.get_task_result(task)
