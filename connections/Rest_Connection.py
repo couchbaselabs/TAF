@@ -208,9 +208,13 @@ class RestConnection(object):
                     raise ServerUnavailableException(ip=self.ip)
             sleep(3, log_type="infra")
 
-    def _create_headers(self):
+    def _create_headers(self, username=None, password=None):
+        if username is None:
+            username = self.username
+        if password is None:
+            password = self.password
         authorization = base64.encodestring('%s:%s'
-                                            % (self.username, self.password))
+                                            % (username, password))
         return {'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',
