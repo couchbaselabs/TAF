@@ -880,7 +880,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
         # Create SDK Client
-        client = SDKClient([self.cluster.master], self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket)
 
         # Retry failed docs
         self.durability_helper.retry_with_no_error(client, error_docs,
@@ -1034,7 +1034,7 @@ class TimeoutTests(DurabilityTestsBase):
                                           mutate=1)
 
         # Create SDK Client
-        client = SDKClient([self.cluster.master], self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket)
 
         for op_type in ["create", "update", "read", "delete"]:
             self.log.info("Performing '%s' with timeout=%s"
@@ -1188,7 +1188,7 @@ class TimeoutTests(DurabilityTestsBase):
         shell_conn.disconnect()
 
         # Create SDK Client
-        client = SDKClient([self.cluster.master], self.bucket.name)
+        client = SDKClient([self.cluster.master], self.bucket)
 
         # Wait for document_loader tasks to complete and retry failed docs
         op_type = None

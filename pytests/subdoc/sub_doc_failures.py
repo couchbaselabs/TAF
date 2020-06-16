@@ -374,7 +374,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.cluster_util.buckets)))
+                        self.cluster_util.vbuckets)))
 
         affected_vbs = list(set(affected_vbs))
         err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"
