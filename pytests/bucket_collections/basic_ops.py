@@ -51,11 +51,11 @@ class BasicOps(CollectionBase):
                     self.task.jython_task_manager.get_task_result(task)
                     if op_type == "create":
                         bucket.scopes[scope.name] \
-                            .collections[collection.name].num_items\
+                            .collections[collection.name].num_items \
                             += self.num_items
                     elif op_type == "delete":
                         bucket.scopes[scope.name] \
-                            .collections[collection.name].num_items\
+                            .collections[collection.name].num_items \
                             -= self.num_items
                     # Doc count validation
                     self.bucket_util._wait_for_stats_all_buckets()
@@ -144,9 +144,9 @@ class BasicOps(CollectionBase):
             c_data = cbstats.get_collections(self.bucket)
             expected_collection_count = \
                 len(self.bucket_util.get_active_collections(
-                        self.bucket,
-                        CbServer.default_scope,
-                        only_names=True))
+                    self.bucket,
+                    CbServer.default_scope,
+                    only_names=True))
             if c_data["count"] != expected_collection_count:
                 self.log_failure("%s - Expected collection count is '%s'. "
                                  "Actual: %s"
@@ -389,7 +389,7 @@ class BasicOps(CollectionBase):
             .num_items += self.num_items
 
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+        self.bucket_util.verify_stats_all_buckets(self.num_items * 2)
 
         task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_set, "update", 0,
@@ -403,7 +403,7 @@ class BasicOps(CollectionBase):
         self.task_manager.get_task_result(task)
 
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+        self.bucket_util.verify_stats_all_buckets(self.num_items * 2)
         self.validate_test_failure()
 
     def test_similar_keys_in_all_collections(self):
@@ -455,21 +455,21 @@ class BasicOps(CollectionBase):
     def test_dockey_whitespace_data_ops(self):
         generic_key = "d o c k e y"
         if self.key_size:
-            self.key_size = self.key_size-len(generic_key)
+            self.key_size = self.key_size - len(generic_key)
             generic_key = generic_key + "_" * self.key_size
         self.__dockey_data_ops(generic_key)
 
     def test_dockey_binary_data_ops(self):
         generic_key = "d\ro\nckey"
         if self.key_size:
-            self.key_size = self.key_size-len(generic_key)
+            self.key_size = self.key_size - len(generic_key)
             generic_key = generic_key + "\n" * self.key_size
         self.__dockey_data_ops(generic_key)
 
     def test_dockey_unicode_data_ops(self):
         generic_key = "\u00CA"
         if self.key_size:
-            self.key_size = self.key_size-len(generic_key)
+            self.key_size = self.key_size - len(generic_key)
             generic_key = generic_key + "é" * self.key_size
         self.__dockey_data_ops(generic_key)
 
@@ -545,7 +545,7 @@ class BasicOps(CollectionBase):
         max_doc_size_gen = doc_generator("test_max_doc_size",
                                          0, self.num_items,
                                          key_size=self.key_size,
-                                         doc_size=1024*1024*20,
+                                         doc_size=1024 * 1024 * 20,
                                          mix_key_size=False,
                                          randomize_doc_size=False)
         # Set to keep track of all inserted CAS values
@@ -604,7 +604,7 @@ class BasicOps(CollectionBase):
         max_doc_size_gen = doc_generator("test_max_doc_size",
                                          0, self.num_items,
                                          key_size=self.key_size,
-                                         doc_size=1024*1024*1024*20,
+                                         doc_size=1024 * 1024 * 1024 * 20,
                                          mix_key_size=False,
                                          randomize_doc_size=False)
         for _, scope in self.bucket.scopes.items():
@@ -629,7 +629,7 @@ class BasicOps(CollectionBase):
 
     def test_create_delete_recreate_collection(self):
         collections = BucketUtils.get_random_collections(
-                                    self.bucket_util.buckets, 10, 10, 1)
+            self.bucket_util.buckets, 10, 10, 1)
         # delete collection
         for bucket_name, scope_dict in collections.iteritems():
             bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
@@ -665,7 +665,7 @@ class BasicOps(CollectionBase):
     def test_create_delete_recreate_scope(self):
         scope_drop_fails = False
         bucket_dict = BucketUtils.get_random_scopes(
-                                    self.bucket_util.buckets, "all", 1)
+            self.bucket_util.buckets, "all", 1)
         # Delete scopes
         for bucket_name, scope_dict in bucket_dict.items():
             bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
@@ -691,14 +691,14 @@ class BasicOps(CollectionBase):
                                                 bucket_name)
             for scope_name, _ in scope_dict["scopes"].items():
                 BucketUtils.create_scope(self.cluster.master, bucket,
-                                         scope_name)
+                                         {"name": scope_name})
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
 
     def test_drop_collection_compaction(self):
         collections = BucketUtils.get_random_collections(
-                                    self.bucket_util.buckets, 10, 10, 1)
+            self.bucket_util.buckets, 10, 10, 1)
         # Delete collection
         for self.bucket_name, scope_dict in collections.iteritems():
             bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
@@ -749,7 +749,7 @@ class BasicOps(CollectionBase):
                                                     doc_loading_spec,
                                                     mutation_num=0,
                                                     batch_size=self.batch_size)
-            collection_count = cb_stat.get_collections(self.bucket[0])["count"]
+            collection_count = cb_stat.get_collections(self.bucket)["count"]
 
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
@@ -757,7 +757,7 @@ class BasicOps(CollectionBase):
 
     def test_load_default_collection(self):
         self.delete_default_collection = \
-                    self.input.param("delete_default_collection", False)
+            self.input.param("delete_default_collection", False)
         self.perform_ops = self.input.param("perform_ops", False)
         load_gen = doc_generator('test_drop_default',
                                  0, self.num_items,
@@ -815,8 +815,8 @@ class BasicOps(CollectionBase):
             scope_name = BucketUtils.get_random_name(invalid_name=True)
             try:
                 status, content = BucketHelper(
-                                        self.cluster.master).create_scope(
-                                        self.bucket, scope_name)
+                    self.cluster.master).create_scope(
+                    self.bucket, scope_name)
                 if status is True:
                     self.log_failure("Scope '%s::%s' creation not failed: %s"
                                      % (self.bucket, scope_name, content))
@@ -858,7 +858,7 @@ class BasicOps(CollectionBase):
 
         if run_compaction:
             compaction_task = self.task.async_compact_bucket(
-                                self.cluster.master, self.bucket)
+                self.cluster.master, self.bucket)
             self.task.jython_task_manager.get_task_result(compaction_task)
             if compaction_task.result is False:
                 self.fail("compaction failed")
@@ -877,7 +877,7 @@ class BasicOps(CollectionBase):
 
         while retry > 0:
             bucket_dict = BucketUtils.get_random_collections(
-                                        [self.bucket], 1, "all", "all")
+                [self.bucket], 1, "all", "all")
             scope_dict = bucket_dict[self.bucket.name]["scopes"]
             scope_name = scope_dict.keys()[0]
             # Check to prevent default scope deletion, which is not allowed
@@ -891,7 +891,7 @@ class BasicOps(CollectionBase):
                 .scopes[scope_name] \
                 .collections[collection_name] \
                 .num_items
-        load_gen = doc_generator(self.key, self.num_items, self.num_items*20)
+        load_gen = doc_generator(self.key, self.num_items, self.num_items * 20)
 
         self.log.info("Delete collection while load %s: %s"
                       % (scope_name, collection_name))
@@ -908,10 +908,12 @@ class BasicOps(CollectionBase):
         self.bucket_util.print_bucket_stats()
 
         if delete_scope:
-            self.bucket_util.drop_scope(self.cluster.master,
-                                        self.bucket,
-                                        scope_name)
-            del self.bucket.scopes[scope_name]
+            # Attempt deleting scope only if it is NOT default scope
+            if scope_name != CbServer.default_scope:
+                self.bucket_util.drop_scope(self.cluster.master,
+                                            self.bucket,
+                                            scope_name)
+                del self.bucket.scopes[scope_name]
 
         else:
             self.bucket_util.drop_collection(self.cluster.master,
