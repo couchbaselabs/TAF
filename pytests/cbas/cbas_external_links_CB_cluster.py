@@ -3,42 +3,42 @@ Created on 13-May-2020
 
 @author: umang.agrawal
 '''
-from cbas_base import *
 from TestInput import TestInputSingleton
-import random, json, copy, time
+from cbas.cbas_base import CBASBaseTest
+import random, json, copy, datetime
+from threading import Thread
+from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from rbac_utils.Rbac_ready_functions import RbacUtils
-from remote.remote_util import RemoteMachineShellConnection
 from security_utils.x509main import x509main
+from shutil import copytree
 
-
-cb_server_roles = ["admin", "analytics_admin", "analytics_reader", "cluster_admin", 
-                   "query_external_access", "query_system_catalog", "replication_admin", 
-                   "ro_admin", "security_admin", "analytics_manager[*]", "analytics_select[*]", 
+cb_server_roles = ["admin", "analytics_admin", "analytics_reader", "cluster_admin",
+                   "query_external_access", "query_system_catalog", "replication_admin",
+                   "ro_admin", "security_admin", "analytics_manager[*]", "analytics_select[*]",
                    "bucket_admin[*]", "bucket_full_access[*]", "data_backup[*]", "data_dcp_reader[*]",
-                   "data_monitoring[*]", "data_reader[*]", "data_writer[*]", "fts_admin[*]", 
-                   "fts_searcher[*]", "mobile_sync_gateway[*]", "query_delete[*]", "query_insert[*]", 
-                   "query_manage_index[*]", "query_select[*]", "query_update[*]", "replication_target[*]", 
+                   "data_monitoring[*]", "data_reader[*]", "data_writer[*]", "fts_admin[*]",
+                   "fts_searcher[*]", "mobile_sync_gateway[*]", "query_delete[*]", "query_insert[*]",
+                   "query_manage_index[*]", "query_select[*]", "query_update[*]", "replication_target[*]",
                    "views_admin[*]", "views_reader[*]"]
 rbac_users_created = {}
 
+
 class CBASExternalLinks(CBASBaseTest):
-    
-    
+
     def setUp(self):
-        self.setup_certs_status = False
-        self.dataset_created = False
-        self.link_created = False
-        
         self.input = TestInputSingleton.input
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket":False})
         super(CBASExternalLinks, self).setUp()
-        
+        self.setup_certs_status = False
+        self.dataset_created = False
+        self.link_created = False
+
         """
         Assumptions: 
         1) Only 1 Analytics cluster.
         2) No cbas node on any other cluster apart from analytics cluster.
-        """ 
+        """
         self.to_clusters = list()
         self.link_info = dict()
         for cluster in self._cb_cluster:
@@ -47,92 +47,88 @@ class CBASExternalLinks(CBASBaseTest):
             else:
                 self.to_clusters.append(cluster)
             cluster.rbac_util = RbacUtils(cluster.master)
-        
+
         # Test parameters
         self.no_of_dataverse = int(self.input.test_params.get("dataverse", 0))
         self.no_of_link = int(self.input.test_params.get("link", 1))
         self.no_of_datasets = int(self.input.test_params.get("dataset", 0))
-        
+
         # Create analytics admin user on Analytics cluster
         self.analytics_username = "admin_analytics"
         self.analytics_cluster.rbac_util._create_user_and_grant_role(self.analytics_username, "analytics_admin")
         rbac_users_created[self.analytics_username] = "analytics_admin"
-        
+
         self.invalid_value = "invalid"
         self.invalid_ip = "127.0.0.99"
-    
-    
+
     def tearDown(self):
         """
         If certs were setup, then remove those certs and restore default certs.
         """
         if self.setup_certs_status:
             self.teardown_certs()
-        
+
         if self.dataset_created:
-            self.analytics_cluster.cbas_util.drop_dataset(cbas_dataset_name=self.cbas_dataset_name, 
+            self.analytics_cluster.cbas_util.drop_dataset(cbas_dataset_name=self.cbas_dataset_name,
                                                      dataverse=self.link_info["dataverse"])
-        
+
         if self.link_created:
             self.analytics_cluster.cbas_util.drop_link_on_cbas(link_name= "{0}.{1}".format(
                 self.link_info["dataverse"],
                 self.link_info["name"]))
-        
+
         self.create_or_delete_users(self.analytics_cluster, delete=True)
-        
+
         for cluster in self.to_clusters:
             cluster.cluster_util.stop_firewall_on_node(cluster.master)
-            
+
         super(CBASExternalLinks, self).tearDown()
-    
-    
+
     def setup_certs(self):
         """
         Setup method for setting up root, node and client certs for all the clusters.
         """
-        
+
         self._reset_original()
         self.ip_address = '172.16.1.174'
         SSLtype = "openssl"
         encryption_type = self.input.param('encryption_type',"")
         key_length=self.input.param("key_length",1024)
-        
+
         #Input parameters for state, path, delimeters and prefixes
         self.client_cert_state = self.input.param("client_cert_state","enable")
         self.paths = self.input.param('paths',"subject.cn:san.dnsname:san.uri").split(":")
         self.prefixs = self.input.param('prefixs','www.cb-:us.:www.').split(":")
         self.delimeters = self.input.param('delimeter','.:.:.') .split(":")
         self.setup_once = self.input.param("setup_once",True)
-        
+
         self.dns = self.input.param('dns',None)
         self.uri = self.input.param('uri',None)
-        
+
         for cluster in self._cb_cluster:
-            
+
             cluster.x509 = x509main(cluster.master)
             cluster.CACERTFILEPATH = x509main.CACERTFILEPATH.rstrip("/") + cluster.name + "/"
             cluster.root_ca_path = cluster.CACERTFILEPATH + x509main.CACERTFILE
             cluster.client_cert_pem = cluster.CACERTFILEPATH + self.ip_address + ".pem"
             cluster.client_cert_key = cluster.CACERTFILEPATH + self.ip_address + ".key"
-            
+
             copy_servers = copy.deepcopy(cluster.servers)
-            
+
             #Generate cert and pass on the client ip for cert generation
             if (self.dns is not None) or (self.uri is not None):
                 cluster.x509._generate_cert(copy_servers,type=SSLtype,encryption=encryption_type,key_length=key_length,client_ip=self.ip_address,alt_names='non_default',dns=self.dns,uri=self.uri)
             else:
                 cluster.x509._generate_cert(copy_servers,type=SSLtype,encryption=encryption_type,key_length=key_length,client_ip=self.ip_address)
             self.log.info(" Path is {0} - Prefixs - {1} -- Delimeters - {2}".format(self.paths, self.prefixs, self.delimeters))
-            
+
             if (self.setup_once):
                 cluster.x509.setup_master(self.client_cert_state, self.paths, self.prefixs, self.delimeters)
                 cluster.x509.setup_cluster_nodes_ssl(cluster.servers)
-            from shutil import copytree
             copytree(cluster.x509.CACERTFILEPATH, cluster.CACERTFILEPATH)
             self.log.info (" list of server {0}".format(copy_servers))
         self.setup_certs_status = True
-        
-    
+
     def teardown_certs(self):
         """
         Teardown method for removing all the certs created and setting all root cert on all the servers to Default.
@@ -142,8 +138,7 @@ class CBASExternalLinks(CBASBaseTest):
         shell.execute_command("rm -rf " + x509main.CACERTFILEPATH)
         for cluster in self._cb_cluster:
             shell.execute_command("rm -rf " + cluster.CACERTFILEPATH)
-            
-    
+
     def _reset_original(self):
         """
         Reverting to original state - regenerating certificate and removing inbox folder
@@ -158,13 +153,12 @@ class CBASExternalLinks(CBASBaseTest):
                                                                 cluster_host=servers.ip, user="Administrator",
                                                                 password="password")
             x509main(servers)._delete_inbox_folder()
-    
-    
+
     def get_link_property_dict(self, to_cluster, encryption="none"):
         """
         Creates a dict of all the properties required to create external link to remote
         couchbase cluster.
-        :param to_cluster : remote cluster to which the link has to be created. 
+        :param to_cluster : remote cluster to which the link has to be created.
         """
         self.link_info = dict()
         self.link_info["dataverse"] = "Default"
@@ -189,8 +183,7 @@ class CBASExternalLinks(CBASBaseTest):
                 self.link_info["certificate"] = None
                 self.link_info["clientCertificate"] = None
                 self.link_info["clientKey"] = None
-    
-    
+
     def create_or_delete_users(self, cluster, delete=False):
         """
         Creates all types of rbac users.
@@ -210,8 +203,8 @@ class CBASExternalLinks(CBASBaseTest):
                     user = role
                 rbac_users_created[user] = role
                 cluster.rbac_util._create_user_and_grant_role(user, role)
-    
-    
+
+
     def create_testcase_for_rbac_user(self, cluster, description):
         testcases = []
         for user in rbac_users_created:
@@ -223,7 +216,7 @@ class CBASExternalLinks(CBASBaseTest):
             elif user in ["security_admin", "query_external_access", "query_system_catalog",
                           "replication_admin", "ro_admin", "bucket_full_access",
                           "replication_target", "mobile_sync_gateway", "data_reader", "data_writer",
-                          "data_dcp_reader", "data_monitoring", "views_admin", "views_reader", 
+                          "data_dcp_reader", "data_monitoring", "views_admin", "views_reader",
                           "query_delete", "query_insert", "query_manage_index", "query_select",
                           "query_update", "fts_admin", "fts_searcher", ]:
                 test_params = {
@@ -241,29 +234,28 @@ class CBASExternalLinks(CBASBaseTest):
             test_params["description"] = (description.replace("{0}",user))
             testcases.append(test_params)
         return testcases
-    
-    
-    def setup_datasets(self, username=None, to_cluster=None, get_link_info=True, 
+
+    def setup_datasets(self, username=None, to_cluster=None, get_link_info=True,
                        connect_link=True, wait_for_ingestion=True, set_primary_index=True):
-        
+
         if not username:
             username = self.analytics_username
-        
+
         if not to_cluster:
             to_cluster = random.choice(self.to_clusters)
-        
+
         if get_link_info:
             self.get_link_property_dict(to_cluster)
-        
-        
+
+
         if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info, username=username):
             self.fail("link cration failed")
         self.link_created = True
-        
+
         if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
             self.fail("Error while loading {0} bucket in remote cluster".format(self.sample_bucket.name))
-        
-        if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(cbas_bucket_name= self.sample_bucket.name, 
+
+        if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(cbas_bucket_name= self.sample_bucket.name,
                                                                          cbas_dataset_name= self.cbas_dataset_name,
                                                                          dataverse=self.link_info["dataverse"],
                                                                          link_name="{0}.{1}".format(
@@ -272,7 +264,7 @@ class CBASExternalLinks(CBASBaseTest):
                                                                          username=username):
             self.fail("Error while creating dataset")
         self.dataset_created = True
-        
+
         if connect_link:
             if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
                                                                              self.link_info["name"]),
@@ -285,10 +277,10 @@ class CBASExternalLinks(CBASBaseTest):
                     self.fail("Data Ingestion did not complete")
                 if set_primary_index and not self.set_primary_index(to_cluster, self.sample_bucket.name):
                     self.fail("Creating Primary index on bucket {0} FAILED".format(self.sample_bucket.name))
-        
+
         return to_cluster
-    
-    
+
+
     def set_primary_index(self, cluster, bucket_name):
         query = "CREATE PRIMARY INDEX ON `{0}`;".format(bucket_name)
         result = cluster.rest.query_tool(query)
@@ -296,32 +288,31 @@ class CBASExternalLinks(CBASBaseTest):
             return True
         else:
             return False
-    
-    
+
+
     def perform_setup_and_add_new_docs(self, number_of_docs, wait_for_ingestion=True, username=None):
         to_cluster = self.setup_datasets(wait_for_ingestion=wait_for_ingestion, username=username)
-        
+
         task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=number_of_docs, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
         result = self.task.jython_task_manager.get_task_result(task)
-        
+
         if wait_for_ingestion:
             assert(self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                           self.sample_bucket.stats.expected_item_count + number_of_docs, 
+                                                                           self.sample_bucket.stats.expected_item_count + number_of_docs,
                                                                            300), "Data Ingestion did not complete")
         return to_cluster
-    
-    
+
     def test_create_external_link(self):
         self.setup_certs()
         # Check for link creation failure scenario
         if self.no_of_link == 1:
             to_cluster = random.choice(self.to_clusters)
             self.get_link_property_dict(to_cluster)
-            
+
             # Create users with all RBAC roles.
             self.create_or_delete_users(self.analytics_cluster)
-            
+
             testcases = [
                 {
                     "description": "Create a link with a non-existent dataverse",
@@ -366,7 +357,7 @@ class CBASExternalLinks(CBASBaseTest):
                     "description": "Create a link with a name that already exists in the dataverse",
                     "recreate_link": True,
                     "validate_error_msg": False,
-                    "expected_error": "Link {0}.{1} already exists".format(self.link_info["dataverse"], 
+                    "expected_error": "Link {0}.{1} already exists".format(self.link_info["dataverse"],
                                                                            self.link_info["name"])
                 },
                 {
@@ -380,14 +371,14 @@ class CBASExternalLinks(CBASBaseTest):
                     "expected_error": 'Connection refused'
                 }
                 ]
-            rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster, 
+            rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster,
                                                                 "Create a link using (0) user")
             for testcase in rbac_testcases:
                 if testcase["validate_error_msg"]:
                     testcase["expected_error"] = "Unauthorized user"
-                    
+
             testcases = testcases + rbac_testcases
-            
+
             for testcase in testcases:
                 self.log.info(testcase["description"])
                 link_properties = copy.deepcopy(self.link_info)
@@ -395,47 +386,47 @@ class CBASExternalLinks(CBASBaseTest):
                 for key, value in testcase.iteritems():
                     if key in link_properties:
                         link_properties[key] = value
-                
+
                 if testcase.has_key("stop_server"):
                     to_cluster.cluster_util.stop_server(to_cluster.master)
-                
+
                 if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = link_properties,
                                                                                      validate_error_msg=testcase.get(
-                                                                                         "validate_error_msg", True), 
+                                                                                         "validate_error_msg", True),
                                                                                      expected_error=testcase.get(
                                                                                          "expected_error", None),
-                                                                                     username=testcase.get("username", 
+                                                                                     username=testcase.get("username",
                                                                                                            self.analytics_username)):
                     self.fail("Error message is different than expected.")
-                
+
                 if testcase.has_key("stop_server"):
                     to_cluster.cluster_util.start_server(to_cluster.master)
-                
+
                 if testcase.has_key("recreate_link"):
                     testcase["validate_error_msg"] = True
                     if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = link_properties,
                                                                                          validate_error_msg=testcase.get(
-                                                                                             "validate_error_msg", True), 
+                                                                                             "validate_error_msg", True),
                                                                                          expected_error=testcase.get(
                                                                                              "expected_error", None),
-                                                                                         username=testcase.get("username", 
+                                                                                         username=testcase.get("username",
                                                                                                                self.analytics_username)):
                         self.fail("Error message is different than expected.")
                     testcase["validate_error_msg"] = False
-                
+
                 if not testcase.get("validate_error_msg", True):
                     self.analytics_cluster.cbas_util.drop_link_on_cbas(link_name="{0}.{1}".format(link_properties["dataverse"],
-                                                                                             link_properties["name"]), 
+                                                                                             link_properties["name"]),
                                                                                              username=self.analytics_username)
         else:
-            self.dataverse_map = self.create_dataverse_link_map(self.analytics_cluster, self.no_of_dataverse, 
+            self.dataverse_map = self.create_dataverse_link_map(self.analytics_cluster, self.no_of_dataverse,
                                                                 self.no_of_link)
             # Check for multiple link creation scenario
             to_cluster = random.choice(self.to_clusters)
             ip_list = []
             for server in to_cluster.servers:
                 ip_list.append(server.ip)
-    
+
             try:
                 for dataverse, links in self.dataverse_map.iteritems():
                     for link in links:
@@ -458,11 +449,11 @@ class CBASExternalLinks(CBASBaseTest):
                                 self.dataverse_map[dataverse][link]["username"] = None
                                 self.dataverse_map[dataverse][link]["password"] = None
                         if self.analytics_cluster.cbas_util.create_external_link_on_cbas(
-                            link_properties = self.dataverse_map[dataverse][link], 
+                            link_properties = self.dataverse_map[dataverse][link],
                             username= self.analytics_username):
-                            response = self.analytics_cluster.cbas_util.get_link_info(link_name=link, 
-                                                                                 dataverse=dataverse, 
-                                                                                 link_type="couchbase", 
+                            response = self.analytics_cluster.cbas_util.get_link_info(link_name=link,
+                                                                                 dataverse=dataverse,
+                                                                                 link_type="couchbase",
                                                                                  username=self.analytics_username)
                             if not (response[0]["bootstrapHostname"] == self.dataverse_map[dataverse][link]["hostname"]):
                                 self.fail("Hostname does not match. Expected - {0}\nActual - {1}".format(self.dataverse_map[dataverse][link]["hostname"],
@@ -474,21 +465,20 @@ class CBASExternalLinks(CBASBaseTest):
                             self.fail("Link creation failed.")
             except Exception as err:
                 self.fail("Exception Occured - " + str(err))
-    
-    
+
     def test_list_external_links(self):
         to_cluster = random.choice(self.to_clusters)
         if self.input.test_params.get("encryption", "none") == "full":
             self.get_link_property_dict(to_cluster,encryption="full")
         else:
             self.get_link_property_dict(to_cluster)
-            
-        if self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info, 
+
+        if self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info,
                                                                     username=self.analytics_username):
             self.link_created = True
             # Create users with all RBAC roles.
             self.create_or_delete_users(self.analytics_cluster)
-            
+
             if self.link_info["encryption"] == "full":
                 testcases = [
                     {"expected_hits": 1,
@@ -526,7 +516,7 @@ class CBASExternalLinks(CBASBaseTest):
                      "description": "Parameters Passed - Dataverse, Name and Type",
                         }
                     ]
-                rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster, 
+                rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster,
                                                                            "List external links using (0) user")
                 for testcase in rbac_testcases:
                     testcase["dataverse"] = self.link_info["dataverse"]
@@ -539,15 +529,15 @@ class CBASExternalLinks(CBASBaseTest):
                         testcase["expected_error"] = "Unauthorized user"
                     else:
                         testcase["expected_hits"] = 1
-                    
+
                 testcases = testcases + rbac_testcases
-            
+
             for testcase in testcases:
                 self.log.info(testcase["description"])
-                response = self.analytics_cluster.cbas_util.get_link_info(link_name=testcase.get("name", None), 
-                                                                          dataverse=testcase.get("dataverse",None), 
+                response = self.analytics_cluster.cbas_util.get_link_info(link_name=testcase.get("name", None),
+                                                                          dataverse=testcase.get("dataverse",None),
                                                                           link_type=testcase.get("type",None),
-                                                                          validate_error_msg=testcase.get("validate_error_msg", False), 
+                                                                          validate_error_msg=testcase.get("validate_error_msg", False),
                                                                           expected_error=testcase.get("expected_error",None),
                                                                           username=testcase.get("username", self.analytics_username))
                 if testcase.get("validate_error_msg", False):
@@ -585,34 +575,33 @@ class CBASExternalLinks(CBASBaseTest):
                 self.log.info("Test Passed")
         else:
             self.fail("Link creation failed")
-    
-    
+
     def test_alter_link_properties(self):
         to_cluster = random.choice(self.to_clusters)
         self.get_link_property_dict(to_cluster)
         if self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info):
             self.link_created = True
-            
+
             def remove_and_return_new_list(itemlist, item_to_remove):
                 itemlist.remove(item_to_remove)
                 return itemlist
-            
+
             # Create users with all RBAC roles.
             self.create_or_delete_users(self.analytics_cluster)
-            
+
             self.setup_certs()
-            
+
             new_dataverse = "dataverse2"
-            if not self.analytics_cluster.cbas_util.create_dataverse_on_cbas(dataverse_name=new_dataverse, 
+            if not self.analytics_cluster.cbas_util.create_dataverse_on_cbas(dataverse_name=new_dataverse,
                                                                              username=self.analytics_username):
                 self.fail("Dataverse creation failed")
-            
+
             ip_list = []
             for server in to_cluster.servers:
                 ip_list.append(server.ip)
-            
+
             ip_list = remove_and_return_new_list(ip_list, to_cluster.master.ip)
-                    
+
             testcases = [
                 {"description": "Changing dataverse to another existing dataverse",
                  "dataverse": new_dataverse,
@@ -698,16 +687,16 @@ class CBASExternalLinks(CBASBaseTest):
                  "expected_error": ""
                     },
                 ]
-            
-            rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster, 
+
+            rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster,
                                                                        "Altering external link properties using (0) user")
             for testcase in rbac_testcases:
                 testcase["encryption"] = "half"
                 if testcase["validate_error_msg"]:
                     testcase["expected_error"] = "Unauthorized user"
-            
+
             testcases = testcases + rbac_testcases
-            
+
             for testcase in testcases:
                 self.log.info(testcase["description"])
                 link_properties = copy.deepcopy(self.link_info)
@@ -716,39 +705,38 @@ class CBASExternalLinks(CBASBaseTest):
                     if key in link_properties:
                         link_properties[key] = value
                 response = self.cluster.cbas_util.update_external_link_properties(
-                    link_properties, validate_error_msg=testcase.get("validate_error_msg", False), 
+                    link_properties, validate_error_msg=testcase.get("validate_error_msg", False),
                     expected_error=testcase.get("expected_error", None),
                     username=testcase.get("username", self.analytics_username))
-                
+
                 if testcase["validate_error_msg"]:
                     assert(response, "Error message is different than expected.")
                 else:
-                    response2 = self.cluster.cbas_util.get_link_info(link_name=link_properties["name"], 
+                    response2 = self.cluster.cbas_util.get_link_info(link_name=link_properties["name"],
                                                                      dataverse=link_properties["dataverse"])[0]
-                    assert(response2.viewitems() <= link_properties, 
+                    assert(response2.viewitems() <= link_properties,
                            "Actual link properties - \n{0}\n Expected Link properties - \n{1}\n".format(json.dumps(response2),
                                                                                                         json.dumps(link_properties)))
                 self.log.info("Test Passed")
             self.analytics_cluster.cbas_util.drop_link_on_cbas(link_name= "{0}.{1}".format(
                 self.link_info["dataverse"], self.link_info["name"]))
-            assert(self.analytics_cluster.cbas_util.drop_dataverse_on_cbas(dataverse_name=new_dataverse, 
-                                                                        username=self.analytics_username), 
+            assert(self.analytics_cluster.cbas_util.drop_dataverse_on_cbas(dataverse_name=new_dataverse,
+                                                                        username=self.analytics_username),
                                                                         "Dataverse creation failed")
-            
-            
+
+
         else:
             assert(False, "Link creation failed")
-    
-    
+
     def test_connect_link(self):
         to_cluster = random.choice(self.to_clusters)
         self.get_link_property_dict(to_cluster)
         if self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info):
             self.link_created = True
-            
+
             # Create users with all RBAC roles.
             self.create_or_delete_users(self.analytics_cluster)
-            
+
             testcases = [
                 {"name": self.link_info["name"],
                  "description": "Connect a valid link",
@@ -759,33 +747,32 @@ class CBASExternalLinks(CBASBaseTest):
                  "expected_error": "Link {0}.{1} does not exist".format(self.link_info["dataverse"], self.invalid_value)
                     }
                 ]
-            
-            rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster, 
+
+            rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster,
                                                                 "Connect external link using (0) user")
             for testcase in rbac_testcases:
                 testcase["name"] = self.link_info["name"]
-            
+
             testcases = testcases + rbac_testcases
             for testcase in testcases:
                 self.log.info(testcase["description"])
                 if not self.analytics_cluster.cbas_util.connect_link(
-                    link_name="{0}.{1}".format(self.link_info["dataverse"], testcase["name"]), 
-                    validate_error_msg=testcase.get("validate_error_msg", False), 
+                    link_name="{0}.{1}".format(self.link_info["dataverse"], testcase["name"]),
+                    validate_error_msg=testcase.get("validate_error_msg", False),
                     expected_error=testcase.get("expected_error", None),
                     username=testcase.get("username", self.analytics_username)):
                     self.fail("Error while connecting the link ")
                 self.log.info("Test Passed")
-            
+
         else:
             self.fail("Link creation failed")
-    
-    
+
     def test_disconnect_link(self):
         to_cluster = random.choice(self.to_clusters)
         self.get_link_property_dict(to_cluster)
         if self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info):
             self.link_created = True
-            
+
             # Create users with all RBAC roles.
             self.create_or_delete_users(self.analytics_cluster)
             testcases = [
@@ -798,42 +785,41 @@ class CBASExternalLinks(CBASBaseTest):
                  "expected_error": "Link {0}.{1} does not exist".format(self.link_info["dataverse"], self.invalid_value)
                     }
                 ]
-            
-            rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster, 
+
+            rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster,
                                                                        "Disconnect external link using (0) user")
             for testcase in rbac_testcases:
                 testcase["name"] = self.link_info["name"]
-            
+
             testcases = testcases + rbac_testcases
-            
+
             for testcase in testcases:
                 self.log.info(testcase["description"])
                 if not self.analytics_cluster.cbas_util.disconnect_link(
-                    link_name="{0}.{1}".format(self.link_info["dataverse"], testcase["name"]), 
-                    validate_error_msg=testcase.get("validate_error_msg", False), 
+                    link_name="{0}.{1}".format(self.link_info["dataverse"], testcase["name"]),
+                    validate_error_msg=testcase.get("validate_error_msg", False),
                     expected_error=testcase.get("expected_error", None),
                     username=testcase.get("username", self.analytics_username)):
                     self.fail( "Error while Disconnecting the link ")
                 self.log.info("Test Passed")
-            
+
         else:
             self.fail("Link creation failed")
-    
-    
+
     def test_create_dataset(self):
         to_cluster = random.choice(self.to_clusters)
         self.get_link_property_dict(to_cluster)
-        
+
         if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info):
             self.fail("link creation failed")
         self.link_created = True
-        
+
         if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
             self.fail("Error while loading {0} bucket in remote cluster".format(self.sample_bucket))
-        
+
         # Create users with all RBAC roles.
         self.create_or_delete_users(self.analytics_cluster)
-        
+
         testcases = [
             {
                 "description": "Creating a valid dataset",
@@ -848,122 +834,119 @@ class CBASExternalLinks(CBASBaseTest):
                 "expected_error": "Bucket ({0}) does not exist".format(self.invalid_value)
             },
         ]
-        
-        rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster, 
+
+        rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster,
                                                             "Creating dataset on external link using (0) user")
         for testcase in rbac_testcases:
             testcase["dataset_name"] = self.cbas_dataset_name
             testcase["bucket_name"] = self.sample_bucket.name
-        
+
         testcases = testcases + rbac_testcases
         for testcase in testcases:
             self.log.info(testcase["description"])
-            if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(cbas_bucket_name= testcase["bucket_name"], 
+            if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(cbas_bucket_name= testcase["bucket_name"],
                                                                              cbas_dataset_name= testcase["dataset_name"],
-                                                                             validate_error_msg=testcase.get("validate_error_msg", 
-                                                                                                             False), 
-                                                                             expected_error=testcase.get("expected_error", 
-                                                                                                         None), 
-                                                                             dataverse=self.link_info["dataverse"], 
+                                                                             validate_error_msg=testcase.get("validate_error_msg",
+                                                                                                             False),
+                                                                             expected_error=testcase.get("expected_error",
+                                                                                                         None),
+                                                                             dataverse=self.link_info["dataverse"],
                                                                              compress_dataset=False,
                                                                              link_name="{0}.{1}".format(
                                                                                  self.link_info["dataverse"],
                                                                                  self.link_info["name"]),
-                                                                             username=testcase.get("username", 
+                                                                             username=testcase.get("username",
                                                                                                    self.analytics_username)):
                 self.fail("Error while creating dataset")
             if not testcase.get("validate_error_msg", False):
-                if not self.analytics_cluster.cbas_util.validate_dataset_in_metadata_collection(dataset_name=testcase["dataset_name"], 
-                                                                                                link_name=self.link_info["name"], 
-                                                                                                dataverse=self.link_info["dataverse"], 
+                if not self.analytics_cluster.cbas_util.validate_dataset_in_metadata_collection(dataset_name=testcase["dataset_name"],
+                                                                                                link_name=self.link_info["name"],
+                                                                                                dataverse=self.link_info["dataverse"],
                                                                                                 bucket_name=testcase["bucket_name"]):
                     self.fail("Dataset entry not present in Metadata.Dataset collection")
-                self.analytics_cluster.cbas_util.drop_dataset(cbas_dataset_name=testcase["dataset_name"], 
+                self.analytics_cluster.cbas_util.drop_dataset(cbas_dataset_name=testcase["dataset_name"],
                                                          dataverse=self.link_info["dataverse"])
             self.log.info("Test Passed")
-        
-    
+
     def test_query_dataset(self):
         to_cluster = self.setup_datasets()
-        
+
         # Create users with all RBAC roles.
         self.create_or_delete_users(self.analytics_cluster)
-        
-        testcases = self.create_testcase_for_rbac_user(self.analytics_cluster, 
+
+        testcases = self.create_testcase_for_rbac_user(self.analytics_cluster,
                                                        "Querying dataset on external link using (0) user")
-        
+
         query_statement = "select * from `{0}` where `id` <= 10;"
-        
+
         n1ql_result = to_cluster.rest.query_tool(query_statement.format(self.sample_bucket.name))[
             'results'][0][self.sample_bucket.name]
         #n1ql_result = self.curl_helper(to_cluster, query_statement.format(self.sample_bucket))
-        
+
         for testcase in testcases:
             status, metrics, errors, cbas_result, _ = self.analytics_cluster.cbas_util.execute_statement_on_cbas_util(
-                statement=query_statement.format(self.cbas_dataset_name), 
+                statement=query_statement.format(self.cbas_dataset_name),
                 username=testcase.get("username", self.analytics_username))
             if testcase["validate_error_msg"]:
-                if not self.analytics_cluster.cbas_util.validate_error_in_response(status, errors, 
+                if not self.analytics_cluster.cbas_util.validate_error_in_response(status, errors,
                                                                                    expected_error=testcase["expected_error"]):
                     self.fail("Error msg is different from expected error msg")
             elif not cbas_result[0][self.cbas_dataset_name] == n1ql_result:
                 self.fail("Result returned from analytics query does not match the result of N1Ql query")
-        
-    
+
     def test_effect_of_rbac_role_change_on_external_link(self):
         """
-        This testcase checks, effect of user role change on data ingestion, 
+        This testcase checks, effect of user role change on data ingestion,
         when the role of the user who created the link and dataset is changed to a role,
-        which does not have permission to create link or datasets. 
+        which does not have permission to create link or datasets.
         """
         new_username = "user1"
         original_user_role = "analytics_admin"
         new_user_role = "analytics_reader"
         self.analytics_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
         rbac_users_created[new_username] = None
-        
+
         to_cluster = self.setup_datasets(username=new_username)
-        
+
         self.analytics_cluster.rbac_util._create_user_and_grant_role(new_username, new_user_role)
-        
-        task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=1000, _async=True, 
+
+        task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=1000, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
-        
+
         result = self.task.jython_task_manager.get_task_result(task)
-        
+
         # Allow ingestion to complete
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
                                                                             self.sample_bucket.stats.expected_item_count + 1000, 300):
             self.fail("Data Ingestion did not complete")
-        
-        
+
     def test_data_ingestion_after_reducing_and_then_restoring_remote_user_permission(self):
         to_cluster = random.choice(self.to_clusters)
-        
+
         # Create a new high privileged role remote user
         new_username = "user1"
         original_user_role = "admin"
         new_user_role = "query_external_access"
         to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
         rbac_users_created[new_username] = None
-        
+
         # Set user name to the remote user created above in link properties
         self.get_link_property_dict(to_cluster)
         self.link_info["username"] = new_username
-        
+
         to_cluster = self.setup_datasets(to_cluster=to_cluster, get_link_info=False)
-        
+
         # Assign the remote user created before a low privilege role
         to_cluster.rbac_util._create_user_and_grant_role(new_username, new_user_role)
-        
+
         task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
-        
+
         result = self.task.jython_task_manager.get_task_result(task)
-        
+
         if self.input.param("after_timeout", False):
             # Restoring remote user permission after timeout
-            
+
             # Wait until timeout happens and dataset is disconnected
             retry = 0
             while retry < 30:
@@ -972,57 +955,56 @@ class CBASExternalLinks(CBASBaseTest):
                 if status and json.loads(content)["buckets"][0]["state"] != "connected":
                     break
                 self.sleep(10)
-            
+
             self.log.info("Validate not all new data has been ingested into dataset")
-            if self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, 
-                                                                                  self.sample_bucket.stats.expected_item_count + self.num_items, 
+            if self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
+                                                                                  self.sample_bucket.stats.expected_item_count + self.num_items,
                                                                                   num_tries=1):
                 self.fail("New data was ingested into dataset even after remote user permission was revoked.")
-            
+
             to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
             # Reconnecting link.
             if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
                                                                              self.link_info["name"]),
                                                                              username=self.analytics_username):
                 self.fail("Error while connecting link")
-        
+
         else:
             # Restoring remote user permission before timeout
             to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
-        
+
         # Allow ingestion to complete
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + self.num_items, 
+                                                                            self.sample_bucket.stats.expected_item_count + self.num_items,
                                                                             300):
             self.fail("Data Ingestion did not complete")
-    
-    
+
     def test_data_ingestion_after_daleting_and_then_recreating_remote_user(self):
         to_cluster = random.choice(self.to_clusters)
-        
+
         # Create a new high privileged role remote user
         new_username = "user1"
         original_user_role = "admin"
         to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
         rbac_users_created[new_username] = None
-        
+
         # Set user name to the remote user created above in link properties
         self.get_link_property_dict(to_cluster)
         self.link_info["username"] = new_username
-        
+
         to_cluster = self.setup_datasets(to_cluster=to_cluster, get_link_info=False)
-        
+
         # Delete the remote user created before.
         to_cluster.rbac_util._drop_user(new_username)
-        
+
         task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
-        
+
         result = self.task.jython_task_manager.get_task_result(task)
-        
+
         if self.input.param("after_timeout", False):
             # Restoring remote user permission after timeout
-            
+
             # Wait until timeout happens and dataset is disconnected
             retry = 0
             while retry < 30:
@@ -1031,30 +1013,29 @@ class CBASExternalLinks(CBASBaseTest):
                 if status and json.loads(content)["buckets"][0]["state"] != "connected":
                     break
                 self.sleep(10)
-            
+
             self.log.info("Validate not all new data has been ingested into dataset")
-            if self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, 
-                                                                                  self.sample_bucket.stats.expected_item_count + self.num_items, 
+            if self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
+                                                                                  self.sample_bucket.stats.expected_item_count + self.num_items,
                                                                                   num_tries=1):
                 self.fail("New data was ingested into dataset even after remote user permission was revoked.")
-            
+
             to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
             # Reconnecting link.
             if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
                                                                              self.link_info["name"]),
                                                                              username=self.analytics_username):
                 self.fail("Error while connecting link")
-        
+
         else:
             # Restoring remote user permission before timeout
             to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
-        
+
         # Allow ingestion to complete
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + self.num_items, 
+                                                                            self.sample_bucket.stats.expected_item_count + self.num_items,
                                                                             300):
             self.fail("Data Ingestion did not complete")
-        
 
     def test_dataset_creation_when_network_down(self):
         to_cluster = random.choice(self.to_clusters)
@@ -1062,15 +1043,14 @@ class CBASExternalLinks(CBASBaseTest):
         if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info):
             self.fail("link cration failed")
         self.link_created = True
-        
+
         if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
             self.fail("Error while loading {0} bucket in remote cluster".format(self.sample_bucket.name))
-        
-        from remote.remote_util import RemoteUtilHelper
-        RemoteUtilHelper.enable_firewall(server=to_cluster.master, block_ips=[self.analytics_cluster.master.ip], 
+
+        RemoteUtilHelper.enable_firewall(server=to_cluster.master, block_ips=[self.analytics_cluster.master.ip],
                                          all_interface=True)
-        
-        if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(cbas_bucket_name= self.sample_bucket.name, 
+
+        if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(cbas_bucket_name= self.sample_bucket.name,
                                                                          cbas_dataset_name= self.cbas_dataset_name,
                                                                          dataverse=self.link_info["dataverse"],
                                                                          link_name="{0}.{1}".format(
@@ -1080,50 +1060,45 @@ class CBASExternalLinks(CBASBaseTest):
                                                                          expected_error="Internal error"):
             self.fail("Error while creating dataset")
         to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
-    
-    
+
     def test_connect_link_when_network_up_before_timeout(self):
         "This testcase deals with the scenario, when network comes back up before timeout happens for connect link DDL"
         to_cluster = self.setup_datasets(connect_link=False)
-        
-        from remote.remote_util import RemoteUtilHelper
-        RemoteUtilHelper.enable_firewall(server=to_cluster.master, action_on_packet="DROP", 
-                                         block_ips=[self.analytics_cluster.master.ip], 
+
+        RemoteUtilHelper.enable_firewall(server=to_cluster.master, action_on_packet="DROP",
+                                         block_ips=[self.analytics_cluster.master.ip],
                                          all_interface=True)
         link_connected = [False]
-        
+
         def get_connect_link_result():
             if self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
                                                                               self.link_info["name"]),
                                                                               username=self.analytics_username):
                 link_connected[0] = True
-        
-        from threading import Thread
+
         thread = Thread(target=get_connect_link_result,
                         name="connect_link_thread")
         thread.start()
-        
+
         to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
-        
+
         thread.join()
-        
+
         if not link_connected[0]:
             self.fail("Link connection Failed.")
-        
+
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
                                                                             self.sample_bucket.stats.expected_item_count, 300):
             self.fail("Data Ingestion did not resume")
-    
-    
+
     def test_data_ingestion_resumes_when_network_up_before_timeout(self):
         "This testcase deals with the scenario, when network comes back up before timeout happens for an exsiting dataset"
         to_cluster = self.setup_datasets()
-        
-        from remote.remote_util import RemoteUtilHelper
-        RemoteUtilHelper.enable_firewall(server=to_cluster.master, action_on_packet="DROP", 
-                                         block_ips=[self.analytics_cluster.master.ip], 
+
+        RemoteUtilHelper.enable_firewall(server=to_cluster.master, action_on_packet="DROP",
+                                         block_ips=[self.analytics_cluster.master.ip],
                                          all_interface=True)
-        
+
         # Wait for link to get disconnected
         retry = 0
         while retry < 30:
@@ -1132,45 +1107,43 @@ class CBASExternalLinks(CBASBaseTest):
             if status and json.loads(content)["buckets"][0]["state"] != "connected":
                 break
             self.sleep(10)
-        
+
         task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
-        
+
         result = self.task.jython_task_manager.get_task_result(task)
-        
+
         to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
-        
+
         # Allow ingestion to complete
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + self.num_items, 
+                                                                            self.sample_bucket.stats.expected_item_count + self.num_items,
                                                                             300):
             self.fail("Data Ingestion did not complete")
-        
-        
+
     def test_reconnecting_link_after_timeout_due_to_network_failure(self):
         """
-        This testcase deals with the scenario, when network comes back up after timeout happens. 
+        This testcase deals with the scenario, when network comes back up after timeout happens.
         The link connection should fail after the timeout happens. But a subsequent link connection
         request once the network is up should succeed.
         """
         to_cluster = self.setup_datasets(connect_link=False)
-        
-        from remote.remote_util import RemoteUtilHelper
-        RemoteUtilHelper.enable_firewall(server=to_cluster.master, action_on_packet="DROP", 
-                                         block_ips=[self.analytics_cluster.master.ip], 
+
+        RemoteUtilHelper.enable_firewall(server=to_cluster.master, action_on_packet="DROP",
+                                         block_ips=[self.analytics_cluster.master.ip],
                                          all_interface=True)
-        
+
         #Wait for connect link to timeout. It take approx 10 mins to timeout.
-        if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"], 
+        if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
                                                                               self.link_info["name"]),
-                                                                              username=self.analytics_username, 
-                                                                              validate_error_msg=True, 
+                                                                              username=self.analytics_username,
+                                                                              validate_error_msg=True,
                                                                               expected_error="Connect link failed",
                                                                               timeout=900, analytics_timeout=900):
             self.fail("Expected a different error while connecting link")
-        
+
         to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
-        if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"], 
+        if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
                                                                               self.link_info["name"]),
                                                                               username=self.analytics_username):
             self.fail("Link connection failed")
@@ -1178,15 +1151,14 @@ class CBASExternalLinks(CBASBaseTest):
                                                                             self.sample_bucket.stats.expected_item_count,
                                                                             300):
             self.fail("Data Ingestion did not resume")
-    
-    
+
     def test_dataset_behaviour_on_remote_bucket_deletion(self):
         to_cluster = self.setup_datasets()
-        
-        if not to_cluster.bucket_util.delete_bucket(serverInfo=to_cluster.master, 
+
+        if not to_cluster.bucket_util.delete_bucket(serverInfo=to_cluster.master,
                                                     bucket=self.sample_bucket):
             self.fail("Deletion of bucket failed")
-        
+
         # Wait for link to get disconnected
         retry = 0
         while retry < 30:
@@ -1195,23 +1167,22 @@ class CBASExternalLinks(CBASBaseTest):
             if status and json.loads(content)["buckets"][0]["state"] != "connected":
                 break
             self.sleep(10)
-        
-        if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, 
+
+        if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
                                                                                   self.sample_bucket.stats.expected_item_count):
             self.fail("Mismatch between number of documents in dataset and remote bucket")
-    
-    
+
     def test_dataset_behaviour_on_remote_bucket_deletion_and_recreation(self):
         """
         This testcase deals with the scenario when remote bucket is deleted and another bucket with same name
-        is recreated on remote cluster. 
+        is recreated on remote cluster.
         """
         to_cluster = self.perform_setup_and_add_new_docs(10, wait_for_ingestion=True)
-        
-        if not to_cluster.bucket_util.delete_bucket(serverInfo=to_cluster.master, 
+
+        if not to_cluster.bucket_util.delete_bucket(serverInfo=to_cluster.master,
                                                     bucket=self.sample_bucket):
             self.fail("Deletion of bucket failed")
-        
+
         # Wait for link to get disconnected
         retry = 0
         while retry < 30:
@@ -1220,12 +1191,12 @@ class CBASExternalLinks(CBASBaseTest):
             if status and json.loads(content)["buckets"][0]["state"] != "connected":
                 break
             self.sleep(10)
-        
+
         if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
             self.fail("Error while loading {0} bucket in remote cluster".format(self.sample_bucket.name))
-        
+
         with_force_flag = self.input.param("with_force_flag", False)
-        
+
         if with_force_flag:
             validate_err_msg = False
             expected_error_msg = None
@@ -1240,27 +1211,26 @@ class CBASExternalLinks(CBASBaseTest):
                                                                               username=self.analytics_username,
                                                                               expected_error=expected_error_msg):
             self.fail("Error while connecting link")
-        if with_force_flag and not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, 
+        if with_force_flag and not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
                                                                                                       self.sample_bucket.stats.expected_item_count):
             self.fail("Mismatch between number of documents in dataset and remote bucket")
-    
-    
+
     def test_data_ingestion_for_data_updation_in_remote_cluster(self):
         to_cluster = self.perform_setup_and_add_new_docs(10, wait_for_ingestion=False)
-        
+
         task = self.perform_doc_ops_in_all_cb_buckets(operation="update", end_key=10, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key,
                                                       mutation_num=1)
         result = self.task.jython_task_manager.get_task_result(task)
-        
+
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + 10, 
+                                                                            self.sample_bucket.stats.expected_item_count + 10,
                                                                             300):
             self.fail("Data Ingestion did not complete")
-        
+
         query_statement = "select count(*) from `{0}` where mutated=1;"
         count_n1ql = to_cluster.rest.query_tool(query_statement.format(self.sample_bucket.name))['results'][0]['$1']
-        
+
         status, metrics, errors, cbas_result, _ = self.analytics_cluster.cbas_util.execute_statement_on_cbas_util(
             statement=query_statement.format(self.cbas_dataset_name))
         if status == "success":
@@ -1269,49 +1239,46 @@ class CBASExternalLinks(CBASBaseTest):
                 self.fail("Result returned from analytics query does not match the result of N1Ql query")
         else:
             self.fail("Unable to execute query on analytics dataset")
-        
-    
+
     def test_data_ingestion_for_data_deletion_in_remote_cluster(self):
         to_cluster = self.perform_setup_and_add_new_docs(10, wait_for_ingestion=False)
-        
+
         task = self.perform_doc_ops_in_all_cb_buckets(operation="delete", end_key=10, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
         result = self.task.jython_task_manager.get_task_result(task)
 
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count, 
+                                                                            self.sample_bucket.stats.expected_item_count,
                                                                             300):
             self.fail("Data Ingestion did not complete")
-    
-    
+
     def get_rebalance_servers(self, to_cluster):
         rebalanceServers = list()
-        used_servers = list
+        used_servers = list()
         for cserver in (self.analytics_cluster.servers + to_cluster.servers):
             used_servers.append(cserver.ip)
         for server in self.servers:
             if not server.ip in used_servers:
                 rebalanceServers.append(server)
         return rebalanceServers
-        
-        
+
     def test_analytics_cluster_while_remote_cluster_swap_rebalacing(self):
         '''
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
         2, Post initial setup - local cluster - 1 node with cbas, remote cluster - 1 node with KV and query running
         3. As part of test add an extra KV node that we will swap rebalance later - Adding 103 and rebalance
         4. select the node added in #3 for remove and 104 to add during swap
-        
+
         Data mutation is happening on remote cluster while local cluster is rebalancing.
         '''
 
         node_services = ["kv", "n1ql"]
-        
+
         self.log.info("Setup CBAS")
         to_cluster = self.setup_datasets()
-        
+
         rebalanceServers = self.get_rebalance_servers(to_cluster)
-        
+
         self.log.info("Rebalance in remote cluster, this node will be removed during swap")
         to_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services)
 
@@ -1319,13 +1286,13 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
-        
+
         run_query = self.input.param("run_query", False)
         if run_query:
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
-            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, 
-                                                                          "async", 
+            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement,
+                                                                          "async",
                                                                           self.num_concurrent_queries,
                                                                           wait_for_execution=False)
 
@@ -1339,10 +1306,10 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Swap rebalance KV nodes")
         to_cluster.cluster_util.add_node(node=rebalanceServers[1], services=node_services, rebalance=False)
         self.remove_node([out_nodes[0]], wait_for_rebalance=False, rest=to_cluster.rest)
-        
+
         if not to_cluster.rest.monitorRebalance():
             self.fail("Rebalance failed")
-        
+
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
 
@@ -1353,25 +1320,25 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   self.sample_bucket.stats.expected_item_count +
                                                                                   self.num_items):
             self.fail("Number of items in dataset do not match number of items in bucket")
-    
-        
+
+
     def test_analytics_cluster_swap_rebalacing(self):
         '''
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
         2, Post initial setup - local cluster - 1 node with cbas, remote cluster - 1 node with KV and query running
         3. As part of test add an extra cbas node that we will swap rebalance later - Adding 103 and rebalance
         4. select the node added in #3 for remove and 104 to add during swap
-        
+
         Data mutation is happening on remote cluster while local cluster is rebalancing.
         '''
-        
+
         node_services = ["cbas"]
-        
+
         self.log.info("Setup CBAS")
         to_cluster = self.setup_datasets()
-        
+
         rebalanceServers = self.get_rebalance_servers(to_cluster)
-        
+
         self.log.info("Rebalance in local cluster, this node will be removed during swap")
         self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services)
 
@@ -1383,8 +1350,8 @@ class CBASExternalLinks(CBASBaseTest):
         if run_query:
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
-            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, 
-                                                                          "async", 
+            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement,
+                                                                          "async",
                                                                           self.num_concurrent_queries,
                                                                           wait_for_execution=False)
 
@@ -1398,7 +1365,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Swap rebalance CBAS nodes")
         self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[1], services=node_services, rebalance=False)
         self.remove_node([out_nodes[0]], wait_for_rebalance=True, rest=self.analytics_cluster.rest)
-        
+
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
 
@@ -1410,31 +1377,31 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   + self.num_items):
             self.fail("Number of items in dataset do not match number of items in bucket")
 
-        
+
     def test_analytics_cluster_when_rebalacing_in_cbas_node(self):
         '''
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
         2, Post initial setup - local cluster - 1 node with cbas, remote cluster - 1 node with KV and query running
         3. As part of test add an extra cbas nodes and rebalance
-        
+
         Data mutation is happening on remote cluster while local cluster is rebalancing.
         '''
         node_services = ["cbas"]
-        
+
         self.log.info("Setup CBAS")
         to_cluster = self.setup_datasets()
-        
+
         rebalanceServers = self.get_rebalance_servers(to_cluster)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
-        
+
         run_query = self.input.param("run_query", False)
         if run_query:
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
-            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async", 
+            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async",
                                                                           self.num_concurrent_queries,
                                                                           wait_for_execution=False)
 
@@ -1461,16 +1428,16 @@ class CBASExternalLinks(CBASBaseTest):
         2, Post initial setup - local cluster - 1 node with cbas, remote cluster - 1 node with KV and query running
         3. As part of test add extra cbas nodes that we will rebalance out later - Adding 103, 104 and rebalance
         4. select the nodes added in #3 for remove
-        
+
         Data mutation is happening on remote cluster while local cluster is rebalancing.
         '''
         node_services = ["cbas"]
-        
+
         self.log.info("Setup CBAS")
         to_cluster = self.setup_datasets()
-        
+
         rebalanceServers = self.get_rebalance_servers(to_cluster)
-        
+
         self.log.info("Rebalance in CBAS nodes")
         self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
                                                 rebalance=False, wait_for_rebalance_completion=False)
@@ -1481,12 +1448,12 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
-        
+
         run_query = self.input.param("run_query", False)
         if run_query:
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
-            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async", 
+            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async",
                                                                           self.num_concurrent_queries,
                                                                           wait_for_execution=False)
 
@@ -1511,8 +1478,8 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   self.sample_bucket.stats.expected_item_count
                                                                                   + self.num_items, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
-    
-    
+
+
     def test_fail_over_cbas_node_followed_by_rebalance_out_or_add_back(self):
         """
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
@@ -1526,12 +1493,12 @@ class CBASExternalLinks(CBASBaseTest):
         9. Verify document count on dataset post failover
         """
         node_services = ["cbas"]
-        
+
         self.log.info("Setup CBAS")
         to_cluster = self.setup_datasets()
-        
+
         rebalanceServers = self.get_rebalance_servers(to_cluster)
-        
+
         self.log.info("Add an extra node to fail-over")
         self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
                                                      rebalance=True, wait_for_rebalance_completion=True)
@@ -1547,12 +1514,12 @@ class CBASExternalLinks(CBASBaseTest):
         if run_query:
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
-            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async", 
+            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async",
                                                                           self.num_concurrent_queries,
                                                                           wait_for_execution=False)
 
         self.log.info("fail-over the node")
-        fail_task = self.analytics_cluster.async_failover(self.analytics_cluster.servers, 
+        fail_task = self.analytics_cluster.async_failover(self.analytics_cluster.servers,
                                                           [rebalanceServers[0]], graceful_failover)
         self.task_manager.get_task_result(fail_task)
 
@@ -1566,7 +1533,6 @@ class CBASExternalLinks(CBASBaseTest):
             self.recovery_strategy = self.input.param("recovery_strategy", "full")
             self.log.info("Performing %s recovery" % self.recovery_strategy)
             success = False
-            import datetime
             end_time = datetime.datetime.now() + datetime.timedelta(minutes=int(1))
             while datetime.datetime.now() < end_time or not success:
                 try:

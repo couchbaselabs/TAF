@@ -1,5 +1,5 @@
-import logger
-log = logger.Logger.get_logger()
+import logging
+log = logging.getLogger("x509")
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 from membase.api import httplib2
@@ -10,7 +10,6 @@ import random
 import os
 import copy
 import subprocess
-import json
 
 
 class ServerInfo():
