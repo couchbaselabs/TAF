@@ -2088,9 +2088,9 @@ class ValidateDocumentsTask(GenericLoadingTask):
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
         if self.is_sub_doc:
-            self.__validate_sub_docs()
+            self.__validate_sub_docs(doc_gen)
         else:
-            self.__validate_docs()
+            self.__validate_docs(doc_gen)
 
     def validate_key_val(self, map, key_value):
         missing_keys = []
