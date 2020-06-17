@@ -13,6 +13,7 @@ from CbasLib.CBASOperations import CBASHelper
 from common_lib import sleep
 from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
+import urllib
 
 
 class CbasUtil:
@@ -207,6 +208,172 @@ class CbasUtil:
             else:
                 return True
 
+    
+    def create_external_link_on_cbas(self, link_properties, username=None, password=None, timeout=120,
+                                     validate_error_msg=False, expected_error=None, expected_error_code=None):
+        """
+        Create an external link to AWS S3 service or an external couchbase server.
+        
+        :param username : used for authentication while calling API.
+        :param password : used for authentication while calling API.
+        :param timeout : timeout for API response
+        :param validate_error_msg : boolean, If set to true, it will compare the error raised while creating the link
+        with the error msg or error code passed. 
+        :param expected_error : str, expected error string
+        :param expected_error_code: str, expected error code
+        
+        :param link_properties: dict, contains all the properties required to create a link.
+         
+        Common for both AWS and couchbase link.
+        <Required> name : name of the link to be created.
+        <Required> dataverse : name of the dataverse under which the link has to be created.
+        <Required> type : s3/couchbase
+        
+        For links to external couchbase cluster.
+        
+        <Required> hostname : The hostname of the link
+        <Optional> username : The username for host authentication. Required if encryption is set to 
+        "none" or "half. Optional if encryption is set to "full".
+        <Optional> password : The password for host authentication. Required if encryption is set to 
+        "none" or "half. Optional if encryption is set to "full".
+        <Required> encryption : The link secure connection type ('none', 'full' or 'half')
+        <Optional> certificate : The root certificate of target cluster for authentication. 
+        Required only if encryption is set to "full"
+        <Optional> clientCertificate : The user certificate for authentication. 
+        Required only if encryption is set to "full" and username and password is not used.
+        <Optional> clientKey : The client key for user authentication.
+        Required only if encryption is set to "full" and username and password is not used.
+        
+        For links to AWS S3
+        
+        <Required> accessKeyId : The access key of the link
+        <Required> secretAccessKey : The secret key of the link
+        <Required> region : The region of the link
+        <Optional> serviceEndpoint : The service endpoint of the link.
+        
+        Note - please use the exact key names as provided above in link properties dict.
+        """
+        params = dict()
+        for key, value in link_properties.iteritems():
+            if value:
+                if isinstance(value, unicode):
+                    params[key] = str(value)
+                else:
+                    params[key] = value
+        
+        params = urllib.urlencode(params)
+        status, status_code, content = self.cbas_helper.analytics_link_operations(method="POST", 
+                                                                                  params=params, 
+                                                                                  timeout=timeout, 
+                                                                                  username=username, 
+                                                                                  password=password)
+        if validate_error_msg:
+            return self.validate_error_in_restapi_response(status_code, content, expected_error, expected_error_code)
+        return status
+                
+    
+    
+    def get_link_info(self, dataverse=None, link_name=None, link_type=None,
+                      username=None, password=None, timeout=120, restapi=True, 
+                      validate_error_msg=False, expected_error=None, expected_error_code=None):
+        """
+        Fetch the list of links based on parameters passed.
+        :param dataverse (optional) Dataverse name where the links reside. 
+        If not specified, all the links from all the dataverses will be retrieved.
+        :param link_name (optional) The name of the link to be retrieved instead of 
+        retrieving all links. If this parameter is specified, the dataverse name 
+        has to be specified as well.
+        :param link_type (optional) Link type (e.g. S3) to be retrieved, 
+        if not specified, links of all types will be retrieved (excluding the Local link)
+        :param username : used for authentication while calling API.
+        :param password : used for authentication while calling API.
+        :param timeout : timeout for API response
+        :param restapi : True, if you want to create link using rest API. False, if you
+        want to create link using DDL.
+        """
+        if restapi:
+            params = dict()
+            if dataverse:
+                params["dataverse"] = dataverse
+            if link_name:
+                params["name"] = link_name
+            if link_type:
+                params["type"] = link_type
+            params = urllib.urlencode(params)
+            status, status_code, content = self.cbas_helper.analytics_link_operations(method="GET", 
+                                                                                      params=params, 
+                                                                                      timeout=timeout, 
+                                                                                      username=username, 
+                                                                                      password=password)
+            if validate_error_msg:
+                return self.validate_error_in_restapi_response(status_code, content, expected_error, expected_error_code)
+            if status:
+                return content
+                
+    
+    def update_external_link_properties(self, link_properties, username=None, password=None, timeout=120,
+                                        validate_error_msg=False, expected_error=None, expected_error_code=None):
+        """
+        Update all the link properties with the new values.
+        
+        :param username : used for authentication while calling API.
+        :param password : used for authentication while calling API.
+        :param timeout : timeout for API response
+        :param validate_error_msg : boolean, If set to true, it will compare the error raised while creating the link
+        with the error msg or error code passed. 
+        :param expected_error : str, expected error string
+        :param expected_error_code: str, expected error code
+        
+        :param link_properties: dict, contains all the properties required to create a link.
+         
+        Common for both AWS and couchbase link.
+        <Required> name : name of the link to be created.
+        <Required> dataverse : name of the dataverse under which the link has to be created.
+        <Required> type : s3/couchbase
+        
+        For links to external couchbase cluster.
+        
+        <Required> hostname : The hostname of the link
+        <Optional> username : The username for host authentication. Required if encryption is set to 
+        "none" or "half. Optional if encryption is set to "full".
+        <Optional> password : The password for host authentication. Required if encryption is set to 
+        "none" or "half. Optional if encryption is set to "full".
+        <Required> encryption : The link secure connection type ('none', 'full' or 'half')
+        <Optional> certificate : The root certificate of target cluster for authentication. 
+        Required only if encryption is set to "full"
+        <Optional> clientCertificate : The user certificate for authentication. 
+        Required only if encryption is set to "full" and username and password is not used.
+        <Optional> clientKey : The client key for user authentication.
+        Required only if encryption is set to "full" and username and password is not used.
+        
+        For links to AWS S3
+        
+        <Required> accessKeyId : The access key of the link
+        <Required> secretAccessKey : The secret key of the link
+        <Required> region : The region of the link
+        <Optional> serviceEndpoint : The service endpoint of the link.
+        
+        Note - please use the exact key names as provided above in link properties dict.
+        """
+        
+        params = dict()
+        for key, value in link_properties.iteritems():
+            if value:
+                if isinstance(value, unicode):
+                    params[key] = str(value)
+                else:
+                    params[key] = value
+        params = urllib.urlencode(params)
+        status, status_code, content = self.cbas_helper.analytics_link_operations(method="PUT", 
+                                                                                  params=params, 
+                                                                                  timeout=timeout, 
+                                                                                  username=username, 
+                                                                                  password=password)
+        if validate_error_msg:
+            return self.validate_error_in_restapi_response(status_code, content, expected_error, expected_error_code)
+        return status
+    
+                
     def drop_link_on_cbas(self, link_name=None,
                           username=None,
                           password=None,
@@ -235,7 +402,8 @@ class CbasUtil:
     def create_dataset_on_bucket(self, cbas_bucket_name, cbas_dataset_name,
                                  where_field=None, where_value = None,
                                  validate_error_msg=False, username = None,
-                                 password = None, expected_error=None, dataverse=None, compress_dataset=False):
+                                 password = None, expected_error=None, dataverse=None, compress_dataset=False,
+                                 link_name="Local"):
         """
         Creates a shadow dataset on a CBAS bucket
         """
@@ -245,7 +413,7 @@ class CbasUtil:
         if compress_dataset:
             cmd_create_dataset = cmd_create_dataset + "with {'storage-block-compression': {'scheme': 'snappy'}} "
 
-        cmd_create_dataset = cmd_create_dataset + "on {0} ".format(cbas_bucket_name)
+        cmd_create_dataset = cmd_create_dataset + "on {0} at {1} ".format(cbas_bucket_name, link_name)
 
         if where_field and where_value:
             cmd_create_dataset = cmd_create_dataset + "WHERE `{0}`=\"{1}\";".format(where_field, where_value)
@@ -315,13 +483,81 @@ class CbasUtil:
             else:
                 return True
 
+    def create_dataset_on_external_resource(self, cbas_dataset_name, aws_bucket_name, link_name,
+                                            object_construction_def=None, dataverse="Default", 
+                                            path_on_aws_bucket=None, file_format="json", redact_warning=False,
+                                            header=False, null_string=None,                                             
+                                            validate_error_msg=False, username = None,
+                                            password = None, expected_error=None, expected_error_code=None):
+        """
+        Creates a dataset for an external resource like AWS S3 bucket. 
+        Note - No shadow dataset is created for this type of external datasets.
+        :param cbas_dataset_name (str) : Name for the dataset to be created.
+        :param aws_bucket_name (str): AWS S3 bucket to which this dataset is to be linked. S3 bucket should be in 
+        the same region as the link, that is used to create this dataset.
+        :param link_name (str): external link to AWS S3
+        :param object_construction_def (str): It defines how the data read will be parsed. 
+        Required only for csv and tsv formats.
+        :param dataverse (str): Name of the dataverse where dataset is to be created.
+        :param path_on_aws_bucket (str): Relative path in S3 bucket, from where the files will be read.
+        :param file_format (str): Type of files to read. Valid values - json, csv and tsv
+        :param redact_warning (bool): internal information like e.g. filenames are redacted from warning messages.
+        :param header (bool): True means every csv, tsv file has a header record at the top and 
+        the expected behaviour is that the first record (the header) is skipped.
+        False means every csv, tsv file does not have a header.
+        :param null_string (str): a string that represents the NULL value if the field accepts NULLs.
+        :param validate_error_msg (bool): validate errors that occur while creating dataset.
+        :param username (str):
+        :param password (str):
+        :param expected_error (str):
+        :param expected_error_code (str):
+        :return True/False
+        
+        """
+
+        cmd_create_dataset = "CREATE EXTERNAL DATASET {1}".format(cbas_dataset_name)
+        if object_construction_def:
+            cmd_create_dataset += "({0})".format(object_construction_def)
+        if dataverse is not "Default":
+            cmd_create_dataset += " ON `{1}` AT {2}.{3}".format(aws_bucket_name, dataverse, link_name)
+        else:
+            cmd_create_dataset += " ON `{1}` AT `{2}`".format(aws_bucket_name, link_name)
+        if path_on_aws_bucket:
+            cmd_create_dataset += " USING {0}".format(path_on_aws_bucket)
+        with_parameters = dict()
+        with_parameters["format"] = file_format
+        if redact_warning:
+            with_parameters["redact-warnings"] = redact_warning
+        if file_format in ["cvs", "tsv"]:
+            with_parameters["header"] = header
+            if null_string:
+                with_parameters["null"] = null_string
+        cmd_create_dataset += " WITH {0};".format(json.dumps(with_parameters))
+
+        if dataverse is not None:
+            dataverse_prefix = 'use ' + dataverse + ';\n'
+            cmd_create_dataset = dataverse_prefix + cmd_create_dataset
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd_create_dataset, username=username, password=password)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error, expected_error_code=None)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+    
     def connect_link(self, link_name="Local",
                      validate_error_msg=False,
                      with_force=False,
                      username=None,
                      password=None,
                      expected_error=None,
-                     expected_error_code=None):
+                     expected_error_code=None,
+                     timeout=120,
+                     analytics_timeout=120):
         """
         Connects to a Link
         """
@@ -336,7 +572,9 @@ class CbasUtil:
             status, metrics, errors, results, _ = \
                 self.execute_statement_on_cbas_util(cmd_connect_bucket,
                                                     username=username,
-                                                    password=password)
+                                                    password=password, 
+                                                    timeout=timeout, 
+                                                    analytics_timeout=analytics_timeout)
 
             if errors:
                 # Below errors are to be fixed in Alice, until they are fixed retry is only option
@@ -452,12 +690,15 @@ class CbasUtil:
             else:
                 return True
 
-    def drop_dataset(self, cbas_dataset_name, validate_error_msg=False,
+    def drop_dataset(self, cbas_dataset_name, dataverse="Default", validate_error_msg=False,
                      username=None, password=None, expected_error=None):
         """
         Drop dataset from CBAS
         """
-        cmd_drop_dataset = "drop dataset {0};".format(cbas_dataset_name)
+        if dataverse == "Default":
+            cmd_drop_dataset = "drop dataset {0};".format(cbas_dataset_name)
+        else:
+            cmd_drop_dataset = "drop dataset {0}.{1};".format(dataverse, cbas_dataset_name)
         status, metrics, errors, results, _ = \
             self.execute_statement_on_cbas_util(cmd_drop_dataset,
                                                 username=username,
@@ -724,7 +965,7 @@ class CbasUtil:
 
     def _run_concurrent_queries(self, query, mode, num_queries, rest=None,
                                 batch_size=100, timeout=300,
-                                analytics_timeout=300):
+                                analytics_timeout=300, wait_for_execution=True):
         self.failed_count = 0
         self.success_count = 0
         self.rejected_count = 0
@@ -751,17 +992,19 @@ class CbasUtil:
                 self.log.debug("Submitted {0} queries".format(i))
                 sleep(5)
             thread.start()
-        for thread in threads:
-            thread.join()
-
-        self.log.debug("%s queries submitted, %s failed, %s passed, "
-                       "%s rejected, %s cancelled, %s timeout"
-                       % (num_queries, self.failed_count, self.success_count,
-                          self.rejected_count, self.cancel_count,
-                          self.timeout_count))
-        if self.failed_count+self.error_count != 0:
-            raise Exception("Queries Failed:%s , Queries Error Out:%s"
-                            % (self.failed_count, self.error_count))
+        sleep(3)
+        if wait_for_execution:
+            for thread in threads:
+                thread.join()
+    
+            self.log.debug("%s queries submitted, %s failed, %s passed, "
+                           "%s rejected, %s cancelled, %s timeout"
+                           % (num_queries, self.failed_count, self.success_count,
+                              self.rejected_count, self.cancel_count,
+                              self.timeout_count))
+            if self.failed_count+self.error_count != 0:
+                raise Exception("Queries Failed:%s , Queries Error Out:%s"
+                                % (self.failed_count, self.error_count))
         return self.handles
 
     def _run_query(self, query, mode, rest=None, validate_item_count=False,
@@ -1365,4 +1608,48 @@ class CbasUtil:
         self.log.info("Compression Type for Dataset {0} is {1}".format(ds, ds_compression_type))
 
         return ds_compression_type
-
+    
+    def validate_error_in_restapi_response(self, error_code, errors, expected_error=None,
+                                   expected_error_code=None):
+        """
+        Validates the error response against the expected one.
+        """
+        result = True
+        if expected_error and (expected_error not in str(errors["error"])):
+            result = result and False
+        if expected_error_code and not (expected_error_code == error_code):
+            result = result and False
+        return result
+    
+    
+    def validate_dataset_in_metadata_collection(self, dataset_name, link_name, dataverse, 
+                                                bucket_name, username=None, password=None):
+        """
+        validates metadata information about a dataset with entry in Metadata.Dataset collection.
+        """
+        cmd = 'SELECT * FROM `Metadata.Dataset` WHERE DatasetName="{0}" and DataverseName = "{1}";'.format(dataset_name, 
+                                                                                                           dataverse)
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd, username=username, password=password)
+        if status == "success":
+            for result in results:
+                if result["Metadata.Dataset"]["DatasetType"] == "INTERNAL":
+                    actual_link_name = result["Metadata.Dataset"]["LinkName"]
+                    actual_bucket_name = result["Metadata.Dataset"]["BucketName"]
+                elif result["Metadata.Dataset"]["DatasetType"] == "EXTERNAL":
+                    for prop in results["Metadata.Dataset"]["ExternalDetails"]["Properties"]:
+                        if prop["Name"] == "container":
+                            actual_link_name = prop["Value"]
+                        if prop["Name"] == "name":
+                            actual_bucket_name = prop["Value"]
+                if not (actual_link_name == link_name):
+                    self.log.error("Link name mismatch. Expected - {0} /t Actual - {1}".format(
+                        result["Metadata.Dataset"]["LinkName"], link_name))
+                    return False
+                if not (actual_bucket_name == bucket_name):
+                    self.log.error("Bucket name mismatch. Expected - {0} /t Actual - {1}".format(
+                        result["Metadata.Dataset"]["BucketName"], bucket_name))
+                    return False
+            return True
+        else:
+            return False
