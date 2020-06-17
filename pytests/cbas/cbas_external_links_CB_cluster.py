@@ -371,6 +371,7 @@ class CBASExternalLinks(CBASBaseTest):
                     "expected_error": 'Connection refused'
                 }
                 ]
+
             rbac_testcases = self.create_testcase_for_rbac_user(self.analytics_cluster,
                                                                 "Create a link using (0) user")
             for testcase in rbac_testcases:
@@ -881,7 +882,6 @@ class CBASExternalLinks(CBASBaseTest):
 
         n1ql_result = to_cluster.rest.query_tool(query_statement.format(self.sample_bucket.name))[
             'results'][0][self.sample_bucket.name]
-        #n1ql_result = self.curl_helper(to_cluster, query_statement.format(self.sample_bucket))
 
         for testcase in testcases:
             status, metrics, errors, cbas_result, _ = self.analytics_cluster.cbas_util.execute_statement_on_cbas_util(
@@ -984,7 +984,24 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Create a new high privileged role remote user
         new_username = "user1"
-        original_user_role = "admin"
+        original_user_role = "analytics_admin"
+
+        validate_error_msg = False
+        error_msg = None
+        timeout = 120
+        analytics_timeout = 120
+
+        if self.input.param("has_bucket_access", False) and self.input.param("same_role", False):
+            new_role = "analytics_admin"
+        elif self.input.param("has_bucket_access", False) and not self.input.param("same_role", False):
+            new_role = "admin"
+        else:
+            new_role = "query_external_access"
+            validate_error_msg = True
+            error_msg = "Connect link failed"
+            timeout = 900
+            analytics_timeout = 900
+
         to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
         rbac_users_created[new_username] = None
 
@@ -1020,22 +1037,32 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   num_tries=1):
                 self.fail("New data was ingested into dataset even after remote user permission was revoked.")
 
-            to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
+            to_cluster.rbac_util._create_user_and_grant_role(new_username, new_role)
             # Reconnecting link.
             if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
-                                                                             self.link_info["name"]),
-                                                                             username=self.analytics_username):
+                                                                                  self.link_info["name"]),
+                                                                 username=self.analytics_username,
+                                                                 validate_error_msg=validate_error_msg,
+                                                                 expected_error=error_msg,
+                                                                 timeout=timeout, analytics_timeout=analytics_timeout):
                 self.fail("Error while connecting link")
 
         else:
             # Restoring remote user permission before timeout
-            to_cluster.rbac_util._create_user_and_grant_role(new_username, original_user_role)
+            to_cluster.rbac_util._create_user_and_grant_role(new_username, new_role)
 
         # Allow ingestion to complete
-        if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
+        if not self.input.param("has_bucket_access", False):
+            if self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
                                                                             self.sample_bucket.stats.expected_item_count + self.num_items,
                                                                             300):
-            self.fail("Data Ingestion did not complete")
+                self.fail("Data Ingestion started when it should not.")
+        else:
+            if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
+                                                                                self.sample_bucket.stats.expected_item_count + self.num_items,
+                                                                                300):
+                self.fail("Data Ingestion did not complete")
+
 
     def test_dataset_creation_when_network_down(self):
         to_cluster = random.choice(self.to_clusters)
