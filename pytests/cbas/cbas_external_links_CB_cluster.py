@@ -1286,8 +1286,11 @@ class CBASExternalLinks(CBASBaseTest):
     
     def get_rebalance_servers(self, to_cluster):
         rebalanceServers = list()
+        used_servers = list
+        for cserver in (self.analytics_cluster.servers + to_cluster.servers):
+            used_servers.append(cserver.ip)
         for server in self.servers:
-            if not server.ip in [self.analytics_cluster.master.ip, to_cluster.master.ip]:
+            if not server.ip in used_servers:
                 rebalanceServers.append(server)
         return rebalanceServers
         
@@ -1314,7 +1317,7 @@ class CBASExternalLinks(CBASBaseTest):
 
 
         self.log.info("Run KV ops in async while rebalance is in progress")
-        task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
+        tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
         
         run_query = self.input.param("run_query", False)
@@ -1337,7 +1340,8 @@ class CBASExternalLinks(CBASBaseTest):
         to_cluster.cluster_util.add_node(node=rebalanceServers[1], services=node_services, rebalance=False)
         self.remove_node([out_nodes[0]], wait_for_rebalance=False, rest=to_cluster.rest)
         
-        assert(to_cluster.rest.monitorRebalance(), "Rebalance failed")
+        if not to_cluster.rest.monitorRebalance():
+            self.fail("Rebalance failed")
         
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
@@ -1345,9 +1349,10 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Log concurrent query status")
         self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.cluster.master, handles)
 
-        assert(self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, 
-                                                                             self.sample_bucket.stats.expected_item_count + self.num_items), 
-                                                                             "Number of items in dataset do not match number of items in bucket")
+        if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
+                                                                                  self.sample_bucket.stats.expected_item_count +
+                                                                                  self.num_items):
+            self.fail("Number of items in dataset do not match number of items in bucket")
     
         
     def test_analytics_cluster_swap_rebalacing(self):
@@ -1371,7 +1376,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
-        task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
+        tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
 
         run_query = self.input.param("run_query", False)
@@ -1400,10 +1405,11 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Log concurrent query status")
         self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
-        assert(self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, 
-                                                                             self.sample_bucket.stats.expected_item_count + self.num_items), 
-                                                                             "Number of items in dataset do not match number of items in bucket")
-        
+        if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
+                                                                                  self.sample_bucket.stats.expected_item_count
+                                                                                  + self.num_items):
+            self.fail("Number of items in dataset do not match number of items in bucket")
+
         
     def test_analytics_cluster_when_rebalacing_in_cbas_node(self):
         '''
@@ -1421,7 +1427,7 @@ class CBASExternalLinks(CBASBaseTest):
         rebalanceServers = self.get_rebalance_servers(to_cluster)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
-        task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
+        tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
         
         run_query = self.input.param("run_query", False)
@@ -1433,9 +1439,9 @@ class CBASExternalLinks(CBASBaseTest):
                                                                           wait_for_execution=False)
 
         self.log.info("Rebalance in CBAS nodes")
-        self.analytics_cluster.cluster_util.add_node(node=self.rebalanceServers[0], services=node_services, 
+        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
                                                 rebalance=False, wait_for_rebalance_completion=False)
-        self.analytics_cluster.cluster_util.add_node(node=self.rebalanceServers[1], services=node_services, 
+        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[1], services=node_services,
                                                 rebalance=True, wait_for_rebalance_completion=True)
 
         self.log.info("Get KV ops result")
@@ -1444,10 +1450,10 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Log concurrent query status")
         self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.cluster.master, handles)
 
-        assert(self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, 
-                                                                             self.sample_bucket.stats.expected_item_count + self.num_items,
-                                                                             0), 
-                                                                             "No. of items in CBAS dataset do not match that in the CB bucket")
+        if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
+                                                                                  self.sample_bucket.stats.expected_item_count
+                                                                                  + self.num_items, 0):
+            self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
 
     def test_analytics_cluster_when_rebalacing_out_cbas_node(self):
         '''
@@ -1466,14 +1472,14 @@ class CBASExternalLinks(CBASBaseTest):
         rebalanceServers = self.get_rebalance_servers(to_cluster)
         
         self.log.info("Rebalance in CBAS nodes")
-        self.analytics_cluster.cluster_util.add_node(node=self.rebalanceServers[0], services=node_services, 
+        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
                                                 rebalance=False, wait_for_rebalance_completion=False)
-        self.analytics_cluster.cluster_util.add_node(node=self.rebalanceServers[1], services=node_services, 
+        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[1], services=node_services,
                                                 rebalance=True, wait_for_rebalance_completion=True)
 
 
         self.log.info("Run KV ops in async while rebalance is in progress")
-        task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
+        tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
         
         run_query = self.input.param("run_query", False)
@@ -1501,10 +1507,10 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Log concurrent query status")
         self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
-        assert(self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, 
-                                                                             self.sample_bucket.stats.expected_item_count + self.num_items,
-                                                                             0), 
-                                                                             "No. of items in CBAS dataset do not match that in the CB bucket")
+        if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
+                                                                                  self.sample_bucket.stats.expected_item_count
+                                                                                  + self.num_items, 0):
+            self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
     
     
     def test_fail_over_cbas_node_followed_by_rebalance_out_or_add_back(self):
@@ -1527,14 +1533,14 @@ class CBASExternalLinks(CBASBaseTest):
         rebalanceServers = self.get_rebalance_servers(to_cluster)
         
         self.log.info("Add an extra node to fail-over")
-        self.analytics_cluster.cluster_util.add_node(node=self.rebalanceServers[0], services=node_services, 
+        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
                                                      rebalance=True, wait_for_rebalance_completion=True)
 
         self.log.info("Read the failure out type to be performed")
         graceful_failover = self.input.param("graceful_failover", True)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
-        task = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
+        tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
 
         run_query = self.input.param("run_query", False)
@@ -1547,7 +1553,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("fail-over the node")
         fail_task = self.analytics_cluster.async_failover(self.analytics_cluster.servers, 
-                                                          [self.rebalanceServers[0]], graceful_failover)
+                                                          [rebalanceServers[0]], graceful_failover)
         self.task_manager.get_task_result(fail_task)
 
         self.log.info("Read input param to decide on add back or rebalance out")
@@ -1565,14 +1571,14 @@ class CBASExternalLinks(CBASBaseTest):
             while datetime.datetime.now() < end_time or not success:
                 try:
                     self.sleep(10, message="Wait for fail over complete")
-                    self.analytics_cluster.rest.set_recovery_type('ns_1@' + self.rebalanceServers[0].ip, self.recovery_strategy)
+                    self.analytics_cluster.rest.set_recovery_type('ns_1@' + rebalanceServers[0].ip, self.recovery_strategy)
                     success = True
                 except Exception:
                     self.log.info("Fail over in progress. Re-try after 10 seconds.")
                     pass
             if not success:
                 self.fail("Recovery %s failed." % self.recovery_strategy)
-            self.analytics_cluster.rest.add_back_node('ns_1@' + self.rebalanceServers[0].ip)
+            self.analytics_cluster.rest.add_back_node('ns_1@' + rebalanceServers[0].ip)
             result = self.analytics_cluster.cluster_util.rebalance()
             self.assertTrue(result, "Rebalance operation failed")
 
@@ -1584,8 +1590,11 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Validate dataset count on CBAS")
         count_n1ql = to_cluster.rest.query_tool('select count(*) from `%s`' % self.cb_bucket_name)['results'][0]['$1']
-        assert(self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, count_n1ql, 0, timeout=400, analytics_timeout=400),
-               "No. of items in CBAS dataset do not match that in the CB bucket")
+        if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
+                                                                                  count_n1ql, 0,
+                                                                                  timeout=400,
+                                                                                  analytics_timeout=400):
+            self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
     
     
     """def test_scan_consistency_with_kv_mutations(self):
