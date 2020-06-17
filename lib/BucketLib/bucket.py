@@ -127,10 +127,11 @@ class Bucket(object):
     threadsNumber = "threadsNumber"
     compressionMode = "compressionMode"
     uuid = "uuid"
+    durabilityMinLevel = "durabilityMinLevel"
 
     class Type(object):
         EPHEMERAL = "ephemeral"
-        MEMBASE = "membase"
+        MEMBASE = "couchbase"
         MEMCACHED = "memcached"
 
     class ReplicaNum(object):
@@ -168,14 +169,15 @@ class Bucket(object):
             self.replica = []
             self.id = -1
 
-    class StorageBackend(object):
-        magma = "magma"
-        couchstore = "couchstore"
-
     class DurabilityLevel(object):
+        NONE = "NONE"
         MAJORITY = "MAJORITY"
         MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
         PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
+
+    class StorageBackend(object):
+        magma = "magma"
+        couchstore = "couchstore"
 
     def __init__(self, new_params=dict()):
         # Default values based on Couchbase document,
@@ -202,6 +204,9 @@ class Bucket(object):
         self.compressionMode = new_params.get(
             Bucket.compressionMode,
             Bucket.CompressionMode.PASSIVE)
+        self.durability_level = new_params.get(
+            Bucket.durabilityMinLevel,
+            Bucket.DurabilityLevel.NONE.lower())
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(

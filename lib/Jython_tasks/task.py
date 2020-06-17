@@ -2770,19 +2770,22 @@ class N1QLQueryTask(Task):
             if self.verify_results:
                 if not self.is_explain_query:
                     if not self.isSuccess:
-                        self.test_log.debug("Query {0} results leads to INCORRECT RESULT"
-                                            .format(self.query))
+                        self.test_log.debug("Incorrect query results for %s"
+                                            % self.query)
                         raise N1QLQueryException(self.msg)
                 else:
-                    check = self.n1ql_helper.verify_index_with_explain(self.actual_result, self.index_name)
+                    check = self.n1ql_helper.verify_index_with_explain(
+                        self.actual_result, self.index_name)
                     if not check:
                         actual_result = self.n1ql_helper.run_cbq_query(
                             query="select * from system:indexes",
                             server=self.server)
                         self.test_log.debug(actual_result)
-                        raise Exception(
-                            " INDEX usage in Query {0} :: NOT FOUND {1} :: as observed in result {2}"
-                                .format(self.query, self.index_name, self.actual_result))
+                        raise Exception("INDEX usage in Query %s :: "
+                                        "NOT FOUND %s :: "
+                                        "as observed in result %s"
+                                        % (self.query, self.index_name,
+                                           self.actual_result))
             self.test_log.debug(" <<<<< Done VERIFYING Query {0} >>>>>>"
                                 .format(self.query))
             return True
@@ -3112,13 +3115,12 @@ class BucketCreateTask(Task):
             self.result = True
             return
         except BucketCreationException as e:
+            self.result = False
             self.test_log.error(str(e))
-            self.set_exception(e)
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False
             self.test_log.error(str(e))
-            self.set_exception(e)
 
     def check(self):
         try:
@@ -3138,7 +3140,8 @@ class BucketCreateTask(Task):
             self.test_log.warn("Exception: {0}. vbucket map not ready after try {1}"
                                .format(e, self.retries))
             if self.retries >= 5:
-                self.set_exception(e)
+                self.result = False
+                self.test_log.error(str(e))
         self.retries = self.retris + 1
         sleep(5, "Wait for vBucket map to be ready", log_type="infra")
         self.check()

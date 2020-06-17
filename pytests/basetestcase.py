@@ -10,12 +10,14 @@ from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from global_vars import logger
+from couchbase_helper.durability_helper import BucketDurability
 from membase.api.rest_client import RestHelper, RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
+from test_summary import TestSummary
 
 
 class BaseTestCase(unittest.TestCase):
@@ -122,6 +124,8 @@ class BaseTestCase(unittest.TestCase):
         self.persist_to = self.input.param("persist_to", 0)
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
+        self.bucket_durability_level = self.input.param(
+            "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
         self.durability_level = self.input.param("durability", "").upper()
         self.sdk_client_pool = self.input.param("sdk_client_pool", None)
         # Client compression settings
@@ -134,6 +138,8 @@ class BaseTestCase(unittest.TestCase):
                 self.sdk_compression["minSize"] = compression_min_size
             if compression_min_ratio:
                 self.sdk_compression["minRatio"] = compression_min_ratio
+        self.bucket_durability_level = \
+            BucketDurability[self.bucket_durability_level]
 
         # Doc Loader Params
         self.process_concurrency = self.input.param("process_concurrency", 20)
@@ -190,6 +196,7 @@ class BaseTestCase(unittest.TestCase):
         self.nonroot = False
         self.test_failure = None
         self.crash_warning = self.input.param("crash_warning", False)
+        self.summary = TestSummary(self.log)
 
         # Populate memcached_port in case of cluster_run
         cluster_run_base_port = ClusterRun.port
@@ -231,6 +238,7 @@ class BaseTestCase(unittest.TestCase):
                     self.nonroot = True
                     shell.disconnect()
                     break
+                shell.disconnect()
 
         """ some tests need to bypass checking cb server at set up
             to run installation """
@@ -561,6 +569,7 @@ class BaseTestCase(unittest.TestCase):
 
     def log_failure(self, message):
         self.log.error(message)
+        self.summary.set_status("FAILED")
         if self.test_failure is None:
             self.test_failure = message
 
@@ -606,14 +615,12 @@ class BaseTestCase(unittest.TestCase):
             o, _ = shell.execute_command("ls -l %s | grep '.dmp' | wc -l"
                                          % core_path)
             output = o[0].split('\n')[0]
-            if int(output) == 0:
-                shell.disconnect()
-            else:
+            if int(output) != 0:
                 self.log.error("Node %s - Core dump seen: %s"
                                % (server.ip, output))
                 if TestInputSingleton.input.param("get-cbcollect-info", True):
                     servers_with_crashes.append(server.ip)
-                shell.disconnect()
+            shell.disconnect()
         if servers_with_crashes:
             self.fetch_cb_collect_logs()
         return servers_with_crashes

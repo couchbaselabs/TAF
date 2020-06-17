@@ -298,7 +298,8 @@ class BucketHelper(RestConnection):
             Bucket.storageBackend: bucket_params.get('storageBackend'),
             Bucket.conflictResolutionType:
                 bucket_params.get('conflictResolutionType'),
-            Bucket.threadsNumber: Bucket.Priority.LOW}
+            Bucket.threadsNumber: Bucket.Priority.LOW,
+            Bucket.durabilityMinLevel:  bucket_params.get('durability_level')}
 
         if init_params[Bucket.priority] == "high":
             init_params[Bucket.threadsNumber] = Bucket.Priority.HIGH
@@ -320,18 +321,20 @@ class BucketHelper(RestConnection):
         create_start_time = time.time()
 
         maxwait = 60
+        request_success = False
         for numsleep in range(maxwait):
             status, content, header = self._http_request(api, 'POST', params)
             if status:
+                request_success = True
                 break
             elif (int(header['status']) == 503 and
                     '{"_":"Bucket with given name still exists"}' in content):
-                self.sleep(1, "The bucket still exists, sleep 1 sec and retry")
+                sleep(1, "Bucket still exists, will retry..")
             else:
                 raise BucketCreationException(
                     ip=self.ip, bucket_name=bucket_params.get('name'))
 
-        if (numsleep + 1) == maxwait:
+        if not request_success:
             self.log.warning("Failed creating the bucket after {0} secs"
                              .format(maxwait))
             raise BucketCreationException(
@@ -341,7 +344,7 @@ class BucketHelper(RestConnection):
         self.log.debug("{0:.02f} seconds to create bucket {1}"
                        .format(round(create_time, 2),
                                bucket_params.get('name')))
-        return status
+        return request_success
 
     def update_memcached_settings(self, num_writer_threads="default",
                                   num_reader_threads="default"):
@@ -366,7 +369,8 @@ class BucketHelper(RestConnection):
                             saslPassword=None, replicaNumber=None,
                             proxyPort=None, replicaIndex=None,
                             flushEnabled=None, timeSynchronization=None,
-                            maxTTL=None, compressionMode=None):
+                            maxTTL=None, compressionMode=None,
+                            bucket_durability=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -392,6 +396,8 @@ class BucketHelper(RestConnection):
             params_dict["maxTTL"] = maxTTL
         if compressionMode:
             params_dict["compressionMode"] = compressionMode
+        if bucket_durability:
+            params_dict[Bucket.durabilityMinLevel] = bucket_durability
         params = urllib.urlencode(params_dict)
 
         self.log.info("Updating bucket properties for %s" % bucket)
@@ -402,8 +408,8 @@ class BucketHelper(RestConnection):
                 raise Exception("Erroneously able to set bucket settings %s for bucket on time-sync" % (params, bucket))
             return status, content
         if not status:
-            raise Exception("Unable to set bucket settings %s for bucket"
-                            % (params, bucket))
+            raise Exception("Failure while setting bucket %s param %s: %s"
+                            % (bucket, params, content))
         self.log.debug("Bucket %s updated" % bucket)
         bucket.__dict__.update(params_dict)
         return status

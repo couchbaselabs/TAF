@@ -19,6 +19,8 @@ from com.couchbase.client.core.error import \
     DocumentExistsException, \
     DocumentNotFoundException, \
     DurabilityAmbiguousException, \
+    DurabilityImpossibleException, \
+    ReplicaNotConfiguredException, \
     RequestCanceledException, \
     ServerOutOfMemoryException, \
     TemporaryFailureException, \
@@ -283,6 +285,10 @@ class SDKClient(object):
             self.select_collection(self.scope_name, self.collection_name)
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))
+
+    def get_diagnostics_report(self):
+        diagnostics_results = self.cluster.diagnostics()
+        return diagnostics_results.toString()
 
     def close(self):
         self.log.debug("Closing SDK for bucket '%s'" % self.bucket.name)
@@ -710,6 +716,15 @@ class SDKClient(object):
             self.log.warning("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
+        except DurabilityImpossibleException as ex:
+            self.log.warning("Durability impossible for key: " + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
+        except ReplicaNotConfiguredException as ex:
+            self.log.warning("ReplicaNotConfiguredException for key: "
+                             + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": content,
@@ -885,6 +900,11 @@ class SDKClient(object):
                            "cas": upsert_result.cas()})
         except DocumentExistsException as ex:
             self.log.warning("Upsert: Document already exists! => " + str(ex))
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
+        except ReplicaNotConfiguredException as ex:
+            self.log.warning("Upsert: ReplicaNotConfiguredException for %s: %s"
+                             % (key, str(ex)))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:

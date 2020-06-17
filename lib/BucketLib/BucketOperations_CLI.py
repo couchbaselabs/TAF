@@ -3,106 +3,73 @@ Created on Sep 27, 2017
 
 @author: riteshagarwal
 """
-
+from cb_tools.cb_cli import CbCli
 from remote.remote_util import RemoteMachineShellConnection
 from BucketOperations_Rest import BucketHelper as BucketHelperRest
 
 
 class BucketHelper(BucketHelperRest):
-    def __init__(self, server, username, password, cb_version=None):
+    def __init__(self, server, username="Administrator", password="password"):
+        super(BucketHelper, self).__init__(server)
         self.server = server
-        self.hostname = "%s:%s" % (server.ip, server.port)
         self.username = username
         self.password = password
-        self.cb_version = cb_version
+        self.cb_cli = None
 
-    def bucket_create(self, name, bucket_type, quota,
-                      eviction_policy, replica_count, enable_replica_indexes,
-                      priority, enable_flush, wait):
-        options = self._get_default_options()
-        if name is not None:
-            options += " --bucket " + name
-        if bucket_type is not None:
-            options += " --bucket-type " + bucket_type
-        if quota is not None:
-            options += " --bucket-ramsize " + str(quota)
-        if eviction_policy is not None:
-            options += " --bucket-eviction-policy " + eviction_policy
-        if replica_count is not None:
-            options += " --bucket-replica " + str(replica_count)
-        if enable_replica_indexes is not None:
-            options += " --enable-index-replica " + str(enable_replica_indexes)
-        if priority is not None:
-            options += " --bucket-priority " + priority
-        if enable_flush is not None:
-            options += " --enable-flush " + str(enable_flush)
-        if wait:
-            options += " --wait"
+    def __use_shell(self, cli_function):
+        def wrapper():
+            shell = RemoteMachineShellConnection(self.server)
+            self.cb_cli = CbCli(shell, self.username, self.password)
+            try:
+                output = cli_function()
+            except Exception as e:
+                shell.disconnect()
+                raise e
+            shell.disconnect()
+            return output
+        return wrapper
 
-        remote_client = RemoteMachineShellConnection(self.server)
-        stdout, stderr = remote_client.couchbase_cli("bucket-create",
-                                                     self.hostname.split(":")[0], options)
-        remote_client.disconnect()
-        return stdout, stderr, self._was_success(stdout, "Bucket created")
+    @__use_shell
+    def create_bucket(self, bucket_params={}):
+        return self.cb_cli.create_bucket(bucket_params)
 
-    def bucket_compact(self, bucket_name, data_only, views_only):
-        options = self._get_default_options()
-        if bucket_name is not None:
-            options += " --bucket " + bucket_name
-        if data_only:
-            options += " --data-only"
-        if views_only:
-            options += " --view-only"
+    @__use_shell
+    def delete_bucket(self, bucket_name="default"):
+        return self.cb_cli.delete_bucket(bucket_name)
 
-        remote_client = RemoteMachineShellConnection(self.server)
-        stdout, stderr = remote_client.couchbase_cli("bucket-compact",
-                                                     self.hostname, options)
-        remote_client.disconnect()
-        return stdout, stderr, self._was_success(stdout,
-                                                 "Bucket compaction started")
+    @__use_shell
+    def flush_bucket(self, bucket_name="default"):
+        return self.cb_cli.flush_bucket(bucket_name, force=True)
 
-    def bucket_delete(self, bucket_name):
-        options = self._get_default_options()
-        if bucket_name is not None:
-            options += " --bucket " + bucket_name
+    @__use_shell
+    def change_bucket_props(self, bucket, ramQuotaMB=None, authType=None,
+                            saslPassword=None, replicaNumber=None,
+                            proxyPort=None, replicaIndex=None,
+                            flushEnabled=None, timeSynchronization=None,
+                            maxTTL=None, compressionMode=None,
+                            bucket_durability=None):
+        bucket_params = dict()
+        bucket_params["name"] = "%s" % bucket
+        if ramQuotaMB:
+            bucket_params["ramQuotaMB"] = ramQuotaMB
+        if authType:
+            bucket_params["authType"] = authType
+        if saslPassword:
+            bucket_params["authType"] = "sasl"
+            bucket_params["saslPassword"] = saslPassword
+        if replicaNumber is not None:
+            bucket_params["replicaNumber"] = replicaNumber
+        if replicaIndex:
+            bucket_params["replicaIndex"] = replicaIndex
+        if flushEnabled:
+            bucket_params["flushEnabled"] = flushEnabled
+        if timeSynchronization:
+            bucket_params["timeSynchronization"] = timeSynchronization
+        if maxTTL is not None:
+            bucket_params["maxTTL"] = maxTTL
+        if compressionMode:
+            bucket_params["compressionMode"] = compressionMode
+        if bucket_durability:
+            bucket_params["durabilityMinLevel"] = bucket_durability
 
-        remote_client = RemoteMachineShellConnection(self.server)
-        stdout, stderr = remote_client.couchbase_cli("bucket-delete",
-                                                     self.hostname, options)
-        remote_client.disconnect()
-        return stdout, stderr, self._was_success(stdout, "Bucket deleted")
-
-    def bucket_edit(self, name, quota, eviction_policy,
-                    replica_count, priority, enable_flush):
-        options = self._get_default_options()
-        if name is not None:
-            options += " --bucket " + name
-        if quota is not None:
-            options += " --bucket-ramsize " + str(quota)
-        if eviction_policy is not None:
-            options += " --bucket-eviction-policy " + eviction_policy
-        if replica_count is not None:
-            options += " --bucket-replica " + str(replica_count)
-        if priority is not None:
-            options += " --bucket-priority " + priority
-        if enable_flush is not None:
-            options += " --enable-flush " + str(enable_flush)
-
-        remote_client = RemoteMachineShellConnection(self.server)
-        stdout, stderr = remote_client.couchbase_cli("bucket-edit",
-                                                     self.hostname, options)
-        remote_client.disconnect()
-        return stdout, stderr, self._was_success(stdout, "Bucket edited")
-
-    def bucket_flush(self, name, force):
-        options = self._get_default_options()
-        if name is not None:
-            options += " --bucket " + name
-        if force:
-            options += " --force"
-
-        remote_client = RemoteMachineShellConnection(self.server)
-        stdout, stderr = remote_client.couchbase_cli("bucket-flush",
-                                                     self.hostname, options)
-        remote_client.disconnect()
-        return stdout, stderr, self._was_success(stdout, "Bucket flushed")
+        return self.cb_cli.edit_bucket(bucket_params)

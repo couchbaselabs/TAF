@@ -43,6 +43,7 @@ from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer,\
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator, sub_doc_generator_for_edit
+from couchbase_helper.durability_helper import BucketDurability
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 
@@ -1374,6 +1375,8 @@ class BucketUtils(ScopeUtils):
         raise_exception = None
         task = self.async_create_bucket(bucket)
         self.task_manager.get_task_result(task)
+        if task.result is False:
+            raise_exception = "BucketCreateTask failed"
         if task.result and wait_for_warmup:
             self.log.debug("Wait for memcached to accept cbstats "
                            "or any other bucket request connections")
@@ -1461,7 +1464,9 @@ class BucketUtils(ScopeUtils):
                 return True
         return False
 
-    def delete_all_buckets(self, servers):
+    def delete_all_buckets(self, servers=None):
+        if servers is None:
+            servers = self.cluster_util.get_kv_nodes()
         for serverInfo in servers:
             try:
                 buckets = self.get_all_buckets(serverInfo)
@@ -1490,19 +1495,20 @@ class BucketUtils(ScopeUtils):
             replica_index=1,
             storage=Bucket.StorageBackend.couchstore,
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
-            flush_enabled=Bucket.FlushBucket.DISABLED):
+            flush_enabled=Bucket.FlushBucket.DISABLED,
+            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE]):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
-            ramQuotaMB = ram_quota
+            ram_quota_mb = ram_quota
         elif node_info.memoryQuota and int(node_info.memoryQuota) > 0:
             ram_available = node_info.memoryQuota
-            ramQuotaMB = ram_available - 1
+            ram_quota_mb = ram_available - 1
         else:
             # By default set 100Mb if unable to fetch proper value
-            ramQuotaMB = 100
+            ram_quota_mb = 100
 
         default_bucket = Bucket({Bucket.bucketType: bucket_type,
-                                 Bucket.ramQuotaMB: ramQuotaMB,
+                                 Bucket.ramQuotaMB: ram_quota_mb,
                                  Bucket.replicaNumber: replica,
                                  Bucket.compressionMode: compression_mode,
                                  Bucket.maxTTL: maxTTL,
@@ -1511,7 +1517,8 @@ class BucketUtils(ScopeUtils):
                                  Bucket.replicaIndex: replica_index,
                                  Bucket.storageBackend: storage,
                                  Bucket.evictionPolicy: eviction_policy,
-                                 Bucket.flushEnabled: flush_enabled})
+                                 Bucket.flushEnabled: flush_enabled,
+                                 Bucket.durabilityMinLevel: bucket_durability})
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])
@@ -1732,17 +1739,18 @@ class BucketUtils(ScopeUtils):
 
     def print_bucket_stats(self):
         table = TableView(self.log.info)
-        table.set_headers(["Bucket", "Type", "Replicas",
+        table.set_headers(["Bucket", "Type", "Replicas", "Durability",
                            "TTL", "Items", "RAM Quota",
                            "RAM Used", "Disk Used"])
         buckets = self.get_all_buckets()
         if len(buckets) == 0:
-            table.add_row(["No buckets", "", "", "", "", "", "", ""])
+            table.add_row(["No buckets", "", "", "", "", "", "", "", ""])
         else:
             for bucket in buckets:
                 table.add_row(
                     [bucket.name, bucket.bucketType,
                      str(bucket.replicaNumber),
+                     str(bucket.durability_level),
                      str(bucket.maxTTL),
                      str(bucket.stats.itemCount),
                      str(bucket.stats.ram),
@@ -1822,7 +1830,8 @@ class BucketUtils(ScopeUtils):
             maxttl=0,
             storage={Bucket.StorageBackend.couchstore: 3,
                      Bucket.StorageBackend.magma: 0},
-            compression_mode=Bucket.CompressionMode.ACTIVE):
+            compression_mode=Bucket.CompressionMode.ACTIVE,
+            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE]):
         success = True
         rest = RestConnection(server)
         info = rest.get_nodes_self()
@@ -1843,14 +1852,16 @@ class BucketUtils(ScopeUtils):
                 count = 0
                 while count < storage[key]:
                     name = "{0}-{1}".format(key, count)
-                    bucket = Bucket({Bucket.name: name,
-                                     Bucket.ramQuotaMB: bucket_ram,
-                                     Bucket.replicaNumber: replica,
-                                     Bucket.bucketType: bucket_type,
-                                     Bucket.evictionPolicy: eviction_policy,
-                                     Bucket.maxTTL: maxttl,
-                                     Bucket.storageBackend: key,
-                                     Bucket.compressionMode: compression_mode})
+                    bucket = Bucket({
+                        Bucket.name: name,
+                        Bucket.ramQuotaMB: bucket_ram,
+                        Bucket.replicaNumber: replica,
+                        Bucket.bucketType: bucket_type,
+                        Bucket.evictionPolicy: eviction_policy,
+                        Bucket.maxTTL: maxttl,
+                        Bucket.storageBackend: key,
+                        Bucket.compressionMode: compression_mode,
+                        Bucket.durabilityMinLevel: bucket_durability})
                     tasks[bucket] = self.async_create_bucket(bucket)
                     count += 1
 
@@ -1902,20 +1913,30 @@ class BucketUtils(ScopeUtils):
             status[bucket] = self.flush_bucket(kv_node, bucket)
         return status
 
+    def update_bucket_property(self, bucket, ram_quota_mb=None, auth_type=None,
+                               sasl_password=None, replica_number=None,
+                               replica_index=None, flush_enabled=None,
+                               time_synchronization=None, max_ttl=None,
+                               compression_mode=None, bucket_durability=None):
+        BucketHelper(self.cluster.master).change_bucket_props(
+            bucket, ramQuotaMB=ram_quota_mb, authType=auth_type,
+            saslPassword=sasl_password, replicaNumber=replica_number,
+            replicaIndex=replica_index, flushEnabled=flush_enabled,
+            timeSynchronization=time_synchronization, maxTTL=max_ttl,
+            compressionMode=compression_mode,
+            bucket_durability=bucket_durability)
+
     def update_all_bucket_maxTTL(self, maxttl=0):
         for bucket in self.buckets:
             self.log.debug("Updating maxTTL for bucket %s to %ss"
                            % (bucket.name, maxttl))
-            BucketHelper(self.cluster.master).change_bucket_props(
-                bucket, maxTTL=maxttl)
+            self.update_bucket_property(bucket, max_ttl=maxttl)
 
     def update_all_bucket_replicas(self, replicas=1):
-        helper = BucketHelper(self.cluster.master)
         for bucket in self.buckets:
             self.log.debug("Updating replica for bucket %s to %ss"
                            % (bucket.name, replicas))
-            helper.change_bucket_props(
-                bucket, replicaNumber=replicas)
+            self.update_bucket_property(bucket, replica_number=replicas)
 
     def is_warmup_complete(self, buckets, retry_count=5):
         buckets_warmed_up = True
@@ -3545,6 +3566,9 @@ class BucketUtils(ScopeUtils):
         bucket.saslPassword = parsed["saslPassword"]
         bucket.nodes = list()
         bucket.maxTTL = parsed["maxTTL"]
+        bucket.durability_level = "none"
+        if Bucket.durabilityMinLevel in parsed:
+            bucket.durability_level = parsed[Bucket.durabilityMinLevel]
         if 'vBucketServerMap' in parsed:
             vBucketServerMap = parsed['vBucketServerMap']
             serverList = vBucketServerMap['serverList']
