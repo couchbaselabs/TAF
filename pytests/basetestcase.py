@@ -594,7 +594,7 @@ class BaseTestCase(unittest.TestCase):
         self.sdk_client_pool = SDKClientPool()
         DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
-    def check_coredump_exist(self, servers, force_collect=False)):
+    def check_coredump_exist(self, servers, force_collect=False):
         """
         Checks coredump on the given nodes/node
         return: List of servers with crashes or a empty list if no core exists
