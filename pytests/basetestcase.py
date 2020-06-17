@@ -181,6 +181,10 @@ class BaseTestCase(unittest.TestCase):
         self.log = logger.get("test")
         self.infra_log = logger.get("infra")
 
+        # variable for log collection using cbCollect
+        self.get_cbcollect_info = TestInputSingleton.input.param("get-cbcollect-info",
+                                                                 False)
+
         # Configure loggers
         self.log.setLevel(self.log_level)
         self.infra_log.setLevel(self.infra_log_level)
@@ -360,7 +364,8 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager.abort_all_tasks()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
-        server_with_crashes = self.check_coredump_exist(self.servers)
+        server_with_crashes = self.check_coredump_exist(self.servers,
+                                                        force_collect=True)
         self.tearDownEverything()
         if not self.crash_warning:
             self.assertEqual(len(server_with_crashes), 0,
@@ -394,8 +399,7 @@ class BaseTestCase(unittest.TestCase):
                 else:
                     if test_failed:
                         # Collect logs because we have not shut things down
-                        if TestInputSingleton.input.param("get-cbcollect-info",
-                                                          False):
+                        if self.get_cbcollect_info:
                             self.fetch_cb_collect_logs()
 
                         get_trace = \
@@ -590,7 +594,7 @@ class BaseTestCase(unittest.TestCase):
         self.sdk_client_pool = SDKClientPool()
         DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
-    def check_coredump_exist(self, servers):
+    def check_coredump_exist(self, servers, force_collect=False)):
         """
         Checks coredump on the given nodes/node
         return: List of servers with crashes or a empty list if no core exists
@@ -599,10 +603,12 @@ class BaseTestCase(unittest.TestCase):
 
         self.log.info("Initializing core dump check on all the nodes")
         servers_with_crashes = list()
+
         for server in servers:
             shell = RemoteMachineShellConnection(server)
             shell.extract_remote_info()
             core_path = None
+
             if shell.info.type.lower() == "linux":
                 rest = RestConnection(server)
                 core_path = str(rest.get_data_path()).split("data")[0] \
@@ -612,15 +618,19 @@ class BaseTestCase(unittest.TestCase):
 
             elif shell.info.type.lower() == "windows":
                 core_path = 'c://CrashDumps'
+
             o, _ = shell.execute_command("ls -l %s | grep '.dmp' | wc -l"
                                          % core_path)
             output = o[0].split('\n')[0]
+
             if int(output) != 0:
                 self.log.error("Node %s - Core dump seen: %s"
                                % (server.ip, output))
-                if TestInputSingleton.input.param("get-cbcollect-info", True):
-                    servers_with_crashes.append(server.ip)
+                servers_with_crashes.append(server.ip)
             shell.disconnect()
-        if servers_with_crashes:
+
+        if servers_with_crashes and force_collect:
             self.fetch_cb_collect_logs()
+            self.get_cbcollect_info = False
+
         return servers_with_crashes
