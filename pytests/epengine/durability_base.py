@@ -196,7 +196,6 @@ class BucketDurabilityBase(BaseTestCase):
         verification_dict["ops_create"] = 0
         verification_dict["ops_update"] = 0
         verification_dict["ops_delete"] = 0
-        verification_dict["ops_get"] = 0
         verification_dict["rollback_item_count"] = 0
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["sync_write_committed_count"] = 0

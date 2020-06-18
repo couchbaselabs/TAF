@@ -19,6 +19,7 @@ from com.couchbase.client.core.error import \
     DocumentNotFoundException, \
     DurabilityAmbiguousException, \
     DurabilityImpossibleException, \
+    FeatureNotAvailableException, \
     ReplicaNotConfiguredException, \
     RequestCanceledException, \
     ServerOutOfMemoryException, \
@@ -488,6 +489,9 @@ class SDKClient(object):
             self.log.warning("OOM exception: %s" % ex)
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
+        except FeatureNotAvailableException as ex:
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
@@ -537,6 +541,9 @@ class SDKClient(object):
             self.log.warning("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
+        except FeatureNotAvailableException as ex:
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
@@ -568,6 +575,9 @@ class SDKClient(object):
             result["error"] = str(e)
         except (RequestCanceledException, TimeoutException) as ex:
             self.log.warning("Request cancelled/timed-out: " + str(ex))
+            result.update({"key": key, "value": None,
+                           "error": str(ex), "status": False})
+        except FeatureNotAvailableException as ex:
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except Exception as ex:
@@ -659,6 +669,9 @@ class SDKClient(object):
                            "error": str(ex), "status": False})
         except DurabilityAmbiguousException as ex:
             self.log.warning("Durability Ambiguous for key: %s" % key)
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
+        except FeatureNotAvailableException as ex:
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except Exception as ex:

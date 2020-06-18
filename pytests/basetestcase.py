@@ -211,6 +211,7 @@ class BaseTestCase(unittest.TestCase):
 
         try:
             if self.skip_setup_cleanup:
+                self.bucket_util.get_all_buckets()
                 return
             if not self.skip_init_check_cbserver:
                 for cluster in self.__cb_clusters:
