@@ -548,9 +548,14 @@ class volume(BaseTestCase):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
 
+            exp = 0
+            if doc_type == "expiry":
+                exp = self.maxttl
+                doc_type = "update"
+
             for collection in self.bucket.scopes[self.scope_name].collections.keys():
                 tasks_info.update(self.doc_loader(doc_type, gen_docs,
-                                                  exp=5,
+                                                  exp=exp,
                                                   scope=self.scope_name,
                                                   collection=collection))
             self.wait_for_doc_load_completion(tasks_info, wait_for_stats=False)
@@ -1049,7 +1054,7 @@ class volume(BaseTestCase):
                 [self.cluster.master] + nodes_init)
 
         #######################################################################
-        self.PrintStep("Step 2: Create required buckets and 10 collections.")
+        self.PrintStep("Step 2: Create required buckets and collections.")
         self.bucket = self.create_required_buckets()
         props = "magma"
         update_bucket_props = False
@@ -1083,12 +1088,13 @@ class volume(BaseTestCase):
                                                {"name": collection_name})
             self.sleep(2)
         #######################################################################
-        self.PrintStep("Step 3: Create and Delete everything. checkout fragmentation")
         '''
         creates: 0 - 10M
         deletes: 0 - 10M
         Final Docs = 0
         '''
+        self.PrintStep("Step 3: Create %s items and Delete everything. checkout fragmentation"%
+                       str(self.num_items*self.create_perc/100))
         self.create_perc = 100
         self.delete_perc = 100
 
@@ -1103,13 +1109,14 @@ class volume(BaseTestCase):
         fragmentation at this time: 0
         '''
         #######################################################################
-        self.PrintStep("Step 4: Load 100M/100GB items, sequential keys")
         '''
         creates: 0 - 10M
         creates: 0 - 10M
         Final Docs = 20M (0-20M)
         '''
         self.create_perc = 100
+        self.PrintStep("Step 4: Load %s items, sequential keys"%
+                       str(self.num_items*self.create_perc/100))
         _iter = 0
         while _iter < 2:
             self.generate_docs(doc_ops="create")
@@ -1119,16 +1126,21 @@ class volume(BaseTestCase):
         fragmentation at this time: 0, total data: 2X, stale: 0
         '''
         #######################################################################
-        self.PrintStep("Step 5: Update the first set of 10% items 10 times")
         '''
         update: 0 - 1M * 10
         Final Docs = 20M (0-20M)
         '''
         self.update_perc = 10
+        self.PrintStep("Step 5: Update the first set of %s percent (%s) items 10 times"%
+                       (str(self.update_perc),str(self.num_items*self.update_perc/100)))
+
+
         _iter = 0
         while _iter < 10:
+            self.PrintStep("Step 5.%s: Update the first set of %s percent (%s) items 10 times"%
+                           (str(_iter), str(self.update_perc), str(self.num_items*self.update_perc/100)))
             self.generate_docs(doc_ops="update")
-            self.perform_load(crash=False, validate_data=True)
+            self.perform_load(crash=True, validate_data=True)
             _iter += 1
         if self.end_step == 5:
             exit(5)
@@ -1136,14 +1148,18 @@ class volume(BaseTestCase):
         fragmentation at this time: 50, total data: 2X, stale: X
         '''
         #######################################################################
-        self.PrintStep("Step 6: Reverse Update last set of 10% items 10 times")
         '''
         Reverse Update: 10M - 9M
         Final Docs = 20M (0-20M)
         '''
         _iter = 0
         self.update_perc = 10
+        self.PrintStep("Step 6: Reverse Update last set of %s percent (%s-%s) items 10 times"%
+                       (str(self.update_perc), str(self.num_items-1), str(self.num_items+1-self.num_items*self.update_perc/100)))
+
         while _iter < 10:
+            self.PrintStep("Step 6.%s: Reverse Update last set of %s percent (%s-%s) items 10 times"%
+                           (str(_iter), str(self.update_perc), str(self.num_items+1), str(self.num_items+1-self.num_items*self.update_perc/100)))
             self.generate_docs(doc_ops="update",
                                update_start=-self.num_items+1,
                                update_end=self.num_items *
@@ -1156,7 +1172,6 @@ class volume(BaseTestCase):
         fragmentation: 50, total data: 2X, stale: X
         '''
         #######################################################################
-        self.PrintStep("Step 7: Create random keys")
         '''
         Create Random: 0 - 10M
         Final Docs = 30M (0-20M, 10M Random)
@@ -1164,6 +1179,8 @@ class volume(BaseTestCase):
         temp = self.key_prefix
         self.key_prefix = "random_keys"
         self.create_perc = 100
+        self.PrintStep("Step 7: Create %s random keys"%
+                       str(self.num_items*self.create_perc/100))
 
         self.generate_docs(doc_ops="create")
         self.perform_load(crash=False, validate_data=True)
@@ -1173,7 +1190,6 @@ class volume(BaseTestCase):
         fragmentation: 50, total data: 3X, stale: X
         '''
         #######################################################################
-        self.PrintStep("Step 8: Update all random 10 times")
         '''
         Update Random: 0 - 10M
         Final Docs = 30M (0-20M, 10M Random)
@@ -1182,7 +1198,11 @@ class volume(BaseTestCase):
         self.update_perc = 100
         self.key_prefix = "random_keys"
 
+        self.PrintStep("Step 8: Update all %s random items 10 times"%
+                       str(self.num_items*self.update_perc/100))
         while _iter < 10:
+            self.PrintStep("Step 8.%s: Update all %s random items 10 times"%
+                           (str(_iter), str(self.num_items*self.update_perc/100)))
             self.generate_docs(doc_ops="update")
             self.perform_load(crash=False, validate_data=True)
             _iter += 1
@@ -1194,7 +1214,6 @@ class volume(BaseTestCase):
         fragmentation: 50, total data: 3X, stale: 1.5X
         '''
         #######################################################################
-        self.PrintStep("Step 9: Delete/Re-Create all random items")
         '''
         Delete Random: 0 - 10M
         Create Random: 0 - 10M
@@ -1202,6 +1221,9 @@ class volume(BaseTestCase):
         '''
         self.key_prefix = "random_keys"
         self.delete_perc = 100
+
+        self.PrintStep("Step 9: Delete/Re-Create all %s random items"%
+                       str(self.num_items*self.delete_perc/100))
 
         self.generate_docs(doc_ops="delete")
         self.perform_load(crash=False, validate_data=True)
@@ -1216,15 +1238,17 @@ class volume(BaseTestCase):
         if self.end_step == 9:
             exit(9)
         #######################################################################
-        self.PrintStep("Step 10: Update 10% items 10 times and \
-        crash during recovery")
         '''
         Update: 0 - 1M
         Final Docs = 30M (0-20M, 10M Random)
         '''
         self.update_perc = 10
+        self.PrintStep("Step 10: Update %s percent(%s) items 10 times and crash during recovery"%
+                       (str(self.update_perc), str(self.num_items*self.update_perc/100)))
         _iter = 0
         while _iter < 10:
+            self.PrintStep("Step 10.%s: Update %s percent(%s) items 10 times and crash during recovery"%
+                           (str(_iter), str(self.update_perc), str(self.num_items*self.update_perc/100)))
             self.generate_docs(doc_ops="update")
             self.perform_load(crash=False, validate_data=True)
             _iter += 1
