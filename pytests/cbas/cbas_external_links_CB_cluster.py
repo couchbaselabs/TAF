@@ -1289,7 +1289,7 @@ class CBASExternalLinks(CBASBaseTest):
                 rebalanceServers.append(server)
         return rebalanceServers
 
-    def test_analytics_cluster_while_remote_cluster_swap_rebalacing(self):
+    def test_analytics_cluster_while_remote_cluster_swap_rebalancing(self):
         '''
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
         2, Post initial setup - local cluster - 1 node with cbas, remote cluster - 1 node with KV and query running
@@ -1350,7 +1350,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Number of items in dataset do not match number of items in bucket")
 
 
-    def test_analytics_cluster_swap_rebalacing(self):
+    def test_analytics_cluster_swap_rebalancing(self):
         '''
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
         2, Post initial setup - local cluster - 1 node with cbas, remote cluster - 1 node with KV and query running
@@ -1407,7 +1407,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Number of items in dataset do not match number of items in bucket")
 
 
-    def test_analytics_cluster_when_rebalacing_in_cbas_node(self):
+    def test_analytics_cluster_when_rebalancing_in_cbas_node(self):
         '''
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
         2, Post initial setup - local cluster - 1 node with cbas, remote cluster - 1 node with KV and query running
@@ -1452,7 +1452,7 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   + self.num_items, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
 
-    def test_analytics_cluster_when_rebalacing_out_cbas_node(self):
+    def test_analytics_cluster_when_rebalancing_out_cbas_node(self):
         '''
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
         2, Post initial setup - local cluster - 1 node with cbas, remote cluster - 1 node with KV and query running
