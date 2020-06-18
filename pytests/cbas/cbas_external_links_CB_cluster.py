@@ -82,6 +82,7 @@ class CBASExternalLinks(CBASBaseTest):
         for cluster in self.to_clusters:
             cluster.cluster_util.stop_firewall_on_node(cluster.master)
 
+        self.reset_cluster()
         super(CBASExternalLinks, self).tearDown()
 
     def setup_certs(self):

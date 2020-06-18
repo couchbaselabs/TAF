@@ -10,6 +10,7 @@ from cluster_utils.cluster_ready_functions import ClusterUtils
 from bucket_utils.bucket_ready_functions import BucketUtils
 
 import random
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class CBASBaseTest(BaseTestCase):
@@ -598,3 +599,26 @@ class CBASBaseTest(BaseTestCase):
         else:
             self.log.error("Dataset map needs to be created first")
             return False
+
+    def reset_cluster(self):
+        try:
+            for node in self.servers:
+                shell = RemoteMachineShellConnection(node)
+                # Start node
+                rest = RestConnection(node)
+                data_path = rest.get_data_path()
+                # Stop node
+                shell.stop_server()
+                # Delete Path
+                shell.cleanup_data_config(data_path)
+                shell.start_server()
+
+                # If Ipv6 update dist_cfg file post server restart
+                # to change distribution to IPv6
+                if '.com' in node.ip or ':' in node.ip:
+                    self.log.info("Updating dist_cfg for IPv6 Machines")
+                    shell.update_dist_type()
+                shell.disconnect()
+            self.sleep(10)
+        except Exception, ex:
+            self.log.info(ex)
