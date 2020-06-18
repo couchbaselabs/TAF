@@ -1340,8 +1340,9 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
 
-        self.log.info("Log concurrent query status")
-        self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
+        if run_query:
+            self.log.info("Log concurrent query status")
+            self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
                                                                                   self.sample_bucket.stats.expected_item_count +
@@ -1396,8 +1397,9 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
 
-        self.log.info("Log concurrent query status")
-        self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
+        if run_query:
+            self.log.info("Log concurrent query status")
+            self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
                                                                                   self.sample_bucket.stats.expected_item_count
@@ -1441,8 +1443,9 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
 
-        self.log.info("Log concurrent query status")
-        self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
+        if run_query:
+            self.log.info("Log concurrent query status")
+            self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
                                                                                   self.sample_bucket.stats.expected_item_count
@@ -1498,8 +1501,9 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
 
-        self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
+        if run_query:
+            self.log.info("Log concurrent query status")
+            self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
                                                                                   self.sample_bucket.stats.expected_item_count
@@ -1578,8 +1582,9 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
 
-        self.log.info("Log concurrent query status")
-        self.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
+        if run_query:
+            self.log.info("Log concurrent query status")
+            self.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         self.log.info("Validate dataset count on CBAS")
         count_n1ql = to_cluster.rest.query_tool('select count(*) from `%s`' % self.cb_bucket_name)['results'][0]['$1']
