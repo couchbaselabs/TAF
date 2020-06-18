@@ -238,7 +238,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                         sub_doc_key, sub_doc_val, result))
                 else:
                     verification_dict["ops_update"] += 1
-                    verification_dict["ops_get"] += 1
                     verification_dict["sync_write_committed_count"] += 1
 
                 success, fail = client.crud("subdoc_read", key, sub_doc_key)
@@ -246,7 +245,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     self.log_failure("%s failed. Expected: %s, Actual: %s"
                                      % (sub_doc_op, sub_doc_val,
                                         success[key]["value"].get(0)))
-                verification_dict["ops_get"] += 1
                 self.summary.add_step("%s for key %s" % (sub_doc_op, key))
 
             # Subdoc_delete and verify
@@ -257,7 +255,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                  % (sub_doc_op, key,
                                     sub_doc_key, sub_doc_val, result))
             verification_dict["ops_update"] += 1
-            verification_dict["ops_get"] += 1
             verification_dict["sync_write_committed_count"] += 1
 
             _, fail = client.crud(sub_doc_op, key, sub_doc_key)
@@ -265,7 +262,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     not in str(fail[key]["error"]):
                 self.log_failure("Invalid error after sub_doc_delete")
 
-            verification_dict["ops_get"] += 1
             self.summary.add_step("%s for key %s" % (sub_doc_op, key))
 
             # Validate doc_count
@@ -863,9 +859,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 if op_type != "read":
                     if op_type != "replace":
                         dict_key = "ops_%s" % op_type
-                        # MB-39572
-                        if op_type == "delete":
-                            verification_dict["ops_get"] += 1
                     else:
                         dict_key = "ops_update"
 
@@ -875,7 +868,6 @@ class BucketDurabilityTests(BucketDurabilityBase):
                         self.log_failure("CAS didn't get updated: %s"
                                          % result["cas"])
                 elif op_type == "read":
-                    verification_dict["ops_get"] += 1
                     if result["cas"] != old_cas:
                         self.log_failure("CAS updated for read operation: %s"
                                          % result["cas"])

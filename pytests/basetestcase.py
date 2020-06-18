@@ -182,8 +182,8 @@ class BaseTestCase(unittest.TestCase):
         self.infra_log = logger.get("infra")
 
         # variable for log collection using cbCollect
-        self.get_cbcollect_info = TestInputSingleton.input.param("get-cbcollect-info",
-                                                                 False)
+        self.get_cbcollect_info = TestInputSingleton.input.param(
+            "get-cbcollect-info", False)
 
         # Configure loggers
         self.log.setLevel(self.log_level)
@@ -251,7 +251,7 @@ class BaseTestCase(unittest.TestCase):
 
         try:
             if self.skip_setup_cleanup:
-                self.bucket_util.buckets = self.bucket_util.get_all_buckets()
+                self.bucket_util.get_all_buckets()
                 return
             if not self.skip_init_check_cbserver:
                 for cluster in self.__cb_clusters:
@@ -406,18 +406,15 @@ class BaseTestCase(unittest.TestCase):
                             TestInputSingleton.input.param("get_trace", None)
                         if get_trace:
                             for server in cluster.servers:
-                                try:
-                                    shell = \
-                                        RemoteMachineShellConnection(server)
-                                    output, _ = shell.execute_command(
-                                        "ps -aef|grep %s" % get_trace)
-                                    output = shell.execute_command(
-                                        "pstack %s"
-                                        % output[0].split()[1].strip())
-                                    self.infra_log.debug(output[0])
-                                    shell.disconnect()
-                                except:
-                                    pass
+                                shell = \
+                                    RemoteMachineShellConnection(server)
+                                output, _ = shell.execute_command(
+                                    "ps -aef|grep %s" % get_trace)
+                                output = shell.execute_command(
+                                    "pstack %s"
+                                    % output[0].split()[1].strip())
+                                self.infra_log.debug(output[0])
+                                shell.disconnect()
                         else:
                             self.log.critical("Skipping get_trace !!")
 
@@ -436,7 +433,7 @@ class BaseTestCase(unittest.TestCase):
                 self.case_number += 1000
             finally:
                 if not self.input.param("skip_cleanup", False):
-                    cluster_util.reset_cluster(crash_warning=self.crash_warning)
+                    cluster_util.reset_cluster(self.crash_warning)
                 # stop all existing task manager threads
                 if self.cleanup:
                     self.cleanup = False
@@ -463,16 +460,17 @@ class BaseTestCase(unittest.TestCase):
             % (class_name, status, self.case_number, self._testMethodName))
 
     def _initialize_nodes(self, task, cluster, disabled_consistent_view=None,
-                          rebalanceIndexWaitingDisabled=None,
-                          rebalanceIndexPausingDisabled=None,
-                          maxParallelIndexers=None,
-                          maxParallelReplicaIndexers=None,
+                          rebalance_index_waiting_disabled=None,
+                          rebalance_index_pausing_disabled=None,
+                          max_parallel_indexers=None,
+                          max_parallel_replica_indexers=None,
                           port=None, quota_percent=None, services=None):
         quota = 0
         init_tasks = []
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
-            for path in set([_f for _f in [server.data_path, server.index_path] if _f]):
+            for path in set([_f for _f in [server.data_path, server.index_path]
+                             if _f]):
                 shell = RemoteMachineShellConnection(server)
                 for cmd in ("rm -rf {0}/*".format(path),
                             "chown -R couchbase:couchbase {0}".format(path)):
@@ -488,10 +486,10 @@ class BaseTestCase(unittest.TestCase):
             init_tasks.append(
                 task.async_init_node(
                     server, disabled_consistent_view,
-                    rebalanceIndexWaitingDisabled,
-                    rebalanceIndexPausingDisabled,
-                    maxParallelIndexers,
-                    maxParallelReplicaIndexers, init_port,
+                    rebalance_index_waiting_disabled,
+                    rebalance_index_pausing_disabled,
+                    max_parallel_indexers,
+                    max_parallel_replica_indexers, init_port,
                     quota_percent, services=assigned_services,
                     index_quota_percent=self.index_quota_percent,
                     gsi_type=self.gsi_type))
