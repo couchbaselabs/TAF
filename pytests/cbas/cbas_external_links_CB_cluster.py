@@ -1341,7 +1341,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.task_manager.get_task_result(tasks)
 
         self.log.info("Log concurrent query status")
-        self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.cluster.master, handles)
+        self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
                                                                                   self.sample_bucket.stats.expected_item_count +
