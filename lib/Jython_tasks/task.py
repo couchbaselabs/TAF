@@ -385,8 +385,9 @@ class GenericLoadingTask(Task):
                  suppress_error_table=False, sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection):
-        super(GenericLoadingTask, self).__init__("Loadgen_task_%s_%s"
-                                                 % (bucket, time.time()))
+        super(GenericLoadingTask, self).__init__("Loadgen_task_%s_%s_%s_%s"
+                                                 % (bucket, scope, collection,
+                                                    time.time()))
         self.batch_size = batch_size
         self.pause = pause_secs
         self.timeout = timeout_secs
@@ -442,10 +443,10 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
             if fail:
-                key_val = dict(key_val)
+                failed_item_table = None
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
-                    failed_item_table.set_headers(["Create doc_Id",
+                    failed_item_table.set_headers(["Create Key",
                                                    "Exception"])
                 if not skip_read_on_error:
                     self.log.debug(
@@ -465,7 +466,10 @@ class GenericLoadingTask(Task):
                     for key, value in fail.items():
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
-                    failed_item_table.display("Failed items:")
+                    failed_item_table.display("Keys failed in %s:%s:%s"
+                                              % (self.bucket.name,
+                                                 self.scope,
+                                                 self.collection))
             return success, copy.deepcopy(fail)
         except Exception as error:
             self.test_log.error(error)
@@ -488,7 +492,7 @@ class GenericLoadingTask(Task):
                 key_val = dict(key_val)
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
-                    failed_item_table.set_headers(["Update doc_Id",
+                    failed_item_table.set_headers(["Update Key",
                                                    "Exception"])
                 if not skip_read_on_error:
                     self.log.debug(
@@ -509,7 +513,10 @@ class GenericLoadingTask(Task):
                     for key, value in fail.items():
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
-                    failed_item_table.display("Failed items after reads:")
+                    failed_item_table.display("Keys failed in %s:%s:%s"
+                                              % (self.bucket.name,
+                                                 self.scope,
+                                                 self.collection))
             return success, copy.deepcopy(fail)
         except Exception as error:
             self.test_log.error(error)
@@ -529,10 +536,9 @@ class GenericLoadingTask(Task):
                 timeout=timeout, time_unit=time_unit,
                 doc_type=doc_type, durability=durability)
             if fail:
-                key_val = dict(key_val)
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
-                    failed_item_table.set_headers(["Replace doc_Id",
+                    failed_item_table.set_headers(["Replace Key",
                                                    "Exception"])
                 if not skip_read_on_error:
                     self.log.debug(
@@ -552,7 +558,10 @@ class GenericLoadingTask(Task):
                     for key, value in fail.items():
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
-                    failed_item_table.display("Failed items after reads:")
+                    failed_item_table.display("Keys failed in %s:%s:%s"
+                                              % (self.bucket.name,
+                                                 self.scope,
+                                                 self.collection))
             return success, copy.deepcopy(fail)
         except Exception as error:
             self.test_log.error(error)
@@ -570,10 +579,13 @@ class GenericLoadingTask(Task):
                                                  durability=durability)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
-            failed_item_view.set_headers(["Delete doc_Id", "Exception"])
+            failed_item_view.set_headers(["Delete Key", "Exception"])
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
-            failed_item_view.display("Delete failed details")
+            failed_item_view.display("Keys failed in %s:%s:%s"
+                                     % (self.bucket.name,
+                                        self.scope,
+                                        self.collection))
         return success, fail
 
     def batch_touch(self, key_val, exp=0, shared_client=None,
@@ -585,10 +597,13 @@ class GenericLoadingTask(Task):
                                                 time_unit=timeunit)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
-            failed_item_view.set_headers(["Touch doc_Id", "Exception"])
+            failed_item_view.set_headers(["Touch Key", "Exception"])
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
-            failed_item_view.display("Touch failed details")
+            failed_item_view.display("Keys failed in %s:%s:%s"
+                                     % (self.bucket.name,
+                                        self.scope,
+                                        self.collection))
         return success, fail
 
     def batch_read(self, keys, shared_client=None):
@@ -732,15 +747,12 @@ class LoadDocumentsTask(GenericLoadingTask):
             retries=retries, suppress_error_table=suppress_error_table,
             sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection)
-        self.thread_name = "LoadDocumentsTask-%s_%s_%s_%s_%s_%s_%s_%s_%s" \
+        self.thread_name = "LoadDocs_%s_%s_%s_%s_%s_%s" \
             % (task_identifier,
-               bucket.name,
-               scope,
-               collection,
-               generator._doc_gen.start,
-               generator._doc_gen.end,
                op_type,
                durability,
+               generator._doc_gen.start,
+               generator._doc_gen.end,
                time.time())
         self.generator = generator
         self.op_type = op_type
@@ -1393,7 +1405,7 @@ class LoadDocumentsGeneratorsTask(Task):
                  collection=CbServer.default_collection,
                  monitor_stats=["doc_ops"]):
         super(LoadDocumentsGeneratorsTask, self).__init__(
-            "DocumentsLoadGenTask_%s_%s_%s_%s_%s"
+            "LoadDocsGen_%s_%s_%s_%s_%s"
             % (bucket, scope, collection, task_identifier, time.time()))
         self.cluster = cluster
         self.exp = exp
@@ -1729,9 +1741,12 @@ class ContinuousDocUpdateTask(Task):
                  durability="", time_unit="seconds",
                  only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=5, compression=None,
-                 process_concurrency=4, print_ops_rate=True):
+                 process_concurrency=4,
+                 scope=CbServer.default_scope,
+                 collection=CbServer.default_collection):
         super(ContinuousDocUpdateTask, self).__init__(
-            "ContinuousDocUpdateTask_%s_%s" % (bucket.name, time.time()))
+            "ContDocUpdate_%s_%s_%s_%s"
+            % (bucket.name, scope, collection, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -1749,7 +1764,7 @@ class ContinuousDocUpdateTask(Task):
         self.batch_size = batch_size
         self.generator = generator
         self.buckets = None
-#         self.success = dict()
+        # self.success = dict()
         self.fail = dict()
 
         self.key = self.generator.name
@@ -1763,6 +1778,8 @@ class ContinuousDocUpdateTask(Task):
             self.buckets = bucket
         else:
             self.bucket = bucket
+        self.scope = scope
+        self.collection = collection
 
     def end_task(self):
         self.__stop_updates = True
@@ -1788,7 +1805,9 @@ class ContinuousDocUpdateTask(Task):
                     replicate_to=self.replicate_to,
                     durability=self.durability,
                     batch_size=self.batch_size,
-                    timeout_secs=self.timeout_secs)
+                    timeout_secs=self.timeout_secs,
+                    scope=self.scope,
+                    collection=self.collection)
                 self.task_manager.add_new_task(task)
                 doc_tasks.append(task)
                 self.fail.update(task.fail)
@@ -1826,7 +1845,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
             "create", exp,
-            task_identifier="DGM_%s_%s" % (bucket.name, time.time()))
+            task_identifier="DGM_%s_%s_%s_%s" % (bucket.name, scope,
+                                                 collection, time.time()))
 
         self.cluster = cluster
         self.exp = exp
@@ -1944,7 +1964,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
         self.exp = exp
         self.flag = flag
         self.failed_item_table = TableView(self.test_log.info)
-        self.failed_item_table.set_headers(["READ doc_Id", "Exception"])
+        self.failed_item_table.set_headers(["READ Key", "Exception"])
         self.missing_keys = []
         self.wrong_values = []
         self.failed_reads = dict()
@@ -1978,7 +1998,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
         return
 
         op_failed_tbl = TableView(self.log.error)
-        op_failed_tbl.set_headers(["Update failed key",
+        op_failed_tbl.set_headers(["Update Key",
                                    "Value"])
         for key, value in task.success.items():
             doc_value = value["value"]
@@ -1995,12 +2015,15 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     != ["get", "up"]:
                 op_failed_tbl.add_row(failed_row)
 
-        op_failed_tbl.display("Update failed for keys:")
+        op_failed_tbl.display("Keys failed in %s:%s:%s"
+                              % (self.bucket.name,
+                                 self.scope,
+                                 self.collection))
         if len(op_failed_tbl.rows) != 0:
             self.fail("Update failed for few keys")
 
         op_failed_tbl = TableView(self.log.error)
-        op_failed_tbl.set_headers(["Delete failed key",
+        op_failed_tbl.set_headers(["Delete Key",
                                    "Value"])
 
         for key, value in task.success.items():
@@ -2015,7 +2038,10 @@ class ValidateDocumentsTask(GenericLoadingTask):
         for key, value in task.fail.items():
             op_failed_tbl.add_row([key, value["value"]])
 
-        op_failed_tbl.display("Delete failed for keys:")
+        op_failed_tbl.display("Keys failed in %s:%s:%s"
+                              % (self.bucket.name,
+                                 self.scope,
+                                 self.collection))
         if len(op_failed_tbl.rows) != 0:
             self.fail("Delete failed for few keys")
 
@@ -2189,7 +2215,10 @@ class DocumentsValidatorTask(Task):
             self.task_manager.add_new_task(task)
         for task in tasks:
             self.task_manager.get_task_result(task)
-            task.failed_item_table.display("During DocumentsValidatorTask read failed for items:")
+            task.failed_item_table.display("DocValidator failure for %s:%s:%s"
+                                           % (self.bucket.name,
+                                              self.scope,
+                                              self.collection))
             if task.missing_keys:
                 self.set_exception("{} keys were missing. Missing keys: "
                                    "{}".format(task.missing_keys.__len__(),
@@ -3414,12 +3443,14 @@ class MutateDocsFromSpecTask(Task):
                     self.batch_size)
                 generators.append(batch_gen)
             for doc_gen in generators:
+                task_id = "%s_%s_%s_%s" % (self.thread_name, bucket.name,
+                                           scope_name, col_name)
                 if op_type in DocLoading.Bucket.DOC_OPS:
                     doc_load_task = LoadDocumentsTask(
                         self.cluster, bucket, None, doc_gen,
                         op_type, op_data["doc_ttl"],
                         scope=scope_name, collection=col_name,
-                        task_identifier=self.thread_name,
+                        task_identifier=task_id,
                         sdk_client_pool=self.sdk_client_pool,
                         batch_size=self.batch_size,
                         durability=op_data["durability_level"],
@@ -3434,7 +3465,7 @@ class MutateDocsFromSpecTask(Task):
                         create_paths=True,
                         xattr=op_data["xattr_test"],
                         scope=scope_name, collection=col_name,
-                        task_identifier=self.thread_name,
+                        task_identifier=task_id,
                         sdk_client_pool=self.sdk_client_pool,
                         batch_size=self.batch_size,
                         durability=op_data["durability_level"],
