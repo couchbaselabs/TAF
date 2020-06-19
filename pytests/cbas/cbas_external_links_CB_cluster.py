@@ -1504,7 +1504,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         if run_query:
             self.log.info("Log concurrent query status")
-            self.cbas_util.log_concurrent_query_outcome(self.cluster.master, handles)
+            self.analytics_cluster.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
                                                                                   self.sample_bucket.stats.expected_item_count
@@ -1551,10 +1551,9 @@ class CBASExternalLinks(CBASBaseTest):
                                                                           wait_for_execution=False)
 
         self.log.info("fail-over the node")
-        fail_task = self.analytics_cluster.async_failover(self.analytics_cluster.servers,
-                                                          [rebalanceServers[0]], graceful_failover)
-        self.task_manager.get_task_result(fail_task)
-
+        failover_task = self.task.failover(self.analytics_cluster.servers, failover_nodes=[rebalanceServers[0]],
+                                           graceful=True, wait_for_pending=300)
+        
         self.log.info("Read input param to decide on add back or rebalance out")
         self.rebalance_out = self.input.param("rebalance_out", False)
         if self.rebalance_out:
@@ -1585,7 +1584,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         if run_query:
             self.log.info("Log concurrent query status")
-            self.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
+            self.analytics_cluster.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         self.log.info("Validate dataset count on CBAS")
         count_n1ql = to_cluster.rest.query_tool('select count(*) from `%s`' % self.cb_bucket_name)['results'][0]['$1']
