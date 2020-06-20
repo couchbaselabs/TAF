@@ -1536,7 +1536,7 @@ class CBASExternalLinks(CBASBaseTest):
                                                      rebalance=True, wait_for_rebalance_completion=True)
 
         self.log.info("Read the failure out type to be performed")
-        graceful_failover = self.input.param("graceful_failover", True)
+        graceful_failover = self.input.param("graceful_failover", False)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
@@ -1552,7 +1552,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("fail-over the node")
         failover_task = self.task.failover(self.analytics_cluster.servers, failover_nodes=[rebalanceServers[0]],
-                                           graceful=True, wait_for_pending=300)
+                                           graceful=graceful_failover, wait_for_pending=300)
 
         self.log.info("Read input param to decide on add back or rebalance out")
         self.rebalance_out = self.input.param("rebalance_out", False)
@@ -1562,20 +1562,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.assertTrue(result, "Rebalance operation failed")
         else:
             self.recovery_strategy = self.input.param("recovery_strategy", "full")
-            self.log.info("Performing %s recovery" % self.recovery_strategy)
-            success = False
-            end_time = datetime.datetime.now() + datetime.timedelta(minutes=int(1))
-            while datetime.datetime.now() < end_time or not success:
-                try:
-                    self.sleep(10, message="Wait for fail over complete")
-                    self.analytics_cluster.rest.set_recovery_type('ns_1@' + rebalanceServers[0].ip, self.recovery_strategy)
-                    success = True
-                except Exception:
-                    self.log.info("Fail over in progress. Re-try after 10 seconds.")
-                    pass
-            if not success:
-                self.fail("Recovery %s failed." % self.recovery_strategy)
-            self.analytics_cluster.rest.add_back_node('ns_1@' + rebalanceServers[0].ip)
+            self.analytics_cluster.rest.set_recovery_type('ns_1@' + rebalanceServers[0].ip, self.recovery_strategy)
             result = self.analytics_cluster.cluster_util.rebalance()
             self.assertTrue(result, "Rebalance operation failed")
 
