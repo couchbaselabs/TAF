@@ -92,6 +92,13 @@ class DurabilityHelper:
             node_list.append(cluster.master)
         return node_list
 
+    @staticmethod
+    def is_sync_write_enabled(bucket_durability, doc_durability):
+        if (bucket_durability != "none") \
+                or (doc_durability != "" and doc_durability.lower() != "none"):
+            return True
+        return False
+
     def durability_succeeds(self, bucket_name, master,
                             induced_error=None, failed_nodes=[]):
         """

@@ -744,10 +744,10 @@ class SDKClient(object):
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
-        if result["error"]:
-            result["error"] = str(ex.getClass().getName() +
-                                  " | " + ex.getMessage())
-            SDKClient.populate_crud_failure_reason(result, ex)
+            if result["error"]:
+                result["error"] = str(ex.getClass().getName() +
+                                      " | " + ex.getMessage())
+                SDKClient.populate_crud_failure_reason(result, ex)
         return result
 
     def replace(self, key, value, exp=0, exp_unit="seconds",
@@ -975,7 +975,7 @@ class SDKClient(object):
             result = self.read(
                 key, timeout=timeout, time_unit=time_unit,
                 fail_fast=fail_fast)
-        elif op_type == "subdoc_insert":
+        elif op_type in [DocLoading.Bucket.SubDocOps.INSERT, "subdoc_insert"]:
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getInsertMutateInSpec(
@@ -994,7 +994,7 @@ class SDKClient(object):
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
             return self.__translate_upsert_multi_sub_doc_result(result)
-        elif op_type == "subdoc_upsert":
+        elif op_type in [DocLoading.Bucket.SubDocOps.UPSERT, "subdoc_upsert"]:
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getUpsertMutateInSpec(
@@ -1012,7 +1012,7 @@ class SDKClient(object):
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
             return self.__translate_upsert_multi_sub_doc_result(result)
-        elif op_type == "subdoc_delete":
+        elif op_type in [DocLoading.Bucket.SubDocOps.REMOVE, "subdoc_delete"]:
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getRemoveMutateInSpec(
                 value, xattr))

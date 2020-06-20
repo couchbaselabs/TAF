@@ -183,7 +183,7 @@ class CollectionBase(BaseTestCase):
             elif over_ride_param == "doc_size":
                 target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
 
-    def load_data_for_sub_doc_ops(self):
+    def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
             self.bucket_util.get_crud_template_from_package("initial_load")
         new_data_load_template[MetaCrudParams.DURABILITY_LEVEL] = ""
@@ -201,6 +201,11 @@ class CollectionBase(BaseTestCase):
                 batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Extra doc loading task failed")
+
+        if verification_dict:
+            self.update_verification_dict_from_collection_task(
+                verification_dict,
+                doc_loading_task)
 
     def update_verification_dict_from_collection_task(self,
                                                       verification_dict,

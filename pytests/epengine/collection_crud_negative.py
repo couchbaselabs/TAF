@@ -1,5 +1,7 @@
 import json
+from random import choice
 
+from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from bucket_collections.collections_base import CollectionBase
 from cb_tools.cbstats import Cbstats
@@ -21,14 +23,35 @@ class CollectionDurabilityTests(CollectionBase):
             self.num_nodes_affected = 2
 
         self.verification_dict = dict()
-        self.verification_dict["ops_create"] = self.num_items
+        self.verification_dict["ops_create"] = 0
         self.verification_dict["ops_update"] = 0
         self.verification_dict["ops_delete"] = 0
         self.verification_dict["rollback_item_count"] = 0
         self.verification_dict["sync_write_committed_count"] = 0
+        # Populate initial cb_stat values as per num_items
+        for _, scope in self.bucket.scopes.items():
+            for _, collection in scope.collections.items():
+                self.verification_dict["ops_create"] += collection.num_items
+                if self.durability_helper.is_sync_write_enabled(
+                        self.bucket_durability_level, self.durability_level):
+                    self.verification_dict["sync_write_committed_count"] \
+                        += self.num_items
 
     def tearDown(self):
         super(CollectionDurabilityTests, self).tearDown()
+
+    def __get_random_durability_level(self):
+        supported_d_levels = [d_level for d_level in self.supported_d_levels]
+        supported_d_levels.remove(Bucket.DurabilityLevel.NONE)
+        return choice(supported_d_levels)
+
+    def __get_d_level_and_error_to_simulate(self):
+        self.simulate_error = CouchbaseError.STOP_PERSISTENCE
+        self.durability_level = self.__get_random_durability_level()
+        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
+            self.simulate_error = CouchbaseError.STOP_MEMCACHED
+        self.log.info("Testing with durability_level=%s, simulate_error=%s"
+                      % (self.durability_level, self.simulate_error))
 
     def test_crud_failures(self):
         """
@@ -44,11 +67,25 @@ class CollectionDurabilityTests(CollectionBase):
         vb_info = dict()
         shell_conn = dict()
         cbstat_obj = dict()
-        vb_info["init"] = dict()
-        vb_info["failure_stat"] = dict()
         vb_info["create_stat"] = dict()
+        vb_info["failure_stat"] = dict()
         nodes_in_cluster = self.cluster_util.get_kv_nodes()
         sub_doc_test = self.input.param("sub_doc_test", False)
+
+        if sub_doc_test:
+            self.load_data_for_sub_doc_ops(self.verification_dict)
+
+        failed = self.durability_helper.verify_vbucket_details_stats(
+            self.bucket, self.cluster_util.get_kv_nodes(),
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=self.verification_dict)
+        if failed:
+            self.fail("Cbstat vbucket-details verification failed")
+
+        # Override durability_level to test
+        self.durability_level = self.__get_random_durability_level()
+        self.log.info("Testing with durability_level=%s"
+                      % self.durability_level)
 
         doc_load_spec = dict()
         doc_load_spec["doc_crud"] = dict()
@@ -57,6 +94,7 @@ class CollectionDurabilityTests(CollectionBase):
         doc_load_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = [
             SDKException.DurabilityImpossibleException]
         doc_load_spec[MetaCrudParams.SKIP_READ_ON_ERROR] = True
+        doc_load_spec[MetaCrudParams.SUPPRESS_ERROR_TABLE] = True
         doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] = \
             self.durability_level
 
@@ -70,10 +108,6 @@ class CollectionDurabilityTests(CollectionBase):
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 10
         else:
-            self.load_data_for_sub_doc_ops()
-            self.verification_dict["ops_create"] += self.num_items
-            self.verification_dict["ops_update"] += self.num_items
-
             doc_load_spec["subdoc_crud"][
                 MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION] = 10
             doc_load_spec["subdoc_crud"][
@@ -81,8 +115,6 @@ class CollectionDurabilityTests(CollectionBase):
 
         num_items_before_d_load = \
             self.bucket_util.get_expected_total_num_items(self.bucket)
-        self.log.info("Using doc-durability_level: %s" %
-                      doc_load_spec[MetaCrudParams.DURABILITY_LEVEL])
 
         for node in nodes_in_cluster:
             shell_conn[node.ip] = \
@@ -90,8 +122,8 @@ class CollectionDurabilityTests(CollectionBase):
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
 
             # Fetch vbucket seq_no stats from vb_seqno command for verification
-            vb_info["init"].update(cbstat_obj[node.ip]
-                                   .vbucket_seqno(self.bucket.name))
+            vb_info["create_stat"].update(cbstat_obj[node.ip]
+                                          .vbucket_seqno(self.bucket.name))
 
         # MB-34064 - Try same CREATE twice to validate doc cleanup in server
         for _ in range(2):
@@ -113,15 +145,15 @@ class CollectionDurabilityTests(CollectionBase):
             curr_num_items = self.bucket_util.get_bucket_current_item_count(
                 self.cluster, self.bucket)
             if curr_num_items != num_items_before_d_load:
-                self.log_failure("Few mutation went in."
+                self.log_failure("Few mutation went in. "
                                  "Docs expected: %s, actual: %s"
                                  % (num_items_before_d_load, curr_num_items))
             self.bucket_util.validate_docs_per_collections_all_buckets()
 
-            if vb_info["init"] != vb_info["failure_stat"]:
+            if vb_info["create_stat"] != vb_info["failure_stat"]:
                 self.log_failure(
                     "Failure stats mismatch. {0} != {1}"
-                    .format(vb_info["init"], vb_info["failure_stat"]))
+                    .format(vb_info["create_stat"], vb_info["failure_stat"]))
 
             # Rewind doc_indexes to starting point to re-use the same index
             for bucket, s_dict in collection_crud_task.loader_spec.items():
@@ -144,6 +176,12 @@ class CollectionDurabilityTests(CollectionBase):
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed ")
+
+        if not sub_doc_test and \
+                vb_info["create_stat"] != vb_info["failure_stat"]:
+            self.log_failure("Failover stats failed to update. %s != %s"
+                             % (vb_info["failure_stat"],
+                                vb_info["create_stat"]))
         self.validate_test_failure()
 
         # Perform async CRUDs on the documents
@@ -160,14 +198,11 @@ class CollectionDurabilityTests(CollectionBase):
         if collection_crud_task.result is False:
             self.log_failure("CRUDs with async_writes failed")
 
-        # Fetch vbucket seq_no status from vb_seqno command after async creates
-        for node in nodes_in_cluster:
-            vb_info["create_stat"].update(cbstat_obj[node.ip]
-                                          .vbucket_seqno(self.bucket.name))
+        # Wait for ep_queue to drain
+        self.bucket_util._wait_for_stats_all_buckets()
 
         # Reset failure_stat dictionary for reuse
         vb_info["failure_stat"] = dict()
-
         # Fetch vbucket seq_no status from vb_seqno after UPDATE/DELETE task
         for node in nodes_in_cluster:
             vb_info["failure_stat"].update(cbstat_obj[node.ip]
@@ -183,22 +218,9 @@ class CollectionDurabilityTests(CollectionBase):
             shell_conn[node.ip].disconnect()
 
         # Update cbstat vb-details verification counters
-        for bucket, s_dict in collection_crud_task.loader_spec.items():
-            for s_name, c_dict in s_dict["scopes"].items():
-                for c_name, _ in c_dict["collections"].items():
-                    c_crud_data = collection_crud_task.loader_spec[
-                        bucket]["scopes"][
-                        s_name]["collections"][c_name]
-                    for op_type in c_crud_data.keys():
-                        total_mutation = \
-                            c_crud_data[op_type]["doc_gen"].end \
-                            - c_crud_data[op_type]["doc_gen"].start
-                        if op_type in DocLoading.Bucket.DOC_OPS:
-                            self.verification_dict["ops_%s" % op_type] \
-                                += total_mutation
-                        elif op_type in DocLoading.Bucket.SUB_DOC_OPS:
-                            self.verification_dict["ops_update"] \
-                                += total_mutation
+        self.update_verification_dict_from_collection_task(
+            self.verification_dict,
+            collection_crud_task)
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(),
@@ -215,18 +237,21 @@ class CollectionDurabilityTests(CollectionBase):
         rollback on active vbucket
         :return:
         """
-        replica_vbs = dict()
         load_task = dict()
 
-        self.log.info("Loading docs such that all sync_writes will be aborted "
-                      "with durability_level '%s'" % self.durability_level)
+        # Override d_level, error_simulation type based on d_level
+        self.__get_d_level_and_error_to_simulate()
+
         kv_nodes = self.cluster_util.get_kv_nodes()
         for server in kv_nodes:
             ssh_shell = RemoteMachineShellConnection(server)
             cbstats = Cbstats(ssh_shell)
             cb_err = CouchbaseError(self.log, ssh_shell)
-            replica_vbs[server] = cbstats.vbucket_list(self.bucket.name,
-                                                       "replica")
+            target_vb_type = "replica"
+            if self.durability_level \
+                    == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                target_vb_type = "active"
+            target_vbs = cbstats.vbucket_list(self.bucket.name, target_vb_type)
             doc_load_spec = dict()
             doc_load_spec["doc_crud"] = dict()
             doc_load_spec["doc_crud"][
@@ -238,16 +263,18 @@ class CollectionDurabilityTests(CollectionBase):
 
             doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
                 = "test_collections"
-            doc_load_spec[MetaCrudParams.TARGET_VBUCKETS] = replica_vbs[server]
+            doc_load_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbs
 
-            doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] = \
-                self.durability_level
+            doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] \
+                = self.durability_level
             doc_load_spec[MetaCrudParams.RETRY_EXCEPTIONS] = [
                 SDKException.DurabilityAmbiguousException]
             doc_load_spec[MetaCrudParams.SDK_TIMEOUT] = 2
             doc_load_spec[MetaCrudParams.SKIP_READ_ON_ERROR] = True
+            doc_load_spec[MetaCrudParams.SUPPRESS_ERROR_TABLE] = True
 
-            cb_err.create(CouchbaseError.STOP_MEMCACHED)
+            cb_err.create(self.simulate_error,
+                          self.bucket_util.buckets[0].name)
             load_task[server] = \
                 self.bucket_util.run_scenario_from_spec(
                     self.task,
@@ -256,7 +283,8 @@ class CollectionDurabilityTests(CollectionBase):
                     doc_load_spec,
                     batch_size=1,
                     validate_task=False)
-            cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+            cb_err.revert(self.simulate_error,
+                          self.bucket_util.buckets[0].name)
             ssh_shell.disconnect()
         self.validate_test_failure()
 
@@ -309,9 +337,13 @@ class CollectionDurabilityTests(CollectionBase):
         cbstat_obj = dict()
         error_sim = dict()
         vb_info = dict()
+        active_vbs = dict()
         replica_vbs = dict()
         sync_write_in_progress = \
             SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+
+        # Override d_level, error_simulation type based on d_level
+        self.__get_d_level_and_error_to_simulate()
 
         # Acquire SDK client from the pool for performing doc_ops locally
         client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
@@ -327,24 +359,36 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
+            active_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
+                self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
 
-        target_vbuckets = replica_vbs[target_nodes[0].ip]
-        if len(target_nodes) > 1:
-            index = 1
-            while index < len(target_nodes):
-                target_vbuckets = list(
-                    set(target_vbuckets).intersection(
-                        set(replica_vbs[target_nodes[index].ip])
+        if self.durability_level \
+                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+            target_vbs = active_vbs
+            target_vbuckets = list()
+            for target_node in target_nodes:
+                target_vbuckets += target_vbs[target_node.ip]
+        else:
+            target_vbuckets = replica_vbs[target_nodes[0].ip]
+            if len(target_nodes) > 1:
+                index = 1
+                while index < len(target_nodes):
+                    target_vbuckets = list(
+                        set(target_vbuckets).intersection(
+                            set(replica_vbs[target_nodes[index].ip])
+                        )
                     )
-                )
-                index += 1
+                    index += 1
 
         doc_load_spec = dict()
         doc_load_spec["doc_crud"] = dict()
+        doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
+            = "test_collections"
         doc_load_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbuckets
         doc_load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 5
+        doc_load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
         doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
         doc_load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
 
@@ -381,6 +425,7 @@ class CollectionDurabilityTests(CollectionBase):
             for s_name, c_dict in s_dict["scopes"].items():
                 for c_name, c_meta in c_dict["collections"].items():
                     client.select_collection(s_name, c_name)
+                    self.log.info("%s::%s" % (s_name, c_name))
                     for op_type in c_meta:
                         key, value = c_meta[op_type]["doc_gen"].next()
                         for fail_fast in [True, False]:
@@ -459,12 +504,13 @@ class CollectionDurabilityTests(CollectionBase):
         cbstat_obj = dict()
         error_sim = dict()
         vb_info = dict()
+        active_vbs = dict()
         replica_vbs = dict()
         sync_write_in_progress = \
             SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
 
-        # Acquire SDK client from the pool for performing doc_ops locally
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        # Override d_level, error_simulation type based on d_level
+        self.__get_d_level_and_error_to_simulate()
 
         target_nodes = DurabilityHelper.getTargetNodes(self.cluster,
                                                        self.nodes_init,
@@ -477,26 +523,39 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
+            active_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
+                self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
 
-        target_vbuckets = replica_vbs[target_nodes[0].ip]
-        if len(target_nodes) > 1:
-            index = 1
-            while index < len(target_nodes):
-                target_vbuckets = list(
-                    set(target_vbuckets).intersection(
-                        set(replica_vbs[target_nodes[index].ip])
+        target_vbs = replica_vbs
+        if self.durability_level \
+                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+            target_vbs = active_vbs
+            target_vbuckets = list()
+            for target_node in target_nodes:
+                target_vbuckets += target_vbs[target_node.ip]
+        else:
+            target_vbuckets = target_vbs[target_nodes[0].ip]
+            if len(target_nodes) > 1:
+                index = 1
+                while index < len(target_nodes):
+                    target_vbuckets = list(
+                        set(target_vbuckets).intersection(
+                            set(target_vbs[target_nodes[index].ip])
+                        )
                     )
-                )
-                index += 1
+                    index += 1
 
         doc_load_spec = dict()
         doc_load_spec["doc_crud"] = dict()
         doc_load_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbuckets
         doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
         doc_load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 5
+        doc_load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
         doc_load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
+        doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
+            = "test_collections"
 
         if doc_ops[0] == "create":
             doc_load_spec["doc_crud"][
@@ -555,8 +614,8 @@ class CollectionDurabilityTests(CollectionBase):
                         # in doc_loader_task_2
                         failed_docs = doc_loader_task_2.fail
                         if len(failed_docs.keys()) != 1:
-                            self.log_failure("Exception not seen for docs: {0}"
-                                             .format(failed_docs))
+                            self.log_failure("Exception not seen for docs: %s"
+                                             % failed_docs)
 
                         valid_exception = self.durability_helper\
                             .validate_durability_exception(
@@ -593,13 +652,11 @@ class CollectionDurabilityTests(CollectionBase):
                             self.task_manager.get_task_result(read_task)
                             for key, doc_info in read_task.success.items():
                                 if doc_info["cas"] != 0 \
-                                        and json.loads(str(doc_info["value"]))["mutated"] != 1:
+                                        and json.loads(str(doc_info["value"])
+                                                       )["mutated"] != 1:
                                     self.log_failure(
                                         "Update failed for key %s: %s"
                                         % (key, doc_info))
-
-        # Release the acquired SDK client
-        self.sdk_client_pool.release_client(client)
 
         # Validate doc_count per collection
         self.validate_test_failure()
@@ -617,73 +674,94 @@ class CollectionDurabilityTests(CollectionBase):
         4. Validate the end results
         """
 
-        doc_ops = self.input.param("doc_ops", "insert;insert").split(";")
+        doc_ops = self.input.param("doc_ops", "insert")
 
         shell_conn = dict()
         cbstat_obj = dict()
         error_sim = dict()
         vb_info = dict()
+        active_vbs = dict()
         replica_vbs = dict()
         vb_info["init"] = dict()
         doc_load_spec = dict()
 
-        amb_timeout_exception = SDKException.AmbiguousTimeoutException
-        kv_sync_write_in_progress = \
-            SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
-        doc_not_found_exception = SDKException.DocumentNotFoundException
+        # Override d_level, error_simulation type based on d_level
+        self.__get_d_level_and_error_to_simulate()
 
-        # Override the crud_batch_size
-        self.crud_batch_size = 5
-
-        self.load_data_for_sub_doc_ops()
-
-        # Acquire SDK client from the pool for performing doc_ops locally
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
-
-        # Select nodes to affect and open required shell_connections
         target_nodes = DurabilityHelper.getTargetNodes(self.cluster,
                                                        self.nodes_init,
                                                        self.num_nodes_affected)
-        doc_load_spec["doc_crud"] = dict()
-        doc_load_spec["subdoc_crud"] = dict()
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
             # Fetch affected nodes' vb_num which are of type=replica
+            active_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
+                self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
 
-        target_vbuckets = replica_vbs[target_nodes[0].ip]
-        if len(target_nodes) > 1:
-            index = 1
-            while index < len(target_nodes):
-                target_vbuckets = list(
-                    set(target_vbuckets).intersection(
-                        set(replica_vbs[target_nodes[index].ip])
+        target_vbs = replica_vbs
+        if self.durability_level \
+                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+            target_vbs = active_vbs
+            target_vbuckets = list()
+            for target_node in target_nodes:
+                target_vbuckets += target_vbs[target_node.ip]
+        else:
+            target_vbuckets = target_vbs[target_nodes[0].ip]
+            if len(target_nodes) > 1:
+                index = 1
+                while index < len(target_nodes):
+                    target_vbuckets = list(
+                        set(target_vbuckets).intersection(
+                            set(target_vbs[target_nodes[index].ip])
+                        )
                     )
-                )
-                index += 1
+                    index += 1
+
+        amb_timeout = SDKException.AmbiguousTimeoutException
+        kv_sync_write_in_progress = \
+            SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+        doc_not_found_exception = SDKException.DocumentNotFoundException
+
+        self.load_data_for_sub_doc_ops()
+
+        doc_load_spec["doc_crud"] = dict()
+        doc_load_spec["subdoc_crud"] = dict()
+        doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
+            = "test_collections"
+        doc_load_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbuckets
+        doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
+        doc_load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 5
+        doc_load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
+        doc_load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
+
+        # Acquire SDK client from the pool for performing doc_ops locally
+        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        # Override the crud_batch_size
+        self.crud_batch_size = 5
 
         # Update mutation spec based on the required doc_operation
-        if doc_ops[0] == "create":
+        if doc_ops == "create":
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops[0] in "update":
+        elif doc_ops in "update":
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops[0] == "delete":
+        elif doc_ops == "delete":
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops[0] == "insert":
+        elif doc_ops == "insert":
             doc_load_spec["subdoc_crud"][
                 MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION] = 1
-        elif doc_ops[0] == "upsert":
+        elif doc_ops == "upsert":
             doc_load_spec["subdoc_crud"][
                 MetaCrudParams.SubDocCrud.UPSERT_PER_COLLECTION] = 1
-        elif doc_ops[0] == "remove":
+        elif doc_ops == "remove":
             doc_load_spec["subdoc_crud"][
                 MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION] = 1
 
@@ -716,31 +794,40 @@ class CollectionDurabilityTests(CollectionBase):
             for s_name, c_dict in s_dict["scopes"].items():
                 for c_name, c_meta in c_dict["collections"].items():
                     for op_type in c_meta:
-                        while c_meta[op_type]["doc_gen"].has_next():
-                            key, val = c_meta[op_type]["doc_gen"].next()
-                            expected_exception = amb_timeout_exception
-                            retry_reason = kv_sync_write_in_progress
-                            if doc_ops[0] in "create":
-                                expected_exception = doc_not_found_exception
-                                retry_reason = None
+                        key, _ = c_meta[op_type]["doc_gen"].next()
+                        expected_exception = amb_timeout
+                        retry_reason = kv_sync_write_in_progress
+                        if doc_ops == "create":
+                            expected_exception = doc_not_found_exception
+                            retry_reason = None
 
+                        for sub_doc_op in [
+                                DocLoading.Bucket.SubDocOps.INSERT,
+                                DocLoading.Bucket.SubDocOps.UPSERT,
+                                DocLoading.Bucket.SubDocOps.REMOVE]:
+                            val = ["my_mutation", "val"]
+                            if sub_doc_op \
+                                    == DocLoading.Bucket.SubDocOps.REMOVE:
+                                val = "mutated"
                             result = client.crud(
-                                op_type, key, val,
+                                sub_doc_op, key, val,
                                 durability=tem_durability,
-                                timeout=3)
+                                timeout=2)
 
-                            if result["status"] is True:
-                                self.log_failure("Doc crud succeeded for %s"
-                                                 % op_type)
-                            elif expected_exception not in result["error"]:
+                            if result[0]:
+                                self.log_failure(
+                                    "Doc crud succeeded for %s" % op_type)
+                            elif expected_exception \
+                                    not in str(result[1][key]["error"]):
                                 self.log_failure(
                                     "Invalid exception for key %s: %s"
-                                    % (key, result["error"]))
-                            elif retry_reason is not None \
-                                    and retry_reason not in result["error"]:
+                                    % (key, result[1][key]["error"]))
+                            elif retry_reason is not None and \
+                                    retry_reason \
+                                    not in str(result[1][key]["error"]):
                                 self.log_failure(
                                     "Retry reason missing for key %s: %s"
-                                    % (key, result["error"]))
+                                    % (key, result[1][key]["error"]))
 
         # Revert the introduced error condition
         for node in target_nodes:
@@ -754,7 +841,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.log_failure("Doc CRUDs failed")
 
         # Validate docs for update success or not
-        if doc_ops[0] == "update":
+        if doc_ops == "update":
             for bucket, s_dict in doc_loading_task.loader_spec.items():
                 for s_name, c_dict in s_dict["scopes"].items():
                     for c_name, c_meta in c_dict["collections"].items():
@@ -769,7 +856,8 @@ class CollectionDurabilityTests(CollectionBase):
                             self.task_manager.get_task_result(read_task)
                             for key, doc_info in read_task.success.items():
                                 if doc_info["cas"] != 0 and \
-                                        json.loads(str(doc_info["value"]))["mutated"] != 2:
+                                        json.loads(str(doc_info["value"])
+                                                   )["mutated"] != 2:
                                     self.log_failure(
                                         "Update failed for key %s: %s"
                                         % (key, doc_info))
@@ -779,5 +867,5 @@ class CollectionDurabilityTests(CollectionBase):
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()

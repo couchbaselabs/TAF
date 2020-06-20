@@ -168,9 +168,9 @@ class DocLoaderUtils(object):
 
         if type == "default":
             gen_docs = doc_generator(generic_key, start, end,
-                             target_vbucket=target_vbuckets,
-                             mutation_type=op_type,
-                             mutate=mutation_num)
+                                     target_vbucket=target_vbuckets,
+                                     mutation_type=op_type,
+                                     mutate=mutation_num)
         else:
             json_generator = JsonGenerator()
             if type == "employee":
@@ -195,13 +195,19 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def get_subdoc_generator(op_type, collection_obj, num_items,
-                             generic_key):
+                             generic_key, target_vbuckets="all"):
+        if target_vbuckets == "all":
+            target_vbuckets = None
+
         if op_type == DocLoading.Bucket.SubDocOps.INSERT:
             start = collection_obj.sub_doc_index[1]
             end = start + num_items
             collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
                                             end)
-            return sub_doc_generator(generic_key, start, end)
+            if target_vbuckets is not None:
+                end -= start
+            return sub_doc_generator(generic_key, start, end,
+                                     target_vbucket=target_vbuckets)
         elif op_type == DocLoading.Bucket.SubDocOps.REMOVE:
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
@@ -212,8 +218,12 @@ class DocLoaderUtils(object):
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
             subdoc_gen_template_num = choice([0, 1])
+
+        if target_vbuckets is not None:
+            end -= start
         return sub_doc_generator_for_edit(generic_key, start, end,
-                                          subdoc_gen_template_num)
+                                          subdoc_gen_template_num,
+                                          target_vbucket=target_vbuckets)
 
     @staticmethod
     def perform_doc_loading_for_spec(task_manager,
@@ -351,7 +361,8 @@ class DocLoaderUtils(object):
                                         op_type,
                                         collection,
                                         num_items,
-                                        doc_key)
+                                        doc_key,
+                                        target_vbuckets=target_vbs)
         crud_spec = dict()
         spec_percent_data = dict()
 

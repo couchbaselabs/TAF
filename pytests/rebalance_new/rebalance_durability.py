@@ -3,6 +3,7 @@ from math import floor
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper
 from rebalance_base import RebalanceBaseTest
 from rebalance_new import rebalance_base
 
@@ -184,10 +185,6 @@ class RebalanceDurability(RebalanceBaseTest):
         durability_will_fail = False
         def_bucket = self.bucket_util.buckets[0]
 
-        if (self.durability_level.lower() != "none") \
-                or (self.bucket_durability_level != "none"):
-            self.bucket_util.get_supported_durability_levels()
-
         nodes_in_cluster = self.nodes_init
         nodes_required_for_durability = int(floor((self.num_replicas+1)/2)+1)
 
@@ -203,10 +200,8 @@ class RebalanceDurability(RebalanceBaseTest):
             nodes_in_cluster -= 1
 
             if nodes_in_cluster < nodes_required_for_durability:
-                if self.durability_level \
-                        and self.durability_level.lower() != "none":
-                    durability_will_fail = True
-                elif self.bucket_durability_level != "none":
+                if DurabilityHelper.is_sync_write_enabled(
+                        self.bucket_durability_level, self.durability_level):
                     durability_will_fail = True
 
             tasks = list()

@@ -60,7 +60,10 @@ class RollbackTests(CollectionBase):
     def load_docs(self, rewind_index=True):
         load_spec = dict()
         load_spec["doc_crud"] = dict()
+        load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
+            = "test_collections"
         load_spec[MetaCrudParams.TARGET_VBUCKETS] = self.target_vbucket
+        load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
 
         mutation_num = 0
         if "create" in self.doc_ops:
