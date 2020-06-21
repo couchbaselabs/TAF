@@ -121,7 +121,7 @@ class CollectionBase(BaseTestCase):
                 compression_settings=self.sdk_compression)
 
         # TODO: remove this once the bug is fixed
-        self.sleep(10, "MB-38497")
+        self.sleep(120, "MB-38497")
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
@@ -154,8 +154,7 @@ class CollectionBase(BaseTestCase):
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                     self.durability_level
             elif over_ride_param == "replicas":
-                target_spec[Bucket.replicaNumber] = \
-                    eval(self.num_replicas)
+                target_spec[Bucket.replicaNumber] = self.num_replicas
             elif over_ride_param == "sdk_timeout":
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
 
