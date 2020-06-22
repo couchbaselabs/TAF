@@ -597,7 +597,7 @@ class volume(BaseTestCase):
 
     def Volume(self):
         #######################################################################
-        self.PrintStep("Step1: Create a n node cluster")
+        self.PrintStep("Step1: Create a %s node cluster" % self.nodes_init)
         if self.nodes_init > 1:
             nodes_init = self.cluster.servers[1:self.nodes_init]
             self.task.rebalance([self.cluster.master], nodes_init, [])
@@ -605,14 +605,30 @@ class volume(BaseTestCase):
                 [self.cluster.master] + nodes_init)
 
         #######################################################################
-        self.PrintStep("Step 2 & 3: Create required buckets.")
+        self.PrintStep("Step 2: Create required buckets and collections.")
         self.bucket = self.create_required_buckets()
-        self.loop = 0
+        props = "magma"
+        update_bucket_props = False
+
+        if self.disable_magma_commit_points:
+            props += ";magma_max_commit_points=0"
+            update_bucket_props = True
+
+        if self.fragmentation != 50:
+            props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
+            update_bucket_props = True
+
+        if update_bucket_props:
+            self.bucket_util.update_bucket_props(
+                    "backend", props,
+                    self.bucket_util.buckets)
+
         self.scope_name = "VolumeScope"
         collection_prefix = "VolumeCollection"
         self.bucket_util.create_scope(self.cluster.master,
                                       self.bucket,
                                       {"name": self.scope_name})
+
         for i in range(self.num_collections):
             collection_name = collection_prefix + str(i)
             self.log.info("Creating scope::collection '%s::%s'"
@@ -624,165 +640,179 @@ class volume(BaseTestCase):
             self.sleep(2)
         #######################################################################
         while self.loop < self.iterations:
+            '''
+            Create sequential: 0 - 10M
+            Final Docs = 10M (0-10M, 10M seq items)
+            '''
             self.PrintStep("Step 4: Pre-Requisites for Loading of docs")
-            self.bucket_util.add_rbac_user()
             self.generate_docs(doc_ops="create")
-            tasks_info = self.data_load(
-                scope=self.scope_name,
-                collections=self.bucket.scopes[self.scope_name].collections.keys())
-            for task in tasks_info:
-                self.task.jython_task_manager.get_task_result(task)
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
-            self.create_perc = self.input.param("create_perc", 100)
+            self.perform_load(validate_data=False)
+
             ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+
+            This Step:
+            Create Random: 0 - 20M
+
+            Final Docs = 30M (0-20M, 20M Random)
+            Nodes In Cluster = 3
+            '''
+            temp = self.key_prefix
+            self.key_prefix = "random_keys"
+            self.create_perc = 100*2
+            self.PrintStep("Step 7: Create %s random keys" %
+                           str(self.num_items*self.create_perc/100))
+
+            self.generate_docs(doc_ops="create")
+            self.perform_load(validate_data=True)
+
+            self.key_prefix = temp
+            ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 20M
+
+            This Step:
+            Update Sequential: 0 - 10M
+            Update Random: 0 - 20M to create 50% fragmentation
+
+            Final Docs = 30M (0-20M, 20M Random)
+            Nodes In Cluster = 3
+            '''
+
+            self.generate_docs(doc_ops="update")
+            self.perform_load(validate_data=False)
+
+            temp = self.key_prefix
+            self.key_prefix = "random_keys"
+            self.update_perc = 100*2
+            self.PrintStep("Step 7: Update %s random keys" %
+                           str(self.num_items*self.update_perc/100))
+
+            self.generate_docs(doc_ops="update")
+            self.perform_load(validate_data=True)
+
+            self.key_prefix = temp
+            ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 20M
+
+            This Step:
+            Create Random: 20 - 30M
+            Delete Random: 10 - 20M
+            Update Random: 0 - 10M
+            Nodes In Cluster = 3 -> 4
+
+            Final Docs = 30M (Random: 0-10M, 20-30M, Sequential: 0-10M)
+            Nodes In Cluster = 4
+            '''
+
             self.PrintStep("Step 5: Rebalance in with Loading of docs")
-            self.generate_docs(doc_ops="create")
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
+
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
-            tasks_info = self.data_load(
-                scope=self.scope_name,
-                collections=self.bucket.scopes[self.scope_name].collections.keys())
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
+
+            temp = self.key_prefix
+            self.create_perc = 100
+            self.update_perc = 100
+            self.delete_perc = 100
+            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.perform_load(validate_data=True)
+
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.wait_for_doc_load_completion(tasks_info)
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
 
             ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 10M, 20 - 30M
+
+            This Step:
+            Create Random: 30 - 40M
+            Delete Random: 20 - 30M
+            Update Random: 0 - 10M
+            Nodes In Cluster = 4 -> 3
+
+            Final Docs = 30M (Random: 0-10M, 30-40M, Sequential: 0-10M)
+            Nodes In Cluster = 3
+            '''
             self.PrintStep("Step 6: Rebalance Out with Loading of docs")
-            self.generate_docs()
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
-            tasks_info = self.data_load(
-                scope=self.scope_name,
-                collections=self.bucket.scopes[self.scope_name].collections.keys())
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
+
+            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.perform_load(validate_data=True)
+
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.wait_for_doc_load_completion(tasks_info)
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
-
             ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 10M, 30 - 40M
+
+            This Step:
+            Create Random: 40 - 50M
+            Delete Random: 30 - 40M
+            Update Random: 0 - 10M
+            Nodes In Cluster = 3 -> 4
+
+            Final Docs = 30M (Random: 0-10M, 40-50M, Sequential: 0-10M)
+            Nodes In Cluster = 4
+            '''
             self.PrintStep("Step 7: Rebalance In_Out with Loading of docs")
-            self.generate_docs()
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
-            tasks_info = self.data_load(
-                scope=self.scope_name,
-                collections=self.bucket.scopes[self.scope_name].collections.keys())
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
+
+            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.perform_load(validate_data=True)
+
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.wait_for_doc_load_completion(tasks_info)
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
 
             ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 10M, 40 - 50M
+
+            This Step:
+            Create Random: 50 - 60M
+            Delete Random: 40 - 50M
+            Update Random: 0 - 10M
+            Nodes In Cluster = 4 -> 4 (SWAP)
+
+            Final Docs = 30M (Random: 0-10M, 50-60M, Sequential: 0-10M)
+            Nodes In Cluster = 4
+            '''
             self.PrintStep("Step 8: Swap with Loading of docs")
-            self.generate_docs()
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
+
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
-            tasks_info = self.data_load(
-                scope=self.scope_name,
-                collections=self.bucket.scopes[self.scope_name].collections.keys())
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
+
+            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.perform_load(validate_data=True)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.wait_for_doc_load_completion(tasks_info)
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
 
             ###################################################################
-            self.PrintStep("Step 9: Updating the bucket replica to 2")
-            bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
-                bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=2)
-            self.generate_docs()
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
-            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
-            tasks_info = self.data_load(
-                scope=self.scope_name,
-                collections=self.bucket.scopes[self.scope_name].collections.keys())
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.wait_for_doc_load_completion(tasks_info)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 10M, 50 - 60M
 
-            ###################################################################
-            self.PrintStep("Step 10: Stopping and restarting memcached process")
-            self.generate_docs()
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
-            rebalance_task = self.task.async_rebalance(self.cluster.servers,
-                                                       [], [])
-            tasks_info = self.data_load(
-                scope=self.scope_name,
-                collections=self.bucket.scopes[self.scope_name].collections.keys())
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
+            This Step:
+            Create Random: 60 - 70M
+            Delete Random: 50 - 60M
+            Update Random: 0 - 10M
+            Nodes In Cluster = 4 -> 3
 
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.wait_for_doc_load_completion(tasks_info)
-            self.stop_process()
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
-
-            ###################################################################
+            Final Docs = 30M (Random: 0-10M, 60-70M, Sequential: 0-10M)
+            Nodes In Cluster = 3
+            '''
             self.PrintStep("Step 11: Failover a node and RebalanceOut that node \
             with loading in parallel")
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
@@ -802,7 +832,7 @@ class volume(BaseTestCase):
                                                        howmany=1)
 
             # Mark Node for failover
-            self.generate_docs()
+            self.generate_docs(doc_ops=["create", "update", "delete"])
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
@@ -843,13 +873,27 @@ class volume(BaseTestCase):
                 servers=nodes, buckets=self.bucket_util.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
-            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
+#             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+#             self.task.jython_task_manager.get_task_result(rebalance_task)
+#             self.bucket_util.print_bucket_stats()
+#             self.print_crud_stats()
+#             self.get_bucket_dgm(self.bucket)
 
             ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 10M, 60 - 70M
+
+            This Step:
+            Create Random: 70 - 80M
+            Delete Random: 60 - 70M
+            Update Random: 0 - 10M
+            Nodes In Cluster = 3 -> 3
+
+            Final Docs = 30M (Random: 0-10M, 70-80M, Sequential: 0-10M)
+            Nodes In Cluster = 3
+            '''
             self.PrintStep("Step 12: Failover a node and FullRecovery\
              that node")
 
@@ -870,7 +914,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs()
+            self.generate_docs(doc_ops=["create", "update", "delete"])
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
@@ -884,16 +928,8 @@ class volume(BaseTestCase):
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id,
                                             recoveryType="full")
 
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
-
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
-
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -921,6 +957,20 @@ class volume(BaseTestCase):
             self.get_bucket_dgm(self.bucket)
 
             ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 10M, 70 - 80M
+
+            This Step:
+            Create Random: 80 - 90M
+            Delete Random: 70 - 80M
+            Update Random: 0 - 10M
+            Nodes In Cluster = 3 -> 3
+
+            Final Docs = 30M (Random: 0-10M, 80-90M, Sequential: 0-10M)
+            Nodes In Cluster = 3
+            '''
             self.PrintStep("Step 13: Failover a node and DeltaRecovery that \
             node with loading in parallel")
 
@@ -941,7 +991,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs()
+            self.generate_docs(doc_ops=["create", "update", "delete"])
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
@@ -987,13 +1037,65 @@ class volume(BaseTestCase):
             self.print_crud_stats()
             self.get_bucket_dgm(self.bucket)
 
+            ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 10M, 80 - 90M
+
+            This Step:
+            Create Random: 90 - 100M
+            Delete Random: 80 - 90M
+            Update Random: 0 - 10M
+            Replica 1 - > 2
+
+            Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
+            Nodes In Cluster = 3
+            '''
+            self.PrintStep("Step 9: Updating the bucket replica to 2")
+
+            bucket_helper = BucketHelper(self.cluster.master)
+            for i in range(len(self.bucket_util.buckets)):
+                bucket_helper.change_bucket_props(
+                    self.bucket_util.buckets[i], replicaNumber=2)
+
+            self.generate_docs(doc_ops=["create", "update", "delete"])
+            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+            tasks_info = self.data_load(
+                scope=self.scope_name,
+                collections=self.bucket.scopes[self.scope_name].collections.keys())
+
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.wait_for_doc_load_completion(tasks_info)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.data_validation(scope=self.scope_name,
+                                 collections=self.bucket.
+                                 scopes[self.scope_name].collections.keys())
+            self.bucket_util.print_bucket_stats()
+            self.print_crud_stats()
+            self.get_bucket_dgm(self.bucket)
+ 
         #######################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 10M, 90 - 100M
+
+            This Step:
+            Create Random: 100 - 110M
+            Delete Random: 90 - 100M
+            Update Random: 0 - 10M
+            Replica 2 - > 1
+
+            Final Docs = 30M (Random: 0-10M, 100-110M, Sequential: 0-10M)
+            Nodes In Cluster = 3
+            '''
             self.PrintStep("Step 14: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
-            self.generate_docs()
+            self.generate_docs(doc_ops=["create", "update", "delete"])
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
@@ -1002,10 +1104,7 @@ class volume(BaseTestCase):
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
-            self.set_num_writer_and_reader_threads(
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
-
+ 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.wait_for_doc_load_completion(tasks_info)
@@ -1093,8 +1192,8 @@ class volume(BaseTestCase):
         deletes: 0 - 10M
         Final Docs = 0
         '''
-        self.PrintStep("Step 3: Create %s items and Delete everything. checkout fragmentation"%
-                       str(self.num_items*self.create_perc/100))
+        self.PrintStep("Step 3: Create %s items and Delete everything. \
+        checkout fragmentation" % str(self.num_items*self.create_perc/100))
         self.create_perc = 100
         self.delete_perc = 100
 
@@ -1115,7 +1214,7 @@ class volume(BaseTestCase):
         Final Docs = 20M (0-20M)
         '''
         self.create_perc = 100
-        self.PrintStep("Step 4: Load %s items, sequential keys"%
+        self.PrintStep("Step 4: Load %s items, sequential keys" %
                        str(self.num_items*self.create_perc/100))
         _iter = 0
         while _iter < 2:
@@ -1131,14 +1230,16 @@ class volume(BaseTestCase):
         Final Docs = 20M (0-20M)
         '''
         self.update_perc = 10
-        self.PrintStep("Step 5: Update the first set of %s percent (%s) items 10 times"%
-                       (str(self.update_perc),str(self.num_items*self.update_perc/100)))
 
+        self.PrintStep("Step 5: Update the first set of %s percent (%s) items \
+        10 times" % (str(self.update_perc),
+                     str(self.num_items*self.update_perc/100)))
 
         _iter = 0
         while _iter < 10:
-            self.PrintStep("Step 5.%s: Update the first set of %s percent (%s) items 10 times"%
-                           (str(_iter), str(self.update_perc), str(self.num_items*self.update_perc/100)))
+            self.PrintStep("Step 5.%s: Update the first set of %s percent (%s) \
+            items 10 times" % (str(_iter), str(self.update_perc),
+                               str(self.num_items*self.update_perc/100)))
             self.generate_docs(doc_ops="update")
             self.perform_load(crash=True, validate_data=True)
             _iter += 1
@@ -1154,12 +1255,18 @@ class volume(BaseTestCase):
         '''
         _iter = 0
         self.update_perc = 10
-        self.PrintStep("Step 6: Reverse Update last set of %s percent (%s-%s) items 10 times"%
-                       (str(self.update_perc), str(self.num_items-1), str(self.num_items+1-self.num_items*self.update_perc/100)))
+        self.PrintStep("Step 6: Reverse Update last set of %s percent (%s-%s) \
+        items 10 times" % (str(self.update_perc), str(self.num_items-1),
+                           str(self.num_items+1 -
+                               self.num_items*self.update_perc/100)))
 
         while _iter < 10:
-            self.PrintStep("Step 6.%s: Reverse Update last set of %s percent (%s-%s) items 10 times"%
-                           (str(_iter), str(self.update_perc), str(self.num_items+1), str(self.num_items+1-self.num_items*self.update_perc/100)))
+            self.PrintStep("Step 6.%s: Reverse Update last set of %s percent \
+            (%s-%s) items 10 times" % (str(_iter), str(self.update_perc),
+                                       str(self.num_items+1),
+                                       str(self.num_items+1 -
+                                           self.num_items*self.update_perc/100)
+                                       ))
             self.generate_docs(doc_ops="update",
                                update_start=-self.num_items+1,
                                update_end=self.num_items *
@@ -1179,7 +1286,7 @@ class volume(BaseTestCase):
         temp = self.key_prefix
         self.key_prefix = "random_keys"
         self.create_perc = 100
-        self.PrintStep("Step 7: Create %s random keys"%
+        self.PrintStep("Step 7: Create %s random keys" %
                        str(self.num_items*self.create_perc/100))
 
         self.generate_docs(doc_ops="create")
@@ -1198,11 +1305,12 @@ class volume(BaseTestCase):
         self.update_perc = 100
         self.key_prefix = "random_keys"
 
-        self.PrintStep("Step 8: Update all %s random items 10 times"%
+        self.PrintStep("Step 8: Update all %s random items 10 times" %
                        str(self.num_items*self.update_perc/100))
         while _iter < 10:
-            self.PrintStep("Step 8.%s: Update all %s random items 10 times"%
-                           (str(_iter), str(self.num_items*self.update_perc/100)))
+            self.PrintStep("Step 8.%s: Update all %s random items 10 times" %
+                           (str(_iter),
+                            str(self.num_items*self.update_perc/100)))
             self.generate_docs(doc_ops="update")
             self.perform_load(crash=False, validate_data=True)
             _iter += 1
@@ -1222,7 +1330,7 @@ class volume(BaseTestCase):
         self.key_prefix = "random_keys"
         self.delete_perc = 100
 
-        self.PrintStep("Step 9: Delete/Re-Create all %s random items"%
+        self.PrintStep("Step 9: Delete/Re-Create all %s random items" %
                        str(self.num_items*self.delete_perc/100))
 
         self.generate_docs(doc_ops="delete")
@@ -1243,12 +1351,15 @@ class volume(BaseTestCase):
         Final Docs = 30M (0-20M, 10M Random)
         '''
         self.update_perc = 10
-        self.PrintStep("Step 10: Update %s percent(%s) items 10 times and crash during recovery"%
-                       (str(self.update_perc), str(self.num_items*self.update_perc/100)))
+        self.PrintStep("Step 10: Update %s percent(%s) items 10 times and \
+        crash during recovery" % (str(self.update_perc),
+                                  str(self.num_items*self.update_perc/100)))
         _iter = 0
         while _iter < 10:
-            self.PrintStep("Step 10.%s: Update %s percent(%s) items 10 times and crash during recovery"%
-                           (str(_iter), str(self.update_perc), str(self.num_items*self.update_perc/100)))
+            self.PrintStep("Step 10.%s: Update %s percent(%s) items 10 times \
+            and crash during recovery" % (str(_iter), str(self.update_perc),
+                                          str(self.num_items *
+                                              self.update_perc/100)))
             self.generate_docs(doc_ops="update")
             self.perform_load(crash=False, validate_data=True)
             _iter += 1
@@ -1380,7 +1491,8 @@ class volume(BaseTestCase):
                                              self.bucket,
                                              self.scope_name,
                                              collection_name)
-            self.bucket.scopes[self.scope_name].collections.pop(collection_name)
+            self.bucket.scopes[self.scope_name].collections.pop(
+                collection_name)
             self.kill_memcached()
             self.get_magma_disk_usage()
         if self.end_step == 20:
