@@ -61,7 +61,7 @@ class volume(BaseTestCase):
         self.expire_end = 0
         self.expire_start = 0
         self.end_step = self.input.param("end_step", None)
-        self.num_collections = self.input.param("num_collections", 1)
+        self.num_collections = self.input.param("num_collections", 0)
         self.key_prefix = "Users"
         self.skip_read_on_error = False
         self.suppress_error_table = False
@@ -71,6 +71,53 @@ class volume(BaseTestCase):
         self.fragmentation = int(self.input.param("fragmentation", 50))
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        False)
+        #######################################################################
+        self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
+        if self.nodes_init > 1:
+            nodes_init = self.cluster.servers[1:self.nodes_init]
+            self.task.rebalance([self.cluster.master], nodes_init, [])
+            self.cluster.nodes_in_cluster.extend(
+                [self.cluster.master] + nodes_init)
+        else:
+            self.cluster.nodes_in_cluster.extend([self.cluster.master])
+        #######################################################################
+        self.PrintStep("Step 2: Create required buckets and collections.")
+        self.bucket = self.create_required_buckets()
+        props = "magma"
+        update_bucket_props = False
+
+        if self.disable_magma_commit_points:
+            props += ";magma_max_commit_points=0"
+            update_bucket_props = True
+
+        if self.fragmentation != 50:
+            props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
+            update_bucket_props = True
+
+        if update_bucket_props:
+            self.bucket_util.update_bucket_props(
+                    "backend", props,
+                    self.bucket_util.buckets)
+
+        self.scope_name = self.input.param("scope_name",
+                                           CbServer.default_scope)
+        self.collection_prefix = self.input.param("collection_prefix",
+                                                  CbServer.default_collection)
+
+        if self.scope_name != CbServer.default_scope:
+            self.bucket_util.create_scope(self.cluster.master,
+                                          self.bucket,
+                                          {"name": self.scope_name})
+
+        for i in range(self.num_collections):
+            collection_name = self.collection_prefix + str(i)
+            self.log.info("Creating scope::collection '%s::%s'"
+                          % (self.scope_name, collection_name))
+            self.bucket_util.create_collection(self.cluster.master,
+                                               self.bucket,
+                                               self.scope_name,
+                                               {"name": collection_name})
+            self.sleep(2)
 
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
@@ -317,7 +364,7 @@ class volume(BaseTestCase):
                 "Doc ops failed for task: {}".format(task.thread_name))
 
         if wait_for_stats:
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
     def data_validation(self, scope=CbServer.default_scope,
                         collections=[CbServer.default_scope]):
@@ -445,12 +492,63 @@ class volume(BaseTestCase):
         self.bucket_util.print_bucket_stats()
         self.print_crud_stats()
         self.get_bucket_dgm(self.bucket)
+        self.check_fragmentation_using_magma_stats(self.bucket)
         crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if len(crashes) > 0:
             self.PrintStep("Crashes found on server: %s" % crashes)
         if self.assert_crashes_on_load:
             self.task.jython_task_manager.abort_all_tasks()
             self.assertTrue(len(crashes) == 0, "Found servers having crashes")
+
+    def check_fragmentation_using_magma_stats(self, bucket, servers=None):
+        result = dict()
+        stats = list()
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+        for server in servers:
+            fragmentation_values = list()
+            shell = RemoteMachineShellConnection(server)
+            output = shell.execute_command(
+                    "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
+                    )[0][0].split('\n')[0]
+            self.log.debug("machine: {} - core(s): {}\
+            ".format(server.ip, output))
+            for i in range(int(output)):
+                grep_field = "rw_{}:magma".format(i)
+                _res = self.get_magma_stats(
+                    bucket, [server],
+                    field_to_grep=grep_field)
+                fragmentation_values.append(
+                    float(_res[server.ip][grep_field][
+                        "Fragmentation"]))
+                stats.append(_res)
+            result.update({server.ip: fragmentation_values})
+        self.log.info("magma stats fragmentation result {} \
+        ".format(result))
+        for value in result.values():
+            if max(value) > self.fragmentation:
+                self.log.info(stats)
+                return False
+        return True
+
+    def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
+        magma_stats_for_all_servers = dict()
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+        for server in servers:
+            result = dict()
+            shell = RemoteMachineShellConnection(server)
+            cbstat_obj = Cbstats(shell)
+            result = cbstat_obj.magma_stats(bucket.name,
+                                            field_to_grep=field_to_grep)
+            shell.disconnect()
+            magma_stats_for_all_servers[server.ip] = result
+        print magma_stats_for_all_servers
+        return magma_stats_for_all_servers
 
     def get_magma_disk_usage(self, bucket=None):
         if bucket is None:
@@ -597,56 +695,13 @@ class volume(BaseTestCase):
 
     def Volume(self):
         #######################################################################
-        self.PrintStep("Step1: Create a %s node cluster" % self.nodes_init)
-        if self.nodes_init > 1:
-            nodes_init = self.cluster.servers[1:self.nodes_init]
-            self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.cluster.nodes_in_cluster.extend(
-                [self.cluster.master] + nodes_init)
-        else:
-            self.cluster.nodes_in_cluster.extend([self.cluster.master])
-        #######################################################################
-        self.PrintStep("Step 2: Create required buckets and collections.")
-        self.bucket = self.create_required_buckets()
-        props = "magma"
-        update_bucket_props = False
-
-        if self.disable_magma_commit_points:
-            props += ";magma_max_commit_points=0"
-            update_bucket_props = True
-
-        if self.fragmentation != 50:
-            props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
-            update_bucket_props = True
-
-        if update_bucket_props:
-            self.bucket_util.update_bucket_props(
-                    "backend", props,
-                    self.bucket_util.buckets)
-
-        self.scope_name = "VolumeScope"
-        collection_prefix = "VolumeCollection"
-        self.bucket_util.create_scope(self.cluster.master,
-                                      self.bucket,
-                                      {"name": self.scope_name})
-
-        for i in range(self.num_collections):
-            collection_name = collection_prefix + str(i)
-            self.log.info("Creating scope::collection '%s::%s'"
-                          % (self.scope_name, collection_name))
-            self.bucket_util.create_collection(self.cluster.master,
-                                               self.bucket,
-                                               self.scope_name,
-                                               {"name": collection_name})
-            self.sleep(2)
-        #######################################################################
         self.loop = 0
         while self.loop < self.iterations:
             '''
             Create sequential: 0 - 10M
             Final Docs = 10M (0-10M, 10M seq items)
             '''
-            self.PrintStep("Step 4: Pre-Requisites for Loading of docs")
+            self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
             self.generate_docs(doc_ops="create")
             self.perform_load(validate_data=False)
 
@@ -663,11 +718,11 @@ class volume(BaseTestCase):
             '''
             temp = self.key_prefix
             self.key_prefix = "random_keys"
-            self.create_perc = 100*2
-            self.PrintStep("Step 7: Create %s random keys" %
-                           str(self.num_items*self.create_perc/100))
+            self.update_perc = 100*2
+            self.PrintStep("Step 4: Create %s random keys" %
+                           str(self.num_items*self.update_perc/100))
 
-            self.generate_docs(doc_ops="create")
+            self.generate_docs(doc_ops="update")
             self.perform_load(validate_data=True)
 
             self.key_prefix = temp
@@ -685,19 +740,19 @@ class volume(BaseTestCase):
             Nodes In Cluster = 3
             '''
 
-            self.generate_docs(doc_ops="update")
-            self.perform_load(validate_data=False)
-
             temp = self.key_prefix
             self.key_prefix = "random_keys"
             self.update_perc = 100*2
-            self.PrintStep("Step 7: Update %s random keys" %
-                           str(self.num_items*self.update_perc/100))
+            self.PrintStep("Step 5: Update %s random keys to create 50 percent\
+             fragmentation" % str(self.num_items*self.update_perc/100))
 
             self.generate_docs(doc_ops="update")
-            self.perform_load(validate_data=True)
+            self.perform_load(validate_data=False)
 
             self.key_prefix = temp
+            self.generate_docs(doc_ops="update")
+            self.perform_load(validate_data=False)
+
             ###################################################################
             '''
             Existing:
@@ -714,15 +769,16 @@ class volume(BaseTestCase):
             Nodes In Cluster = 4
             '''
 
-            self.PrintStep("Step 5: Rebalance in with Loading of docs")
+            self.PrintStep("Step 6: Rebalance in with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
 
             self.key_prefix = "random_keys"
             self.create_perc = 100
             self.update_perc = 100
-            self.delete_perc = 100
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.delete_perc = 50
+            self.expiry_perc = 50
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             self.perform_load(validate_data=True)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -743,10 +799,10 @@ class volume(BaseTestCase):
             Final Docs = 30M (Random: 0-10M, 30-40M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 6: Rebalance Out with Loading of docs")
+            self.PrintStep("Step 7: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
 
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             self.perform_load(validate_data=True)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -766,10 +822,10 @@ class volume(BaseTestCase):
             Final Docs = 30M (Random: 0-10M, 40-50M, Sequential: 0-10M)
             Nodes In Cluster = 4
             '''
-            self.PrintStep("Step 7: Rebalance In_Out with Loading of docs")
+            self.PrintStep("Step 8: Rebalance In_Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
 
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             self.perform_load(validate_data=True)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -790,11 +846,11 @@ class volume(BaseTestCase):
             Final Docs = 30M (Random: 0-10M, 50-60M, Sequential: 0-10M)
             Nodes In Cluster = 4
             '''
-            self.PrintStep("Step 8: Swap with Loading of docs")
+            self.PrintStep("Step 9: Swap with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
 
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             self.perform_load(validate_data=True)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -815,7 +871,7 @@ class volume(BaseTestCase):
             Final Docs = 30M (Random: 0-10M, 60-70M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 11: Failover a node and RebalanceOut that node \
+            self.PrintStep("Step 10: Failover a node and RebalanceOut that node \
             with loading in parallel")
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
@@ -834,7 +890,7 @@ class volume(BaseTestCase):
                                                        howmany=1)
 
             # Mark Node for failover
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
@@ -896,7 +952,7 @@ class volume(BaseTestCase):
             Final Docs = 30M (Random: 0-10M, 70-80M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 12: Failover a node and FullRecovery\
+            self.PrintStep("Step 11: Failover a node and FullRecovery\
              that node")
 
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
@@ -916,7 +972,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
@@ -973,7 +1029,7 @@ class volume(BaseTestCase):
             Final Docs = 30M (Random: 0-10M, 80-90M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 13: Failover a node and DeltaRecovery that \
+            self.PrintStep("Step 12: Failover a node and DeltaRecovery that \
             node with loading in parallel")
 
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
@@ -993,7 +1049,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
@@ -1054,14 +1110,14 @@ class volume(BaseTestCase):
             Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 9: Updating the bucket replica to 2")
+            self.PrintStep("Step 13: Updating the bucket replica to 2")
 
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=2)
 
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             tasks_info = self.data_load(
                 scope=self.scope_name,
@@ -1076,8 +1132,8 @@ class volume(BaseTestCase):
             self.bucket_util.print_bucket_stats()
             self.print_crud_stats()
             self.get_bucket_dgm(self.bucket)
- 
-        #######################################################################
+
+            ####################################################################
             '''
             Existing:
             Sequential: 0 - 10M
@@ -1097,7 +1153,7 @@ class volume(BaseTestCase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
-            self.generate_docs(doc_ops=["create", "update", "delete"])
+            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
@@ -1146,48 +1202,6 @@ class volume(BaseTestCase):
                 self.get_bucket_dgm(self.bucket)
 
     def SteadyStateVolume(self):
-        #######################################################################
-        self.PrintStep("Step 1: Create a n node cluster")
-        if self.nodes_init > 1:
-            nodes_init = self.cluster.servers[1:self.nodes_init]
-            self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.cluster.nodes_in_cluster.extend(
-                [self.cluster.master] + nodes_init)
-
-        #######################################################################
-        self.PrintStep("Step 2: Create required buckets and collections.")
-        self.bucket = self.create_required_buckets()
-        props = "magma"
-        update_bucket_props = False
-
-        if self.disable_magma_commit_points:
-            props += ";magma_max_commit_points=0"
-            update_bucket_props = True
-
-        if self.fragmentation != 50:
-            props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
-            update_bucket_props = True
-
-        if update_bucket_props:
-            self.bucket_util.update_bucket_props(
-                    "backend", props,
-                    self.bucket_util.buckets)
-
-        self.scope_name = "VolumeScope"
-        collection_prefix = "VolumeCollection"
-        self.bucket_util.create_scope(self.cluster.master,
-                                      self.bucket,
-                                      {"name": self.scope_name})
-
-        for i in range(self.num_collections):
-            collection_name = collection_prefix + str(i)
-            self.log.info("Creating scope::collection '%s::%s'"
-                          % (self.scope_name, collection_name))
-            self.bucket_util.create_collection(self.cluster.master,
-                                               self.bucket,
-                                               self.scope_name,
-                                               {"name": collection_name})
-            self.sleep(2)
         #######################################################################
         '''
         creates: 0 - 10M
