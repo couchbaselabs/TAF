@@ -598,8 +598,9 @@ class BaseTestCase(unittest.TestCase):
         return: List of servers with crashes or a empty list if no core exists
         Args: list of servers
         """
+        if force_collect:
+            self.log.info("Initializing core dump check on all the nodes")
 
-        self.log.info("Initializing core dump check on all the nodes")
         servers_with_crashes = list()
 
         for server in servers:
