@@ -603,7 +603,8 @@ class volume(BaseTestCase):
             self.task.rebalance([self.cluster.master], nodes_init, [])
             self.cluster.nodes_in_cluster.extend(
                 [self.cluster.master] + nodes_init)
-
+        else:
+            self.cluster.nodes_in_cluster.extend([self.cluster.master])
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and collections.")
         self.bucket = self.create_required_buckets()
@@ -639,6 +640,7 @@ class volume(BaseTestCase):
                                                {"name": collection_name})
             self.sleep(2)
         #######################################################################
+        self.loop = 0
         while self.loop < self.iterations:
             '''
             Create sequential: 0 - 10M
@@ -716,7 +718,7 @@ class volume(BaseTestCase):
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
 
-            temp = self.key_prefix
+            self.key_prefix = "random_keys"
             self.create_perc = 100
             self.update_perc = 100
             self.delete_perc = 100
