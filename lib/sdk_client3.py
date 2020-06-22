@@ -783,7 +783,6 @@ class SDKClient(object):
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except DocumentNotFoundException as e:
-            self.log.warning("Key '%s' not found!" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except DurabilityAmbiguousException as e:

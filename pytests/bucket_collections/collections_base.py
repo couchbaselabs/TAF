@@ -157,6 +157,10 @@ class CollectionBase(BaseTestCase):
                 target_spec[Bucket.replicaNumber] = self.num_replicas
             elif over_ride_param == "sdk_timeout":
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
+            elif over_ride_param == "bucket_size":
+                target_spec[Bucket.ramQuotaMB] = self.bucket_size
+            elif over_ride_param == "doc_size":
+                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
 
     def load_data_for_sub_doc_ops(self):
         new_data_load_template = \
