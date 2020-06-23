@@ -73,6 +73,7 @@ class MagmaFailures(MagmaBaseTest):
 
     def crash(self, nodes=None, kill_itr=1, graceful=False):
         self.stop_crash = False
+        count = kill_itr
         if not nodes:
             nodes = self.cluster.nodes_in_cluster
 
@@ -90,10 +91,11 @@ class MagmaFailures(MagmaBaseTest):
                 if graceful:
                     shell.restart_couchbase()
                 else:
-                    while kill_itr > 0:
+                    while count > 0:
                         shell.kill_memcached()
                         self.sleep(1)
-                        kill_itr -= 1
+                        count -= 1
+                    count = kill_itr
 
             crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
             if len(crashes) > 0:
