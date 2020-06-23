@@ -112,6 +112,7 @@ class MagmaFailures(MagmaBaseTest):
         for shell in connections:
             shell.disconnect()
 
+
 class MagmaCrashTests(MagmaFailures):
 
     def test_crash_magma_n_times(self):
@@ -162,16 +163,19 @@ class MagmaCrashTests(MagmaFailures):
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
 
-        ops_len= len(self.doc_ops.split(":"))
+        ops_len = len(self.doc_ops.split(":"))
 
         self.create_start = self.num_items
         self.create_end = self.num_items * 2
+
+        if self.doc_ops == "create":
+            self.create_end = self.num_items * 20
 
         if ops_len == 1:
             self.update_start = 0
             self.update_end = self.num_items
             self.expiry_start = 0
-            self.expiry_end =  self.num_items
+            self.expiry_end = self.num_items
             self.delete_start = 0
             self.delete_end = self.num_items
         elif ops_len == 2:
@@ -195,7 +199,8 @@ class MagmaCrashTests(MagmaFailures):
 
         self.generate_docs(doc_ops=self.doc_ops)
 
-        th = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
+        th = threading.Thread(target=self.crash, kwargs={"graceful":
+                                                         self.graceful})
         th.start()
 
         tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
@@ -210,7 +215,7 @@ class MagmaCrashTests(MagmaFailures):
         th.join()
 
     def test_crash_during_recovery(self):
-        ops_len= len(self.doc_ops.split(":"))
+        ops_len = len(self.doc_ops.split(":"))
 
         self.create_start = self.num_items
         self.create_end = self.num_items * 2
@@ -219,7 +224,7 @@ class MagmaCrashTests(MagmaFailures):
             self.update_start = 0
             self.update_end = self.num_items
             self.expiry_start = 0
-            self.expiry_end =  self.num_items
+            self.expiry_end = self.num_items
             self.delete_start = 0
             self.delete_end = self.num_items
         elif ops_len == 2:
@@ -289,7 +294,7 @@ class MagmaCrashTests(MagmaFailures):
                 self.bucket_util._wait_for_stats_all_buckets()
 
             if self.stop:
-                break;
+                break
 
             count += 1
 
@@ -387,7 +392,8 @@ class MagmaCrashTests(MagmaFailures):
         end = 1
         reverse_read_gen = self.genrate_docs_basic(start, end)
 
-        th = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
+        th = threading.Thread(target=self.crash, kwargs={"graceful":
+                                                         self.graceful})
         th.start()
 
         count = 0
@@ -429,7 +435,8 @@ class MagmaCrashTests(MagmaFailures):
         self.update_start = 0
         self.update_end = self.num_items
 
-        th = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
+        th = threading.Thread(target=self.crash, kwargs={"graceful":
+                                                         self.graceful})
         th.start()
 
         count = 0
@@ -474,7 +481,8 @@ class MagmaCrashTests(MagmaFailures):
                 val_obj.put("mutated", i)
                 self.client.upsert(key_obj, val_obj)
 
-        th1 = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
+        th1 = threading.Thread(target=self.crash, kwargs={"graceful":
+                                                          self.graceful})
         th1.start()
 
         threads = []
@@ -529,7 +537,8 @@ class MagmaCrashTests(MagmaFailures):
                 self.update_end = 1
         self.doc_ops = "update"
 
-        th = threading.Thread(target=self.crash, kwargs={"graceful": self.graceful})
+        th = threading.Thread(target=self.crash, kwargs={"graceful":
+                                                         self.graceful})
         th.start()
 
         count = 0
@@ -566,9 +575,11 @@ class MagmaCrashTests(MagmaFailures):
 
         self.validate_data("update", self.gen_update)
 
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster, disable=False)
+        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
+                                       disable=False)
 
         self.log.info("==test_crash_during_val_movement_across_trees ends==")
+
 
 class MagmaRollbackTests(MagmaFailures):
 
@@ -659,8 +670,7 @@ class MagmaRollbackTests(MagmaFailures):
                                                                  self.target_vbucket)
 
         self.doc_ops = "create"
-        self.loadgen_docs(_sync=True,
-                              retry_exceptions=retry_exceptions)
+        self.loadgen_docs(_sync=True, retry_exceptions=retry_exceptions)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(items)
 
@@ -685,7 +695,7 @@ class MagmaRollbackTests(MagmaFailures):
 
             self.loadgen_docs(_sync=True,
                               retry_exceptions=retry_exceptions)
-            #start = self.gen_delete.key_counter
+            # start = self.gen_delete.key_counter
 
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                                  mem_only_items}
@@ -770,6 +780,7 @@ class MagmaRollbackTests(MagmaFailures):
         self.bucket_util.verify_stats_all_buckets(items)
         shell.disconnect()
         self.log.info("test_magma_rollback_n_times_during_del_op starts")
+
 
 class MagmaSpaceAmplification(MagmaFailures):
 
