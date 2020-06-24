@@ -85,7 +85,7 @@ class MagmaBaseTest(BaseTestCase):
                     self.bucket_util.buckets)
 
         self.ep_queue_stats = self.input.param("ep_queue_stats", True)
-        self.monitor_stats =["doc_ops", "ep_queue_size"]
+        self.monitor_stats = ["doc_ops", "ep_queue_size"]
         if not self.ep_queue_stats:
             self.monitor_stats =["doc_ops"]
         self.doc_size = self.input.param("doc_size", 2048)
@@ -581,3 +581,4 @@ class MagmaBaseTest(BaseTestCase):
                 self.assertEqual(len(crashes), 0,
                                  msg="Coredump found on servers {}"
                                  .format(crashes))
+            self.sleep(10, "Sleeping before re-checking for crashes.")
