@@ -134,8 +134,8 @@ class BasicCrudTests(MagmaBaseTest):
         count = 0
         init_items = self.num_items
 
-        th = threading.Thread(target=self.abort_tasks_after_crash)
-        th.start()
+        #th = threading.Thread(target=self.abort_tasks_after_crash)
+        #th.start()
 
         while count < self.test_itr:
             self.log.info("Create Iteration count == {}".format(count))
@@ -165,8 +165,8 @@ class BasicCrudTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             self.generate_docs(doc_ops="read")
-            if self.stop:
-                break;
+            #if self.stop:
+            #    break;
 
             if self.doc_size <= 32:
                 for bucket in self.bucket_util.get_all_buckets():
@@ -179,8 +179,8 @@ class BasicCrudTests(MagmaBaseTest):
                         msg.format(bucket.name, count+1,
                                    disk_usage[3], disk_usage[2]))
             count += 1
-        self.stop = True
-        th.join()
+        #self.stop = True
+        #th.join()
         self.log.info("====test_basic_create_read ends====")
 
     def test_update_multi(self):
@@ -194,8 +194,8 @@ class BasicCrudTests(MagmaBaseTest):
 
         upsert_doc_list = self.get_fragmentation_upsert_docs_list()
 
-        th = threading.Thread(target=self.abort_tasks_after_crash)
-        th.start()
+        #th = threading.Thread(target=self.abort_tasks_after_crash)
+        #th.start()
 
         count = 0
         self.mutate = 0
@@ -251,12 +251,12 @@ class BasicCrudTests(MagmaBaseTest):
                                   self.disk_usage[self.disk_usage.keys()[0]]))
             # Spcae Amplification check ends
 
-            if self.stop:
-                break
+            #if self.stop:
+            #    break
             count += 1
 
-        self.stop = True
-        th.join()
+        #self.stop = True
+        #th.join()
 
         self.validate_data("update", self.gen_update)
 
@@ -283,8 +283,8 @@ class BasicCrudTests(MagmaBaseTest):
         msg = "{} Iteration= {}, Disk Usage = {}MB\
          exceeds 2.5 times from Actual disk usage = {}MB"
 
-        th = threading.Thread(target=self.abort_tasks_after_crash)
-        th.start()
+        #th = threading.Thread(target=self.abort_tasks_after_crash)
+        #th.start()
 
         self.mutate = 0
         for i in range(self.test_itr):
@@ -338,8 +338,8 @@ class BasicCrudTests(MagmaBaseTest):
                                       self.disk_usage[self.disk_usage.keys()[0]]))
                 # Spcae Amplification check ends
 
-                if self.stop:
-                    break
+                #if self.stop:
+                #    break
                 count += 1
             self.update_itr += self.update_itr
 
@@ -360,8 +360,8 @@ class BasicCrudTests(MagmaBaseTest):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            if self.stop:
-                break
+            #if self.stop:
+            #    break
 
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -401,8 +401,8 @@ class BasicCrudTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            if self.stop:
-                break
+            #if self.stop:
+            #    break
 
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -430,8 +430,8 @@ class BasicCrudTests(MagmaBaseTest):
                                   self.disk_usage[self.disk_usage.keys()[0]]))
             # Space amplification Check  ends
 
-        self.stop = True
-        th.join()
+        #self.stop = True
+        #th.join()
 
         self.validate_data("create", self.gen_create)
         self.log.info("====test_multiUpdate_delete ends====")
@@ -439,8 +439,8 @@ class BasicCrudTests(MagmaBaseTest):
     def test_update_rev_update(self):
         self.log.info("==== test_update_rev_update starts =====")
 
-        th = threading.Thread(target=self.abort_tasks_after_crash)
-        th.start()
+        #th = threading.Thread(target=self.abort_tasks_after_crash)
+        #th.start()
 
         count = 0
         mutated = 1
@@ -602,8 +602,8 @@ class BasicCrudTests(MagmaBaseTest):
                     times".format(_res, count,
                                   self.disk_usage[self.disk_usage.keys()[0]]))
                 # Spcae amplification check ends
-                if self.stop:
-                    break
+                #if self.stop:
+                #   break
                 count += 1
             self.update_itr += self.update_itr
             start_del = 0
@@ -627,8 +627,8 @@ class BasicCrudTests(MagmaBaseTest):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            if self.stop:
-                break
+            #if self.stop:
+            #    break
 
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -666,8 +666,8 @@ class BasicCrudTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            if self.stop:
-                break
+            #if self.stop:
+            #    break
 
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -707,8 +707,8 @@ class BasicCrudTests(MagmaBaseTest):
                               self.disk_usage[self.disk_usage.keys()[0]]))
             # Space amplification check ends
 
-        self.stop = True
-        th.join()
+        #self.stop = True
+        #th.join()
         self.log.info("====test_update_rev_update ends====")
 
     def test_update_single_doc_n_times(self):

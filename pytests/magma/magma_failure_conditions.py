@@ -270,9 +270,6 @@ class MagmaCrashTests(MagmaFailures):
 
         upsert_doc_list = self.get_fragmentation_upsert_docs_list()
 
-        th = threading.Thread(target=self.abort_tasks_after_crash)
-        th.start()
-
         count = 0
         self.mutate = 0
         while count < self.test_itr:
@@ -295,13 +292,7 @@ class MagmaCrashTests(MagmaFailures):
                                       _sync=True)
                 self.bucket_util._wait_for_stats_all_buckets()
 
-            if self.stop:
-                break
-
             count += 1
-
-        self.stop = True
-        th.join()
 
         self.validate_data("update", self.gen_update)
         self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
