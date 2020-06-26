@@ -261,6 +261,7 @@ class ClusterUtils:
             remote_client = RemoteMachineShellConnection(server)
             vb_on_node, _ = remote_client.execute_command("grep ^COUCHBASE_NUM_VBUCKETS \
             /opt/couchbase/bin/couchbase-server | cut -d \"=\" -f 2",)
+            self.log.debug("Current vBuckets on node %s: %s" % (server, vb_on_node))
             if vb_on_node:
                 vb_on_node = int(vb_on_node[0])
             else:

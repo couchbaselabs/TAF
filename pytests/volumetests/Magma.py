@@ -12,7 +12,7 @@ from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection
+from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from table_view import TableView
@@ -101,8 +101,9 @@ class volume(BaseTestCase):
 
         self.scope_name = self.input.param("scope_name",
                                            CbServer.default_scope)
-        self.collection_prefix = self.input.param("collection_prefix",
-                                                  CbServer.default_collection)
+        if self.num_collections:
+            self.collection_prefix = self.input.param("collection_prefix",
+                                                      CbServer.default_collection)
 
         if self.scope_name != CbServer.default_scope:
             self.bucket_util.create_scope(self.cluster.master,
@@ -474,11 +475,16 @@ class volume(BaseTestCase):
             ])
         self.table.display("Docs statistics")
 
-    def perform_load(self, crash=False, num_kills=1, validate_data=True):
+    def perform_load(self, crash=False, num_kills=1, wait_for_load=True,
+                     validate_data=True):
         tasks_info = self.data_load(
             scope=self.scope_name,
             collections=self.bucket.scopes[self.scope_name].collections.keys())
-        self.wait_for_doc_load_completion(tasks_info)
+
+        if wait_for_load:
+            self.wait_for_doc_load_completion(tasks_info)
+        else:
+            return tasks_info
 
         if crash:
             self.kill_memcached(num_kills=num_kills)
@@ -488,17 +494,20 @@ class volume(BaseTestCase):
                                  collections=self.bucket.
                                  scopes[self.scope_name].collections.keys())
 
-        self.get_magma_disk_usage()
-        self.bucket_util.print_bucket_stats()
-        self.print_crud_stats()
-        self.get_bucket_dgm(self.bucket)
-        self.check_fragmentation_using_magma_stats(self.bucket)
+        self.print_stats()
         crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if len(crashes) > 0:
             self.PrintStep("Crashes found on server: %s" % crashes)
         if self.assert_crashes_on_load:
             self.task.jython_task_manager.abort_all_tasks()
             self.assertTrue(len(crashes) == 0, "Found servers having crashes")
+
+    def print_stats(self):
+        self.get_magma_disk_usage()
+        self.bucket_util.print_bucket_stats()
+        self.print_crud_stats()
+        self.get_bucket_dgm(self.bucket)
+        self.check_fragmentation_using_magma_stats(self.bucket)
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
@@ -588,6 +597,7 @@ class volume(BaseTestCase):
 
     def crash_thread(self, nodes=None, graceful=False):
         self.stop_crash = False
+        self.crash_count = 0
         if not nodes:
             nodes = self.cluster.nodes_in_cluster
 
@@ -597,6 +607,7 @@ class volume(BaseTestCase):
                        "Waiting for %s sec to kill memc on all nodes" %
                        sleep)
             self.kill_memcached(nodes, num_kills=1, graceful=graceful, wait=True)
+            self.crash_count += 1
 
     def kill_memcached(self, servers=None, num_kills=1,
                        graceful=False, wait=True):
@@ -617,6 +628,7 @@ class volume(BaseTestCase):
 
         crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if len(crashes) > 0:
+            self.stop_crash = True
             self.task.jython_task_manager.abort_all_tasks()
 
         self.assertTrue(len(crashes) == 0, "Found servers having crashes")
@@ -691,6 +703,23 @@ class volume(BaseTestCase):
             self.get_bucket_dgm(self.bucket)
             _iter += 1
 
+    def pause_rebalance(self):
+        rest = RestConnection(self.cluster.master)
+        i = 1
+        expected_progress = 20
+        while expected_progress < 100:
+            expected_progress = 20 * i
+            reached = RestHelper(rest).rebalance_reached(expected_progress)
+            self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
+                            .format(expected_progress))
+            if not RestHelper(rest).is_cluster_rebalanced():
+                self.log.info("Stop the rebalance")
+                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
+                self.assertTrue(stopped, msg="Unable to stop rebalance")
+                rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster)
+            i += 1
+        return rebalance_task
+
     def PrintStep(self, msg=None):
         print "\n"
         print "\t", "#"*60
@@ -702,6 +731,20 @@ class volume(BaseTestCase):
 
     def Volume(self):
         #######################################################################
+        def end_step_checks(tasks):
+            self.wait_for_doc_load_completion(tasks)
+            self.data_validation(scope=self.scope_name,
+                                 collections=self.bucket.
+                                 scopes[self.scope_name].collections.keys())
+
+            self.print_stats()
+            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+            if len(crashes) > 0:
+                self.PrintStep("Crashes found on server: %s" % crashes)
+            if self.assert_crashes_on_load:
+                self.task.jython_task_manager.abort_all_tasks()
+                self.assertTrue(len(crashes) == 0, "Found servers having crashes")
+
         self.loop = 0
         while self.loop < self.iterations:
             '''
@@ -730,7 +773,7 @@ class volume(BaseTestCase):
                            str(self.num_items*self.update_perc/100))
 
             self.generate_docs(doc_ops="update")
-            self.perform_load(validate_data=True)
+            self.perform_load(validate_data=False)
 
             self.key_prefix = temp
             ###################################################################
@@ -786,11 +829,11 @@ class volume(BaseTestCase):
             self.delete_perc = 50
             self.expiry_perc = 50
             self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
-            self.perform_load(validate_data=True)
+            tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-
+            end_step_checks(tasks)
             ###################################################################
             '''
             Existing:
@@ -809,11 +852,17 @@ class volume(BaseTestCase):
             self.PrintStep("Step 7: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
 
+            self.create_perc = 100
+            self.update_perc = 100
+            self.delete_perc = 100
+            self.expiry_perc = 0
             self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
-            self.perform_load(validate_data=True)
+            tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            end_step_checks(tasks)
+
             ###################################################################
             '''
             Existing:
@@ -832,11 +881,16 @@ class volume(BaseTestCase):
             self.PrintStep("Step 8: Rebalance In_Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
 
+            self.create_perc = 100
+            self.update_perc = 100
+            self.delete_perc = 0
+            self.expiry_perc = 100
             self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
-            self.perform_load(validate_data=True)
+            tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            end_step_checks(tasks)
 
             ###################################################################
             '''
@@ -857,11 +911,16 @@ class volume(BaseTestCase):
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
 
+            self.create_perc = 100
+            self.update_perc = 100
+            self.delete_perc = 50
+            self.expiry_perc = 50
             self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
-            self.perform_load(validate_data=True)
+            tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            end_step_checks(tasks)
 
             ###################################################################
             '''
@@ -897,6 +956,10 @@ class volume(BaseTestCase):
                                                        howmany=1)
 
             # Mark Node for failover
+            self.create_perc = 100
+            self.update_perc = 100
+            self.delete_perc = 0
+            self.expiry_perc = 100
             self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
             tasks_info = self.data_load(
                 scope=self.scope_name,
@@ -919,10 +982,7 @@ class volume(BaseTestCase):
             self.cluster.nodes_in_cluster = list(
                 set(self.cluster.nodes_in_cluster) - set(servs_out))
             self.available_servers += servs_out
-            self.wait_for_doc_load_completion(tasks_info)
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
+            end_step_checks(tasks_info)
 
             self.bucket_util.compare_failovers_logs(
                 prev_failover_stats,
@@ -998,10 +1058,7 @@ class volume(BaseTestCase):
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.wait_for_doc_load_completion(tasks_info)
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
+            end_step_checks(tasks_info)
 
             self.bucket_util.compare_failovers_logs(
                 prev_failover_stats,
@@ -1017,9 +1074,6 @@ class volume(BaseTestCase):
                 servers=nodes, buckets=self.bucket_util.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
 
             ###################################################################
             '''
@@ -1079,10 +1133,7 @@ class volume(BaseTestCase):
                 num_reader_threads="disk_io_optimized")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.wait_for_doc_load_completion(tasks_info)
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
+            end_step_checks(tasks_info)
 
             self.bucket_util.compare_failovers_logs(
                 prev_failover_stats,
@@ -1098,9 +1149,6 @@ class volume(BaseTestCase):
                 servers=nodes, buckets=self.bucket_util.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
 
             ###################################################################
             '''
@@ -1131,14 +1179,8 @@ class volume(BaseTestCase):
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.wait_for_doc_load_completion(tasks_info)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
+            end_step_checks(tasks_info)
 
             ####################################################################
             '''
@@ -1172,13 +1214,7 @@ class volume(BaseTestCase):
  
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.wait_for_doc_load_completion(tasks_info)
-            self.data_validation(scope=self.scope_name,
-                                 collections=self.bucket.
-                                 scopes[self.scope_name].collections.keys())
-            self.bucket_util.print_bucket_stats()
-            self.print_crud_stats()
-            self.get_bucket_dgm(self.bucket)
+            end_step_checks(tasks_info)
 
         #######################################################################
             self.PrintStep("Step 15: Flush the bucket and \
@@ -1449,6 +1485,9 @@ class volume(BaseTestCase):
 
         for task in tasks_info:
             self.task_manager.get_task_result(task)
+        self.stop_crash = True
+        th.join()
+
         #######################################################################
         self.PrintStep("Step 15: Random crashes during Updates")
         '''
@@ -1465,7 +1504,11 @@ class volume(BaseTestCase):
                               kwargs={"graceful": False})
         th.start()
 
-        self.wait_for_doc_load_completion(tasks_info)
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.stop_crash = True
+        th.join()
+
         #######################################################################
         self.PrintStep("Step 15: Random crashes during Deletes")
         '''
@@ -1486,6 +1529,9 @@ class volume(BaseTestCase):
 
         for task in tasks_info:
             self.task_manager.get_task_result(task)
+        self.stop_crash = True
+        th.join()
+
         #######################################################################
         self.PrintStep("Step 15: Random crashes during Expiry")
         '''
@@ -1506,6 +1552,9 @@ class volume(BaseTestCase):
 
         for task in tasks_info:
             self.task_manager.get_task_result(task)
+        self.stop_crash = True
+        th.join()
+
         #######################################################################
         self.PrintStep("Step 20: Drop a collection")
         for i in range(1, self.num_collections, 2):
@@ -1520,3 +1569,286 @@ class volume(BaseTestCase):
             self.get_magma_disk_usage()
         if self.end_step == 20:
             exit(20)
+
+    def SystemTestMagma(self):
+        #######################################################################
+        self.loop = 0
+        self.skip_read_on_error = True
+        self.suppress_error_table = True
+        self.stop_rebalance = self.input.param("pause_rebalance", False)
+        while self.loop < self.iterations:
+            '''
+            Create sequential: 0 - 10M
+            Final Docs = 10M (0-10M, 10M seq items)
+            '''
+            self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
+            self.expiry_perc = 100
+            self.create_perc = 0
+            self.update_perc = 0
+            self.delete_perc = 0
+            self.key_prefix = "random"
+            self.generate_docs(doc_ops="expiry",
+                               expire_start=0,
+                               expire_end=self.num_items)
+            self.perform_load(wait_for_load=False)
+            self.sleep(120)
+            ###################################################################
+            self.PrintStep("Step 6: Rebalance in with Loading of docs")
+            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+
+            if self.stop_rebalance:
+                rebalance_task = self.pause_rebalance()
+
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 7: Rebalance Out with Loading of docs")
+            rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
+
+            if self.stop_rebalance:
+                rebalance_task = self.pause_rebalance()
+
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 8: Rebalance In_Out with Loading of docs")
+            rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
+
+            if self.stop_rebalance:
+                rebalance_task = self.pause_rebalance()
+
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 9: Swap with Loading of docs")
+
+            rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
+
+            if self.stop_rebalance:
+                rebalance_task = self.pause_rebalance()
+
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 10: Failover a node and RebalanceOut that node \
+            with loading in parallel")
+
+            # Chose node to failover
+            self.rest = RestConnection(self.cluster.master)
+            self.nodes = self.cluster_util.get_nodes(self.cluster.master)
+            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                                       howmany=1)
+
+            # Failover Node
+            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
+                                                           graceful=True)
+            self.sleep(10)
+            self.rest.monitorRebalance()
+
+            # Rebalance out failed over node
+            self.otpNodes = self.rest.node_statuses()
+            self.rest.rebalance(otpNodes=[otpNode.id for otpNode in self.otpNodes],
+                                ejectedNodes=[self.chosen[0].id])
+            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
+                            msg="Rebalance failed")
+
+            # Maintain nodes availability
+            servs_out = [node for node in self.cluster.servers
+                         if node.ip == self.chosen[0].ip]
+            self.cluster.nodes_in_cluster = list(
+                set(self.cluster.nodes_in_cluster) - set(servs_out))
+            self.available_servers += servs_out
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 11: Failover a node and FullRecovery\
+             that node")
+
+            self.rest = RestConnection(self.cluster.master)
+            self.nodes = self.cluster_util.get_nodes(self.cluster.master)
+            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                                       howmany=1)
+
+            # Mark Node for failover
+            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
+                                                           graceful=True)
+            self.sleep(10)
+            self.rest.monitorRebalance()
+
+            # Mark Node for full recovery
+            if self.success_failed_over:
+                self.rest.set_recovery_type(otpNode=self.chosen[0].id,
+                                            recoveryType="full")
+
+            rebalance_task = self.task.async_rebalance(
+                self.cluster.servers[:self.nodes_init], [], [])
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 12: Failover a node and DeltaRecovery that \
+            node with loading in parallel")
+
+            self.rest = RestConnection(self.cluster.master)
+            self.nodes = self.cluster_util.get_nodes(self.cluster.master)
+            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                                       howmany=1)
+
+            # Mark Node for failover
+            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
+                                                           graceful=True)
+            self.sleep(10)
+            self.rest.monitorRebalance()
+            if self.success_failed_over:
+                self.rest.set_recovery_type(otpNode=self.chosen[0].id,
+                                            recoveryType="delta")
+
+            rebalance_task = self.task.async_rebalance(
+                self.cluster.servers[:self.nodes_init], [], [])
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 13: Updating the bucket replica to 2")
+
+            bucket_helper = BucketHelper(self.cluster.master)
+            for i in range(len(self.bucket_util.buckets)):
+                bucket_helper.change_bucket_props(
+                    self.bucket_util.buckets[i], replicaNumber=2)
+
+            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+
+            if self.stop_rebalance:
+                rebalance_task = self.pause_rebalance()
+
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 14: Updating the bucket replica to 1")
+            bucket_helper = BucketHelper(self.cluster.master)
+            for i in range(len(self.bucket_util.buckets)):
+                bucket_helper.change_bucket_props(
+                    self.bucket_util.buckets[i], replicaNumber=1)
+
+            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
+                                                       [], [])
+            if self.stop_rebalance:
+                rebalance_task = self.pause_rebalance()
+
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+
+            th = threading.Thread(target=self.crash_thread,
+                                  kwargs={"graceful": False})
+            th.start()
+            while self.crash_count < 20:
+                continue
+            self.stop_crash = True
+            th.join()
+
+            ###################################################################
+            self.PrintStep("Step 15: Flush the bucket and \
+            start the entire process again")
+            self.loop += 1
+            self.task_manager.abort_all_tasks()
+            if self.loop < self.iterations:
+                # Flush the bucket
+                self.bucket_util.flush_all_buckets(self.cluster.master)
+                self.sleep(10)
+                if len(self.cluster.nodes_in_cluster) > self.nodes_init:
+                    nodes_cluster = self.cluster.nodes_in_cluster[:]
+                    nodes_cluster.remove(self.cluster.master)
+                    servs_out = random.sample(
+                        nodes_cluster,
+                        int(len(self.cluster.nodes_in_cluster)
+                            - self.nodes_init))
+                    rebalance_task = self.task.async_rebalance(
+                        self.cluster.servers[:self.nodes_init], [], servs_out)
+
+                    self.task.jython_task_manager.get_task_result(
+                        rebalance_task)
+                    self.available_servers += servs_out
+                    self.cluster.nodes_in_cluster = list(
+                        set(self.cluster.nodes_in_cluster) - set(servs_out))
+                    self.get_bucket_dgm(self.bucket)
+            else:
+                self.log.info("Volume Test Run Complete")
+                self.get_bucket_dgm(self.bucket)
+            self.print_stats()
