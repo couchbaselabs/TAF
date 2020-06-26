@@ -547,7 +547,6 @@ class volume(BaseTestCase):
                                             field_to_grep=field_to_grep)
             shell.disconnect()
             magma_stats_for_all_servers[server.ip] = result
-        print magma_stats_for_all_servers
         return magma_stats_for_all_servers
 
     def get_magma_disk_usage(self, bucket=None):
@@ -558,20 +557,28 @@ class volume(BaseTestCase):
         wal = 0
         keyTree = 0
         seqTree = 0
+        data_files = 0
+
         for server in servers:
             shell = RemoteMachineShellConnection(server)
+            bucket_path = os.path.join(RestConnection(server).get_data_path(),bucket.name)
             kvstore += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
-                             bucket.name, "magma.*/kv*"))[0][0].split('\n')[0])
+            " % os.path.join(bucket_path, "magma.*/kv*"))[0][0].split('\n')[0])
             wal += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
-                             bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
+            " % os.path.join(bucket_path, "magma.*/wal"))[0][0].split('\n')[0])
             keyTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
-                             bucket.name, "magma.*/kv*/rev*/key*"))[0][0].split('\n')[0])
+            " % os.path.join(bucket_path, "magma.*/kv*/rev*/key*"))[0][0].split('\n')[0])
             seqTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
-                             bucket.name, "magma.*/kv*/rev*/seq*"))[0][0].split('\n')[0])
+            " % os.path.join(bucket_path, "magma.*/kv*/rev*/seq*"))[0][0].split('\n')[0])
+
+            cmd = 'find ' + bucket_path + '/magma*/ -maxdepth 1 -type d \
+            -print0 | while read -d "" -r dir; do files=("$dir"/*/*/*); \
+            printf "%d,%s\n" "${#files[@]}" "$dir"; done'
+            data_files = shell.execute_command(cmd)[0]
+            for files in data_files:
+                if "kvstore" in files and int(files.split(",")[0]) >= 300:
+                    self.log.warn("Number of files in {} is {}".format(
+                        files.split(",")[1].rstrip(), files.split(",")[0]))
             shell.disconnect()
         self.log.debug("Total Disk usage for kvstore is {}MB".format(kvstore))
         self.log.debug("Total Disk usage for wal is {}MB".format(wal))
@@ -1502,7 +1509,7 @@ class volume(BaseTestCase):
         #######################################################################
         self.PrintStep("Step 20: Drop a collection")
         for i in range(1, self.num_collections, 2):
-            collection_name = collection_prefix + str(i)
+            collection_name = self.collection_prefix + str(i)
             self.bucket_util.drop_collection(self.cluster.master,
                                              self.bucket,
                                              self.scope_name,
