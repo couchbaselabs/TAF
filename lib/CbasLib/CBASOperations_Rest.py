@@ -409,11 +409,19 @@ class CBASHelper(RestConnection):
         headers = self._create_headers(username, password)
         status, content, header = self._http_request(
             api, method, headers=headers, params=params, timeout=timeout)
+        if not status:
+            if not content:
+                content = dict()
+                content["error"] = "Request Rejected"
+            else:
+                try:
+                    json_parsed = json.loads(content)
+                except ValueError:
+                    json_parsed = dict()
+                    json_parsed["error"] = content
+                    content = json_parsed
         if content:
             if isinstance(content, str):
                 content = json.loads(content)
-        if not status and not content:
-            content = dict()
-            content["error"] = "Request Rejected"
         return status, header['status'], content
         
