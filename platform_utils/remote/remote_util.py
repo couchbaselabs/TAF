@@ -5103,3 +5103,55 @@ class RemoteUtilHelper(object):
                 break
         shell.disconnect()
         return is_txt_found
+
+    @staticmethod
+    def get_interface_info(server):
+        shell = RemoteMachineShellConnection(server)
+        shell.info = shell.extract_remote_info()
+        if not shell.info.type.lower() == "windows":
+            command_1 = "ifconfig -a"
+            o, r = shell.execute_command(command_1)
+            interface_info = dict()
+            interface_name = None
+            interface_regex = r"(.*):.*flags"
+            ip_regex = r"inet(.*)netmask"
+            for line in o:
+                match1 = re.search(interface_regex, line)
+                match2 = re.search(ip_regex, line)
+                if match1:
+                    interface_name = match1.group(1)
+                    interface_info[interface_name] = None
+                if match2:
+                    interface_info[interface_name] = match2.group(1).strip(" ")
+        shell.disconnect()
+        return interface_info
+
+    @staticmethod
+    def set_upload_download_speed(server, upload=0, download=0):
+        shell = RemoteMachineShellConnection(server)
+        shell.info = shell.extract_remote_info()
+        if not shell.info.type.lower() == "windows":
+            interface_info = RemoteUtilHelper.get_interface_info(server)
+            interface_to_use = list()
+            for interface in interface_info:
+                if not (interface =="lo" or not interface_info[interface] or interface_info[interface] == server.ip):
+                    interface_to_use.append(interface)
+            command = "wondershaper -a {0} "
+            if upload:
+                command += "-u {0} ".format(str(upload))
+            if download:
+                command += "-d {0} ".format(str(download))
+            for interface in interface_to_use:
+                o,r = shell.execute_command(command.format(interface))
+                print o,r
+        shell.disconnect()
+
+    @staticmethod
+    def clear_all_speed_restrictions(server):
+        shell = RemoteMachineShellConnection(server)
+        shell.info = shell.extract_remote_info()
+        if not shell.info.type.lower() == "windows":
+            interface_info = RemoteUtilHelper.get_interface_info(server)
+            for interface in interface_info:
+                o, r = shell.execute_command("wondershaper -ca {0}".format(interface))
+                print o, r
