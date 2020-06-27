@@ -8,6 +8,7 @@ from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 
 from cluster_utils.cluster_ready_functions import ClusterUtils
 from bucket_utils.bucket_ready_functions import BucketUtils
+from rbac_utils.Rbac_ready_functions import RbacUtils
 
 import random
 from remote.remote_util import RemoteMachineShellConnection
@@ -371,7 +372,7 @@ class CBASBaseTest(BaseTestCase):
                             "Rebalance operation failed while removing %s"
                             % otpnode)
     
-    def create_dataverse_link_map(self, cluster, dataverse=0, link=0):
+    def create_dataverse_link_map(self, cbas_util, dataverse=0, link=0):
         """
         This function creates a hash map, depicting links in different dataverses.
         :param dataverse: Number of dataverses to be created. Default value of 0 will not create any dataverse,
@@ -409,7 +410,7 @@ class CBASBaseTest(BaseTestCase):
         link_created = 0
         for i in range(1,dataverse+1):
             dataverse_name = "dataverse_{0}".format(str(i))
-            if cluster.cbas_util.create_dataverse_on_cbas(dataverse_name=dataverse_name):
+            if cbas_util.create_dataverse_on_cbas(dataverse_name=dataverse_name):
                 dataverse_map[dataverse_name] = dict()
                 if link and (link_created < link):
                     for j in range(1, random.randint(0, link - link_created)+1):
@@ -420,205 +421,70 @@ class CBASBaseTest(BaseTestCase):
                 self.log.error("Creation of dataverse {0} failed.".format(dataverse_name))
                 for key in dataverse_map.keys():
                     if key != "Dafault":
-                        cluster.cbas_util.drop_dataverse_on_cbas(dataverse_name=key)
+                        cbas_util.drop_dataverse_on_cbas(dataverse_name=key)
                     del dataverse_map[key]
                 raise Exception("Dataverse creation failed")
         while link_created < link:
             dataverse_map["Default"]["link_{0}".format(str(link_created))] = dict()
             link_created += 1
         return dataverse_map
-    
-    
-    def create_aws_links_from_dataverse_map(self, region_list=None, verify_link_creation=False):
+
+    def create_or_delete_users(self, rbac_util, rbac_users_created, delete=False):
         """
-        This function creates external links to AWS based on the dataverse hash map.
-        :param region_list: List of valid AWS regions, where the links have to be created. 
-        If not passed, then it will generate region list from aws_config file.
-        :param verify_link_creation: verify whether the link was created successfully or not.
-        :returns True if all the links were created, False even if one of the link creation fails.
+        Creates all types of rbac users.
         """
-        if not region_list:
-            region_list = self.aws_util.aws_config["Buckets"].keys()
-        try:
-            for dataverse,links in self.dataverse_map.iteritems():
-                for link in links:
-                    self.dataverse_map[dataverse][link]["region"] = random.choice(region_list)
-                    self.dataverse_map[dataverse][link]["accessKeyId"] = self.aws_util.aws_config["Users"][
-                        self.awsUser]["accessKeyId"]
-                    self.dataverse_map[dataverse][link]["serviceEndpoint"] = self.aws_util.aws_config["Users"][
-                        self.awsUser]["serviceEndpoint"]
-                    self.dataverse_map[dataverse][link]["type"] = "s3"
-                    self.dataverse_map[dataverse][link]["secretAccessKey"] = self.aws_util.aws_config["Users"][
-                        self.awsUser]["secretAccessKey"]
-                    if self.cluster.cbas_util.create_external_link_on_cbas(
-                        link_name=link, dataverse=dataverse, link_type="s3", 
-                        accessKeyId=self.dataverse_map[dataverse][link]["accessKeyId"],
-                        secretAccessKey=self.dataverse_map[dataverse][link]["secretAccessKey"],
-                        region=self.dataverse_map[dataverse][link]["region"],
-                        serviceEndpoint= self.dataverse_map[dataverse][link]["serviceEndpoint"]):
-                        self.dataverse_map[dataverse][link]["created"] = True
-                    else:
-                        return False
-                    if verify_link_creation:
-                        response = self.cluster.cbas_util.get_link_info(link_name=link, dataverse=dataverse, link_type="s3")
-                        assert(response[0]["accessKeyId"] == self.aws_util.aws_config["Users"][self.awsUser]["accessKeyId"], 
-                               "Access key id for link {0} does not match. \n Actual - {1}\nExpected - {2}".format(
-                                   link, response[0]["accessKeyId"],
-                                   self.aws_util.aws_config["Users"][self.awsUser]["accessKeyId"]))
-                        assert(response[0]["region"] == self.dataverse_map[dataverse][link]["region"],
-                               "Region does not match. \nActual - {0}\nExpected - {1}".format(
-                                   response[0]["region"],
-                                   self.dataverse_map[dataverse][link]["region"]))
-                        assert(response[0]["serviceEndpoint"] == self.aws_util.aws_config["Users"][self.awsUser][
-                            "serviceEndpoint"], "Service Endpoints do not match.\n Actual - {0}\nExpected - {1}".format(
-                                response[0]["serviceEndpoint"], self.aws_util.aws_config["Users"][
-                                    self.awsUser]["serviceEndpoint"]))
-            return True
-        except Exception:
-            return False
-    
-    
-    def create_datasets_map(self, num_of_datasets, file_formats= "", file_path="", 
-                            object_construction_def="", redact_warning=False, 
-                            header=False, null_string=None, randomize=False):
-        """
-        This function creates a hash map, depicting properties of each of the datasets within.
-        :param num_of_datasets: total number of datasets to be created.
-        :param file_formats : List of file formats for which datasets have to be created.
-        If not provided, then dataset will be created on one of the supported file formats.
-        JSON, CSV or TSV.
-        :param file_path : relative path to AWS bucket from where the files are to be 
-        read while querying the dataset. If not provided, random path will be chosen from aws_config
-        :param object_construction_def: str, required only if the file format is csv or tsv
-        :param redact_warning : True/False
-        :param header : True/False, required only if the file format is csv or tsv
-        :param null_string : str, required only if the file format is csv or tsv
-        :param randomize : True/False, sets True/False values randomly for header and redact_warning.
-        :returns hash map with dataset names as keys and associated properties as values.
-        
-        Sample dataset map: 
-        dataset_map = {
-                        "dataset_1": {
-                            "dataset_property_1": "value",
-                            "dataset_property_2": "value",
-                            ...
-                            },
-                        "dataset_2": {
-                            "dataset_property_1": "value",
-                            "dataset_property_2": "value",
-                            ...
-                            },
-                        ...
-                        }
-        """
-        dataset_map = dict()
-        for i in range(1, num_of_datasets + 1):
-            dataset_name = "dataset_{0}".format(str(i))
-            dataset_map[dataset_name] = dict()
-            # to avoid choosing a dataverse with no links.
-            while True:
-                dataverse_name = random.choice(self.dataverse_map.keys())
-                if len(self.dataverse_map[dataverse_name].keys()):
-                    break
-            
-            link_name = random.choice(self.dataverse_map[dataverse_name].keys())
-            region = self.dataverse_map[dataverse_name][link_name]["region"]
-            bucket_name = random.choice(self.aws_util.aws_config["Buckets"][region].keys())
-            if file_formats:
-                if isinstance(file_formats, str):
-                    file_format = file_formats
-                else:
-                    file_format = random.choice(file_formats)
-            else:
-                file_format = random.choice(self.aws_util.aws_config["Buckets"][region][bucket_name].keys())
-            if not file_path:
-                file_path = random.choice(self.aws_util.aws_config["Buckets"][region][bucket_name][file_format].keys())
-            if file_path == "/":
-                file_path = ""
-            if not object_construction_def:
-                object_construction_def = self.aws_util.aws_config["Buckets"][region][bucket_name][
-                    file_format][file_path].get("object_construction_def", None)
-            if not null_string:
-                null_string = self.aws_util.aws_config["Buckets"][region][bucket_name][
-                    file_format][file_path].get("null_string", None)
-            if randomize:
-                header = random.choice([True,False])
-                redact_warning = random.choice([True,False])
-            
-            dataset_map[dataset_name]["dataverse"] = dataset_name
-            dataset_map[dataset_name]["link_name"] = link_name
-            dataset_map[dataset_name]["aws_bucket_name"] = bucket_name
-            dataset_map[dataset_name]["file_format"] = file_format
-            dataset_map[dataset_name]["file_path"] = file_path
-            dataset_map[dataset_name]["object_construction_def"] = object_construction_def
-            dataset_map[dataset_name]["null_string"] = null_string
-            dataset_map[dataset_name]["header"] = header
-            dataset_map[dataset_name]["redact_warning"] = redact_warning
-            dataset_map[dataset_name]["total_records"] = self.aws_util.aws_config["Buckets"][region][
-                bucket_name][file_format][file_path].get("total_num_records", 0)
-        return dataset_map
-    
-    
-    def create_datasets_from_dataset_map(self, dataset_map=None, verify_dataset_creation=False):
-        """
-        Creates datasets based on dataset maps.
-        :param dataset_map: dict()
-        :param verify_dataset_creation: bool, verifies whether an entry for the dataset created is 
-        present in Metadata.Dataset collection.
-        :return bool
-        """
-        if not dataset_map:
-            dataset_map = self.dataset_map
-        
-        if dataset_map:
-            for dataset_name in dataset_map:
-                if self.cluster.cbas_util.create_dataset_on_external_resource(
-                    cbas_dataset_name=dataset_name, 
-                    aws_bucket_name=dataset_map[dataset_name]["aws_bucket_name"], 
-                    link_name=dataset_map[dataset_name]["link_name"],
-                    object_construction_def=dataset_map[dataset_name]["object_construction_def"], 
-                    dataverse=dataset_map[dataset_name]["dataverse"], 
-                    path_on_aws_bucket=dataset_map[dataset_name]["file_path"], 
-                    file_format=dataset_map[dataset_name]["file_format"], 
-                    redact_warning=dataset_map[dataset_name]["redact_warning"],
-                    header=dataset_map[dataset_name]["header"], 
-                    null_string=dataset_map[dataset_name]["null_string"]):
-                    if verify_dataset_creation:
-                        if not self.cluster.cbas_util.validate_dataset_in_metadata_collection(
-                            dataset_name=dataset_name, 
-                            link_name=dataset_map[dataset_name]["link_name"], 
-                            dataverse=dataset_map[dataset_name]["dataverse"], 
-                            aws_bucket_name=dataset_map[dataset_name]["aws_bucket_name"], 
-                            file_format=dataset_map[dataset_name]["file_format"]):
-                            self.log.error("Dataset {0} creation Failed".format(dataset_name))
-                            return False
-                    dataset_map[dataset_name]["created"] = True
-                else:
-                    self.log.error("Dataset {0} creation Failed".format(dataset_name))
-                    return False
+        if delete:
+            for user in rbac_users_created:
+                try:
+                    rbac_util._drop_user(user)
+                    del(rbac_users_created[user])
+                except:
+                    pass
         else:
-            self.log.error("Dataset map needs to be created first")
+            for role in RbacUtils.cb_server_roles:
+                if "[*]" in role:
+                    user = role.replace("[*]","")
+                else:
+                    user = role
+                rbac_users_created[user] = role
+                rbac_util._create_user_and_grant_role(user, role)
+
+    def create_testcase_for_rbac_user(self, description, rbac_users_created):
+        testcases = []
+        for user in rbac_users_created:
+            if user in ["admin", "analytics_admin", "cluster_admin", self.analytics_username]:
+                test_params = {
+                    "description": description.format(user),
+                    "validate_error_msg": False
+                    }
+            elif user in ["security_admin", "query_external_access", "query_system_catalog",
+                          "replication_admin", "ro_admin", "bucket_full_access",
+                          "replication_target", "mobile_sync_gateway", "data_reader", "data_writer",
+                          "data_dcp_reader", "data_monitoring", "views_admin", "views_reader",
+                          "query_delete", "query_insert", "query_manage_index", "query_select",
+                          "query_update", "fts_admin", "fts_searcher", ]:
+                test_params = {
+                    "description": description.format(user),
+                    "validate_error_msg": True,
+                    "expected_error": "User must have permission",
+                    }
+            else:
+                test_params = {"description": description.format(user),
+                               "validate_error_msg": True,
+                               "expected_error": "Unauthorized user"
+                               }
+            test_params["username"] = user
+            testcases.append(test_params)
+        return testcases
+
+    def remove_and_return_new_list(self, itemlist, item_to_remove):
+        itemlist.remove(item_to_remove)
+        return itemlist
+    
+    def set_primary_index(self, rest, bucket_name):
+        query = "CREATE PRIMARY INDEX ON `{0}`;".format(bucket_name)
+        result = rest.query_tool(query)
+        if result["status"] == "success":
+            return True
+        else:
             return False
-
-    def reset_cluster(self):
-        try:
-            for node in self.servers:
-                shell = RemoteMachineShellConnection(node)
-                # Start node
-                rest = RestConnection(node)
-                data_path = rest.get_data_path()
-                # Stop node
-                shell.stop_server()
-                # Delete Path
-                shell.cleanup_data_config(data_path)
-                shell.start_server()
-
-                # If Ipv6 update dist_cfg file post server restart
-                # to change distribution to IPv6
-                if '.com' in node.ip or ':' in node.ip:
-                    self.log.info("Updating dist_cfg for IPv6 Machines")
-                    shell.update_dist_type()
-                shell.disconnect()
-            self.sleep(10)
-        except Exception, ex:
-            self.log.info(ex)
