@@ -484,11 +484,12 @@ class CbasUtil:
                 return True
 
     def create_dataset_on_external_resource(self, cbas_dataset_name, aws_bucket_name, link_name,
-                                            object_construction_def=None, dataverse="Default", 
-                                            path_on_aws_bucket=None, file_format="json", redact_warning=False,
-                                            header=False, null_string=None,                                             
+                                            object_construction_def=None, dataverse="Default",
+                                            path_on_aws_bucket=None, file_format="json", redact_warning=None,
+                                            header=None, null_string=None, include=None, exclude=None,
                                             validate_error_msg=False, username = None,
-                                            password = None, expected_error=None, expected_error_code=None):
+                                            password = None, expected_error=None, expected_error_code=None,
+                                            links_dataverse="Default"):
         """
         Creates a dataset for an external resource like AWS S3 bucket. 
         Note - No shadow dataset is created for this type of external datasets.
@@ -515,26 +516,40 @@ class CbasUtil:
         
         """
 
-        cmd_create_dataset = "CREATE EXTERNAL DATASET {1}".format(cbas_dataset_name)
+        cmd_create_dataset = "CREATE EXTERNAL DATASET {0}".format(cbas_dataset_name)
+
         if object_construction_def:
             cmd_create_dataset += "({0})".format(object_construction_def)
-        if dataverse is not "Default":
-            cmd_create_dataset += " ON `{1}` AT {2}.{3}".format(aws_bucket_name, dataverse, link_name)
+
+        if links_dataverse != "Default":
+            cmd_create_dataset += " ON `{0}` AT {1}.{2}".format(aws_bucket_name, links_dataverse, link_name)
         else:
-            cmd_create_dataset += " ON `{1}` AT `{2}`".format(aws_bucket_name, link_name)
-        if path_on_aws_bucket:
-            cmd_create_dataset += " USING {0}".format(path_on_aws_bucket)
+            cmd_create_dataset += " ON `{0}` AT {1}".format(aws_bucket_name, link_name)
+
+        if path_on_aws_bucket is not None:
+            cmd_create_dataset += " USING \"{0}\"".format(path_on_aws_bucket)
+
         with_parameters = dict()
         with_parameters["format"] = file_format
-        if redact_warning:
+
+        if redact_warning is not None:
             with_parameters["redact-warnings"] = redact_warning
-        if file_format in ["cvs", "tsv"]:
+
+        if header is not None:
             with_parameters["header"] = header
-            if null_string:
-                with_parameters["null"] = null_string
+
+        if null_string:
+            with_parameters["null"] = null_string
+
+        if include is not None:
+            with_parameters["include"] = include
+
+        if exclude is not None:
+            with_parameters["exclude"] = exclude
+
         cmd_create_dataset += " WITH {0};".format(json.dumps(with_parameters))
 
-        if dataverse is not None:
+        if dataverse != "Default":
             dataverse_prefix = 'use ' + dataverse + ';\n'
             cmd_create_dataset = dataverse_prefix + cmd_create_dataset
 
@@ -542,7 +557,7 @@ class CbasUtil:
             cmd_create_dataset, username=username, password=password)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
-                                                   expected_error, expected_error_code=None)
+                                                   expected_error, expected_error_code)
         else:
             if status != "success":
                 return False
