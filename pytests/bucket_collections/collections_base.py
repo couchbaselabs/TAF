@@ -28,9 +28,8 @@ class CollectionBase(BaseTestCase):
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
-        if not self.skip_collections_cleanup:
-            self.bucket_util.remove_scope_collections_and_validate(
-                validate_docs_count=self.validate_docs_count_during_teardown)
+        self.bucket_util.remove_scope_collections_and_validate(
+            validate_docs_count=self.validate_docs_count_during_teardown)
         super(CollectionBase, self).tearDown()
 
     def handle_collection_setup_exception(self, exception_obj):

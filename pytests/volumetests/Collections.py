@@ -34,12 +34,12 @@ class volume(CollectionBase):
         self.data_load_stage = self.input.param("data_load_stage", "during")
         self.use_doc_ttl = self.input.param("use_doc_ttl", False)
         self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
-        self.skip_collections_cleanup = True
 
     def tearDown(self):
+        # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
         self.log.info("Printing bucket stats before teardown")
         self.bucket_util.print_bucket_stats()
-        super(volume, self).tearDown()
+        self.cluster_util.check_for_panic_and_mini_dumps(self.cluster.servers)
 
     # Stopping and restarting the memcached process
     def stop_process(self):
@@ -75,10 +75,8 @@ class volume(CollectionBase):
         return rebalance_task
 
     def wait_for_rebalance_to_complete(self, task, wait_step=120):
-        self.task.jython_task_manager.get_task_result(task)
         reached = RestHelper(self.rest).rebalance_reached(wait_step=wait_step)
         self.assertTrue(reached, "Rebalance failed, stuck or did not complete")
-        self.assertTrue(task.result, "Rebalance Failed")
 
     def data_load_collection(self, async_load=True):
         doc_loading_spec = \
