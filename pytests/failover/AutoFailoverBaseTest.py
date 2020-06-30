@@ -185,8 +185,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                     self.durability_level
             elif over_ride_param == "replicas":
                 target_spec[Bucket.replicaNumber] = \
-                    eval(self.num_replicas)
-
+                    self.num_replicas
 
     def bareSetUp(self):
         super(AutoFailoverBaseTest, self).setUp()
