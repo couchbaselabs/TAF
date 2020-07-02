@@ -165,9 +165,9 @@ class NodeInitializeTask(Task):
             self.set_result(True)
             return
 
-        self.quota = int(info.mcdMemoryReserved * 2 / 3)
+        self.quota = int(info.mcdMemoryReserved - 100)
         if self.index_quota_percent:
-            self.index_quota = int((info.mcdMemoryReserved * 2 / 3) *
+            self.index_quota = int(self.quota *
                                    self.index_quota_percent / 100)
             rest.set_service_memoryQuota(
                 service='indexMemoryQuota',
@@ -175,12 +175,12 @@ class NodeInitializeTask(Task):
                 password=password,
                 memoryQuota=self.index_quota)
         if self.quota_percent:
-            self.quota = int(info.mcdMemoryReserved * self.quota_percent / 100)
+            self.quota = int(self.quota * self.quota_percent / 100)
 
         """ Adjust KV RAM to correct value when there is INDEX
             and FTS services added to node from Watson  """
         index_quota = INDEX_QUOTA
-        kv_quota = int(info.mcdMemoryReserved * 2 / 3)
+        kv_quota = self.quota
         if self.index_quota_percent:
             index_quota = self.index_quota
         if not self.quota_percent:
