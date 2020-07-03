@@ -1304,7 +1304,7 @@ class volume(BaseTestCase):
             items 10 times" % (str(_iter), str(self.update_perc),
                                str(self.num_items*self.update_perc/100)))
             self.generate_docs(doc_ops="update")
-            self.perform_load(crash=True, validate_data=True)
+            self.perform_load(crash=False, validate_data=True)
             _iter += 1
         if self.end_step == 5:
             exit(5)
@@ -1579,6 +1579,7 @@ class volume(BaseTestCase):
         self.loop = 0
         self.skip_read_on_error = True
         self.suppress_error_table = True
+        self.crash_count = 0
         self.stop_rebalance = self.input.param("pause_rebalance", False)
         while self.loop < self.iterations:
             '''
@@ -1597,7 +1598,7 @@ class volume(BaseTestCase):
             self.perform_load(wait_for_load=False)
             self.sleep(120)
             ###################################################################
-            self.PrintStep("Step 6: Rebalance in with Loading of docs")
+            self.PrintStep("Step 4: Rebalance in with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
 
             if self.stop_rebalance:
@@ -1616,7 +1617,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 7: Rebalance Out with Loading of docs")
+            self.PrintStep("Step 5: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
 
             if self.stop_rebalance:
@@ -1635,7 +1636,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 8: Rebalance In_Out with Loading of docs")
+            self.PrintStep("Step 6: Rebalance In_Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
 
             if self.stop_rebalance:
@@ -1654,7 +1655,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 9: Swap with Loading of docs")
+            self.PrintStep("Step 7: Swap with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
 
@@ -1674,7 +1675,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 10: Failover a node and RebalanceOut that node \
+            self.PrintStep("Step 8: Failover a node and RebalanceOut that node \
             with loading in parallel")
 
             # Chose node to failover
@@ -1713,7 +1714,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 11: Failover a node and FullRecovery\
+            self.PrintStep("Step 9: Failover a node and FullRecovery\
              that node")
 
             self.rest = RestConnection(self.cluster.master)
@@ -1747,7 +1748,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 12: Failover a node and DeltaRecovery that \
+            self.PrintStep("Step 10: Failover a node and DeltaRecovery that \
             node with loading in parallel")
 
             self.rest = RestConnection(self.cluster.master)
@@ -1779,7 +1780,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 13: Updating the bucket replica to 2")
+            self.PrintStep("Step 12: Updating the bucket replica to 2")
 
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
@@ -1804,7 +1805,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 14: Updating the bucket replica to 1")
+            self.PrintStep("Step 13: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
@@ -1828,7 +1829,7 @@ class volume(BaseTestCase):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 15: Flush the bucket and \
+            self.PrintStep("Step 14: Flush the bucket and \
             start the entire process again")
             self.loop += 1
             self.task_manager.abort_all_tasks()
