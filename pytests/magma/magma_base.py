@@ -111,7 +111,7 @@ class MagmaBaseTest(BaseTestCase):
         self.delete_start = 0
         self.read_end = 0
         self.read_start = 0
-        self.buckets = self.bucket_util.get_all_buckets()
+        self.buckets = self.bucket_util.buckets
         self.num_collections = self.input.param("num_collections", 2)
         self.num_scopes = self.input.param("num_scopes", 1)
 

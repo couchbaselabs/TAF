@@ -1742,11 +1742,10 @@ class BucketUtils(ScopeUtils):
         table.set_headers(["Bucket", "Type", "Replicas", "Durability",
                            "TTL", "Items", "RAM Quota",
                            "RAM Used", "Disk Used"])
-        buckets = self.get_all_buckets()
-        if len(buckets) == 0:
+        if len(self.buckets) == 0:
             table.add_row(["No buckets", "", "", "", "", "", "", "", ""])
         else:
-            for bucket in buckets:
+            for bucket in self.buckets:
                 table.add_row(
                     [bucket.name, bucket.bucketType,
                      str(bucket.replicaNumber),
@@ -3542,7 +3541,7 @@ class BucketUtils(ScopeUtils):
 
     def get_fragmentation_kv(self, bucket=None, server=None):
         if bucket is None:
-            bucket = self.get_all_buckets()[0]
+            bucket = self.buckets[0]
         if server is None:
             server = self.cluster.master
         bucket_helper = BucketHelper(server)
@@ -3562,6 +3561,8 @@ class BucketUtils(ScopeUtils):
 
         bucket.uuid = parsed['uuid']
         bucket.bucketType = parsed['bucketType']
+        if str(parsed['bucketType']) == 'membase':
+            bucket.bucketType = Bucket.Type.MEMBASE
         bucket.authType = parsed["authType"]
         bucket.saslPassword = parsed["saslPassword"]
         bucket.nodes = list()
