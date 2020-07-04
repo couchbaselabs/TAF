@@ -170,7 +170,7 @@ class MagmaCrashTests(MagmaFailures):
         self.create_start = self.num_items
         self.create_end = self.num_items * 2
 
-        if self.doc_ops == "create":
+        if "create" in self.doc_ops:
             self.create_end = self.num_items * 20
 
         if ops_len == 1:
