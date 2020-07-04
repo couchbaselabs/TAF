@@ -107,7 +107,7 @@ class MagmaFailures(MagmaBaseTest):
                             "Found servers having crashes")
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
+                nodes,
                 self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 20))
 
