@@ -1742,10 +1742,11 @@ class BucketUtils(ScopeUtils):
         table.set_headers(["Bucket", "Type", "Replicas", "Durability",
                            "TTL", "Items", "RAM Quota",
                            "RAM Used", "Disk Used"])
-        if len(self.buckets) == 0:
+        buckets = self.get_all_buckets()
+        if len(buckets) == 0:
             table.add_row(["No buckets", "", "", "", "", "", "", "", ""])
         else:
-            for bucket in self.buckets:
+            for bucket in buckets:
                 table.add_row(
                     [bucket.name, bucket.bucketType,
                      str(bucket.replicaNumber),
