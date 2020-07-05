@@ -635,10 +635,14 @@ class volume(BaseTestCase):
 
         if wait:
             for server in servers:
-                self.assertTrue(self.bucket_util._wait_warmup_completed(
-                        [server],
-                        self.bucket_util.buckets[0],
-                        wait_time=self.wait_timeout * 20))
+                result = self.bucket_util._wait_warmup_completed(
+                            [server],
+                            self.bucket_util.buckets[0],
+                            wait_time=self.wait_timeout * 20)
+                if not result:
+                    self.stop_crash = True
+                    self.task.jython_task_manager.abort_all_tasks()
+                    self.assertTrue(result)
 
     def perform_rollback(self, mem_only_items=100000, doc_type="create",
                          kill_rollback=1):
