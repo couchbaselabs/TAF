@@ -71,49 +71,6 @@ class MagmaFailures(MagmaBaseTest):
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
-    def crash(self, nodes=None, kill_itr=1, graceful=False):
-        self.stop_crash = False
-        count = kill_itr
-        if not nodes:
-            nodes = self.cluster.nodes_in_cluster
-
-        connections = list()
-        for node in nodes:
-            shell = RemoteMachineShellConnection(node)
-            connections.append(shell)
-
-        while not self.stop_crash:
-            sleep = random.randint(30, 60)
-            self.sleep(sleep,
-                       "waiting for %s sec to kill memcached on all nodes" %
-                       sleep)
-            for shell in connections:
-                if graceful:
-                    shell.restart_couchbase()
-                else:
-                    while count > 0:
-                        shell.kill_memcached()
-                        self.sleep(1)
-                        count -= 1
-                    count = kill_itr
-
-            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-            if len(crashes) > 0:
-                self.task.jython_task_manager.abort_all_tasks()
-                for shell in connections:
-                    shell.disconnect()
-
-            self.assertTrue(len(crashes) == 0,
-                            "Found servers having crashes")
-
-            self.assertTrue(self.bucket_util._wait_warmup_completed(
-                nodes,
-                self.bucket_util.buckets[0],
-                wait_time=self.wait_timeout * 20))
-
-        for shell in connections:
-            shell.disconnect()
-
 
 class MagmaCrashTests(MagmaFailures):
 
@@ -162,6 +119,7 @@ class MagmaCrashTests(MagmaFailures):
 
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)
+        wait_warmup = self.graceful = self.input.param("wait_warmup", True)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
 
@@ -202,7 +160,8 @@ class MagmaCrashTests(MagmaFailures):
         self.generate_docs(doc_ops=self.doc_ops)
 
         th = threading.Thread(target=self.crash, kwargs={"graceful":
-                                                         self.graceful})
+                                                         self.graceful,
+                                                         "wait": wait_warmup})
         th.start()
 
         tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,

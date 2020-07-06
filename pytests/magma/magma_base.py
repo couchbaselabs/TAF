@@ -1,5 +1,6 @@
 import math
 import os
+import random
 
 from BucketLib.bucket import Bucket
 from Cb_constants.CBServer import CbServer
@@ -592,3 +593,56 @@ class MagmaBaseTest(BaseTestCase):
                                  msg="Coredump found on servers {}"
                                  .format(crashes))
             self.sleep(10, "Sleeping before re-checking for crashes.")
+
+    def crash(self, nodes=None, kill_itr=1, graceful=False,
+              wait=True):
+        result = True
+        self.stop_crash = False
+        count = kill_itr
+
+        if not nodes:
+            nodes = self.cluster.nodes_in_cluster
+
+        connections = list()
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            connections.append(shell)
+
+        while not self.stop_crash:
+            sleep = random.randint(30, 60)
+            self.sleep(sleep,
+                       "waiting for %s sec to kill memcached on all nodes" %
+                       sleep)
+
+            for shell in connections:
+                if graceful:
+                    shell.restart_couchbase()
+                else:
+                    while count > 0:
+                        shell.kill_memcached()
+                        self.sleep(1)
+                        count -= 1
+                    count = kill_itr
+
+            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+            if len(crashes) > 0:
+                result = False
+                self.stop_crash = False
+                self.task.jython_task_manager.abort_all_tasks()
+                self.log.error("Found servers having crashes")
+
+            if wait:
+                for server in nodes:
+                    result = self.bucket_util._wait_warmup_completed(
+                                [server],
+                                self.bucket_util.buckets[0],
+                                wait_time=self.wait_timeout * 20)
+                    if not result:
+                        self.stop_crash = True
+                        self.task.jython_task_manager.abort_all_tasks()
+                        break
+
+        for shell in connections:
+            shell.disconnect()
+
+        self.assertTrue(result)
