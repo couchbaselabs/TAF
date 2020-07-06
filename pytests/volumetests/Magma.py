@@ -103,7 +103,7 @@ class volume(BaseTestCase):
                                            CbServer.default_scope)
         if self.num_collections:
             self.collection_prefix = self.input.param("collection_prefix",
-                                                      CbServer.default_collection)
+                                                      "Volume")
 
         if self.scope_name != CbServer.default_scope:
             self.bucket_util.create_scope(self.cluster.master,
