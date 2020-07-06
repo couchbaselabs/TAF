@@ -208,7 +208,8 @@ class MagmaCrashTests(MagmaFailures):
         tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                   skip_read_on_error=True,
                                   suppress_error_table=True,
-                                  _sync=False)
+                                  _sync=False,
+                                  track_failures=False)
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)

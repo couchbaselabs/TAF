@@ -155,7 +155,8 @@ class MagmaBaseTest(BaseTestCase):
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True, dgm_batch=5000,
                           skip_read_on_error=False,
-                          suppress_error_table=False):
+                          suppress_error_table=False,
+                          track_failures=True):
 
         retry_exceptions = self.retry_exceptions
         tasks_info = self.bucket_util.sync_load_all_buckets(
@@ -170,7 +171,8 @@ class MagmaBaseTest(BaseTestCase):
             skip_read_on_error=skip_read_on_error,
             suppress_error_table=suppress_error_table,
             dgm_batch=dgm_batch,
-            monitor_stats=self.monitor_stats)
+            monitor_stats=self.monitor_stats,
+            track_failures=track_failures)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
                 self.num_items = task.doc_index
@@ -185,7 +187,8 @@ class MagmaBaseTest(BaseTestCase):
                              suppress_error_table=False,
                              scope=None,
                              collection=None,
-                             _sync=True):
+                             _sync=True,
+                             track_failures=True):
         tasks_info = dict()
         read_tasks_info = dict()
         read_task = False
@@ -203,7 +206,8 @@ class MagmaBaseTest(BaseTestCase):
                 suppress_error_table=suppress_error_table,
                 scope=scope,
                 collection=collection,
-                monitor_stats=self.monitor_stats)
+                monitor_stats=self.monitor_stats,
+                track_failures=track_failures)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -219,7 +223,8 @@ class MagmaBaseTest(BaseTestCase):
                 suppress_error_table=suppress_error_table,
                 scope=scope,
                 collection=collection,
-                monitor_stats=self.monitor_stats)
+                monitor_stats=self.monitor_stats,
+                track_failures=track_failures)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "expiry" in self.doc_ops and self.gen_expiry is not None and self.maxttl:
@@ -236,7 +241,8 @@ class MagmaBaseTest(BaseTestCase):
                 suppress_error_table=suppress_error_table,
                 scope=scope,
                 collection=collection,
-                monitor_stats=self.monitor_stats)
+                monitor_stats=self.monitor_stats,
+                track_failures=track_failures)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
         if "read" in self.doc_ops and self.gen_read is not None:
@@ -248,7 +254,8 @@ class MagmaBaseTest(BaseTestCase):
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions,
                scope=scope,
-               collection=collection)
+               collection=collection,
+               track_failures=track_failures)
             read_task = True
         if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -264,7 +271,8 @@ class MagmaBaseTest(BaseTestCase):
                 suppress_error_table=suppress_error_table,
                 scope=scope,
                 collection=collection,
-                monitor_stats=self.monitor_stats)
+                monitor_stats=self.monitor_stats,
+                track_failures=track_failures)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
@@ -293,7 +301,8 @@ class MagmaBaseTest(BaseTestCase):
                      suppress_error_table=False,
                      scope=CbServer.default_scope,
                      collection=CbServer.default_collection,
-                     _sync=True):
+                     _sync=True,
+                     track_failures=True):
 
         if self.check_temporary_failure_exception:
             retry_exceptions.append(SDKException.TemporaryFailureException)
@@ -303,7 +312,8 @@ class MagmaBaseTest(BaseTestCase):
                                             suppress_error_table=suppress_error_table,
                                             _sync=_sync,
                                             scope=scope,
-                                            collection=collection)
+                                            collection=collection,
+                                            track_failures=track_failures)
         return loaders
 
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
