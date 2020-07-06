@@ -2513,7 +2513,7 @@ class BucketUtils(ScopeUtils):
             dgm_batch=dgm_batch,
             scope=scope, collection=collection,
             monitor_stats=monitor_stats,
-            track_failures=True)
+            track_failures=track_failures)
 
         for task in tasks_info.keys():
             self.task_manager.get_task_result(task)
