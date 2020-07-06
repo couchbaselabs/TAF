@@ -125,7 +125,8 @@ class ServerTasks(object):
                             scope=CbServer.default_scope,
                             collection=CbServer.default_collection,
                             sdk_client_pool=None,
-                            monitor_stats=["doc_ops"]):
+                            monitor_stats=["doc_ops"],
+                            track_failures=True):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
@@ -159,7 +160,8 @@ class ServerTasks(object):
                     suppress_error_table=suppress_error_table,
                     sdk_client_pool=sdk_client_pool,
                     scope=scope, collection=collection,
-                    monitor_stats=monitor_stats)
+                    monitor_stats=monitor_stats,
+                    track_failures=track_failures)
             else:
                 majority_value = (bucket.replicaNumber + 1)/2 + 1
 

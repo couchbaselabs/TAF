@@ -738,7 +738,8 @@ class LoadDocumentsTask(GenericLoadingTask):
                  durability="", task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False, sdk_client_pool=None,
                  scope=CbServer.default_scope,
-                 collection=CbServer.default_collection):
+                 collection=CbServer.default_collection,
+                 track_failures=True):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
@@ -767,6 +768,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.fail = dict()
         self.success = dict()
         self.skip_read_on_error = skip_read_on_error
+        self.track_failures = track_failures
 
         if proxy_client:
             self.log.debug("Changing client to proxy %s:%s..."
@@ -791,8 +793,12 @@ class LoadDocumentsTask(GenericLoadingTask):
                 timeout=self.timeout, time_unit=self.time_unit,
                 doc_type=self.generator.doc_type, durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
-            self.fail.update(fail)
-            # self.success.update(success)
+            if not self.track_failures:
+                import pydevd
+                pydevd.settrace(trace_only_current_thread=False)
+            if self.track_failures:
+                self.fail.update(fail)
+
         elif self.op_type == 'update':
             success, fail = self.batch_update(
                 key_value,
@@ -803,8 +809,9 @@ class LoadDocumentsTask(GenericLoadingTask):
                 doc_type=self.generator.doc_type,
                 durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
-            self.fail.update(fail)
-            # self.success.update(success)
+            if self.track_failures:
+                self.fail.update(fail)
+
         elif self.op_type == 'replace':
             success, fail = self.batch_replace(
                 key_value,
@@ -815,8 +822,9 @@ class LoadDocumentsTask(GenericLoadingTask):
                 doc_type=self.generator.doc_type,
                 durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
-            self.fail.update(fail)
-            # self.success.update(success)
+            if self.track_failures:
+                self.fail.update(fail)
+
         elif self.op_type == 'delete':
             success, fail = self.batch_delete(key_value,
                                               persist_to=self.persist_to,
@@ -824,18 +832,21 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               timeout=self.timeout,
                                               timeunit=self.time_unit,
                                               durability=self.durability)
-            self.fail.update(fail)
-            # self.success.update(success)
+            if self.track_failures:
+                self.fail.update(fail)
+
         elif self.op_type == 'touch':
             success, fail = self.batch_touch(key_value,
                                              exp=self.exp,
                                              timeout=self.timeout,
                                              timeunit=self.time_unit)
-            self.fail.update(fail)
-            # self.success.update(success)
+            if self.track_failures:
+                self.fail.update(fail)
+
         elif self.op_type == 'read':
             success, fail = self.batch_read(dict(key_value).keys())
-            self.fail.update(fail)
+            if self.track_failures:
+                self.fail.update(fail)
             self.success.update(success)
         else:
             self.set_exception(Exception("Bad operation: %s" % self.op_type))
@@ -1403,7 +1414,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 monitor_stats=["doc_ops"]):
+                 monitor_stats=["doc_ops"],
+                 track_failures=True):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "LoadDocsGen_%s_%s_%s_%s_%s"
             % (bucket, scope, collection, task_identifier, time.time()))
@@ -1445,6 +1457,7 @@ class LoadDocumentsGeneratorsTask(Task):
         else:
             self.bucket = bucket
         self.num_loaded = 0
+        self.track_failures = track_failures
         self.fail = dict()
         self.success = dict()
         self.print_ops_rate_tasks = list()
@@ -1503,16 +1516,17 @@ class LoadDocumentsGeneratorsTask(Task):
                 except Exception as e:
                     self.test_log.error(e)
                 finally:
-                    self.fail.update(task.fail)
                     self.success.update(task.success)
-                    if task.fail.__len__() != 0:
-                        target_log = self.test_log.error
-                    else:
-                        target_log = self.test_log.debug
-                    target_log("Failed to load {} docs from {} to {}"
-                               .format(task.fail.__len__(),
-                                       task.generator._doc_gen.start,
-                                       task.generator._doc_gen.end))
+                    if self.track_failures:
+                        self.fail.update(task.fail)
+                        if task.fail.__len__() != 0:
+                            target_log = self.test_log.error
+                        else:
+                            target_log = self.test_log.debug
+                        target_log("Failed to load {} docs from {} to {}"
+                                   .format(task.fail.__len__(),
+                                           task.generator._doc_gen.start,
+                                           task.generator._doc_gen.end))
         except Exception as e:
             self.test_log.error(e)
             self.set_exception(e)
@@ -1563,7 +1577,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 skip_read_on_error=self.skip_read_on_error,
                 suppress_error_table=self.suppress_error_table,
                 sdk_client_pool=self.sdk_client_pool,
-                scope=self.scope, collection=self.collection)
+                scope=self.scope, collection=self.collection,
+                track_failures=self.track_failures)
             tasks.append(task)
         return tasks
 

@@ -2366,7 +2366,8 @@ class BucketUtils(ScopeUtils):
                           dgm_batch=5000,
                           scope=CbServer.default_scope,
                           collection=CbServer.default_collection,
-                          monitor_stats=["doc_ops"]):
+                          monitor_stats=["doc_ops"],
+                          track_failures=True):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
@@ -2380,7 +2381,8 @@ class BucketUtils(ScopeUtils):
             skip_read_on_error=skip_read_on_error,
             dgm_batch=dgm_batch,
             scope=scope, collection=collection,
-            monitor_stats=monitor_stats)
+            monitor_stats=monitor_stats,
+            track_failures=track_failures)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,
@@ -2395,7 +2397,8 @@ class BucketUtils(ScopeUtils):
                                 dgm_batch=5000,
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection,
-                                monitor_stats=["doc_ops"]):
+                                monitor_stats=["doc_ops"],
+                                track_failures=True):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -2422,7 +2425,8 @@ class BucketUtils(ScopeUtils):
                 skip_read_on_error=skip_read_on_error,
                 dgm_batch=dgm_batch,
                 scope=scope, collection=collection,
-                monitor_stats=monitor_stats)
+                monitor_stats=monitor_stats,
+                track_failures=track_failures)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,
@@ -2478,7 +2482,8 @@ class BucketUtils(ScopeUtils):
                               dgm_batch=5000,
                               scope=CbServer.default_scope,
                               collection=CbServer.default_collection,
-                              monitor_stats=["doc_ops"]):
+                              monitor_stats=["doc_ops"],
+                              track_failures=True):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -2507,7 +2512,8 @@ class BucketUtils(ScopeUtils):
             suppress_error_table=suppress_error_table,
             dgm_batch=dgm_batch,
             scope=scope, collection=collection,
-            monitor_stats=monitor_stats)
+            monitor_stats=monitor_stats,
+            track_failures=True)
 
         for task in tasks_info.keys():
             self.task_manager.get_task_result(task)
