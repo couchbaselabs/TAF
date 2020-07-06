@@ -5134,7 +5134,7 @@ class RemoteUtilHelper(object):
             interface_info = RemoteUtilHelper.get_interface_info(server)
             interface_to_use = list()
             for interface in interface_info:
-                if not (interface =="lo" or not interface_info[interface] or interface_info[interface] == server.ip):
+                if not (interface =="lo" or not interface_info[interface]):
                     interface_to_use.append(interface)
             command = "wondershaper -a {0} "
             if upload:
@@ -5143,7 +5143,6 @@ class RemoteUtilHelper(object):
                 command += "-d {0} ".format(str(download))
             for interface in interface_to_use:
                 o,r = shell.execute_command(command.format(interface))
-                print o,r
         shell.disconnect()
 
     @staticmethod
@@ -5154,4 +5153,3 @@ class RemoteUtilHelper(object):
             interface_info = RemoteUtilHelper.get_interface_info(server)
             for interface in interface_info:
                 o, r = shell.execute_command("wondershaper -ca {0}".format(interface))
-                print o, r

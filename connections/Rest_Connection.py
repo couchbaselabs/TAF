@@ -187,12 +187,21 @@ class RestConnection(object):
                     reason = "unknown"
                     if "error" in json_parsed:
                         reason = json_parsed["error"]
-                    message = '{0} {1} body: {2} headers: {3} ' \
+                    if ("accesskey" in params.lower()) or ("secretaccesskey" in params.lower()) or (
+                        "password" in params.lower()) or ("secretkey" in params.lower()):
+                        message = '{0} {1} body: {2} headers: {3} ' \
                               'error: {4} reason: {5} {6} {7}'.\
-                              format(method, api, params, headers,
+                              format(method, api, "Body is being redacted because it contains sensitive info", headers,
                                      response['status'], reason,
                                      content.rstrip('\n'),
                                      RestConnection.get_auth(headers))
+                    else:
+                        message = '{0} {1} body: {2} headers: {3} ' \
+                                  'error: {4} reason: {5} {6} {7}'.\
+                                  format(method, api, params, headers,
+                                         response['status'], reason,
+                                         content.rstrip('\n'),
+                                         RestConnection.get_auth(headers))
                     self.log.error(message)
                     self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response
@@ -214,7 +223,7 @@ class RestConnection(object):
         if password is None:
             password = self.password
         authorization = base64.encodestring('%s:%s'
-                                            % (username, password))
+                                            % (username, password)).strip("\n")
         return {'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',

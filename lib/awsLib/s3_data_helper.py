@@ -94,14 +94,11 @@ class S3DataHelper():
             return folder_paths
         else:
             for i in xrange(0, no_of_folder):
-                depth = random.randint(0, max_depth)
-                if not depth:
-                    folder_paths.append(root_path)
-                else:
-                    path = copy.deepcopy(root_path)
-                    for j in xrange(0, depth):
-                        path += "folder{0}/".format(str(random.randint(0, no_of_folder)))
-                    folder_paths.append(path)
+                depth = random.randint(1, max_depth)
+                path = copy.deepcopy(root_path)
+                for j in xrange(0, depth):
+                    path += "folder{0}/".format(str(random.randint(0, no_of_folder)))
+                folder_paths.append(path)
             return folder_paths
 
     @staticmethod
@@ -254,26 +251,26 @@ class S3DataHelper():
         n1ql_result = self.rest.query_tool(query)["results"]
         list_of_json_obj = list()
         cur_dir = os.path.dirname(__file__)
-        filepath = os.path.join(cur_dir, filename)
+        filepath = os.path.join(cur_dir, "-".join(folder.split("/")) + filename)
         with open(filepath, "a+") as fh:
             if randomize_header:
                 header = random.choice(["True", "False"])
             if ("csv" in filename) and header:
-                fh.write(",".join(str(x) for x in n1ql_result["results"][0][self.bucket.name].keys()))
+                fh.write(",".join(str(x) for x in n1ql_result[0][self.bucket.name].keys()))
                 fh.write("\n")
             elif ("tsv" in filename) and header:
-                fh.write("\t".join(str(x) for x in n1ql_result["results"][0][self.bucket.name].keys()))
+                fh.write("\t".join(str(x) for x in n1ql_result[0][self.bucket.name].keys()))
                 fh.write("\n")
             for result in n1ql_result:
                 result = result[self.bucket.name]
                 if null_key:
                     result["null_key"] = null_key
+                record = [result["filename"],result["folder"],result["mutated"],result["null_key"],result.get("missing_field")]
                 if result["missing_field"]:
                     del (result["missing_field"])
-                record = [result["filename"],result["folder"],result["mutated"],result["null_key"],result.get("missing_field")]
+                    record = [result["filename"],result["folder"],result["mutated"],result["null_key"]]
                 if "json" in filename:
-                    #sub_type = random.choice(["json", "list_of_json"])
-                    sub_type = "json"
+                    sub_type = random.choice(["json", "list_of_json"])
                     if sub_type == "json":
                         fh.write(json.dumps(result))
                         fh.write("\n")
@@ -343,9 +340,9 @@ class S3DataHelper():
         if upload_to_s3:
             try:
                 if perform_S3_operation(
-                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token, bucket_name=bucket_name,
-                    upload_file=True, src_path=filepath, dest_path=filename):
+                        aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                        aws_session_token=self.aws_session_token, bucket_name=bucket_name,
+                        upload_file=True, src_path=filepath, dest_path=filename):
                     upload_success = True
                 else:
                     upload_success = False
@@ -396,9 +393,9 @@ class S3DataHelper():
         if upload_to_s3:
             try:
                 if perform_S3_operation(
-                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token, bucket_name=bucket_name,
-                    upload_file=True, src_path=filepath, dest_path=filename):
+                        aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                        aws_session_token=self.aws_session_token, bucket_name=bucket_name,
+                        upload_file=True, src_path=filepath, dest_path=filename):
                     upload_success = True
                 else:
                     upload_success = False

@@ -488,3 +488,12 @@ class CBASBaseTest(BaseTestCase):
             return True
         else:
             return False
+    
+    def convert_string_to_bool(self,value):
+        if isinstance(value, str) or isinstance(value, unicode):
+            if value.lower() == "true":
+                return True
+            elif value.lower() == "false":
+                return False
+            else:
+                return value

@@ -6,6 +6,7 @@ Created on Sep 25, 2017
 
 import json
 import urllib
+import requests
 
 from connections.Rest_Connection import RestConnection
 from membase.api import httplib2
@@ -407,21 +408,33 @@ class CBASHelper(RestConnection):
             password = self.password
         api = self.cbas_base_url + "/analytics/link"
         headers = self._create_headers(username, password)
-        status, content, header = self._http_request(
-            api, method, headers=headers, params=params, timeout=timeout)
-        if not status:
-            if not content:
-                content = dict()
-                content["error"] = "Request Rejected"
-            else:
-                try:
-                    json_parsed = json.loads(content)
-                except ValueError:
-                    json_parsed = dict()
-                    json_parsed["error"] = content
-                    content = json_parsed
-        if content:
-            if isinstance(content, str):
+        try:
+            status, content, header = self._http_request(
+                api, method, headers=headers, params=params, timeout=timeout)
+            try:
                 content = json.loads(content)
-        return status, header['status'], content
+            except Exception:
+                pass
+            errors = list()
+            if not status:
+                if not content:
+                    errors.append({"msg": "Request Rejected", "code": 0 })
+                else:
+                    errors.append({"msg": content, "code": 0 })
+            return status, header['status'], content, errors
+        except Exception as err:
+            self.log.error("Exception occured while calling rest APi through httplib2.")
+            self.log.error("Exception msg - (0)".format(str(err)))
+            self.log.info("Retrying again with requests module")
+            response = requests.request(method,api,headers=headers,data=params)
+            try:
+                content = response.json()
+            except Exception:
+                content = response.content
+            errors = list()
+            if response.status_code in [200, 201, 202]:
+                return True, response.status_code, content, errors
+            else:
+                return False, response.status_code, content, content["errors"]
+            
         

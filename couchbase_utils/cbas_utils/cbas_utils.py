@@ -262,13 +262,13 @@ class CbasUtil:
                     params[key] = value
         
         params = urllib.urlencode(params)
-        status, status_code, content = self.cbas_helper.analytics_link_operations(method="POST", 
-                                                                                  params=params, 
-                                                                                  timeout=timeout, 
-                                                                                  username=username, 
-                                                                                  password=password)
+        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(method="POST", 
+                                                                                          params=params, 
+                                                                                          timeout=timeout, 
+                                                                                          username=username, 
+                                                                                          password=password)
         if validate_error_msg:
-            return self.validate_error_in_restapi_response(status_code, content, expected_error, expected_error_code)
+            return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
         return status
                 
     
@@ -300,13 +300,13 @@ class CbasUtil:
             if link_type:
                 params["type"] = link_type
             params = urllib.urlencode(params)
-            status, status_code, content = self.cbas_helper.analytics_link_operations(method="GET", 
+            status, status_code, content, errors = self.cbas_helper.analytics_link_operations(method="GET", 
                                                                                       params=params, 
                                                                                       timeout=timeout, 
                                                                                       username=username, 
                                                                                       password=password)
             if validate_error_msg:
-                return self.validate_error_in_restapi_response(status_code, content, expected_error, expected_error_code)
+                return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
             if status:
                 return content
                 
@@ -364,13 +364,13 @@ class CbasUtil:
                 else:
                     params[key] = value
         params = urllib.urlencode(params)
-        status, status_code, content = self.cbas_helper.analytics_link_operations(method="PUT", 
+        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(method="PUT", 
                                                                                   params=params, 
                                                                                   timeout=timeout, 
                                                                                   username=username, 
                                                                                   password=password)
         if validate_error_msg:
-            return self.validate_error_in_restapi_response(status_code, content, expected_error, expected_error_code)
+            return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
         return status
     
                 
@@ -1623,19 +1623,6 @@ class CbasUtil:
         self.log.info("Compression Type for Dataset {0} is {1}".format(ds, ds_compression_type))
 
         return ds_compression_type
-    
-    def validate_error_in_restapi_response(self, error_code, errors, expected_error=None,
-                                   expected_error_code=None):
-        """
-        Validates the error response against the expected one.
-        """
-        result = True
-        if expected_error and (expected_error not in str(errors["error"])):
-            result = result and False
-        if expected_error_code and not (expected_error_code == error_code):
-            result = result and False
-        return result
-    
     
     def validate_dataset_in_metadata_collection(self, dataset_name, link_name, dataverse, 
                                                 bucket_name, username=None, password=None):
