@@ -793,9 +793,6 @@ class LoadDocumentsTask(GenericLoadingTask):
                 timeout=self.timeout, time_unit=self.time_unit,
                 doc_type=self.generator.doc_type, durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
-            if not self.track_failures:
-                import pydevd
-                pydevd.settrace(trace_only_current_thread=False)
             if self.track_failures:
                 self.fail.update(fail)
 
