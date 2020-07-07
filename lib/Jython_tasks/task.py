@@ -299,83 +299,86 @@ class RebalanceTask(Task):
         self.start_time = time.time()
 
     def check(self):
-        try:
-            if self.monitor_vbuckets_shuffling:
-                non_swap_servers = set(self.servers) - set(self.to_remove) - set(self.to_add)
-                new_vbuckets = BucketHelper(self.servers[0])._get_vbuckets(non_swap_servers, None)
-                for vb_type in ["active_vb", "replica_vb"]:
-                    for srv in non_swap_servers:
-                        if set(self.old_vbuckets[srv][vb_type]) != set(new_vbuckets[srv][vb_type]):
-                            msg = "%s vBuckets were shuffled on %s! " \
-                                  "Expected: %s, Got: %s" \
-                                  % (vb_type, srv.ip,
-                                     self.old_vbuckets[srv][vb_type],
-                                     new_vbuckets[srv][vb_type])
-                            self.test_log.error(msg)
-                            raise Exception(msg)
-            (status, progress) = self.rest._rebalance_status_and_progress()
-            self.test_log.info("Rebalance - status: %s, progress: %s", status,
-                               progress)
-            # if ServerUnavailableException
-            if progress == -100:
-                self.retry_get_progress += 1
-            if self.previous_progress != progress:
-                self.previous_progress = progress
-                self.retry_get_progress = 0
-            else:
-                self.retry_get_progress += 1
-        except RebalanceFailedException as ex:
-            self.result = False
-            raise ex
-        # catch and set all unexpected exceptions
-        except Exception as e:
-            self.result = False
-            raise e
-        if self.rest.is_cluster_mixed():
-            """ for mix cluster, rebalance takes longer """
-            self.test_log.debug("Rebalance in mix cluster")
-            self.retry_get_process_num = 40
-        # we need to wait for status to be 'none'
-        # (i.e. rebalance actually finished and not just 'running' and at 100%)
-        # before we declare ourselves done
-        if progress != -1 and status != 'none':
-            if self.retry_get_progress < self.retry_get_process_num:
-                self.log.debug("Wait before next rebalance progress check")
-                sleep(5, log_type="infra")
-                self.check()
-            else:
+        self.poll = True
+        while self.poll:
+            self.poll = False
+            try:
+                if self.monitor_vbuckets_shuffling:
+                    non_swap_servers = set(self.servers) - set(self.to_remove) - set(self.to_add)
+                    new_vbuckets = BucketHelper(self.servers[0])._get_vbuckets(non_swap_servers, None)
+                    for vb_type in ["active_vb", "replica_vb"]:
+                        for srv in non_swap_servers:
+                            if set(self.old_vbuckets[srv][vb_type]) != set(new_vbuckets[srv][vb_type]):
+                                msg = "%s vBuckets were shuffled on %s! " \
+                                      "Expected: %s, Got: %s" \
+                                      % (vb_type, srv.ip,
+                                         self.old_vbuckets[srv][vb_type],
+                                         new_vbuckets[srv][vb_type])
+                                self.test_log.error(msg)
+                                raise Exception(msg)
+                (status, progress) = self.rest._rebalance_status_and_progress()
+                self.test_log.info("Rebalance - status: %s, progress: %s", status,
+                                   progress)
+                # if ServerUnavailableException
+                if progress == -100:
+                    self.retry_get_progress += 1
+                if self.previous_progress != progress:
+                    self.previous_progress = progress
+                    self.retry_get_progress = 0
+                else:
+                    self.retry_get_progress += 1
+            except RebalanceFailedException as ex:
                 self.result = False
-                self.rest.print_UI_logs()
-                raise RebalanceFailedException("seems like rebalance hangs. please check logs!")
-        else:
-            success_cleaned = []
-            for removed in self.to_remove:
-                try:
-                    rest = RestConnection(removed)
-                except ServerUnavailableException, e:
-                    self.test_log.error(e)
-                    continue
-                start = time.time()
-                while time.time() - start < 30:
+                raise ex
+            # catch and set all unexpected exceptions
+            except Exception as e:
+                self.result = False
+                raise e
+            if self.rest.is_cluster_mixed():
+                """ for mix cluster, rebalance takes longer """
+                self.test_log.debug("Rebalance in mix cluster")
+                self.retry_get_process_num = 40
+            # we need to wait for status to be 'none'
+            # (i.e. rebalance actually finished and not just 'running' and at 100%)
+            # before we declare ourselves done
+            if progress != -1 and status != 'none':
+                if self.retry_get_progress < self.retry_get_process_num:
+                    self.log.debug("Wait before next rebalance progress check")
+                    sleep(5, log_type="infra")
+                    self.poll = True
+                else:
+                    self.result = False
+                    self.rest.print_UI_logs()
+                    raise RebalanceFailedException("seems like rebalance hangs. please check logs!")
+            else:
+                success_cleaned = []
+                for removed in self.to_remove:
                     try:
-                        if 'pools' in rest.get_pools_info() and \
-                                (len(rest.get_pools_info()["pools"]) == 0):
-                            success_cleaned.append(removed)
-                            break
-                    except (ServerUnavailableException, IncompleteRead), e:
+                        rest = RestConnection(removed)
+                    except ServerUnavailableException, e:
                         self.test_log.error(e)
+                        continue
+                    start = time.time()
+                    while time.time() - start < 30:
+                        try:
+                            if 'pools' in rest.get_pools_info() and \
+                                    (len(rest.get_pools_info()["pools"]) == 0):
+                                success_cleaned.append(removed)
+                                break
+                        except (ServerUnavailableException, IncompleteRead), e:
+                            self.test_log.error(e)
 
-            for node in set(self.to_remove) - set(success_cleaned):
-                self.test_log.error(
-                    "Node {0}:{1} was not cleaned after removing from cluster"
-                    .format(node.ip, node.port))
-                self.result = False
+                for node in set(self.to_remove) - set(success_cleaned):
+                    self.test_log.error(
+                        "Node {0}:{1} was not cleaned after removing from cluster"
+                        .format(node.ip, node.port))
+                    self.result = False
 
-            self.test_log.info(
-                "Rebalance completed with progress: {0}% in {1} sec"
-                .format(progress, time.time() - self.start_time))
-            self.result = True
-            return
+                self.test_log.info(
+                    "Rebalance completed with progress: {0}% in {1} sec"
+                    .format(progress, time.time() - self.start_time))
+                self.result = True
+                return
 
 
 class GenericLoadingTask(Task):
