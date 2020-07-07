@@ -642,7 +642,7 @@ class BaseTestCase(unittest.TestCase):
             logsDir = libCb + "logs/"
             logFiles = shell.execute_command("ls " + logsDir + "memcached.log.*" )[0]
             for logFile in logFiles:
-                criticalMessages = shell.execute_command("grep -r 'CRITICAL' " + logFile)[0]
+                criticalMessages = shell.execute_command("grep -r 'CRITICAL' " + logFile.strip("\n"))[0]
                 index = findIndexOf(criticalMessages, "Fatal error encountered during exception handling")
                 criticalMessages = criticalMessages[:index]
                 if (criticalMessages):
