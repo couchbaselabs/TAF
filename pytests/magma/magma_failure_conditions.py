@@ -119,7 +119,7 @@ class MagmaCrashTests(MagmaFailures):
 
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)
-        wait_warmup = self.graceful = self.input.param("wait_warmup", True)
+        wait_warmup = self.input.param("wait_warmup", True)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
 
@@ -159,9 +159,9 @@ class MagmaCrashTests(MagmaFailures):
 
         self.generate_docs(doc_ops=self.doc_ops)
 
-        th = threading.Thread(target=self.crash, kwargs={"graceful":
-                                                         self.graceful,
-                                                         "wait": wait_warmup})
+        th = threading.Thread(target=self.crash,
+                              kwargs=dict(graceful=self.graceful,
+                                          wait=wait_warmup))
         th.start()
 
         tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
