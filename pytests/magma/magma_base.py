@@ -255,8 +255,7 @@ class MagmaBaseTest(BaseTestCase):
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions,
                scope=scope,
-               collection=collection,
-               track_failures=track_failures)
+               collection=collection)
             read_task = True
         if "delete" in self.doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
