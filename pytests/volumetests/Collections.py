@@ -20,7 +20,7 @@ class volume(CollectionBase):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket": False})
         super(volume, self).setUp()
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(val=5)
         self.rest = RestConnection(self.servers[0])
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
@@ -34,6 +34,7 @@ class volume(CollectionBase):
         self.data_load_stage = self.input.param("data_load_stage", "during")
         self.use_doc_ttl = self.input.param("use_doc_ttl", False)
         self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
+        self.skip_validations = self.input.param("skip_validations", True)
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
@@ -75,8 +76,8 @@ class volume(CollectionBase):
         return rebalance_task
 
     def wait_for_rebalance_to_complete(self, task, wait_step=120):
-        reached = RestHelper(self.rest).rebalance_reached(wait_step=wait_step)
-        self.assertTrue(reached, "Rebalance failed, stuck or did not complete")
+        self.task.jython_task_manager.get_task_result(task)
+        self.assertTrue(task.result, "Rebalance Failed")
 
     def data_load_collection(self, async_load=True):
         doc_loading_spec = \
@@ -91,11 +92,12 @@ class volume(CollectionBase):
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(task)
-        if task.result is False:
-            self.fail("Doc_loading failed")
+        if not self.skip_validations:
+            self.bucket_util.validate_doc_loading_results(task)
+            if task.result is False:
+                self.fail("Doc_loading failed")
         if self.use_doc_ttl:
-            self.bucket_util._expiry_pager()
+            self.bucket_util._expiry_pager(val=5)
             self.bucket_util.update_num_items_based_on_expired_docs(self.bucket_util.buckets, task)
 
     def data_validation_collection(self):
@@ -112,7 +114,7 @@ class volume(CollectionBase):
             self.log.info("Attempting last retry for ep-queue to drain")
             self.bucket_util._wait_for_stats_all_buckets()
         if self.doc_and_collection_ttl:
-            self.bucket_util._expiry_pager()
+            self.bucket_util._expiry_pager(val=5)
             self.sleep(400, "wait for doc/collection maxttl to finish")
             items = 0
             self.bucket_util._wait_for_stats_all_buckets()
@@ -121,7 +123,10 @@ class volume(CollectionBase):
             if items != 0:
                 self.fail("doc count!=0, TTL + rebalance failed")
         else:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            if not self.skip_validations:
+                self.bucket_util.validate_docs_per_collections_all_buckets()
+            else:
+                pass
 
     def test_volume_taf(self):
         self.loop = 0

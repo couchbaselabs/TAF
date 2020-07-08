@@ -16,7 +16,7 @@ spec = {
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
     Bucket.maxTTL: 0,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
-    Bucket.evictionPolicy: Bucket.EvictionPolicy.VALUE_ONLY,
+    Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
     "buckets": {
         "default": {
@@ -40,7 +40,7 @@ spec = {
         },
         "bucket3": {
             Bucket.bucketType: Bucket.Type.EPHEMERAL,
-            Bucket.evictionPolicy: Bucket.EvictionPolicy.NO_EVICTION,
+            Bucket.evictionPolicy: Bucket.EvictionPolicy.NRU_EVICTION,
             Bucket.ramQuotaMB: 100,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 5,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 100
