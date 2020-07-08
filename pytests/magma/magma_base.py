@@ -530,6 +530,7 @@ class MagmaBaseTest(BaseTestCase):
             if expiry_end is not None:
                 self.expiry_end = expiry_end
 
+            self.maxttl = self.input.param("maxttl", 10)
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
                                                       self.expiry_end,
                                                       expiry_mutate)
