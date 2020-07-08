@@ -1,3 +1,5 @@
+import urllib
+
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
@@ -41,6 +43,15 @@ class volume(CollectionBase):
         self.log.info("Printing bucket stats before teardown")
         self.bucket_util.print_bucket_stats()
         self.cluster_util.check_for_panic_and_mini_dumps(self.cluster.servers)
+
+    def set_metadata_purge_interval(self, interval=0.04):
+        # set it to 0.04 ie 1 hour if not given
+        rest = RestConnection(self.cluster.master)
+        params = {}
+        api = rest.baseUrl + "controller/setAutoCompaction"
+        params["purgeInterval"] = interval
+        params = urllib.urlencode(params)
+        return rest._http_request(api, "POST", params)
 
     # Stopping and restarting the memcached process
     def stop_process(self):
@@ -130,6 +141,7 @@ class volume(CollectionBase):
 
     def test_volume_taf(self):
         self.loop = 0
+        self.set_metadata_purge_interval()
         while self.loop < self.iterations:
             self.log.info("Finished steps 1-4 successfully in setup")
             self.log.info("Step 5: Rebalance in with Loading of docs")

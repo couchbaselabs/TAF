@@ -9,7 +9,7 @@ spec = {
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
 
     Bucket.bucketType: Bucket.Type.MEMBASE,
-    Bucket.replicaNumber: Bucket.ReplicaNum.THREE,
+    Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
     Bucket.ramQuotaMB: 300,
     Bucket.replicaIndex: 1,
     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
@@ -18,7 +18,7 @@ spec = {
     Bucket.maxTTL: 0,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
-    Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
+    Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
 
     "buckets": {
         "default": {

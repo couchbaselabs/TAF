@@ -17,7 +17,7 @@ spec = {
     Bucket.maxTTL: 0,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
-    Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
+    Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
     "buckets": {
         "default": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
