@@ -157,6 +157,96 @@ class MagmaBaseTest(BaseTestCase):
         self.cluster_util.print_cluster_stats()
         super(MagmaBaseTest, self).tearDown()
 
+    def genrate_docs_basic(self, start, end, mutate=0):
+        return doc_generator(self.key, start, end,
+                             doc_size=self.doc_size,
+                             doc_type=self.doc_type,
+                             target_vbucket=self.target_vbucket,
+                             vbuckets=self.cluster_util.vbuckets,
+                             key_size=self.key_size,
+                             randomize_doc_size=self.randomize_doc_size,
+                             randomize_value=self.randomize_value,
+                             mix_key_size=self.mix_key_size,
+                             mutate=mutate,
+                             deep_copy=self.deep_copy)
+
+    def gen_docs_basic_for_target_vbucket(self, start, end,
+                                          target_vbucket, mutate=0):
+        return doc_generator(
+                self.key, start, end,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=target_vbucket,
+                vbuckets=self.cluster_util.vbuckets,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mutate=mutate)
+
+    def generate_docs(self, doc_ops=None,
+                      create_end=None, create_start=None,
+                      create_mutate=0,
+                      update_end=None, update_start=None,
+                      update_mutate=0,
+                      read_end=None, read_start=None,
+                      read_mutate=0,
+                      delete_end=None, delete_start=None,
+                      expiry_end=None, expiry_start=None,
+                      expiry_mutate=0):
+
+        if doc_ops is None:
+            doc_ops = self.doc_ops
+
+        if "update" in doc_ops:
+            if update_start is not None:
+                self.update_start = update_start
+            if update_end is not None:
+                self.update_end = update_end
+
+            self.mutate += 1
+            self.gen_update = self.genrate_docs_basic(self.update_start,
+                                                      self.update_end,
+                                                      self.mutate)
+
+        if "delete" in doc_ops:
+            if delete_start is not None:
+                self.delete_start = delete_start
+            if delete_end is not None:
+                self.delete_end = delete_end
+
+            self.gen_delete = self.genrate_docs_basic(self.delete_start,
+                                                      self.delete_end,
+                                                      read_mutate)
+
+        if "create" in doc_ops:
+            if create_start is not None:
+                self.create_start = create_start
+            if create_end is not None:
+                self.create_end = create_end
+
+            self.gen_create = self.genrate_docs_basic(self.create_start,
+                                                      self.create_end,
+                                                      create_mutate)
+
+        if "read" in doc_ops:
+            if read_start is not None:
+                self.read_start = read_start
+            if read_end is not None:
+                self.read_end = read_end
+
+            self.gen_read = self.genrate_docs_basic(self.read_start,
+                                                    self.read_end,
+                                                    read_mutate)
+        if "expiry" in doc_ops:
+            if expiry_start is not None:
+                self.expiry_start = expiry_start
+            if expiry_end is not None:
+                self.expiry_end = expiry_end
+
+            self.maxttl = self.input.param("maxttl", 10)
+            self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
+                                                      self.expiry_end,
+                                                      expiry_mutate)
+
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True, dgm_batch=5000,
@@ -235,7 +325,7 @@ class MagmaBaseTest(BaseTestCase):
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "expiry" in self.doc_ops and self.gen_expiry is not None and self.maxttl:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_expriy, "update", self.maxttl,
+                self.cluster, self.gen_expiry, "update", self.maxttl,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -449,96 +539,6 @@ class MagmaBaseTest(BaseTestCase):
             if value > self.fragmentation:
                 return False
         return True
-
-    def genrate_docs_basic(self, start, end, mutate=0):
-        return doc_generator(self.key, start, end,
-                             doc_size=self.doc_size,
-                             doc_type=self.doc_type,
-                             target_vbucket=self.target_vbucket,
-                             vbuckets=self.cluster_util.vbuckets,
-                             key_size=self.key_size,
-                             randomize_doc_size=self.randomize_doc_size,
-                             randomize_value=self.randomize_value,
-                             mix_key_size=self.mix_key_size,
-                             mutate=mutate,
-                             deep_copy=self.deep_copy)
-
-    def gen_docs_basic_for_target_vbucket(self, start, end,
-                                               target_vbucket, mutate=0):
-        return doc_generator(
-                self.key, start, end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mutate=mutate)
-
-    def generate_docs(self, doc_ops=None,
-                      create_end=None, create_start=None,
-                      create_mutate=0,
-                      update_end=None, update_start=None,
-                      update_mutate=0,
-                      read_end=None, read_start=None,
-                      read_mutate=0,
-                      delete_end=None, delete_start=None,
-                      expiry_end=None, expiry_start=None,
-                      expiry_mutate=0):
-
-        if doc_ops is None:
-            doc_ops = self.doc_ops
-
-        if "update" in doc_ops:
-            if update_start is not None:
-                self.update_start = update_start
-            if update_end is not None:
-                self.update_end = update_end
-
-            self.mutate += 1
-            self.gen_update = self.genrate_docs_basic(self.update_start,
-                                                      self.update_end,
-                                                      self.mutate)
-
-        if "delete" in doc_ops:
-            if delete_start is not None:
-                self.delete_start = delete_start
-            if delete_end is not None:
-                self.delete_end = delete_end
-
-            self.gen_delete = self.genrate_docs_basic(self.delete_start,
-                                                      self.delete_end,
-                                                      read_mutate)
-
-        if "create" in doc_ops:
-            if create_start is not None:
-                self.create_start = create_start
-            if create_end is not None:
-                self.create_end = create_end
-
-            self.gen_create = self.genrate_docs_basic(self.create_start,
-                                                      self.create_end,
-                                                      create_mutate)
-
-        if "read" in doc_ops:
-            if read_start is not None:
-                self.read_start = read_start
-            if read_end is not None:
-                self.read_end = read_end
-
-            self.gen_read = self.genrate_docs_basic(self.read_start,
-                                                    self.read_end,
-                                                    read_mutate)
-        if "expiry" in doc_ops:
-            if expiry_start is not None:
-                self.expiry_start = expiry_start
-            if expiry_end is not None:
-                self.expiry_end = expiry_end
-
-            self.maxttl = self.input.param("maxttl", 10)
-            self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
-                                                      self.expiry_end,
-                                                      expiry_mutate)
 
     def get_fragmentation_upsert_docs_list(self):
         """
