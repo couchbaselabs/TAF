@@ -136,7 +136,7 @@ class MagmaCrashTests(MagmaFailures):
             self.update_start = 0
             self.update_end = self.num_items
             self.expiry_start = 0
-            self.expiry_end = self.num_items
+            self.expiry_end = self.num_items * 20
             self.delete_start = 0
             self.delete_end = self.num_items
         elif ops_len == 2:
@@ -149,14 +149,14 @@ class MagmaCrashTests(MagmaFailures):
                 self.delete_start = 0
                 self.delete_end = self.num_items // 2
                 self.expiry_start = self.num_items // 2
-                self.expiry_end = self.num_item
+                self.expiry_end = self.num_item * 2
         else:
             self.update_start = 0
             self.update_end = self.num_items // 3
-            self.expiry_start = self.num_items // 3
-            self.expiry_end = (2 * self.num_items) // 3
-            self.delete_start = (2 * self.num_items) // 3
-            self.delete_end = self.num_items
+            self.delete_start = self.num_items // 3
+            self.delete_end = (2 * self.num_items) // 3
+            self.expiry_start = (2 * self.num_items) // 3
+            self.expiry_end = self.num_items * 2
 
         self.generate_docs(doc_ops=self.doc_ops)
 
