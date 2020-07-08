@@ -68,12 +68,17 @@ class MagmaBaseTest(BaseTestCase):
 
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
+        self.max_commit_points = self.input.param("max_commit_points", 5)
 
         props = "magma"
         update_bucket_props = False
 
         if self.disable_magma_commit_points:
             props += ";magma_max_commit_points=0"
+            update_bucket_props = True
+        else:
+            props += ";magma_max_commit_points={}".format(self.max_commit_points)
+            self.log.debug("props== {}".format(props))
             update_bucket_props = True
 
         if self.fragmentation != 50:
@@ -646,3 +651,22 @@ class MagmaBaseTest(BaseTestCase):
             shell.disconnect()
 
         self.assertTrue(result)
+
+    def get_state_files(self, bucket, server=None):
+
+        if server is None:
+            server = self.cluster_util.cluster.master
+
+        shell = RemoteMachineShellConnection(server)
+
+        magma_path =  str(os.path.join(RestConnection(server).get_data_path(), bucket.name, "magma.0"))
+        kv_path = shell.execute_command("ls %s | grep kv | head -1" % magma_path) [0][0].split('\n')[0]
+        path = os.path.join(magma_path, kv_path, "rev*/seqIndex")
+        self.log.debug("SeqIndex path = {}".format(path))
+
+        output = shell.execute_command(
+                    "ls %s | grep state"
+                   % path)[0]
+        self.log.debug("State files = {}".format(output))
+
+        return output

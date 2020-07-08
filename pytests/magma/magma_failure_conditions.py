@@ -17,6 +17,7 @@ from sdk_exceptions import SDKException
 from sdk_client3 import SDKClient
 from Cb_constants.CBServer import CbServer
 import threading
+import time
 
 retry_exceptions = [SDKException.TimeoutException,
                     SDKException.AmbiguousTimeoutException,
@@ -685,6 +686,118 @@ class MagmaRollbackTests(MagmaFailures):
 
         shell.disconnect()
         self.log.info("test_magma_rollback_n_times_with_del_op ends")
+
+    def test_magma_rollback_to_snapshot(self):
+        items = self.num_items
+        mem_only_items = self.input.param("rollback_items", 10000)
+
+        if self.nodes_init < 2 or self.num_replicas < 1:
+            self.fail("Not enough nodes/replicas in the cluster/bucket \
+            to test rollback")
+
+        self.duration = self.input.param("duration", 2)
+        self.num_rollbacks = self.input.param("num_rollbacks", 10)
+
+        self.log.info("State files after initial creates %s"
+                      % self.get_state_files(self.buckets[0]))
+
+        '''
+        To ensure at least one snapshot should get created before rollback
+        starts, we need to sleep for 60 seconds as per magma design which
+        create state file every 60s
+        '''
+
+        self.sleep(60, "Ensures creation of at least one snapshot")
+        self.log.info("State files after 60 second of sleep %s"
+                      % self.get_state_files(self.buckets[0]))
+
+        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
+        cbstats = Cbstats(shell)
+        self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
+                                                   name)
+
+        self.gen_read = copy.deepcopy(self.gen_create)
+        start = self.num_items
+        while_itr = 0
+
+        for i in range(1, self.num_rollbacks+1):
+            self.log.info("Roll back Iteration {}".format(i))
+
+            mem_item_count = 0
+            self.log.debug("State files before stopping persistence %s"
+                           % self.get_state_files(self.buckets[0]))
+
+            # Stopping persistence on NodeA
+            mem_client = MemcachedClientHelper.direct_client(
+                self.cluster_util.cluster.master, self.bucket_util.buckets[0])
+            mem_client.stop_persistence()
+
+            time_end = time.time() + 60 * self.duration
+            while time.time() < time_end:
+                while_itr += 1
+                time_start = time.time()
+                mem_item_count += mem_only_items
+                self.log.info("")
+                self.gen_create = self.gen_docs_basic_for_target_vbucket(start,
+                                                                         mem_only_items,
+                                                                         self.target_vbucket)
+                self.loadgen_docs(_sync=True,
+                                  retry_exceptions=retry_exceptions)
+
+                start = self.gen_create.key_counter
+
+                if time.time() < time_start + 60:
+                    self.sleep(time_start + 60 - time.time(),
+                               "Sleep to ensure creation of state files for roll back, itr = {}"
+                               .format(while_itr))
+                self.log.info("Iteration== {} , state files== {}".
+                              format(while_itr,
+                                     self.get_state_files(self.buckets[0])))
+
+            ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
+                                 mem_item_count}
+            vb_replica_queue_size_map = {self.cluster.nodes_in_cluster[0]: 0}
+
+            for node in self.cluster.nodes_in_cluster[1:]:
+                ep_queue_size_map.update({node: 0})
+                vb_replica_queue_size_map.update({node: 0})
+
+            for bucket in self.bucket_util.buckets:
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(
+                    bucket,
+                    vb_replica_queue_size_map,
+                    stat_name="vb_replica_queue_size")
+
+            # Kill memcached on NodeA to trigger rollback on other Nodes
+            # replica vBuckets
+            for bucket in self.bucket_util.buckets:
+                self.log.debug(cbstats.failover_stats(bucket.name))
+
+            shell.kill_memcached()
+
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                [self.cluster_util.cluster.master],
+                self.bucket_util.buckets[0],
+                wait_time=self.wait_timeout * 10))
+
+            self.log.info("State files after killing memcached {}".
+                          format(self.get_state_files(self.buckets[0])))
+
+            self.sleep(10, "Not Required, but waiting for 10s after warm up")
+            self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+            for bucket in self.bucket_util.buckets:
+                self.log.debug(cbstats.failover_stats(bucket.name))
+
+        data_validation = self.task.async_validate_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                self.gen_read, "create", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                pause_secs=5, timeout_secs=self.sdk_timeout)
+        self.task.jython_task_manager.get_task_result(data_validation)
+
+        shell.disconnect()
 
     def test_magma_rollback_to_0(self):
         items = self.num_items
