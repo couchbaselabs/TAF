@@ -35,7 +35,7 @@ class MagmaBaseTest(BaseTestCase):
         self.info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
-        self.kv_memory = int(self.info.mcdMemoryReserved) - 100
+        self.kv_memory = (int(self.info.mcdMemoryReserved) - 100)*self.quota_percent
         if "index" in self.cluster.master.services:
             self.kv_memory -= INDEX_QUOTA
         if "fts" in self.cluster.master.services:
