@@ -128,7 +128,8 @@ class volume(BaseTestCase):
         total_memory_in_mb = self.info.mcdMemoryReserved
         total_available_memory_in_mb = total_memory_in_mb
         if self.quota_percent:
-            total_available_memory_in_mb *= self.quota_percent
+            total_available_memory_in_mb = (self.quota_percent *
+                                            self.total_available_memory_in_mb)/100
 
         # If the mentioned service is already present,
         # we remove that much memory from available memory quota
