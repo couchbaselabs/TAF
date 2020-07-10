@@ -510,7 +510,8 @@ class volume(BaseTestCase):
         self.bucket_util.print_bucket_stats()
         self.print_crud_stats()
         self.get_bucket_dgm(self.bucket)
-        self.check_fragmentation_using_magma_stats(self.bucket)
+        if self.bucket.storageBackend == Bucket.StorageBackend.magma:
+            self.check_fragmentation_using_magma_stats(self.bucket)
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
@@ -525,16 +526,14 @@ class volume(BaseTestCase):
             output = shell.execute_command(
                     "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
                     )[0][0].split('\n')[0]
-            self.log.debug("machine: {} - core(s): {}\
-            ".format(server.ip, output))
+            self.log.debug("machine: {} - core(s): {}".format(server.ip,
+                                                              output))
             for i in range(int(output)):
                 grep_field = "rw_{}:magma".format(i)
-                _res = self.get_magma_stats(
-                    bucket, [server],
-                    field_to_grep=grep_field)
-                fragmentation_values.append(
-                    float(_res[server.ip][grep_field][
-                        "Fragmentation"]))
+                _res = self.get_magma_stats(bucket, [server],
+                                            field_to_grep=grep_field)
+                fragmentation_values.append(float(_res[server.ip][grep_field]
+                                                  ["Fragmentation"]))
                 stats.append(_res)
             result.update({server.ip: fragmentation_values})
         self.log.info("magma stats fragmentation result {} \
@@ -601,14 +600,15 @@ class volume(BaseTestCase):
     def crash_thread(self, nodes=None, graceful=False):
         self.stop_crash = False
         self.crash_count = 0
+        loop_itr = 0
         if not nodes:
             nodes = self.cluster.nodes_in_cluster
 
         while not self.stop_crash:
             sleep = random.randint(60, 120)
             self.sleep(sleep,
-                       "Waiting for %s sec to kill memc on all nodes" %
-                       sleep)
+                       "Iteration:{} waiting to kill memc on all nodes".
+                       format(loop_itr))
             self.kill_memcached(nodes, num_kills=1, graceful=graceful, wait=True)
             self.crash_count += 1
 

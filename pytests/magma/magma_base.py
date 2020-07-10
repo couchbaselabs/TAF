@@ -637,7 +637,7 @@ class MagmaBaseTest(BaseTestCase):
                                                 force_collect=force_collect)
             if len(crashes) > 0:
                 result = False
-                self.stop_crash = False
+                self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
                 self.log.error("Found servers having crashes")
 
