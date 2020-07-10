@@ -650,7 +650,7 @@ class BaseTestCase(unittest.TestCase):
                     print("".join(criticalMessages))
                     break
                 streamreqfailed = "Stream request failed because the snap start seqno"
-                found = shell.execute_command(("grep -r {} " + logFile.strip("\n")).
+                found = shell.execute_command(("grep -r '{}' " + logFile.strip("\n")).
                                               format(streamreqfailed))[0]
                 if found:
                     self.log.error(streamreqfailed)
