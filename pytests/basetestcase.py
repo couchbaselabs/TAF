@@ -653,7 +653,7 @@ class BaseTestCase(unittest.TestCase):
                 found = shell.execute_command(("grep -r '{}' " + logFile.strip("\n")).
                                               format(streamreqfailed))[0]
                 if found:
-                    self.log.error(streamreqfailed)
+                    self.log.error("Found {} in {}".format(streamreqfailed,logFile))
                     if server.ip not in servers_with_crashes:
                         servers_with_crashes.append(server.ip)
         if servers_with_crashes and force_collect:

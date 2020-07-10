@@ -602,7 +602,7 @@ class MagmaBaseTest(BaseTestCase):
             self.sleep(10, "Sleeping before re-checking for crashes.")
 
     def crash(self, nodes=None, kill_itr=1, graceful=False,
-              wait=True):
+              wait=True, force_collect=False):
         result = True
         self.stop_crash = False
         count = kill_itr
@@ -633,7 +633,8 @@ class MagmaBaseTest(BaseTestCase):
                         count -= 1
                     count = kill_itr
 
-            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster,
+                                                force_collect=force_collect)
             if len(crashes) > 0:
                 result = False
                 self.stop_crash = False
