@@ -270,9 +270,9 @@ class SDKClient(object):
                                 self.servers[0][0],
                                 Optional.of(ClusterRun.memcached_port),
                                 Optional.of(int(self.servers[0][1])))))
-                        cluster_options = \
-                            cluster_options.seedNodes(master_seed)
-                    self.cluster = Cluster.connect(
+                        self.cluster = Cluster.connect(master_seed, cluster_options)
+                    else:
+                        self.cluster = Cluster.connect(
                             ", ".join(self.hosts).replace(" ", ""),
                             cluster_options)
                     break
