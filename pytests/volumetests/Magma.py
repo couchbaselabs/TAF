@@ -127,6 +127,8 @@ class volume(BaseTestCase):
         # threshold_memory_vagrant = 100
         total_memory_in_mb = self.info.mcdMemoryReserved
         total_available_memory_in_mb = total_memory_in_mb
+        if self.quota_percent:
+            total_available_memory_in_mb *= self.quota_percent
 
         # If the mentioned service is already present,
         # we remove that much memory from available memory quota
