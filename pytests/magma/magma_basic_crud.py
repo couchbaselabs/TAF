@@ -121,6 +121,28 @@ class BasicCrudTests(MagmaBaseTest):
         self.client.close()
         self.assertTrue(result, "SDK is able to retrieve expired documents")
 
+    def test_MB_38315(self):
+        self.log.info("Deleting half of the items")
+        self.doc_ops = "delete"
+        self.generate_docs(doc_ops=self.doc_ops,
+                           delete_start=0, delete_end=self.num_items/2)
+        _ = self.loadgen_docs(self.retry_exceptions,
+                              self.ignore_exceptions)
+        self.log.info("Verifying doc counts after create doc_ops")
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        tasks_info = self.bucket_util._async_validate_docs(
+               self.cluster, self.gen_delete, "delete", 0,
+               batch_size=self.batch_size,
+               process_concurrency=self.process_concurrency,
+               pause_secs=5, timeout_secs=self.sdk_timeout,
+               retry_exceptions=self.retry_exceptions,
+               ignore_exceptions=self.ignore_exceptions)
+
+        for task in tasks_info:
+                self.task_manager.get_task_result(task)
+
     def test_basic_create_read(self):
         """
         Write and Read docs parallely , While reading we are using
