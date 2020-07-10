@@ -130,7 +130,8 @@ class NodeInitializeTask(Task):
                  port=None, quota_percent=None,
                  index_quota_percent=None,
                  services=None, gsi_type='forestdb'):
-        Task.__init__(self, name="node_init_task_%s" % server.ip,
+        Task.__init__(self, name="node_init_task_%s_%s" %
+                      (server.ip, server.port),
                       task_manager=task_manager)
         self.server = server
         self.port = port or server.port
