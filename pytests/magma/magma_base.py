@@ -604,6 +604,7 @@ class MagmaBaseTest(BaseTestCase):
         result = True
         self.stop_crash = False
         count = kill_itr
+        loop_itr = 0
 
         if not nodes:
             nodes = self.cluster.nodes_in_cluster
@@ -614,10 +615,11 @@ class MagmaBaseTest(BaseTestCase):
             connections.append(shell)
 
         while not self.stop_crash:
+            loop_itr += 1
             sleep = random.randint(30, 60)
             self.sleep(sleep,
-                       "waiting for %s sec to kill memcached on all nodes" %
-                       sleep)
+                       "Iteration:{} waiting for {} sec to kill memcached on all nodes".
+                       format(loop_itr, sleep))
 
             for shell in connections:
                 if graceful:
@@ -641,7 +643,7 @@ class MagmaBaseTest(BaseTestCase):
                     result = self.bucket_util._wait_warmup_completed(
                                 [server],
                                 self.bucket_util.buckets[0],
-                                wait_time=self.wait_timeout * 20)
+                                wait_time=self.wait_timeout * 5)
                     if not result:
                         self.stop_crash = True
                         self.task.jython_task_manager.abort_all_tasks()
