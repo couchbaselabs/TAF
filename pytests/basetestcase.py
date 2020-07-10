@@ -649,7 +649,13 @@ class BaseTestCase(unittest.TestCase):
                     print(server.ip + " : Found message in " + logFile.strip("\n"))
                     print("".join(criticalMessages))
                     break
-
+                streamreqfailed = "Stream request failed because the snap start seqno"
+                found = shell.execute_command(("grep -r {} " + logFile.strip("\n")).
+                                              format(streamreqfailed))[0]
+                if found:
+                    self.log.error(streamreqfailed)
+                    if server.ip not in servers_with_crashes:
+                        servers_with_crashes.append(server.ip)
         if servers_with_crashes and force_collect:
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False
