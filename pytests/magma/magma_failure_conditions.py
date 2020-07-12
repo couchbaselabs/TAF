@@ -137,7 +137,7 @@ class MagmaCrashTests(MagmaFailures):
                 self.delete_start = 0
                 self.delete_end = self.num_items // 2
                 self.expiry_start = self.num_items // 2
-                self.expiry_end = self.num_item * 2
+                self.expiry_end = self.num_items * 2
         else:
             self.update_start = 0
             self.update_end = self.num_items // 3
