@@ -181,6 +181,11 @@ class BaseTestCase(unittest.TestCase):
         self.log = logger.get("test")
         self.infra_log = logger.get("infra")
 
+        self.cleanup_pcaps()
+        self.collect_pcaps = self.input.param("collect_pcaps", False)
+        if self.collect_pcaps:
+            self.start_collect_pcaps()
+
         # variable for log collection using cbCollect
         self.get_cbcollect_info = TestInputSingleton.input.param(
             "get-cbcollect-info", False)
@@ -358,12 +363,72 @@ class BaseTestCase(unittest.TestCase):
             self.task.shutdown(force=True)
             self.fail(e)
 
+    def cleanup_pcaps(self):
+        for server in self.servers:
+            shell = RemoteMachineShellConnection(server)
+            # Stop old instances of tcpdump if still running
+            stop_tcp_cmd = "if [[ \"$(pgrep tcpdump)\" ]]; then kill -s TERM $(pgrep tcpdump); fi"
+            o, e = shell.execute_command(stop_tcp_cmd)
+            shell.execute_command("rm -rf pcaps")
+            shell.execute_command("rm -rf " + server.ip + "_pcaps.zip")
+            shell.disconnect()
+
+    def start_collect_pcaps(self):
+        for server in self.servers:
+            shell = RemoteMachineShellConnection(server)
+            # Create path for storing pcaps
+            create_path = "mkdir -p pcaps"
+            o, e = shell.execute_command(create_path)
+            shell.log_command_output(o, e)
+            # Install tcpdump command if it doesn't exist
+            o, e = shell.execute_command("yum install -y tcpdump")
+            shell.log_command_output(o, e)
+            # Install screen command if it doesn't exist
+            o, e = shell.execute_command("yum install -y screen")
+            shell.log_command_output(o, e)
+            # Execute the tcpdump command
+            tcp_cmd = "screen -dmS test bash -c \"tcpdump -C 500 -w pcaps/pack-dump-file.pcap  -i eth0 -s 0 tcp\""
+            o, e = shell.execute_command(tcp_cmd)
+            shell.log_command_output(o, e)
+            shell.disconnect()
+
+    def start_fetch_pcaps(self):
+        log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+        for server in self.servers:
+            remote_client = RemoteMachineShellConnection(server)
+            # stop tcdump
+            stop_tcp_cmd = "if [[ \"$(pgrep tcpdump)\" ]]; then kill -s TERM $(pgrep tcpdump); fi"
+            o, e = remote_client.execute_command(stop_tcp_cmd)
+            remote_client.log_command_output(o, e)
+            # install zip unzip
+            o, e = remote_client.execute_command("yum install -y zip unzip")
+            remote_client.log_command_output(o, e)
+            # zip the pcaps folder
+            zip_cmd = "zip -r "+server.ip+"_pcaps.zip pcaps"
+            o, e = remote_client.execute_command(zip_cmd)
+            remote_client.log_command_output(o, e)
+            # transfer the zip file
+            zip_file_copied = remote_client.get_file(
+                "/root",
+                os.path.basename(server.ip+"_pcaps.zip"),
+                log_path)
+            self.log.info(
+                "%s node pcap zip coped on client : %s"
+                % (server.ip, zip_file_copied))
+            if zip_file_copied:
+                # clean up everything
+                remote_client.execute_command("rm -rf pcaps")
+                remote_client.execute_command("rm -rf "+server.ip+"_pcaps.zip")
+                remote_client.disconnect()
+
     def tearDown(self):
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
+        if self.collect_pcaps:
+            self.start_fetch_pcaps()
         server_with_crashes = self.check_coredump_exist(self.servers,
                                                         force_collect=True)
         self.tearDownEverything()
