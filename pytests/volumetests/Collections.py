@@ -9,10 +9,6 @@ import random
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
-from collections_helper.collections_spec_constants import MetaConstants, \
-    MetaCrudParams
-from bucket_utils.bucket_ready_functions import BucketUtils
-from Cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 
 
@@ -42,7 +38,17 @@ class volume(CollectionBase):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
         self.log.info("Printing bucket stats before teardown")
         self.bucket_util.print_bucket_stats()
-        self.cluster_util.check_for_panic_and_mini_dumps(self.cluster.servers)
+        if self.collect_pcaps:
+            self.start_fetch_pcaps()
+        server_with_crashes = self.check_coredump_exist(self.servers,
+                                                        force_collect=True)
+        if not self.crash_warning:
+            self.assertEqual(len(server_with_crashes), 0,
+                             msg="Test failed, Coredump found on servers {}"
+                             .format(server_with_crashes))
+        if self.crash_warning and len(server_with_crashes) > 0:
+            self.log.warn("Coredump found on servers {}\
+            ".format(server_with_crashes))
 
     def set_metadata_purge_interval(self, interval=0.04):
         # set it to 0.04 ie 1 hour if not given
@@ -50,6 +56,7 @@ class volume(CollectionBase):
         params = {}
         api = rest.baseUrl + "controller/setAutoCompaction"
         params["purgeInterval"] = interval
+        params["parallelDBAndViewCompaction"] = "false"
         params = urllib.urlencode(params)
         return rest._http_request(api, "POST", params)
 
