@@ -70,15 +70,15 @@ class MagmaBaseTest(BaseTestCase):
 
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
-        self.max_commit_points = self.input.param("max_commit_points", 5)
+        self.max_commit_points = self.input.param("max_commit_points", None)
 
         props = "magma"
         update_bucket_props = False
 
         if self.disable_magma_commit_points:
-            props += ";magma_max_commit_points=0"
-            update_bucket_props = True
-        else:
+            self.max_commit_points = 0
+
+        if self.max_commit_points is not None:
             props += ";magma_max_commit_points={}".format(self.max_commit_points)
             self.log.debug("props== {}".format(props))
             update_bucket_props = True
