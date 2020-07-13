@@ -163,7 +163,7 @@ class MagmaBaseTest(BaseTestCase):
         return doc_generator(self.key, start, end,
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
-                             target_vbucket=self.target_vbucket,
+                             target_vbucket=None,
                              vbuckets=self.cluster_util.vbuckets,
                              key_size=self.key_size,
                              randomize_doc_size=self.randomize_doc_size,
