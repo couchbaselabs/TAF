@@ -55,7 +55,7 @@ class CBASHelper(RestConnection):
         elif str(header['status']) == '503':
             self.log.info("Request Rejected")
             raise Exception("Request Rejected")
-        elif str(header['status']) in ['500','400']:
+        elif str(header['status']) in ['500','400','401','403']:
             json_content = json.loads(content)
             msg = json_content['errors'][0]['msg']
             if "Job requirement" in  msg and "exceeds capacity" in msg:
@@ -420,7 +420,10 @@ class CBASHelper(RestConnection):
                 if not content:
                     errors.append({"msg": "Request Rejected", "code": 0 })
                 else:
-                    errors.append({"msg": content, "code": 0 })
+                    if isinstance(content,dict) and "error" in content:
+                        errors.append({"msg": content["error"], "code": 0 })
+                    else:
+                        errors.append({"msg": content, "code": 0 })
             return status, header['status'], content, errors
         except Exception as err:
             self.log.error("Exception occured while calling rest APi through httplib2.")

@@ -478,8 +478,12 @@ class CBASBaseTest(BaseTestCase):
         return testcases
 
     def remove_and_return_new_list(self, itemlist, item_to_remove):
-        itemlist.remove(item_to_remove)
-        return itemlist
+        try:
+            itemlist.remove(item_to_remove)
+        except Exception:
+            pass
+        finally:
+            return itemlist
     
     def set_primary_index(self, rest, bucket_name):
         query = "CREATE PRIMARY INDEX ON `{0}`;".format(bucket_name)

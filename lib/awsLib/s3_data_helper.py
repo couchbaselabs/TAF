@@ -340,9 +340,9 @@ class S3DataHelper():
         if upload_to_s3:
             try:
                 if perform_S3_operation(
-                        aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                        aws_session_token=self.aws_session_token, bucket_name=bucket_name,
-                        upload_file=True, src_path=filepath, dest_path=filename):
+                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token, bucket_name=bucket_name,
+                    upload_file=True, src_path=filepath, dest_path=filename):
                     upload_success = True
                 else:
                     upload_success = False
@@ -393,9 +393,9 @@ class S3DataHelper():
         if upload_to_s3:
             try:
                 if perform_S3_operation(
-                        aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                        aws_session_token=self.aws_session_token, bucket_name=bucket_name,
-                        upload_file=True, src_path=filepath, dest_path=filename):
+                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token, bucket_name=bucket_name,
+                    upload_file=True, src_path=filepath, dest_path=filename):
                     upload_success = True
                 else:
                     upload_success = False

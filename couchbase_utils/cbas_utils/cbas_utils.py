@@ -301,10 +301,10 @@ class CbasUtil:
                 params["type"] = link_type
             params = urllib.urlencode(params)
             status, status_code, content, errors = self.cbas_helper.analytics_link_operations(method="GET", 
-                                                                                      params=params, 
-                                                                                      timeout=timeout, 
-                                                                                      username=username, 
-                                                                                      password=password)
+                                                                                              params=params, 
+                                                                                              timeout=timeout, 
+                                                                                              username=username, 
+                                                                                              password=password)
             if validate_error_msg:
                 return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
             if status:
@@ -403,7 +403,7 @@ class CbasUtil:
                                  where_field=None, where_value = None,
                                  validate_error_msg=False, username = None,
                                  password = None, expected_error=None, dataverse=None, compress_dataset=False,
-                                 link_name="Local"):
+                                 link_name="Local", timeout=120, analytics_timeout=120):
         """
         Creates a shadow dataset on a CBAS bucket
         """
@@ -431,7 +431,8 @@ class CbasUtil:
             cmd_create_dataset = dataverse_prefix + cmd_create_dataset
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd_create_dataset, username=username, password=password)
+            cmd_create_dataset, username=username, password=password,timeout=timeout, 
+            analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
                                                    expected_error)
