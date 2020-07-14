@@ -459,7 +459,11 @@ class ClusterUtils:
                         for server in servers:
                             shell = RemoteMachineShellConnection(server)
                             ips = shell.get_ip_address()
-                            if node.ip in ips:
+                            ips_new = []
+                            for ele in ips:
+                                ele = ele.replace('\n', '')
+                                ips_new.append(ele)
+                            if node.ip in ips_new:
                                 node.ssh_username = server.ssh_username
                                 node.ssh_password = server.ssh_password
                                 break

@@ -3292,23 +3292,20 @@ class RemoteMachineShellConnection:
             channel.close()
             stdin.close()
         elif self.remote:
-            stdin, stdout, stderro = self._ssh_client.exec_command(command)
-            stdin.close()
+            stdout, stderro = self.execute_command_raw_jsch(command)
 
         if not self.remote:
             p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE)
             output, error = p.communicate()
 
         if self.remote:
-            for line in stdout.read().splitlines():
+            for line in stdout.split():
                 output.append(line)
-            for line in stderro.read().splitlines():
+            for line in stderro.split():
                 error.append(line)
             if temp:
                 line = temp.splitlines()
                 output.extend(line)
-            stdout.close()
-            stderro.close()
         if debug:
             self.log.info('command executed successfully')
         return output, error
