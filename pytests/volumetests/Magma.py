@@ -35,7 +35,7 @@ class volume(BaseTestCase):
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.num_buckets = self.input.param("num_buckets", 1)
         self.mutate = 0
-        self.doc_ops = self.input.param("doc_ops", None)
+        self.doc_ops = self.input.param("doc_ops", "create")
         if self.doc_ops:
             self.doc_ops = self.doc_ops.split(';')
         self.iterations = self.input.param("iterations", 2)
@@ -123,34 +123,14 @@ class volume(BaseTestCase):
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
         self.info = self.rest.get_nodes_self()
-        threshold_memory = 100
+
         # threshold_memory_vagrant = 100
-        total_memory_in_mb = self.info.mcdMemoryReserved
-        total_available_memory_in_mb = total_memory_in_mb
-        if self.quota_percent:
-            total_available_memory_in_mb = (self.quota_percent *
-                                            total_available_memory_in_mb)/100
-
-        # If the mentioned service is already present,
-        # we remove that much memory from available memory quota
-        if "index" in self.info.services:
-            total_available_memory_in_mb -= self.info.indexMemoryQuota
-        if "fts" in self.info.services:
-            total_available_memory_in_mb -= self.info.ftsMemoryQuota
-        if "cbas" in self.info.services:
-            total_available_memory_in_mb -= self.info.cbasMemoryQuota
-        if "eventing" in self.info.services:
-            total_available_memory_in_mb -= self.info.eventingMemoryQuota
-
-        available_memory = total_available_memory_in_mb - threshold_memory
-
-        self.rest.set_service_memoryQuota(service='memoryQuota',
-                                          memoryQuota=available_memory)
+        kv_memory = self.info.memoryQuota - 100
 
         # Creating buckets for data loading purpose
         self.log.info("Create CB buckets")
         self.bucket_expiry = self.input.param("bucket_expiry", 0)
-        ramQuota = self.input.param("ramQuota", available_memory)
+        ramQuota = self.input.param("ramQuota", kv_memory)
         buckets = self.input.param("bucket_names",
                                    "GleamBookUsers").split(';')
         self.bucket_type = self.bucket_type.split(';')
@@ -185,14 +165,10 @@ class volume(BaseTestCase):
                 num_reader_threads=num_reader_threads)
 
     def generate_docs(self, doc_ops=None,
-                      create_end=None,
-                      create_start=None,
-                      update_end=None,
-                      update_start=None,
-                      delete_end=None,
-                      delete_start=None,
-                      expire_end=None,
-                      expire_start=None):
+                      create_end=None, create_start=None,
+                      update_end=None, update_start=None,
+                      delete_end=None, delete_start=None,
+                      expire_end=None, expire_start=None):
         self.gen_delete = None
         self.gen_create = None
         self.gen_update = None
@@ -498,12 +474,15 @@ class volume(BaseTestCase):
                                  scopes[self.scope_name].collections.keys())
 
         self.print_stats()
-        crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-        if len(crashes) > 0:
-            self.PrintStep("Crashes found on server: %s" % crashes)
+        result, cores, streamFailures = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+        if result:
+            if cores:
+                self.PrintStep("Issues found on server: %s" % cores)
+            if streamFailures:
+                self.PrintStep("Issues found on server: %s" % streamFailures)
         if self.assert_crashes_on_load:
             self.task.jython_task_manager.abort_all_tasks()
-            self.assertTrue(len(crashes) == 0, "Found servers having crashes")
+            self.assertFalse(result)
 
     def print_stats(self):
         self.get_magma_disk_usage()
@@ -629,12 +608,13 @@ class volume(BaseTestCase):
 
                 shell.disconnect()
 
-        crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-        if len(crashes) > 0:
+        result, core_msg, stream_msg = self.check_coredump_exist(
+            self.cluster.nodes_in_cluster)
+        if result:
             self.stop_crash = True
             self.task.jython_task_manager.abort_all_tasks()
-
-        self.assertTrue(len(crashes) == 0, "Found servers having crashes")
+            self.log.error(core_msg + stream_msg)
+            self.assertFalse(result, "Found issues on the nodes")
 
         if wait:
             for server in servers:
@@ -745,12 +725,13 @@ class volume(BaseTestCase):
                                  scopes[self.scope_name].collections.keys())
 
             self.print_stats()
-            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-            if len(crashes) > 0:
-                self.PrintStep("Crashes found on server: %s" % crashes)
-            if self.assert_crashes_on_load:
+            result, core_msg, stream_msg = self.check_coredump_exist(
+                self.cluster.nodes_in_cluster)
+            if result:
+                self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
-                self.assertTrue(len(crashes) == 0, "Found servers having crashes")
+                self.log.error(core_msg + stream_msg)
+                self.assertFalse(result, "Found issues on the nodes")
 
         self.loop = 0
         while self.loop < self.iterations:
@@ -1584,22 +1565,27 @@ class volume(BaseTestCase):
         self.suppress_error_table = True
         self.crash_count = 0
         self.stop_rebalance = self.input.param("pause_rebalance", False)
+        self.crashes = self.input.param("crashes", 20)
+
+        self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
+        self.expiry_perc = 100
+        self.create_perc = 100
+        self.update_perc = 100
+        self.delete_perc = 100
+        self.key_prefix = "random"
+        self.process_concurrency = 5
+        self.doc_ops = self.input.param("doc_ops", "expiry")
+        self.generate_docs(doc_ops=self.doc_ops,
+                           expire_start=0,
+                           expire_end=self.num_items,
+                           create_start=self.num_items,
+                           create_end=self.num_items*2,
+                           update_start=self.num_items*2,
+                           update_end=self.num_items*3
+                           )
+        self.perform_load(wait_for_load=False)
+        self.sleep(120)
         while self.loop < self.iterations:
-            '''
-            Create sequential: 0 - 10M
-            Final Docs = 10M (0-10M, 10M seq items)
-            '''
-            self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
-            self.expiry_perc = 100
-            self.create_perc = 0
-            self.update_perc = 0
-            self.delete_perc = 0
-            self.key_prefix = "random"
-            self.generate_docs(doc_ops="expiry",
-                               expire_start=0,
-                               expire_end=self.num_items)
-            self.perform_load(wait_for_load=False)
-            self.sleep(120)
             ###################################################################
             self.PrintStep("Step 4: Rebalance in with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
@@ -1614,7 +1600,7 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
@@ -1633,7 +1619,7 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
@@ -1652,7 +1638,7 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
@@ -1672,7 +1658,7 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
@@ -1711,7 +1697,7 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
@@ -1745,7 +1731,7 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
@@ -1777,7 +1763,7 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
@@ -1802,7 +1788,7 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
@@ -1826,19 +1812,15 @@ class volume(BaseTestCase):
             th = threading.Thread(target=self.crash_thread,
                                   kwargs={"graceful": False})
             th.start()
-            while self.crash_count < 20:
+            while self.crash_count < self.crashes:
                 continue
             self.stop_crash = True
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 14: Flush the bucket and \
-            start the entire process again")
+            self.PrintStep("Step 14: Start the entire process again")
             self.loop += 1
-            self.task_manager.abort_all_tasks()
             if self.loop < self.iterations:
-                # Flush the bucket
-                self.bucket_util.flush_all_buckets(self.cluster.master)
                 self.sleep(10)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
                     nodes_cluster = self.cluster.nodes_in_cluster[:]
@@ -1856,7 +1838,9 @@ class volume(BaseTestCase):
                     self.cluster.nodes_in_cluster = list(
                         set(self.cluster.nodes_in_cluster) - set(servs_out))
                     self.get_bucket_dgm(self.bucket)
-            else:
-                self.log.info("Volume Test Run Complete")
-                self.get_bucket_dgm(self.bucket)
+
             self.print_stats()
+
+        self.get_bucket_dgm(self.bucket)
+        self.log.info("Volume Test Run Complete")
+        self.task_manager.abort_all_tasks()
