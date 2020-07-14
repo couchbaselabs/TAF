@@ -433,8 +433,7 @@ class BaseTestCase(unittest.TestCase):
                                                                  force_collect=True)
         self.tearDownEverything()
         if not self.crash_warning:
-            self.assertTrue(result, 0,
-                            msg=core_msg + stream_msg)
+            self.assertTrue(result, msg=core_msg + stream_msg)
         if self.crash_warning and result > 0:
             self.log.warn(core_msg + stream_msg)
 
