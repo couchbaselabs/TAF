@@ -65,6 +65,7 @@ class volume(BaseTestCase):
         self.key_prefix = "Users"
         self.skip_read_on_error = False
         self.suppress_error_table = False
+        self.track_failures = True
 
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
@@ -301,7 +302,8 @@ class volume(BaseTestCase):
             retry_exceptions=retry_exceptions,
             skip_read_on_error=self.skip_read_on_error,
             suppress_error_table=self.suppress_error_table,
-            scope=scope, collection=collection)
+            scope=scope, collection=collection,
+            track_failures=self.track_failures)
         return tasks_info
 
     def data_load(self,
@@ -1456,6 +1458,7 @@ class volume(BaseTestCase):
         #######################################################################
         self.skip_read_on_error = True
         self.suppress_error_table = True
+        self.track_failures = False
         self.PrintStep("Step 15: Random crashes during Creates")
         '''
         Creates: 20M-50M
@@ -1563,6 +1566,7 @@ class volume(BaseTestCase):
         self.loop = 0
         self.skip_read_on_error = True
         self.suppress_error_table = True
+        self.track_failures = False
         self.crash_count = 0
         self.stop_rebalance = self.input.param("pause_rebalance", False)
         self.crashes = self.input.param("crashes", 20)

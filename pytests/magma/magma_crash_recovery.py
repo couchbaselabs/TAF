@@ -171,7 +171,8 @@ class MagmaCrashTests(MagmaBaseTest):
         tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                   skip_read_on_error=True,
                                   suppress_error_table=True,
-                                  _sync=False)
+                                  _sync=False,
+                                  track_failures=False)
 
         th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
         th.start()
