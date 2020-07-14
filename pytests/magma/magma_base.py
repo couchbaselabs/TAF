@@ -35,16 +35,6 @@ class MagmaBaseTest(BaseTestCase):
         self.info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
-        self.kv_memory = (int(self.info.mcdMemoryReserved) - 100)
-        if self.quota_percent:
-            self.kv_memory = (self.quota_percent * self.kv_memory)/100
-        if "index" in self.cluster.master.services:
-            self.kv_memory -= INDEX_QUOTA
-        if "fts" in self.cluster.master.services:
-            self.kv_memory -= FTS_QUOTA
-        if "cbas" in self.cluster.master.services:
-            self.kv_memory -= CBAS_QUOTA
-        self.rest.init_cluster_memoryQuota(memoryQuota=self.kv_memory)
         nodes_init = self.cluster.servers[
             1:self.nodes_init] if self.nodes_init != 1 else []
         if nodes_init:
@@ -129,10 +119,7 @@ class MagmaBaseTest(BaseTestCase):
         self.log.info("==========Finished magma base setup========")
 
     def _create_default_bucket(self):
-        if self.kv_memory < 100:
-            self.kv_memory = 100
         self.bucket_util.create_default_bucket(
-            ram_quota=self.kv_memory,
             bucket_type=self.bucket_type,
             replica=self.num_replicas,
             storage=self.bucket_storage,
