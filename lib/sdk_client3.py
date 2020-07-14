@@ -77,7 +77,7 @@ class SDKClient(object):
         self.hosts = list()
 
         # Used while creating connection for Cluster_run
-        self.servers = tuple()
+        self.servers = list()
 
         self.username = username
         self.password = password
@@ -90,7 +90,7 @@ class SDKClient(object):
             self.bucket = bucket.name
 
         for server in servers:
-            self.servers += (server.ip, int(server.port))
+            self.servers.append((server.ip, int(server.port)))
             if server.ip == "127.0.0.1":
                 self.hosts.append("%s:%s" % (server.ip, server.port))
                 self.scheme = "http"
