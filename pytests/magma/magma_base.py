@@ -661,3 +661,22 @@ class MagmaBaseTest(BaseTestCase):
         self.log.debug("State files = {}".format(output))
 
         return output
+
+    def check_roll_back_to_zero(self, servers=None):
+        logs_dir = "/opt/couchbase/var/lib/couchbase/logs"
+
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+
+        if type(servers) is not list:
+            servers = [servers]
+
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            log_files = shell.execute_command("ls " + logs_dir + "memcached.log.*" )[0]
+            for log_file in log_files:
+                msg = "Rollback point not found, please reset kvstore"
+                found = shell.execute_command(("grep -r '{}' " + log_file.strip("\n")).
+                                              format(msg))[0]
+                if found:
+                    print ("Found {} in {} on machine {}".format(msg, log_file, server.ip))
