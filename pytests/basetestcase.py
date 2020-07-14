@@ -429,16 +429,14 @@ class BaseTestCase(unittest.TestCase):
             self.sdk_client_pool.shutdown()
         if self.collect_pcaps:
             self.start_fetch_pcaps()
-        server_with_crashes = self.check_coredump_exist(self.servers,
-                                                        force_collect=True)
+        result, core_msg, stream_msg = self.check_coredump_exist(self.servers,
+                                                                 force_collect=True)
         self.tearDownEverything()
         if not self.crash_warning:
-            self.assertEqual(len(server_with_crashes), 0,
-                             msg="Test failed, Coredump found on servers {}"
-                             .format(server_with_crashes))
-        if self.crash_warning and len(server_with_crashes) > 0:
-            self.log.warn("Coredump found on servers {}\
-            ".format(server_with_crashes))
+            self.assertTrue(result, 0,
+                            msg=core_msg + stream_msg)
+        if self.crash_warning and result > 0:
+            self.log.warn(core_msg + stream_msg)
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
@@ -662,7 +660,9 @@ class BaseTestCase(unittest.TestCase):
         libCb = "/opt/couchbase/var/lib/couchbase/"
         crashDir = "/opt/couchbase/var/lib/couchbase/"
         crashDirWin = "c://CrashDumps"
-        servers_with_crashes = list()
+        result = True
+        dmpmsg = ""
+        streammsg = ""
 
         def findIndexOf(strList, subString):
             for i in range(len(strList)):
@@ -695,11 +695,12 @@ class BaseTestCase(unittest.TestCase):
             dmpFiles = [f.split()[-1] for f in dmpFiles if ".core" not in f]
             dmpFiles = [f.strip("\n") for f in dmpFiles]
             if dmpFiles:
-                self.log.error("Node %s - Core dump seen: %s"
-                               % (server.ip, str(len(dmpFiles))))
+                msg = "Node %s - Core dump seen: %s" % (server.ip, str(len(dmpFiles)))
+                dmpmsg += msg + "\n"
+                self.log.error(msg)
                 print(server.ip + " : Stack Trace of first crash: " + dmpFiles[-1])
                 print(get_gdb(shell, crashDir, dmpFiles[-1]))
-                servers_with_crashes.append(server.ip)
+                result = False
             else:
                 self.log.info(server.ip + " : No crash files found")
 
@@ -718,11 +719,12 @@ class BaseTestCase(unittest.TestCase):
                 found = shell.execute_command(("grep -r '{}' " + logFile.strip("\n")).
                                               format(streamreqfailed))[0]
                 if found:
-                    self.log.error("Found {} in {}".format(streamreqfailed,logFile))
-                    if server.ip not in servers_with_crashes:
-                        servers_with_crashes.append(server.ip)
-        if servers_with_crashes and force_collect:
+                    temp = "Found {} in {}".format(streamreqfailed, logFile)
+                    self.log.error(temp)
+                    streammsg += temp + "\n"
+                    result = False
+        if not result and force_collect:
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False
 
-        return servers_with_crashes
+        return result, dmpmsg, streammsg

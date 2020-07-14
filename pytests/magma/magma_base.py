@@ -462,7 +462,7 @@ class MagmaBaseTest(BaseTestCase):
         disk_usage.extend([kvstore, wal, keyTree, seqTree])
         return disk_usage
 
-    def enable_disable_swap_space(self, servers=None, disable=True):
+    def change_swap_space(self, servers=None, disable=True):
         if servers is None:
             servers = self.cluster.nodes_in_cluster
         if type(servers) is not list:
@@ -633,13 +633,12 @@ class MagmaBaseTest(BaseTestCase):
                         count -= 1
                     count = kill_itr
 
-            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster,
-                                                force_collect=force_collect)
-            if len(crashes) > 0:
-                result = False
+            result, core_msg, stream_msg = self.check_coredump_exist(
+                self.cluster.nodes_in_cluster, force_collect=force_collect)
+            if result:
                 self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
-                self.log.error("Found servers having crashes")
+                self.log.error(core_msg + stream_msg)
 
             if wait:
                 for server in nodes:
@@ -655,7 +654,7 @@ class MagmaBaseTest(BaseTestCase):
         for shell in connections:
             shell.disconnect()
 
-        self.assertTrue(result)
+        self.assertFalse(result)
 
     def get_state_files(self, bucket, server=None):
 
@@ -664,7 +663,7 @@ class MagmaBaseTest(BaseTestCase):
 
         shell = RemoteMachineShellConnection(server)
 
-        magma_path =  str(os.path.join(RestConnection(server).get_data_path(), bucket.name, "magma.0"))
+        magma_path = str(os.path.join(RestConnection(server).get_data_path(), bucket.name, "magma.0"))
         kv_path = shell.execute_command("ls %s | grep kv | head -1" % magma_path) [0][0].split('\n')[0]
         path = os.path.join(magma_path, kv_path, "rev*/seqIndex")
         self.log.debug("SeqIndex path = {}".format(path))
