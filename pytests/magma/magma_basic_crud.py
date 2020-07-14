@@ -14,7 +14,7 @@ from sdk_client3 import SDKClient
 class BasicCrudTests(MagmaBaseTest):
     def setUp(self):
         super(BasicCrudTests, self).setUp()
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster)
+        self.change_swap_space(self.cluster.nodes_in_cluster)
         self.disk_usage = dict()
 
         self.create_start = 0
@@ -77,49 +77,6 @@ class BasicCrudTests(MagmaBaseTest):
 
     def tearDown(self):
         super(BasicCrudTests, self).tearDown()
-
-    def test_expiry(self):
-        result = True
-        self.gen_create = doc_generator(
-            self.key, 0, 10,
-            doc_size=20,
-            doc_type=self.doc_type,
-            key_size=self.key_size)
-
-        tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_create, "create", 10,
-                batch_size=10,
-                process_concurrency=1,
-                persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, pause_secs=5,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                )
-        self.task.jython_task_manager.get_task_result(tasks_info.keys()[0])
-        self.sleep(20)
-        self.client = SDKClient([self.cluster.master],
-                                self.bucket_util.buckets[0],
-                                scope=CbServer.default_scope,
-                                collection=CbServer.default_collection)
-        for i in range(10):
-            key = (self.key + "-" + str(i).zfill(self.key_size-len(self.key)))
-            try:
-                getReplicaResult = self.client.collection.getAnyReplica(
-                    key, GetAnyReplicaOptions.getAnyReplicaOptions())
-                if getReplicaResult:
-                    result = False
-                    try:
-                        self.log.info("Able to retreive: %s" %
-                                      {"key": key,
-                                       "value": getReplicaResult.contentAsObject(),
-                                       "cas": getReplicaResult.cas()})
-                    except Exception as e:
-                        print str(e)
-            except DocumentUnretrievableException as e:
-                pass
-            if len(self.client.get_from_all_replicas(key)) > 0:
-                result = False
-        self.client.close()
-        self.assertTrue(result, "SDK is able to retrieve expired documents")
 
     def test_MB_38315(self):
         self.log.info("Deleting half of the items")
@@ -282,8 +239,8 @@ class BasicCrudTests(MagmaBaseTest):
 
         self.validate_data("update", self.gen_update)
 
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
-                                       disable=False)
+        self.change_swap_space(self.cluster.nodes_in_cluster,
+                               disable=False)
         self.log.info("====test_update_multi ends====")
 
     def test_multi_update_delete(self):
@@ -828,8 +785,8 @@ class BasicCrudTests(MagmaBaseTest):
                       msg="expected_val-{} != Actual_val-{}\
                       ".format(expected_val, actual_val))
 
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
-                                       disable=False)
+        self.change_swap_space(self.cluster.nodes_in_cluster,
+                               disable=False)
         self.log.info("====test_update_single_doc_n_times====")
 
     def test_read_docs_using_multithreads(self):
@@ -1102,7 +1059,7 @@ class BasicCrudTests(MagmaBaseTest):
             process_concurrency=self.process_concurrency,
             pause_secs=5, timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster, disable=False)
+        self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
         self.log.info("====test_move_docs_btwn_key_and_seq_trees ends====")
 
     def test_parallel_create_update(self):
@@ -1186,7 +1143,7 @@ class BasicCrudTests(MagmaBaseTest):
                                   (2 * self.disk_usage[
                                       self.disk_usage.keys()[0]])))
             count += 1
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster, disable=False)
+        self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
         self.log.info("====test_parallel_create_update ends====")
 
     def test_parallel_creates_deletes(self):
@@ -1290,8 +1247,8 @@ class BasicCrudTests(MagmaBaseTest):
                        self.disk_usage[self.disk_usage.keys()[0]]))
         # Space Amplifiaction check ends
 
-        self.enable_disable_swap_space(self.cluster.nodes_in_cluster,
-                                       disable=False)
+        self.change_swap_space(self.cluster.nodes_in_cluster,
+                               disable=False)
         self.log.info("====test_parallel_create_delete ends====")
 
     def test_drop_collections_after_upserts(self):
