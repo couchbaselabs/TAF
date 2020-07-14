@@ -441,6 +441,22 @@ class IsolationDocTest(BaseTestCase):
         while load_gen.has_next():
             key, _ = load_gen.next()
             self.keys.append(key)
+        load_gen.reset()
+
+        if self.doc_op != "create":
+            trans_task = self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets,
+                load_gen, "create", exp=self.maxttl,
+                batch_size=50,
+                process_concurrency=8,
+                timeout_secs=self.sdk_timeout,
+                update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
+                commit=True,
+                durability=self.durability_level,
+                sync=self.sync, defer=self.defer,
+                retries=0)
+            self.task_manager.get_task_result(trans_task)
 
         # Start reader thread for validation
         read_thread = Thread(target=self.__perform_read_on_doc_keys,
@@ -449,7 +465,7 @@ class IsolationDocTest(BaseTestCase):
                              )
         read_thread.start()
         if self.doc_op != "create":
-            self.sleep(60, "Wait for reader thread to fetch the values")
+            self.sleep(30, "Wait for reader thread to fetch the values")
 
         # Transaction task with commit=False so that rollback will be triggered
         for index in range(1, 11):
