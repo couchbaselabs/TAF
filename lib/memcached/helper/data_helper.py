@@ -245,7 +245,7 @@ class MemcachedClientHelper(object):
 
     @staticmethod
     def direct_client(server, bucket, timeout=30,
-                      admin_user='cbadminbucket', admin_pass='password'):
+                      admin_user='Administrator', admin_pass='password'):
         log = logger.get("test")
         rest = RestConnection(server)
         node = None
