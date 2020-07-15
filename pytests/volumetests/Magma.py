@@ -233,7 +233,9 @@ class volume(BaseTestCase):
                 mix_key_size=self.mix_key_size)
             self.final_items -= (self.delete_end - self.delete_start) * self.num_collections
 
-        if "expiry" in doc_ops and self.maxttl:
+        if "expiry" in doc_ops:
+            if self.maxttl == 0:
+                self.maxttl = self.input.param("maxttl", 10)
             if expire_start is not None:
                 self.expire_start = expire_start
             else:
@@ -654,14 +656,14 @@ class volume(BaseTestCase):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
 
-            exp = 0
             if doc_type == "expiry":
-                exp = self.maxttl
+                if self.maxttl == 0:
+                    self.maxttl = self.input.param("maxttl", 10)
                 doc_type = "update"
 
             for collection in self.bucket.scopes[self.scope_name].collections.keys():
                 tasks_info.update(self.doc_loader(doc_type, gen_docs,
-                                                  exp=exp,
+                                                  exp=self.maxttl,
                                                   scope=self.scope_name,
                                                   collection=collection))
             self.wait_for_doc_load_completion(tasks_info, wait_for_stats=False)
@@ -1404,13 +1406,13 @@ class volume(BaseTestCase):
         crash during recovery" % (str(self.update_perc),
                                   str(self.num_items*self.update_perc/100)))
         _iter = 0
-        while _iter < 10:
+        while _iter < 5:
             self.PrintStep("Step 10.%s: Update %s percent(%s) items 10 times \
             and crash during recovery" % (str(_iter), str(self.update_perc),
                                           str(self.num_items *
                                               self.update_perc/100)))
             self.generate_docs(doc_ops="update")
-            self.perform_load(crash=False, validate_data=True)
+            self.perform_load(crash=True, validate_data=True)
             _iter += 1
 
         if self.end_step == 10:
