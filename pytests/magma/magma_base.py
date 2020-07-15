@@ -578,19 +578,19 @@ class MagmaBaseTest(BaseTestCase):
 
         while not self.stop:
             self.log.info("Crash check")
-            crashes = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+            result, cores, streamFailures = self.check_coredump_exist(self.cluster.nodes_in_cluster)
 
-            if len(crashes) > 0:
-                self.stop = True
+            if result:
+                if cores:
+                    self.log.error("Issues found on server: %s" % cores)
+                if streamFailures:
+                    self.log.error("Issues found on server: %s" % streamFailures)
                 self.task.jython_task_manager.abort_all_tasks()
-                self.assertEqual(len(crashes), 0,
-                                 msg="Coredump found on servers {}"
-                                 .format(crashes))
+                self.assertFalse(result)
             self.sleep(10, "Sleeping before re-checking for crashes.")
 
     def crash(self, nodes=None, kill_itr=1, graceful=False,
               wait=True, force_collect=False):
-        result = True
         self.stop_crash = False
         count = kill_itr
         loop_itr = 0
@@ -626,6 +626,7 @@ class MagmaBaseTest(BaseTestCase):
                 self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
                 self.log.error(core_msg + stream_msg)
+                self.assertFalse(result)
 
             if wait:
                 for server in nodes:
@@ -640,8 +641,6 @@ class MagmaBaseTest(BaseTestCase):
 
         for shell in connections:
             shell.disconnect()
-
-        self.assertFalse(result)
 
     def get_state_files(self, bucket, server=None):
 

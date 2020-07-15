@@ -433,8 +433,8 @@ class BaseTestCase(unittest.TestCase):
                                                                  force_collect=True)
         self.tearDownEverything()
         if not self.crash_warning:
-            self.assertTrue(result, msg=core_msg + stream_msg)
-        if self.crash_warning and result > 0:
+            self.assertFalse(result, msg=core_msg + stream_msg)
+        if self.crash_warning and result:
             self.log.warn(core_msg + stream_msg)
 
     def tearDownEverything(self):
@@ -659,7 +659,7 @@ class BaseTestCase(unittest.TestCase):
         libCb = "/opt/couchbase/var/lib/couchbase/"
         crashDir = "/opt/couchbase/var/lib/couchbase/"
         crashDirWin = "c://CrashDumps"
-        result = True
+        result = False
         dmpmsg = ""
         streammsg = ""
 
@@ -699,7 +699,7 @@ class BaseTestCase(unittest.TestCase):
                 self.log.error(msg)
                 print(server.ip + " : Stack Trace of first crash: " + dmpFiles[-1])
                 print(get_gdb(shell, crashDir, dmpFiles[-1]))
-                result = False
+                result = True
             else:
                 self.log.info(server.ip + " : No crash files found")
 
@@ -721,7 +721,7 @@ class BaseTestCase(unittest.TestCase):
                     temp = "Found {} in {}".format(streamreqfailed, logFile)
                     self.log.error(temp)
                     streammsg += temp + "\n"
-                    result = False
+                    result = True
         if not result and force_collect:
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False

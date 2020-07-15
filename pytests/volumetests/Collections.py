@@ -40,15 +40,12 @@ class volume(CollectionBase):
         self.bucket_util.print_bucket_stats()
         if self.collect_pcaps:
             self.start_fetch_pcaps()
-        server_with_crashes = self.check_coredump_exist(self.servers,
-                                                        force_collect=True)
+        result, core_msg, stream_msg = self.check_coredump_exist(self.servers,
+                                                                 force_collect=True)
         if not self.crash_warning:
-            self.assertEqual(len(server_with_crashes), 0,
-                             msg="Test failed, Coredump found on servers {}"
-                             .format(server_with_crashes))
-        if self.crash_warning and len(server_with_crashes) > 0:
-            self.log.warn("Coredump found on servers {}\
-            ".format(server_with_crashes))
+            self.assertFalse(result, msg=core_msg + stream_msg)
+        if self.crash_warning and result:
+            self.log.warn(core_msg + stream_msg)
 
     def set_metadata_purge_interval(self, interval=0.04):
         # set it to 0.04 ie 1 hour if not given
