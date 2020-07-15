@@ -140,8 +140,6 @@ class BaseTestCase(unittest.TestCase):
                 self.sdk_compression["minSize"] = compression_min_size
             if compression_min_ratio:
                 self.sdk_compression["minRatio"] = compression_min_ratio
-        self.bucket_durability_level = \
-            BucketDurability[self.bucket_durability_level]
 
         # Doc Loader Params
         self.process_concurrency = self.input.param("process_concurrency", 20)
