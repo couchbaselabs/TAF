@@ -71,7 +71,7 @@ class volume(BaseTestCase):
             "disable_magma_commit_points", False)
         self.fragmentation = int(self.input.param("fragmentation", 50))
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
-                                                       False)
+                                                       True)
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
         if self.nodes_init > 1:
@@ -482,9 +482,9 @@ class volume(BaseTestCase):
                 self.PrintStep("Issues found on server: %s" % cores)
             if streamFailures:
                 self.PrintStep("Issues found on server: %s" % streamFailures)
-        if self.assert_crashes_on_load:
-            self.task.jython_task_manager.abort_all_tasks()
-            self.assertFalse(result)
+            if self.assert_crashes_on_load:
+                self.task.jython_task_manager.abort_all_tasks()
+                self.assertFalse(result)
 
     def print_stats(self):
         self.get_magma_disk_usage()
