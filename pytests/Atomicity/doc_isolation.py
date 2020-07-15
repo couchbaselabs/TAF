@@ -519,11 +519,11 @@ class IsolationDocTest(BaseTestCase):
 
         # Create docs for update/delete operation
         if self.doc_op != "create":
-            trans_task = self.task.async_load_gen_docs_atomicity(
+            trans_task_1 = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets,
                 load_gen_1, "create", exp=self.maxttl,
                 batch_size=50,
-                process_concurrency=3,
+                process_concurrency=4,
                 timeout_secs=self.sdk_timeout,
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
@@ -531,12 +531,20 @@ class IsolationDocTest(BaseTestCase):
                 durability=self.durability_level,
                 sync=self.sync, defer=self.defer,
                 retries=0)
-            self.task_manager.get_task_result(trans_task)
-
-        # Start rebalance task
-        rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init],
-            nodes_to_add, nodes_to_remove)
+            trans_task_2 = self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets,
+                load_gen_2, "create", exp=self.maxttl,
+                batch_size=50,
+                process_concurrency=4,
+                timeout_secs=self.sdk_timeout,
+                update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
+                commit=True,
+                durability=self.durability_level,
+                sync=self.sync, defer=self.defer,
+                retries=0)
+            self.task_manager.get_task_result(trans_task_1)
+            self.task_manager.get_task_result(trans_task_2)
 
         # Start transaction tasks with success & rollback for shadow docs test
         # Successful transaction
@@ -565,6 +573,12 @@ class IsolationDocTest(BaseTestCase):
             durability=self.durability_level,
             sync=self.sync, defer=self.defer,
             retries=0)
+
+        self.sleep(3, "Wait for transactions to start")
+        # Start rebalance task
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init],
+            nodes_to_add, nodes_to_remove)
 
         # Wait for transactions and rebalance task to complete
         self.task_manager.get_task_result(trans_task_1)
