@@ -2,6 +2,7 @@ import os.path
 import uuid
 
 from BucketLib.bucket import Bucket
+from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from membase.api.rest_client import RestConnection
@@ -564,20 +565,35 @@ class DataCollector(object):
             dataMap = dict()
             for server in servers:
                 map_data = dict()
-                client = MemcachedClientHelper.direct_client(server, bucket)
+                shell = RemoteMachineShellConnection(server)
+                cbstat = Cbstats(shell)
+
                 if collect_vbucket:
-                    vbucket = client.stats('vbucket')
-                    self.createMapVbucket(vbucket, map_data)
+                    result = cbstat.vbucket_list(bucket.name)
+                    for key in result.keys():
+                        result['vb_' + key] = result.pop(key)
+                    map_data.update(result)
+                    # vbucket = client.stats('vbucket')
+                    # self.createMapVbucket(vbucket, map_data)
                 if collect_vbucket_seqno:
-                    vbucket_seqno = client.stats('vbucket-seqno')
-                    self.createMapVbucket(vbucket_seqno, map_data)
+                    result = cbstat.vbucket_seqno(bucket.name)
+                    for key in result.keys():
+                        result['vb_' + key] = result.pop(key)
+                    map_data.update(result)
+                    # vbucket_seqno = client.stats('vbucket-seqno')
+                    # self.createMapVbucket(vbucket_seqno, map_data)
                 if collect_vbucket_details:
-                    vbucket_details = client.stats('vbucket-details')
-                    self.createMapVbucket(vbucket_details, map_data)
+                    result = cbstat.vbucket_details(bucket.name)
+                    for key in result.keys():
+                        result['vb_' + key] = result.pop(key)
+                    map_data.update(result)
+                    # vbucket_details = client.stats('vbucket-details')
+                    # self.createMapVbucket(vbucket_details, map_data)
                 if perNode:
                     dataMap[server.ip] = map_data
                 else:
                     dataMap.update(map_data)
+                shell.disconnect()
             bucketMap[bucket.name] = dataMap
         return bucketMap
 
