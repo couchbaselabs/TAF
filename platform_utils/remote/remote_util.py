@@ -3319,9 +3319,9 @@ class RemoteMachineShellConnection:
             output, error = p.communicate()
 
         if self.remote:
-            for line in stdout.split():
+            for line in stdout:
                 output.append(line)
-            for line in stderro.split():
+            for line in stderro:
                 error.append(line)
             if temp:
                 line = temp.splitlines()
