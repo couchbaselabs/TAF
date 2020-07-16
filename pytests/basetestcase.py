@@ -187,8 +187,16 @@ class BaseTestCase(unittest.TestCase):
             self.start_collect_pcaps()
 
         # variable for log collection using cbCollect
-        self.get_cbcollect_info = TestInputSingleton.input.param(
-            "get-cbcollect-info", False)
+        self.get_cbcollect_info = self.input.param("get-cbcollect-info", False)
+
+        '''
+        Be careful while using this flag.
+        This is only and only for stand-alone tests.
+        During bugs reproductions, when a crash is seen
+        stop_server_on_crash will stop the server
+        so that we can collect data/logs/dumps at the right time
+        '''
+        self.stop_server_on_crash = self.input.param("stop_server_on_crash", False)
 
         # Configure loggers
         self.log.setLevel(self.log_level)
@@ -699,6 +707,8 @@ class BaseTestCase(unittest.TestCase):
                 self.log.error(msg)
                 print(server.ip + " : Stack Trace of first crash: " + dmpFiles[-1])
                 print(get_gdb(shell, crashDir, dmpFiles[-1]))
+                if self.stop_server_on_crash:
+                    shell.stop_couchbase()
                 result = True
             else:
                 self.log.info(server.ip + " : No crash files found")
