@@ -814,6 +814,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
+        self.gen_read = copy.deepcopy(self.gen_create)
 
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
@@ -938,6 +939,19 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.sleep(5, "Sleep after re-starting persistence, Iteration{}".format(i))
 
             shell.disconnect()
+        ###############################################################################
+        '''
+        STEP - 6
+          -- Data Validation
+        '''
+        data_validation = self.task.async_validate_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                self.gen_read, "create", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                pause_secs=5, timeout_secs=self.sdk_timeout)
+        self.task.jython_task_manager.get_task_result(data_validation)
+        ###############################################################################
 
 class MagmaSpaceAmplification(MagmaBaseTest):
 
