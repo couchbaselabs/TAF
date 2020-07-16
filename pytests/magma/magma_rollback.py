@@ -891,8 +891,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                      mem_item_count}
                 vb_replica_queue_size_map = {node: 0}
 
-                for nod in enumerate(self.cluster.nodes_in_cluster):
-                    self.log.info("Nod and node are {} {}".format(nod, node))
+                for nod in self.cluster.nodes_in_cluster:
                     if nod != node:
                         ep_queue_size_map.update({nod: 0})
                         vb_replica_queue_size_map.update({nod: 0})
