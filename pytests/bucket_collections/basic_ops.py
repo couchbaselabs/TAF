@@ -690,6 +690,9 @@ class BasicOps(CollectionBase):
             bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
                                                 bucket_name)
             for scope_name, _ in scope_dict["scopes"].items():
+                # Cannot create a _default scope
+                if scope_name == CbServer.default_collection:
+                    continue
                 BucketUtils.create_scope(self.cluster.master, bucket,
                                          {"name": scope_name})
         # Validate doc count as per bucket collections
