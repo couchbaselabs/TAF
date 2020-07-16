@@ -73,14 +73,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             mem_client = MemcachedClientHelper.direct_client(
                 self.cluster_util.cluster.master, self.bucket_util.buckets[0])
             mem_client.stop_persistence()
-
-            self.gen_create = doc_generator(
-                self.key, start, mem_only_items,
-                doc_size=self.doc_size, doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value)
+            self.gen_create = self.gen_docs_basic_for_target_vbucket(start, mem_only_items,
+                                                                     self.target_vbucket)
 
             self.loadgen_docs(_sync=True,
                               retry_exceptions=retry_exceptions)
