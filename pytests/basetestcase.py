@@ -722,7 +722,7 @@ class BaseTestCase(unittest.TestCase):
                     self.log.error(temp)
                     streammsg += temp + "\n"
                     result = True
-        if not result and force_collect:
+        if result and force_collect:
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False
 
