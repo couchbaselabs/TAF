@@ -569,9 +569,12 @@ class DataCollector(object):
                 cbstat = Cbstats(shell)
 
                 if collect_vbucket:
-                    result = cbstat.vbucket_list(bucket.name)
-                    for key in result.keys():
-                        result['vb_' + key] = result.pop(key)
+                    result = dict()
+                    for vb_type in ["active", "replica"]:
+                        vb_list = cbstat.vbucket_list(bucket.name, vb_type)
+                        for vb_num in vb_list:
+                            result['vb_%s' % vb_num] = dict()
+                            result['vb_%s' % vb_num]["state"] = vb_type
                     map_data.update(result)
                     # vbucket = client.stats('vbucket')
                     # self.createMapVbucket(vbucket, map_data)
