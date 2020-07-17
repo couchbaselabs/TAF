@@ -24,13 +24,12 @@ class volume(CollectionBase):
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
-        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
+        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
         self.contains_ephemeral = self.input.param("contains_ephemeral", True)
         # the stage at which CRUD for collection level/ document level take place.
         # "before" - start and finish before rebalance/failover starts at each step
         # "during" - during rebalance/failover at each step
         self.data_load_stage = self.input.param("data_load_stage", "during")
-        self.use_doc_ttl = self.input.param("use_doc_ttl", False)
         self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
         self.skip_validations = self.input.param("skip_validations", True)
 
@@ -111,9 +110,6 @@ class volume(CollectionBase):
             self.bucket_util.validate_doc_loading_results(task)
             if task.result is False:
                 self.fail("Doc_loading failed")
-        if self.use_doc_ttl:
-            self.bucket_util._expiry_pager(val=5)
-            self.bucket_util.update_num_items_based_on_expired_docs(self.bucket_util.buckets, task)
 
     def data_validation_collection(self):
         retry_count = 0
