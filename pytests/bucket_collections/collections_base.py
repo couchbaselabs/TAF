@@ -9,6 +9,8 @@ from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 import traceback
+from remote.remote_util import RemoteMachineShellConnection
+from cb_tools.cbstats import Cbstats
 
 from java.lang import Exception as Java_base_exception
 
@@ -28,6 +30,11 @@ class CollectionBase(BaseTestCase):
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstat_obj = Cbstats(shell)
+        for bucket in self.bucket_util.buckets:
+            result = cbstat_obj.all_stats(bucket.name, field_to_grep="vb_active_perc_mem_resident")
+            self.log.info("Bucket name : {0} Resident ratio(DGM) : {1}".format(bucket.name, result))
         self.bucket_util.remove_scope_collections_and_validate(
             validate_docs_count=self.validate_docs_count_during_teardown)
         super(CollectionBase, self).tearDown()
