@@ -5,23 +5,23 @@ Created on Sep 25, 2017
 """
 import base64
 import json
+import logging
 import traceback
 import socket
 import time
-
-from Cb_constants import constants
 from TestInput import TestInputSingleton
-from common_lib import sleep
-from global_vars import logger
+from Cb_constants import constants
+
 from membase.api import httplib2
 from membase.api.exception import ServerUnavailableException
 
 
 class RestConnection(object):
+
     def __new__(self, serverInfo={}, node=None):
         # allow port to determine
         # behavior of rest connection
-        self.log = logger.get("infra")
+        self.log = logging.getLogger("infra")
         port = None
         if isinstance(serverInfo, dict):
             if 'port' in serverInfo:
@@ -118,7 +118,7 @@ class RestConnection(object):
                     or http_res.find(unexpected_server_err_msg) > -1):
                 self.log.error("Error {0}, 5 seconds sleep before retry"
                                .format(http_res))
-                sleep(5, log_type="infra")
+                time.sleep(5)
                 if iteration == 2:
                     self.log.error("Node {0}:{1} is in a broken state!"
                                    .format(self.ip, port))
@@ -126,6 +126,10 @@ class RestConnection(object):
                 continue
             else:
                 break
+
+    def sleep(self, time_in_sec, message=""):
+        self.log.debug("%s. Sleep for %s seconds" % (message, time_in_sec))
+        time.sleep(time_in_sec)
 
     def init_http_request(self, api):
         content = None
@@ -215,7 +219,7 @@ class RestConnection(object):
                                "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
-            sleep(3, log_type="infra")
+            time.sleep(3)
 
     def _create_headers(self, username=None, password=None):
         if username is None:
@@ -223,7 +227,7 @@ class RestConnection(object):
         if password is None:
             password = self.password
         authorization = base64.encodestring('%s:%s'
-                                            % (username, password)).strip("\n")
+                                            % (username, password))
         return {'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',
