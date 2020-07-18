@@ -433,6 +433,8 @@ class ClusterUtils:
                     shell.cleanup_data_config(core_path)
 
                 self.start_server(node)
+                if '.com' in node.ip or ':' in node.ip:
+                    shell.update_dist_type()
                 shell.disconnect()
             # Wait after reset of cluster nodes
             sleep(10)
