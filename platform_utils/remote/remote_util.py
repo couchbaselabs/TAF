@@ -13,7 +13,7 @@ from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
 from Cb_constants import constants
-from testconstants import VERSION_FILE
+from testconstants import VERSION_FILE, LINUX_DIST_CONFIG
 from testconstants import MEMBASE_VERSIONS
 from testconstants import MISSING_UBUNTU_LIB
 from testconstants import MV_LATESTBUILD_REPO, SHERLOCK_BUILD_REPO
