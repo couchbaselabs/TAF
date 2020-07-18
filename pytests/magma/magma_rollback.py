@@ -796,7 +796,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         for shell in shell_conn:
             shell.disconnect()
 
-    def test_magma_rollback_on_all_nodes_one_at_a_time_to_new_snapshot(self):
+    def test_magma_rollback_on_all_nodes_one_at_a_time_to_same_snapshot(self):
         '''
         Test focus: Stopping persistence one by one on all nodes,
                     and trigger roll back on other  nodes.
