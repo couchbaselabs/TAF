@@ -6,6 +6,7 @@ Created on Sep 25, 2017
 
 import json
 import urllib
+import requests
 
 from connections.Rest_Connection import RestConnection
 from membase.api import httplib2
@@ -15,6 +16,12 @@ class CBASHelper(RestConnection):
     def __init__(self, master, cbas_node):
         super(CBASHelper, self).__init__(cbas_node)
         self.cbas_base_url = "http://{0}:{1}".format(self.ip, 8095)
+
+    def createConn(self, bucket, username, password):
+        pass
+
+    def closeConn(self):
+        pass
 
     def execute_statement_on_cbas(self, statement, mode, pretty=True,
                                   timeout=70, client_context_id=None,
@@ -48,7 +55,7 @@ class CBASHelper(RestConnection):
         elif str(header['status']) == '503':
             self.log.info("Request Rejected")
             raise Exception("Request Rejected")
-        elif str(header['status']) in ['500','400']:
+        elif str(header['status']) in ['500','400','401','403']:
             json_content = json.loads(content)
             msg = json_content['errors'][0]['msg']
             if "Job requirement" in  msg and "exceeds capacity" in msg:
@@ -232,10 +239,19 @@ class CBASHelper(RestConnection):
             api, method="GET", headers=headers)
         return status, content, response
 
-    def operation_service_parameters_configuration_cbas(self, method="GET",
-                                                        params=None,
-                                                        username=None,
-                                                        password=None):
+    def fetch_cbas_storage_stats(self, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        headers = self._create_capi_headers(username, password)
+        cbas_base_url = "http://{0}:{1}".format(self.ip, 9110)
+        api = cbas_base_url + "/analytics/node/storage/stats"
+        status, content, response = self._http_request(api, method="GET", headers=headers)
+        content = json.loads(content)
+        return status, content, response
+    
+    def operation_service_parameters_configuration_cbas(self, method="GET", params=None, username=None, password=None):
         if not username:
             username = self.username
         if not password:
@@ -350,3 +366,78 @@ class CBASHelper(RestConnection):
             return json_parsed
         else:
             raise Exception("Unable to get jre path from analytics")
+
+    # Backup Analytics metadata
+    def backup_cbas_metadata(self, bucket_name, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        url = self.cbas_base_url + "/analytics/backup?bucket={0}".format(bucket_name)
+        response = requests.get(url=url, auth=(username, password))
+        return response
+
+    # Restore Analytics metadata
+    def restore_cbas_metadata(self, metadata, bucket_name, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        url = self.cbas_base_url + "/analytics/backup?bucket={0}".format(bucket_name)
+        response = requests.post(url, data=json.dumps(metadata), auth=(username, password))
+        return response
+
+    # Set Analytics config parameter
+    def set_global_compression_type(self, compression_type="snappy", username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        headers = self._create_capi_headers(username, password)
+        url = self.cbas_base_url + "/analytics/config/service"
+        setting = {'storageCompressionBlock': compression_type}
+        setting = json.dumps(setting)
+
+        status, content, header = self._http_request(url, 'PUT', setting, headers=headers)
+        return status
+    
+    def analytics_link_operations(self,method="GET", params="", timeout=120, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        api = self.cbas_base_url + "/analytics/link"
+        headers = self._create_headers(username, password)
+        try:
+            status, content, header = self._http_request(
+                api, method, headers=headers, params=params, timeout=timeout)
+            try:
+                content = json.loads(content)
+            except Exception:
+                pass
+            errors = list()
+            if not status:
+                if not content:
+                    errors.append({"msg": "Request Rejected", "code": 0 })
+                else:
+                    if isinstance(content,dict) and "error" in content:
+                        errors.append({"msg": content["error"], "code": 0 })
+                    else:
+                        errors.append({"msg": content, "code": 0 })
+            return status, header['status'], content, errors
+        except Exception as err:
+            self.log.error("Exception occured while calling rest APi through httplib2.")
+            self.log.error("Exception msg - (0)".format(str(err)))
+            self.log.info("Retrying again with requests module")
+            response = requests.request(method,api,headers=headers,data=params)
+            try:
+                content = response.json()
+            except Exception:
+                content = response.content
+            errors = list()
+            if response.status_code in [200, 201, 202]:
+                return True, response.status_code, content, errors
+            else:
+                return False, response.status_code, content, content["errors"]
+            
+        
