@@ -2045,6 +2045,7 @@ class BucketUtils:
         bucket.nodes = list()
         bucket.maxTTL = parsed["maxTTL"]
         bucket.durability_level = "none"
+        bucket.bucketCapabilities = parsed["bucketCapabilities"]
         if "durabilityMinLevel" in parsed:
             bucket.durability_level = parsed["durabilityMinLevel"]
         if 'vBucketServerMap' in parsed:

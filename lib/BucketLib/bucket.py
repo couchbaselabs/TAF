@@ -96,6 +96,7 @@ class Bucket(object):
         self.compressionMode = new_params.get(
             Bucket.compressionMode,
             Bucket.CompressionMode.PASSIVE)
+        self.bucketCapabilities = list()
         self.nodes = None
         self.stats = Bucket.BucketStats()
         self.servers = list()
