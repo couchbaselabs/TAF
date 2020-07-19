@@ -121,11 +121,6 @@ class UpgradeTests(UpgradeBase):
         if sync_write_support:
             self.verification_dict["rollback_item_count"] = 0
             self.verification_dict["sync_write_aborted_count"] = 0
-            self.verification_dict["sync_write_committed_count"] = 0
-
-            if self.durability_level:
-                self.verification_dict["sync_write_committed_count"] \
-                    += self.num_items
 
         if self.upgrade_with_data_load:
             self.log.info("Starting async doc updates")
@@ -220,7 +215,6 @@ class UpgradeTests(UpgradeBase):
         if not sync_write_support:
             self.verification_dict["rollback_item_count"] = 0
             self.verification_dict["sync_write_aborted_count"] = 0
-            self.verification_dict["sync_write_committed_count"] = 0
 
         # Perform bucket_durability update
         key, value = doc_generator("b_durability_doc", 0, 1).next()
@@ -250,9 +244,6 @@ class UpgradeTests(UpgradeBase):
                 op_type = "update"
                 if "ops_update" in self.verification_dict:
                     self.verification_dict["ops_update"] += 1
-
-            if d_level != Bucket.DurabilityLevel.NONE:
-                self.verification_dict["sync_write_committed_count"] += 1
 
             result = client.crud(op_type, key, value,
                                  timeout=self.sdk_timeout)
@@ -295,7 +286,6 @@ class UpgradeTests(UpgradeBase):
         stop_thread = False
         update_task = None
         self.sdk_timeout = 60
-        create_batch_size = 10000
 
         self.log.info("Upgrading cluster nodes to target version")
         node_to_upgrade = self.fetch_node_to_upgrade()
@@ -318,24 +308,6 @@ class UpgradeTests(UpgradeBase):
                 stop_thread = True
                 update_task.join()
 
-            create_gen = doc_generator(self.key, self.num_items,
-                                       self.num_items+create_batch_size)
-            # Start transaction load after node upgrade
-            trans_task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
-                create_gen, "create", exp=self.maxttl,
-                batch_size=50,
-                process_concurrency=3,
-                timeout_secs=self.sdk_timeout,
-                update_count=self.update_count,
-                transaction_timeout=self.transaction_timeout,
-                commit=True,
-                durability=self.durability_level,
-                sync=self.sync, defer=self.defer,
-                retries=0)
-
-            self.task_manager.get_task_result(trans_task)
-
             self.cluster_util.print_cluster_stats()
             self.bucket_util.print_bucket_stats()
 
@@ -346,5 +318,32 @@ class UpgradeTests(UpgradeBase):
                 break
 
             node_to_upgrade = self.fetch_node_to_upgrade()
+            for bucket in self.bucket_util.get_all_buckets():
+                tombstone_doc_supported = \
+                    "tombstonedUserXAttrs" in bucket.bucketCapabilities
+                if node_to_upgrade is None and not tombstone_doc_supported:
+                    self.log_failure("Tombstone docs not added to %s "
+                                     "capabilities" % bucket.name)
+                elif node_to_upgrade is not None and tombstone_doc_supported:
+                    self.log_failure("Tombstone docs supported for %s before "
+                                     "cluster upgrade" % bucket.name)
 
         self.validate_test_failure()
+
+        create_gen = doc_generator(self.key, self.num_items,
+                                   self.num_items*2)
+        # Start transaction load after node upgrade
+        trans_task = self.task.async_load_gen_docs_atomicity(
+            self.cluster, self.bucket_util.buckets,
+            create_gen, "create", exp=self.maxttl,
+            batch_size=50,
+            process_concurrency=8,
+            timeout_secs=self.sdk_timeout,
+            update_count=self.update_count,
+            transaction_timeout=self.transaction_timeout,
+            commit=True,
+            durability=self.durability_level,
+            sync=self.sync, defer=self.defer,
+            retries=0)
+        self.task_manager.get_task_result(trans_task)
+

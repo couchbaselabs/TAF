@@ -97,7 +97,8 @@ class UpgradeBase(BaseTestCase):
             replica=self.num_replicas,
             compression_mode=self.compression_mode,
             bucket_type=self.bucket_type, storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
+            eviction_policy=self.bucket_eviction_policy,
+            bucket_durability=self.bucket_durability_level)
         self.bucket_util.add_rbac_user()
         self.bucket = self.bucket_util.buckets[0]
 

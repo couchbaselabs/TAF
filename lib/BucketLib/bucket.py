@@ -220,6 +220,7 @@ class Bucket(object):
                 Bucket.evictionPolicy,
                 Bucket.EvictionPolicy.VALUE_ONLY)
 
+        self.bucketCapabilities = list()
         self.nodes = None
         self.stats = BucketStats()
         self.servers = list()
