@@ -254,6 +254,7 @@ class RebalanceBaseTest(BaseTestCase):
                     commit=self.transaction_commit,
                     durability=self.durability_level, sync=sync,
                     defer=self.defer): None})
+            self.update_count += 1
         if "create" in self.doc_ops:
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
