@@ -4,7 +4,6 @@ import time
 
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import DocumentGenerator
-from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 
 from reactor.util.function import Tuples
@@ -105,19 +104,22 @@ class basic_ops(BaseTestCase):
             exception = Transaction().RunTransaction(
                 transaction, [client.collection], [], [], doc,
                 txn_commit, sync, update_count)
-        if set_exception:
-            if exception:
-                self.set_exception("Failed")
+        if set_exception and exception:
+            self.set_exception("Failed")
 
-    def doc_gen(self, num_items, start=0, value={'value': 'value1'}):
+    def doc_gen(self, num_items, start=0, value={'value': 'value1'},
+                op_type="create"):
         self.docs = []
         self.keys = []
         self.content = self.client.translate_to_json_object(value)
         for i in range(start, self.num_items):
             key = "test_docs-" + str(i)
-            doc = Tuples.of(key, self.content)
-            self.keys.append(key)
-            self.docs.append(doc)
+            if op_type == "create":
+                doc = Tuples.of(key, self.content)
+                self.keys.append(key)
+                self.docs.append(doc)
+            else:
+                self.docs.append(key)
 
     def verify_doc(self, num_items, client):
         for i in range(num_items):
@@ -291,9 +293,9 @@ class basic_ops(BaseTestCase):
             self.client1.close()
         else:
             key = "test_docs-0"
-            # insert will fail
+            # insert will succeed due to doc_isoloation feature
             result = self.client.insert(key, "value")
-            self.assertEqual(result["status"], False)
+            self.assertEqual(result["status"], True)
 
             # Update should pass
             result = self.client.upsert(key, "value")
@@ -377,20 +379,28 @@ class basic_ops(BaseTestCase):
             xattr_key = "my.attr"
 
         val = "v" * self.doc_size
-        self.doc_gen(self.num_items)
 
-        threads = threading.Thread(
+        self.doc_gen(self.num_items)
+        thread = threading.Thread(
             target=self.__thread_to_transaction,
             args=(self.transaction, "create", self.docs,
                   self.transaction_commit, self.update_count))
+        thread.start()
+        thread.join()
 
-        threads.start()
+        self.doc_gen(self.num_items, op_type="update",
+                     value={"mutated": 1, "value": "value1"})
+        thread = threading.Thread(
+            target=self.__thread_to_transaction,
+            args=(self.transaction, "update", self.docs,
+                  self.transaction_commit, self.update_count))
+        thread.start()
         self.sleep(1)
 
         self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
                                            xattr_key, val)
 
-        threads.join()
+        thread.join()
 
         if self.transaction_commit:
             self.__read_doc_and_validate("test_docs-0", val, xattr_key)
@@ -403,17 +413,26 @@ class basic_ops(BaseTestCase):
                             ["new_my.attr", "new_value"]]
 
         self.doc_gen(self.num_items)
-        threads = threading.Thread(
+        thread = threading.Thread(
             target=self.__thread_to_transaction,
             args=(self.transaction, "create", self.docs,
                   self.transaction_commit, self.update_count))
+        thread.start()
+        thread.join()
 
-        threads.start()
-        self.sleep(1)
+        self.doc_gen(self.num_items, op_type="update",
+                     value={"mutated": 1, "value": "value1"})
+        thread = threading.Thread(
+            target=self.__thread_to_transaction,
+            args=(self.transaction, "update", self.docs,
+                  self.transaction_commit, self.update_count))
+
+        thread.start()
+        self.sleep(1, "Wait for transx-thread to start")
         for key, val in xattrs_to_insert:
             self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
                                                key, val)
-        threads.join()
+        thread.join()
 
         if self.transaction_commit:
             for key, val in xattrs_to_insert:
