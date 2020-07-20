@@ -1,6 +1,5 @@
 import Jython_tasks.task as jython_tasks
 from cb_tools.cbstats import Cbstats
-from membase.api.exception import RebalanceFailedException
 from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
 from couchbase_helper.documentgenerator import doc_generator
@@ -696,23 +695,22 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.sleep(20)
         shell.start_couchbase()
         shell.disconnect()
-        try:
-            rebalance = self.task.async_rebalance(
-                self.cluster.servers, [], servs_out)
-            self.task.jython_task_manager.get_task_result(rebalance)
-            self.assertTrue(rebalance.result, "Rebalance Failed")
-            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-        except RebalanceFailedException:
+        rebalance = self.task.async_rebalance(
+            self.cluster.servers, [], servs_out)
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
+        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
+        if rebalance.result is False:
             self.log.info("Rebalance was failed as expected")
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                self, [warmup_node], 'default',
+                self.cluster_util.get_kv_nodes(), self.bucket_util.buckets[0],
                 wait_time=self.wait_timeout * 10))
 
             self.log.info("Second attempt to rebalance")
             rebalance = self.task.async_rebalance(
                 self.cluster.servers, [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
-            self.assertTrue(rebalance.result, "Rebalance Failed")
+            self.assertTrue(rebalance.result, "Rebalance attempt failed again")
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(self.num_items)
