@@ -10,7 +10,6 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
-from testconstants import INDEX_QUOTA, CBAS_QUOTA, FTS_QUOTA
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -116,7 +115,61 @@ class MagmaBaseTest(BaseTestCase):
         # self.thread_count is used to define number of thread use
         # to read same number of documents parallelly
         self.read_thread_count = self.input.param("read_thread_count", 4)
+        self.disk_usage = dict()
+        self.initial_load()
         self.log.info("==========Finished magma base setup========")
+
+    def initial_load(self):
+        self.create_start = 0
+        self.create_end = self.num_items
+        if self.rev_write:
+            self.create_start = -int(self.num_items - 1)
+            self.create_end = 1
+
+        self.read_start = 0
+        self.read_end = self.num_items
+        if self.rev_read:
+            self.read_start = -int(self.num_items - 1)
+            self.read_end = 1
+
+        self.delete_start = 0
+        self.delete_end = self.num_items
+        if self.rev_del:
+            self.delete_start = -int(self.num_items - 1)
+            self.delete_end = 1
+
+        self.update_start = 0
+        self.update_end = self.num_items
+        if self.rev_update:
+            self.update_start = -int(self.num_items - 1)
+            self.update_end = 1
+
+        self.generate_docs(doc_ops="create")
+
+        self.init_loading = self.input.param("init_loading", True)
+        if self.init_loading:
+            self.result_task = self._load_all_buckets(
+                self.cluster, self.gen_create,
+                "create", 0,
+                batch_size=self.batch_size,
+                dgm_batch=self.dgm_batch)
+            if self.active_resident_threshold != 100:
+                for task in self.result_task.keys():
+                    self.num_items = task.doc_index
+
+            self.log.info("Verifying num_items counts after doc_ops")
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+            if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
+                for bucket in self.bucket_util.get_all_buckets():
+                    disk_usage = self.get_disk_usage(
+                        bucket, self.cluster.nodes_in_cluster)
+                    self.disk_usage[bucket.name] = disk_usage[0]
+                    self.log.info(
+                        "For bucket {} disk usage after initial creation is {}MB\
+                        ".format(bucket.name,
+                                 self.disk_usage[bucket.name]))
 
     def _create_default_bucket(self):
         self.bucket_util.create_default_bucket(

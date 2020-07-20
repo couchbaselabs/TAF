@@ -27,30 +27,6 @@ class MagmaCrashTests(MagmaBaseTest):
 
     def setUp(self):
         super(MagmaCrashTests, self).setUp()
-
-        self.create_start = 0
-        self.create_end = self.num_items
-
-        self.generate_docs(doc_ops="create")
-
-        self.init_loading = self.input.param("init_loading", True)
-        if self.init_loading:
-            self.result_task = self._load_all_buckets(
-                self.cluster, self.gen_create,
-                "create", 0,
-                batch_size=self.batch_size,
-                dgm_batch=self.dgm_batch)
-
-            if self.active_resident_threshold != 100:
-                for task in self.result_task.keys():
-                    self.num_items = task.doc_index
-
-            self.log.info("Verifying num_items counts after doc_ops")
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
-
-        self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
         self.graceful = self.input.param("graceful", False)
 
     def tearDown(self):

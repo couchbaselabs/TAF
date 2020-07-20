@@ -26,30 +26,6 @@ class MagmaRollbackTests(MagmaBaseTest):
 
     def setUp(self):
         super(MagmaRollbackTests, self).setUp()
-
-        self.create_start = 0
-        self.create_end = self.num_items
-
-        self.generate_docs(doc_ops="create")
-
-        self.init_loading = self.input.param("init_loading", True)
-        if self.init_loading:
-            self.result_task = self._load_all_buckets(
-                self.cluster, self.gen_create,
-                "create", 0,
-                batch_size=self.batch_size,
-                dgm_batch=self.dgm_batch)
-
-            if self.active_resident_threshold != 100:
-                for task in self.result_task.keys():
-                    self.num_items = task.doc_index
-
-            self.log.info("Verifying num_items counts after doc_ops")
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
-
-        self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
         self.graceful = self.input.param("graceful", False)
 
     def tearDown(self):
@@ -307,7 +283,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         self.gen_read = copy.deepcopy(self.gen_create)
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 1, Ensures creation of at least one snapshot
 
@@ -323,7 +299,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.log.info("State files after 60 second of sleep %s"
                       % self.get_state_files(self.buckets[0]))
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 2,  Stop persistence on master node
         '''
@@ -342,7 +318,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.cluster_util.cluster.master, self.bucket_util.buckets[0])
             mem_client.stop_persistence()
 
-        ###############################################################################
+            ###################################################################
             '''
             STEP - 3
               -- Doc ops on master node for  self.duration * 60 seconds
@@ -399,7 +375,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             # replica vBuckets
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
-        ###############################################################################
+            ###################################################################
             '''
             STEP - 4
               -- Kill Memcached on master node(Node A) and trigger rollback on replica/ nodes
@@ -418,7 +394,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(items, timeout=300)
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 5
           -- Data Validation
@@ -430,7 +406,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 process_concurrency=self.process_concurrency,
                 pause_secs=5, timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
-        ###############################################################################
+        #######################################################################
         shell.disconnect()
 
     def test_magma_rollback_to_new_snapshot(self):
@@ -462,7 +438,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         cbstats = Cbstats(shell)
         self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].name)
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 1, Ensures creation of at least one snapshot
 
@@ -479,7 +455,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.log.info("State files after 60 second of sleep %s"
                       % self.get_state_files(self.buckets[0]))
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 2,  Stop persistence on master node
         '''
@@ -494,7 +470,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.log.debug("Iteration == {}, stopping persistence".format(i))
             Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "stop")
 
-        ###############################################################################
+            ###################################################################
             '''
             STEP - 3
               -- Doc ops on master node for  self.duration * 60 seconds
@@ -550,7 +526,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             # replica vBuckets
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
-        ###############################################################################
+            ###################################################################
             '''
             STEP - 4
               -- Kill Memcached on master node(Node A) and trigger rollback on replica/other nodes
@@ -570,7 +546,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(items, timeout=300)
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
-        ###############################################################################
+            ###################################################################
             '''
             STEP -5
               -- Restarting persistence on master node(Node A)
@@ -578,7 +554,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             self.log.debug("Iteration=={}, Re-Starting persistence".format(i))
             Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "start")
-        ###############################################################################
+            ###################################################################
             '''
             STEP - 6
               -- Load Docs on all the nodes
@@ -602,7 +578,6 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             items = items + items // 3
             self.log.debug("Iteration == {}, Total num_items {}".format(i, items))
-        ###############################################################################
 
         shell.disconnect()
 
@@ -647,7 +622,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         target_vbs_replicas = [val for vb_lst in target_vbs_replicas for val in vb_lst]
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 1, Ensures creation of at least one snapshot
 
@@ -664,7 +639,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.log.info("State files after 60 second of sleep == %s"
                       % self.get_state_files(self.buckets[0]))
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 2,  Stop persistence on master node
         '''
@@ -685,7 +660,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.log.debug("Iteration == {}, Stopping persistence on master node".format(i))
             Cbepctl(shell_conn[0]).persistence(self.bucket_util.buckets[0].name, "stop")
 
-        ###############################################################################
+        #######################################################################
             '''
             STEP - 3
               -- Load documents on master node for  self.duration * 60 seconds
@@ -733,7 +708,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
 
-        ###############################################################################
+            ###################################################################
             '''
             STEP - 4
               -- Kill Memcached on master node(Node A) and trigger rollback on replica/ nodes
@@ -753,7 +728,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             for bucket in self.bucket_util.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
 
-        ###############################################################################
+            ###################################################################
             '''
             STEP -5
               -- Restarting persistence on master node(Node A)
@@ -766,7 +741,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             for shell in shell_conn[1:]:
                 Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "stop")
 
-        ###############################################################################
+            ###################################################################
             '''
             STEP - 6
               -- Load Docs on slave nodes(Other than node A)
@@ -809,7 +784,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 for bucket in self.bucket_util.buckets:
                     self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
-                                                     stat_name="vb_replica_queue_size")
+                                                    stat_name="vb_replica_queue_size")
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , slave_itr == {}".
@@ -819,7 +794,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             start = start_2
             self.log.debug("Iteration == {}, Total num_items {}".format(i, items))
 
-        ###############################################################################
+            ###################################################################
             '''
             STEP -7
               -- Kill MemCached on Slave nodes, and trigger rollback on master
@@ -836,7 +811,6 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             for shell in shell_conn[1:]:
                 Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "start")
-        ###############################################################################
 
             self.log.info("State file at end of iteration-{} are == {}".
                           format(i, self.get_state_files(self.buckets[0])))
@@ -880,7 +854,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.duration = self.input.param("duration", 2)
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 1, Ensures creation of at least one snapshot
 
@@ -897,7 +871,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.log.info("State files after 60 second of sleep == %s"
                       % self.get_state_files(self.buckets[0]))
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 2,  Stop persistence on node - x
         '''
@@ -909,7 +883,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 shell = RemoteMachineShellConnection(node)
                 cbstats = Cbstats(shell)
                 self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
-                                                   name)
+                                                           name)
                 mem_item_count = 0
                 self.log.debug("Iteration == {}, State files before stopping persistence == {}".
                            format(i, self.get_state_files(self.buckets[0])))
@@ -918,7 +892,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                .format(i, x+1))
                 Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "stop")
 
-        ###############################################################################
+                ###############################################################
                 '''
                 STEP - 3
                   -- Load documents on node  x for  self.duration * 60 seconds
@@ -962,7 +936,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 for bucket in self.bucket_util.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
 
-        ###############################################################################
+                ###############################################################
                 '''
                 STEP - 4
                   -- Kill Memcached on Node - x and trigger rollback on other nodes
@@ -981,7 +955,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 for bucket in self.bucket_util.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
 
-        ###############################################################################
+                ###############################################################
                 '''
                 STEP -5
                    -- Restarting persistence on Node -- x
@@ -995,7 +969,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.sleep(5, "Sleep after re-starting persistence, Iteration{}".format(i))
 
                 shell.disconnect()
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 6
           -- Data Validation
@@ -1007,7 +981,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 process_concurrency=self.process_concurrency,
                 pause_secs=5, timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
-        ###############################################################################
+        #######################################################################
 
     def test_magma_rollback_on_all_nodes_one_at_a_time_to_new_snapshot(self):
         '''
@@ -1040,7 +1014,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.duration = self.input.param("duration", 2)
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 1, Ensures creation of at least one snapshot
 
@@ -1057,7 +1031,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.log.info("State files after 60 second of sleep == %s"
                       % self.get_state_files(self.buckets[0]))
 
-        ###############################################################################
+        #######################################################################
         '''
         STEP - 2,  Stop persistence on node - x
         '''
@@ -1072,13 +1046,13 @@ class MagmaRollbackTests(MagmaBaseTest):
                                                    name)
                 mem_item_count = 0
                 self.log.debug("Iteration == {}, State files before stopping persistence == {}".
-                           format(i, self.get_state_files(self.buckets[0])))
+                               format(i, self.get_state_files(self.buckets[0])))
                 # Stopping persistence on Node-x
                 self.log.debug("Iteration == {}, Stopping persistence on Node-{}"
                                .format(i, x+1))
                 Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "stop")
 
-        ###############################################################################
+                ###############################################################
                 '''
                 STEP - 3
                   -- Load documents on node  x for  self.duration * 60 seconds
@@ -1091,8 +1065,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                     time_start = time.time()
                     mem_item_count += mem_only_items
                     self.gen_create = self.gen_docs_basic_for_target_vbucket(start,
-                                                                         mem_only_items,
-                                                                         self.target_vbucket)
+                                                                             mem_only_items,
+                                                                             self.target_vbucket)
                     self.loadgen_docs(_sync=True,
                                       retry_exceptions=retry_exceptions)
 
@@ -1122,7 +1096,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 for bucket in self.bucket_util.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
 
-        ###############################################################################
+                ###############################################################
                 '''
                 STEP - 4
                   -- Kill Memcached on Node - x and trigger rollback on other nodes
@@ -1141,7 +1115,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 for bucket in self.bucket_util.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
 
-        ###############################################################################
+                ###############################################################
                 '''
                 STEP -5
                  -- Restarting persistence on Node -- x
@@ -1156,7 +1130,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.sleep(5, "Sleep after re-starting persistence, Iteration{}".format(i))
 
             shell.disconnect()
-        ###############################################################################
+            ###################################################################
             '''
             STEP - 6
               -- Load Docs on all the nodes
@@ -1171,13 +1145,12 @@ class MagmaRollbackTests(MagmaBaseTest):
             while time.time() < time_end:
                 time_start = time.time()
                 self.loadgen_docs(self.retry_exceptions,
-                              self.ignore_exceptions, _sync=True)
+                                  self.ignore_exceptions, _sync=True)
                 self.bucket_util._wait_for_stats_all_buckets()
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
             items = items + items // 3
             self.log.debug("Iteration == {}, Total num_items {}".format(i, items))
-        ###############################################################################
 
 
 class MagmaSpaceAmplification(MagmaBaseTest):
