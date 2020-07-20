@@ -130,6 +130,8 @@ class BasicOps(CollectionBase):
         else:
             self.log_failure("Invalid client_type '%s'" % client_type)
 
+        self.sleep(30)
+        
         # Wait for doc_loading task to complete
         if data_load == "during_drop":
             self.task_manager.get_task_result(task)
