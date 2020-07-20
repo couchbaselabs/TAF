@@ -55,6 +55,39 @@ class MagmaRollbackTests(MagmaBaseTest):
     def tearDown(self):
         super(MagmaRollbackTests, self).tearDown()
 
+    def compute_docs(self, start, mem_only_items):
+        ops_len = len(self.doc_ops.split(":"))
+        if "create" in self.doc_ops:
+            self.create_start = start
+            self.create_end = mem_only_items
+        if ops_len == 1:
+            if "update" in self.doc_ops:
+                self.update_start = 0
+                self.update_end = mem_only_items
+            if "delete" in self.doc_ops:
+                self.delete_start = 0
+                self.delete_end = mem_only_items
+            if "expiry" in self.doc_ops:
+                self.expiry_start = 0
+                self.expiry_end =  mem_only_items
+        elif ops_len == 2:
+            self.expiry_start = 0
+            self.expiry_end = mem_only_items
+            self.delete_start = start // 2
+            self.delete_end = mem_only_items
+            if "update" in self.doc_ops:
+                self.delete_start = 0
+                self.delete_end = mem_only_items
+                self.update_start = start // 2
+                self.update_end = mem_only_items
+        else:
+            self.expiry_start = 0
+            self.expiry_end = mem_only_items
+            self.delete_start = start // 3
+            self.delete_end = mem_only_items
+            self.update_start = (2 * start) // 3
+            self.update_end = mem_only_items
+
     def test_magma_rollback_n_times(self):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 100000)
@@ -259,6 +292,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
+        ops_len = len(self.doc_ops.split(":"))
 
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
@@ -311,26 +345,37 @@ class MagmaRollbackTests(MagmaBaseTest):
         ###############################################################################
             '''
             STEP - 3
-              -- Load documents on master node for  self.duration * 60 seconds
+              -- Doc ops on master node for  self.duration * 60 seconds
               -- This step ensures new state files (number equal to self.duration)
             '''
+            self.compute_docs(start, mem_only_items)
+            self.gen_create = None
+            self.gen_update = None
+            self.gen_delete = None
+            self.gen_expiry = None
             time_end = time.time() + 60 * self.duration
             while time.time() < time_end:
                 master_itr += 1
                 time_start = time.time()
-                mem_item_count += mem_only_items
-                self.log.info("")
-                self.gen_create = self.gen_docs_basic_for_target_vbucket(start,
-                                                                         mem_only_items,
-                                                                         self.target_vbucket)
+                mem_item_count += mem_only_items * ops_len
+                self.generate_docs(doc_ops=self.doc_ops,
+                                   target_vbucket=self.target_vbucket)
+
                 self.loadgen_docs(_sync=True,
                                   retry_exceptions=retry_exceptions)
 
-                start = self.gen_create.key_counter
+                if self.gen_create is not None:
+                    self.create_start = self.gen_create.key_counter
+                if self.gen_update is not None:
+                    self.update_start = self.gen_update.key_counter
+                if self.gen_delete is not None:
+                    self.delete_start = self.gen_delete.key_counter
+                if self.gen_expiry is not None:
+                    self.expiry_start = self.gen_expiry.key_counter
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(),
-                               "Sleep to ensure creation of state files for roll back, itr = {}"
+                               "Sleep to ensure creation of state files for roll back, Itr = {}"
                                .format(master_itr))
                 self.log.info("master_itr == {} , state files== {}".
                               format(master_itr,
@@ -367,7 +412,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 wait_time=self.wait_timeout * 10))
 
             self.log.info("Iteration= {}, State files after killing memcached on master node== {}".
-                          format(self.get_state_files(self.buckets[0])))
+                          format(i, self.get_state_files(self.buckets[0])))
 
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
             self.bucket_util.verify_stats_all_buckets(items, timeout=300)

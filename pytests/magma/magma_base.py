@@ -146,11 +146,11 @@ class MagmaBaseTest(BaseTestCase):
         self.cluster_util.print_cluster_stats()
         super(MagmaBaseTest, self).tearDown()
 
-    def genrate_docs_basic(self, start, end, mutate=0):
+    def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0):
         return doc_generator(self.key, start, end,
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
-                             target_vbucket=None,
+                             target_vbucket=target_vbucket,
                              vbuckets=self.cluster_util.vbuckets,
                              key_size=self.key_size,
                              randomize_doc_size=self.randomize_doc_size,
@@ -172,6 +172,7 @@ class MagmaBaseTest(BaseTestCase):
                 mutate=mutate)
 
     def generate_docs(self, doc_ops=None,
+                      target_vbucket=None,
                       create_end=None, create_start=None,
                       create_mutate=0,
                       update_end=None, update_start=None,
@@ -194,8 +195,8 @@ class MagmaBaseTest(BaseTestCase):
             self.mutate += 1
             self.gen_update = self.genrate_docs_basic(self.update_start,
                                                       self.update_end,
-                                                      self.mutate)
-
+                                                      target_vbucket=target_vbucket,
+                                                      mutate=self.mutate)
         if "delete" in doc_ops:
             if delete_start is not None:
                 self.delete_start = delete_start
@@ -204,7 +205,8 @@ class MagmaBaseTest(BaseTestCase):
 
             self.gen_delete = self.genrate_docs_basic(self.delete_start,
                                                       self.delete_end,
-                                                      read_mutate)
+                                                      target_vbucket=target_vbucket,
+                                                      mutate=read_mutate)
 
         if "create" in doc_ops:
             if create_start is not None:
@@ -214,7 +216,8 @@ class MagmaBaseTest(BaseTestCase):
 
             self.gen_create = self.genrate_docs_basic(self.create_start,
                                                       self.create_end,
-                                                      create_mutate)
+                                                      target_vbucket=target_vbucket,
+                                                      mutate=create_mutate)
 
         if "read" in doc_ops:
             if read_start is not None:
@@ -224,7 +227,8 @@ class MagmaBaseTest(BaseTestCase):
 
             self.gen_read = self.genrate_docs_basic(self.read_start,
                                                     self.read_end,
-                                                    read_mutate)
+                                                    target_vbucket=target_vbucket,
+                                                    mutate=read_mutate)
         if "expiry" in doc_ops:
             if expiry_start is not None:
                 self.expiry_start = expiry_start
@@ -234,7 +238,8 @@ class MagmaBaseTest(BaseTestCase):
             self.maxttl = self.input.param("maxttl", 10)
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
                                                       self.expiry_end,
-                                                      expiry_mutate)
+                                                      target_vbucket=target_vbucket,
+                                                      mutate=expiry_mutate)
 
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
