@@ -1,7 +1,11 @@
 import time
+
+from BucketLib.BucketOperations import BucketHelper
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
+
+from couchbase_utils.cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -25,12 +29,15 @@ class CollectionsRebalance(CollectionBase):
         self.compaction = self.input.param("compaction", False)
         self.warmup = self.input.param("warmup", False)
         self.update_replica = self.input.param("update_replica", False)  # for replica + rebalance tests
-        self.updated_num_replicas = self.input.param("updated_num_replicas", 1)  # for replica + rebalance tests, forced hard failover
-        self.forced_hard_failover = self.input.param("forced_hard_failover", False) # for forced hard failover tests
-        self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster", False) # To change during rebalance
+        self.updated_num_replicas = self.input.param("updated_num_replicas",
+                                                     1)  # for replica + rebalance tests, forced hard failover
+        self.forced_hard_failover = self.input.param("forced_hard_failover", False)  # for forced hard failover tests
+        self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster",
+                                                         False)  # To change during rebalance
         self.skip_validations = self.input.param("skip_validations", True)
         if self.compaction:
             self.compaction_tasks = list()
+        self.dgm_test = self.input.param("dgm_test", False)
 
     def tearDown(self):
         super(CollectionsRebalance, self).tearDown()
@@ -58,6 +65,22 @@ class CollectionsRebalance(CollectionBase):
                                                     self.cluster.master.rest_password,
                                                     memoryQuota=2500)
         self.assertTrue(status, "RAM quota wasn't changed")
+
+    def get_active_resident_threshold(self, bucket_name):
+        self.rest_client = BucketHelper(self.cluster.master)
+        dgm = self.rest_client.fetch_bucket_stats(
+            bucket_name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+        return dgm
+
+    def load_to_dgm(self):
+        bucket_name = self.bucket_util.buckets[0].name
+        curr_active = self.get_active_resident_threshold(bucket_name)
+        while curr_active == 100:
+            self.subsequent_data_load(data_load_spec="dgm_load")
+            curr_active = self.get_active_resident_threshold(bucket_name)
+            self.log.info("curr_active resident {0} %".format(curr_active))
+            self.bucket_util._wait_for_stats_all_buckets()
+        self.log.info("Initial dgm load done. Resident {0} %".format(curr_active))
 
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
@@ -122,7 +145,7 @@ class CollectionsRebalance(CollectionBase):
                         self.log.info("rebalance was failed as expected")
                         for bucket in self.bucket_util.buckets:
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                                            [node], bucket))
+                                [node], bucket))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
                         operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
@@ -169,7 +192,7 @@ class CollectionsRebalance(CollectionBase):
                         self.log.info("rebalance was failed as expected")
                         for bucket in self.bucket_util.buckets:
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                                            [node], bucket))
+                                [node], bucket))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
                         operation = self.task.async_rebalance(known_nodes + add_nodes, [], [])
@@ -465,9 +488,17 @@ class CollectionsRebalance(CollectionBase):
             self.fail("rebalance_operation is not defined")
         return operation
 
-    def subsequent_data_load(self, async_load=False):
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+    def subsequent_data_load(self, async_load=False, data_load_spec=None):
+        if data_load_spec is None:
+            data_load_spec = self.data_load_spec
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
         self.over_ride_template_params(doc_loading_spec)
+        if self.dgm_test:
+            if data_load_spec == "volume_test_load":
+                doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+            else:
+                # reduce the create ops
+                doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 5
         if self.forced_hard_failover and self.spec_name == "multi_bucket.buckets_for_rebalance_tests_more_collections":
             # create collections, else if other bucket_spec - then just "create" ops
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
@@ -506,9 +537,17 @@ class CollectionsRebalance(CollectionBase):
 
     def wait_for_rebalance_to_complete(self, task, wait_step=120):
         self.task.jython_task_manager.get_task_result(task)
-        reached = RestHelper(self.rest).rebalance_reached(wait_step=wait_step)
-        self.assertTrue(reached, "Rebalance failed, stuck or did not complete")
-        self.assertTrue(task.result, "Rebalance Failed")
+        if self.dgm_test and (not task.result):
+            fail_flag = True
+            for bucket in self.bucket_util.buckets:
+                result = self.get_active_resident_threshold(bucket.name)
+                if result < 20:
+                    fail_flag = False
+                    self.log.error("DGM less than 20")
+                    break
+            self.assertFalse(fail_flag, "rebalance failed")
+        else:
+            self.assertTrue(task.result, "Rebalance Failed")
         if self.compaction:
             self.wait_for_compaction_to_complete()
 
@@ -538,6 +577,8 @@ class CollectionsRebalance(CollectionBase):
                 tasks = self.async_data_load()
             else:
                 self.sync_data_load()
+        if self.dgm_test:
+            self.load_to_dgm()
         if rebalance_operation == "rebalance_in":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
