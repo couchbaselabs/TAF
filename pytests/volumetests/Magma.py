@@ -39,6 +39,7 @@ class volume(BaseTestCase):
         if self.doc_ops:
             self.doc_ops = self.doc_ops.split(';')
         self.iterations = self.input.param("iterations", 2)
+        self.step_iterations = self.input.param("step_iterations", 5)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.new_num_writer_threads = self.input.param(
             "new_num_writer_threads", 6)
@@ -720,7 +721,7 @@ class volume(BaseTestCase):
         print "\t", "#"*60
         print "\n"
 
-    def Volume(self):
+    def ClusterOpsVolume(self):
         #######################################################################
         def end_step_checks(tasks):
             self.wait_for_doc_load_completion(tasks)
@@ -1283,14 +1284,16 @@ class volume(BaseTestCase):
         self.update_perc = 10
 
         self.PrintStep("Step 5: Update the first set of %s percent (%s) items \
-        10 times" % (str(self.update_perc),
-                     str(self.num_items*self.update_perc/100)))
+        %s times" % (str(self.update_perc),
+                     str(self.num_items*self.update_perc/100),
+                     str(self.step_iterations)))
 
         _iter = 0
-        while _iter < 10:
+        while _iter < self.step_iterations:
             self.PrintStep("Step 5.%s: Update the first set of %s percent (%s) \
-            items 10 times" % (str(_iter), str(self.update_perc),
-                               str(self.num_items*self.update_perc/100)))
+            items %s times" % (str(_iter), str(self.update_perc),
+                               str(self.num_items*self.update_perc/100),
+                               str(self.step_iterations)))
             self.generate_docs(doc_ops="update")
             self.perform_load(crash=False, validate_data=True)
             _iter += 1
@@ -1307,17 +1310,18 @@ class volume(BaseTestCase):
         _iter = 0
         self.update_perc = 10
         self.PrintStep("Step 6: Reverse Update last set of %s percent (%s-%s) \
-        items 10 times" % (str(self.update_perc), str(self.num_items-1),
+        items %s times" % (str(self.update_perc), str(self.num_items-1),
                            str(self.num_items+1 -
-                               self.num_items*self.update_perc/100)))
+                               self.num_items*self.update_perc/100),
+                           str(self.step_iterations)))
 
-        while _iter < 10:
+        while _iter < self.step_iterations:
             self.PrintStep("Step 6.%s: Reverse Update last set of %s percent \
-            (%s-%s) items 10 times" % (str(_iter), str(self.update_perc),
+            (%s-%s) items %s times" % (str(_iter), str(self.update_perc),
                                        str(self.num_items+1),
                                        str(self.num_items+1 -
-                                           self.num_items*self.update_perc/100)
-                                       ))
+                                           self.num_items*self.update_perc/100),
+                                       str(self.step_iterations)))
             self.generate_docs(doc_ops="update",
                                update_start=-self.num_items+1,
                                update_end=self.num_items *
@@ -1356,12 +1360,14 @@ class volume(BaseTestCase):
         self.update_perc = 100
         self.key_prefix = "random_keys"
 
-        self.PrintStep("Step 8: Update all %s random items 10 times" %
-                       str(self.num_items*self.update_perc/100))
-        while _iter < 10:
-            self.PrintStep("Step 8.%s: Update all %s random items 10 times" %
+        self.PrintStep("Step 8: Update all %s random items %s times" %
+                       (str(self.num_items*self.update_perc/100)),
+                       str(self.step_iterations))
+        while _iter < self.step_iterations:
+            self.PrintStep("Step 8.%s: Update all %s random items %s times" %
                            (str(_iter),
-                            str(self.num_items*self.update_perc/100)))
+                            str(self.num_items*self.update_perc/100),
+                            str(self.step_iterations)))
             self.generate_docs(doc_ops="update")
             self.perform_load(crash=False, validate_data=True)
             _iter += 1
@@ -1402,15 +1408,17 @@ class volume(BaseTestCase):
         Final Docs = 30M (0-20M, 10M Random)
         '''
         self.update_perc = 10
-        self.PrintStep("Step 10: Update %s percent(%s) items 10 times and \
+        self.PrintStep("Step 10: Update %s percent(%s) items %s times and \
         crash during recovery" % (str(self.update_perc),
-                                  str(self.num_items*self.update_perc/100)))
+                                  str(self.num_items*self.update_perc/100),
+                                  str(self.step_iterations)))
         _iter = 0
-        while _iter < 5:
-            self.PrintStep("Step 10.%s: Update %s percent(%s) items 10 times \
+        while _iter < self.step_iterations/2:
+            self.PrintStep("Step 10.%s: Update %s percent(%s) items %s times \
             and crash during recovery" % (str(_iter), str(self.update_perc),
                                           str(self.num_items *
-                                              self.update_perc/100)))
+                                              self.update_perc/100),
+                                          str(self.step_iterations)))
             self.generate_docs(doc_ops="update")
             self.perform_load(crash=True, validate_data=True)
             _iter += 1
