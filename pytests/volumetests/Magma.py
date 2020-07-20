@@ -121,6 +121,8 @@ class volume(BaseTestCase):
                                                self.scope_name,
                                                {"name": collection_name})
             self.sleep(2)
+        if self.num_collections == 0:
+            self.num_collections = 1
 
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
@@ -1361,8 +1363,8 @@ class volume(BaseTestCase):
         self.key_prefix = "random_keys"
 
         self.PrintStep("Step 8: Update all %s random items %s times" %
-                       (str(self.num_items*self.update_perc/100)),
-                       str(self.step_iterations))
+                       (str(self.num_items*self.update_perc/100),
+                        str(self.step_iterations)))
         while _iter < self.step_iterations:
             self.PrintStep("Step 8.%s: Update all %s random items %s times" %
                            (str(_iter),
