@@ -634,12 +634,11 @@ class volume(BaseTestCase):
                     self.task.jython_task_manager.abort_all_tasks()
                     self.assertTrue(result)
 
-    def perform_rollback(self, mem_only_items=100000, doc_type="create",
-                         kill_rollback=1):
+    def perform_rollback(self, start=None, mem_only_items=100000,
+                         doc_type="create", kill_rollback=1):
         _iter = 0
         while _iter < 10:
             tasks_info = dict()
-            start = self.num_items
 
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
@@ -1433,7 +1432,8 @@ class volume(BaseTestCase):
         Final Docs = 30M (0-20M, 10M Random)
         '''
         mem_only_items = self.input.param("rollback_items", 1000000)
-        self.perform_rollback(mem_only_items, doc_type="create")
+        self.perform_rollback(self.final_items, mem_only_items,
+                              doc_type="create")
 
         if self.end_step == 11:
             exit(11)
@@ -1443,7 +1443,7 @@ class volume(BaseTestCase):
         Final Docs = 30M (0-20M, 10M Random)
         '''
         mem_only_items = self.input.param("rollback_items", 1000000)
-        self.perform_rollback(mem_only_items, doc_type="update")
+        self.perform_rollback(self.start, mem_only_items, doc_type="update")
 
         if self.end_step == 12:
             exit(12)
@@ -1453,7 +1453,7 @@ class volume(BaseTestCase):
         Final Docs = 30M (0-20M, 10M Random)
         '''
         mem_only_items = self.input.param("rollback_items", 1000000)
-        self.perform_rollback(mem_only_items, doc_type="delete")
+        self.perform_rollback(self.start, mem_only_items, doc_type="delete")
 
         if self.end_step == 13:
             exit(13)
@@ -1463,7 +1463,7 @@ class volume(BaseTestCase):
         Final Docs = 30M (0-20M, 10M Random)
         '''
         mem_only_items = self.input.param("rollback_items", 1000000)
-        self.perform_rollback(mem_only_items, doc_type="expiry")
+        self.perform_rollback(self.start, mem_only_items, doc_type="expiry")
 
         if self.end_step == 14:
             exit(14)
