@@ -583,7 +583,7 @@ class volume(BaseTestCase):
         self.log.debug("Total Disk usage for seqTree is {}MB".format(seqTree))
         return kvstore, wal, keyTree, seqTree
 
-    def crash_thread(self, nodes=None, graceful=False):
+    def crash_thread(self, nodes=None, num_kills=1, graceful=False):
         self.stop_crash = False
         self.crash_count = 0
         loop_itr = 0
@@ -595,7 +595,8 @@ class volume(BaseTestCase):
             self.sleep(sleep,
                        "Iteration:{} waiting to kill memc on all nodes".
                        format(loop_itr))
-            self.kill_memcached(nodes, num_kills=1, graceful=graceful, wait=True)
+            self.kill_memcached(nodes, num_kills=num_kills,
+                                graceful=graceful, wait=True)
             self.crash_count += 1
 
     def kill_memcached(self, servers=None, num_kills=1,
@@ -1266,14 +1267,11 @@ class volume(BaseTestCase):
         creates: 0 - 10M
         Final Docs = 20M (0-20M)
         '''
-        self.create_perc = 100
+        self.create_perc = 200
         self.PrintStep("Step 4: Load %s items, sequential keys" %
                        str(self.num_items*self.create_perc/100))
-        _iter = 0
-        while _iter < 2:
-            self.generate_docs(doc_ops="create")
-            self.perform_load(validate_data=False)
-            _iter += 1
+        self.generate_docs(doc_ops="create")
+        self.perform_load(validate_data=False)
         '''
         fragmentation at this time: 0, total data: 2X, stale: 0
         '''
@@ -1442,7 +1440,6 @@ class volume(BaseTestCase):
         '''
         Final Docs = 30M (0-20M, 10M Random)
         '''
-        mem_only_items = self.input.param("rollback_items", 1000000)
         self.perform_rollback(self.start, mem_only_items, doc_type="update")
 
         if self.end_step == 12:
@@ -1452,7 +1449,6 @@ class volume(BaseTestCase):
         '''
         Final Docs = 30M (0-20M, 10M Random)
         '''
-        mem_only_items = self.input.param("rollback_items", 1000000)
         self.perform_rollback(self.start, mem_only_items, doc_type="delete")
 
         if self.end_step == 13:
@@ -1462,7 +1458,6 @@ class volume(BaseTestCase):
         '''
         Final Docs = 30M (0-20M, 10M Random)
         '''
-        mem_only_items = self.input.param("rollback_items", 1000000)
         self.perform_rollback(self.start, mem_only_items, doc_type="expiry")
 
         if self.end_step == 14:
@@ -1471,78 +1466,27 @@ class volume(BaseTestCase):
         self.skip_read_on_error = True
         self.suppress_error_table = True
         self.track_failures = False
-        self.PrintStep("Step 15: Random crashes during Creates")
+        self.PrintStep("Step 15: Random crashes during CRUD-Expiry")
         '''
         Creates: 20M-50M
         Final Docs = 60M (0-50M, 10M Random)
-        '''
-        self.create_perc = 300
-        self.generate_docs(doc_ops="create")
-        tasks_info = self.data_load(
-            scope=self.scope_name,
-            collections=self.bucket.scopes[self.scope_name].collections.keys())
 
-        th = threading.Thread(target=self.crash_thread,
-                              kwargs={"graceful": False})
-        th.start()
-
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-        self.stop_crash = True
-        th.join()
-
-        #######################################################################
-        self.PrintStep("Step 15: Random crashes during Updates")
-        '''
         Updates: 0M-20M
         Final Docs = 60M (0-50M, 10M Random)
-        '''
-        self.update_perc = 200
-        self.generate_docs(doc_ops="update")
-        tasks_info = self.data_load(
-            scope=self.scope_name,
-            collections=self.bucket.scopes[self.scope_name].collections.keys())
 
-        th = threading.Thread(target=self.crash_thread,
-                              kwargs={"graceful": False})
-        th.start()
-
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-        self.stop_crash = True
-        th.join()
-
-        #######################################################################
-        self.PrintStep("Step 15: Random crashes during Deletes")
-        '''
         Deletes: 0M-20M
         Final Docs = 40M (20-50M, 10M Random)
-        '''
-        self.delete_perc = 200
-        self.generate_docs(doc_ops="delete",
-                           delete_start=0,
-                           delete_end=self.num_items*self.delete_perc/100)
-        tasks_info = self.data_load(
-            scope=self.scope_name,
-            collections=self.bucket.scopes[self.scope_name].collections.keys())
 
-        th = threading.Thread(target=self.crash_thread,
-                              kwargs={"graceful": False})
-        th.start()
-
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-        self.stop_crash = True
-        th.join()
-
-        #######################################################################
-        self.PrintStep("Step 15: Random crashes during Expiry")
-        '''
-        Updates: 0M-20M , MAXTTL=5s
+        Expiry: 0M-20M , MAXTTL=5s
         Final Docs = 40M (20-50M, 10M Random)
         '''
+        self.create_perc = 300
+        self.update_perc = 200
+        self.delete_perc = 200
         self.expiry_perc = 200
-        self.generate_docs(doc_ops="expiry",
+        self.generate_docs(doc_ops="create;update;delete;expiry",
+                           delete_start=0,
+                           delete_end=self.num_items*self.delete_perc/100,
                            expire_start=0,
                            expire_end=self.num_items*self.expiry_perc/100)
         tasks_info = self.data_load(
@@ -1557,7 +1501,42 @@ class volume(BaseTestCase):
             self.task_manager.get_task_result(task)
         self.stop_crash = True
         th.join()
+        #######################################################################
+        self.skip_read_on_error = True
+        self.suppress_error_table = True
+        self.track_failures = False
+        self.PrintStep("Step 15: Random crashes during CRUD-Expiry")
+        '''
+        Creates: 50M-80M
+        Final Docs = 90M (0-80M, 10M Random)
 
+        Updates: 0M-20M
+        Final Docs = 90M (0-80M, 10M Random)
+
+        Deletes: 0M-20M
+        Final Docs = 70M (20-90M, 10M Random)
+
+        Expiry: 0M-20M , MAXTTL=5s
+        Final Docs = 40M (20-50M, 10M Random)
+        '''
+        self.create_perc = 300
+        self.update_perc = 200
+        self.delete_perc = 150
+        self.expiry_perc = 150
+        self.generate_docs(doc_ops="create;update;delete;expiry")
+        tasks_info = self.data_load(
+            scope=self.scope_name,
+            collections=self.bucket.scopes[self.scope_name].collections.keys())
+
+        th = threading.Thread(target=self.crash_thread,
+                              kwargs={"graceful": False,
+                                      "num_kills": 20})
+        th.start()
+
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.stop_crash = True
+        th.join()
         #######################################################################
         self.PrintStep("Step 20: Drop a collection")
         for i in range(1, self.num_collections, 2):
