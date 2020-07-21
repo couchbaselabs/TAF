@@ -825,7 +825,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         for shell in shell_conn:
             shell.disconnect()
 
-    def test_magma_rollback_on_all_nodes_one_at_a_time_to_same_snapshot(self):
+    def test_iteratively_rollback_all_nodes_to_same_snapshot(self):
         '''
         Test focus: Stopping persistence one by one on all nodes,
                     and trigger roll back on other  nodes.
@@ -983,7 +983,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
 
-    def test_magma_rollback_on_all_nodes_one_at_a_time_to_new_snapshot(self):
+    def test_iteratively_rollback_all_nodes_to_new_snapshot(self):
         '''
         Test focus: Stopping persistence one by one on all nodes,
                     and trigger roll back on other  nodes
