@@ -3,19 +3,29 @@ package com.couchbase.test.transactions;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 import java.util.Queue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import com.couchbase.client.core.cnc.Event;
+import com.couchbase.client.core.cnc.EventSubscription;
 import com.couchbase.transactions.error.internal.TestFailTransient;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.json.JsonObject;
+import com.couchbase.transactions.TransactionAttempt;
 import com.couchbase.transactions.TransactionDurabilityLevel;
 import com.couchbase.transactions.TransactionGetResult;
 import com.couchbase.transactions.TransactionResult;
@@ -26,6 +36,8 @@ import com.couchbase.transactions.deferred.TransactionSerializedContext;
 import com.couchbase.transactions.error.TransactionFailed;
 import com.couchbase.transactions.log.LogDefer;
 import com.couchbase.transactions.log.TransactionEvent;
+import com.couchbase.transactions.log.TransactionCleanupAttempt;
+import com.couchbase.transactions.log.TransactionCleanupEndRunEvent;
 import com.couchbase.transactions.util.TestAttemptContextFactory;
 import com.couchbase.transactions.util.TransactionMock;
 
@@ -293,97 +305,97 @@ public class SimpleTransaction {
 
 			    if (operation.equals("afterDocCommitted")) {
                     mock.afterDocCommitted = (ctx, id) -> {
-                	if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TestFailTransient(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TestFailTransient(null));}
-                    return Mono.just(1);
+						if (fail)
+							if (id.equals(docId))
+								return Mono.error(new TestFailTransient(null));
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TestFailTransient(null));}
+						return Mono.just(1);
                     };
                 }
 
 			    if (operation.equals("afterGetComplete")) {
                     mock.afterGetComplete = (ctx, id) -> {
-                	if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TestFailTransient(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TestFailTransient(null));}
-                    return Mono.just(1);
+						if (fail)
+							if (id.equals(docId))
+								return Mono.error(new TestFailTransient(null));
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TestFailTransient(null));}
+						return Mono.just(1);
                     };
                 }
 
 			    if (operation.equals("beforeDocCommitted")) {
                     mock.beforeDocCommitted = (ctx, id) -> {
-                	if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TestFailTransient(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TestFailTransient(null));}
-                    return Mono.just(1);
+						if (fail)
+							if (id.equals(docId))
+								return Mono.error(new TestFailTransient(null));
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TestFailTransient(null));}
+						return Mono.just(1);
                     };
                 }
 
 			    if (operation.equals("beforeStagedInsert")) {
                     mock.beforeStagedInsert = (ctx, id) -> {
-                	if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TestFailTransient(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TestFailTransient(null));}
-                    return Mono.just(1);
+						if (fail)
+							if (id.equals(docId))
+								return Mono.error(new TestFailTransient(null));
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TestFailTransient(null));}
+						return Mono.just(1);
                     };
                 }
 
 			    if (operation.equals("beforeStagedReplace")) {
                     mock.beforeStagedReplace = (ctx, id) -> {
-                	if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TestFailTransient(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TestFailTransient(null));}
-                    return Mono.just(1);
+						if (fail)
+							if (id.equals(docId))
+								return Mono.error(new TestFailTransient(null));
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TestFailTransient(null));}
+						return Mono.just(1);
                     };
                 }
 
 			    if (operation.equals("beforeStagedRemove")) {
                     mock.beforeStagedRemove = (ctx, id) -> {
-                	if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TestFailTransient(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TestFailTransient(null));}
-                    return Mono.just(1);
+						if (fail)
+							if (id.equals(docId))
+								return Mono.error(new TestFailTransient(null));
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TestFailTransient(null));}
+						return Mono.just(1);
                     };
                 }
 
 			    if (operation.equals("beforeDocRemoved")) {
                     mock.beforeDocRemoved = (ctx, id) -> {
-                	if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TestFailTransient(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TestFailTransient(null));}
-                    return Mono.just(1);
+						if (fail)
+							if (id.equals(docId))
+								return Mono.error(new TestFailTransient(null));
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TestFailTransient(null));}
+						return Mono.just(1);
                     };
                 }
 
 			    if (operation.equals("beforeDocRolledBack")) {
                     mock.beforeDocRolledBack = (ctx, id) -> {
-                	if (fail)
-                    	if (id.equals(docId))
-							return Mono.error(new TestFailTransient(null));
-                    else if (first.get() && id.equals(docId))  {
-                       first.set(false);
-                       return Mono.error(new TestFailTransient(null));}
-                    return Mono.just(1);
+						if (fail)
+							if (id.equals(docId))
+								return Mono.error(new TestFailTransient(null));
+						else if (first.get() && id.equals(docId))  {
+						   first.set(false);
+						   return Mono.error(new TestFailTransient(null));}
+						return Mono.just(1);
                     };
                 }
 
@@ -415,16 +427,13 @@ public class SimpleTransaction {
 						}
 					}
 
-			        if (commit) {
+			        if (commit)
 						ctx1.commit();
-			        }
-				    else {
+				    else
 				    	ctx1.rollback();
-				    }
-
 			    });
 			    result.log().logs().forEach(System.err::println);
-			    	}
+			}
 			catch (TransactionFailed err) {
 				// This per-txn log allows the app to only log failures
 				System.out.println("Transaction failed from runTransaction");
@@ -434,13 +443,48 @@ public class SimpleTransaction {
 		        }
 			}
 			return res;
-		}
+	}
 
-	public List<LogDefer> RunTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
+	public EventSubscription record_cleanup_attempt_events(Cluster cluster, Set<String> attemptIds) {
+		return cluster.environment().eventBus().subscribe(event -> {
+			if (event instanceof TransactionCleanupAttempt) {
+				String curr_attempt_id = ((TransactionCleanupAttempt)event).attemptId();
+				if (((TransactionCleanupAttempt)event).success()) {
+					attemptIds.add(curr_attempt_id);
+				}
+			}
+		});
+	}
+
+	public void waitForTransactionCleanupEvent(Cluster cluster, List<TransactionAttempt> attempts,
+											   Set<String> attemptIds) {
+		Iterator<TransactionAttempt> it = attempts.iterator();
+		long end_time = (TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS)) + 60;
+		long curr_time;
+		while(it.hasNext()) {
+			String id_to_check = (it.next()).attemptId();
+			System.out.println("Waiting for cleanup event for: " + id_to_check);
+			while (true) {
+				if (attemptIds.contains(id_to_check)) {
+					break;
+				}
+				// Check for timeout case
+				curr_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
+				if (curr_time > end_time) {
+					System.out.println("Timeout waiting for attemptId: " + id_to_check);
+					break;
+				}
+			}
+		}
+	}
+
+	public List<LogDefer> RunTransaction(Cluster cluster, Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
 										 List<String> Deletekeys, Boolean commit, boolean sync, int updatecount) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
   		// synchronous API - transactions
 		if (sync) {
+			Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+			EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 			try {
 				TransactionResult result = transaction.run(ctx -> {
 					// creation of docs
@@ -485,12 +529,16 @@ public class SimpleTransaction {
 							}
 						}
 					}
-					// commit ot rollback the docs
-					if (commit) {  ctx.commit(); }
-					else { ctx.rollback(); 	 }
-
-//					transaction.close();
+					// commit or rollback the docs
+					if (commit)
+						ctx.commit();
+					else
+						ctx.rollback();
 				});
+
+				if (commit && !result.unstagingComplete()) {
+					this.waitForTransactionCleanupEvent(cluster, result.attempts(), attempt_ids);
+				}
 //				result.log().logs().forEach(System.err::println);
 			}
 			catch (TransactionFailed err) {
@@ -502,29 +550,36 @@ public class SimpleTransaction {
 						System.out.println(e);
 			        }
 				}
+				this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids);
+			}
+			finally {
+				cleanup_es.unsubscribe();
 			}
 		}
 		else {
 			for (Collection collection:collections) {
 				if (Createkeys.size() > 0) {
-					res = multiInsertSingelTransaction(transaction, collection, Createkeys, commit); }
+					res = multiInsertSingelTransaction(cluster, transaction, collection, Createkeys, commit); }
 				if (Updatekeys.size() > 0) {
-					res = multiUpdateSingelTransaction(transaction, collection, Updatekeys, commit);}
+					res = multiUpdateSingelTransaction(cluster, transaction, collection, Updatekeys, commit);}
 				if (Deletekeys.size() > 0) {
-					res = multiDeleteSingelTransaction(transaction, collection, Deletekeys, commit);
-					}
+					res = multiDeleteSingelTransaction(cluster, transaction, collection, Deletekeys, commit);
+				}
 			}
 
 		}
 		return res;
 	}
 
-	public List<LogDefer>  multiInsertSingelTransaction(Transactions transaction, Collection collection, List<Tuple2<String, JsonObject>> createkeys, Boolean commit)
+	public List<LogDefer>  multiInsertSingelTransaction(Cluster cluster, Transactions transaction, Collection collection, List<Tuple2<String, JsonObject>> createkeys, Boolean commit)
 	{
 		List<LogDefer> res = new ArrayList<LogDefer>();
 		Tuple2<String, JsonObject> firstDoc = createkeys.get(0);
 		List<Tuple2<String, JsonObject>> remainingDocs = createkeys.stream().skip(1).collect(Collectors.toList());
 		ReactiveCollection rc = collection.reactive();
+
+		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 
 		List<LogDefer> result = transaction.reactive((ctx) -> {
 			if (commit)
@@ -565,35 +620,39 @@ public class SimpleTransaction {
 								// expected type
 						).then(ctx.rollback());}
 			}
-
 		}).map(r -> r.log().logs())
-                .onErrorResume(err -> {
-                	if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
-                		System.out.println("DurabilityImpossibleException seen");
-                		for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-                            res.add(e); }
-                	}
-                	else {
-                    for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-                        res.add(e);
-                        System.out.println(e);
-                    }}
-                    return Mono.just(res);
-                }).block();
+        .onErrorResume(err -> {
+          	if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
+          		System.out.println("DurabilityImpossibleException seen");
+					for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+						res.add(e);
+					}
+				}
+				else {
+					for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+						res.add(e);
+						System.out.println(e);
+					}
+				}
+				this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids);
+				return Mono.just(res);
+		}).block();
+		cleanup_es.unsubscribe();
 		return res;
 	}
 
-	public List<LogDefer> multiUpdateSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
+	public List<LogDefer> multiUpdateSingelTransaction(Cluster cluster, Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
 		ReactiveCollection reactiveCollection=collection.reactive();
 		List<String> docToUpdate=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToUpdate.get(0);
 		List<String> remainingDocs = docToUpdate.stream().skip(1).collect(Collectors.toList());
 
-		List<LogDefer> result = transaction.reactive((ctx) -> {
+		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 
-			if (commit)
-			{
+		List<LogDefer> result = transaction.reactive((ctx) -> {
+			if (commit) {
 				// The first mutation must be done in serial
 				if (remainingDocs.size() == 0) {
 					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then();
@@ -604,8 +663,7 @@ public class SimpleTransaction {
 									remainingDocs.size())).then();
 					}
 			}
-			else
-			{
+			else {
 				if (remainingDocs.size() == 0) {
 					return ctx.get(reactiveCollection, id1).flatMap(doc-> ctx.replace(doc, doc.contentAs(JsonObject.class).put("mutated", 1))).then(ctx.rollback());
 				}
@@ -615,29 +673,36 @@ public class SimpleTransaction {
 							v-> Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.replace(d1, d1.contentAs(JsonObject.class).put("mutated", 1))),
 									remainingDocs.size())).then(ctx.rollback());}
 			}
-			}).map(r -> r.log().logs())
-                .onErrorResume(err -> {
-                	if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
-                		System.out.println("DurabilityImpossibleException seen");
-                		for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-                            res.add(e); }
-                	}
-                	else {
-                    for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-                        res.add(e);
-                        System.out.println(e);
-                    }}
-                    return Mono.just(res);
-                }).block();
+		}).map(r -> r.log().logs())
+		.onErrorResume(err -> {
+			if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
+				System.out.println("DurabilityImpossibleException seen");
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					res.add(e);
+				}
+			}
+			else {
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					res.add(e);
+					System.out.println(e);
+				}
+			}
+			this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids);
+			return Mono.just(res);
+		}).block();
+		cleanup_es.unsubscribe();
         return res;
 	}
 
-	public List<LogDefer> multiDeleteSingelTransaction(Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
+	public List<LogDefer> multiDeleteSingelTransaction(Cluster cluster, Transactions transaction, Collection collection, List<String> ids, Boolean commit) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
 		ReactiveCollection reactiveCollection=collection.reactive();
 		List<String> docToDelete=ids.parallelStream().collect(Collectors.toList());
 		String id1 = docToDelete.get(0);
 		List<String> remainingDocs = docToDelete.stream().skip(1).collect(Collectors.toList());
+
+		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 
 		List<LogDefer> result = transaction.reactive((ctx) -> {
 			if (commit)
@@ -662,34 +727,35 @@ public class SimpleTransaction {
 							Flux.fromIterable(remainingDocs).flatMap(d -> ctx.get(reactiveCollection,d).flatMap(d1-> ctx.remove(d1)),
 									remainingDocs.size())).then(ctx.rollback());}
 			}
-
-			}).map(r -> r.log().logs())
-                .onErrorResume(err -> {
-                	if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
-                		System.out.println("DurabilityImpossibleException seen");
-                		for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-                            res.add(e); }
-                	}
-                	else {
-                    for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
-                        res.add(e);
-                        System.out.println(e);
-                    }}
-                    return Mono.just(res);
-                }).block();
+		}).map(r -> r.log().logs())
+		.onErrorResume(err -> {
+			if (((TransactionFailed) err).result().log().logs().toString().contains("DurabilityImpossibleException")) {
+				System.out.println("DurabilityImpossibleException seen");
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					res.add(e);
+				}
+			}
+			else {
+				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
+					res.add(e);
+					System.out.println(e);
+				}
+			}
+			this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids);
+			return Mono.just(res);
+		}).block();
+		cleanup_es.unsubscribe();
 		return res;
 	}
 
-	public List<String> getQueue(int n){
-		return this.queue.stream().skip(queue.size() - n).collect(Collectors.toList());
-	}
-
-	public Tuple2<byte[], List<LogDefer>> DeferTransaction(Transactions transaction, List<Collection> collections, List<Tuple2<String,
+	public Tuple2<byte[], List<LogDefer>> DeferTransaction(Cluster cluster, Transactions transaction, List<Collection> collections, List<Tuple2<String,
 			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys) {
 		byte[] encoded = new byte[0];
 		List<LogDefer> res = new ArrayList<LogDefer>();
 		int updatecount = 1;
 
+		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 		try {
 			TransactionResult result = transaction.run(ctx -> {
 				for (Collection bucket:collections) {
@@ -719,7 +785,7 @@ public class SimpleTransaction {
 							}
 						catch (TransactionFailed err) {
 							System.out.println("Document not present");
-							}
+						}
 					}
 				}
 				// delete the docs
@@ -744,21 +810,28 @@ public class SimpleTransaction {
 		catch (TransactionFailed err) {
 			res = err.result().log().logs();
 			if (res.toString().contains("DurabilityImpossibleException")) {
-				System.out.println("DurabilityImpossibleException seen"); }
+				System.out.println("DurabilityImpossibleException seen");
+				this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids);
+			}
 			else {
 				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
 					System.out.println(e);
 		        }
 			}
 		}
+		finally {
+			cleanup_es.unsubscribe();
+		}
 		Tuple2<byte[], List<LogDefer>>mp = Tuples.of(encoded, res);
 		return mp;
 	}
 
-	public List<LogDefer> DefferedTransaction(Transactions transaction, Boolean commit, byte[] encoded) {
+	public List<LogDefer> DefferedTransaction(Cluster cluster, Transactions transaction, Boolean commit, byte[] encoded) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
 		TransactionSerializedContext serialized = TransactionSerializedContext.createFrom(encoded);
 
+		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 		try {
 			if (commit) {
 				TransactionResult result = transaction.commit(serialized);
@@ -776,6 +849,9 @@ public class SimpleTransaction {
 					System.out.println(e);
 		        }
 			}
+			this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids);
+		} finally {
+			cleanup_es.unsubscribe();
 		}
 		return res;
 	}
