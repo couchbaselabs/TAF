@@ -449,6 +449,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
+        ops_len = len(self.doc_ops.split(":"))
 
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
@@ -488,8 +489,6 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.log.info("Roll back Iteration == {}".format(i))
 
             mem_item_count = 0
-            self.log.debug("Iteration == {}, State files before stopping persistence == {}".
-                           format(i, self.get_state_files(self.buckets[0])))
 
             # Stopping persistence on NodeA
             self.log.debug("Iteration == {}, stopping persistence".format(i))
@@ -498,22 +497,32 @@ class MagmaRollbackTests(MagmaBaseTest):
         ###############################################################################
             '''
             STEP - 3
-              -- Load documents on master node for  self.duration * 60 seconds
+              -- Doc ops on master node for  self.duration * 60 seconds
               -- This step ensures new state files (number equal to self.duration)
             '''
+            self.log.info("Just before compute docs, iteration {}".format(i))
+            self.compute_docs(start, mem_only_items)
+            self.gen_create = None
+            self.gen_update = None
+            self.gen_delete = None
+            self.gen_expiry = None
             time_end = time.time() + 60 * self.duration
             while time.time() < time_end:
                 master_itr += 1
                 time_start = time.time()
-                mem_item_count += mem_only_items
-
-                self.gen_create = self.gen_docs_basic_for_target_vbucket(start,
-                                                                         mem_only_items,
-                                                                         self.target_vbucket)
+                mem_item_count += mem_only_items * ops_len
+                self.generate_docs(doc_ops=self.doc_ops,
+                                   target_vbucket=self.target_vbucket)
                 self.loadgen_docs(_sync=True,
                                   retry_exceptions=retry_exceptions)
-
-                start = self.gen_create.key_counter
+                if self.gen_create is not None:
+                    self.create_start = self.gen_create.key_counter
+                if self.gen_update is not None:
+                    self.update_start = self.gen_update.key_counter
+                if self.gen_delete is not None:
+                    self.delete_start = self.gen_delete.key_counter
+                if self.gen_expiry is not None:
+                    self.expiry_start = self.gen_expiry.key_counter
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(),
@@ -578,14 +587,15 @@ class MagmaRollbackTests(MagmaBaseTest):
             '''
             self.create_start = items
             self.create_end = items + items // 3
-            self.generate_docs(doc_ops="create")
+            self.generate_docs(doc_ops="create", target_vbucket=None)
 
             time_end = time.time() + 60
             while time.time() < time_end:
                 time_start = time.time()
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
-                                      _sync=True)
+                                      _sync=True,
+                                      doc_ops="create")
                 self.bucket_util._wait_for_stats_all_buckets()
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))

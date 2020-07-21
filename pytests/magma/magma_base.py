@@ -278,11 +278,15 @@ class MagmaBaseTest(BaseTestCase):
                              scope=None,
                              collection=None,
                              _sync=True,
-                             track_failures=True):
+                             track_failures=True,
+                             doc_ops=None):
+        if doc_ops == None:
+            doc_ops = self.doc_ops
+
         tasks_info = dict()
         read_tasks_info = dict()
         read_task = False
-        if "update" in self.doc_ops and self.gen_update is not None:
+        if "update" in doc_ops and self.gen_update is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
                 batch_size=self.batch_size,
@@ -299,7 +303,7 @@ class MagmaBaseTest(BaseTestCase):
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures)
             tasks_info.update(tem_tasks_info.items())
-        if "create" in self.doc_ops and self.gen_create is not None:
+        if "create" in doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_create, "create", 0,
                 batch_size=self.batch_size,
@@ -317,7 +321,7 @@ class MagmaBaseTest(BaseTestCase):
                 track_failures=track_failures)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
-        if "expiry" in self.doc_ops and self.gen_expiry is not None and self.maxttl:
+        if "expiry" in doc_ops and self.gen_expiry is not None and self.maxttl:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_expiry, "update", self.maxttl,
                 batch_size=self.batch_size,
@@ -335,7 +339,7 @@ class MagmaBaseTest(BaseTestCase):
                 track_failures=track_failures)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
-        if "read" in self.doc_ops and self.gen_read is not None:
+        if "read" in doc_ops and self.gen_read is not None:
             read_tasks_info = self.bucket_util._async_validate_docs(
                self.cluster, self.gen_read, "read", 0,
                batch_size=self.batch_size,
@@ -346,7 +350,7 @@ class MagmaBaseTest(BaseTestCase):
                scope=scope,
                collection=collection)
             read_task = True
-        if "delete" in self.doc_ops and self.gen_delete is not None:
+        if "delete" in doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_delete, "delete", 0,
                 batch_size=self.batch_size,
@@ -391,7 +395,10 @@ class MagmaBaseTest(BaseTestCase):
                      scope=CbServer.default_scope,
                      collection=CbServer.default_collection,
                      _sync=True,
-                     track_failures=True):
+                     track_failures=True,
+                     doc_ops=None):
+        if doc_ops == None:
+            doc_ops = self.doc_ops
 
         if self.check_temporary_failure_exception:
             retry_exceptions.append(SDKException.TemporaryFailureException)
@@ -402,7 +409,8 @@ class MagmaBaseTest(BaseTestCase):
                                             _sync=_sync,
                                             scope=scope,
                                             collection=collection,
-                                            track_failures=track_failures)
+                                            track_failures=track_failures,
+                                            doc_ops=doc_ops)
         return loaders
 
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
