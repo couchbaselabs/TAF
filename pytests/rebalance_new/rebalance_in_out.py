@@ -450,10 +450,16 @@ class RebalanceInOutTests(RebalanceBaseTest):
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
-                pause_secs=5, batch_size=1, timeout_secs=60)
+                durability=self.durability_level,
+                batch_size=10, timeout_secs=60,
+                process_concurrency=4,
+                retry_exceptions=rebalance_base.retry_exceptions)
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, gen_delete, "update", 10,
-                pause_secs=5, batch_size=1, timeout_secs=60)
+                durability=self.durability_level,
+                batch_size=10, timeout_secs=60,
+                process_concurrency=4,
+                retry_exceptions=rebalance_base.retry_exceptions)
             tasks_info.update(tem_tasks_info.copy())
 
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
