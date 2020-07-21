@@ -40,6 +40,7 @@ class volume(BaseTestCase):
             self.doc_ops = self.doc_ops.split(';')
         self.iterations = self.input.param("iterations", 2)
         self.step_iterations = self.input.param("step_iterations", 5)
+        self.rollback = self.input.param("rollback", True)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.new_num_writer_threads = self.input.param(
             "new_num_writer_threads", 6)
@@ -622,7 +623,7 @@ class volume(BaseTestCase):
             self.stop_crash = True
             self.task.jython_task_manager.abort_all_tasks()
             self.log.error(core_msg + stream_msg)
-            self.assertFalse(result, "Found issues on the nodes")
+            self.assertFalse(result, "Found crashes/issues on the nodes")
 
         if wait:
             for server in servers:
@@ -633,10 +634,13 @@ class volume(BaseTestCase):
                 if not result:
                     self.stop_crash = True
                     self.task.jython_task_manager.abort_all_tasks()
-                    self.assertTrue(result)
+                    self.assertTrue(result, "Warm-up failed in %s seconds"
+                                    % self.wait_timeout * 20)
 
     def perform_rollback(self, start=None, mem_only_items=100000,
                          doc_type="create", kill_rollback=1):
+        if not self.rollback:
+            return
         _iter = 0
         while _iter < 10:
             tasks_info = dict()

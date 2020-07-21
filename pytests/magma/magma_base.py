@@ -468,8 +468,7 @@ class MagmaBaseTest(BaseTestCase):
 
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
         magma_stats_for_all_servers = dict()
-        if servers is None:
-            servers = self.cluster.nodes_in_cluster
+        servers = servers or self.cluster.nodes_in_cluster
         if type(servers) is not list:
             servers = [servers]
         for server in servers:
@@ -516,8 +515,7 @@ class MagmaBaseTest(BaseTestCase):
         return disk_usage
 
     def change_swap_space(self, servers=None, disable=True):
-        if servers is None:
-            servers = self.cluster.nodes_in_cluster
+        servers = servers or self.cluster.nodes_in_cluster
         if type(servers) is not list:
             servers = [servers]
         for server in servers:
@@ -625,35 +623,18 @@ class MagmaBaseTest(BaseTestCase):
         self.task.jython_task_manager.get_task_result(task)
 
     def sigkill_memcached(self, nodes=None, graceful=False):
-        if not nodes:
-            nodes = self.cluster.nodes_in_cluster
-            for node in nodes:
-                shell = RemoteMachineShellConnection(node)
-                if graceful:
-                    shell.restart_couchbase()
-                else:
-                    shell.kill_memcached()
-                shell.disconnect()
-                self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [self.cluster_util.cluster.master],
-                    self.bucket_util.buckets[0],
-                    wait_time=self.wait_timeout * 20))
-
-    def abort_tasks_after_crash(self):
-        self.stop = False
-
-        while not self.stop:
-            self.log.info("Crash check")
-            result, cores, streamFailures = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-
-            if result:
-                if cores:
-                    self.log.error("Issues found on server: %s" % cores)
-                if streamFailures:
-                    self.log.error("Issues found on server: %s" % streamFailures)
-                self.task.jython_task_manager.abort_all_tasks()
-                self.assertFalse(result)
-            self.sleep(10, "Sleeping before re-checking for crashes.")
+        nodes = nodes or self.cluster.nodes_in_cluster
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            if graceful:
+                shell.restart_couchbase()
+            else:
+                shell.kill_memcached()
+            shell.disconnect()
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                [self.cluster_util.cluster.master],
+                self.bucket_util.buckets[0],
+                wait_time=self.wait_timeout * 20))
 
     def crash(self, nodes=None, kill_itr=1, graceful=False,
               wait=True, force_collect=False):
@@ -661,8 +642,7 @@ class MagmaBaseTest(BaseTestCase):
         count = kill_itr
         loop_itr = 0
 
-        if not nodes:
-            nodes = self.cluster.nodes_in_cluster
+        nodes = nodes or self.cluster.nodes_in_cluster
 
         connections = list()
         for node in nodes:
@@ -686,12 +666,15 @@ class MagmaBaseTest(BaseTestCase):
                         count -= 1
                     count = kill_itr
 
-            result, core_msg, stream_msg = self.check_coredump_exist(
+            result, core_msg, streamFailures = self.check_coredump_exist(
                 self.cluster.nodes_in_cluster, force_collect=force_collect)
             if result:
                 self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
-                self.log.error(core_msg + stream_msg)
+                if core_msg:
+                    self.log.error("Issues found on server: %s" % core_msg)
+                if streamFailures:
+                    self.log.error("Issues found on server: %s" % streamFailures)
                 self.assertFalse(result)
 
             if wait:
@@ -715,33 +698,15 @@ class MagmaBaseTest(BaseTestCase):
 
         shell = RemoteMachineShellConnection(server)
 
-        magma_path = str(os.path.join(RestConnection(server).get_data_path(), bucket.name, "magma.0"))
-        kv_path = shell.execute_command("ls %s | grep kv | head -1" % magma_path) [0][0].split('\n')[0]
+        magma_path = os.path.join(RestConnection(server).get_data_path(),
+                                  bucket.name, "magma.0")
+        kv_path = shell.execute_command("ls %s | grep kv | head -1" %
+                                        magma_path)[0][0].split('\n')[0]
         path = os.path.join(magma_path, kv_path, "rev*/seqIndex")
         self.log.debug("SeqIndex path = {}".format(path))
 
-        output = shell.execute_command(
-                    "ls %s | grep state"
-                   % path)[0]
+        output = shell.execute_command("ls %s | grep state" % path)[0]
         self.log.debug("State files = {}".format(output))
+        shell.disconnect()
 
         return output
-
-    def check_roll_back_to_zero(self, servers=None):
-        logs_dir = "/opt/couchbase/var/lib/couchbase/logs"
-
-        if servers is None:
-            servers = self.cluster.nodes_in_cluster
-
-        if type(servers) is not list:
-            servers = [servers]
-
-        for server in servers:
-            shell = RemoteMachineShellConnection(server)
-            log_files = shell.execute_command("ls " + logs_dir + "memcached.log.*" )[0]
-            for log_file in log_files:
-                msg = "Rollback point not found, please reset kvstore"
-                found = shell.execute_command(("grep -r '{}' " + log_file.strip("\n")).
-                                              format(msg))[0]
-                if found:
-                    print ("Found {} in {} on machine {}".format(msg, log_file, server.ip))
