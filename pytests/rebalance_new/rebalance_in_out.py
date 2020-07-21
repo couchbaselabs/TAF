@@ -416,7 +416,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
         gen_delete = self.get_doc_generator(self.num_items / 2 + 2000, self.num_items)
-        self.bucket_util._expiry_pager(5)
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
@@ -435,6 +434,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
             self.sleep(10)
             self.add_remove_servers_and_rebalance(self.cluster.servers[i:self.num_servers], [])
+            self.bucket_util._expiry_pager(5)
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
                                                            self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
