@@ -545,6 +545,9 @@ class IsolationDocTest(BaseTestCase):
                 retries=0)
             self.task_manager.get_task_result(trans_task_1)
             self.task_manager.get_task_result(trans_task_2)
+            load_gen_1 = doc_generator(self.key, 0, self.num_items, mutate=1)
+            load_gen_2 = doc_generator(self.key, self.num_items,
+                                       self.num_items*2, mutate=1)
 
         # Start transaction tasks with success & rollback for shadow docs test
         # Successful transaction

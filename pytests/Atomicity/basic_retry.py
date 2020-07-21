@@ -100,15 +100,18 @@ class basic_ops(BaseTestCase):
             client = self.client
         if op_type == "create":
             exception = Transaction().RunTransaction(
+                client.cluster,
                 transaction, [client.collection], doc, [], [],
                 txn_commit, sync, update_count)
         elif op_type == "update":
             self.log.info("updating all the keys through threads")
             exception = Transaction().RunTransaction(
+                client.cluster,
                 transaction, [client.collection], [], doc, [],
                 txn_commit, sync, update_count)
         elif op_type == "delete":
             exception = Transaction().RunTransaction(
+                client.cluster,
                 transaction, [client.collection], [], [], doc,
                 txn_commit, sync, update_count)
         if set_exception and exception:
@@ -151,6 +154,7 @@ class basic_ops(BaseTestCase):
 
         # create the docs
         exception = Transaction().RunTransaction(
+            self.client.cluster,
             self.transaction, [self.client.collection], self.docs, [], [],
             self.transaction_commit, True, self.update_count)
         if exception:
@@ -268,6 +272,7 @@ class basic_ops(BaseTestCase):
         keys = ["test_docs-0"]*2
 
         exception = Transaction().RunTransaction(
+            self.client.cluster,
             self.transaction, [self.client.collection], [], keys, [],
             self.transaction_commit, False, 0)
         if exception:
@@ -294,6 +299,7 @@ class basic_ops(BaseTestCase):
             self.sleep(self.transaction_timeout+60,
                        "Wait for transaction cleanup to complete")
             exception = Transaction().RunTransaction(
+                self.client.cluster,
                 self.transaction, [self.client1.collection], self.docs, [], [],
                 self.transaction_commit, self.sync, self.update_count)
             if exception:
@@ -351,6 +357,7 @@ class basic_ops(BaseTestCase):
         self.log.info("going to start the load")
         for doc in docs:
             exception = Transaction().RunTransaction(
+                self.client1.cluster,
                 self.transaction, [self.client1.collection], doc, [], [],
                 self.transaction_commit, self.sync, self.update_count)
             if exception:
