@@ -406,3 +406,20 @@ class Cbstats(CbCmdBase):
                 except Exception as err:
                     raise Exception(err)
         return is_stat_ok
+
+    def dcp_stats(self, bucket_name):
+        stats = dict()
+        output, error = self.get_stats(bucket_name, "failovers")
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+        for line in output:
+            line = line.strip()
+            list_all = line.rsplit(":",1)
+            stat = list_all[0]
+            val = list_all[1].strip()
+            stats[stat]=val
+        return stats
+
+
+
+
