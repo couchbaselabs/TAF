@@ -278,7 +278,7 @@ class BaseTestCase(unittest.TestCase):
                     master_services = cluster_util.get_services(
                         cluster.servers[:1], self.services_init, start_node=0)
                     if master_services is not None:
-                        master_services = master_services[0].split(";")
+                        master_services = master_services[0].split(",")
 
                     self.quota = self._initialize_nodes(
                         self.task,
