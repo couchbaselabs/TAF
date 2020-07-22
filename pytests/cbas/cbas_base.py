@@ -57,7 +57,7 @@ class CBASBaseTest(BaseTestCase):
         self.sample_bucket_dict = {TravelSample().name: TravelSample(),
                                    BeerSample().name: BeerSample()}
         self.sample_bucket = None
-        self.flush_enabled = Bucket.FlushBucket.ENABLED
+        #self.flush_enabled = Bucket.FlushBucket.ENABLED
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
 
