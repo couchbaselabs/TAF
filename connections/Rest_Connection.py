@@ -227,7 +227,7 @@ class RestConnection(object):
         if password is None:
             password = self.password
         authorization = base64.encodestring('%s:%s'
-                                            % (username, password))
+                                            % (username, password)).rstrip("\n")
         return {'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',

@@ -123,11 +123,9 @@ class CBASBaseTest(BaseTestCase):
                     bucket_type=self.bucket_type,
                     ram_quota=self.bucket_size,
                     replica=self.num_replicas,
-                    conflict_resolution=self.bucket_conflict_resolution_type,
                     replica_index=self.bucket_replica_index,
                     storage=self.bucket_storage,
-                    eviction_policy=self.bucket_eviction_policy,
-                    flush_enabled=self.flush_enabled)
+                    eviction_policy=self.bucket_eviction_policy)
             elif self.cb_bucket_name in self.sample_bucket_dict.keys():
                 self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
         
@@ -199,11 +197,9 @@ class CBASBaseTest(BaseTestCase):
                         bucket_type=self.bucket_type,
                         ram_quota=self.bucket_size,
                         replica=self.num_replicas,
-                        conflict_resolution=self.bucket_conflict_resolution_type,
                         replica_index=self.bucket_replica_index,
                         storage=self.bucket_storage,
-                        eviction_policy=self.bucket_eviction_policy,
-                        flush_enabled=self.flush_enabled)
+                        eviction_policy=self.bucket_eviction_policy)
                 elif self.cb_bucket_name in self.sample_bucket_dict.keys():
                     self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
     
@@ -296,22 +292,15 @@ class CBASBaseTest(BaseTestCase):
         """
         first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
         profession = ['doctor', 'lawyer']
-
-        template_obj = JsonObject.create()
-        template_obj.put("number", 0)
-        template_obj.put("first_name", "")
-        template_obj.put("profession", "")
-        template_obj.put("mutated", mutation_num)
-        template_obj.put("mutation_type", "ADD")
+        
+        template = '{{ "number": {0}, "first_name": "{1}", "profession": "{2}", "mutated": %d }}' % (mutation_num)
 
         if not key:
             key = "test_docs"
+        
+        doc_gen = DocumentGenerator(key, template, range(70), first, profession,
+                                    start=start_key, end=end_key)
 
-        doc_gen = DocumentGenerator(key, template_obj,
-                                    start=start_key, end=end_key,
-                                    randomize=False,
-                                    first_name=first, profession=profession,
-                                    number=range(70))
         if cluster:
             bucket_util = cluster.bucket_util
         else:

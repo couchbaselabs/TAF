@@ -4947,7 +4947,8 @@ class RemoteMachineShellConnection:
 class RemoteUtilHelper(object):
 
     @staticmethod
-    def enable_firewall(server, bidirectional=False, xdcr=False):
+    def enable_firewall(server, bidirectional=False, xdcr=False, action_on_packet="REJECT", 
+                        block_ips=[], all_interface=False, interface_names=["eth0"]):
         """ Check if user is root or non root in unix """
         shell = RemoteMachineShellConnection(server)
         shell.info = shell.extract_remote_info()
@@ -4967,7 +4968,12 @@ class RemoteUtilHelper(object):
                                          % shell.ip)
         else:
             copy_server = copy.deepcopy(server)
-            command_1 = "/sbin/iptables -A INPUT -p tcp -i eth0 --dport 1000:65535 -j REJECT"
+            command_1 = "/sbin/iptables -A INPUT -p tcp "
+            if not all_interface:
+                command_1 += "-i {0} ".format(",".join(interface_names))
+            if block_ips:
+                command_1 += "-s {0} ".format(",".join(block_ips))
+            command_1 += "--dport 1000:65535 -j {0}".format(action_on_packet)
             command_2 = "/sbin/iptables -A OUTPUT -p tcp -o eth0 --sport 1000:65535 -j REJECT"
             command_3 = "/sbin/iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT"
             if shell.info.distribution_type.lower() in LINUX_DISTRIBUTION_NAME \

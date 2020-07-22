@@ -139,22 +139,14 @@ class S3DataHelper():
         folder = folders
         filename = filenames
         missing_field = missing_field
-        template_obj = JsonObject.create()
-        template_obj.put("filename", "")
-        template_obj.put("folder", "")
-        template_obj.put("mutated", mutation_num)
-        template_obj.put("null_key", None)
-        template_obj.put("missing_field", "")
+        template = '{{ "filename": "{0}", "folder": "{1}", "null_key": "", "missing_field": {2}, "mutated": %d }}' % (mutation_num) 
 
         if not key:
             key = "test_docs"
 
-        doc_gen = DocumentGenerator(key, template_obj,
-                                    start=start_key, end=end_key,
-                                    randomize=True,
-                                    filename=filename,
-                                    folder=folder,
-                                    missing_field=missing_field)
+        doc_gen = DocumentGenerator(key, template, filename, folder, missing_field,
+                                    start=start_key, end=end_key)
+        
         return self.bucket_util.async_load_bucket(self.cluster, bucket, doc_gen, operation, exp,
                                                   durability=durability,
                                                   batch_size=batch_size,

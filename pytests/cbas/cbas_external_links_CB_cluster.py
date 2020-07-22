@@ -1742,7 +1742,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("fail-over the node")
         failover_task = self.task.failover(self.analytics_cluster.servers, failover_nodes=[rebalanceServers[0]],
-                                           graceful=graceful_failover, wait_for_pending=300)
+                                           graceful=graceful_failover, timeout=300)
 
         self.log.info("Read input param to decide on add back or rebalance out")
         self.rebalance_out = self.input.param("rebalance_out", False)
