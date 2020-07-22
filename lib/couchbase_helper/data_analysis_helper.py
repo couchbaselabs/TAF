@@ -620,31 +620,54 @@ class DataCollector(object):
         for bucket in buckets:
             dataMap = {}
             for server in servers:
-                client = MemcachedClientHelper.direct_client(server, bucket)
-                stats = client.stats('failovers')
+                #client = MemcachedClientHelper.direct_client(server, bucket)
+                #stats = client.stats('failovers')
+                shell = RemoteMachineShellConnection(server)
+                cbstat = Cbstats(shell)
+                stats = cbstat.failover_stats(bucket)
                 map_data = {}
                 num_map ={}
-                for o in stats.keys():
-                    tokens = o.split(":")
-                    vb = tokens[0]
-                    key = tokens[1]
-                    value = stats[o].split()
-                    num = -1
-                    if len(tokens) == 3:
-                        vb = tokens[0]
-                        num = int(tokens[1])
-                        key = tokens[2]
-                    if vb in map_data.keys() and \
-                            (num == num_map[vb] or num > num_map[vb]):
-                        map_data[vb][key] = value[0]
-                        num_map[vb] = num
-                    elif vb in map_data.keys() and key == "num_entries":
-                        map_data[vb][key] = value[0]
-                    elif vb not in map_data.keys():
-                        m = {}
-                        m[key] = value[0]
-                        map_data[vb] = m
-                        num_map[vb] = num
+                for okey,ovalue in stats.items():
+                    vb = 'vb_'+ okey
+                    for ikey, ivalue in ovalue.items():
+                        tokens = ikey.split(":")
+                        key = tokens[0]
+                        num = -1
+                        if len(tokens) == 2:
+                            key = tokens[1]
+                            num = int(tokens[0])
+                        value = ivalue.split()
+                        if vb in map_data.keys() and \
+                                (num == num_map[vb] or num > num_map[vb]):
+                            map_data[vb][key] = value[0]
+                        elif vb in map_data.keys() and key == "num_entries":
+                            map_data[vb][key] = value[0]
+                        elif vb not in map_data.keys():
+                            m = {}
+                            m[key] = value[0]
+                            map_data[vb] = m
+                            num_map[vb] = num
+                # for o in stats.keys():
+                #     tokens = o.split(":")
+                #     vb = tokens[0]
+                #     key = tokens[1]
+                #     value = stats[o].split()
+                #     num = -1
+                #     if len(tokens) == 3:
+                #         vb = tokens[0]
+                #         num = int(tokens[1])
+                #         key = tokens[2]
+                #     if vb in map_data.keys() and \
+                #             (num == num_map[vb] or num > num_map[vb]):
+                #         map_data[vb][key] = value[0]
+                #         num_map[vb] = num
+                #     elif vb in map_data.keys() and key == "num_entries":
+                #         map_data[vb][key] = value[0]
+                #     elif vb not in map_data.keys():
+                #         m = {}
+                #         m[key] = value[0]
+                #         map_data[vb] = m
+                #         num_map[vb] = num
                 if perNode:
                     dataMap[server.ip] = map_data
                 else:
@@ -671,13 +694,19 @@ class DataCollector(object):
             active_map_data = {}
             replica_map_data = {}
             for server in servers:
-                client = MemcachedClientHelper.direct_client(server, bucket)
-                stats = client.stats('')
-                for key in stats.keys():
-                    if key == 'vb_active_num':
-                        active_map_data[server.ip] = int(stats[key])
-                    if key == 'vb_replica_num':
-                        replica_map_data[server.ip] = int(stats[key])
+                #client = MemcachedClientHelper.direct_client(server, bucket)
+                #stats = client.stats('')
+                shell = RemoteMachineShellConnection(server)
+                cbstat = Cbstats(shell)
+                stats = cbstat.vbucket_list(bucket)
+                active_map_data[server.ip] = len(stats)
+                stats = cbstat.vbucket_list(bucket,vbucket_type="replica")
+                replica_map_data[server.ip] = len(stats)
+                # for key in stats.keys():
+                #     if key == 'vb_active_num':
+                #         active_map_data[server.ip] = int(stats[key])
+                #     if key == 'vb_replica_num':
+                #         replica_map_data[server.ip] = int(stats[key])
             active_bucketMap[bucket.name] = active_map_data
             replica_bucketMap[bucket.name] = replica_map_data
         return active_bucketMap, replica_bucketMap
@@ -706,8 +735,11 @@ class DataCollector(object):
             bucketMap[bucket.name] = True
         for bucket in buckets:
             for server in servers:
-                client = MemcachedClientHelper.direct_client(server, bucket)
-                stats = client.stats('dcp')
+                # client = MemcachedClientHelper.direct_client(server, bucket)
+                # stats = client.stats('dcp')
+                shell = RemoteMachineShellConnection(server)
+                cbstat = Cbstats(shell)
+                stats = cbstat.dcp_stats(bucket)
                 for key in stats.keys():
                     do_filter = False
                     if stat_name in key:
