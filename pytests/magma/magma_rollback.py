@@ -719,6 +719,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
+        ops_len = len(self.doc_ops.split(":"))
         self.gen_read = copy.deepcopy(self.gen_create)
 
         if self.nodes_init < 2 or self.num_replicas < 1:
@@ -769,25 +770,36 @@ class MagmaRollbackTests(MagmaBaseTest):
                 ###############################################################
                 '''
                 STEP - 3
-                  -- Load documents on node  x for  self.duration * 60 seconds
+                  -- Doc Ops on node  x for  self.duration * 60 seconds
                   -- This step ensures new state files (number equal to self.duration)
                 '''
+                self.compute_docs(start, mem_only_items)
+                self.gen_create = None
+                self.gen_update = None
+                self.gen_delete = None
+                self.gen_expiry = None
                 time_end = time.time() + 60 * self.duration
                 itr = 0
                 while time.time() < time_end:
                     itr += 1
                     time_start = time.time()
-                    mem_item_count += mem_only_items
-                    self.gen_create = self.gen_docs_basic_for_target_vbucket(start,
-                                                                         mem_only_items,
-                                                                         self.target_vbucket)
+                    mem_item_count += mem_only_items * ops_len
+                    self.generate_docs(doc_ops=self.doc_ops,
+                                       target_vbucket=self.target_vbucket)
+
                     self.loadgen_docs(_sync=True,
                                       retry_exceptions=retry_exceptions)
-
-                    start = self.gen_create.key_counter
+                    if self.gen_create is not None:
+                        self.create_start = self.gen_create.key_counter
+                    if self.gen_update is not None:
+                        self.update_start = self.gen_update.key_counter
+                    if self.gen_delete is not None:
+                        self.delete_start = self.gen_delete.key_counter
+                    if self.gen_expiry is not None:
+                        self.expiry_start = self.gen_expiry.key_counter
 
                     if time.time() < time_start + 60:
-                        self.log.info("Rollback Iteration = {}, itr == {}, Active-Node- {}".format(i, itr, x+1))
+                        self.log.info("Rollback Iteration== {}, itr== {}, Active-Node== {}, Node=={}".format(i, itr, x+1, node))
                         self.sleep(time_start + 60 - time.time(),
                                    "Sleep to ensure creation of state files for roll back")
                         self.log.info("state files == {}".format(
@@ -879,7 +891,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
-        self.gen_read = copy.deepcopy(self.gen_create)
+        ops_len = len(self.doc_ops.split(":"))
 
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
@@ -932,22 +944,32 @@ class MagmaRollbackTests(MagmaBaseTest):
                   -- Load documents on node  x for  self.duration * 60 seconds
                   -- This step ensures new state files (number equal to self.duration)
                 '''
+                self.compute_docs(start, mem_only_items)
+                self.gen_create = None
+                self.gen_update = None
+                self.gen_delete = None
+                self.gen_expiry = None
                 time_end = time.time() + 60 * self.duration
                 itr = 0
                 while time.time() < time_end:
                     itr += 1
                     time_start = time.time()
-                    mem_item_count += mem_only_items
-                    self.gen_create = self.gen_docs_basic_for_target_vbucket(start,
-                                                                             mem_only_items,
-                                                                             self.target_vbucket)
+                    mem_item_count += mem_only_items * ops_len
+                    self.generate_docs(doc_ops=self.doc_ops,
+                                       target_vbucket=self.target_vbucket)
                     self.loadgen_docs(_sync=True,
-                                      retry_exceptions=retry_exceptions)
-
-                    start = self.gen_create.key_counter
+                                  retry_exceptions=retry_exceptions)
+                    if self.gen_create is not None:
+                        self.create_start = self.gen_create.key_counter
+                    if self.gen_update is not None:
+                        self.update_start = self.gen_update.key_counter
+                    if self.gen_delete is not None:
+                        self.delete_start = self.gen_delete.key_counter
+                    if self.gen_expiry is not None:
+                        self.expiry_start = self.gen_expiry.key_counter
 
                     if time.time() < time_start + 60:
-                        self.log.info("Rollback Iteration = {}, itr == {}, Active-Node- {}".format(i, itr, x+1))
+                        self.log.info("Rollback Iteration== {}, itr== {}, Active-Node=={}, Node=={}".format(i, itr, x+1, node))
                         self.sleep(time_start + 60 - time.time(),
                                    "Sleep to ensure creation of state files for roll back")
                         self.log.info("state files == {}".format(
@@ -983,7 +1005,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     wait_time=self.wait_timeout * 10))
 
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
-                          format(i, x, self.get_state_files(self.buckets[0])))
+                          format(i, node, self.get_state_files(self.buckets[0])))
 
                 self.bucket_util.verify_stats_all_buckets(items, timeout=300)
                 for bucket in self.bucket_util.buckets:
@@ -995,7 +1017,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                  -- Restarting persistence on Node -- x
                 '''
 
-                self.log.debug("Iteration=={}, Re-Starting persistence on Node -- {}".format(i, x))
+                self.log.debug("Iteration=={}, Re-Starting persistence on Node -- {}".format(i, node))
                 Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "start")
 
                 self.log.info("State file at end of iteration-{} are == {}".
@@ -1013,13 +1035,14 @@ class MagmaRollbackTests(MagmaBaseTest):
             '''
             self.create_start = items
             self.create_end = items + items // 3
-            self.generate_docs(doc_ops="create")
+            self.generate_docs(doc_ops="create", target_vbucket=None)
 
             time_end = time.time() + 60
             while time.time() < time_end:
                 time_start = time.time()
                 self.loadgen_docs(self.retry_exceptions,
-                                  self.ignore_exceptions, _sync=True)
+                                  self.ignore_exceptions, _sync=True,
+                                  doc_ops="create")
                 self.bucket_util._wait_for_stats_all_buckets()
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
