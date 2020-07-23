@@ -130,10 +130,11 @@ class ServerTasks(object):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
-                task_identifier = "%s_%s_%s_%s_%s" % (scope, collection,
-                                                      op_type,
-                                                      generator.start,
-                                                      generator.end)
+                task_identifier = "%s_%s_%s" % (op_type,
+                                                generator.start,
+                                                generator.end)
+                if exp:
+                    task_identifier += "_ttl=%s" % str(exp)
             gen_start = int(generator.start)
             gen_end = int(generator.end)
             gen_range = max(int((generator.end - generator.start)
