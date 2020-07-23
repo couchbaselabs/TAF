@@ -112,10 +112,8 @@ class RebalanceBaseTest(BaseTestCase):
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         for bucket in self.bucket_util.buckets:
-            ready = self.bucket_util.wait_for_memcached(
-                self.cluster.master,
-                bucket)
-            self.assertTrue(ready, msg="Wait_for_memcached failed")
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                self.cluster_util.get_kv_nodes(), bucket))
 
     def create_buckets(self, bucket_size):
         if self.standard_buckets == 1:
