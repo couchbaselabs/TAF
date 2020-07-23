@@ -265,17 +265,18 @@ class volume(BaseTestCase):
             self.final_items -= (self.expire_end - self.expire_start) * self.num_collections
 
         if "create" in doc_ops:
-            self.start = self.end
-            self.end += self.num_items*self.create_perc/100
             if create_start is not None:
                 self.create_start = create_start
             else:
-                self.create_start = self.start
+                self.create_start = self.end
+            self.start = self.create_start
+
             if create_end is not None:
                 self.create_end = create_end
-                self.end = self.create_end
             else:
-                self.create_end = self.end
+                self.create_end = self.start + self.num_items*self.create_perc/100
+            self.end = self.create_end
+
             self.gen_create = doc_generator(
                 self.key_prefix,
                 self.create_start, self.create_end,

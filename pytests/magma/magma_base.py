@@ -16,22 +16,14 @@ class MagmaBaseTest(BaseTestCase):
     def setUp(self):
         super(MagmaBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
-        self.doc_ops = self.input.param("doc_ops", "create")
-        self.key_size = self.input.param("key_size", 8)
-        self.replica_to_update = self.input.param("new_replica", None)
-        self.key = 'test_docs'
-        if self.random_key:
-            self.key = "random_keys"
-        self.items = self.num_items
         self.check_temporary_failure_exception = False
-        self.fragmentation = int(self.input.param("fragmentation", 50))
-        self.dgm_batch = self.input.param("dgm_batch", 5000)
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
                                  SDKException.RequestCanceledException,
                                  SDKException.UnambiguousTimeoutException]
         self.ignore_exceptions = []
-        self.info = self.rest.get_nodes_self()
+
+        # Create Cluster
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
         nodes_init = self.cluster.servers[
@@ -41,14 +33,14 @@ class MagmaBaseTest(BaseTestCase):
             self.assertTrue(result, "Initial rebalance failed")
         self.cluster.nodes_in_cluster.extend(
             [self.cluster.master] + nodes_init)
-        self.check_replica = self.input.param("check_replica", False)
+
+        # Create Buckets
         self.bucket_storage = self.input.param("bucket_storage",
                                                Bucket.StorageBackend.magma)
-        self.bucket_eviction_policy = self.input.param(
-            "bucket_eviction_policy",
-            Bucket.EvictionPolicy.FULL_EVICTION)
+        self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
+                                                       Bucket.EvictionPolicy.FULL_EVICTION)
         self.bucket_util.add_rbac_user()
-        # below will come in to picture if we'll have standard_buckets > 1
+
         self.magma_buckets = self.input.param("magma_buckets", 0)
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
@@ -57,12 +49,17 @@ class MagmaBaseTest(BaseTestCase):
         else:
             self._create_multiple_buckets()
 
+        self.buckets = self.bucket_util.buckets
+        self.num_collections = self.input.param("num_collections", 2)
+        self.num_scopes = self.input.param("num_scopes", 1)
+
+        # Update Magma/Storage Properties
+        props = "magma"
+        update_bucket_props = False
+
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
         self.max_commit_points = self.input.param("max_commit_points", None)
-
-        props = "magma"
-        update_bucket_props = False
 
         if self.disable_magma_commit_points:
             self.max_commit_points = 0
@@ -72,6 +69,7 @@ class MagmaBaseTest(BaseTestCase):
             self.log.debug("props== {}".format(props))
             update_bucket_props = True
 
+        self.fragmentation = int(self.input.param("fragmentation", 50))
         if self.fragmentation != 50:
             props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
             update_bucket_props = True
@@ -81,41 +79,52 @@ class MagmaBaseTest(BaseTestCase):
                     "backend", props,
                     self.bucket_util.buckets)
 
+        # Monitor Stats Params
         self.ep_queue_stats = self.input.param("ep_queue_stats", True)
         self.monitor_stats = ["doc_ops", "ep_queue_size"]
         if not self.ep_queue_stats:
-            self.monitor_stats =["doc_ops"]
+            self.monitor_stats = ["doc_ops"]
+
+        # Doc controlling params
+        self.key = 'test_docs'
+        if self.random_key:
+            self.key = "random_keys"
+        self.doc_ops = self.input.param("doc_ops", "create")
+        self.key_size = self.input.param("key_size", 8)
         self.doc_size = self.input.param("doc_size", 2048)
+        self.gen_create = None
+        self.gen_delete = None
+        self.gen_read = None
+        self.gen_update = None
+        self.create_perc = self.input.param("update_perc", 100)
+        self.update_perc = self.input.param("update_perc", 0)
+        self.delete_perc = self.input.param("delete_perc", 0)
+        self.expiry_perc = self.input.param("expiry_perc", 0)
+        self.start = 0
+        self.end = 0
+        self.create_start = 0
+        self.create_end = 0
+        self.update_start = 0
+        self.update_end = 0
+        self.delete_start = 0
+        self.delete_end = 0
+        self.read_start = 0
+        self.read_end = 0
+        self.mutate = 0
+
+        # Common test params
         self.test_itr = self.input.param("test_itr", 4)
         self.update_itr = self.input.param("update_itr", 10)
         self.next_half = self.input.param("next_half", False)
         self.deep_copy = self.input.param("deep_copy", False)
         if self.active_resident_threshold < 100:
             self.check_temporary_failure_exception = True
-        self.gen_create = None
-        self.gen_delete = None
-        self.gen_read = None
-        self.gen_update = None
-        self.mutate = 0
-        self.start = 0
-        self.init_items = 0
-        self.end = 0
-        self.create_end = 0
-        self.create_start = 0
-        self.update_end = 0
-        self.update_start = 0
-        self.delete_end = 0
-        self.delete_start = 0
-        self.read_end = 0
-        self.read_start = 0
-        self.buckets = self.bucket_util.buckets
-        self.num_collections = self.input.param("num_collections", 2)
-        self.num_scopes = self.input.param("num_scopes", 1)
-
         # self.thread_count is used to define number of thread use
         # to read same number of documents parallelly
         self.read_thread_count = self.input.param("read_thread_count", 4)
         self.disk_usage = dict()
+
+        # Initial Data Load
         self.initial_load()
         self.log.info("==========Finished magma base setup========")
 
@@ -126,27 +135,9 @@ class MagmaBaseTest(BaseTestCase):
             self.create_start = -int(self.num_items - 1)
             self.create_end = 1
 
-        self.read_start = 0
-        self.read_end = self.num_items
-        if self.rev_read:
-            self.read_start = -int(self.num_items - 1)
-            self.read_end = 1
-
-        self.delete_start = 0
-        self.delete_end = self.num_items
-        if self.rev_del:
-            self.delete_start = -int(self.num_items - 1)
-            self.delete_end = 1
-
-        self.update_start = 0
-        self.update_end = self.num_items
-        if self.rev_update:
-            self.update_start = -int(self.num_items - 1)
-            self.update_end = 1
-
         self.generate_docs(doc_ops="create")
-
         self.init_loading = self.input.param("init_loading", True)
+        self.dgm_batch = self.input.param("dgm_batch", 5000)
         if self.init_loading:
             self.result_task = self._load_all_buckets(
                 self.cluster, self.gen_create,
@@ -156,6 +147,7 @@ class MagmaBaseTest(BaseTestCase):
             if self.active_resident_threshold != 100:
                 for task in self.result_task.keys():
                     self.num_items = task.doc_index
+                    self.end = self.num_items
 
             self.log.info("Verifying num_items counts after doc_ops")
             self.bucket_util._wait_for_stats_all_buckets()
@@ -245,6 +237,11 @@ class MagmaBaseTest(BaseTestCase):
             if update_end is not None:
                 self.update_end = update_end
 
+            if self.update_start is None:
+                self.update_start = self.start
+            if self.update_end is None:
+                self.update_end = self.end*self.update_perc/100
+
             self.mutate += 1
             self.gen_update = self.genrate_docs_basic(self.update_start,
                                                       self.update_end,
@@ -256,6 +253,11 @@ class MagmaBaseTest(BaseTestCase):
             if delete_end is not None:
                 self.delete_end = delete_end
 
+            if self.delete_start is None:
+                self.delete_start = self.start
+            if self.delete_end is None:
+                self.delete_end = self.end*self.delete_perc/100
+
             self.gen_delete = self.genrate_docs_basic(self.delete_start,
                                                       self.delete_end,
                                                       target_vbucket=target_vbucket,
@@ -264,8 +266,15 @@ class MagmaBaseTest(BaseTestCase):
         if "create" in doc_ops:
             if create_start is not None:
                 self.create_start = create_start
+            if self.create_start is None:
+                self.create_start = self.end
+            self.start = self.create_start
+
             if create_end is not None:
                 self.create_end = create_end
+            if self.create_end is None:
+                self.create_end = self.start+self.num_items*self.create_perc/100
+            self.end = self.create_end
 
             self.gen_create = self.genrate_docs_basic(self.create_start,
                                                       self.create_end,
@@ -285,8 +294,15 @@ class MagmaBaseTest(BaseTestCase):
         if "expiry" in doc_ops:
             if expiry_start is not None:
                 self.expiry_start = expiry_start
+            elif self.expiry_start is None:
+                self.expire_start = self.start+(self.num_items *
+                                                self.delete_perc)/100
+
             if expiry_end is not None:
                 self.expiry_end = expiry_end
+            elif self.expiry_end is None:
+                self.expire_end = self.start+self.num_items *\
+                                  (self.delete_perc + self.expiry_perc)/100
 
             self.maxttl = self.input.param("maxttl", 10)
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
