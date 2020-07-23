@@ -1258,11 +1258,14 @@ class volume(BaseTestCase):
 
         self.generate_docs(doc_ops="create")
         self.perform_load(validate_data=False)
-
+        if self.end_step == 2:
+            exit(2)
         self.generate_docs(doc_ops="delete",
                            delete_start=self.start,
                            delete_end=self.end)
         self.perform_load(validate_data=True)
+        if self.end_step == 3:
+            exit(3)
         '''
         fragmentation at this time: 0
         '''
@@ -1277,6 +1280,8 @@ class volume(BaseTestCase):
                        str(self.num_items*self.create_perc/100))
         self.generate_docs(doc_ops="create")
         self.perform_load(validate_data=False)
+        if self.end_step == 4:
+            exit(4)
         '''
         fragmentation at this time: 0, total data: 2X, stale: 0
         '''
