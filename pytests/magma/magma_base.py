@@ -466,7 +466,7 @@ class MagmaBaseTest(BaseTestCase):
                      _sync=True,
                      track_failures=True,
                      doc_ops=None):
-        if doc_ops == None:
+        if doc_ops is None:
             doc_ops = self.doc_ops
 
         if self.check_temporary_failure_exception:
