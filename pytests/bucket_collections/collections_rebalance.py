@@ -72,10 +72,11 @@ class CollectionsRebalance(CollectionBase):
             bucket_name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
         return dgm
 
-    def load_to_dgm(self):
+    def load_to_dgm(self, threshold=100):
+        # load data until resident % goes below 100
         bucket_name = self.bucket_util.buckets[0].name
         curr_active = self.get_active_resident_threshold(bucket_name)
-        while curr_active == 100:
+        while curr_active >= threshold:
             self.subsequent_data_load(data_load_spec="dgm_load")
             curr_active = self.get_active_resident_threshold(bucket_name)
             self.log.info("curr_active resident {0} %".format(curr_active))
@@ -493,12 +494,12 @@ class CollectionsRebalance(CollectionBase):
             data_load_spec = self.data_load_spec
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
         self.over_ride_template_params(doc_loading_spec)
-        if self.dgm_test:
-            if data_load_spec == "volume_test_load":
-                doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
-            else:
-                # reduce the create ops
-                doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 5
+        if data_load_spec == "dgm_load":
+            # pre-load to dgm
+            doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 2
+        else:
+            # Do only deletes during dgm + rebalance op
+            doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         if self.forced_hard_failover and self.spec_name == "multi_bucket.buckets_for_rebalance_tests_more_collections":
             # create collections, else if other bucket_spec - then just "create" ops
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
