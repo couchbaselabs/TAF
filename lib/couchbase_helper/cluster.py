@@ -803,8 +803,10 @@ class ServerTasks(object):
         Returns:
             boolean - Whether or not the bucket was flushed."""
         _task = self.async_failover(servers, failover_nodes, graceful,
-                                    use_hostnames)
-        return _task.result(timeout)
+                                    use_hostnames,timeout)
+        self.jython_task_manager.get_task_result(_task)
+        return _task.result
+        #return _task.result(timeout)
 
     def async_bucket_flush(self, server, bucket='default'):
         """

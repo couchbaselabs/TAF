@@ -723,8 +723,8 @@ class ClusterUtils:
                 knownNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in otpnode],
                 wait_for_rebalance=wait_for_rebalance)
-        if wait_for_rebalance:
-            removed
+        #if wait_for_rebalance:
+            #removed
             # self.assertTrue(removed,
             # "Rebalance operation failed while removing %s,"%otpnode)
 

@@ -55,11 +55,17 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.invalid_value = "invalid"
         self.invalid_ip = "172.19.202.132"
+        self.log.info("================================================================")
+        self.log.info("SETUP has finished")
+        self.log.info("================================================================")
 
     def tearDown(self):
         """
         If certs were setup, then remove those certs and restore default certs.
         """
+        self.log.info("================================================================")
+        self.log.info("TEARDOWN has started")
+        self.log.info("================================================================")
         if hasattr(self, "dataverse_map"):
             for dataverse, links in self.dataverse_map.iteritems():
                 for link in links:
@@ -92,6 +98,9 @@ class CBASExternalLinks(CBASBaseTest):
             cluster.cluster_util.reset_cluster()
         
         super(CBASExternalLinks, self).tearDown()
+        self.log.info("================================================================")
+        self.log.info("Teardown has finished")
+        self.log.info("================================================================")
 
     def setup_certs(self):
         """
@@ -136,7 +145,9 @@ class CBASExternalLinks(CBASBaseTest):
             self.log.info(" Path is {0} - Prefixs - {1} -- Delimeters - {2}".format(self.paths, self.prefixs, self.delimeters))
 
             if self.setup_once:
+                self.sleep(5, "Sleeping before uploading root certs.")
                 cluster.x509.setup_master(self.client_cert_state, self.paths, self.prefixs, self.delimeters)
+                self.sleep(5, "Sleeping before uploading node certs.")
                 cluster.x509.setup_cluster_nodes_ssl(cluster.servers)
             copytree(cluster.x509.CACERTFILEPATH, cluster.CACERTFILEPATH)
             self.log.info (" list of server {0}".format(copy_servers))
@@ -409,7 +420,7 @@ class CBASExternalLinks(CBASBaseTest):
                                 if helper.is_cluster_healthy():
                                     service_up = True
                             except Exception as err:
-                            	self.log.error(str(err))
+                                self.log.error(str(err))
                                 if count > 12:
                                     raise Exception("Couchbase service did not start even after 2 mins.")
     
@@ -862,6 +873,8 @@ class CBASExternalLinks(CBASBaseTest):
                         link_name="{0}.{1}".format(link_properties["dataverse"], link_properties["name"])):
                         raise Exception( "Error while connecting the link ")
                     self.validate_alter_link(to_cluster, link_properties)
+                    if not response:
+                        raise Exception("Altering link properties failed.")
                 
                 if testcase.get("new_user",None):
                     to_cluster.rbac_util._drop_user(testcase["new_user"].replace("[*]",""))
@@ -1509,10 +1522,9 @@ class CBASExternalLinks(CBASBaseTest):
         if run_query:
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
-            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement,
-                                                                          "async",
-                                                                          self.num_concurrent_queries,
-                                                                          wait_for_execution=False)
+            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async",
+                                                                               int(self.input.param("num_queries", 0)),
+                                                                               wait_for_execution=False)
 
         self.log.info("Fetch node to remove during rebalance")
         out_nodes = []
@@ -1565,8 +1577,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
             handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async",
-                                                                          self.num_concurrent_queries,
-                                                                          wait_for_execution=False)
+                                                                               int(self.input.param("num_queries", 0)),
+                                                                               wait_for_execution=False)
 
         self.log.info("Rebalance in CBAS nodes")
         self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
@@ -1615,10 +1627,9 @@ class CBASExternalLinks(CBASBaseTest):
         if run_query:
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
-            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement,
-                                                                          "async",
-                                                                          self.num_concurrent_queries,
-                                                                          wait_for_execution=False)
+            handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async",
+                                                                               int(self.input.param("num_queries", 0)),
+                                                                               wait_for_execution=False)
 
         self.log.info("Fetch node to remove during rebalance")
         out_nodes = []
@@ -1675,8 +1686,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
             handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async",
-                                                                          self.num_concurrent_queries,
-                                                                          wait_for_execution=False)
+                                                                               int(self.input.param("num_queries", 0)),
+                                                                               wait_for_execution=False)
 
 
         self.log.info("Fetch node to remove during rebalance")
@@ -1725,9 +1736,6 @@ class CBASExternalLinks(CBASBaseTest):
         self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
                                                      rebalance=True, wait_for_rebalance_completion=True)
 
-        self.log.info("Read the failure out type to be performed")
-        graceful_failover = self.input.param("graceful_failover", False)
-
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create", end_key=self.num_items, _async=True,
                                                       cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
@@ -1737,15 +1745,17 @@ class CBASExternalLinks(CBASBaseTest):
             self.log.info("Run concurrent queries to simulate busy system")
             statement = "select sleep(count(*),50000) from {0} where mutated=0;".format(self.cbas_dataset_name)
             handles = self.analytics_cluster.cbas_util._run_concurrent_queries(statement, "async",
-                                                                          self.num_concurrent_queries,
-                                                                          wait_for_execution=False)
+                                                                               int(self.input.param("num_queries", 0)),
+                                                                               wait_for_execution=False)
 
         self.log.info("fail-over the node")
-        failover_task = self.task.failover(self.analytics_cluster.servers, failover_nodes=[rebalanceServers[0]],
-                                           graceful=graceful_failover, timeout=300)
+        if not self.task.failover(self.analytics_cluster.servers, failover_nodes=[rebalanceServers[0]],
+                                  graceful=False, timeout=300):
+            self.fail("Error while node failover")
 
         self.log.info("Read input param to decide on add back or rebalance out")
         self.rebalance_out = self.input.param("rebalance_out", False)
+        self.sleep(10, "Sleeping before removing or adding back the failed over node")
         if self.rebalance_out:
             self.log.info("Rebalance out the fail-over node")
             result = self.analytics_cluster.cluster_util.rebalance()

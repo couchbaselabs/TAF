@@ -1267,7 +1267,7 @@ class RestConnection(object):
         return status
 
     def set_recovery_type(self, otpNode=None, recoveryType=None):
-        self.test_log.debug("{0} - Setting recoveryType={0}"
+        self.test_log.debug("{0} - Setting recoveryType={1}"
                             .format(otpNode, recoveryType))
         if otpNode is None:
             self.test_log.error('{0} - Required otpNode parameter'

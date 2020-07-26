@@ -11,6 +11,7 @@ from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
 
 rbac_users_created = {}
 
+
 class CBASExternalLinks(CBASBaseTest):
 
     def setUp(self):
@@ -18,8 +19,8 @@ class CBASExternalLinks(CBASBaseTest):
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
         super(CBASExternalLinks, self).setUp()
-        
-        self.aws_access_key ,self.aws_secret_key ,self.aws_session_token = self.get_aws_credentials()
+
+        self.aws_access_key, self.aws_secret_key, self.aws_session_token = self.get_aws_credentials()
 
         self.dataset_created = False
         self.link_created = False
@@ -27,14 +28,15 @@ class CBASExternalLinks(CBASBaseTest):
         self.speed_limit_set = False
 
         self.service_endpoint = None
-        self.aws_bucket_name = self.input.test_params.get("aws_bucket_name", "cbas-regression-{0}".format(random.randint(1,1000)))
+        self.aws_bucket_name = self.input.test_params.get("aws_bucket_name",
+                                                          "cbas-regression-{0}".format(random.randint(1, 1000)))
         self.aws_region_list = perform_S3_operation(
             aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-            aws_session_token=self.aws_session_token,get_regions=True)
+            aws_session_token=self.aws_session_token, get_regions=True)
         self.region = random.choice(self.aws_region_list)
 
         self.rbac_util = RbacUtils(self.cluster.master)
-        
+
         # Create analytics admin user on Analytics cluster
         self.analytics_username = "admin_analytics"
         self.rbac_util._create_user_and_grant_role(self.analytics_username, "analytics_admin")
@@ -43,23 +45,29 @@ class CBASExternalLinks(CBASBaseTest):
         self.invalid_value = "invalid"
         self.invalid_ip = "127.0.0.99"
         self.invalid_region = "us-west-6"
+        self.log.info("================================================================")
+        self.log.info("SETUP has finished")
+        self.log.info("================================================================")
 
     def tearDown(self):
+        self.log.info("================================================================")
+        self.log.info("TEARDOWN has started")
+        self.log.info("================================================================")
         if self.speed_limit_set:
             for server in self.cluster.servers:
                 RemoteUtilHelper.clear_all_speed_restrictions(server)
         if self.aws_bucket_created:
             if not perform_S3_operation(
-                aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                aws_session_token=self.aws_session_token,create_bucket=False, 
-                bucket_name=self.aws_bucket_name, delete_bucket=True):
+                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token, create_bucket=False,
+                    bucket_name=self.aws_bucket_name, delete_bucket=True):
                 self.log.error("Error while deleting AWS S3 bucket.")
 
         if self.dataset_created:
             self.cbas_util.drop_dataset(cbas_dataset_name=self.dataset_params["cbas_dataset_name"],
-                                                          dataverse=self.dataset_params["dataverse"])
+                                        dataverse=self.dataset_params["dataverse"])
         if self.link_created:
-            self.cbas_util.drop_link_on_cbas(link_name= "{0}.{1}".format(
+            self.cbas_util.drop_link_on_cbas(link_name="{0}.{1}".format(
                 self.link_info["dataverse"],
                 self.link_info["name"]))
 
@@ -74,11 +82,14 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.cluster_util.reset_cluster()
         super(CBASExternalLinks, self).tearDown()
-    
+        self.log.info("================================================================")
+        self.log.info("Teardown has finished")
+        self.log.info("================================================================")
+
     def get_aws_credentials(self, user='full_access'):
         with open("/etc/aws_config.json", "r") as fh:
             cred = json.loads(fh.read())
-        return cred[user]["aws_access_key"],cred[user]["aws_secret_key"],cred[user]["aws_session_token"]
+        return cred[user]["aws_access_key"], cred[user]["aws_secret_key"], cred[user]["aws_session_token"]
 
     def get_link_property_dict(self, access_key, secret_key, serviceEndpoint=None):
         """
@@ -93,7 +104,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.link_info["accessKeyId"] = access_key
         self.link_info["secretAccessKey"] = secret_key
         self.link_info["serviceEndpoint"] = serviceEndpoint
-    
+
     def get_dataset_parameters(self, cbas_dataset_name=None, aws_bucket_name=None, link_name=None,
                                object_construction_def=None, dataverse="Default",
                                path_on_aws_bucket=None, file_format="json", redact_warning=None,
@@ -137,68 +148,80 @@ class CBASExternalLinks(CBASBaseTest):
             self.dataset_params["links_dataverse"] = self.link_info["dataverse"]
 
     def setup_for_dataset(self):
-        if not perform_S3_operation(
-            aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-            aws_session_token=self.aws_session_token,create_bucket=True,
-            bucket_name=self.aws_bucket_name, region=self.region):
-            self.fail("Creating S3 bucket - {0}. Failed.".format(self.aws_bucket_name))
-        self.aws_bucket_created = True
+        retry = 0
+        while (not self.aws_bucket_created) and retry < 3:
+            try:
+                if not perform_S3_operation(
+                        aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                        aws_session_token=self.aws_session_token, create_bucket=True,
+                        bucket_name=self.aws_bucket_name, region=self.region):
+                    self.fail("Creating S3 bucket - {0}. Failed.".format(self.aws_bucket_name))
+                self.aws_bucket_created = True
+            except Exception as err:
+                if "InvalidLocationConstraint" in str(err):
+                    self.aws_bucket_name = self.input.test_params.get("aws_bucket_name", "cbas-regression-{0}".format(
+                        random.randint(1, 1000)))
+                    self.region = random.choice(self.remove_and_return_new_list(self.aws_region_list, self.region))
+                    retry += 1
+                else:
+                    raise Exception(err)
         self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
         if not self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info):
             self.fail("link creation failed")
         self.link_created = True
         self.get_dataset_parameters()
         self.s3_data_helper = S3DataHelper(
-            aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key, 
+            aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
             aws_session_token=self.aws_session_token, cluster=self.cluster,
             bucket_util=self.bucket_util, rest=self.rest, task=self.task, log=self.log)
-    
-    def execute_cbas_query(self, cbas_query, result,timeout=120,analytics_timeout=120):
+
+    def execute_cbas_query(self, cbas_query, result, timeout=120, analytics_timeout=120):
         status, metrics, errors, cbas_result, handle = self.cbas_util.execute_statement_on_cbas_util(cbas_query,
                                                                                                      timeout=timeout,
                                                                                                      analytics_timeout=analytics_timeout)
-        result.extend([status,cbas_result,errors])
-    
+        result.extend([status, cbas_result, errors])
+
     def perform_delete_recreate_file_on_AWS_S3(self, bucket_name, filename, dest_path, delete_only=False):
         if not perform_S3_operation(
-            aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-            aws_session_token=self.aws_session_token,bucket_name=bucket_name, delete_file=True, file_path=filename):
+                aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                aws_session_token=self.aws_session_token, bucket_name=bucket_name, delete_file=True,
+                file_path=filename):
             self.fail("Error while deleting file from S3")
         if not delete_only:
             if not perform_S3_operation(
-                aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                aws_session_token=self.aws_session_token,bucket_name=bucket_name, upload_file=True, 
-                src_path=dest_path, dest_path=filename):
+                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token, bucket_name=bucket_name, upload_file=True,
+                    src_path=dest_path, dest_path=filename):
                 self.fail("Error while uploading file from S3")
-    
+
     def get_n1ql_query(self, query_name):
         query_dict = {
-            "count_all" : "Select count(*) from `{0}`;",
+            "count_all": "Select count(*) from `{0}`;",
             "count_from_csv": "select count(*) from {0} where filename like '%.csv';",
             "count_from_tsv": "select count(*) from {0} where filename like '%.tsv';",
             "count_from_json": "select count(*) from {0} where filename like '%.json';",
             "invalid_folder": "select count(*) from {0} where folder like 'invalid/invalid';",
             "valid_folder": "select count(*) from {0} where folder like '{1}%';"
-            }
+        }
         return query_dict[query_name]
-    
+
     def get_include_exclude_flag(self, include=True, key_name='0'):
         include_dict = {
-            "1": ["file_[1234567890].json","*.json"],
-            "2": ["file_[1234567890].csv","*.csv"],
-            "3": ["file_[1234567890].tsv","*.tsv"],
+            "1": ["file_[1234567890].json", "*.json"],
+            "2": ["file_[1234567890].csv", "*.csv"],
+            "3": ["file_[1234567890].tsv", "*.tsv"],
             "4": 'file_?.[!ct]s[!v]*',
             "5": 'file_?.[!t]sv',
             "6": 'file_?.[!c]sv'
-            }
+        }
         exclude_dict = {
-            "1": ["*.csv","*.tsv"],
-            "2": ["*.json","*.tsv"],
-            "3": ["*.json","*.csv"],
+            "1": ["*.csv", "*.tsv"],
+            "2": ["*.json", "*.tsv"],
+            "3": ["*.json", "*.csv"],
             "4": 'file_?*.[ct]s[!o]',
             "5": 'file_?*.[t]s[!v]',
             "6": 'file_?*.[c]s[!v]'
-            }
+        }
         if include:
             return include_dict.get(key_name, None)
         else:
@@ -330,7 +353,8 @@ class CBASExternalLinks(CBASBaseTest):
                             if not (response[0]["secretAccessKey"] == "<redacted sensitive entry>"):
                                 self.fail("secretAccessKey does not match. Expected - {0}\nActual - {1}".format(
                                     "<redacted sensitive entry>", response[0]["secretAccessKey"]))
-                            if not (response[0]["serviceEndpoint"] == self.dataverse_map[dataverse][link]["serviceEndpoint"]):
+                            if not (response[0]["serviceEndpoint"] == self.dataverse_map[dataverse][link][
+                                "serviceEndpoint"]):
                                 self.fail("serviceEndpoint does not match. Expected - {0}\nActual - {1}".format(
                                     self.dataverse_map[dataverse][link]["serviceEndpoint"],
                                     response[0]["serviceEndpoint"]))
@@ -398,32 +422,34 @@ class CBASExternalLinks(CBASBaseTest):
 
             testcases = testcases + rbac_testcases
             failed_testcases = list()
-            
+
             for testcase in testcases:
                 try:
                     self.log.info(testcase["description"])
                     response = self.cbas_util.get_link_info(link_name=testcase.get("name", None),
                                                             dataverse=testcase.get("dataverse", None),
                                                             link_type=testcase.get("type", None),
-                                                            validate_error_msg=testcase.get("validate_error_msg", False),
-                                                            expected_error=testcase.get("expected_error",None),
+                                                            validate_error_msg=testcase.get("validate_error_msg",
+                                                                                            False),
+                                                            expected_error=testcase.get("expected_error", None),
                                                             username=testcase.get("username", self.analytics_username))
                     if testcase.get("validate_error_msg", False):
                         if not response:
                             raise Exception("Error message is different than expected.")
                     else:
                         if not (len(response) == testcase["expected_hits"]):
-                            raise Exception("Expected links - {0} \t Actual links - {1}".format(testcase["expected_hits"], 
-                                                                                                len(response)))
+                            raise Exception(
+                                "Expected links - {0} \t Actual links - {1}".format(testcase["expected_hits"],
+                                                                                    len(response)))
                         if not (response[0]["dataverse"] == self.link_info["dataverse"]):
-                            raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["dataverse"], 
+                            raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["dataverse"],
                                                                                    response[0]["dataverse"]))
                         if not (response[0]["name"] == self.link_info["name"]):
-                            raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["name"], 
+                            raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["name"],
                                                                                    response[0]["name"]))
                         if not (response[0]["type"] == self.link_info["type"]):
-                            raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["type"], 
-                                                                             response[0]["type"]))
+                            raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["type"],
+                                                                                   response[0]["type"]))
                         if not (response[0]["accessKeyId"] == self.link_info["accessKeyId"]):
                             raise Exception("Access key ID does not match. Expected - {0}\nActual - {1}".format(
                                 self.link_info["accessKeyId"], response[0]["accessKeyId"]))
@@ -446,10 +472,10 @@ class CBASExternalLinks(CBASBaseTest):
 
     def test_alter_link_properties(self):
         self.setup_for_dataset()
-        
+
         # Create users with all RBAC roles.
         self.create_or_delete_users(self.rbac_util, rbac_users_created)
-        
+
         aws_access_key_1, aws_secret_key_1, aws_session_token_1 = self.get_aws_credentials("full_access_2")
         region2 = random.choice(self.remove_and_return_new_list(self.aws_region_list, self.link_info["region"]))
 
@@ -496,7 +522,7 @@ class CBASExternalLinks(CBASBaseTest):
             {
                 "description": "Changing serviceEndpoint to an invalid serviceEndpoint",
                 "serviceEndpoint": self.invalid_value
-             }
+            }
         ]
         rbac_testcases = self.create_testcase_for_rbac_user("Altering external link properties using {0} user",
                                                             rbac_users_created)
@@ -505,29 +531,29 @@ class CBASExternalLinks(CBASBaseTest):
                 testcase["expected_error"] = "Unauthorized user"
         testcases = testcases + rbac_testcases
         failed_testcases = list()
-        
+
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Failed to create dataset")
-        self.dataset_created=True
-        
+        self.dataset_created = True
+
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
-                    aws_bucket_name=self.dataset_params["aws_bucket_name"],
-                    key=self.key,
-                    no_of_files=1,
-                    file_formats=["json"],
-                    no_of_folders=0,
-                    max_folder_depth=0,
-                    header=False,
-                    null_key="",
-                    operation="create",
-                    bucket=self.bucket_util.buckets[0],
-                    no_of_docs=10,
-                    randomize_header=False,
-                    large_file=False,
-                    missing_field=[False])
+            aws_bucket_name=self.dataset_params["aws_bucket_name"],
+            key=self.key,
+            no_of_files=1,
+            file_formats=["json"],
+            no_of_folders=0,
+            max_folder_depth=0,
+            header=False,
+            null_key="",
+            operation="create",
+            bucket=self.bucket_util.buckets[0],
+            no_of_docs=10,
+            randomize_header=False,
+            large_file=False,
+            missing_field=[False])
         if result:
             self.fail("Error while uploading files to S3")
-        
+
         cbas_query = "Select count(*) from `{0}`;".format(self.dataset_params["cbas_dataset_name"])
         status, metrics, errors, cbas_result, handle = self.cbas_util.execute_statement_on_cbas_util(
             cbas_query, timeout=120, analytics_timeout=120)
@@ -535,26 +561,26 @@ class CBASExternalLinks(CBASBaseTest):
         for testcase in testcases:
             try:
                 self.log.info(testcase["description"])
-                
+
                 link_properties = copy.deepcopy(self.link_info)
-                
+
                 # Copying link property values for the testcase, to link_property dict, to create a new link.
                 for key, value in testcase.iteritems():
                     if key in link_properties:
                         link_properties[key] = value
-                
+
                 if testcase.get("new_dataverse", False):
                     link_properties["dataverse"] = "dataverse2"
                     if not self.cbas_util.create_dataverse_on_cbas(dataverse_name=link_properties["dataverse"],
                                                                    username=self.analytics_username):
                         raise Exception("Dataverse creation failed")
-    
+
                 response = self.cbas_util.update_external_link_properties(
                     link_properties, validate_error_msg=testcase.get("validate_error_msg", False),
                     expected_error=testcase.get("expected_error", None),
                     username=testcase.get("username", self.analytics_username))
-    
-                if testcase.get("validate_error_msg",False):
+
+                if testcase.get("validate_error_msg", False):
                     if not response:
                         raise Exception("Error message is different than expected.")
                 else:
@@ -566,12 +592,13 @@ class CBASExternalLinks(CBASBaseTest):
                         elif errors and "External source error" in errors[0]["msg"]:
                             pass
                         else:
-                            raise Exception("Following error is raised while reading data from AWS after altering the link\nERROR : {0}"
-                                        .format(str(errors)))
-                            
+                            raise Exception(
+                                "Following error is raised while reading data from AWS after altering the link\nERROR : {0}"
+                                .format(str(errors)))
+
                     elif cbas_result[0]["$1"] != cbas_result_2[0]["$1"]:
                         raise Exception("Data read from AWS before and after altering link do not match")
-                    
+
                     response2 = self.cbas_util.get_link_info(link_name=link_properties["name"],
                                                              dataverse=link_properties["dataverse"])[0]
                     if not (response2["accessKeyId"] == link_properties["accessKeyId"]):
@@ -586,18 +613,18 @@ class CBASExternalLinks(CBASBaseTest):
                     if not (response2["serviceEndpoint"] == link_properties["serviceEndpoint"]):
                         raise Exception("serviceEndpoint does not match. Expected - {0}\nActual - {1}".format(
                             link_properties["serviceEndpoint"], response2["serviceEndpoint"]))
-                
+
                 if testcase.get("new_dataverse", False):
                     if not self.cbas_util.drop_dataverse_on_cbas(dataverse_name=link_properties["dataverse"],
                                                                  username=self.analytics_username):
                         raise Exception("Dataverse creation failed")
-                
+
                 self.log.info("Test Passed")
-            
+
             except Exception as err:
                 self.log.error(str(err))
                 failed_testcases.append(testcase["description"])
-                
+
         if failed_testcases:
             self.fail("Following testcases failed - {0}".format(str(failed_testcases)))
 
@@ -606,10 +633,10 @@ class CBASExternalLinks(CBASBaseTest):
         if self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info):
             self.link_created = True
             if not self.cbas_util.connect_link(
-                link_name="{0}.{1}".format(self.link_info["dataverse"], self.link_info["name"]),
-                validate_error_msg=True, 
-                expected_error="Link {0}.{1} cannot be used for data ingestion".format(self.link_info["dataverse"], 
-                                                                                       self.link_info["name"])):
+                    link_name="{0}.{1}".format(self.link_info["dataverse"], self.link_info["name"]),
+                    validate_error_msg=True,
+                    expected_error="Link {0}.{1} cannot be used for data ingestion".format(self.link_info["dataverse"],
+                                                                                           self.link_info["name"])):
                 self.fail("Expected error message different from actual error message")
         else:
             self.fail("Link creation failed")
@@ -619,10 +646,10 @@ class CBASExternalLinks(CBASBaseTest):
         if self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info):
             self.link_created = True
             if not self.cbas_util.disconnect_link(
-                link_name="{0}.{1}".format(self.link_info["dataverse"], self.link_info["name"]),
-                validate_error_msg=True, 
-                expected_error="Link {0}.{1} cannot be used for data ingestion".format(self.link_info["dataverse"], 
-                                                                                       self.link_info["name"])):
+                    link_name="{0}.{1}".format(self.link_info["dataverse"], self.link_info["name"]),
+                    validate_error_msg=True,
+                    expected_error="Link {0}.{1} cannot be used for data ingestion".format(self.link_info["dataverse"],
+                                                                                           self.link_info["name"])):
                 self.fail("Expected error message different from actual error message")
         else:
             self.fail("Link creation failed")
@@ -633,13 +660,13 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Create users with all RBAC roles.
         self.create_or_delete_users(self.rbac_util, rbac_users_created)
-        
+
         new_region = random.choice(self.remove_and_return_new_list(self.aws_region_list, self.link_info["region"]))
-        new_aws_bucket = "new-cbas-regression-{0}".format(random.randint(1,1000))
+        new_aws_bucket = "new-cbas-regression-{0}".format(random.randint(1, 1000))
 
         def create_bucket_in_other_region(aws_bucket, region):
             if perform_S3_operation(aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                                    aws_session_token=self.aws_session_token,create_bucket=True,
+                                    aws_session_token=self.aws_session_token, create_bucket=True,
                                     bucket_name=aws_bucket, region=region):
                 return True
             else:
@@ -650,8 +677,9 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Create dataset with same name",
                 "recreate_dataset": True,
                 "validate_error_msg": True,
-                "expected_error": "A dataset with name {0} already exists in dataverse {1}".format(self.cbas_dataset_name,
-                                                                                                   self.link_info["dataverse"])
+                "expected_error": "A dataset with name {0} already exists in dataverse {1}".format(
+                    self.cbas_dataset_name,
+                    self.link_info["dataverse"])
             },
             {
                 "description": "Create dataset without type definition for CSV format",
@@ -705,7 +733,7 @@ class CBASExternalLinks(CBASBaseTest):
             {
                 "description": "Create dataset in different dataverse than link",
                 "dataverse": "dataverse2",
-                "link_name": "{0}.{1}".format(self.link_info["dataverse"],self.link_info["name"]),
+                "link_name": "{0}.{1}".format(self.link_info["dataverse"], self.link_info["name"]),
                 "new_dataverse": True,
                 "validate_error_msg": False
             },
@@ -867,17 +895,17 @@ class CBASExternalLinks(CBASBaseTest):
                     if param in dataset_param:
                         dataset_param[param] = testcase[param]
 
-                if testcase.get("new_dataverse",False):
+                if testcase.get("new_dataverse", False):
                     if not self.cbas_util.create_dataverse_on_cbas(dataset_param["dataverse"]):
                         raise Exception("Error while creating new dataverse")
 
-                if testcase.get("recreate_dataset",False):
+                if testcase.get("recreate_dataset", False):
                     dataset_param["validate_error_msg"] = False
 
                 if not self.cbas_util.create_dataset_on_external_resource(**dataset_param):
                     raise Exception("Error while creating dataset")
 
-                if testcase.get("recreate_dataset",False):
+                if testcase.get("recreate_dataset", False):
                     dataset_param["validate_error_msg"] = True
                     if not self.cbas_util.create_dataset_on_external_resource(**dataset_param):
                         raise Exception("Error while creating dataset")
@@ -890,10 +918,10 @@ class CBASExternalLinks(CBASBaseTest):
 
                 if testcase.get("new_bucket", False):
                     if not perform_S3_operation(
-                        aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                        aws_session_token=self.aws_session_token,create_bucket=False, 
-                        bucket_name=dataset_param["aws_bucket_name"], 
-                        delete_bucket=True):
+                            aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                            aws_session_token=self.aws_session_token, create_bucket=False,
+                            bucket_name=dataset_param["aws_bucket_name"],
+                            delete_bucket=True):
                         raise Exception("Error while deleting bucket")
 
                 if not dataset_param["validate_error_msg"]:
@@ -927,10 +955,10 @@ class CBASExternalLinks(CBASBaseTest):
         for param in self.dataset_params:
             if param in self.input.test_params:
                 if param == "include":
-                    self.dataset_params[param] = self.get_include_exclude_flag(True, 
+                    self.dataset_params[param] = self.get_include_exclude_flag(True,
                                                                                self.input.test_params.get(param))
                 elif param == "exclude":
-                    self.dataset_params[param] = self.get_include_exclude_flag(False, 
+                    self.dataset_params[param] = self.get_include_exclude_flag(False,
                                                                                self.input.test_params.get(param))
                 else:
                     self.dataset_params[param] = self.convert_string_to_bool(self.input.test_params.get(param))
@@ -938,24 +966,24 @@ class CBASExternalLinks(CBASBaseTest):
         # generate and upload data to AWS S3
         if self.convert_string_to_bool(self.input.test_params.get("mix_data_file", False)):
             if not self.s3_data_helper.generate_mix_data_file(
-                self.dataset_params["aws_bucket_name"], file_format=self.dataset_params["file_format"], 
-                upload_to_s3=True):
+                    self.dataset_params["aws_bucket_name"], file_format=self.dataset_params["file_format"],
+                    upload_to_s3=True):
                 self.fail("Error while uploading files to S3")
         elif self.input.test_params.get("file_extension", None):
             if not self.s3_data_helper.generate_file_with_record_of_size_and_upload(
-                self.dataset_params["aws_bucket_name"], "sample", 
-                record_size=1024, file_format=self.dataset_params["file_format"], 
-                upload_to_s3=True, file_extension=self.input.test_params.get("file_extension")):
+                    self.dataset_params["aws_bucket_name"], "sample",
+                    record_size=1024, file_format=self.dataset_params["file_format"],
+                    upload_to_s3=True, file_extension=self.input.test_params.get("file_extension")):
                 self.fail("Error while uploading files to S3")
         else:
-            missing_field = json.loads(self.input.test_params.get("missing_field","[\"False\"]"))
+            missing_field = json.loads(self.input.test_params.get("missing_field", "[\"False\"]"))
             for field in missing_field:
                 missing_field.append(self.convert_string_to_bool(field))
                 missing_field.remove(field)
             result = self.s3_data_helper.generate_data_for_s3_and_upload(
                 aws_bucket_name=self.dataset_params["aws_bucket_name"],
                 key=self.key,
-                no_of_files=int(self.input.test_params.get("no_of_files",5)),
+                no_of_files=int(self.input.test_params.get("no_of_files", 5)),
                 file_formats=json.loads(self.input.test_params.get("file_format_for_upload", "[\"json\"]")),
                 no_of_folders=int(self.input.test_params.get("no_of_folders", 0)),
                 max_folder_depth=int(self.input.test_params.get("max_folder_depth", 0)),
@@ -963,17 +991,17 @@ class CBASExternalLinks(CBASBaseTest):
                 null_key=self.input.test_params.get("null_s3_file", ""),
                 operation="create",
                 bucket=self.bucket_util.buckets[0],
-                no_of_docs=int(self.input.test_params.get("no_of_docs",100)),
+                no_of_docs=int(self.input.test_params.get("no_of_docs", 100)),
                 randomize_header=self.convert_string_to_bool(self.input.test_params.get("randomize_header", False)),
-                large_file=self.convert_string_to_bool(self.input.test_params.get("large_file",False)),
+                large_file=self.convert_string_to_bool(self.input.test_params.get("large_file", False)),
                 missing_field=missing_field)
             if result:
                 self.fail("Error while uploading files to S3")
-        
+
         # run query on dataset and on bucket that was used to generate AWS data.
         n1ql_query = self.get_n1ql_query(self.input.test_params.get("n1ql_query", "count_all"))
         cbas_query = self.input.test_params.get("cbas_query", "Select count(*) from `{0}`;")
-                
+
         # path_on_aws_bucket is used to set Using condition in create dataset DDL, when path_on_aws_bucket is True,
         # we will set the USING condition with valid AWS path else if False we will set it with invalid AWS path.
         if self.convert_string_to_bool(self.input.test_params.get("select_aws_path", False)):
@@ -982,26 +1010,26 @@ class CBASExternalLinks(CBASBaseTest):
                 while folder_name == "":
                     folder_name = random.choice(self.s3_data_helper.folders)
                 self.dataset_params["path_on_aws_bucket"] = folder_name
-                n1ql_query = n1ql_query.format("{0}",folder_name)
-        
+                n1ql_query = n1ql_query.format("{0}", folder_name)
+
         if self.convert_string_to_bool(self.input.test_params.get("invalid_aws_path", False)):
             self.dataset_params["path_on_aws_bucket"] = "invalid/invalid"
 
         # create dataset
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Failed to create dataset")
-        self.dataset_created=True
-        
+        self.dataset_created = True
+
         n1ql_result = self.rest.query_tool(n1ql_query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
         status, metrics, errors, cbas_result, handle = self.cbas_util.execute_statement_on_cbas_util(
             cbas_query.format(self.dataset_params["cbas_dataset_name"]), timeout=120, analytics_timeout=120)
-        
-        if self.convert_string_to_bool(self.input.test_params.get("header",False)) and\
-         not self.convert_string_to_bool(self.input.test_params.get("header_s3_file",False)):
-            n1ql_result -= int(self.input.test_params.get("no_of_files",5))
-        elif not self.convert_string_to_bool(self.input.test_params.get("header",False)) and\
-         self.convert_string_to_bool(self.input.test_params.get("header_s3_file",False)):
-            if not metrics['warningCount'] == int(self.input.test_params.get("no_of_files",5)):
+
+        if self.convert_string_to_bool(self.input.test_params.get("header", False)) and \
+                not self.convert_string_to_bool(self.input.test_params.get("header_s3_file", False)):
+            n1ql_result -= int(self.input.test_params.get("no_of_files", 5))
+        elif not self.convert_string_to_bool(self.input.test_params.get("header", False)) and \
+                self.convert_string_to_bool(self.input.test_params.get("header_s3_file", False)):
+            if not metrics['warningCount'] == int(self.input.test_params.get("no_of_files", 5)):
                 self.fail("No warnings were raised for data mismatch while querying on csv or tsv file.")
 
         if self.convert_string_to_bool(self.input.test_params.get("validate_error_conditions", False)):
@@ -1019,21 +1047,21 @@ class CBASExternalLinks(CBASBaseTest):
         new_user_role = "analytics_reader"
         self.rbac_util._create_user_and_grant_role(new_username, original_user_role)
         rbac_users_created[new_username] = None
-        
+
         self.setup_for_dataset()
-        
+
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
-        self.dataset_created=True
-        
+        self.dataset_created = True
+
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
             aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
-            no_of_files=5, file_formats=["json"], no_of_folders=0, max_folder_depth=0, 
+            no_of_files=5, file_formats=["json"], no_of_folders=0, max_folder_depth=0,
             header=False, null_key="", operation="create", bucket=self.bucket_util.buckets[0],
             no_of_docs=100, randomize_header=False, large_file=False, missing_field=[False])
         if result:
             self.fail("Error while uploading files to S3")
-        
+
         # run query on dataset and on bucket that was used to generate AWS data.
         n1ql_query = "Select count(*) from {0};".format(self.bucket_util.buckets[0].name)
         n1ql_result = self.rest.query_tool(n1ql_query)["results"][0]["$1"]
@@ -1049,26 +1077,26 @@ class CBASExternalLinks(CBASBaseTest):
         self.setup_for_dataset()
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
-        self.dataset_created=True
-        
+        self.dataset_created = True
+
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
             aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
-            no_of_files=5, file_formats=["json"], no_of_folders=0, max_folder_depth=0, 
+            no_of_files=5, file_formats=["json"], no_of_folders=0, max_folder_depth=0,
             header=False, null_key="", operation="create", bucket=self.bucket_util.buckets[0],
             no_of_docs=10000, randomize_header=False, large_file=False, missing_field=[False])
         if result:
             self.fail("Error while uploading files to S3")
-        
+
         shell = RemoteMachineShellConnection(self.cbas_node)
         self.speed_limit_set = True
-        
+
         cbas_query = "Select count(*) from `{0}`;".format(self.dataset_params["cbas_dataset_name"])
         result = list()
         threads = list()
         threads.append(Thread(
             target=self.execute_cbas_query,
             name="s3_query_thread",
-            args=(cbas_query,result,120,120,)
+            args=(cbas_query, result, 120, 120,)
         ))
         threads.append(Thread(
             target=shell.stop_network,
@@ -1086,113 +1114,113 @@ class CBASExternalLinks(CBASBaseTest):
         self.setup_for_dataset()
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
-        self.dataset_created=True
-        
+        self.dataset_created = True
+
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=self.dataset_params["aws_bucket_name"],key=self.key,no_of_files=1500,
-            file_formats=["json"],no_of_folders=0,max_folder_depth=0,
-            header=False,null_key="",operation="create",
-            bucket=self.bucket_util.buckets[0],no_of_docs=100000,
-            randomize_header=False,large_file=False,missing_field=[False])
+            aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key, no_of_files=1500,
+            file_formats=["json"], no_of_folders=0, max_folder_depth=0,
+            header=False, null_key="", operation="create",
+            bucket=self.bucket_util.buckets[0], no_of_docs=100000,
+            randomize_header=False, large_file=False, missing_field=[False])
         if result:
             self.fail("Error while uploading files to S3")
-        
+
         n1ql_query = "Select count(*) from {0};".format(self.bucket_util.buckets[0].name)
         n1ql_result = self.rest.query_tool(n1ql_query)["results"][0]["$1"]
         if not self.cbas_util.validate_cbas_dataset_items_count(self.dataset_params["cbas_dataset_name"], n1ql_result,
-                                                                timeout=3600,analytics_timeout=3600):
+                                                                timeout=3600, analytics_timeout=3600):
             self.fail("Expected data does not match actual data")
 
     def test_file_deletion_from_AWS_while_query_is_reading_file(self):
         self.setup_for_dataset()
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
-        self.dataset_created=True
-        
+        self.dataset_created = True
+
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=self.dataset_params["aws_bucket_name"],key=self.key,
-            no_of_files=int(self.input.test_params.get("no_of_files",5)),
-            file_formats=json.loads(self.input.test_params.get("file_format_for_upload","[\"json\"]")),
+            aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
+            no_of_files=int(self.input.test_params.get("no_of_files", 5)),
+            file_formats=json.loads(self.input.test_params.get("file_format_for_upload", "[\"json\"]")),
             no_of_folders=0,
             max_folder_depth=0,
-            header=self.convert_string_to_bool(self.input.test_params.get("header_s3_file",False)),
+            header=self.convert_string_to_bool(self.input.test_params.get("header_s3_file", False)),
             null_key=self.input.test_params.get("null_s3_file", ""),
             operation="create", bucket=self.bucket_util.buckets[0],
-            no_of_docs=int(self.input.test_params.get("no_of_docs",100)),
+            no_of_docs=int(self.input.test_params.get("no_of_docs", 100)),
             randomize_header=False,
-            large_file=self.convert_string_to_bool(self.input.test_params.get("large_file",False)),
+            large_file=self.convert_string_to_bool(self.input.test_params.get("large_file", False)),
             missing_field=[False])
 
         if result:
             self.fail("Error while uploading files to S3")
 
-        if self.convert_string_to_bool(self.input.test_params.get("delete_last_file",False)):
+        if self.convert_string_to_bool(self.input.test_params.get("delete_last_file", False)):
             # selecting a middle file to delete, as list object from aws returns object name in sorted alpha numeric way.
             file_to_delete = self.s3_data_helper.filenames[-1]
         else:
             file_to_delete = self.s3_data_helper.filenames[0]
-        
+
         if not self.convert_string_to_bool(self.input.test_params.get("recreate", False)) and \
-        self.convert_string_to_bool(self.input.test_params.get("delete_last_file",False)):
-            n1ql_query = "Select count(*) from `{0}` where filename != '{1}';".format(self.bucket_util.buckets[0].name, 
+                self.convert_string_to_bool(self.input.test_params.get("delete_last_file", False)):
+            n1ql_query = "Select count(*) from `{0}` where filename != '{1}';".format(self.bucket_util.buckets[0].name,
                                                                                       file_to_delete)
         else:
             n1ql_query = "Select count(*) from `{0}`;".format(self.bucket_util.buckets[0].name)
-            
+
         n1ql_result = self.rest.query_tool(n1ql_query)["results"][0]["$1"]
         cbas_query = "Select count(*) from {0};".format(self.dataset_params["cbas_dataset_name"])
-        
+
         dest_path = os.path.join(r"/tmp/", file_to_delete)
         if self.convert_string_to_bool(self.input.test_params.get("recreate", False)):
             # Downloading file to be deleted, so that it can be recreated again
             if not perform_S3_operation(
-                aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                aws_session_token=self.aws_session_token,bucket_name=self.dataset_params["aws_bucket_name"], 
-                download_file=True, src_path=file_to_delete, dest_path=dest_path):
+                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token, bucket_name=self.dataset_params["aws_bucket_name"],
+                    download_file=True, src_path=file_to_delete, dest_path=dest_path):
                 self.fail("Error while downloading file from S3")
             delete_only = False
         else:
             delete_only = True
-        
+
         for server in self.cluster.servers:
             RemoteUtilHelper.set_upload_download_speed(server=server, download=1000)
             self.speed_limit_set = True
-        
+
         result = list()
-        
+
         threads = list()
         thread1 = Thread(target=self.execute_cbas_query,
                          name="s3_query_thread",
-                         args=(cbas_query, result,300,300,))
+                         args=(cbas_query, result, 300, 300,))
         thread1.start()
         threads.append(thread1)
         self.sleep(30)
-        
+
         thread2 = Thread(target=self.perform_delete_recreate_file_on_AWS_S3,
                          name="s3_thread",
                          args=(self.dataset_params["aws_bucket_name"], file_to_delete, dest_path, delete_only,))
         thread2.start()
         threads.append(thread2)
-        
+
         while thread2.is_alive():
             self.sleep(1, "Waiting for thread to terminate")
-        
+
         for server in self.cluster.servers:
             RemoteUtilHelper.clear_all_speed_restrictions(server=server)
         self.speed_limit_set = False
-        
+
         for thread in threads:
             thread.join()
-        
+
         if os.path.exists(dest_path):
             os.remove(dest_path)
-        
+
         if not result[0] == "success":
             self.fail("query execution failed")
-        
+
         if not n1ql_result == result[1][0]["$1"]:
             self.fail("Expected data does not match actual data")
-    
+
     def get_rebalance_server(self):
         node_ip = [i.ip for i in self.rest.node_statuses()]
         rebalanceServers = list()
@@ -1200,9 +1228,10 @@ class CBASExternalLinks(CBASBaseTest):
             if not (server.ip in node_ip):
                 rebalanceServers.append(server)
         return rebalanceServers
-        
+
     def rebalance_cbas(self, rebalanceServers, node_services, rebalance_in=True,
-                       swap_rebalance=True, failover=True):
+                       swap_rebalance=True, failover=True, sleep_bofore_starting=0):
+        self.sleep(sleep_bofore_starting, "Sleeping before starting rebalance operations")
         self.log.info("Fetch node to remove during rebalance")
         if rebalance_in:
             self.log.info("Rebalance in CBAS nodes")
@@ -1212,11 +1241,12 @@ class CBASExternalLinks(CBASBaseTest):
                                        rebalance=True, wait_for_rebalance_completion=True)
         elif failover:
             self.log.info("fail-over the node")
-            self.task.failover(self.cluster.servers, failover_nodes=[rebalanceServers[0]],
-                               graceful=False, wait_for_pending=30)
-
+            if not self.task.failover(self.cluster.servers, failover_nodes=[rebalanceServers[0]],
+                                      graceful=False, timeout=300):
+                self.fail("Error while node failover")
             self.log.info("Read input param to decide on add back or rebalance out")
             self.rebalance_out = self.input.param("rebalance_out", False)
+            self.sleep(10, "Sleeping before removing or adding back the failed over node")
             if self.rebalance_out:
                 self.log.info("Rebalance out the fail-over node")
                 result = self.cluster_util.rebalance()
@@ -1256,10 +1286,10 @@ class CBASExternalLinks(CBASBaseTest):
         self.setup_for_dataset()
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
-        self.dataset_created=True
-        
+        self.dataset_created = True
+
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=self.dataset_params["aws_bucket_name"],key=self.key,
+            aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
             no_of_files=5,
             file_formats=["json"],
             no_of_folders=0,
@@ -1274,10 +1304,10 @@ class CBASExternalLinks(CBASBaseTest):
 
         if result:
             self.fail("Error while uploading files to S3")
-        
+
         query = "Select count(*) from `{0}`;"
         n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
-        
+
         rebalanceServers = self.get_rebalance_server()
 
         result = list()
@@ -1285,7 +1315,7 @@ class CBASExternalLinks(CBASBaseTest):
         threads.append(Thread(
             target=self.execute_cbas_query,
             name="s3_query_thread",
-            args=(query.format(self.dataset_params["cbas_dataset_name"]), result,120,120,)
+            args=(query.format(self.dataset_params["cbas_dataset_name"]), result, 120, 120,)
         ))
         threads.append(Thread(
             target=self.rebalance_cbas,
@@ -1316,14 +1346,14 @@ class CBASExternalLinks(CBASBaseTest):
         self.setup_for_dataset()
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
-        self.dataset_created=True
+        self.dataset_created = True
 
         rebalanceServers = self.get_rebalance_server()
         self.log.info("Rebalance in local cluster, this node will be removed during swap")
         self.cluster_util.add_node(node=rebalanceServers[0], services=node_services)
 
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=self.dataset_params["aws_bucket_name"],key=self.key,
+            aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
             no_of_files=5,
             file_formats=["json"],
             no_of_folders=0,
@@ -1338,7 +1368,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         if result:
             self.fail("Error while uploading files to S3")
-        
+
         query = "Select count(*) from `{0}`;"
         n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
 
@@ -1347,7 +1377,7 @@ class CBASExternalLinks(CBASBaseTest):
         threads.append(Thread(
             target=self.execute_cbas_query,
             name="s3_query_thread",
-            args=(query.format(self.dataset_params["cbas_dataset_name"]), result,120,120,)
+            args=(query.format(self.dataset_params["cbas_dataset_name"]), result, 120, 120,)
         ))
         threads.append(Thread(
             target=self.rebalance_cbas,
@@ -1380,7 +1410,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.setup_for_dataset()
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
-        self.dataset_created=True
+        self.dataset_created = True
 
         rebalanceServers = self.get_rebalance_server()
 
@@ -1391,7 +1421,7 @@ class CBASExternalLinks(CBASBaseTest):
                                    rebalance=True, wait_for_rebalance_completion=True)
 
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=self.dataset_params["aws_bucket_name"],key=self.key,
+            aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
             no_of_files=5,
             file_formats=["json"],
             no_of_folders=0,
@@ -1406,21 +1436,21 @@ class CBASExternalLinks(CBASBaseTest):
 
         if result:
             self.fail("Error while uploading files to S3")
-        
+
         query = "Select count(*) from `{0}`;"
         n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
-        
+
         result = list()
         threads = list()
         threads.append(Thread(
             target=self.execute_cbas_query,
             name="s3_query_thread",
-            args=(query.format(self.dataset_params["cbas_dataset_name"]), result,120,120,)
+            args=(query.format(self.dataset_params["cbas_dataset_name"]), result, 120, 120,)
         ))
         threads.append(Thread(
             target=self.rebalance_cbas,
             name="rebalance_thread",
-            args=(rebalanceServers, node_services, False, False, False, )
+            args=(rebalanceServers, node_services, False, False, False,)
         ))
         for thread in threads:
             thread.start()
@@ -1449,9 +1479,10 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Setup CBAS")
         self.setup_for_dataset()
+
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
-        self.dataset_created=True
+        self.dataset_created = True
 
         rebalanceServers = self.get_rebalance_server()
 
@@ -1459,8 +1490,16 @@ class CBASExternalLinks(CBASBaseTest):
         self.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
                                    rebalance=True, wait_for_rebalance_completion=True)
 
-        result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=self.dataset_params["aws_bucket_name"],key=self.key,
+        for i in range(0, 2):
+            filename = "big_record_file_{0}".format(str(i))
+            if not self.s3_data_helper.generate_file_with_record_of_size_and_upload(
+                    self.dataset_params["aws_bucket_name"], filename, record_size=29 * 1024 * 1024,
+                    file_format="json", upload_to_s3=True):
+                self.fail("Error while uploading files to S3")
+        self.log.info("File upload successfull")
+
+        """result = self.s3_data_helper.generate_data_for_s3_and_upload(
+            aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
             no_of_files=2,
             file_formats=["json"],
             no_of_folders=0,
@@ -1474,103 +1513,105 @@ class CBASExternalLinks(CBASBaseTest):
             missing_field=[False])
 
         if result:
-            self.fail("Error while uploading files to S3")
-        
+            self.fail("Error while uploading files to S3")"""
+
         query = "Select count(*) from `{0}`;"
-        n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
+        # n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
 
         result = list()
         threads = list()
         threads.append(Thread(
             target=self.execute_cbas_query,
             name="s3_query_thread",
-            args=(query.format(self.dataset_params["cbas_dataset_name"]), result,120,120,)
+            args=(query.format(self.dataset_params["cbas_dataset_name"]), result, 120, 120,)
         ))
         threads.append(Thread(
             target=self.rebalance_cbas,
             name="rebalance_thread",
-            args=(rebalanceServers, node_services, False, False, True)
+            args=(rebalanceServers, node_services, False, False, True, 5)
         ))
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
-        
-        if not self.cbas_util.validate_error_in_response(str(result[0]), result[2], 
-                                           "Analytics Service is temporarily unavailable"):
+
+        if not self.cbas_util.validate_error_in_response(str(result[0]), result[2],
+                                                         "Analytics Service is temporarily unavailable"):
             self.fail("query executed successfully")
-        
-        if not self.cbas_util.validate_cbas_dataset_items_count(self.dataset_params["cbas_dataset_name"], 
-                                                                self.num_items,timeout=600,
-                                                                analytics_timeout=600):
+
+        if not self.cbas_util.validate_cbas_dataset_items_count(self.dataset_params["cbas_dataset_name"],
+                                                                2, timeout=600, analytics_timeout=600):
             self.fail("Expected data does not match actual data")
 
     def test_when_a_single_record_size_is_greater_than_32MB(self):
         self.setup_for_dataset()
-        
-        file_format=self.input.test_params.get("file_format", "json")
+
+        file_format = self.input.test_params.get("file_format", "json")
         record_size = int(self.input.test_params.get("record_size", 32))
         filename = "big_record_file"
-        
-        self.dataset_params["file_format"] = file_format 
-        
-        if file_format in ["csv","tsv"]:
-            self.dataset_params["object_construction_def"] = "key1 string, key2 string, key3 string, key4 string, key5 string"
+
+        self.dataset_params["file_format"] = file_format
+
+        if file_format in ["csv", "tsv"]:
+            self.dataset_params[
+                "object_construction_def"] = "key1 string, key2 string, key3 string, key4 string, key5 string"
             self.dataset_params["header"] = False
-        
+
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
         self.dataset_created = True
         if not self.s3_data_helper.generate_file_with_record_of_size_and_upload(
-            self.dataset_params["aws_bucket_name"],filename,record_size=record_size*1024*1024,
-            file_format=file_format, upload_to_s3=True):
+                self.dataset_params["aws_bucket_name"], filename, record_size=record_size * 1024 * 1024,
+                file_format=file_format, upload_to_s3=True):
             self.fail("Error while uploading files to S3")
         self.log.info("File upload successfull")
         cbas_query = "Select count(*) from {0};".format(self.dataset_params["cbas_dataset_name"])
         status, metrics, errors, results, handle = self.cbas_util.execute_statement_on_cbas_util(cbas_query)
-        
+
         if record_size >= 32:
             if not errors:
                 self.fail("query executed successfully")
             elif not "Record is too large. Maximum record size is 32000000" in errors[0]['msg']:
                 self.fail("Error message mismatch.\nExpected - {0}\nActual - {1}".format(
-                    "Record is too large. Maximum record size is 32000000" ,errors[0]['msg']))
+                    "Record is too large. Maximum record size is 32000000", errors[0]['msg']))
         else:
             if not (results[0]["$1"] == 1):
                 self.fail("Expected data does not match actual data")
-  
+
     def test_large_file(self):
         aws_bucket_name = "cbas-regression-1"
         region = "us-west-1"
         object_construction_def = "num1 int, num2 int"
         doc_counts = {
-            "json" : 155861000,
-            "csv" : 219619000,
-            "tsv" : 219619000,
-            }
-        
+            "json": 155861000,
+            "csv": 219619000,
+            "tsv": 219619000,
+        }
+
         self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
         self.link_info["region"] = region
         if not self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info):
             self.fail("link creation failed")
         self.link_created = True
-        
-        file_format = self.input.test_params.get("file_format","json")
-        
+
+        file_format = self.input.test_params.get("file_format", "json")
+
         self.get_dataset_parameters()
         self.dataset_params["aws_bucket_name"] = aws_bucket_name
         self.dataset_params["file_format"] = file_format
-        self.dataset_params["include"] = "*.{0}".format(file_format) 
-        
-        if file_format in ["csv","tsv"]:
+        self.dataset_params["include"] = "*.{0}".format(file_format)
+
+        if file_format in ["csv", "tsv"]:
             self.dataset_params["object_construction_def"] = object_construction_def
             self.dataset_params["header"] = False
-            
+
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
         self.dataset_created = True
-        
-        if not self.cbas_util.validate_cbas_dataset_items_count(self.dataset_params["cbas_dataset_name"], 
-                                                                doc_counts[file_format],timeout=7200,
+
+        if not self.cbas_util.validate_cbas_dataset_items_count(self.dataset_params["cbas_dataset_name"],
+                                                                doc_counts[file_format], timeout=7200,
                                                                 analytics_timeout=7200):
             self.fail("Expected data does not match actual data")
+
+
