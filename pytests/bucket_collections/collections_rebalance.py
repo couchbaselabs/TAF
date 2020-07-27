@@ -494,12 +494,13 @@ class CollectionsRebalance(CollectionBase):
             data_load_spec = self.data_load_spec
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
         self.over_ride_template_params(doc_loading_spec)
-        if data_load_spec == "dgm_load":
-            # pre-load to dgm
-            doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 2
-        else:
-            # Do only deletes during dgm + rebalance op
-            doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+        if self.dgm_test:
+            if data_load_spec == "dgm_load":
+                # pre-load to dgm
+                doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 2
+            else:
+                # Do only deletes during dgm + rebalance op
+                doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         if self.forced_hard_failover and self.spec_name == "multi_bucket.buckets_for_rebalance_tests_more_collections":
             # create collections, else if other bucket_spec - then just "create" ops
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
