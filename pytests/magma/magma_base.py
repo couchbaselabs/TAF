@@ -102,15 +102,17 @@ class MagmaBaseTest(BaseTestCase):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.start = 0
         self.end = 0
-        self.create_start = 0
-        self.create_end = 0
-        self.update_start = 0
-        self.update_end = 0
-        self.delete_start = 0
-        self.delete_end = 0
-        self.read_start = 0
-        self.read_end = 0
-        self.mutate = 0
+        self.create_start = None
+        self.create_end = None
+        self.update_start = None
+        self.update_end = None
+        self.delete_start = None
+        self.delete_end = None
+        self.read_start = None
+        self.read_end = None
+        self.expiry_start = None
+        self.expiry_end = None
+        self.mutate = None
 
         # Common test params
         self.test_itr = self.input.param("test_itr", 4)
@@ -228,8 +230,7 @@ class MagmaBaseTest(BaseTestCase):
                       expiry_end=None, expiry_start=None,
                       expiry_mutate=0):
 
-        if doc_ops is None:
-            doc_ops = self.doc_ops
+        doc_ops = doc_ops or self.doc_ops
 
         if "update" in doc_ops:
             if update_start is not None:
@@ -262,7 +263,6 @@ class MagmaBaseTest(BaseTestCase):
                                                       self.delete_end,
                                                       target_vbucket=target_vbucket,
                                                       mutate=read_mutate)
-
         if "create" in doc_ops:
             if create_start is not None:
                 self.create_start = create_start
@@ -280,7 +280,6 @@ class MagmaBaseTest(BaseTestCase):
                                                       self.create_end,
                                                       target_vbucket=target_vbucket,
                                                       mutate=create_mutate)
-
         if "read" in doc_ops:
             if read_start is not None:
                 self.read_start = read_start
@@ -295,13 +294,13 @@ class MagmaBaseTest(BaseTestCase):
             if expiry_start is not None:
                 self.expiry_start = expiry_start
             elif self.expiry_start is None:
-                self.expire_start = self.start+(self.num_items *
+                self.expiry_start = self.start+(self.num_items *
                                                 self.delete_perc)/100
 
             if expiry_end is not None:
                 self.expiry_end = expiry_end
             elif self.expiry_end is None:
-                self.expire_end = self.start+self.num_items *\
+                self.expiry_end = self.start+self.num_items *\
                                   (self.delete_perc + self.expiry_perc)/100
 
             self.maxttl = self.input.param("maxttl", 10)
@@ -339,22 +338,25 @@ class MagmaBaseTest(BaseTestCase):
                         "Doc_ops failed in MagmaBase._load_all_buckets")
         return tasks_info
 
-    def start_parallel_cruds(self,
-                             retry_exceptions=[],
-                             ignore_exceptions=[],
-                             skip_read_on_error=False,
-                             suppress_error_table=False,
-                             scope=None,
-                             collection=None,
-                             _sync=True,
-                             track_failures=True,
-                             doc_ops=None):
-        if doc_ops == None:
-            doc_ops = self.doc_ops
+    def loadgen_docs(self,
+                     retry_exceptions=[],
+                     ignore_exceptions=[],
+                     skip_read_on_error=False,
+                     suppress_error_table=False,
+                     scope=CbServer.default_scope,
+                     collection=CbServer.default_collection,
+                     _sync=True,
+                     track_failures=True,
+                     doc_ops=None):
+        doc_ops = doc_ops or self.doc_ops
 
         tasks_info = dict()
         read_tasks_info = dict()
         read_task = False
+
+        if self.check_temporary_failure_exception:
+            retry_exceptions.append(SDKException.TemporaryFailureException)
+
         if "update" in doc_ops and self.gen_update is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
@@ -455,32 +457,6 @@ class MagmaBaseTest(BaseTestCase):
                     self.task_manager.get_task_result(task)
 
         return tasks_info
-
-    def loadgen_docs(self,
-                     retry_exceptions=[],
-                     ignore_exceptions=[],
-                     skip_read_on_error=False,
-                     suppress_error_table=False,
-                     scope=CbServer.default_scope,
-                     collection=CbServer.default_collection,
-                     _sync=True,
-                     track_failures=True,
-                     doc_ops=None):
-        if doc_ops is None:
-            doc_ops = self.doc_ops
-
-        if self.check_temporary_failure_exception:
-            retry_exceptions.append(SDKException.TemporaryFailureException)
-        loaders = self.start_parallel_cruds(retry_exceptions,
-                                            ignore_exceptions,
-                                            skip_read_on_error=skip_read_on_error,
-                                            suppress_error_table=suppress_error_table,
-                                            _sync=_sync,
-                                            scope=scope,
-                                            collection=collection,
-                                            track_failures=track_failures,
-                                            doc_ops=doc_ops)
-        return loaders
 
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
         magma_stats_for_all_servers = dict()
@@ -647,10 +623,10 @@ class MagmaBaseTest(BaseTestCase):
             else:
                 shell.kill_memcached()
             shell.disconnect()
-            self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
-                self.bucket_util.buckets[0],
-                wait_time=self.wait_timeout * 20))
+        self.assertTrue(self.bucket_util._wait_warmup_completed(
+            [self.cluster_util.cluster.master],
+            self.bucket_util.buckets[0],
+            wait_time=self.wait_timeout * 20))
 
     def crash(self, nodes=None, kill_itr=1, graceful=False,
               wait=True, force_collect=False):
