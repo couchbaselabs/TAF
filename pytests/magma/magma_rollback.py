@@ -1183,12 +1183,20 @@ class MagmaRollbackTests(MagmaBaseTest):
                     mem_item_count += mem_only_items * ops_len
                     self.generate_docs(doc_ops=self.doc_ops,
                                        target_vbucket=self.target_vbucket)
+                    tasks_in = dict()
                     for collection in collections:
-                        self.loadgen_docs(retry_exceptions=retry_exceptions,
-                                          ignore_exceptions=self.ignore_exceptions,
-                                          scope=scope_name,
-                                          collection=collection,
-                                          _sync=True)
+                        tem_tasks_in = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                                           ignore_exceptions=self.ignore_exceptions,
+                                                           scope=scope_name,
+                                                           collection=collection,
+                                                           _sync=False)
+                        tasks_in.update(tem_tasks_in.items())
+
+                    for task in tasks_in:
+                        self.task_manager.get_task_result(task)
+                    self.bucket_util.verify_doc_op_task_exceptions(
+                        tasks_in, self.cluster)
+                    self.bucket_util.log_doc_ops_task_failures(tasks_in)
 
                     if self.gen_create is not None:
                         self.create_start = self.gen_create.key_counter
@@ -1232,6 +1240,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 '''
 
                 shell.kill_memcached()
+                self.sleep(10, "sleep after MemCached kill on node {}".format(node))
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
                     [self.cluster_util.cluster.master],
                     self.bucket_util.buckets[0],
