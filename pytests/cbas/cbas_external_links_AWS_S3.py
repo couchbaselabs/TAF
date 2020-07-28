@@ -600,7 +600,7 @@ class CBASExternalLinks(CBASBaseTest):
                         else:
                             raise Exception(
                                 "Following error is raised while reading data from AWS after altering the link\nERROR : {0}"
-                                .format(str(errors)))
+                                    .format(str(errors)))
 
                     elif cbas_result[0]["$1"] != cbas_result_2[0]["$1"]:
                         raise Exception("Data read from AWS before and after altering link do not match")
@@ -1143,37 +1143,28 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Dataset creation failed")
         self.dataset_created = True
 
-        result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
+        file_dict = self.s3_data_helper.generate_file_of_specified_size_and_upload(
+            bucket_name=self.dataset_params["aws_bucket_name"],
             no_of_files=int(self.input.test_params.get("no_of_files", 5)),
-            file_formats=json.loads(self.input.test_params.get("file_format_for_upload", "[\"json\"]")),
-            no_of_folders=0,
-            max_folder_depth=0,
-            header=self.convert_string_to_bool(self.input.test_params.get("header_s3_file", False)),
-            null_key=self.input.test_params.get("null_s3_file", ""),
-            operation="create", bucket=self.bucket_util.buckets[0],
-            no_of_docs=int(self.input.test_params.get("no_of_docs", 100)),
-            randomize_header=False,
-            large_file=self.convert_string_to_bool(self.input.test_params.get("large_file", False)),
-            missing_field=[False])
-
-        if result:
-            self.fail("Error while uploading files to S3")
+            file_size_in_KB=int(self.input.test_params.get("file_size", 100)),
+            record_type=self.input.test_params.get("record_type", "json"),
+            upload_to_s3=True, file_extension=None)
 
         if self.convert_string_to_bool(self.input.test_params.get("delete_last_file", False)):
             # selecting a middle file to delete, as list object from aws returns object name in sorted alpha numeric way.
-            file_to_delete = self.s3_data_helper.filenames[-1]
+            file_to_delete = file_dict.keys()[-1]
         else:
-            file_to_delete = self.s3_data_helper.filenames[0]
+            file_to_delete = file_dict.keys()[0]
 
         if not self.convert_string_to_bool(self.input.test_params.get("recreate", False)) and \
                 self.convert_string_to_bool(self.input.test_params.get("delete_last_file", False)):
-            n1ql_query = "Select count(*) from `{0}` where filename != '{1}';".format(self.bucket_util.buckets[0].name,
-                                                                                      file_to_delete)
+            n1ql_result = 0
+            for filename in file_dict:
+                if filename != file_to_delete:
+                    n1ql_result += file_dict[filename]
         else:
-            n1ql_query = "Select count(*) from `{0}`;".format(self.bucket_util.buckets[0].name)
+            n1ql_result = sum(file_dict.values())
 
-        n1ql_result = self.rest.query_tool(n1ql_query)["results"][0]["$1"]
         cbas_query = "Select count(*) from {0};".format(self.dataset_params["cbas_dataset_name"])
 
         dest_path = os.path.join(r"/tmp/", file_to_delete)
@@ -1504,25 +1495,7 @@ class CBASExternalLinks(CBASBaseTest):
                 self.fail("Error while uploading files to S3")
         self.log.info("File upload successfull")
 
-        """result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
-            no_of_files=2,
-            file_formats=["json"],
-            no_of_folders=0,
-            max_folder_depth=0,
-            header=False,
-            null_key="",
-            operation="create", bucket=self.bucket_util.buckets[0],
-            no_of_docs=self.num_items,
-            randomize_header=False,
-            large_file=False,
-            missing_field=[False])
-
-        if result:
-            self.fail("Error while uploading files to S3")"""
-
         query = "Select count(*) from `{0}`;"
-        # n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
 
         result = list()
         threads = list()
@@ -1619,5 +1592,3 @@ class CBASExternalLinks(CBASBaseTest):
                                                                 doc_counts[file_format], timeout=7200,
                                                                 analytics_timeout=7200):
             self.fail("Expected data does not match actual data")
-
-

@@ -13,30 +13,30 @@ def perform_S3_operation(**kwargs):
     This function performs multiple S3 operations by launching a python script as a subprocess, 
     because boto3 requires multiprocessing which is not supported in jython. 
     """
-    aws_util_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__),"S3.py"))
-    arguements = ["python",aws_util_file_path, kwargs.get("aws_access_key"), kwargs.get("aws_secret_key"), 
+    aws_util_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "S3.py"))
+    arguements = ["python", aws_util_file_path, kwargs.get("aws_access_key"), kwargs.get("aws_secret_key"),
                   kwargs.get("aws_session_token")]
-    
+
     if kwargs.get("get_regions", False):
         arguements.append("--get_regions")
-    
+
     else:
         if kwargs.get("region", None):
             arguements.append("--region")
             arguements.append(kwargs.get("region"))
-        
+
         if kwargs.get("create_bucket", False):
             arguements.append("--new_bucket")
         else:
             arguements.append("--existing_bucket")
         arguements.append(kwargs.get("bucket_name", "cbas-regression"))
-        
+
         if kwargs.get("delete_bucket", False):
             arguements.append("--delete_bucket")
-        
+
         if kwargs.get("empty_bucket", False):
             arguements.append("--empty_bucket")
-        
+
         if kwargs.get("upload_file", False):
             arguements.append("--upload_file")
             arguements.append(kwargs.get("src_path", ""))
@@ -53,19 +53,20 @@ def perform_S3_operation(**kwargs):
             arguements.append("--delete_file")
             arguements.append(kwargs.get("file_path", ""))
     response = subprocess.Popen(arguements, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output,error = response.communicate()
+    output, error = response.communicate()
     if error:
         raise Exception(str(error))
     else:
         result = json.loads(output)
         return result["result"]
 
+
 class S3DataHelper():
     """
     This class is used to generate files that are to be uploaded on AWS S3.
     """
 
-    def __init__(self, aws_access_key, aws_secret_key, aws_session_token, 
+    def __init__(self, aws_access_key, aws_secret_key, aws_session_token,
                  cluster, bucket_util, rest, task, log, max_thread_count=5):
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
@@ -111,7 +112,7 @@ class S3DataHelper():
         """
         filenames = list()
         for i in xrange(0, no_of_files):
-            #filenames.append("file_%03d.%s" % (i, random.choice(formats)))
+            # filenames.append("file_%03d.%s" % (i, random.choice(formats)))
             filenames.append("file_{0}.{1}".format(str(i), random.choice(formats)))
         return filenames
 
@@ -139,20 +140,22 @@ class S3DataHelper():
         folder = folders
         filename = filenames
         missing_field = missing_field
-        template = '{{ "filename": "{0}", "folder": "{1}", "null_key": "", "missing_field": {2}, "mutated": %d }}' % (mutation_num) 
+        template = '{{ "filename": "{0}", "folder": "{1}", "null_key": "", "missing_field": {2}, "mutated": %d }}' % (
+            mutation_num)
 
         if not key:
             key = "test_docs"
 
         doc_gen = DocumentGenerator(key, template, filename, folder, missing_field,
                                     start=start_key, end=end_key)
-        
+
         return self.bucket_util.async_load_bucket(self.cluster, bucket, doc_gen, operation, exp,
                                                   durability=durability,
                                                   batch_size=batch_size,
                                                   suppress_error_table=True)
 
-    def generate_data_for_s3_and_upload(self, aws_bucket_name, key, no_of_files, file_formats, no_of_folders, max_folder_depth,
+    def generate_data_for_s3_and_upload(self, aws_bucket_name, key, no_of_files, file_formats, no_of_folders,
+                                        max_folder_depth,
                                         header, null_key, operation, bucket, no_of_docs,
                                         batch_size=10, exp=0, durability="", mutation_num=0, randomize_header=False,
                                         large_file=False, missing_field=[False]):
@@ -189,15 +192,15 @@ class S3DataHelper():
                                          exp=exp, durability=durability,
                                          mutation_num=mutation_num, key=key)
         result = self.task.jython_task_manager.get_task_result(tasks)
-        
+
         query = "CREATE PRIMARY INDEX ON `{0}`;".format(self.bucket.name)
         result = self.rest.query_tool(query)
         if not (result["status"] == "success"):
             return False
-        
+
         item_list = [(folder, filename) for folder in self.folders for filename in self.filenames]
         threads = list()
-        files_per_thread = abs(len(item_list)/self.max_thread_count) + 1
+        files_per_thread = abs(len(item_list) / self.max_thread_count) + 1
         start = 0
         count = 0
         for i in xrange(0, len(item_list)):
@@ -207,7 +210,7 @@ class S3DataHelper():
                 if start + files_per_thread >= len(item_list):
                     temp_list = item_list[start:]
                 else:
-                    temp_list = item_list[start:start+files_per_thread]
+                    temp_list = item_list[start:start + files_per_thread]
                 threads.append(Thread(
                     target=self.thread_helper,
                     name="s3_thread_{0}".format(i),
@@ -220,11 +223,12 @@ class S3DataHelper():
         for thread in threads:
             thread.join()
         return self.failed_uploads
-    
+
     def thread_helper(self, bucket_name, item_list, header, null_key, randomize_header, large_file):
         for item in item_list:
-            self.create_and_upload_files_in_s3(bucket_name, item[0], item[1], header, null_key, randomize_header, large_file)
-        
+            self.create_and_upload_files_in_s3(bucket_name, item[0], item[1], header, null_key, randomize_header,
+                                               large_file)
+
     def create_and_upload_files_in_s3(self, bucket_name, folder, filename, header, null_key, randomize_header=False,
                                       large_file=False):
         """
@@ -257,10 +261,11 @@ class S3DataHelper():
                 result = result[self.bucket.name]
                 if null_key:
                     result["null_key"] = null_key
-                record = [result["filename"],result["folder"],result["mutated"],result["null_key"],result.get("missing_field")]
+                record = [result["filename"], result["folder"], result["mutated"], result["null_key"],
+                          result.get("missing_field")]
                 if result["missing_field"]:
                     del (result["missing_field"])
-                    record = [result["filename"],result["folder"],result["mutated"],result["null_key"]]
+                    record = [result["filename"], result["folder"], result["mutated"], result["null_key"]]
                 if "json" in filename:
                     sub_type = random.choice(["json", "list_of_json"])
                     if sub_type == "json":
@@ -317,10 +322,10 @@ class S3DataHelper():
         cur_dir = os.path.dirname(__file__)
         filepath = os.path.join(cur_dir, filename)
         sample_data = {
-            "key1":"sample1",
-            "key2":"sample2",
+            "key1": "sample1",
+            "key2": "sample2",
             "key3": "sample3",
-            "key4":"sample4"
+            "key4": "sample4"
         }
         with open(filepath, "a+") as fh:
             fh.write(json.dumps(sample_data))
@@ -332,9 +337,9 @@ class S3DataHelper():
         if upload_to_s3:
             try:
                 if perform_S3_operation(
-                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token, bucket_name=bucket_name,
-                    upload_file=True, src_path=filepath, dest_path=filename):
+                        aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                        aws_session_token=self.aws_session_token, bucket_name=bucket_name,
+                        upload_file=True, src_path=filepath, dest_path=filename):
                     upload_success = True
                 else:
                     upload_success = False
@@ -350,8 +355,8 @@ class S3DataHelper():
         else:
             return filepath
 
-    def generate_file_with_record_of_size_and_upload(self, bucket_name, filename, 
-                                                     record_size=32000000, file_format="json", 
+    def generate_file_with_record_of_size_and_upload(self, bucket_name, filename,
+                                                     record_size=32000000, file_format="json",
                                                      upload_to_s3=True, file_extension=None):
         """
         Generate a single file of format specified, but file contains a single record of data, of type json, csv or tsv,
@@ -363,15 +368,15 @@ class S3DataHelper():
         if file_extension is None:
             file_extension = file_format
         if file_extension != "":
-            filename = "{0}.{1}".format(filename, file_extension) 
+            filename = "{0}.{1}".format(filename, file_extension)
         self.log.info("Creating file {0} and uploading to S3".format(filename))
         cur_dir = os.path.dirname(__file__)
         filepath = os.path.join(cur_dir, filename)
         sample_data = {
-            "key1":"sample1",
-            "key2":"sample2",
+            "key1": "sample1",
+            "key2": "sample2",
             "key3": "sample3",
-            "key4":"sample4"
+            "key4": "sample4"
         }
         sample_data["key5"] = [''.rjust(record_size, 'a')][0]
 
@@ -385,9 +390,9 @@ class S3DataHelper():
         if upload_to_s3:
             try:
                 if perform_S3_operation(
-                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token, bucket_name=bucket_name,
-                    upload_file=True, src_path=filepath, dest_path=filename):
+                        aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                        aws_session_token=self.aws_session_token, bucket_name=bucket_name,
+                        upload_file=True, src_path=filepath, dest_path=filename):
                     upload_success = True
                 else:
                     upload_success = False
@@ -402,3 +407,71 @@ class S3DataHelper():
                 return upload_success
         else:
             return filename
+
+    def generate_file_of_specified_size_and_upload(self, bucket_name, no_of_files,
+                                                   file_size_in_KB=100, record_type="json",
+                                                   upload_to_s3=True, file_extension=None):
+        """
+        Generate multiple files of type file_extension specified, with each record of type
+        specified by record type and upload the created file to S3 if upload_to_S3 flag is set to True.
+        :param bucket_name - name of the S3 bucket where files have to be uploaded.
+        :param no_of_files
+        :param file_size_in_KB
+        :param record type - type of data to be inserted into file. Json, csv or tsv
+        :param upload_to_s3
+        :param file_extension
+        :returns dict with file names and record counts in each file.
+        """
+        file_record_count = dict()
+
+        if not file_extension:
+            file_extension = record_type
+
+        sample_data = {
+            "key1": "sample1",
+            "key2": "sample2",
+            "key3": "sample3",
+            "key4": "sample4"
+        }
+
+        if record_type == "json":
+            data_to_write = json.dumps(sample_data)
+        elif record_type == "csv":
+            data_to_write = ",".join(str(x) for x in sample_data.values())
+        elif record_type == "tsv":
+            data_to_write = "\t".join(str(x) for x in sample_data.values())
+
+        for i in range(0, no_of_files):
+            filename = "file{0}_{1}KB.{2}".format(str(i), file_size_in_KB, file_extension)
+            self.log.info("Creating file {0} and uploading to S3".format(filename))
+            cur_dir = os.path.dirname(__file__)
+            filepath = os.path.join(cur_dir, filename)
+
+            no_of_records = 0
+            with open(filepath, "a+") as fh:
+                while os.stat(filepath).st_size <= (file_size_in_KB * 1024):
+                    # This for loop is to prevent checking file size after each record insertion.
+                    for i in range(0, 1000):
+                        fh.write(data_to_write)
+                    no_of_records += 1000
+
+            file_record_count[filename] = no_of_records
+
+            if upload_to_s3:
+                try:
+                    if perform_S3_operation(
+                            aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                            aws_session_token=self.aws_session_token, bucket_name=bucket_name,
+                            upload_file=True, src_path=filepath, dest_path=filename):
+                        upload_success = True
+                    else:
+                        upload_success = False
+                except Exception as err:
+                    self.log.error("Error while uploading file - {0} to S3".format(filepath))
+                    self.log.error("Error -- {0}".format(str(err)))
+                    upload_success = False
+                finally:
+                    os.remove(filepath)
+                    if not upload_success:
+                        file_record_count[filename] = 0
+        return file_record_count
