@@ -167,7 +167,6 @@ class CBASExternalLinks(CBASBaseTest):
                 if "InvalidLocationConstraint" in str(err):
                     self.aws_bucket_name = self.input.test_params.get("aws_bucket_name", "cbas-regression-{0}".format(
                         random.randint(1, 1000)))
-                    self.region = random.choice(self.remove_and_return_new_list(self.aws_region_list, self.region))
                     retry += 1
                 else:
                     raise Exception(err)
@@ -1117,6 +1116,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("query executed successfully")
 
     def test_querying_with_more_than_1000_files_in_S3_bucket(self):
+        self.region = self.input.test_params.get("aws_region", "us-west-1")
         self.setup_for_dataset()
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
             self.fail("Dataset creation failed")
