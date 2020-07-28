@@ -135,7 +135,7 @@ class MagmaBaseTest(BaseTestCase):
             update_bucket_props = True
 
         self.fragmentation = int(self.input.param("fragmentation", 50))
-        if self.fragmentation != 50:
+        if self.fragmentation != 50 and self.bucket_storage == Bucket.StorageBackend.magma:
             props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
             update_bucket_props = True
 
@@ -438,6 +438,11 @@ class MagmaBaseTest(BaseTestCase):
             if read_end is not None:
                 self.read_end = read_end
 
+            if self.read_start is None:
+                self.read_start = self.create_start
+            if self.read_end is None:
+                self.read_end = self.create_end
+
             self.gen_read = self.genrate_docs_basic(self.read_start,
                                                     self.read_end,
                                                     target_vbucket=target_vbucket,
@@ -546,7 +551,8 @@ class MagmaBaseTest(BaseTestCase):
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "expiry" in doc_ops and self.gen_expiry is not None and self.maxttl:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
-                self.cluster, self.gen_expiry, "update", self.maxttl,
+                self.cluster, self.gen_expiry, "update",
+                self.maxttl, self.random_exp,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -712,7 +718,7 @@ class MagmaBaseTest(BaseTestCase):
         self.log.info("magma stats fragmentation result {} \
         ".format(result))
         for value in result.values():
-            if max(value) > self.fragmentation:
+            if max(value) > self.fragmentation/100:
                 self.log.info(stats)
                 return False
         return True
@@ -862,3 +868,41 @@ class MagmaBaseTest(BaseTestCase):
         shell.disconnect()
 
         return output
+
+    def get_tombstone_count_key(self, servers=[]):
+        result = 0
+        for server in servers:
+            data_path = RestConnection(server).get_data_path()
+            bucket = self.bucket_util.buckets[0]
+            magma_path = os.path.join(data_path, bucket.name, "magma.{}")
+
+            shell = RemoteMachineShellConnection(server)
+            shards = shell.execute_command(
+                        "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
+                        )[0][0].split('\n')[0]
+            self.log.debug("machine: {} - core(s): {}".format(server.ip, shards))
+            for shard in range(int(shards)):
+                magma = magma_path.format(shard)
+                kvstores, _ = shell.execute_command("ls {} | grep kvstore".format(magma))
+                cmd = '/opt/couchbase/bin/magma_dump {}'.format(magma)
+                for kvstore in kvstores:
+                    dump = cmd
+                    kvstore_num = kvstore.split("-")[1].strip()
+                    dump += ' --kvstore {} --tree key --treedata | grep Key |grep \'"deleted":true\' | wc -l'.format(kvstore_num)
+                    result += int(shell.execute_command(dump)[0][0].strip())
+        return result
+
+    def get_tombstone_count_seq(self, server=None, shard=0, kvstore=0):
+        cmd = '/opt/couchbase/bin/magma_dump /data/kv/default/magma.{}/ \
+        --kvstore {} --tree key --treedata | grep Seq| wc -l'.format(shard,
+                                                                     kvstore)
+        shell = RemoteMachineShellConnection(server)
+        result = shell.execute_command(cmd)[0]
+        return result
+
+    def get_level_data_range(self, server=None, tree="key", shard=0, kvstore=0):
+        cmd = '/opt/couchbase/bin/magma_dump /data/kv/default/magma.{}/ \
+        --kvstore {} --tree {}'.format(shard, kvstore, tree)
+        shell = RemoteMachineShellConnection(server)
+        result = shell.execute_command(cmd)[0]
+        return result

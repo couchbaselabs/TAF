@@ -130,7 +130,6 @@ class SDKClientPool(object):
         :param collection: Collection name to select for client operation
         :return client: Instance of SDKClient object
         """
-        self.log.debug("Fetching client for %s" % bucket.name)
         client = None
         col_name = scope + collection
         if bucket.name not in self.clients:
@@ -150,7 +149,6 @@ class SDKClientPool(object):
                 self.clients[bucket.name][col_name]["client"] = client
                 self.clients[bucket.name][col_name]["counter"] = 1
             self.clients[bucket.name]["lock"].release()
-        self.log.debug("Client fetched for %s" % bucket.name)
         return client
 
     def release_client(self, client):
@@ -163,7 +161,6 @@ class SDKClientPool(object):
         if bucket.name not in self.clients:
             return
         col_name = client.scope_name + client.collection_name
-        self.log.debug("Releasing client for %s" % bucket.name)
         self.clients[bucket.name]["lock"].acquire()
         if self.clients[bucket.name][col_name]["counter"] == 1:
             self.clients[bucket.name].pop(col_name)
@@ -172,7 +169,6 @@ class SDKClientPool(object):
         else:
             self.clients[bucket.name][col_name]["counter"] -= 1
         self.clients[bucket.name]["lock"].release()
-        self.log.debug("Released client for %s" % bucket.name)
 
 
 class SDKClient(object):
@@ -601,8 +597,6 @@ class SDKClient(object):
         """
         Method to select collection. Can be called directly from test case.
         """
-        self.log.debug("Selecting bucket:scope::collection %s:%s:%s"
-                       % (self.bucket.name, scope_name, collection_name))
         self.scope_name = scope_name
         self.collection_name = collection_name
         if collection_name != CbServer.default_collection:

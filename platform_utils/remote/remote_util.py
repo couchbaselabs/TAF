@@ -3663,7 +3663,7 @@ class RemoteMachineShellConnection:
         if o:
             return o
 
-    def get_disk_info(self, win_info=None, mac=False, in_MB=False):
+    def get_disk_info(self, win_info=None, mac=False, in_MB=False, path="/"):
         if win_info:
             if 'Total Physical Memory' not in win_info:
                 win_info = self.create_windows_info()
@@ -3675,7 +3675,8 @@ class RemoteMachineShellConnection:
             if not in_MB:
                 o, r = self.execute_command_raw_jsch('df -Th', debug=False)
             else:
-                o, r = self.execute_command_raw_jsch('df -BM /', debug=False)
+                o, r = self.execute_command_raw_jsch('df -BM {}'.format(path),
+                                                     debug=False)
         if o:
             return o
 

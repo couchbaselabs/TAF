@@ -3276,6 +3276,10 @@ class BucketUtils(ScopeUtils):
                                 "flush_param",
                                 "exp_pager_stime",
                                 val)
+                cbepctl_obj.set(bucket.name,
+                                "flush_param",
+                                "exp_pager_initial_run_time",
+                                "disable")
             shell_conn.disconnect()
 
     def _run_compaction(self, number_of_times=100):
@@ -4192,6 +4196,57 @@ class BucketUtils(ScopeUtils):
             cmd = 'ns_bucket:update_bucket_props(' \
                   '"%s", [{extra_config_string, "%s=%s"}]).' \
                   % (bucket.name, command, value)
+            rest.diag_eval(cmd)
+
+        # Restart Memcached in all cluster nodes to reflect the settings
+        for server in self.cluster_util.get_kv_nodes(master=node):
+            shell = RemoteMachineShellConnection(server)
+            shell.restart_couchbase()
+            shell.disconnect()
+
+        # Check bucket-warm_up after Couchbase restart
+        retry_count = 10
+        buckets_warmed_up = self.is_warmup_complete(buckets, retry_count)
+        if not buckets_warmed_up:
+            self.log.critical("Few bucket(s) not warmed up "
+                              "within expected time")
+
+    def cbepctl_set_metadata_purge_interval(self, value,
+                                            buckets=[]):
+        self.log.info("Changing the bucket properties by changing {0} to {1}".
+                      format("persistent_metadata_purge_age", value))
+
+        if not buckets:
+            buckets = self.buckets
+
+        for node in self.cluster_util.get_kv_nodes():
+            shell_conn = RemoteMachineShellConnection(node)
+            cbepctl_obj = Cbepctl(shell_conn)
+            for bucket in buckets:
+                cbepctl_obj.set(bucket.name,
+                                "flush_param",
+                                "persistent_metadata_purge_age",
+                                60)
+            shell_conn.disconnect()
+
+    def set_metadata_purge_interval(self, value,
+                                    buckets=[], node=None):
+        self.log.info("Changing the bucket properties by changing {0} to {1}".
+                      format("purge_interval", value))
+        if not buckets:
+            buckets = self.buckets
+        if node is None:
+            node = self.cluster.master
+        rest = RestConnection(node)
+
+        shell = RemoteMachineShellConnection(node)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
+        for bucket in buckets:
+            cmd = 'ns_bucket:update_bucket_props(' \
+                  '"%s", [{purge_interval, "%s"}]).' \
+                  % (bucket.name, value)
             rest.diag_eval(cmd)
 
         # Restart Memcached in all cluster nodes to reflect the settings
