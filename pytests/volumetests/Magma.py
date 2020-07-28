@@ -65,6 +65,7 @@ class volume(BaseTestCase):
         self.end_step = self.input.param("end_step", None)
         self.num_collections = self.input.param("num_collections", 0)
         self.key_prefix = "Users"
+        self.crashes = self.input.param("crashes", 999)
         self.skip_read_on_error = False
         self.suppress_error_table = False
         self.track_failures = True
@@ -588,7 +589,6 @@ class volume(BaseTestCase):
     def crash_thread(self, nodes=None, num_kills=1, graceful=False):
         self.stop_crash = False
         self.crash_count = 0
-        loop_itr = 0
         if not nodes:
             nodes = self.cluster.nodes_in_cluster
 
@@ -596,10 +596,12 @@ class volume(BaseTestCase):
             sleep = random.randint(60, 120)
             self.sleep(sleep,
                        "Iteration:{} waiting to kill memc on all nodes".
-                       format(loop_itr))
+                       format(self.crash_count))
             self.kill_memcached(nodes, num_kills=num_kills,
                                 graceful=graceful, wait=True)
             self.crash_count += 1
+            if self.crash_count > self.crashes:
+                self.stop_crash = True
 
     def kill_memcached(self, servers=None, num_kills=1,
                        graceful=False, wait=True):
