@@ -7,6 +7,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
     def setUp(self):
         super(AutoFailoverTests, self).setUp()
         self.skip_validations = self.input.param("skip_validations", True)
+        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
         if self.spec_name is None:
             if self.atomicity:
                 self.run_time_create_load_gen = doc_generator(
@@ -29,7 +30,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         super(AutoFailoverTests, self).tearDown()
 
     def data_load_from_spec(self, async_load=False):
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package("volume_test_load")
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
         if self.durability_level:
             doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                 self.durability_level

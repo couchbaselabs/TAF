@@ -8,6 +8,8 @@ from membase.api.exception import \
 class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def setUp(self):
         super(DiskAutofailoverTests, self).setUp()
+        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
+        self.skip_validations = self.input.param("skip_validations",True)
         if self.spec_name is None:
             if self.atomicity:
                 self.run_time_create_load_gen = doc_generator(
@@ -30,7 +32,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         super(DiskAutofailoverTests, self).tearDown()
 
     def data_load_from_spec(self, async_load=False):
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package("volume_test_load")
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
                                                         self.bucket_util.buckets,
@@ -40,14 +42,16 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         return tasks
 
     def data_validation_collection(self):
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        if not self.skip_validations:
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(task)
-        if task.result is False:
-            self.fail("Doc_loading failed")
+        if not self.skip_validations:
+            self.bucket_util.validate_doc_loading_results(task)
+            if task.result is False:
+                self.fail("Doc_loading failed")
 
     def test_disk_autofailover_rest_api(self):
         disk_timeouts = self.input.param("disk_failover_timeouts", "5,10,30,60,120")

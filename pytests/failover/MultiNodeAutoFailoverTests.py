@@ -8,6 +8,7 @@ from membase.api.rest_client import RestConnection
 class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
     def setUp(self):
         super(MultiNodeAutoFailoverTests, self).setUp()
+        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
         self.master = self.servers[0]
 
     def tearDown(self):
@@ -280,7 +281,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             tasks = self.async_load_all_buckets(subsequent_load_gen, "create", 0)
             return tasks
         else:
-            doc_loading_spec = self.bucket_util.get_crud_template_from_package("volume_test_load")
+            doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
             tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                             self.cluster,
                                                             self.bucket_util.buckets,
