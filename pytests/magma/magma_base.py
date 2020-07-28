@@ -112,7 +112,7 @@ class MagmaBaseTest(BaseTestCase):
         self.read_end = None
         self.expiry_start = None
         self.expiry_end = None
-        self.mutate = None
+        self.mutate = 0
 
         # Common test params
         self.test_itr = self.input.param("test_itr", 4)
