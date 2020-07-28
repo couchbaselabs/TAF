@@ -1053,15 +1053,17 @@ class MagmaRollbackTests(MagmaBaseTest):
     def test_rollback_with_multiCollections(self):
         '''
         Test focus: Test roll back with multiple collections,
-                    Stopping persistence one by one on all 
-                    nodes and trigger roll back on other nodes 
+                    Stopping persistence one by one on all
+                    nodes and trigger roll back on other nodes
 
         STEPS:
          -- Disabled initial loading in setup
          -- Loaded self.num_items in all the collections
          -- Doc loading may create state file(s)
-         -- But ensure creation of at least a single state file, sleep for 60 seconds
-         -- Below steps will be repeated on all nodes, with stopping peristence on one at a time
+         -- But ensure creation of at least a single state file,
+             sleep for 60 seconds
+         -- Below steps will be repeated on all nodes,
+             with stopping peristence on one at a time
          -- Stop persistence on node x
          -- Start doc ops on node x on all collections(for self.duration iterations)
          -- Above step ensures creation of new state files
@@ -1095,7 +1097,6 @@ class MagmaRollbackTests(MagmaBaseTest):
         collections = self.buckets[0].scopes[scope_name].collections.keys()
         self.log.debug("Collections list == {}".format(collections))
 
-        #init_items = self.num_items
         tasks_info = dict()
 
         for collection in collections:
@@ -1153,8 +1154,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 start = start_items
                 shell = RemoteMachineShellConnection(node)
                 cbstats = Cbstats(shell)
-                self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
-                                                           name)
+                self.target_vbucket = cbstats.vbucket_list(
+                    self.bucket_util.buckets[0].name)
                 mem_item_count = 0
                 self.log.debug("Iteration == {}, State files before stopping persistence == {}".
                            format(i, self.get_state_files(self.buckets[0])))
@@ -1197,7 +1198,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                         self.delete_start = self.gen_delete.key_counter
                     if self.gen_expiry is not None:
                         self.expiry_start = self.gen_expiry.key_counter
-                    self.log.info("Rollback Iteration== {}, itr== {}, Active-Node== {}, Node=={}".format(i, itr, x+1, node))
+                    self.log.info("Rollback Iteration== {}, itr== {}, Active-Node== {}, Node=={}".
+                                  format(i, itr, x+1, node))
                     if time.time() < time_start + 60:
                         self.sleep(time_start + 60 - time.time(),
                                    "Sleep to ensure creation of state files for roll back")
@@ -1236,9 +1238,10 @@ class MagmaRollbackTests(MagmaBaseTest):
                     wait_time=self.wait_timeout * 10))
 
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
-                          format(i, x+1, self.get_state_files(self.buckets[0])))
+                               format(i, x+1, self.get_state_files(self.buckets[0])))
 
-                self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+                self.bucket_util.verify_stats_all_buckets(items,
+                                                          timeout=300)
                 for bucket in self.bucket_util.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
 
@@ -1253,15 +1256,18 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                 self.log.info("State file at end of iteration-{} are == {}".
                               format(i, self.get_state_files(self.buckets[0])))
-                self.sleep(10, "Sleep after re-starting persistence, Iteration{}".format(i))
+                self.sleep(10, "Sleep after re-starting persistence, Iteration-{}".
+                           format(i))
 
                 for nod in self.cluster.nodes_in_cluster:
                     ep_queue_size_map.update({nod: 0})
                     vb_replica_queue_size_map.update({nod: 0})
 
                 for bucket in self.bucket_util.buckets:
-                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
-                    self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
+                    self.bucket_util._wait_for_stat(bucket,
+                                                    ep_queue_size_map)
+                    self.bucket_util._wait_for_stat(bucket,
+                                                    vb_replica_queue_size_map,
                                                     stat_name="vb_replica_queue_size")
 
                 shell.disconnect()
