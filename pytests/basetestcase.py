@@ -169,7 +169,7 @@ class BaseTestCase(unittest.TestCase):
             self.input.param("maxParallelIndexers", None)
         self.maxParallelReplicaIndexers = \
             self.input.param("maxParallelReplicaIndexers", None)
-        self.quota_percent = self.input.param("quota_percent", None)
+        self.quota_percent = self.input.param("quota_percent", 90)
         self.skip_buckets_handle = self.input.param("skip_buckets_handle",
                                                     False)
 
