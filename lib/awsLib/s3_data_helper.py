@@ -140,8 +140,8 @@ class S3DataHelper():
         folder = folders
         filename = filenames
         missing_field = missing_field
-        template = '{{ "filename": "{0}", "folder": "{1}", "null_key": "", "missing_field": {2}, "mutated": %d }}' % (
-            mutation_num)
+        template = '{{ "filename": "{0}", "folder": "{1}", "null_key": "", "missing_field": {2},' \
+                   ' "mutated": %d }}' % (mutation_num)
 
         if not key:
             key = "test_docs"
