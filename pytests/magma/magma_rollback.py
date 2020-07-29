@@ -83,8 +83,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             mem_client = MemcachedClientHelper.direct_client(
                 self.cluster_util.cluster.master, self.bucket_util.buckets[0])
             mem_client.stop_persistence()
-            self.gen_create = self.gen_docs_basic_for_target_vbucket(start, mem_only_items,
-                                                                     self.target_vbucket)
+            self.gen_create = self.genrate_docs_basic(start, mem_only_items,
+                                                      self.target_vbucket)
 
             self.loadgen_docs(_sync=True,
                               retry_exceptions=retry_exceptions)
@@ -548,9 +548,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 time_start = time.time()
                 mem_item_count += mem_only_items
 
-                self.gen_create = self.gen_docs_basic_for_target_vbucket(start,
-                                                                         mem_only_items,
-                                                                         self.target_vbucket)
+                self.gen_create = self.genrate_docs_basic(start, mem_only_items,
+                                                           self.target_vbucket)
                 self.loadgen_docs(_sync=True,
                                   retry_exceptions=retry_exceptions)
 
@@ -633,9 +632,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 time_start = time.time()
 
                 self.log.debug("slave_itr == {}, Loading docs on slaves".format(slave_itr))
-                self.gen_create = self.gen_docs_basic_for_target_vbucket(start_2,
-                                                                         mem_only_items,
-                                                                         target_vbs_replicas)
+                self.gen_create = self.genrate_docs_basic(start_2, mem_only_items,
+                                                          target_vbs_replicas)
 
                 self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
@@ -644,9 +642,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 start_2 = self.gen_create.key_counter
 
                 self.log.debug("slave_itr == {}, Loading docs on master".format(slave_itr))
-                self.gen_create = self.gen_docs_basic_for_target_vbucket(start_2,
-                                                                         mem_only_items,
-                                                                         self.target_vbucket)
+                self.gen_create = self.genrate_docs_basic(start_2, mem_only_items,
+                                                          self.target_vbucket)
                 self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
