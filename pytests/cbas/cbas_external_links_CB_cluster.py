@@ -1292,6 +1292,7 @@ class CBASExternalLinks(CBASBaseTest):
             to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
             self.fail("Error while creating dataset")
         to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
+        self.dataset_created = True
 
     def test_connect_link_when_network_up_before_timeout(self):
         "This testcase deals with the scenario, when network comes back up before timeout happens for connect link DDL"
