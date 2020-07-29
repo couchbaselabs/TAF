@@ -1268,7 +1268,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Error while loading {0} bucket in remote cluster".format(self.sample_bucket.name))
 
         RemoteUtilHelper.enable_firewall(server=to_cluster.master, block_ips=[self.analytics_cluster.master.ip],
-                                         all_interface=True)
+                                         all_interface=True,action_on_packet="DROP")
         
         def sleep_and_bring_network_up():
             time.sleep(60)
