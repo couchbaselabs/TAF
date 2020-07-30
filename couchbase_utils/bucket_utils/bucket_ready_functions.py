@@ -398,6 +398,8 @@ class DocLoaderUtils(object):
             num_scopes_to_consider,
             num_buckets_to_consider)
 
+        create_load_gens(doc_crud_spec)
+
         # Add new num_items for newly added collections
         for bucket_name, scope_dict in op_details["collections_added"].items():
             b_obj = BucketUtils.get_bucket_obj(buckets, bucket_name)
@@ -407,7 +409,6 @@ class DocLoaderUtils(object):
                         scope_name].collections[
                         col_name].num_items = num_items_for_new_collections
 
-        create_load_gens(doc_crud_spec)
         create_load_gens(op_details["collections_added"],
                          collection_recreated=True)
         create_load_gens(sub_doc_crud_spec,
