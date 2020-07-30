@@ -141,7 +141,7 @@ class volume(CollectionBase):
 
     def test_volume_taf(self):
         self.loop = 0
-        self.set_metadata_purge_interval()
+        #self.set_metadata_purge_interval()
         while self.loop < self.iterations:
             self.log.info("Finished steps 1-4 successfully in setup")
             self.log.info("Step 5: Rebalance in with Loading of docs")
@@ -227,7 +227,7 @@ class volume(CollectionBase):
                     task = self.data_load_collection(async_load=False)
                     if task.result is False:
                         self.fail("Doc loading failed")
-                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
+                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [],retry_get_process_num=100)
                 if self.data_load_stage == "during":
                     task = self.data_load_collection()
                 self.wait_for_rebalance_to_complete(rebalance_task)
@@ -332,7 +332,7 @@ class volume(CollectionBase):
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="full")
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+                self.cluster.servers[:self.nodes_init], [], [],retry_get_process_num=100)
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.sleep(10)
 
@@ -389,7 +389,7 @@ class volume(CollectionBase):
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+                self.cluster.servers[:self.nodes_init], [], [],retry_get_process_num=100)
 
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.sleep(10)
@@ -422,7 +422,7 @@ class volume(CollectionBase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
-            rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
+            rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [],retry_get_process_num=100)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
@@ -444,7 +444,7 @@ class volume(CollectionBase):
                     servs_out = random.sample(self.nodes_cluster,
                                               int(len(self.cluster.nodes_in_cluster) - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out)
+                        self.cluster.servers[:self.nodes_init], [], servs_out,retry_get_process_num=100)
                     self.wait_for_rebalance_to_complete(rebalance_task)
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
