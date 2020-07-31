@@ -21,6 +21,7 @@ import os
 from memcached.helper.data_helper import MemcachedClientHelper
 from cb_tools.cbstats import Cbstats
 import threading
+import time
 
 
 class volume(BaseTestCase):
@@ -629,6 +630,7 @@ class volume(BaseTestCase):
             self.assertFalse(result, "Found crashes/issues on the nodes")
 
         if wait:
+            start_time = time.time()
             for server in servers:
                 result = self.bucket_util._wait_warmup_completed(
                             [server],
@@ -639,6 +641,9 @@ class volume(BaseTestCase):
                     self.task.jython_task_manager.abort_all_tasks()
                     self.assertTrue(result, "Warm-up failed in %s seconds"
                                     % self.wait_timeout * 20)
+                else:
+                    self.log.info("Bucket warm-up completed in %s." %
+                                  time.time() - start_time)
 
     def perform_rollback(self, start=None, mem_only_items=100000,
                          doc_type="create", kill_rollback=1):
