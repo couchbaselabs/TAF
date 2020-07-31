@@ -164,12 +164,9 @@ class CBASExternalLinks(CBASBaseTest):
                     self.fail("Creating S3 bucket - {0}. Failed.".format(self.aws_bucket_name))
                 self.aws_bucket_created = True
             except Exception as err:
-                if "InvalidLocationConstraint" in str(err):
-                    self.aws_bucket_name = self.input.test_params.get("aws_bucket_name", "cbas-regression-{0}".format(
-                        random.randint(1, 1000)))
-                    retry += 1
-                else:
-                    raise Exception(err)
+                self.aws_bucket_name = self.input.test_params.get("aws_bucket_name", "cbas-regression-{0}".format(
+                    random.randint(1, 1000)))
+                retry += 1
         self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
         if not self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info):
             self.fail("link creation failed")

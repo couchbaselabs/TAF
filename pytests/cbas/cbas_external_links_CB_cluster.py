@@ -108,6 +108,7 @@ class CBASExternalLinks(CBASBaseTest):
         Setup method for setting up root, node and client certs for all the clusters.
         """
 
+        self.log.info("Setting up certificates")
         self._reset_original()
         self.ip_address = '172.16.1.174'
         SSLtype = "openssl"
@@ -126,6 +127,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         for cluster in self._cb_cluster:
 
+            self.log.info("Certificate creation started on cluster - {0}".format(cluster.name))
             cluster.x509 = x509main(cluster.master)
             cluster.CACERTFILEPATH = x509main.CACERTFILEPATH.rstrip("/") + cluster.name + "/"
             cluster.root_ca_path = cluster.CACERTFILEPATH + x509main.CACERTFILE
@@ -218,6 +220,7 @@ class CBASExternalLinks(CBASBaseTest):
         if not username:
             username = self.analytics_username
 
+        self.log.info("Selecting remote cluster")
         if not to_cluster:
             while not to_cluster:
                 to_cluster = random.choice(self.to_clusters)
@@ -229,14 +232,16 @@ class CBASExternalLinks(CBASBaseTest):
         if get_link_info:
             self.get_link_property_dict(to_cluster)
 
-
+        self.log.info("Creating link to remote cluster")
         if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info, username=username):
             self.fail("link cration failed")
         self.link_created = True
 
+        self.log.info("Loading sample bucket")
         if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
             self.fail("Error while loading {0} bucket in remote cluster".format(self.sample_bucket.name))
 
+        self.log.info("Creating dataset on link to remote cluster")
         if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(cbas_bucket_name= self.sample_bucket.name,
                                                                          cbas_dataset_name= self.cbas_dataset_name,
                                                                          dataverse=self.link_info["dataverse"],
@@ -248,15 +253,18 @@ class CBASExternalLinks(CBASBaseTest):
         self.dataset_created = True
 
         if connect_link:
+            self.log.info("Connectin remtoe link")
             if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
                                                                              self.link_info["name"]),
                                                                              username=username):
                 self.fail("Error while connecting link")
             if wait_for_ingestion:
+                self.log.info("Waiting for data ingestion to complete")
                 if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
                                                                                     self.sample_bucket.stats.expected_item_count,
                                                                                     300):
                     self.fail("Data Ingestion did not complete")
+                self.log.info("Setting primary index on dataset")
                 if set_primary_index and not self.set_primary_index(to_cluster.rest, self.sample_bucket.name):
                     self.fail("Creating Primary index on bucket {0} FAILED".format(self.sample_bucket.name))
 
@@ -610,6 +618,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Link creation failed")
     
     def restore_link_to_original(self):
+        self.log.info("Resetting link to original state")
         if not self.analytics_cluster.cbas_util.disconnect_link(
             link_name="{0}.{1}".format(self.link_info["dataverse"], self.link_info["name"])):
             raise Exception( "Error while Disconnecting the link ")
@@ -818,6 +827,7 @@ class CBASExternalLinks(CBASBaseTest):
                         link_properties[key] = value
                 
                 # disconnect link before altering
+                self.log.info("Disconnecting link before altering it's properties")
                 if not self.analytics_cluster.cbas_util.disconnect_link(
                     link_name="{0}.{1}".format(link_properties["dataverse"], link_properties["name"])):
                     raise Exception( "Error while Disconnecting the link ")
@@ -838,7 +848,8 @@ class CBASExternalLinks(CBASBaseTest):
                     to_cluster.rbac_util._create_user_and_grant_role(testcase["new_user"].replace("[*]",""), 
                                                                      testcase["new_user"])
                 
-                #Altering link 
+                #Altering link
+                self.log.info("Altering link properties")
                 response = self.analytics_cluster.cbas_util.update_external_link_properties(
                     link_properties, validate_error_msg=testcase.get("validate_error_msg", False),
                     expected_error=testcase.get("expected_error", None),
@@ -854,7 +865,8 @@ class CBASExternalLinks(CBASBaseTest):
                             dataverse_name=link_properties["dataverse"], username=self.analytics_username):
                             raise Exception("Dataverse creation failed")
                         link_properties["dataverse"] = self.link_info["dataverse"]
-                    
+
+                    self.log.info("Connecting link after altering link properties")
                     if self.analytics_cluster.cbas_util.connect_link(
                         link_name="{0}.{1}".format(link_properties["dataverse"], link_properties["name"]),
                         with_force=testcase.get("with_force",False), 
@@ -870,6 +882,7 @@ class CBASExternalLinks(CBASBaseTest):
                     else:
                         raise Exception( "Error while connecting the link ")
                 else:
+                    self.log.info("Connecting link after altering link properties")
                     if not self.analytics_cluster.cbas_util.connect_link(
                         link_name="{0}.{1}".format(link_properties["dataverse"], link_properties["name"])):
                         raise Exception( "Error while connecting the link ")
