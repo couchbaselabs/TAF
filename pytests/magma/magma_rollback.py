@@ -65,7 +65,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.update_start = (2 * start) // 3
             self.update_end = mem_only_items
 
-    def test_magma_rollback_n_times(self):
+    def test_magma_rollback_basic(self):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 100000)
         if self.nodes_init < 2 or self.num_replicas < 1:
