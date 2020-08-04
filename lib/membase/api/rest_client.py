@@ -1748,11 +1748,11 @@ class RestConnection(object):
                 stat_dict[node_stat['hostname']] = dict()
                 stat_dict[node_stat['hostname']]['version'] = node_stat['version']
                 stat_dict[node_stat['hostname']]['services'] = node_stat['services']
-                stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats']['cpu_utilization_rate']
-                stat_dict[node_stat['hostname']]['mem_free'] = node_stat['systemStats']['mem_free']
-                stat_dict[node_stat['hostname']]['mem_total'] = node_stat['systemStats']['mem_total']
-                stat_dict[node_stat['hostname']]['swap_mem_used'] = node_stat['systemStats']['swap_used']
-                stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats']['swap_total']
+                stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats'].get('cpu_utilization_rate')
+                stat_dict[node_stat['hostname']]['mem_free'] = node_stat['systemStats'].get('mem_free')
+                stat_dict[node_stat['hostname']]['mem_total'] = node_stat['systemStats'].get('mem_total')
+                stat_dict[node_stat['hostname']]['swap_mem_used'] = node_stat['systemStats'].get('swap_used')
+                stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats'].get('swap_total')
                 stat_dict[node_stat['hostname']]['active_item_count'] = 0
                 stat_dict[node_stat['hostname']]['replica_item_count'] = 0
                 if 'curr_items' in node_stat['interestingStats']:
