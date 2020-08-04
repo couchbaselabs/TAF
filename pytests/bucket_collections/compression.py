@@ -197,7 +197,7 @@ class SDKCompression(CollectionBase):
                 self.log_failure("Failures during initial doc loading "
                                  "for keys: %s" % task.fail.keys())
 
-        self.bucket.scopes[scope].collections[collection]["num_items"] \
+        self.bucket.scopes[scope].collections[collection].num_items \
             += (self.num_items * 2)
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
 
@@ -266,6 +266,6 @@ class SDKCompression(CollectionBase):
                                  "for keys: %s" % task.fail.keys())
 
         # Doc validation
-        self.bucket.scopes[scope].collections[collection]["num_items"] \
+        self.bucket.scopes[scope].collections[collection].num_items \
             -= (self.num_items * 2)
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
