@@ -6,6 +6,7 @@ Created on Sep 26, 2017
 
 import copy
 import importlib
+import re
 import threading
 from random import sample, choice
 
@@ -419,12 +420,28 @@ class DocLoaderUtils(object):
     @staticmethod
     def validate_crud_task_per_collection(bucket, scope_name,
                                           collection_name, c_data):
+        # Table objects to print data
+        table_headers = ["Initial exception", "Key"]
+        failure_table_header = table_headers + ["Retry exception"]
+        ignored_keys_table = TableView(DocLoaderUtils.log.debug)
+        retry_succeeded_table = TableView(DocLoaderUtils.log.debug)
+        retry_failed_table = TableView(DocLoaderUtils.log.error)
+        unwanted_retry_succeeded_table = TableView(DocLoaderUtils.log.error)
+        unwanted_retry_failed_table = TableView(DocLoaderUtils.log.error)
+
+        ignored_keys_table.set_headers(table_headers)
+        retry_succeeded_table.set_headers(table_headers)
+        retry_failed_table.set_headers(failure_table_header)
+        unwanted_retry_succeeded_table.set_headers(table_headers)
+        unwanted_retry_failed_table.set_headers(failure_table_header)
+
+        exception_pattern = ".*(com.[a-zA-Z0-9\.]+)"
+
         # Fetch client for retry operations
         client = \
             DocLoaderUtils.sdk_client_pool.get_client_for_bucket(
                 bucket, scope_name, collection_name)
         for op_type, op_data in c_data.items():
-            ignored_keys = list()
             failed_keys = op_data["fail"].keys()
 
             # New dicts to filter failures based on retry strategy
@@ -443,6 +460,9 @@ class DocLoaderUtils(object):
                 for key, failed_doc in op_data["fail"].items():
                     is_key_to_ignore = False
                     exception = failed_doc["error"]
+                    initial_exception = re.match(exception_pattern,
+                                                 str(exception)).group(1)
+
                     for tem_exception in op_data["ignore_exceptions"]:
                         if str(exception).find(tem_exception) != -1:
                             if op_type == DocLoading.Bucket.DocOps.CREATE:
@@ -455,9 +475,10 @@ class DocLoaderUtils(object):
                                     += 1
                             is_key_to_ignore = True
                             break
+
                     if is_key_to_ignore:
                         op_data["fail"].pop(key)
-                        ignored_keys.append(key)
+                        ignored_keys_table.add_row([initial_exception, key])
                         continue
 
                     ambiguous_state = False
@@ -499,6 +520,10 @@ class DocLoaderUtils(object):
                             result
                         if retry_strategy == "retried":
                             op_data["fail"].pop(key)
+                            target_tbl = retry_succeeded_table
+                        else:
+                            target_tbl = unwanted_retry_succeeded_table
+                        tbl_row = [initial_exception, key]
                     else:
                         if op_type == DocLoading.Bucket.DocOps.CREATE:
                             bucket.scopes[scope_name] \
@@ -509,30 +534,28 @@ class DocLoaderUtils(object):
                                 .collections[collection_name].num_items \
                                 += 1
                         op_data[retry_strategy]["fail"][key] = result
+                        if retry_strategy == "retried":
+                            target_tbl = retry_failed_table
+                        else:
+                            target_tbl = unwanted_retry_failed_table
+                        retry_exception = re.match(
+                            exception_pattern, str(result["error"])).group(1)
+                        tbl_row = [initial_exception, key, retry_exception]
+                    target_tbl.add_row(tbl_row)
 
-                generic_string = "%s:%s:%s %s" \
-                                 % (bucket.name, scope_name, collection_name,
-                                    op_type)
-                if ignored_keys:
-                    DocLoaderUtils.log.debug(
-                        "%s ignored keys from retry: %s"
-                        % (generic_string, ignored_keys))
-                if op_data["retried"]["success"]:
-                    DocLoaderUtils.log.debug(
-                        "%s expected retry succeeded for keys: %s"
-                        % (generic_string, op_data["retried"]["success"]))
-                if op_data["retried"]["fail"]:
-                    DocLoaderUtils.log.error(
-                        "%s expected retry failed for keys: %s"
-                        % (generic_string, op_data["retried"]["fail"]))
-                if op_data["unwanted"]["success"]:
-                    DocLoaderUtils.log.error(
-                        "%s unexpected failed keys succeeded in retry: %s"
-                        % (generic_string, op_data["unwanted"]["success"]))
-                if op_data["unwanted"]["fail"]:
-                    DocLoaderUtils.log.error(
-                        "%s unexpected failures failed even in retry: %s"
-                        % (generic_string, op_data["unwanted"]["fail"]))
+                gen_str = "%s:%s:%s - %s" \
+                          % (bucket.name, scope_name, collection_name,
+                             op_type)
+                ignored_keys_table.display(
+                    "%s keys ignored from retry" % gen_str)
+                retry_succeeded_table.display(
+                    "%s keys succeeded after expected retry" % gen_str)
+                retry_failed_table.display(
+                    "%s keys failed after expected retry" % gen_str)
+                unwanted_retry_succeeded_table.display(
+                    "%s unwanted exception keys succeeded in retry" % gen_str)
+                unwanted_retry_failed_table.display(
+                    "%s unwanted exception keys failed in retry" % gen_str)
 
         # Release the acquired client
         DocLoaderUtils.sdk_client_pool.release_client(client)
