@@ -1,8 +1,6 @@
 import copy
 
-from magma_base import MagmaBaseTest
 from magma_basic_crud import BasicCrudTests
-
 
 
 class BasicDeleteTests(BasicCrudTests):

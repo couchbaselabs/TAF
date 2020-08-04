@@ -2,11 +2,7 @@ import copy
 import threading
 
 from Cb_constants.CBServer import CbServer
-from com.couchbase.client.core.error import DocumentUnretrievableException
-from com.couchbase.client.java.kv import GetAnyReplicaOptions
-from couchbase_helper.documentgenerator import doc_generator
 import json as Json
-from magma_base import MagmaBaseTest
 from magma_basic_crud import BasicCrudTests
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient

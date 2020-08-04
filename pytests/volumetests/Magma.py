@@ -643,7 +643,7 @@ class volume(BaseTestCase):
                                     % self.wait_timeout * 20)
                 else:
                     self.log.info("Bucket warm-up completed in %s." %
-                                  time.time() - start_time)
+                                  str(time.time() - start_time))
 
     def perform_rollback(self, start=None, mem_only_items=100000,
                          doc_type="create", kill_rollback=1):
