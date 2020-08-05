@@ -314,8 +314,6 @@ class CollectionsSuccessTests(CollectionBase):
                 cbstat_obj[node.ip].failover_stats(self.bucket.name)
 
         # Remove active vbuckets from doc_loading to avoid errors
-        # load_spec["target_vbuckets"] = list(set(target_vbuckets)
-        #                                ^ set(active_vbs_in_target_nodes))
         load_spec = dict()
         load_spec["doc_crud"] = dict()
         load_spec["doc_crud"][
@@ -324,6 +322,10 @@ class CollectionsSuccessTests(CollectionBase):
             MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 25
         load_spec["doc_crud"][
             MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 25
+        load_spec["doc_crud"][
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+        load_spec["target_vbuckets"] = list(set(range(0, 1024))
+                                            ^ set(active_vbs_in_target_nodes))
 
         self.log.info("Perform 'create', 'update', 'delete' mutations")
         doc_loading_task = \
@@ -618,6 +620,10 @@ class CollectionsSuccessTests(CollectionBase):
             MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION] = 0
         load_spec["doc_crud"][
             MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+        load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = "all"
+        load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
+        load_spec[MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD] = "all"
+        load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
 
         self.log.info("Perform initial 'insert' mutations")
         doc_loading_task = \
