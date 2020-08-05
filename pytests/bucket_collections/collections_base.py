@@ -101,8 +101,8 @@ class CollectionBase(BaseTestCase):
             self.bucket_util.get_crud_template_from_package("initial_load")
 
         # Process params to over_ride values if required
-        self.over_ride_template_params(buckets_spec)
-        self.over_ride_template_params(doc_loading_spec)
+        self.over_ride_bucket_template_params(buckets_spec)
+        self.over_ride_doc_loading_template_params(doc_loading_spec)
 
         self.bucket_util.create_buckets_using_json_data(buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete()
@@ -151,7 +151,14 @@ class CollectionBase(BaseTestCase):
         self.bucket_util.print_bucket_stats()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
-    def over_ride_template_params(self, target_spec):
+    def over_ride_bucket_template_params(self, bucket_spec):
+        for over_ride_param in self.over_ride_spec_params:
+            if over_ride_param == "replicas":
+                bucket_spec[Bucket.replicaNumber] = self.num_replicas
+            elif over_ride_param == "bucket_size":
+                bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+
+    def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
             if over_ride_param == "num_items":
                 target_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
@@ -159,12 +166,8 @@ class CollectionBase(BaseTestCase):
             elif over_ride_param == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                     self.durability_level
-            elif over_ride_param == "replicas":
-                target_spec[Bucket.replicaNumber] = self.num_replicas
             elif over_ride_param == "sdk_timeout":
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
-            elif over_ride_param == "bucket_size":
-                target_spec[Bucket.ramQuotaMB] = self.bucket_size
             elif over_ride_param == "doc_size":
                 target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
 

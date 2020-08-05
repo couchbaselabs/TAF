@@ -2174,27 +2174,34 @@ class BucketUtils(ScopeUtils):
 
     def wait_for_collection_creation_to_complete(self, timeout=60):
         self.log.info("Waiting for all collections to be created")
+        bucket_helper = BucketHelper(self.cluster.master)
         for bucket in self.buckets:
             start_time = time.time()
             stop_time = start_time + timeout
             count_matched = False
-            total_collection_as_per_bucket_obj = BucketUtils.get_total_collections_in_bucket(bucket)
-            total_collection_as_per_stats = BucketHelper(self.cluster.master).get_total_collections_in_bucket(bucket)
-            while time.time() < stop_time and total_collection_as_per_stats != total_collection_as_per_bucket_obj:
-                total_collection_as_per_stats = BucketHelper(self.cluster.master).get_total_collections_in_bucket(bucket)
-                if total_collection_as_per_bucket_obj == total_collection_as_per_stats:
+            total_collection_as_per_bucket_obj = \
+                self.get_total_collections_in_bucket(bucket)
+            total_collection_as_per_stats = \
+                bucket_helper.get_total_collections_in_bucket(bucket)
+            while time.time() < stop_time and \
+                    total_collection_as_per_stats \
+                    != total_collection_as_per_bucket_obj:
+                total_collection_as_per_stats = \
+                    bucket_helper.get_total_collections_in_bucket(bucket)
+                if total_collection_as_per_bucket_obj \
+                        == total_collection_as_per_stats:
                     count_matched = True
                     break
-                if not count_matched:
-                    self.log.error("Collections count mismatch in %s. %s != %s"
-                                   % (bucket.name,
-                                      total_collection_as_per_bucket_obj,
-                                      total_collection_as_per_stats))
-                    raise Exception("Collection count mismatch for bucket: %s. "
-                                    "Expected: %d, Actual: %d"
-                                    % (bucket.name,
-                                       total_collection_as_per_bucket_obj,
-                                       total_collection_as_per_stats))
+            if not count_matched:
+                self.log.error("Collections count mismatch in %s. %s != %s"
+                               % (bucket.name,
+                                  total_collection_as_per_bucket_obj,
+                                  total_collection_as_per_stats))
+                raise Exception("Collection count mismatch for bucket: %s. "
+                                "Expected: %d, Actual: %d"
+                                % (bucket.name,
+                                   total_collection_as_per_bucket_obj,
+                                   total_collection_as_per_stats))
 
     # Bucket doc_ops support APIs
     @staticmethod
