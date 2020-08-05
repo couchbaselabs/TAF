@@ -876,14 +876,14 @@ class CollectionUtils(DocLoaderUtils):
         spec_package = importlib.import_module(
             'pytests.bucket_collections.bucket_templates.' +
             module_name)
-        return spec_package.spec
+        return copy.deepcopy(spec_package.spec)
 
     @staticmethod
     def get_crud_template_from_package(module_name):
         spec_package = importlib.import_module(
             'pytests.bucket_collections.collection_ops_specs.' +
             module_name)
-        return spec_package.spec
+        return copy.deepcopy(spec_package.spec)
 
     @staticmethod
     def create_collections(cluster, bucket, num_collections, scope_name,
@@ -2181,11 +2181,7 @@ class BucketUtils(ScopeUtils):
             count_matched = False
             total_collection_as_per_bucket_obj = \
                 self.get_total_collections_in_bucket(bucket)
-            total_collection_as_per_stats = \
-                bucket_helper.get_total_collections_in_bucket(bucket)
-            while time.time() < stop_time and \
-                    total_collection_as_per_stats \
-                    != total_collection_as_per_bucket_obj:
+            while time.time() < stop_time:
                 total_collection_as_per_stats = \
                     bucket_helper.get_total_collections_in_bucket(bucket)
                 if total_collection_as_per_bucket_obj \

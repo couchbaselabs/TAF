@@ -157,13 +157,13 @@ class CollectionBase(BaseTestCase):
                 bucket_spec[Bucket.replicaNumber] = self.num_replicas
             elif over_ride_param == "bucket_size":
                 bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+            elif over_ride_param == "num_items":
+                bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                    self.num_items
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
-            if over_ride_param == "num_items":
-                target_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
-                    self.num_items
-            elif over_ride_param == "durability":
+            if over_ride_param == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                     self.durability_level
             elif over_ride_param == "sdk_timeout":
