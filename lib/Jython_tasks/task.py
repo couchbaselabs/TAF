@@ -789,7 +789,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
                                                            self.scope,
                                                            self.collection)
-        if self.op_type == 'create':
+        if self.op_type == DocLoading.Bucket.DocOps.CREATE:
             success, fail = self.batch_create(
                 key_value,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -799,7 +799,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             if self.track_failures:
                 self.fail.update(fail)
 
-        elif self.op_type == 'update':
+        elif self.op_type == DocLoading.Bucket.DocOps.UPDATE:
             success, fail = self.batch_update(
                 key_value,
                 persist_to=self.persist_to,
@@ -812,7 +812,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             if self.track_failures:
                 self.fail.update(fail)
 
-        elif self.op_type == 'replace':
+        elif self.op_type == DocLoading.Bucket.DocOps.REPLACE:
             success, fail = self.batch_replace(
                 key_value,
                 persist_to=self.persist_to,
@@ -825,7 +825,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             if self.track_failures:
                 self.fail.update(fail)
 
-        elif self.op_type == 'delete':
+        elif self.op_type == DocLoading.Bucket.DocOps.DELETE:
             success, fail = self.batch_delete(key_value,
                                               persist_to=self.persist_to,
                                               replicate_to=self.replicate_to,
@@ -835,7 +835,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             if self.track_failures:
                 self.fail.update(fail)
 
-        elif self.op_type == 'touch':
+        elif self.op_type == DocLoading.Bucket.DocOps.TOUCH:
             success, fail = self.batch_touch(key_value,
                                              exp=self.exp,
                                              timeout=self.timeout,
@@ -843,7 +843,7 @@ class LoadDocumentsTask(GenericLoadingTask):
             if self.track_failures:
                 self.fail.update(fail)
 
-        elif self.op_type == 'read':
+        elif self.op_type == DocLoading.Bucket.DocOps.READ:
             success, fail = self.batch_read(dict(key_value).keys())
             if self.track_failures:
                 self.fail.update(fail)
@@ -908,7 +908,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
                                                            self.scope,
                                                            self.collection)
-        if self.op_type == 'insert':
+        if self.op_type == DocLoading.Bucket.SubDocOps.INSERT:
             success, fail = self.batch_sub_doc_insert(
                 key_value,
                 persist_to=self.persist_to,
@@ -920,7 +920,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 xattr=self.xattr)
             self.fail.update(fail)
             # self.success.update(success)
-        elif self.op_type == 'upsert':
+        elif self.op_type == DocLoading.Bucket.SubDocOps.UPSERT:
             success, fail = self.batch_sub_doc_upsert(
                 key_value,
                 persist_to=self.persist_to,
@@ -932,7 +932,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 xattr=self.xattr)
             self.fail.update(fail)
             # self.success.update(success)
-        elif self.op_type == 'remove':
+        elif self.op_type == DocLoading.Bucket.SubDocOps.REMOVE:
             success, fail = self.batch_sub_doc_remove(
                 key_value,
                 persist_to=self.persist_to,
