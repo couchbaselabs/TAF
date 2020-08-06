@@ -493,7 +493,7 @@ class CollectionsRebalance(CollectionBase):
         if data_load_spec is None:
             data_load_spec = self.data_load_spec
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
-        self.over_ride_template_params(doc_loading_spec)
+        self.over_ride_doc_loading_template_params(doc_loading_spec)
         if self.dgm_test:
             if data_load_spec == "dgm_load":
                 # pre-load to dgm
