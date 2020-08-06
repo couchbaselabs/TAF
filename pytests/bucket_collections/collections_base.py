@@ -19,36 +19,7 @@ class CollectionBase(BaseTestCase):
     def setUp(self):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
-        try:
-            self.collection_setup()
-        except Java_base_exception as exception:
-            self.handle_collection_setup_exception(exception)
-        except Exception as exception:
-            self.handle_collection_setup_exception(exception)
-        self.supported_d_levels = \
-            self.bucket_util.get_supported_durability_levels()
-        self.log_setup_status("CollectionBase", "complete")
 
-    def tearDown(self):
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstat_obj = Cbstats(shell)
-        for bucket in self.bucket_util.buckets:
-            result = cbstat_obj.all_stats(bucket.name, field_to_grep="vb_active_perc_mem_resident")
-            self.log.info("Bucket name : {0} Resident ratio(DGM) : {1}".format(bucket.name, result))
-        self.bucket_util.remove_scope_collections_and_validate(
-            validate_docs_count=self.validate_docs_count_during_teardown)
-        super(CollectionBase, self).tearDown()
-
-    def handle_collection_setup_exception(self, exception_obj):
-        # Shutdown client pool in case of any error before failing
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.shutdown()
-        # print the tracback of the failure
-        traceback.print_exc()
-        # Throw the exception so that the test will fail at setUp
-        raise exception_obj
-
-    def collection_setup(self):
         self.MAX_SCOPES = CbServer.max_scopes
         self.MAX_COLLECTIONS = CbServer.max_collections
         self.key = 'test_collection'.rjust(self.key_size, '0')
@@ -57,15 +28,13 @@ class CollectionBase(BaseTestCase):
         self.doc_ops = self.input.param("doc_ops", None)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
-        ttl_buckets = ["multi_bucket.buckets_for_rebalance_tests_with_ttl",
-                       "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
-                       "multi_bucket.buckets_for_volume_tests_with_ttl"]
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
 
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
-        self.skip_collections_cleanup = self.input.param("skip_collections_cleanup", False)
+        self.skip_collections_cleanup = \
+            self.input.param("skip_collections_cleanup", False)
         self.validate_docs_count_during_teardown = \
             self.input.param("validate_docs_count_during_teardown", False)
         self.batch_size = self.input.param("batch_size", 200)
@@ -92,7 +61,42 @@ class CollectionBase(BaseTestCase):
         status = RestConnection(self.cluster.master) \
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
+        self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
+        try:
+            self.collection_setup()
+        except Java_base_exception as exception:
+            self.handle_collection_setup_exception(exception)
+        except Exception as exception:
+            self.handle_collection_setup_exception(exception)
+        self.supported_d_levels = \
+            self.bucket_util.get_supported_durability_levels()
+        self.log_setup_status("CollectionBase", "complete")
+
+    def tearDown(self):
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstat_obj = Cbstats(shell)
+        for bucket in self.bucket_util.buckets:
+            result = cbstat_obj.all_stats(
+                bucket.name, field_to_grep="vb_active_perc_mem_resident")
+            self.log.info("Bucket: %s, Resident ratio(DGM): %s%%"
+                          % (bucket.name, result))
+            if not self.skip_collections_cleanup:
+                self.bucket_util.remove_scope_collections_for_bucket(bucket)
+        if self.validate_docs_count_during_teardown:
+            self.bucket_util.validate_docs_per_collections_all_buckets()
+        super(CollectionBase, self).tearDown()
+
+    def handle_collection_setup_exception(self, exception_obj):
+        # Shutdown client pool in case of any error before failing
+        if self.sdk_client_pool is not None:
+            self.sdk_client_pool.shutdown()
+        # print the tracback of the failure
+        traceback.print_exc()
+        # Throw the exception so that the test will fail at setUp
+        raise exception_obj
+
+    def collection_setup(self):
         # Create bucket(s) and add rbac user
         self.bucket_util.add_rbac_user()
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
@@ -142,6 +146,11 @@ class CollectionBase(BaseTestCase):
 
         self.cluster_util.print_cluster_stats()
 
+        ttl_buckets = [
+            "multi_bucket.buckets_for_rebalance_tests_with_ttl",
+            "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
+            "multi_bucket.buckets_for_volume_tests_with_ttl"]
+
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         if self.spec_name not in ttl_buckets:
@@ -149,7 +158,6 @@ class CollectionBase(BaseTestCase):
 
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats()
-        self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
     def over_ride_bucket_template_params(self, bucket_spec):
         for over_ride_param in self.over_ride_spec_params:

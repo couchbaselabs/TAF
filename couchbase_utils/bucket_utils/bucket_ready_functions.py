@@ -4319,24 +4319,20 @@ class BucketUtils(ScopeUtils):
 
             self.validate_doc_count_as_per_collections(bucket)
 
-    def remove_scope_collections_and_validate(self, validate_docs_count=False):
+    def remove_scope_collections_for_bucket(self, bucket):
         """
-        Delete all created scope-collection and validate the stats
+        Delete all created scope-collection for the given bucket
         """
-        for bucket in self.buckets:
-            for scope in BucketUtils.get_active_scopes(bucket):
-                for collection in BucketUtils.get_active_collections(
-                        bucket, scope.name):
-                    self.drop_collection(self.cluster.master,
-                                         bucket,
-                                         scope_name=scope.name,
-                                         collection_name=collection.name)
-                if scope.name != CbServer.default_scope:
-                    self.drop_scope(self.cluster.master,
-                                    bucket,
-                                    scope_name=scope.name)
-        if validate_docs_count:
-            self.validate_docs_per_collections_all_buckets()
+        for scope in self.get_active_scopes(bucket):
+            for collection in self.get_active_collections(bucket, scope.name):
+                self.drop_collection(self.cluster.master,
+                                     bucket,
+                                     scope_name=scope.name,
+                                     collection_name=collection.name)
+            if scope.name != CbServer.default_scope:
+                self.drop_scope(self.cluster.master,
+                                bucket,
+                                scope_name=scope.name)
 
     @staticmethod
     def perform_tasks_from_spec(cluster, buckets, input_spec):
