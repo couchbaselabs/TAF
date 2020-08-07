@@ -155,8 +155,8 @@ class DocLoaderUtils(object):
             collection_obj.doc_index = (end, collection_obj.doc_index[1])
             collection_obj.num_items -= (end - start)
         else:
-            start = collection_obj.doc_index[1] - num_items
-            end = collection_obj.doc_index[1]
+            start = collection_obj.doc_index[0]
+            end = start + num_items
 
         if target_vbuckets == "all":
             target_vbuckets = None
@@ -186,8 +186,8 @@ class DocLoaderUtils(object):
                                             collection_obj.sub_doc_index[1])
             subdoc_gen_template_num = 2
         else:
-            start = collection_obj.sub_doc_index[1] - num_items
-            end = collection_obj.sub_doc_index[1]
+            start = collection_obj.sub_doc_index[0]
+            end = start + num_items
             subdoc_gen_template_num = choice([0, 1])
         return sub_doc_generator_for_edit(generic_key, start, end,
                                           subdoc_gen_template_num)
