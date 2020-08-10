@@ -29,19 +29,29 @@ class CBASBaseTest(BaseTestCase):
         self.cbas_bucket_name = self.input.param('cbas_bucket_name', 'travel')
         self.cb_bucket_password = self.input.param('cb_bucket_password', None)
         self.cb_server_ip = self.input.param("cb_server_ip", None)
-        self.cb_server_ip = self.cb_server_ip.replace('INVALID_IP', invalid_ip) if self.cb_server_ip is not None else None
-        self.cbas_dataset_name = self.input.param("cbas_dataset_name", 'travel_ds')
-        self.cbas_bucket_name_invalid = self.input.param('cbas_bucket_name_invalid', self.cbas_bucket_name)
+        self.cb_server_ip = \
+            self.cb_server_ip.replace('INVALID_IP', invalid_ip) \
+            if self.cb_server_ip is not None else None
+        self.cbas_dataset_name = self.input.param("cbas_dataset_name",
+                                                  'travel_ds')
+        self.cbas_bucket_name_invalid = \
+            self.input.param('cbas_bucket_name_invalid', self.cbas_bucket_name)
         self.cbas_dataset2_name = self.input.param('cbas_dataset2_name', None)
-        self.skip_create_dataset = self.input.param('skip_create_dataset', False)
-        self.disconnect_if_connected = self.input.param('disconnect_if_connected', False)
-        self.cbas_dataset_name_invalid = self.input.param('cbas_dataset_name_invalid', self.cbas_dataset_name)
-        self.skip_drop_connection = self.input.param('skip_drop_connection', False)
+        self.skip_create_dataset = self.input.param('skip_create_dataset',
+                                                    False)
+        self.disconnect_if_connected = \
+            self.input.param('disconnect_if_connected', False)
+        self.cbas_dataset_name_invalid = \
+            self.input.param('cbas_dataset_name_invalid',
+                             self.cbas_dataset_name)
+        self.skip_drop_connection = self.input.param('skip_drop_connection',
+                                                     False)
         self.skip_drop_dataset = self.input.param('skip_drop_dataset', False)
         self.query_id = self.input.param('query_id', None)
         self.mode = self.input.param('mode', None)
         self.num_concurrent_queries = self.input.param('num_queries', 5000)
-        self.concurrent_batch_size = self.input.param('concurrent_batch_size', 100)
+        self.concurrent_batch_size = self.input.param('concurrent_batch_size',
+                                                      100)
         self.compiler_param = self.input.param('compiler_param', None)
         self.compiler_param_val = self.input.param('compiler_param_val', None)
         self.expect_reject = self.input.param('expect_reject', False)
@@ -79,29 +89,47 @@ class CBASBaseTest(BaseTestCase):
                                index_path=server.index_path,
                                cbas_path=server.cbas_path)
             if self.expected_error:
-                self.expected_error = self.expected_error.replace("INVALID_IP",invalid_ip)
-                self.expected_error = self.expected_error.replace("PORT",self.cluster.master.port)
+                self.expected_error = \
+                    self.expected_error.replace("INVALID_IP", invalid_ip)
+                self.expected_error = \
+                    self.expected_error.replace("PORT",
+                                                self.cluster.master.port)
             self.otpNodes = []
             self.cbas_path = server.cbas_path
             self.rest = RestConnection(self.cluster.master)
-            self.log.info("Setting the min possible memory quota so that adding more nodes to the cluster wouldn't be a problem.")
-            self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=MIN_KV_QUOTA)
-            self.rest.set_service_memoryQuota(service='ftsMemoryQuota', memoryQuota=FTS_QUOTA)
-            self.rest.set_service_memoryQuota(service='indexMemoryQuota', memoryQuota=INDEX_QUOTA)
-            self.set_cbas_memory_from_available_free_memory = self.input.param('set_cbas_memory_from_available_free_memory', False)
+            self.log.info(
+                "Setting the min possible memory quota so that adding "
+                "more nodes to the cluster wouldn't be a problem.")
+            self.rest.set_service_memoryQuota(service='memoryQuota',
+                                              memoryQuota=MIN_KV_QUOTA)
+            self.rest.set_service_memoryQuota(service='ftsMemoryQuota',
+                                              memoryQuota=FTS_QUOTA)
+            self.rest.set_service_memoryQuota(service='indexMemoryQuota',
+                                              memoryQuota=INDEX_QUOTA)
+            self.set_cbas_memory_from_available_free_memory = \
+                self.input.param('set_cbas_memory_from_available_free_memory',
+                                 False)
             if self.expected_error:
-                self.expected_error = self.expected_error.replace("INVALID_IP",invalid_ip)
-                self.expected_error = self.expected_error.replace("PORT",self.cluster.master.port)
+                self.expected_error = \
+                    self.expected_error.replace("INVALID_IP", invalid_ip)
+                self.expected_error = \
+                    self.expected_error.replace("PORT",
+                                                self.cluster.master.port)
 
             if self.set_cbas_memory_from_available_free_memory:
                 info = self.rest.get_nodes_self()
-                self.cbas_memory_quota = int((info.memoryFree // 1024 ** 2) * 0.9)
-                self.log.info("Setting %d memory quota for CBAS" % self.cbas_memory_quota)
-                self.rest.set_service_memoryQuota(service='cbasMemoryQuota', memoryQuota=self.cbas_memory_quota)
+                self.cbas_memory_quota = int((info.memoryFree // 1024 ** 2)
+                                             * 0.9)
+                self.log.info("Setting %d memory quota for CBAS"
+                              % self.cbas_memory_quota)
+                self.rest.set_service_memoryQuota(
+                    service='cbasMemoryQuota',
+                    memoryQuota=self.cbas_memory_quota)
             else:
                 self.log.info("Setting %d memory quota for CBAS" % CBAS_QUOTA)
                 self.cbas_memory_quota = CBAS_QUOTA
-                self.rest.set_service_memoryQuota(service='cbasMemoryQuota', memoryQuota=CBAS_QUOTA)
+                self.rest.set_service_memoryQuota(service='cbasMemoryQuota',
+                                                  memoryQuota=CBAS_QUOTA)
             self.cbas_util = None
             if self.cluster.cbas_nodes:
                 self.cbas_node = self.cluster.cbas_nodes[0]
@@ -110,18 +138,38 @@ class CBASBaseTest(BaseTestCase):
                     self.cleanup_cbas()
                 if add_default_cbas_node:
                     if self.cluster.master.ip != self.cbas_node.ip:
-                        self.otpNodes.append(ClusterUtils(self.cluster, self.task_manager).add_node(self.cbas_node))
+                        self.otpNodes.append(
+                            ClusterUtils(self.cluster, self.task_manager)
+                            .add_node(self.cbas_node))
                     else:
                         self.otpNodes = self.rest.node_statuses()
                     ''' This cbas cleanup is actually not needed.
-                        When a node is added to the cluster, it is automatically cleaned-up.'''
+                        When a node is added to the cluster, 
+                        it is automatically cleaned-up.'''
                     self.cleanup_cbas()
                     self.cluster.cbas_nodes.remove(self.cbas_node)
+            if self.default_bucket:
+                self.bucket_util.create_default_bucket(
+                    bucket_type=self.bucket_type,
+                    ram_quota=self.bucket_size,
+                    replica=self.num_replicas,
+                    conflict_resolution=self.bucket_conflict_resolution_type,
+                    replica_index=self.bucket_replica_index,
+                    storage=self.bucket_storage,
+                    eviction_policy=self.bucket_eviction_policy,
+                    flush_enabled=self.flush_enabled)
+            elif self.cb_bucket_name in self.sample_bucket_dict.keys():
+                self.sample_bucket = \
+                    self.sample_bucket_dict[self.cb_bucket_name]
+
         else:
             # Multi Cluster Support
             for cluster in self._cb_cluster:
+
                 cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
-                cluster.bucket_util = BucketUtils(cluster, cluster.cluster_util, self.task)
+                cluster.bucket_util = BucketUtils(cluster,
+                                                  cluster.cluster_util,
+                                                  self.task)
 
                 for server in cluster.servers:
                     if "cbas" in server.services:
@@ -134,40 +182,63 @@ class CBASBaseTest(BaseTestCase):
                                        cbas_path=server.cbas_path)
 
                 if self.expected_error:
-                    cluster.expected_error = self.expected_error.replace("INVALID_IP", invalid_ip)
-                    cluster.expected_error = self.expected_error.replace("PORT", cluster.master.port)
+                    cluster.expected_error = \
+                        self.expected_error.replace("INVALID_IP", invalid_ip)
+                    cluster.expected_error = \
+                        self.expected_error.replace("PORT",
+                                                    cluster.master.port)
 
                 cluster.otpNodes = list()
                 cluster.cbas_path = server.cbas_path
 
                 cluster.rest = RestConnection(cluster.master)
-                self.log.info("Setting the min possible memory quota so that adding "
-                              "more nodes to the cluster wouldn't be a problem.")
-                cluster.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=MIN_KV_QUOTA)
-                cluster.rest.set_service_memoryQuota(service='ftsMemoryQuota', memoryQuota=FTS_QUOTA)
-                cluster.rest.set_service_memoryQuota(service='indexMemoryQuota', memoryQuota=INDEX_QUOTA)
-                cluster.set_cbas_memory_from_available_free_memory = self.input.param('set_cbas_memory_from_available_free_memory', False)
+                self.log.info(
+                    "Setting the min possible memory quota so that adding "
+                    "more nodes to the cluster wouldn't be a problem.")
+                cluster.rest.set_service_memoryQuota(
+                    service='memoryQuota',
+                    memoryQuota=MIN_KV_QUOTA)
+                cluster.rest.set_service_memoryQuota(
+                    service='ftsMemoryQuota',
+                    memoryQuota=FTS_QUOTA)
+                cluster.rest.set_service_memoryQuota(
+                    service='indexMemoryQuota',
+                    memoryQuota=INDEX_QUOTA)
+                cluster.set_cbas_memory_from_available_free_memory = \
+                    self.input.param(
+                        'set_cbas_memory_from_available_free_memory', False)
 
                 if cluster.set_cbas_memory_from_available_free_memory:
                     info = cluster.rest.get_nodes_self()
-                    cluster.cbas_memory_quota = int((info.memoryFree // 1024 ** 2) * 0.9)
-                    self.log.info("Setting %d memory quota for CBAS" % cluster.cbas_memory_quota)
-                    cluster.rest.set_service_memoryQuota(service='cbasMemoryQuota', memoryQuota=cluster.cbas_memory_quota)
+                    cluster.cbas_memory_quota = int((info.memoryFree
+                                                     // 1024 ** 2) * 0.9)
+                    self.log.info("Setting %d memory quota for CBAS"
+                                  % cluster.cbas_memory_quota)
+                    cluster.rest.set_service_memoryQuota(
+                        service='cbasMemoryQuota',
+                        memoryQuota=cluster.cbas_memory_quota)
                 else:
-                    self.log.info("Setting %d memory quota for CBAS" % CBAS_QUOTA)
+                    self.log.info("Setting %d memory quota for CBAS"
+                                  % CBAS_QUOTA)
                     cluster.cbas_memory_quota = CBAS_QUOTA
-                    cluster.rest.set_service_memoryQuota(service='cbasMemoryQuota', memoryQuota=CBAS_QUOTA)
+                    cluster.rest.set_service_memoryQuota(
+                        service='cbasMemoryQuota',
+                        memoryQuota=CBAS_QUOTA)
 
                 cluster.cbas_util = None
                 # Drop any existing buckets and datasets
                 if cluster.cbas_nodes:
                     cluster.cbas_node = cluster.cbas_nodes[0]
-                    cluster.cbas_util = CbasUtil(cluster.master, cluster.cbas_node, self.task)
+                    cluster.cbas_util = CbasUtil(cluster.master,
+                                                 cluster.cbas_node,
+                                                 self.task)
                     if "cbas" in cluster.master.services:
                         self.cleanup_cbas(cluster.cbas_util)
                     if add_default_cbas_node:
                         if cluster.master.ip != cluster.cbas_node.ip:
-                            cluster.otpNodes.append(cluster.cluster_util.add_node(cluster.cbas_node))
+                            cluster.otpNodes.append(
+                                cluster.cluster_util
+                                .add_node(cluster.cbas_node))
                         else:
                             cluster.otpNodes = cluster.rest.node_statuses()
                         """
@@ -177,6 +248,19 @@ class CBASBaseTest(BaseTestCase):
                         """
                         self.cleanup_cbas(cluster.cbas_util)
                         cluster.cbas_nodes.remove(cluster.cbas_node)
+                if self.default_bucket:
+                    cluster.bucket_util.create_default_bucket(
+                        bucket_type=self.bucket_type,
+                        ram_quota=self.bucket_size,
+                        replica=self.num_replicas,
+                        conflict_resolution=self.bucket_conflict_resolution_type,
+                        replica_index=self.bucket_replica_index,
+                        storage=self.bucket_storage,
+                        eviction_policy=self.bucket_eviction_policy,
+                        flush_enabled=self.flush_enabled)
+                elif self.cb_bucket_name in self.sample_bucket_dict.keys():
+                    self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
+
                 cluster.bucket_util.add_rbac_user()
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
@@ -230,7 +314,7 @@ class CBASBaseTest(BaseTestCase):
             self.log.info("Drop Dataverse other than Default and Metadata")
             cmd_get_dataverse = 'select DataverseName from Metadata.`Dataverse` where DataverseName != "Metadata" and DataverseName != "Default";'
             status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_dataverse)
-            if (results != None) & (len(results) > 0):
+            if (results is not None) & (len(results) > 0):
                 for row in results:
                     cbas_util.disconnect_link("`" + row['DataverseName'] + "`" + ".Local")
                     cbas_util.drop_dataverse_on_cbas(dataverse_name="`" + row['DataverseName'] + "`")
@@ -259,8 +343,10 @@ class CBASBaseTest(BaseTestCase):
         :param _async: Boolean to decide whether to start ops in parallel
         :param durability: Durability level to use for doc operation
         :param mutation_num: Mutation count to keep track per doc_loading
-        :param cluster: cluster object for cluster on which this doc load operation has to be performed.
-        :param buckets: list of buckets on which doc load operation has to be performed.
+        :param cluster: cluster object for cluster on which this doc load
+                        operation has to be performed.
+        :param buckets: list of buckets on which doc load operation
+                        has to be performed.
         :param key: key for the generated docs
         :return:
         """
@@ -315,7 +401,8 @@ class CBASBaseTest(BaseTestCase):
         """
         Method to remove nodes from a cluster.
         :param otpnode: list of nodes to be removed.
-        :param wait_for_rebalance: boolean, wait for rebalance to finish after removing the nodes.
+        :param wait_for_rebalance: boolean, wait for rebalance to finish
+                                   after removing the nodes.
         :param rest: RestConnection object
         """
         if not rest:
@@ -378,17 +465,18 @@ class CBASBaseTest(BaseTestCase):
         dataverse_map = dict()
         dataverse_map["Default"] = dict()
         link_created = 0
-        for i in range(1,dataverse+1):
+        for i in range(1, dataverse+1):
             dataverse_name = "dataverse_{0}".format(str(i))
             if cbas_util.create_dataverse_on_cbas(dataverse_name=dataverse_name):
                 dataverse_map[dataverse_name] = dict()
                 if link and (link_created < link):
-                    for j in range(1, random.randint(0, link - link_created)+1):
+                    for j in range(1, random.randint(0, link-link_created)+1):
                         link_name = "link_{0}".format(str(j))
                         dataverse_map[dataverse_name][link_name] = dict()
                         link_created += 1
             else:
-                self.log.error("Creation of dataverse {0} failed.".format(dataverse_name))
+                self.log.error("Creation of dataverse %s failed."
+                               % dataverse_name)
                 for key in dataverse_map.keys():
                     if key != "Dafault":
                         cbas_util.drop_dataverse_on_cbas(dataverse_name=key)
@@ -399,7 +487,8 @@ class CBASBaseTest(BaseTestCase):
             link_created += 1
         return dataverse_map
 
-    def create_or_delete_users(self, rbac_util, rbac_users_created, delete=False):
+    def create_or_delete_users(self, rbac_util, rbac_users_created,
+                               delete=False):
         """
         Creates all types of rbac users.
         """
@@ -413,7 +502,7 @@ class CBASBaseTest(BaseTestCase):
         else:
             for role in RbacUtils.cb_server_roles:
                 if "[*]" in role:
-                    user = role.replace("[*]","")
+                    user = role.replace("[*]", "")
                 else:
                     user = role
                 rbac_users_created[user] = role
@@ -422,27 +511,31 @@ class CBASBaseTest(BaseTestCase):
     def create_testcase_for_rbac_user(self, description, rbac_users_created):
         testcases = []
         for user in rbac_users_created:
-            if user in ["admin", "analytics_admin", "cluster_admin", self.analytics_username]:
+            if user in ["admin", "analytics_admin", "cluster_admin",
+                        self.analytics_username]:
                 test_params = {
                     "description": description.format(user),
                     "validate_error_msg": False
                     }
-            elif user in ["security_admin", "query_external_access", "query_system_catalog",
-                          "replication_admin", "ro_admin", "bucket_full_access",
-                          "replication_target", "mobile_sync_gateway", "data_reader", "data_writer",
-                          "data_dcp_reader", "data_monitoring", "views_admin", "views_reader",
-                          "query_delete", "query_insert", "query_manage_index", "query_select",
+            elif user in ["security_admin", "query_external_access",
+                          "query_system_catalog", "replication_admin",
+                          "ro_admin", "bucket_full_access",
+                          "replication_target", "mobile_sync_gateway",
+                          "data_reader", "data_writer",
+                          "data_dcp_reader", "data_monitoring",
+                          "views_admin",  "views_reader",
+                          "query_delete", "query_insert",
+                          "query_manage_index",  "query_select",
                           "query_update", "fts_admin", "fts_searcher", ]:
                 test_params = {
                     "description": description.format(user),
                     "validate_error_msg": True,
                     "expected_error": "User must have permission",
-                    }
+                }
             else:
                 test_params = {"description": description.format(user),
                                "validate_error_msg": True,
-                               "expected_error": "Unauthorized user"
-                               }
+                               "expected_error": "Unauthorized user"}
             test_params["username"] = user
             testcases.append(test_params)
         return testcases
@@ -463,7 +556,7 @@ class CBASBaseTest(BaseTestCase):
         else:
             return False
 
-    def convert_string_to_bool(self,value):
+    def convert_string_to_bool(self, value):
         if isinstance(value, str) or isinstance(value, unicode):
             if value.lower() == "true":
                 return True
