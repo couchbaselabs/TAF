@@ -1279,6 +1279,241 @@ class MagmaRollbackTests(MagmaBaseTest):
                 shell.disconnect()
         #######################################################################
 
+    def test_crash_during_rollback(self):
+        '''
+        Test focus: Stopping persistence on x(where x < num_nodes) nodes,
+                    and trigger roll back on other  nodes.
+                    and during rollback crash on replica nodes.
+                    Above step will be done num_rollback
+                    (variable defined in test) times
+                    At the end of every iteration load new items to
+                    ensure in every iteration roll back is to new snapshot
+
+        STEPS:
+         -- Ensure creation of at least a single state file
+         -- Below steps will be repeated on all nodes,
+               with stopping persistence on x nodes
+               (where x >= 1 and x < num_nodes)
+               at a time
+         -- Start load on all the x nodes for a given duration
+             (self.duration * 60 seconds)
+         -- Above step ensures creation of new state files
+             (# equal or greater than to self.duration)
+         -- Kill MemCached on all the x nodes
+         -- Trigger roll back on other/replica nodes
+         -- During roll back SigKill on replica nodes
+         -- ReStart persistence on all the x nodes
+         -- Repeat all the above steps for num_rollback times
+        '''
+        mem_only_items = self.input.param("rollback_items", 10000)
+        target_active_nodes = self.input.param("target_active_nodes", 1)
+        num_crashes = self.input.param("num_crashes", 5)
+        collections_for_rollback = self.input.param("collections_for_rollback", 1)
+        if self.nodes_init < 2 or self.num_replicas < 1:
+            self.fail("Not enough nodes/replicas in the cluster/bucket \
+            to test rollback")
+
+        self.duration = self.input.param("duration", 1)
+        self.num_rollbacks = self.input.param("num_rollbacks", 10)
+        #######################################################################
+        '''
+        STEP - 1, Initial doc loading to all collections
+        '''
+        start_items = self.num_items
+        scope_name = CbServer.default_scope
+        collection_prefix = "FunctionCollection"
+
+        for i in range(self.num_collections):
+            collection_name = collection_prefix + str(i)
+            self.log.info("Creating scope::collection {} {}\
+            ".format(scope_name, collection_name))
+            self.bucket_util.create_collection(
+                self.cluster.master, self.buckets[0],
+                scope_name, {"name": collection_name})
+            self.sleep(2)
+
+        collections = self.buckets[0].scopes[scope_name].collections.keys()
+        self.log.debug("Collections list == {}".format(collections))
+
+        tasks_info = dict()
+
+        for collection in collections:
+            self.generate_docs(doc_ops="create", target_vbucket=None)
+            tem_tasks_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=scope_name,
+                collection=collection,
+                _sync=False,
+                doc_ops="create")
+            tasks_info.update(tem_tasks_info.items())
+
+        self.num_items -= start_items
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.bucket_util.verify_doc_op_task_exceptions(
+            tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        shell_conn = list()
+        for node in self.cluster.nodes_in_cluster:
+            shell_conn.append(RemoteMachineShellConnection(node))
+
+        target_vbs_active = list()
+        for shell in shell_conn[0:target_active_nodes]:
+            cbstats = Cbstats(shell)
+            target_vbs_active.append(cbstats.vbucket_list(self.bucket_util.buckets[0].name))
+
+        target_vbs_active = [val for vb_lst in target_vbs_active for val in vb_lst]
+        self.log.debug("target_vbs_active == {}".format(target_vbs_active))
+
+        #######################################################################
+        '''
+        STEP - 1, Ensures creation of at least one snapshot
+
+        To ensure at least one snapshot should get created before rollback
+        starts, we need to sleep for 60 seconds as per magma design which
+        create state file every 60s
+
+        '''
+
+        self.log.info("State files after initial creates == %s"
+                      % self.get_state_files(self.buckets[0]))
+
+        self.sleep(60, "Ensures creation of at least one snapshot")
+        self.log.info("State files after 60 second of sleep == %s"
+                      % self.get_state_files(self.buckets[0]))
+
+        #######################################################################
+        '''
+        STEP - 2,  Stop persistence on all the x nodes
+        '''
+
+        for i in range(1, self.num_rollbacks+1):
+            self.log.info("Roll back Iteration == {}".format(i))
+            start = start_items
+            self.log.debug("Iteration == {}, State files before stopping persistence == {}".
+                           format(i, self.get_state_files(self.buckets[0])))
+            # Stopping persistence on Node-x
+            for x, shell in enumerate(shell_conn[0:target_active_nodes]):
+                self.log.debug("Iteration == {}, Stopping persistence on Nodes-{}"
+                               .format(i, self.cluster.nodes_in_cluster[x]))
+                Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "stop")
+
+            ###############################################################
+            '''
+            STEP - 3
+              -- Load documents on all the x number of nodes
+                 for  self.duration * 60 seconds
+              -- This step ensures new state files (number equal to self.duration)
+            '''
+            time_start = time.time()
+            tasks_in = dict()
+            for collection in collections[0:collections_for_rollback]:
+                self.compute_docs(start, mem_only_items)
+                self.gen_create = None
+                self.gen_update = None
+                self.gen_delete = None
+                self.gen_expiry = None
+                self.generate_docs(doc_ops=self.doc_ops,
+                                   target_vbucket=target_vbs_active)
+                tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                  scope=scope_name,
+                                  collection=collection,
+                                  _sync=False)
+                tasks_in.update(tem_tasks_info.items())
+
+            for task in tasks_in:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_in, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_in)
+
+            if time.time() < time_start + 60:
+                self.sleep(time_start + 60 - time.time(),
+                                   "Sleep to ensure creation of state files for roll back")
+            self.log.info("Rollback Iteration== {}, Active-Nodes=={}, collection={}"
+                                      .format(i, self.cluster.nodes_in_cluster[0:target_active_nodes],
+                                              collection))
+            self.log.info("state files == {}".format(self.get_state_files(self.buckets[0])))
+
+            ###############################################################
+            '''
+            STEP - 4
+              -- Kill Memcached on all the x num of nodes
+                 and trigger roll back on other nodes
+             -- SigKill on all the replica nodes during roll back
+            '''
+
+            for shell in shell_conn:
+                shell.kill_memcached()
+            for server in self.cluster.nodes_in_cluster:
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    [server], self.bucket_util.buckets[0],
+                    wait_time=self.wait_timeout * 20))
+            crash_count = 1
+            while num_crashes > 0:
+                self.log.info("Rollback Itr= {}, crash_count ={}".format(i, crash_count))
+                for shell in shell_conn[target_active_nodes:]:
+                    shell.kill_memcached()
+                for server in self.cluster.nodes_in_cluster[target_active_nodes:]:
+                    self.assertTrue(self.bucket_util._wait_warmup_completed(
+                        [server], self.bucket_util.buckets[0],
+                        wait_time=self.wait_timeout * 5))
+                self.sleep(30, "30s sleep after crash")
+                num_crashes -= 1
+                crash_count += 1
+
+            self.log.debug("Iteration == {},State files after killing memCached ".
+                           format(i, self.get_state_files(self.buckets[0])))
+
+            for bucket in self.bucket_util.buckets:
+                self.log.debug(cbstats.failover_stats(bucket.name))
+
+            ###############################################################
+            '''
+            STEP -5
+               -- Restarting persistence on all the x num of nodes
+            '''
+            for x, shell in enumerate(shell_conn[0:target_active_nodes]):
+                self.log.debug("Iteration=={}, Re-Starting persistence on Node -- {}".
+                               format(i, self.cluster.nodes_in_cluster[x]))
+                Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "start")
+
+            self.log.info("State file at end of iteration-{} are == {}".
+                          format(i, self.get_state_files(self.buckets[0])))
+
+            self.sleep(5, "Sleep after re-starting persistence, Iteration{}".format(i))
+
+            ###################################################################
+            '''
+            STEP - 6
+              -- Load Docs on all the nodes
+              -- Loading of doc for 60 seconds
+              -- Ensures creation of new state file
+            '''
+            self.create_start = start_items
+            self.create_end = start_items + start_items // 3
+            self.generate_docs(doc_ops="create", target_vbucket=None)
+
+            time_end = time.time() + 60
+            while time.time() < time_end:
+                time_start = time.time()
+                self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions, _sync=True,
+                                  doc_ops="create")
+                self.bucket_util._wait_for_stats_all_buckets()
+                if time.time() < time_start + 60:
+                    self.sleep(time_start + 60 - time.time(),
+                               "After new creates, sleeping , itr={}".
+                               format(i))
+            start_items = start_items + start_items // 3
+            self.log.debug("Iteration == {}, start_items={}".format(i, start_items))
+
+        for shell in shell_conn:
+            shell.disconnect()
+
 class MagmaSpaceAmplification(MagmaBaseTest):
 
     def test_space_amplification(self):
