@@ -502,7 +502,7 @@ class EventingBaseTest(BaseTestCase):
         # wait for restart and warmup on all node
         self.sleep(self.wait_timeout * 2)
         # wait till node is ready after warmup
-        self.cluster_util.wait_for_ns_servers_or_assert([server], self, wait_if_warmup=True)
+        self.cluster_util.wait_for_ns_servers_or_assert([server], self)
 
     def reboot_server(self, server):
         remote_client = RemoteMachineShellConnection(server)
@@ -513,7 +513,7 @@ class EventingBaseTest(BaseTestCase):
         # disable firewall on these nodes
         self.cluster_util.stop_firewall_on_node(server)
         # wait till node is ready after warmup
-        self.cluster_util.wait_for_ns_servers_or_assert([server], self, wait_if_warmup=True)
+        self.cluster_util.wait_for_ns_servers_or_assert([server], self)
 
     def undeploy_delete_all_functions(self):
         content=self.eventing_helper.get_deployed_eventing_apps()

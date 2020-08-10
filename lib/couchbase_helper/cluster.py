@@ -440,7 +440,7 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_rebalance(self, servers, to_add, to_remove, use_hostnames=False,
+    def async_rebalance(self, servers, to_add=[], to_remove=[], use_hostnames=False,
                         services=None, check_vbucket_shuffling=True,
                         sleep_before_rebalance=0, retry_get_process_num=25):
         """

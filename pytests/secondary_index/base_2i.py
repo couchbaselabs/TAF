@@ -1014,5 +1014,4 @@ class BaseSecondaryIndexingTests(QueryTests):
         # disable firewall on these nodes
         self.cluster_util.stop_firewall_on_node(node)
         # wait till node is ready after warmup
-        self.cluster_util.wait_for_ns_servers_or_assert([node], self,
-                                                        wait_if_warmup=True)
+        self.cluster_util.wait_for_ns_servers_or_assert([node], self)

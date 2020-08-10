@@ -359,7 +359,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         elif error_condition == "reboot_server":
             self.sleep(self.sleep_time * 4)
             # wait till node is ready after warmup
-            # ClusterOperationHelper.wait_for_ns_servers_or_assert([self.servers[1]], self, wait_if_warmup=True)
+            # ClusterOperationHelper.wait_for_ns_servers_or_assert([self.servers[1]], self)
 
     def _induce_rebalance_test_condition(self, test_failure_condition):
         if test_failure_condition == "verify_replication":

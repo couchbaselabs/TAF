@@ -104,8 +104,7 @@ class ClusterUtils:
         self.wait_for_ns_servers_or_assert(self.cluster.servers)
 
     # wait_if_warmup=True is useful in tearDown method for (auto)failover tests
-    def wait_for_ns_servers_or_assert(self, servers, wait_time=360,
-                                      wait_if_warmup=False):
+    def wait_for_ns_servers_or_assert(self, servers, wait_time=360):
         for server in servers:
             rest = RestConnection(server)
             self.log.debug("Waiting for ns_server @ {0}:{1}"

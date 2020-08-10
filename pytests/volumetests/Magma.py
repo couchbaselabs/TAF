@@ -22,6 +22,7 @@ from memcached.helper.data_helper import MemcachedClientHelper
 from cb_tools.cbstats import Cbstats
 import threading
 import time
+from membase.api.exception import RebalanceFailedException
 
 
 class volume(BaseTestCase):
@@ -103,6 +104,11 @@ class volume(BaseTestCase):
             self.bucket_util.update_bucket_props(
                     "backend", props,
                     self.bucket_util.buckets)
+        else:
+            for node in self.servers:
+                shell = RemoteMachineShellConnection(node)
+                shell.enable_diag_eval_on_non_local_hosts()
+                shell.disconnect()
 
         self.scope_name = self.input.param("scope_name",
                                            CbServer.default_scope)
@@ -124,6 +130,9 @@ class volume(BaseTestCase):
                                                self.scope_name,
                                                {"name": collection_name})
             self.sleep(2)
+        self.rest = RestConnection(self.cluster.master)
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
         if self.num_collections == 0:
             self.num_collections = 1
 
@@ -422,6 +431,37 @@ class volume(BaseTestCase):
         error_sim.revert(error_to_simulate)
         remote.disconnect()
 
+    def _induce_error(self, error_condition, node=None):
+        if node is None:
+            node = self.cluster.nodes_in_cluster[0]
+        if error_condition == "stop_server":
+            self.cluster_util.stop_server(node)
+        elif error_condition == "enable_firewall":
+            self.cluster_util.start_firewall_on_node(node)
+        elif error_condition == "kill_memcached":
+            self.cluster_util.kill_server_memcached(node)
+        elif error_condition == "reboot_server":
+            shell = RemoteMachineShellConnection(node)
+            shell.reboot_node()
+        elif error_condition == "kill_erlang":
+            shell = RemoteMachineShellConnection(node)
+            shell.kill_erlang()
+            self.sleep(self.sleep_time * 3)
+        else:
+            self.fail("Invalid error induce option")
+
+    def _recover_from_error(self, error_condition, node=None):
+        if node is None:
+            node = self.cluster.nodes_in_cluster[0]
+        if error_condition == "stop_server" or error_condition == "kill_erlang":
+            self.cluster_util.start_server(node)
+        elif error_condition == "enable_firewall":
+            self.cluster_util.stop_firewall_on_node(node)
+        result = self.cluster_util.wait_for_ns_servers_or_assert([node],
+                                                                 wait_time=1200)
+        self.assertTrue(result, "Server warmup failed")
+        self.check_warmup_complete(node)
+
     def rebalance(self, nodes_in=0, nodes_out=0):
         servs_in = random.sample(self.available_servers, nodes_in)
 
@@ -630,20 +670,23 @@ class volume(BaseTestCase):
             self.assertFalse(result, "Found crashes/issues on the nodes")
 
         if wait:
-            start_time = time.time()
             for server in servers:
-                result = self.bucket_util._wait_warmup_completed(
+                self.check_warmup_complete(server)
+
+    def check_warmup_complete(self, server):
+        start_time = time.time()
+        result = self.bucket_util._wait_warmup_completed(
                             [server],
                             self.bucket_util.buckets[0],
                             wait_time=self.wait_timeout * 20)
-                if not result:
-                    self.stop_crash = True
-                    self.task.jython_task_manager.abort_all_tasks()
-                    self.assertTrue(result, "Warm-up failed in %s seconds"
-                                    % self.wait_timeout * 20)
-                else:
-                    self.log.info("Bucket warm-up completed in %s." %
-                                  str(time.time() - start_time))
+        if not result:
+            self.stop_crash = True
+            self.task.jython_task_manager.abort_all_tasks()
+            self.assertTrue(result, "Warm-up failed in %s seconds"
+                            % self.wait_timeout * 20)
+        else:
+            self.log.info("Bucket warm-up completed in %s." %
+                          str(time.time() - start_time))
 
     def perform_rollback(self, start=None, mem_only_items=100000,
                          doc_type="create", kill_rollback=1):
@@ -712,6 +755,7 @@ class volume(BaseTestCase):
     def pause_rebalance(self):
         rest = RestConnection(self.cluster.master)
         i = 1
+        self.sleep(10, "Let the rebalance begin!")
         expected_progress = 20
         while expected_progress < 100:
             expected_progress = 20 * i
@@ -722,9 +766,49 @@ class volume(BaseTestCase):
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
-                rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster)
+                rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
+                                                           [], [])
+                self.sleep(10, "Rebalance % ={}. Let the rebalance begin!".
+                           format(expected_progress))
             i += 1
         return rebalance_task
+
+    def abort_rebalance(self, rebalance, error_type="kill_memcached"):
+        self.sleep(10, "Let the rebalance begin!")
+        rest = RestConnection(self.cluster.master)
+        i = 1
+        expected_progress = 20
+        while expected_progress < 100:
+            expected_progress = 20 * i
+            reached = RestHelper(rest).rebalance_reached(expected_progress)
+            self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
+                            .format(expected_progress))
+
+            if not RestHelper(rest).is_cluster_rebalanced():
+                self.log.info("Abort rebalance")
+                self._induce_error(error_type)
+                self.sleep(60, "Sleep after error introduction")
+                self._recover_from_error(error_type)
+
+                try:
+                    self.task.jython_task_manager.get_task_result(rebalance)
+                except RebalanceFailedException:
+                    pass
+                if rebalance.result:
+                    self.log.error("Rebalance passed/finished which is not expected")
+                    self.log.info("Rebalance % after rebalance finished = {}".
+                                  format(expected_progress))
+                    break
+                else:
+                    self.log.info("Restarting Rebalance after killing at {}".
+                                  format(expected_progress))
+                    rebalance = self.task.async_rebalance(
+                        self.cluster.nodes_in_cluster, [], [])
+                    self.sleep(60, "Let the rebalance begin after abort")
+                    self.log.info("Rebalance % = {}".
+                                  format(self.rest._rebalance_progress()))
+            i += 1
+        return rebalance
 
     def PrintStep(self, msg=None):
         print "\n"
@@ -1596,7 +1680,7 @@ class volume(BaseTestCase):
                            update_end=self.num_items*3
                            )
         self.perform_load(wait_for_load=False)
-        self.sleep(120)
+        self.sleep(300)
         while self.loop < self.iterations:
             ###################################################################
             self.PrintStep("Step 4: Rebalance in with Loading of docs")
@@ -1604,6 +1688,8 @@ class volume(BaseTestCase):
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
+            else:
+                rebalance_task = self.abort_rebalance(rebalance_task, "kill_memcached")
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1623,6 +1709,8 @@ class volume(BaseTestCase):
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
+            else:
+                rebalance_task = self.abort_rebalance(rebalance_task, "kill_memcached")
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1642,6 +1730,8 @@ class volume(BaseTestCase):
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
+            else:
+                rebalance_task = self.abort_rebalance(rebalance_task, "kill_memcached")
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1662,6 +1752,8 @@ class volume(BaseTestCase):
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
+            else:
+                rebalance_task = self.abort_rebalance(rebalance_task, "kill_memcached")
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
