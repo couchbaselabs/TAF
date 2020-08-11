@@ -257,12 +257,12 @@ class NodeInitializeTask(Task):
                     'unable to get information on a server %s, it is available?' %
                     (self.server.ip)))
             return
+        self.set_result(total_memory)
         self.state = CHECKING
         self.call()
 
     def check(self):
         self.state = FINISHED
-        self.set_result(self.quota)
 
 
 class FailoverTask(Task):
