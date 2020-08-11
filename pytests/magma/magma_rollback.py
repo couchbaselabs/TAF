@@ -1433,10 +1433,9 @@ class MagmaRollbackTests(MagmaBaseTest):
             if time.time() < time_start + 60:
                 self.sleep(time_start + 60 - time.time(),
                                    "Sleep to ensure creation of state files for roll back")
-            self.log.info("Rollback Iteration== {}, Active-Nodes=={}, collection={}"
-                                      .format(i, self.cluster.nodes_in_cluster[0:target_active_nodes],
-                                              collection))
-            self.log.info("state files == {}".format(self.get_state_files(self.buckets[0])))
+            self.log.info("Rollback Iteration== {},\
+            state file after stopping persistence and after doc-ops == {}".
+            format(i, self.get_state_files(self.buckets[0])))
 
             ###############################################################
             '''
