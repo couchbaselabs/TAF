@@ -350,7 +350,7 @@ class RebalanceInTests(RebalanceBaseTest):
                                                        self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util.validate_docs_per_collections_all_buckets(timeout=self.wait_timeout)
-        self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True)
+        self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True, timeout=self.wait_timeout)
         self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.servers[:self.nodes_in + self.nodes_init], self.bucket_util.buckets)
         self.bucket_util.data_analysis_active_replica_all(
             disk_active_dataset, disk_replica_dataset,
@@ -431,7 +431,8 @@ class RebalanceInTests(RebalanceBaseTest):
         self.cluster.nodes_in_cluster = new_server_list
         self.bucket_util.validate_docs_per_collections_all_buckets(timeout=self.wait_timeout)
         self.bucket_util.verify_cluster_stats(self.num_items,
-                                              check_ep_items_remaining=True)
+                                              check_ep_items_remaining=True,
+                                              timeout=self.wait_timeout)
         self.bucket_util.compare_failovers_logs(
             prev_failover_stats, new_server_list, self.bucket_util.buckets)
         self.sleep(30)
@@ -516,7 +517,7 @@ class RebalanceInTests(RebalanceBaseTest):
         for bucket in self.bucket_util.buckets:
             current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
             self.num_items = current_items
-        self.bucket_util.verify_cluster_stats(self.num_items)
+        self.bucket_util.verify_cluster_stats(self.num_items, timeout=self.wait_timeout)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
@@ -599,7 +600,7 @@ class RebalanceInTests(RebalanceBaseTest):
         rest_cons = [RestConnection(self.cluster.servers[i]) for i in xrange(self.nodes_init + self.nodes_in)]
         for rest in rest_cons:
             result = rest.get_random_key('default')
-        self.bucket_util.verify_cluster_stats(self.num_items)
+        self.bucket_util.verify_cluster_stats(self.num_items, timeout=self.wait_timeout)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def incremental_rebalance_in_with_ops(self):
@@ -752,7 +753,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.sleep(60, "Wait for cluster to be ready after rebalance")
         if not self.atomicity:
             self.bucket_util.verify_unacked_bytes_all_buckets()
-            self.bucket_util.verify_cluster_stats(num_of_items)
+            self.bucket_util.verify_cluster_stats(num_of_items, timeout=self.wait_timeout)
 
     def rebalance_in_with_queries(self):
         """
@@ -883,7 +884,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 self.assertTrue(result, "Failure in view query")
 
             if not self.atomicity:
-                self.bucket_util.verify_cluster_stats(self.num_items)
+                self.bucket_util.verify_cluster_stats(self.num_items, timeout=self.wait_timeout)
 
             if reproducer:
                 rebalance = self.task.async_rebalance(self.cluster.servers, [], servs_in)
@@ -970,7 +971,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 num_views, prefix, ddoc_name, self.default_view_name, query,
                 wait_time=timeout, expected_rows=expected_rows)
             self.assertTrue(result, "Failure in view query")
-            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_cluster_stats(self.num_items, timeout=self.wait_timeout)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def rebalance_in_with_warming_up(self):
@@ -1034,7 +1035,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
         if not self.atomicity:
-            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_cluster_stats(self.num_items, timeout=self.wait_timeout)
             self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def rebalance_in_with_ddoc_compaction(self):
@@ -1125,7 +1126,7 @@ class RebalanceInTests(RebalanceBaseTest):
 
         self.cluster.nodes_in_cluster.extend(servs_in)
 
-        self.bucket_util.verify_cluster_stats(self.num_items)
+        self.bucket_util.verify_cluster_stats(self.num_items, timeout=self.wait_timeout)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def incremental_rebalance_in_with_mutation_and_deletion(self):
@@ -1169,7 +1170,7 @@ class RebalanceInTests(RebalanceBaseTest):
             else:
                 self._load_all_buckets(self.cluster, self.gen_delete,
                                    "create", 0)
-                self.bucket_util.verify_cluster_stats(self.num_items)
+                self.bucket_util.verify_cluster_stats(self.num_items, timeout=self.wait_timeout)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def incremental_rebalance_in_with_mutation_and_expiration(self):
@@ -1197,7 +1198,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance Failed")
             self._load_all_buckets(self.cluster, gen_2, "create", 0)
-            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_cluster_stats(self.num_items, timeout=self.wait_timeout)
         self.bucket_util.verify_unacked_bytes_all_buckets()
 
     def test_rebalance_in_with_cluster_ramquota_change(self):
