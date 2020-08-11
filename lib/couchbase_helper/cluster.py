@@ -541,27 +541,6 @@ class ServerTasks(object):
         _task = self.async_create_standard_bucket(name, port, bucket_params)
         return _task.get_result(timeout)
 
-    def init_node(self, server, async_init_node=True,
-                  disabled_consistent_view=None, services=None,
-                  index_quota_percent=None):
-        """Synchronously initializes a node
-
-        The task scheduled will initialize a nodes username and password and
-        will establish the nodes memory quota to be 2/3 of the available
-        system memory.
-
-        Parameters:
-            server - The server to initialize. (TestInputServer)
-            index_quota_percent - index quota percentage
-            disabled_consistent_view - disable consistent view
-
-        Returns:
-            boolean - Whether or not the node was properly initialized."""
-        _task = self.async_init_node(
-            server, async_init_node, disabled_consistent_view,
-            services=services, index_quota_percent=index_quota_percent)
-        return _task.result()
-
     def rebalance(self, servers, to_add, to_remove, timeout=None,
                   use_hostnames=False, services=None):
         """

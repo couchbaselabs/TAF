@@ -129,15 +129,17 @@ class NodeInitializeTask(Task):
                  maxParallelReplicaIndexers=None,
                  port=None, quota_percent=None,
                  index_quota_percent=None,
+                 fts_quota_percent=None,
+                 cbas_quota_percent=None,
                  services=None, gsi_type='forestdb'):
         Task.__init__(self, name="node_init_task_%s_%s" %
                       (server.ip, server.port),
                       task_manager=task_manager)
         self.server = server
         self.port = port or server.port
-        self.quota = 0
-        self.index_quota = 0
         self.index_quota_percent = index_quota_percent
+        self.fts_quota_percent = fts_quota_percent
+        self.cbas_quota_percent = cbas_quota_percent
         self.quota_percent = quota_percent
         self.disable_consistent_view = disabled_consistent_view
         self.rebalanceIndexWaitingDisabled = rebalanceIndexWaitingDisabled
@@ -156,7 +158,8 @@ class NodeInitializeTask(Task):
             return
         info = Task.wait_until(lambda: rest.get_nodes_self(),
                                lambda x: x.memoryTotal > 0, 10)
-        self.test_log.debug("server: %s, nodes/self: %s", self.server, info.__dict__)
+        self.test_log.debug("server: %s, nodes/self: %s", self.server,
+                            info.__dict__)
 
         username = self.server.rest_username
         password = self.server.rest_password
@@ -166,62 +169,48 @@ class NodeInitializeTask(Task):
             self.set_result(True)
             return
 
-        self.quota = int(info.mcdMemoryReserved - 100)
-        if self.index_quota_percent:
-            self.index_quota = int(self.quota *
-                                   self.index_quota_percent / 100)
-            rest.set_service_memoryQuota(
-                service='indexMemoryQuota',
-                username=username,
-                password=password,
-                memoryQuota=self.index_quota)
+        total_memory = int(info.mcdMemoryReserved - 100)
         if self.quota_percent:
-            self.quota = int(self.quota * self.quota_percent / 100)
+            total_memory = int(total_memory * self.quota_percent / 100)
 
-        """ Adjust KV RAM to correct value when there is INDEX
-            and FTS services added to node from Watson  """
-        index_quota = INDEX_QUOTA
-        kv_quota = self.quota
-        if self.index_quota_percent:
-            index_quota = self.index_quota
-        if not self.quota_percent:
-            set_services = copy.deepcopy(self.services)
-            if set_services is None:
-                set_services = ["kv"]
-#             info = rest.get_nodes_self()
-#             cb_version = info.version[:5]
-#             if cb_version in COUCHBASE_FROM_VERSION_4:
-            if "index" in set_services:
-                self.test_log.debug("Quota for index service will be %s MB"
-                                    % index_quota)
-                kv_quota -= index_quota
-                self.test_log.debug("Set index quota to node %s "
-                                    % self.server.ip)
-                rest.set_service_memoryQuota(
-                    service='indexMemoryQuota', memoryQuota=index_quota)
-            if "fts" in set_services:
-                self.test_log.debug("Quota for fts service will be %s MB"
-                                    % FTS_QUOTA)
-                kv_quota -= FTS_QUOTA
-                self.test_log.debug("Set both index and fts quota at node %s"
-                                    % self.server.ip)
-                rest.set_service_memoryQuota(
-                    service='ftsMemoryQuota', memoryQuota=FTS_QUOTA)
-            if "cbas" in set_services:
-                self.test_log.debug("Quota for cbas service will be %s MB"
-                                    % CBAS_QUOTA)
-                kv_quota -= CBAS_QUOTA
-                rest.set_service_memoryQuota(
-                    service="cbasMemoryQuota", memoryQuota=CBAS_QUOTA)
-            if kv_quota < MIN_KV_QUOTA:
-                raise Exception(
-                    "KV RAM needs to be more than %s MB"
-                    " at node  %s" %
-                    (MIN_KV_QUOTA, self.server.ip))
-            if kv_quota < int(self.quota):
-                self.quota = kv_quota
+        set_services = copy.deepcopy(self.services)
+        if set_services is None:
+            set_services = ["kv"]
+        if "index" in set_services:
+            if self.index_quota_percent:
+                index_memory = total_memory * self.index_quota_percent/100
+            else:
+                index_memory - INDEX_QUOTA
+            self.test_log.debug("Quota for index service will be %s MB"
+                                % index_memory)
+            total_memory -= index_memory
+            rest.set_service_memoryQuota(service='indexMemoryQuota',
+                                         memoryQuota=index_memory)
+        if "fts" in set_services:
+            if self.fts_quota_percent:
+                fts_memory = total_memory * self.fts_quota_percent/100
+            else:
+                fts_memory = FTS_QUOTA
+            self.test_log.debug("Quota for fts service will be %s MB"
+                                % fts_memory)
+            total_memory -= fts_memory
+            rest.set_service_memoryQuota(service='ftsMemoryQuota',
+                                         memoryQuota=fts_memory)
+        if "cbas" in set_services:
+            if self.cbas_quota_percent:
+                cbas_memory = total_memory * self.cbas_quota_percent/100
+            else:
+                cbas_memory = CBAS_QUOTA
+            self.test_log.debug("Quota for cbas service will be %s MB"
+                                % cbas_memory)
+            total_memory -= cbas_memory
+            rest.set_service_memoryQuota(service="cbasMemoryQuota",
+                                         memoryQuota=cbas_memory)
+        if total_memory < MIN_KV_QUOTA:
+            raise Exception("KV RAM needs to be more than %s MB"
+                            " at node  %s" % (MIN_KV_QUOTA, self.server.ip))
 
-        rest.init_cluster_memoryQuota(username, password, self.quota)
+        rest.init_cluster_memoryQuota(username, password, total_memory)
         rest.set_indexer_storage_mode(username, password, self.gsi_type)
 
         if self.services:
