@@ -180,7 +180,7 @@ class NodeInitializeTask(Task):
             if self.index_quota_percent:
                 index_memory = total_memory * self.index_quota_percent/100
             else:
-                index_memory - INDEX_QUOTA
+                index_memory = INDEX_QUOTA
             self.test_log.debug("Quota for index service will be %s MB"
                                 % index_memory)
             total_memory -= index_memory
@@ -223,9 +223,8 @@ class NodeInitializeTask(Task):
             if not status:
                 self.state = FINISHED
                 self. set_unexpected_exception(
-                    Exception(
-                        'unable to set services for server %s' %
-                        (self.server.ip)))
+                    Exception('unable to set services for server %s'
+                              % self.server.ip))
                 return
         if self.disable_consistent_view is not None:
             rest.set_reb_cons_view(self.disable_consistent_view)
@@ -254,8 +253,8 @@ class NodeInitializeTask(Task):
             self.state = FINISHED
             self. set_unexpected_exception(
                 Exception(
-                    'unable to get information on a server %s, it is available?' %
-                    (self.server.ip)))
+                    'unable to get information on a server %s, it is available?'
+                    % self.server.ip))
             return
         self.set_result(total_memory)
         self.state = CHECKING
