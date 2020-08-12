@@ -80,7 +80,8 @@ class volume(CollectionBase):
             self.vbucket_check = False
 
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, servs_out, check_vbucket_shuffling=self.vbucket_check,retry_get_process_num=100)
+            self.cluster.servers[:self.nodes_init], servs_in, servs_out, check_vbucket_shuffling=self.vbucket_check,
+            retry_get_process_num=100)
 
         self.available_servers = [servs for servs in self.available_servers if servs not in servs_in]
         self.available_servers += servs_out
@@ -141,7 +142,7 @@ class volume(CollectionBase):
 
     def test_volume_taf(self):
         self.loop = 0
-        #self.set_metadata_purge_interval()
+        # self.set_metadata_purge_interval()
         while self.loop < self.iterations:
             self.log.info("Finished steps 1-4 successfully in setup")
             self.log.info("Step 5: Rebalance in with Loading of docs")
@@ -227,7 +228,7 @@ class volume(CollectionBase):
                     task = self.data_load_collection(async_load=False)
                     if task.result is False:
                         self.fail("Doc loading failed")
-                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [],retry_get_process_num=100)
+                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=100)
                 if self.data_load_stage == "during":
                     task = self.data_load_collection()
                 self.wait_for_rebalance_to_complete(rebalance_task)
@@ -237,183 +238,92 @@ class volume(CollectionBase):
                 self.data_validation_collection()
                 self.bucket_util.print_bucket_stats()
             ########################################################################################################################
-            self.log.info("Step 11: Failover a node and RebalanceOut that node with loading in parallel")
-            if self.data_load_stage == "before":
-                task = self.data_load_collection(async_load=False)
-                if task.result is False:
-                    self.fail("Doc loading failed")
-            self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-            std = self.std_vbucket_dist or 1.0
+            step_count = 10
+            for failover in ["Graceful", "Hard"]:
+                for action in ["RebalanceOut", "FullRecovery", "DeltaRecovery"]:
+                    step_count = step_count + 1
+                    self.log.info("Step {0}: {1} Failover a node and {2} that node with data load in parallel".format(step_count, failover, action))
+                    if self.data_load_stage == "before":
+                        task = self.data_load_collection(async_load=False)
+                        if task.result is False:
+                            self.fail("Doc loading failed")
 
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster,
-                                                                      self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster,
-                                                                     self.bucket_util.buckets)
-            self.sleep(10)
+                    self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
+                    std = self.std_vbucket_dist or 1.0
 
-            disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets, path=None)
+                    prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster,
+                                                                              self.bucket_util.buckets)
+                    prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster,
+                                                                             self.bucket_util.buckets)
+                    self.sleep(10)
 
-            self.rest = RestConnection(self.cluster.master)
-            self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
+                    disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
+                        self.cluster.nodes_in_cluster, self.bucket_util.buckets, path=None)
 
-            # Mark Node for failover
-            if self.data_load_stage == "during":
-                task = self.data_load_collection()
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
+                    self.rest = RestConnection(self.cluster.master)
+                    self.nodes = self.cluster_util.get_nodes(self.cluster.master)
+                    self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
-            self.sleep(300)
-            self.nodes = self.rest.node_statuses()
-            self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[self.chosen[0].id])
-            # self.sleep(600)
-            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
+                    if self.data_load_stage == "during":
+                        task = self.data_load_collection()
+                    # Mark Node for failover
+                    if failover == "Graceful":
+                        self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=True)
+                    else:
+                        self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=True)
 
-            servs_out = [node for node in self.cluster.servers if node.ip == self.chosen[0].ip]
-            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-            self.available_servers += servs_out
-            self.sleep(10)
+                    self.sleep(300)
 
-            if self.data_load_stage == "during":
-                self.wait_for_async_data_load_to_complete(task)
-            self.data_validation_collection()
+                    # Perform the action
+                    if action == "RebalanceOut":
+                        self.nodes = self.rest.node_statuses()
+                        self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[self.chosen[0].id])
+                        # self.sleep(600)
+                        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
+                        servs_out = [node for node in self.cluster.servers if node.ip == self.chosen[0].ip]
+                        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
+                        self.available_servers += servs_out
+                        self.sleep(10)
+                    else:
+                        if action == "FullRecovery":
+                            if self.success_failed_over:
+                                self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="full")
+                            elif action == "DeltaRecovery":
+                                if self.success_failed_over:
+                                    self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
 
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster,
-                                                    self.bucket_util.buckets)
-            self.sleep(10)
+                        rebalance_task = self.task.async_rebalance(
+                            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=100)
+                        self.wait_for_rebalance_to_complete(rebalance_task)
+                        self.sleep(10)
 
-            self.bucket_util.data_analysis_active_replica_all(
-                disk_active_dataset, disk_replica_dataset,
-                self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-            self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
-                num_replicas=2,
-                std=std, total_vbuckets=self.cluster_util.vbuckets)
-            self.sleep(10)
-            self.tasks = []
-            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
-            # self.sleep(600)
-            self.wait_for_rebalance_to_complete(rebalance_task)
-            self.bucket_util.print_bucket_stats()
+                    if self.data_load_stage == "during":
+                        self.wait_for_async_data_load_to_complete(task)
+                    self.data_validation_collection()
+
+                    self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster,
+                                                            self.bucket_util.buckets)
+                    self.sleep(10)
+
+                    self.bucket_util.data_analysis_active_replica_all(
+                        disk_active_dataset, disk_replica_dataset,
+                        self.cluster.servers[:self.nodes_in + self.nodes_init],
+                        self.bucket_util.buckets, path=None)
+                    nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+                    self.bucket_util.vb_distribution_analysis(
+                        servers=nodes, buckets=self.bucket_util.buckets,
+                        num_replicas=2,
+                        std=std, total_vbuckets=self.cluster_util.vbuckets)
+                    self.sleep(10)
+                    self.tasks = []
+                    # Bring back the rebalance out node back to cluster for further steps
+                    if action == "RebalanceOut":
+                        rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+                        # self.sleep(600)
+                        self.wait_for_rebalance_to_complete(rebalance_task)
+                    self.bucket_util.print_bucket_stats()
             ########################################################################################################################
-            self.log.info("Step 12: Failover a node and FullRecovery that node")
-
-            if self.data_load_stage == "before":
-                task = self.data_load_collection(async_load=False)
-                if task.result is False:
-                    self.fail("Doc loading failed")
-            self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-            std = self.std_vbucket_dist or 1.0
-
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster,
-                                                                      self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster,
-                                                                     self.bucket_util.buckets)
-            self.sleep(10)
-
-            disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets, path=None)
-
-            self.rest = RestConnection(self.cluster.master)
-            self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
-
-            if self.data_load_stage == "during":
-                task = self.data_load_collection()
-            # Mark Node for failover
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
-
-            self.sleep(300)
-
-            # Mark Node for full recovery
-            if self.success_failed_over:
-                self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="full")
-
-            rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [],retry_get_process_num=100)
-            self.wait_for_rebalance_to_complete(rebalance_task)
-            self.sleep(10)
-
-            if self.data_load_stage == "during":
-                self.wait_for_async_data_load_to_complete(task)
-            self.data_validation_collection()
-
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster,
-                                                    self.bucket_util.buckets)
-            self.sleep(10)
-
-            self.bucket_util.data_analysis_active_replica_all(
-                disk_active_dataset, disk_replica_dataset,
-                self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-            self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
-                num_replicas=2,
-                std=std, total_vbuckets=self.cluster_util.vbuckets)
-            self.sleep(10)
-            self.tasks = []
-            self.bucket_util.print_bucket_stats()
-            ########################################################################################################################
-            self.log.info("Step 13: Failover a node and DeltaRecovery that node with loading in parallel")
-
-            if self.data_load_stage == "before":
-                task = self.data_load_collection(async_load=False)
-                if task.result is False:
-                    self.fail("Doc loading failed")
-            self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-            std = self.std_vbucket_dist or 1.0
-
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster,
-                                                                      self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster,
-                                                                     self.bucket_util.buckets)
-            self.sleep(10)
-
-            disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets, path=None)
-
-            self.rest = RestConnection(self.cluster.master)
-            self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
-
-            if self.data_load_stage == "during":
-                task = self.data_load_collection()
-            # Mark Node for failover
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
-
-            self.sleep(300)
-            if self.success_failed_over:
-                self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
-
-            rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [],retry_get_process_num=100)
-
-            self.wait_for_rebalance_to_complete(rebalance_task)
-            self.sleep(10)
-
-            if self.data_load_stage == "during":
-                self.wait_for_async_data_load_to_complete(task)
-            self.data_validation_collection()
-
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster,
-                                                    self.bucket_util.buckets)
-            self.sleep(10)
-
-            self.bucket_util.data_analysis_active_replica_all(
-                disk_active_dataset, disk_replica_dataset,
-                self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-            self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
-                num_replicas=2,
-                std=std, total_vbuckets=self.cluster_util.vbuckets)
-            self.bucket_util.print_bucket_stats()
-            ########################################################################################################################
-            self.log.info("Step 14: Updating the bucket replica to 1")
+            self.log.info("Step 17: Updating the bucket replica to 1")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
                 if task.result is False:
@@ -422,7 +332,7 @@ class volume(CollectionBase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
-            rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [],retry_get_process_num=100)
+            rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=100)
             if self.data_load_stage == "during":
                 task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
@@ -432,7 +342,7 @@ class volume(CollectionBase):
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
-            self.log.info("Step 15: Flush the bucket and start the entire process again")
+            self.log.info("Step 18: Flush the bucket and start the entire process again")
             self.loop += 1
             if self.loop < self.iterations:
                 # Flush the bucket
@@ -444,7 +354,7 @@ class volume(CollectionBase):
                     servs_out = random.sample(self.nodes_cluster,
                                               int(len(self.cluster.nodes_in_cluster) - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out,retry_get_process_num=100)
+                        self.cluster.servers[:self.nodes_init], [], servs_out, retry_get_process_num=100)
                     self.wait_for_rebalance_to_complete(rebalance_task)
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
