@@ -288,9 +288,9 @@ class volume(CollectionBase):
                         if action == "FullRecovery":
                             if self.success_failed_over:
                                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="full")
-                            elif action == "DeltaRecovery":
-                                if self.success_failed_over:
-                                    self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
+                        elif action == "DeltaRecovery":
+                            if self.success_failed_over:
+                                self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
 
                         rebalance_task = self.task.async_rebalance(
                             self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=100)
