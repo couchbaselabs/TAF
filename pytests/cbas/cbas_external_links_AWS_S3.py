@@ -14,16 +14,10 @@ rbac_users_created = {}
 class CBASExternalLinks(CBASBaseTest):
 
     def setUp(self):
-
+        self.input = TestInputSingleton.input
+        if "default_bucket" not in self.input.test_params:
+            self.input.test_params.update({"default_bucket": False})
         super(CBASExternalLinks, self).setUp()
-        if self.input.test_params.get("default_bucket", False):
-            self.bucket_util.create_default_bucket(
-                bucket_type=self.bucket_type,
-                ram_quota=self.bucket_size,
-                replica=self.num_replicas,
-                replica_index=self.bucket_replica_index,
-                storage=self.bucket_storage,
-                eviction_policy=self.bucket_eviction_policy)
 
         self.aws_access_key, self.aws_secret_key, self.aws_session_token = self.get_aws_credentials()
 

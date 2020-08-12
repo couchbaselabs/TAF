@@ -19,10 +19,10 @@ rbac_users_created = {}
 class CBASExternalLinks(CBASBaseTest):
 
     def setUp(self):
+        self.input = TestInputSingleton.input
+        if "default_bucket" not in self.input.test_params:
+            self.input.test_params.update({"default_bucket": False})
         super(CBASExternalLinks, self).setUp()
-
-        if self.cb_bucket_name in self.sample_bucket_dict.keys():
-            self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
 
         self.setup_certs_status = False
         self.dataset_created = False
