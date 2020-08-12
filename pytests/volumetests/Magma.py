@@ -23,23 +23,36 @@ from cb_tools.cbstats import Cbstats
 import threading
 import time
 from membase.api.exception import RebalanceFailedException
+import math
 
 
 class volume(BaseTestCase):
 
     def setUp(self):
         self.input = TestInputSingleton.input
-        self.input.test_params.update({"default_bucket": False})
+        self.num_collections = self.input.param("num_collections", 1)
+        self.doc_ops = self.input.param("doc_ops", "create")
+        if self.doc_ops:
+            self.doc_ops = self.doc_ops.split(':')
+        self.max_tasks_per_collection = 8
+        self.process_concurrency = math.ceil(self.max_tasks_per_collection/
+                                             float(len(self.doc_ops)))
+        main_tasks = (self.num_collections+1) * len(self.doc_ops)
+        sub_tasks = main_tasks * self.process_concurrency
+        self.thread_to_use = main_tasks + sub_tasks + 10
+        self.input.test_params.update({"threads_to_use":
+                                       self.thread_to_use})
+        print "Total workers = {}".format(self.thread_to_use)
+        print "Total Main Task = {}".format(main_tasks)
+        print "Total Sub-Tasks = {}".format(sub_tasks)
         BaseTestCase.setUp(self)
+
         self.rest = RestConnection(self.servers[0])
         self.op_type = self.input.param("op_type", "create")
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.num_buckets = self.input.param("num_buckets", 1)
         self.mutate = 0
-        self.doc_ops = self.input.param("doc_ops", "create")
-        if self.doc_ops:
-            self.doc_ops = self.doc_ops.split(';')
         self.iterations = self.input.param("iterations", 2)
         self.step_iterations = self.input.param("step_iterations", 5)
         self.rollback = self.input.param("rollback", True)
@@ -65,7 +78,6 @@ class volume(BaseTestCase):
         self.expire_end = 0
         self.expire_start = 0
         self.end_step = self.input.param("end_step", None)
-        self.num_collections = self.input.param("num_collections", 0)
         self.key_prefix = "Users"
         self.crashes = self.input.param("crashes", 999)
         self.skip_read_on_error = False
@@ -114,29 +126,28 @@ class volume(BaseTestCase):
 
         self.scope_name = self.input.param("scope_name",
                                            CbServer.default_scope)
-        if self.num_collections:
-            self.collection_prefix = self.input.param("collection_prefix",
-                                                      "Volume")
-
         if self.scope_name != CbServer.default_scope:
             self.bucket_util.create_scope(self.cluster.master,
                                           self.bucket,
                                           {"name": self.scope_name})
 
-        for i in range(self.num_collections):
-            collection_name = self.collection_prefix + str(i)
-            self.log.info("Creating scope::collection '%s::%s'"
-                          % (self.scope_name, collection_name))
-            self.bucket_util.create_collection(self.cluster.master,
-                                               self.bucket,
-                                               self.scope_name,
-                                               {"name": collection_name})
-            self.sleep(5)
+        if self.num_collections > 1:
+            self.collection_prefix = self.input.param("collection_prefix",
+                                                      "Volume")
+
+            for i in range(self.num_collections):
+                collection_name = self.collection_prefix + str(i)
+                self.log.info("Creating scope::collection '%s::%s'"
+                              % (self.scope_name, collection_name))
+                self.bucket_util.create_collection(self.cluster.master,
+                                                   self.bucket,
+                                                   self.scope_name,
+                                                   {"name": collection_name})
+                self.sleep(5)
+
         self.rest = RestConnection(self.cluster.master)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
-        if self.num_collections == 0:
-            self.num_collections = 1
 
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
@@ -780,9 +791,11 @@ class volume(BaseTestCase):
         rest = RestConnection(self.cluster.master)
         i = 1
         expected_progress = 20
-        while expected_progress < 100:
+        rebalance_task = rebalance
+        while expected_progress < 80:
             expected_progress = 20 * i
-            reached = RestHelper(rest).rebalance_reached(expected_progress)
+            reached = RestHelper(rest).rebalance_reached(expected_progress,
+                                                         wait_step=10)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
 
@@ -793,7 +806,7 @@ class volume(BaseTestCase):
                 self._recover_from_error(error_type)
 
                 try:
-                    self.task.jython_task_manager.get_task_result(rebalance)
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
                 except RebalanceFailedException:
                     pass
                 if rebalance.result:
@@ -804,13 +817,14 @@ class volume(BaseTestCase):
                 else:
                     self.log.info("Restarting Rebalance after killing at {}".
                                   format(expected_progress))
-                    rebalance = self.task.async_rebalance(
-                        self.cluster.nodes_in_cluster, [], [])
+                    rebalance_task = self.task.async_rebalance(
+                        self.cluster.nodes_in_cluster, [], [],
+                        retry_get_process_num=100)
                     self.sleep(60, "Let the rebalance begin after abort")
                     self.log.info("Rebalance % = {}".
                                   format(self.rest._rebalance_progress()))
             i += 1
-        return rebalance
+        return rebalance_task
 
     def PrintStep(self, msg=None):
         print "\n"
@@ -1671,7 +1685,7 @@ class volume(BaseTestCase):
         self.update_perc = 100
         self.delete_perc = 100
         self.key_prefix = "random"
-        self.process_concurrency = 5
+
         self.doc_ops = self.input.param("doc_ops", "expiry")
         self.generate_docs(doc_ops=self.doc_ops,
                            expire_start=0,
