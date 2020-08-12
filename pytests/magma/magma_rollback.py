@@ -6,6 +6,8 @@ Created on Dec 12, 2019
 
 import copy
 import time
+import random
+import threading
 
 from cb_tools.cbstats import Cbstats
 from cb_tools.cbepctl import Cbepctl
@@ -31,6 +33,35 @@ class MagmaRollbackTests(MagmaBaseTest):
 
     def tearDown(self):
         super(MagmaRollbackTests, self).tearDown()
+
+    def crash_sigkill(self, nodes=None):
+        nodes = nodes or self.cluster.nodes_in_cluster
+        loop_itr = 0
+        self.stop_crash = False
+
+        shell_conn = list()
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            shell_conn.append(shell)
+
+        while not self.stop_crash:
+            loop_itr += 1
+            for shell in shell_conn:
+                shell.kill_memcached()
+                self.sleep(1)
+            for server in nodes:
+                result = self.bucket_util._wait_warmup_completed(
+                    [server],
+                    self.bucket_util.buckets[0],
+                    wait_time=self.wait_timeout * 5)
+                if not result:
+                    self.stop_crash = True
+                    msg = "Server = {}, Bucket stuck in warm up state after memCached kill"
+                    self.assertTrue(result, msg.format(server))
+            sleep = random.randint(30, 60)
+            self.sleep(sleep,
+                       "Crash Iteration:{} finished, waiting for {} sec to kill memcached on all nodes".
+                       format(loop_itr, sleep))
 
     def compute_docs(self, start, mem_only_items):
         ops_len = len(self.doc_ops.split(":"))
@@ -1309,6 +1340,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         target_active_nodes = self.input.param("target_active_nodes", 1)
         num_crashes = self.input.param("num_crashes", 5)
         collections_for_rollback = self.input.param("collections_for_rollback", 1)
+        load_during_rollback = self.input.param("load_during_rollback", False)
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
             to test rollback")
@@ -1362,12 +1394,18 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell_conn.append(RemoteMachineShellConnection(node))
 
         target_vbs_active = list()
+        target_vbs_replica = list()
         for shell in shell_conn[0:target_active_nodes]:
             cbstats = Cbstats(shell)
             target_vbs_active.append(cbstats.vbucket_list(self.bucket_util.buckets[0].name))
 
         target_vbs_active = [val for vb_lst in target_vbs_active for val in vb_lst]
         self.log.debug("target_vbs_active == {}".format(target_vbs_active))
+        for shell in shell_conn[target_active_nodes:]:
+            cbstats = Cbstats(shell)
+            target_vbs_replica.append(cbstats.vbucket_list(self.bucket_util.buckets[0].name))
+        target_vbs_replica = [val for vb_lst in target_vbs_replica for val in vb_lst]
+        self.log.info("target_vbs_active={} and target_vbs_replica={}".format(target_vbs_active, target_vbs_replica))
 
         #######################################################################
         '''
@@ -1444,26 +1482,55 @@ class MagmaRollbackTests(MagmaBaseTest):
                  and trigger roll back on other nodes
              -- SigKill on all the replica nodes during roll back
             '''
-
             for shell in shell_conn:
                 shell.kill_memcached()
             for server in self.cluster.nodes_in_cluster:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
                     [server], self.bucket_util.buckets[0],
                     wait_time=self.wait_timeout * 20))
-            crash_count = 1
-            while num_crashes > 0:
-                self.log.info("Rollback Itr= {}, crash_count ={}".format(i, crash_count))
-                for shell in shell_conn[target_active_nodes:]:
-                    shell.kill_memcached()
-                for server in self.cluster.nodes_in_cluster[target_active_nodes:]:
-                    self.assertTrue(self.bucket_util._wait_warmup_completed(
-                        [server], self.bucket_util.buckets[0],
-                        wait_time=self.wait_timeout * 5))
-                self.sleep(30, "30s sleep after crash")
-                num_crashes -= 1
-                crash_count += 1
+            if not load_during_rollback:
+                crash_count = 1
+                while num_crashes > 0:
+                    self.log.info("Rollback Itr= {}, crash_count ={}".format(i, crash_count))
+                    for shell in shell_conn[target_active_nodes:]:
+                        shell.kill_memcached()
+                    for server in self.cluster.nodes_in_cluster[target_active_nodes:]:
+                        self.assertTrue(self.bucket_util._wait_warmup_completed(
+                            [server], self.bucket_util.buckets[0],
+                            wait_time=self.wait_timeout * 5))
+                    self.sleep(30, "30s sleep after crash")
+                    num_crashes -= 1
+                    crash_count += 1
+            else:
+                tasks_in = dict()
+                nodes = self.cluster.nodes_in_cluster[target_active_nodes:]
+                th = threading.Thread(target=self.crash_sigkill,
+                                      kwargs=dict(nodes=nodes))
+                th.start()
+                for collection in collections[0:collections_for_rollback]:
+                    self.compute_docs(start, mem_only_items)
+                    self.gen_create = None
+                    self.gen_update = None
+                    self.gen_delete = None
+                    self.gen_expiry = None
+                    self.generate_docs(doc_ops=self.doc_ops,
+                                       target_vbucket=target_vbs_replica)
+                    tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                                       scope=scope_name,
+                                                       collection=collection,
+                                                       _sync=False)
+                    tasks_in.update(tem_tasks_info.items())
+                for task in tasks_in:
+                    self.task_manager.get_task_result(task)
 
+                if self.gen_create is not None:
+                        start_items = self.gen_create.key_counter
+                self.log.debug("start_items after load during rollback is {}"
+                               .format(start_items))
+                self.stop_crash = True
+                th.join()
+                #self.bucket_util.verify_doc_op_task_exceptions(tasks_in, self.cluster)
+                #self.bucket_util.log_doc_ops_task_failures(tasks_in)
             self.log.debug("Iteration == {},State files after killing memCached ".
                            format(i, self.get_state_files(self.buckets[0])))
 
@@ -1493,21 +1560,34 @@ class MagmaRollbackTests(MagmaBaseTest):
               -- Ensures creation of new state file
             '''
             self.create_start = start_items
-            self.create_end = start_items + start_items // 3
+            self.create_end = start_items + start_items // 5
+            tasks_info = dict()
             self.generate_docs(doc_ops="create", target_vbucket=None)
+            time_start = time.time()
+            for collection in collections:
+                tem_tasks_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=scope_name,
+                collection=collection,
+                _sync=False,
+                doc_ops="create")
+                tasks_info.update(tem_tasks_info.items())
 
-            time_end = time.time() + 60
-            while time.time() < time_end:
-                time_start = time.time()
-                self.loadgen_docs(self.retry_exceptions,
-                                  self.ignore_exceptions, _sync=True,
-                                  doc_ops="create")
-                self.bucket_util._wait_for_stats_all_buckets()
-                if time.time() < time_start + 60:
-                    self.sleep(time_start + 60 - time.time(),
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            self.bucket_util._wait_for_stats_all_buckets()
+
+            if time.time() < time_start + 60:
+                self.sleep(time_start + 60 - time.time(),
                                "After new creates, sleeping , itr={}".
                                format(i))
-            start_items = start_items + start_items // 3
+
+            start_items = start_items + start_items // 5
             self.log.debug("Iteration == {}, start_items={}".format(i, start_items))
 
         for shell in shell_conn:
