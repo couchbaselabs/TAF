@@ -2219,6 +2219,7 @@ class DocumentsValidatorTask(Task):
                 self.complete_task()
         iterator = 0
         tasks = []
+        exception = None
         for generator in self.generators:
             if self.op_types:
                 self.op_type = self.op_types[iterator]
@@ -2235,17 +2236,19 @@ class DocumentsValidatorTask(Task):
                                               self.scope,
                                               self.collection))
             if task.missing_keys:
-                self.set_exception("{} keys were missing. Missing keys: "
-                                   "{}".format(task.missing_keys.__len__(),
-                                               task.missing_keys))
+                exception = "Total %d keys missing -> %s" \
+                            % (task.missing_keys.__len__(), task.missing_keys)
             if task.wrong_values:
-                self.set_exception("{} values were wrong. Wrong key-value: "
-                                   "{}".format(task.wrong_values.__len__(),
-                                               task.wrong_values))
+                exception = "%s values were wrong. Wrong key-value: %s" \
+                             % (task.wrong_values.__len__(),
+                                task.wrong_values)
         if self.sdk_client_pool is None:
             for client in self.clients:
-                    client.close()
+                client.close()
+
         self.complete_task()
+        if exception:
+            self.set_exception(exception)
 
     def get_tasks(self, generator):
         generators = []
