@@ -104,6 +104,8 @@ class volume(BaseTestCase):
             self.bucket_util.update_bucket_props(
                     "backend", props,
                     self.bucket_util.buckets)
+            self.sleep(10, "Sleep for 10 seconds so that collections \
+            can be created")
         else:
             for node in self.servers:
                 shell = RemoteMachineShellConnection(node)
@@ -129,7 +131,7 @@ class volume(BaseTestCase):
                                                self.bucket,
                                                self.scope_name,
                                                {"name": collection_name})
-            self.sleep(2)
+            self.sleep(5)
         self.rest = RestConnection(self.cluster.master)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
