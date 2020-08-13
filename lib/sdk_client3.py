@@ -656,27 +656,27 @@ class SDKClient(object):
                            "error": None, "status": True,
                            "cas": delete_result.cas()})
         except DocumentNotFoundException as e:
-            self.log.warning("Exception: Document id {0} not found - {1}"
-                             .format(key, e))
+            self.log.debug("Exception: Document id {0} not found - {1}"
+                           .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except CasMismatchException as e:
-            self.log.warning("Exception: Cas mismatch for doc {0} - {1}"
-                             .format(key, e))
+            self.log.debug("Exception: Cas mismatch for doc {0} - {1}"
+                           .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except TemporaryFailureException as e:
-            self.log.warning("Exception: Retry for doc {0} - {1}"
-                             .format(key, e))
+            self.log.debug("Exception: Retry for doc {0} - {1}"
+                           .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except CouchbaseException as e:
-            self.log.warning("Generic exception for doc {0} - {1}"
-                             .format(key, e))
+            self.log.debug("CB generic exception for doc {0} - {1}"
+                           .format(key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
-            self.log.warning("Request cancelled/timed-out: " + str(ex))
+            self.log.debug("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except Exception as e:
@@ -714,28 +714,27 @@ class SDKClient(object):
                            "error": None, "status": True,
                            "cas": insert_result.cas()})
         except DocumentExistsException as ex:
-            self.log.warning("The document already exists! => " + str(ex))
+            self.log.debug("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except DurabilityImpossibleException as ex:
-            self.log.warning("Durability impossible for key: " + str(ex))
+            self.log.debug("Durability impossible for key: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except ReplicaNotConfiguredException as ex:
-            self.log.warning("ReplicaNotConfiguredException for key: "
-                             + str(ex))
+            self.log.debug("ReplicaNotConfigured for key: %s" % str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
-            self.log.warning("Request cancelled/timed-out: " + str(ex))
+            self.log.debug("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except DurabilityAmbiguousException as e:
-            self.log.warning("D_Ambiguous for key %s" % key)
+            self.log.debug("D_Ambiguous for key %s" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except ServerOutOfMemoryException as ex:
-            self.log.warning("OOM exception: %s" % ex)
+            self.log.debug("OOM exception: %s" % ex)
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except FeatureNotAvailableException as ex:
@@ -774,23 +773,22 @@ class SDKClient(object):
                            "error": None, "status": True,
                            "cas": replace_result.cas()})
         except DocumentExistsException as ex:
-            self.log.warning("The document already exists! => " + str(ex))
+            self.log.debug("The document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except CasMismatchException as e:
-            self.log.warning("Exception: Cas mismatch for doc {0} - {1}"
-                             .format(key, e))
+            self.log.debug("CAS mismatch for key %s - %s" % (key, e))
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except DocumentNotFoundException as e:
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except DurabilityAmbiguousException as e:
-            self.log.warning("D_Ambiguous for key %s" % key)
+            self.log.debug("D_Ambiguous for key %s" % key)
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
-            self.log.warning("Request cancelled/timed-out: " + str(ex))
+            self.log.debug("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except FeatureNotAvailableException as ex:
@@ -823,10 +821,10 @@ class SDKClient(object):
                 touch_options)
             result.update({"status": True, "cas": touch_result.cas()})
         except DocumentNotFoundException as e:
-            self.log.warning("Document key '%s' not found!" % key)
+            self.log.debug("Document key '%s' not found!" % key)
             result["error"] = str(e)
         except (RequestCanceledException, TimeoutException) as ex:
-            self.log.warning("Request cancelled/timed-out: " + str(ex))
+            self.log.debug("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except FeatureNotAvailableException as ex:
@@ -862,7 +860,7 @@ class SDKClient(object):
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
-            self.log.warning("Request cancelled/timed-out: " + str(ex))
+            self.log.debug("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except Exception as ex:
@@ -908,20 +906,20 @@ class SDKClient(object):
                            "error": None, "status": True,
                            "cas": upsert_result.cas()})
         except DocumentExistsException as ex:
-            self.log.warning("Upsert: Document already exists! => " + str(ex))
+            self.log.debug("Upsert: Document already exists! => " + str(ex))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except ReplicaNotConfiguredException as ex:
-            self.log.warning("Upsert: ReplicaNotConfiguredException for %s: %s"
-                             % (key, str(ex)))
+            self.log.debug("Upsert: ReplicaNotConfiguredException for %s: %s"
+                           % (key, str(ex)))
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
-            self.log.warning("Request cancelled/timed-out: " + str(ex))
+            self.log.debug("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
         except DurabilityAmbiguousException as ex:
-            self.log.warning("Durability Ambiguous for key: %s" % key)
+            self.log.debug("Durability Ambiguous for key: %s" % key)
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
         except FeatureNotAvailableException as ex:
