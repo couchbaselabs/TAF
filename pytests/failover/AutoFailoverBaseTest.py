@@ -593,9 +593,11 @@ class AutoFailoverBaseTest(BaseTestCase):
                 for _ in range(0, 6):
                     try:
                         shell = RemoteMachineShellConnection(node)
+                        o, r = shell.execute_command("/sbin/iptables -F")
+                        self.log_command_output(o, r)
                         shell.disconnect()
                         break
-                    except Exception:
+                    except:
                         self.log.info("Unable to connect to the host. "
                                       "Machine has not restarted")
                         self.sleep(60, "Sleep for another minute and try "
