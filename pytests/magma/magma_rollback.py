@@ -30,6 +30,9 @@ class MagmaRollbackTests(MagmaBaseTest):
     def setUp(self):
         super(MagmaRollbackTests, self).setUp()
         self.graceful = self.input.param("graceful", False)
+        self.available_servers = list()
+        self.available_servers = self.cluster.servers[self.nodes_init:]
+        self.vbucket_check = self.input.param("vbucket_check", True)
 
     def tearDown(self):
         super(MagmaRollbackTests, self).tearDown()
@@ -1592,6 +1595,326 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         for shell in shell_conn:
             shell.disconnect()
+
+    def test_rebalance_during_rollback(self):
+        '''
+        Test focus: Stopping persistence on master node,
+                    and trigger roll back on other  nodes.
+                    and during roll back trigger rebalance task
+                    along with load on replica nodes.
+                    Above step will be done num_rollback
+                    (variable defined in test) times
+                    At the end of every iteration load new items to
+                    ensure in every iteration roll back is to new snapshot
+
+        STEPS:
+         -- Ensure creation of at least a single state file
+         -- Stop persistence on master node
+         -- Start load on master node)
+         -- Above step ensures creation of at least one new state file
+         -- Kill MemCached on master node
+         -- Above step triggers roll back on other/replica nodes
+         -- During rollback trigger Rebalance task
+         -- Along with rebalance start load on replica nodes
+         -- Start persistence on master node
+         -- Load on all the nodes(ensures creation of new state files)
+         -- Repeat all the above steps for num_rollback times
+        '''
+        mem_only_items = self.input.param("rollback_items", 10000)
+        rebalance_out_master = self.input.param("rebalance_out_master", False)
+        init_nodes_count = len(self.cluster.nodes_in_cluster)
+
+        collections_for_rollback = self.input.param("collections_for_rollback", 1)
+        if self.nodes_init < 2 or self.num_replicas < 1:
+            self.fail("Not enough nodes/replicas in the cluster/bucket \
+            to test rollback")
+
+        self.num_rollbacks = self.input.param("num_rollbacks", 10)
+        #######################################################################
+        '''
+        STEP - 1, Initial doc loading to all collections
+        '''
+        start_items = self.num_items
+        scope_name = CbServer.default_scope
+        collection_prefix = "FunctionCollection"
+
+        for i in range(self.num_collections):
+            collection_name = collection_prefix + str(i)
+            self.log.info("Creating scope::collection {} {}\
+            ".format(scope_name, collection_name))
+            self.bucket_util.create_collection(
+                self.cluster.master, self.buckets[0],
+                scope_name, {"name": collection_name})
+            self.sleep(2)
+
+        collections = self.buckets[0].scopes[scope_name].collections.keys()
+        self.log.debug("Collections list == {}".format(collections))
+
+        tasks_info = dict()
+
+        for collection in collections:
+            self.generate_docs(doc_ops="create", target_vbucket=None)
+            tem_tasks_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=scope_name,
+                collection=collection,
+                _sync=False,
+                doc_ops="create")
+            tasks_info.update(tem_tasks_info.items())
+
+        self.num_items -= start_items
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.bucket_util.verify_doc_op_task_exceptions(
+            tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+        #######################################################################
+        '''
+        STEP - 1, Ensures creation of at least one snapshot
+
+        To ensure at least one snapshot should get created before rollback
+        starts, we need to sleep for 60 seconds as per magma design which
+        create state file every 60s
+
+        '''
+
+        self.log.info("State files after initial creates == %s"
+                      % self.get_state_files(self.buckets[0]))
+
+        self.sleep(60, "Ensures creation of at least one snapshot")
+        self.log.info("State files after 60 second of sleep == %s"
+                      % self.get_state_files(self.buckets[0]))
+
+        #######################################################################
+        '''
+        STEP - 2,  Stop persistence on master node
+        '''
+
+        for i in range(1, self.num_rollbacks+1):
+            self.log.info("Roll back Iteration == {}".format(i))
+            shell_conn = list()
+            for node in self.cluster.nodes_in_cluster:
+                shell_conn.append(RemoteMachineShellConnection(node))
+            cbstats = Cbstats(shell_conn[0])
+            self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].name)
+            target_vbs_replicas = list()
+            for shell in shell_conn[1:]:
+                cbstats = Cbstats(shell)
+                target_vbs_replicas.append(cbstats.vbucket_list(self.bucket_util.buckets[0].name))
+            target_vbs_replicas = [val for vb_lst in target_vbs_replicas for val in vb_lst]
+
+            '''
+            Initial config for rebalance
+            '''
+            servs_in = random.sample(self.available_servers, self.nodes_in)
+            self.nodes_cluster = self.cluster.nodes_in_cluster[:]
+            self.nodes_cluster.remove(self.cluster.master)
+            if rebalance_out_master and self.nodes_out > 0:
+                self.nodes_out -= 1
+            servs_out = random.sample(self.nodes_cluster, self.nodes_out)
+
+            if rebalance_out_master:
+                self.nodes_out += 1
+                servs_out.append(self.cluster.master)
+                self.nodes_cluster.insert(0, self.cluster.master)
+
+            if self.nodes_in == self.nodes_out:
+                self.vbucket_check = False
+
+            start = start_items
+            self.log.debug("Iteration == {}, State files before stopping persistence == {}".
+                           format(i, self.get_state_files(self.buckets[0])))
+            # Stopping persistence on Node-x
+            self.log.debug("Iteration == {}, stopping persistence".format(i))
+            Cbepctl(shell_conn[0]).persistence(self.bucket_util.buckets[0].name, "stop")
+
+            ###############################################################
+            '''
+            STEP - 3
+              -- Load documents on master node
+              -- This step ensures creation of atleast one new
+                 state file
+            '''
+            time_start = time.time()
+            tasks_in = dict()
+            for collection in collections[0:collections_for_rollback]:
+                self.compute_docs(start, mem_only_items)
+                self.gen_create = None
+                self.gen_update = None
+                self.gen_delete = None
+                self.gen_expiry = None
+                self.generate_docs(doc_ops=self.doc_ops,
+                                   target_vbucket=self.target_vbucket)
+                tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                  scope=scope_name,
+                                  collection=collection,
+                                  _sync=False)
+                tasks_in.update(tem_tasks_info.items())
+
+            for task in tasks_in:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_in, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_in)
+
+            if time.time() < time_start + 60:
+                self.sleep(time_start + 60 - time.time(),
+                                   "Sleep to ensure creation of state files for roll back")
+            self.log.info("Rollback Iteration== {},\
+            state file after stopping persistence and after doc-ops == {}".
+            format(i, self.get_state_files(self.buckets[0])))
+
+            ###############################################################
+            '''
+            STEP - 4
+              -- Kill Memcached on master node
+                 which triggers roll back on other nodes
+             -- Start rebalance task
+             -- Also start doc ops on replica nodes
+            '''
+            tasks_in = dict()
+            shell_conn[0].kill_memcached()
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                [self.cluster_util.cluster.master], self.bucket_util.buckets[0],
+                wait_time=self.wait_timeout * 20))
+            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
+                                                       servs_in, servs_out,
+                                                       check_vbucket_shuffling=self.vbucket_check,
+                                                       retry_get_process_num=150)
+            for collection in collections[0:collections_for_rollback]:
+                self.compute_docs(start, mem_only_items)
+                self.gen_create = None
+                self.gen_update = None
+                self.gen_delete = None
+                self.gen_expiry = None
+                self.generate_docs(doc_ops=self.doc_ops,
+                                   target_vbucket=target_vbs_replicas)
+                tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                                                   scope=scope_name,
+                                                   collection=collection,
+                                                   _sync=False)
+                tasks_in.update(tem_tasks_info.items())
+
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+            for task in tasks_in:
+                    self.task_manager.get_task_result(task)
+
+            if self.gen_create is not None:
+                start_items = self.gen_create.key_counter
+                self.log.debug("Iteration-{},start_items after load during rollback is {}"
+                               .format(i, start_items))
+
+            self.log.debug("Iteration == {},State files after killing memCached ".
+                           format(i, self.get_state_files(self.buckets[0])))
+
+            self.available_servers = [servs for servs in self.available_servers
+                                      if servs not in servs_in]
+            self.available_servers += servs_out
+            self.cluster.nodes_in_cluster.extend(servs_in)
+            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster)
+                                             - set(servs_out))
+            if rebalance_out_master:
+                self.log.debug("Updating master")
+                self.cluster.master = self.cluster.nodes_in_cluster[0]
+
+            ###############################################################
+            '''
+            STEP -5
+               -- Restarting persistence master node
+            '''
+            self.log.debug("Iteration == {}, Restarting persistence".format(i))
+            Cbepctl(shell_conn[0]).persistence(self.bucket_util.buckets[0].name, "start")
+
+            self.sleep(5, "Sleep after re-starting persistence, Iteration{}".format(i))
+
+            ###################################################################
+            '''
+            STEP - 6
+              -- Load Docs on all the nodes
+              -- Loading of doc for 60 seconds
+              -- Ensures creation of new state file
+            '''
+            self.create_start = start_items
+            self.create_end = start_items + start_items // 5
+            tasks_info = dict()
+            self.generate_docs(doc_ops="create", target_vbucket=None)
+            time_start = time.time()
+            for collection in collections:
+                tem_tasks_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=scope_name,
+                collection=collection,
+                _sync=False,
+                doc_ops="create")
+                tasks_info.update(tem_tasks_info.items())
+
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            self.bucket_util._wait_for_stats_all_buckets()
+
+            if time.time() < time_start + 60:
+                self.sleep(time_start + 60 - time.time(),
+                               "After new creates, sleeping , itr={}".
+                               format(i))
+
+            start_items = start_items + start_items // 5
+            self.log.debug("Iteration == {}, start_items={}".format(i, start_items))
+
+            ###################################################################
+            '''
+            STEP - 7
+               -- Ensures,  For rebalance in next iteration
+                  number of nodes should be equal to number of nodes
+                  which were availble during initial iteration
+            '''
+            rebalance_required = False
+            if len(self.cluster.nodes_in_cluster) < init_nodes_count:
+                nodes_in = init_nodes_count - len(self.cluster.nodes_in_cluster)
+                servs_in = random.sample(self.available_servers, nodes_in)
+                servs_out = []
+                rebalance_required = True
+
+            if len(self.cluster.nodes_in_cluster) > init_nodes_count:
+                nodes_out = len(self.cluster.nodes_in_cluster) - init_nodes_count
+                self.nodes_cluster = self.cluster.nodes_in_cluster[:]
+                self.nodes_cluster.remove(self.cluster.master)
+                servs_out = random.sample(self.nodes_cluster, nodes_out)
+                servs_in = []
+                rebalance_required = True
+
+            if rebalance_required:
+                self.log.debug("Iteration=={}, Rebalance before moving to next iteration")
+                rebalance_task = self.task.async_rebalance(
+                    self.cluster.nodes_in_cluster,
+                    servs_in, servs_out,
+                    check_vbucket_shuffling=self.vbucket_check,
+                    retry_get_process_num=150)
+
+                self.task.jython_task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+                self.available_servers = [servs for servs in self.available_servers
+                                  if servs not in servs_in]
+                self.available_servers += servs_out
+                self.cluster.nodes_in_cluster.extend(servs_in)
+                self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster)
+                                             - set(servs_out))
+
+            self.cluster.nodes_in_cluster.remove(self.cluster.master)
+            self.cluster.nodes_in_cluster.insert(0, self.cluster.master)
+
+            for shell in shell_conn:
+                shell.disconnect()
 
 class MagmaSpaceAmplification(MagmaBaseTest):
 
