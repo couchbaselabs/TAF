@@ -1,3 +1,4 @@
+from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import DiskAutoFailoverBasetest
 from membase.api.exception import \
@@ -33,6 +34,9 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
 
     def data_load_from_spec(self, async_load=False):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        if self.durability_level:
+            doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = \
+                self.durability_level
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
                                                         self.bucket_util.buckets,
