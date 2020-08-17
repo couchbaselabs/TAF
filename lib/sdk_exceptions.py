@@ -3,8 +3,8 @@ class SDKException(object):
         "com.couchbase.client.core.error.CasMismatchException"
     CollectionNotFoundException = \
         "com.couchbase.client.core.error.CollectionNotFoundException"
-    CollectionsNotAvailableException = \
-        "com.couchbase.client.core.error.CollectionsNotAvailableException"
+    CouchbaseException = \
+        "com.couchbase.client.core.error.CouchbaseException"
     DecodingFailedException = \
         "com.couchbase.client.core.error.DecodingFailedException"
     DocumentExistsException = \
@@ -21,6 +21,8 @@ class SDKException(object):
         "com.couchbase.client.core.error.DurableWriteInProgressException"
     FeatureNotAvailableException = \
         "com.couchbase.client.core.error.FeatureNotAvailableException"
+    ScopeNotFoundException = \
+        "com.couchbase.client.core.error.ScopeNotFoundException"
 
     TimeoutException = \
         "com.couchbase.client.core.error.TimeoutException"
