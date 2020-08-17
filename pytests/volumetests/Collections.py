@@ -1,3 +1,4 @@
+import time
 import urllib
 
 from com.couchbase.client.java import *
@@ -140,6 +141,36 @@ class volume(CollectionBase):
             else:
                 pass
 
+    def wait_for_failover_or_assert(self, expected_failover_count, timeout=7200):
+        # Timeout is kept large for graceful failover
+        time_start = time.time()
+        time_max_end = time_start + timeout
+        actual_failover_count = 0
+        while time.time() < time_max_end:
+            actual_failover_count = self.get_failover_count()
+            if actual_failover_count == expected_failover_count:
+                break
+            time.sleep(20)
+        time_end = time.time()
+        if actual_failover_count != expected_failover_count:
+            self.log.info(self.rest.print_UI_logs())
+        self.assertTrue(actual_failover_count == expected_failover_count,
+                        "{0} nodes failed over, expected : {1}"
+                        .format(actual_failover_count,
+                                expected_failover_count))
+        self.log.info("{0} nodes failed over as expected in {1} seconds"
+                      .format(actual_failover_count, time_end - time_start))
+
+    def get_failover_count(self):
+        rest = RestConnection(self.cluster.master)
+        cluster_status = rest.cluster_status()
+        failover_count = 0
+        # check for inactiveFailed
+        for node in cluster_status['nodes']:
+            if node['clusterMembership'] == "inactiveFailed":
+                failover_count += 1
+        return failover_count
+
     def test_volume_taf(self):
         self.loop = 0
         # self.set_metadata_purge_interval()
@@ -242,7 +273,10 @@ class volume(CollectionBase):
             for failover in ["Graceful", "Hard"]:
                 for action in ["RebalanceOut", "FullRecovery", "DeltaRecovery"]:
                     step_count = step_count + 1
-                    self.log.info("Step {0}: {1} Failover a node and {2} that node with data load in parallel".format(step_count, failover, action))
+                    self.log.info(
+                        "Step {0}: {1} Failover a node and {2} that node with data load in parallel".format(step_count,
+                                                                                                            failover,
+                                                                                                            action))
                     if self.data_load_stage == "before":
                         task = self.data_load_collection(async_load=False)
                         if task.result is False:
@@ -270,16 +304,17 @@ class volume(CollectionBase):
                     if failover == "Graceful":
                         self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=True)
                     else:
-                        self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=True)
+                        self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
                     self.sleep(300)
+                    self.wait_for_failover_or_assert(1)
 
                     # Perform the action
                     if action == "RebalanceOut":
                         self.nodes = self.rest.node_statuses()
                         self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[self.chosen[0].id])
                         # self.sleep(600)
-                        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
+                        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=False), msg="Rebalance failed")
                         servs_out = [node for node in self.cluster.servers if node.ip == self.chosen[0].ip]
                         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
                         self.available_servers += servs_out
@@ -318,6 +353,7 @@ class volume(CollectionBase):
                     self.tasks = []
                     # Bring back the rebalance out node back to cluster for further steps
                     if action == "RebalanceOut":
+                        self.sleep(120)
                         rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
                         # self.sleep(600)
                         self.wait_for_rebalance_to_complete(rebalance_task)
