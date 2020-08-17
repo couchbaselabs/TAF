@@ -57,7 +57,7 @@ class volume(AutoFailoverBaseTest):
             servers_to_fail = self.nodes_in_cluster[1:self.num_node_failures + 1]
         return servers_to_fail
 
-    def test_rebalance_after_autofailover(self):
+    def rebalance_after_autofailover(self):
         """
         Test autofailover for different failure scenarios and then rebalance
         nodes
@@ -83,8 +83,8 @@ class volume(AutoFailoverBaseTest):
         # Initiate failure, and let the autofailover/autoreprovison kick-in
         self.log.info("Inducing failure {0} on nodes: {1}".format(self.failover_action, self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        # TODO: Remove this sleep; Not sure why it was there in functional test
-        self.sleep(300, "Unknown sleep")
+
+        self.sleep(300, "keep the cluster with the failure")
 
         # Wait for async data load to complete
         self.wait_for_async_data_load_to_complete(task)
@@ -94,23 +94,29 @@ class volume(AutoFailoverBaseTest):
         self.bring_back_failed_nodes_up()
         self.sleep(30)
 
-        # Either RebalanceOut or Recovery
-        if self.subsequent_action == "RebalanceOut":
-            # RebalanceOut
-            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], self.server_to_fail,
-                                                       retry_get_process_num=100)
-            self.wait_for_rebalance_to_complete(rebalance_task)
-            # Add the node back to cluster
-            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
+        if self.auto_reprovision:
+            # Rebalance the cluster
+            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
                                                        retry_get_process_num=100)
             self.wait_for_rebalance_to_complete(rebalance_task)
         else:
-            if self.subsequent_action == "DeltaRecovery":
-                self.rest.set_recovery_type(otpNode='ns_1@' + self.server_to_fail[0].ip, recoveryType="delta")
+            # Either RebalanceOut or Recovery
+            if self.subsequent_action == "RebalanceOut":
+                # RebalanceOut
+                rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], self.server_to_fail,
+                                                           retry_get_process_num=100)
+                self.wait_for_rebalance_to_complete(rebalance_task)
+                # Add the node back to cluster
+                rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
+                                                           retry_get_process_num=100)
+                self.wait_for_rebalance_to_complete(rebalance_task)
             else:
-                self.rest.set_recovery_type(otpNode='ns_1@' + self.server_to_fail[0].ip, recoveryType="full")
-            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [], retry_get_process_num=100)
-            self.wait_for_rebalance_to_complete(rebalance_task)
+                if self.subsequent_action == "DeltaRecovery":
+                    self.rest.set_recovery_type(otpNode='ns_1@' + self.server_to_fail[0].ip, recoveryType="delta")
+                else:
+                    self.rest.set_recovery_type(otpNode='ns_1@' + self.server_to_fail[0].ip, recoveryType="full")
+                rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [], retry_get_process_num=100)
+                self.wait_for_rebalance_to_complete(rebalance_task)
 
         if self.auto_reprovision:
             self.disable_autoreprovision()
@@ -180,14 +186,12 @@ class volume(AutoFailoverBaseTest):
             self.log.info("Step {0}: {1} -> Autofailover -> {2}".format(step_count, self.failover_action,
                                                                         self.subsequent_action))
             self.server_to_fail = self.servers_to_fail()
-            self.test_rebalance_after_autofailover()
+            self.rebalance_after_autofailover()
             self.bucket_util.print_bucket_stats()
         #########################################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Deleting all buckets".format(step_count))
         self.bucket_util.delete_all_buckets()
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
         #########################################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Creating ephemeral buckets".format(step_count))
@@ -204,21 +208,6 @@ class volume(AutoFailoverBaseTest):
         self.log.info("Step {0}: Initial data data load into ephemeral buckets".format(step_count))
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
-        # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
-
-        # Create clients in SDK client pool
-        self.log.info("Creating required SDK clients for client_pool")
-        bucket_count = len(self.bucket_util.buckets)
-        max_clients = self.task_manager.number_of_threads
-        clients_per_bucket = int(ceil(max_clients / bucket_count))
-        for bucket in self.bucket_util.buckets:
-            self.sdk_client_pool.create_clients(
-                bucket,
-                [self.cluster.master],
-                clients_per_bucket,
-                compression_settings=self.sdk_compression)
 
         # TODO: remove this once the bug is fixed
         self.sleep(120, "MB-38497")
@@ -255,14 +244,11 @@ class volume(AutoFailoverBaseTest):
                 self.timeout = 60
             if step_count % 2 == 0:
                 self.failover_orchestrator = False
-                self.subsequent_action = "RebalanceOut"
             else:
-                # ToDo: 1. Enable failover_orchaestror for odd step number 2. Enable full recovery for some steps
+                # ToDo: 1. Enable failover_orchaestror for odd step number
                 self.failover_orchestrator = False
-                self.subsequent_action = "DeltaRecovery"
-            self.log.info("Step {0}: {1} -> Autoreprovision -> {2}".format(step_count, self.failover_action,
-                                                                           self.subsequent_action))
+            self.log.info("Step {0}: {1} -> Autoreprovision -> Rebalance".format(step_count, self.failover_action))
             self.server_to_fail = self.servers_to_fail()
-            self.test_rebalance_after_autofailover()
+            self.rebalance_after_autofailover()
             self.bucket_util.print_bucket_stats()
         self.log.info("Volume test run complete!")
