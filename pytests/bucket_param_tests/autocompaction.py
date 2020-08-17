@@ -370,7 +370,7 @@ class AutoCompactionTests(CollectionBase):
                                                              self.bucket)
         self._monitor_DB_fragmentation(self.bucket)
         rebalance = self.task.async_rebalance(servs_init,
-                                              servs_in, servs_out)
+                                              servs_in, servs_out, check_vbucket_shuffling=False)
         self.task_manager.get_task_result(compaction_task)
         self.task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance failed with compaction")

@@ -237,7 +237,8 @@ class CollectionsRebalance(CollectionBase):
                                            node.ip, self.cluster.servers[self.nodes_init].port)
                     node = known_nodes[-1]
                     self.warmup_node(node)
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                                                          check_vbucket_shuffling=False)
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
