@@ -13,7 +13,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 self.run_time_create_load_gen = doc_generator(
                     self.key,
                     self.num_items,
-                    self.num_items*2,
+                    self.num_items * 2,
                     key_size=self.key_size,
                     doc_size=self.doc_size,
                     doc_type=self.doc_type)
@@ -21,7 +21,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 self.run_time_create_load_gen = doc_generator(
                     self.key,
                     self.num_items,
-                    self.num_items*10,
+                    self.num_items * 10,
                     key_size=self.key_size,
                     doc_size=self.doc_size,
                     doc_type=self.doc_type)
@@ -58,7 +58,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.bucket_util.validate_doc_loading_results(task)
             if self.durability_level and task.result is False:
                 self.fail("Doc_loading failed")
-
 
     def test_autofailover(self):
         """
@@ -244,6 +243,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.enable_autofailover_and_validate()
         self.sleep(5)
 
+        self.cluster.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -429,7 +429,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.bucket_util.update_all_bucket_replicas(self.new_replica)
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
-                  .format(self.replicas, self.new_replica)
+                .format(self.replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
         if self.spec_name is None:

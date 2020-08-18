@@ -152,7 +152,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             for bucket in self.bucket_util.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket,
-                    [self.cluster.master],
+                    [self.orchestrator],
                     clients_per_bucket,
                     compression_settings=self.sdk_compression)
 
@@ -173,7 +173,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.bucket_util.validate_docs_per_collections_all_buckets()
 
         self.bucket_util.print_bucket_stats()
-        self.bucket_helper_obj = BucketHelper(self.cluster.master)
+        self.bucket_helper_obj = BucketHelper(self.orchestrator)
 
     def over_ride_bucket_template_params(self, bucket_spec):
         for over_ride_param in self.over_ride_spec_params:
