@@ -1584,7 +1584,6 @@ class LoadDocumentsGeneratorsTask(Task):
 
 
 class LoadSubDocumentsGeneratorsTask(Task):
-
     def __init__(self, cluster, task_manager, bucket, clients,
                  generators,
                  op_type, exp, create_paths=False,
@@ -1594,7 +1593,10 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  timeout_secs=5, compression=None,
                  process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
-                 task_identifier=""):
+                 task_identifier="",
+                 sdk_client_pool=None,
+                 scope=CbServer.default_scope,
+                 collection=CbServer.default_collection):
         thread_name = "SubDocumentsLoadGenTask_%s_%s_%s_%s_%s" \
                       % (task_identifier,
                          bucket.name,
@@ -1626,6 +1628,9 @@ class LoadSubDocumentsGeneratorsTask(Task):
         self.print_ops_rate = print_ops_rate
         self.retries = retries
         self.durability = durability
+        self.sdk_client_pool = sdk_client_pool
+        self.scope = scope
+        self.collection = collection
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1702,8 +1707,9 @@ class LoadSubDocumentsGeneratorsTask(Task):
             self.log.debug("=======================================")
             for task in tasks:
                 self.task_manager.stop_task(task)
-            for client in self.clients:
-                client.close()
+            if self.sdk_client_pool is None:
+                for client in self.clients:
+                    client.close()
         self.complete_task()
         return self.fail
 
@@ -1745,7 +1751,10 @@ class LoadSubDocumentsGeneratorsTask(Task):
                                         timeout_secs=self.timeout_secs,
                                         compression=self.compression,
                                         retries=self.retries,
-                                        durability=self.durability)
+                                        durability=self.durability,
+                                        scope=self.scope,
+                                        collection=self.collection,
+                                        sdk_client_pool=self.sdk_client_pool)
             tasks.append(task)
         return tasks
 

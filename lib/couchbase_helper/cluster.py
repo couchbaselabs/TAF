@@ -214,6 +214,7 @@ class ServerTasks(object):
                                 durability="",
                                 start_task=True,
                                 task_identifier="",
+                                sdk_client_pool=None,
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection):
         self.log.debug("Loading sub documents to {}".format(bucket.name))
@@ -226,8 +227,10 @@ class ServerTasks(object):
         gen_range = max(int(
             (generator.end - generator.start) / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
-            client = SDKClient([cluster.master], bucket,
-                               scope, collection)
+            client = None
+            if sdk_client_pool is None:
+                client = SDKClient([cluster.master], bucket,
+                                   scope, collection)
             clients.append(client)
         _task = jython_tasks.LoadSubDocumentsGeneratorsTask(
             cluster,
@@ -244,6 +247,8 @@ class ServerTasks(object):
             persist_to=persist_to,
             replicate_to=replicate_to,
             only_store_hash=only_store_hash,
+            sdk_client_pool=sdk_client_pool,
+            scope=scope, collection=collection,
             batch_size=batch_size,
             pause_secs=pause_secs,
             timeout_secs=timeout_secs,
