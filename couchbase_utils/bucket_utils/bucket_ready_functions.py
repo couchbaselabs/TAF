@@ -3600,7 +3600,8 @@ class BucketUtils(ScopeUtils):
         bucket.authType = parsed["authType"]
         bucket.saslPassword = parsed["saslPassword"]
         bucket.nodes = list()
-        bucket.maxTTL = parsed["maxTTL"]
+        if "maxTTL" in parsed:
+            bucket.maxTTL = parsed["maxTTL"]
         bucket.durability_level = "none"
         bucket.bucketCapabilities = parsed["bucketCapabilities"]
         if Bucket.durabilityMinLevel in parsed:

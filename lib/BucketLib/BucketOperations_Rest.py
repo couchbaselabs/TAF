@@ -14,6 +14,7 @@ from membase.api.exception import \
     BucketCreationException, GetBucketInfoFailed, \
     BucketCompactionException
 from Rest_Connection import RestConnection
+from membase.api.rest_client import RestConnection as RC
 
 
 class BucketHelper(RestConnection):
@@ -289,17 +290,23 @@ class BucketHelper(RestConnection):
             Bucket.ramQuotaMB: bucket_params.get('ramQuotaMB'),
             Bucket.replicaNumber: bucket_params.get('replicaNumber'),
             Bucket.bucketType: bucket_params.get('bucketType'),
-            Bucket.replicaIndex: bucket_params.get('replicaIndex'),
             Bucket.priority: bucket_params.get('priority'),
             Bucket.flushEnabled: bucket_params.get('flushEnabled'),
             Bucket.evictionPolicy: bucket_params.get('evictionPolicy'),
-            Bucket.compressionMode: bucket_params.get('compressionMode'),
-            Bucket.maxTTL: bucket_params.get('maxTTL'),
             Bucket.storageBackend: bucket_params.get('storageBackend'),
             Bucket.conflictResolutionType:
                 bucket_params.get('conflictResolutionType'),
             Bucket.threadsNumber: Bucket.Priority.LOW,
             Bucket.durabilityMinLevel:  bucket_params.get('durability_level')}
+
+        server_info = dict({"ip": self.ip, "port": 8091,
+                            "username": self.username,
+                            "password": self.password})
+        rest = RC(server_info)
+        if rest.is_enterprise_edition():
+            init_params[Bucket.replicaIndex] = bucket_params.get('replicaIndex')
+            init_params[Bucket.compressionMode] = bucket_params.get('compressionMode')
+            init_params[Bucket.maxTTL] = bucket_params.get('maxTTL')
 
         if init_params[Bucket.priority] == "high":
             init_params[Bucket.threadsNumber] = Bucket.Priority.HIGH
