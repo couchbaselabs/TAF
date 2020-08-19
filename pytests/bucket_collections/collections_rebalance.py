@@ -556,9 +556,9 @@ class CollectionsRebalance(CollectionBase):
 
     def data_validation_collection(self):
         if not self.skip_validations:
-            if self.data_load_spec == "ttl_load":
+            if self.data_load_spec == "ttl_load" or self.data_load_spec == "ttl_load1":
                 self.bucket_util._expiry_pager()
-                self.sleep(300, "wait for maxttl to finish")
+                self.sleep(400, "wait for maxttl to finish")
                 items = 0
                 self.bucket_util._wait_for_stats_all_buckets()
                 for bucket in self.bucket_util.buckets:
