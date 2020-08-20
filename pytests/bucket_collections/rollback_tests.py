@@ -145,11 +145,12 @@ class RollbackTests(CollectionBase):
 
             self.log.info("Validating stats")
             for bucket in self.bucket_util.buckets:
-                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map, timeout=self.wait_timeout)
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
-                    stat_name="vb_replica_queue_size")
+                    stat_name="vb_replica_queue_size",
+                    timeout=self.wait_timeout)
 
             self.log.info("Killing memcached to trigger rollback")
             shell.kill_memcached()
@@ -208,7 +209,7 @@ class RollbackTests(CollectionBase):
                 stat_map.update({node: expected_val})
 
             for bucket in self.bucket_util.buckets:
-                self.bucket_util._wait_for_stat(bucket, stat_map)
+                self.bucket_util._wait_for_stat(bucket, stat_map, timeout=self.wait_timeout)
             self.sleep(60)
             self.get_vb_details_cbstats_for_all_nodes("post_rollback")
             self.validate_seq_no_post_rollback("pre_rollback", "post_rollback",
