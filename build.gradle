@@ -23,16 +23,18 @@ repositories {
 
 dependencies {
     // Forcing Java-Client 3.0.6-SNAPSHOT to use instead of transitive dependency from 1.1.0-SNAPSHOT
+    /*
     implementation 'com.couchbase.client:couchbase-transactions:1.1.0-SNAPSHOT'
     implementation('com.couchbase.client:java-client') {
         version {
             strictly '3.0.6-SNAPSHOT'
         }
     }
+    */
 
     // This will transitively pull in all dependencies of transactions, including Couchbase java-client
-    // compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.1.0-SNAPSHOT'
-    // compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.6-SNAPSHOT'
+    compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.1.0'
+    compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.8-SNAPSHOT'
 
     compile group: 'com.jcraft', name: 'jsch', version: '0.1.54'
 
