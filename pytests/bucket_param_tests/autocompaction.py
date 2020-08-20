@@ -18,7 +18,7 @@ from cb_tools.cbstats import Cbstats
 class AutoCompactionTests(CollectionBase):
     def setUp(self):
         super(AutoCompactionTests, self).setUp()
-        self.key = "compact"
+        self.key = self.input.param("key","compact")
         self.is_crashed = Event()
         self.autocompaction_value = self.input.param("autocompaction_value", 0)
         self.during_ops = self.input.param("during_ops", None)
@@ -28,7 +28,8 @@ class AutoCompactionTests(CollectionBase):
                                       doc_type=self.doc_type)
         self.gen_update = doc_generator(self.key, 0, (self.num_items/2),
                                         doc_size=self.doc_size,
-                                        doc_type=self.doc_type)
+                                        doc_type=self.doc_type,
+                                        mutation_type="update")
         self.bucket = self.bucket_util.buckets[0]
         self.log.info("======= Finished Autocompaction base setup =========")
 
@@ -263,7 +264,7 @@ class AutoCompactionTests(CollectionBase):
         monitor_fragm = self.task.async_monitor_db_fragmentation(
             self.cluster.master, self.bucket.name, 0)
         self.task.jython_task_manager.get_task_result(monitor_fragm)
-        self.bucket_util.verify_cluster_stats(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets()
         remote_client.disconnect()
 
         self.bucket_util.validate_docs_per_collections_all_buckets()
@@ -378,7 +379,6 @@ class AutoCompactionTests(CollectionBase):
             self.cluster.master, self.bucket.name, 0)
         self.task.jython_task_manager.get_task_result(monitor_fragm)
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
 
