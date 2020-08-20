@@ -258,7 +258,8 @@ class CollectionsRebalance(CollectionBase):
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                            node.ip, self.cluster.servers[self.nodes_init].port)
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                                                          check_vbucket_shuffling=False)
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -278,7 +279,8 @@ class CollectionsRebalance(CollectionBase):
                 # start each intermediate rebalance and wait for it to finish before
                 # starting new one
                 for new_add_nodes, new_remove_nodes in zip(add_list, remove_list):
-                    operation = self.task.async_rebalance(known_nodes, new_add_nodes, new_remove_nodes)
+                    operation = self.task.async_rebalance(known_nodes, new_add_nodes, new_remove_nodes,
+                                                          check_vbucket_shuffling=False)
                     known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
                     known_nodes.extend(new_add_nodes)
                     iter_count = iter_count + 1
