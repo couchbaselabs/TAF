@@ -27,6 +27,8 @@ class CollectionsRebalance(CollectionBase):
         self.step_count = self.input.param("step_count", -1)
         self.recovery_type = self.input.param("recovery_type", "full")
         self.compaction = self.input.param("compaction", False)
+        if self.compaction:
+            self.disable_auto_compaction()
         self.warmup = self.input.param("warmup", False)
         self.update_replica = self.input.param("update_replica", False)  # for replica + rebalance tests
         self.updated_num_replicas = self.input.param("updated_num_replicas",
@@ -41,6 +43,12 @@ class CollectionsRebalance(CollectionBase):
 
     def tearDown(self):
         super(CollectionsRebalance, self).tearDown()
+
+    def disable_auto_compaction(self):
+        buckets = self.bucket_util.get_all_buckets()
+        for bucket in buckets:
+            if bucket.bucketType == "couchbase":
+                self.bucket_util.disable_compaction(bucket=str(bucket.name))
 
     def compact_all_buckets(self):
         self.sleep(10, "wait for rebalance to start")
@@ -532,13 +540,11 @@ class CollectionsRebalance(CollectionBase):
                 self.fail("Doc_loading failed")
 
     def wait_for_compaction_to_complete(self):
-        # Strictly, we should be doing this
-        # But this is not working properly.
-        # for task in self.compaction_tasks:
-        #     self.task_manager.get_task_result(task)
-        #     self.assertTrue(task.result, "Compaction failed for bucket: %s" %
-        #                     task.bucket.name)
-        pass
+        for task in self.compaction_tasks:
+            self.task_manager.get_task_result(task)
+            self.assertTrue(task.result, "Compaction failed for bucket: %s" %
+                            task.bucket.name)
+
 
     def wait_for_rebalance_to_complete(self, task, wait_step=120):
         self.task.jython_task_manager.get_task_result(task)
