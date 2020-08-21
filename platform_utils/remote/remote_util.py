@@ -3162,7 +3162,7 @@ class RemoteMachineShellConnection:
             f.write(newdata)
             f.close()
         if not(queries == ""):
-            if (source):
+            if source:
                 if iswin:
                     main_command = main_command + "  -s=\"\SOURCE " + 'c:\\\\tmp\\\\test.txt'
                 else:
@@ -3176,10 +3176,10 @@ class RemoteMachineShellConnection:
         self.log.debug("Running command on {0}: {1}".format(self.ip, main_command))
         output = ""
         if self.remote:
-            (stdin, stdout, stderro) = self._ssh_client.exec_command(main_command)
+            (stdout, stderro) = self.execute_command_raw_jsch(main_command)
             sleep(10, log_type="infra")
             count = 0
-            for line in stdout.readlines():
+            for line in stdout:
                 if (count == 0) and line.lower().find("error") > 0:
                     output = "status:FAIL"
                     break
@@ -3187,7 +3187,7 @@ class RemoteMachineShellConnection:
                 # if line.find("results") > 0 or line.find("status") > 0 or \
                 #    line.find("metrics") or line.find("elapsedTime")> 0 or \
                 #    line.find("executionTime")> 0 or line.find("resultCount"):
-                if (count > 0):
+                if count > 0:
                     output += line.strip()
                     output = output.strip()
                     if "Inputwasnotastatement" in output:
@@ -3197,9 +3197,6 @@ class RemoteMachineShellConnection:
                         output = "status:timeout"
                 else:
                     count += 1
-            stdin.close()
-            stdout.close()
-            stderro.close()
             """
             main_command = main_command + " < " + '/tmp/' + filename
             stdin,stdout, ssh_stderr = ssh.exec_command(main_command)
@@ -3302,7 +3299,7 @@ class RemoteMachineShellConnection:
     def execute_command_raw(self, command, debug=True, use_channel=False):
         if debug:
             self.log.info("running command.raw on {0}: {1}"
-                          .format(self.ip, command))
+                     .format(self.ip, command))
         output = []
         error = []
         temp = ''
@@ -3321,20 +3318,23 @@ class RemoteMachineShellConnection:
             channel.close()
             stdin.close()
         elif self.remote:
-            stdout, stderro = self.execute_command_raw_jsch(command)
+            stdin, stdout, stderro = self._ssh_client.exec_command(command)
+            stdin.close()
 
         if not self.remote:
             p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE)
             output, error = p.communicate()
 
         if self.remote:
-            for line in stdout:
+            for line in stdout.read().splitlines():
                 output.append(line)
-            for line in stderro:
+            for line in stderro.read().splitlines():
                 error.append(line)
             if temp:
                 line = temp.splitlines()
                 output.extend(line)
+            stdout.close()
+            stderro.close()
         if debug:
             self.log.info('command executed successfully')
         return output, error
