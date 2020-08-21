@@ -567,6 +567,15 @@ class RemoteMachineShellConnection:
     def start_memcached(self):
         return self.kill_process("memcached", "memcached", signum=18)
 
+    def kill_prometheus(self):
+        return self.kill_process("prometheus", "prometheus", signum=9)
+
+    def stop_prometheus(self):
+        return self.kill_process("prometheus", "prometheus", signum=19)
+
+    def start_prometheus(self):
+        return self.kill_process("prometheus", "prometheus", signum=18)
+
     def kill_goxdcr(self):
         self.log.debug("%s - Killing goxdcr process" % self.ip)
         self.extract_remote_info()
@@ -3669,6 +3678,20 @@ class RemoteMachineShellConnection:
             return o[0]
         elif self.info.type == 'windows':
             output, error = self.execute_command('tasklist| grep memcache',
+                                                 debug=False)
+            if error or output == [""] or output == []:
+                return None
+            words = output[0].split(" ")
+            words = filter(lambda x: x != "", words)
+            return words[1]
+
+    def get_prometheus_pid(self):
+        self.extract_remote_info()
+        if self.info.type == 'Linux':
+            o, _ = self.execute_command("ps -eo comm,pid | awk '$1 == \"prometheus\" { print $2 }'")
+            return o[0]
+        elif self.info.type == 'windows':
+            output, error = self.execute_command('tasklist| grep prometheus',
                                                  debug=False)
             if error or output == [""] or output == []:
                 return None

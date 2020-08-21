@@ -357,6 +357,12 @@ class ClusterUtils:
             remote_client.kill_memcached()
             remote_client.disconnect()
 
+    def kill_prometheus(self):
+        for server in self.cluster.servers:
+            remote_client = RemoteMachineShellConnection(server)
+            remote_client.kill_prometheus()
+            remote_client.disconnect()
+
     def get_nodes(self, server):
         """ Get Nodes from list of server """
         rest = RestConnection(self.cluster.master)
