@@ -64,8 +64,9 @@ spec = {
     MetaCrudParams.DURABILITY_LEVEL: "",
     MetaCrudParams.SDK_TIMEOUT: 60,
     MetaCrudParams.SDK_TIMEOUT_UNIT: "seconds",
-    MetaCrudParams.SKIP_READ_ON_ERROR: False,
     MetaCrudParams.TARGET_VBUCKETS: "all",
+    MetaCrudParams.SKIP_READ_ON_ERROR: False,
+    MetaCrudParams.SUPPRESS_ERROR_TABLE: False,
 
     MetaCrudParams.RETRY_EXCEPTIONS: [],
     MetaCrudParams.IGNORE_EXCEPTIONS: [],

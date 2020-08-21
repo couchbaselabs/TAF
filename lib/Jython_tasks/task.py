@@ -3330,8 +3330,7 @@ class MutateDocsFromSpecTask(Task):
                  sdk_client_pool,
                  batch_size=500,
                  process_concurrency=1,
-                 print_ops_rate=True,
-                 suppress_error_table=False):
+                 print_ops_rate=True):
         super(MutateDocsFromSpecTask, self).__init__(
             "MutateDocsFromSpecTask_%s" % time.time())
         self.cluster = cluster
@@ -3340,7 +3339,6 @@ class MutateDocsFromSpecTask(Task):
         self.process_concurrency = process_concurrency
         self.batch_size = batch_size
         self.print_ops_rate = print_ops_rate
-        self.suppress_error_table = suppress_error_table
 
         self.result = True
         self.load_gen_tasks = list()
@@ -3484,7 +3482,7 @@ class MutateDocsFromSpecTask(Task):
                         timeout_secs=op_data["sdk_timeout"],
                         time_unit=op_data["sdk_timeout_unit"],
                         skip_read_on_error=op_data["skip_read_on_error"],
-                        suppress_error_table=self.suppress_error_table)
+                        suppress_error_table=op_data["suppress_error_table"])
                 else:
                     doc_load_task = LoadSubDocumentsTask(
                         self.cluster, bucket, None, doc_gen,

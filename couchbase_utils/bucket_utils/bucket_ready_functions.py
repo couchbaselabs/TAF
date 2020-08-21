@@ -222,8 +222,7 @@ class DocLoaderUtils(object):
             batch_size=batch_size,
             process_concurrency=1,
             print_ops_rate=True,
-            start_task=True,
-            suppress_error_table=False)
+            start_task=True)
         if not async_load:
             task_manager.jython_task_manager.get_task_result(task)
         return task
@@ -299,6 +298,8 @@ class DocLoaderUtils(object):
                                 durability_level
                             c_crud_data[op_type]["skip_read_on_error"] = \
                                 skip_read_on_error
+                            c_crud_data[op_type]["suppress_error_table"] = \
+                                suppress_error_table
                             c_crud_data[op_type]["ignore_exceptions"] = \
                                 ignore_exceptions
                             c_crud_data[op_type]["retry_exceptions"] = \
@@ -356,6 +357,8 @@ class DocLoaderUtils(object):
             MetaCrudParams.DURABILITY_LEVEL, "")
         skip_read_on_error = input_spec.get(
             MetaCrudParams.SKIP_READ_ON_ERROR, False)
+        suppress_error_table = input_spec.get(
+            MetaCrudParams.SUPPRESS_ERROR_TABLE, False)
         target_vbs = input_spec.get(
             MetaCrudParams.TARGET_VBUCKETS, "all")
 

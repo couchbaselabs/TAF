@@ -95,16 +95,14 @@ class ServerTasks(object):
                                       batch_size=200,
                                       process_concurrency=1,
                                       print_ops_rate=True,
-                                      start_task=True,
-                                      suppress_error_table=False):
+                                      start_task=True):
         self.log.debug("Initializing mutation task for given spec")
         task = MutateDocsFromSpecTask(
             cluster, task_manager, loader_spec,
             sdk_client_pool,
             batch_size=batch_size,
             process_concurrency=process_concurrency,
-            print_ops_rate=print_ops_rate,
-            suppress_error_table=suppress_error_table)
+            print_ops_rate=print_ops_rate)
         if start_task:
             self.jython_task_manager.add_new_task(task)
         return task
