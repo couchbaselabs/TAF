@@ -575,91 +575,117 @@ class TuqGenerators(object):
 
 class JsonGenerator:
 
-    def generate_docs_employee(self, docs_per_day=1, start=0, isShuffle=False):
-        generators = []
-        types = self._shuffle(['Engineer', 'Sales', 'Support'], isShuffle)
-        join_yr = self._shuffle([2010, 2011], isShuffle)
-        join_mo = self._shuffle(xrange(1, 12 + 1), isShuffle)
-        join_day = self._shuffle(xrange(1, 28 + 1), isShuffle)
-        template = '{{ "name":"{0}", "join_yr":{1}, "join_mo":{2}, "join_day":{3},'
-        template += ' "email":"{4}", "job_title":"{5}", "test_rate":{8}, "skills":{9},'
-        template += '"VMs": {10},'
-        template += ' "tasks_points" : {{"task1" : {6}, "task2" : {7}}}}}'
-        count = 1
-        for info in types:
-            for year in join_yr:
-                for month in join_mo:
-                    for day in join_day:
-                        random.seed(count)
-                        count += 1
-                        prefix = "employee"+str(random.random()*100000)
-                        name = ["employee-%s" % (str(day))]
-                        email = ["%s-mail@couchbase.com" % (str(day))]
-                        vms = [{"RAM": month, "os": "ubuntu",
-                                "name": "vm_%s" % month, "memory": month},
-                               {"RAM": month, "os": "windows",
-                                "name": "vm_%s" % (month + 1),
-                                "memory": month}]
-                        generators.append(
-                            DocumentGenerator(
-                                "query-test"+prefix, template,
-                                name, [year], [month], [day],
-                                email, [info], range(1, 10), range(1, 10),
-                                [float("%s.%s" % (month, month))],
-                                [["skill%s" % y for y in join_yr]], [vms],
-                                start=start, end=docs_per_day))
-        return generators
+    def generate_docs_employee(self, key_prefix, docs_per_day=1, start=0, isShuffle=False):
+        types = ['Engineer', 'Sales', 'Support']
+        skills = ['Python', 'Java', 'C++', 'Testing', 'Development']
+        join_yr = [2010, 2011,2012,2013,2014,2015,2016]
+        join_mo = xrange(1, 12 + 1)
+        join_day = xrange(1, 28 + 1)
+        templates = []
+        for i in range(start, docs_per_day):
+            random.seed(i)
+            month = random.choice(join_mo)
+            prefix = "_employee"+str(i)
+            name = "employee-%s" % (str(i))
+            email = ["%s-mail@couchbase.com" % (str(i))]
+            vms = [{"RAM": month, "os": "ubuntu",
+                    "name": "vm_%s" % month, "memory": month},
+                   {"RAM": month, "os": "windows",
+                    "name": "vm_%s"% (month + 1), "memory": month}
+                 ]
+            template = JsonObject.create()
+            template.put("name", name)
+            template.put("join_yr", random.choice(join_yr))
+            template.put("join_mo" , month)
+            template.put("join_day" , random.choice(join_day))
+            template.put("email" , email)
+            template.put("job_title" , random.choice(types))
+            template.put("test_rate" , range(1, 10))
+            template.put("skills" , random.sample(skills, 2))
+            template.put("vms" , [vms])
+            templates.append(template)
+        gen_load = DocumentGenerator(key_prefix, templates,
+                                start=start, end=docs_per_day)
+        return gen_load
 
-    def generate_docs_employee_more_field_types(self, docs_per_day=1, start=0,
-                                                isShuffle=False):
-        generators = []
-        types = self._shuffle(['Engineer', 'Sales', 'Support'], isShuffle)
-        join_yr = self._shuffle([2010, 2011], isShuffle)
-        join_mo = self._shuffle(xrange(1, 12 + 1), isShuffle)
-        join_day = self._shuffle(xrange(1, 28 + 1), isShuffle)
-        hikes = [5,10,1,20,15]
-        permanent = [True,False]
-        template = '{{ "name":"{0}", "join_yr":{1}, "join_mo":{2}, "join_day":{3},'
-        template += ' "email":"{4}", "job_title":"{5}", "test_rate":{8}, "skills":{9},'
-        template += '"VMs": {10},'
-        template += '"permanent": {11},'
-        template += '"hikes": {12},'
-        template += ' "tasks_points" : {{"task1" : {6}, "task2" : {7}}}}}'
+    def generate_docs_employee_more_field_types(self, key_prefix, docs_per_day=1, start=0):
+        types = ['Engineer', 'Sales', 'Support', "Pre-Sales", "Info-Tech",
+                 "Accounts", "Dev-ops", "Cloud", "Training", ""]
+        skills = ['Python', 'Java', 'C++', 'Testing', 'Development']
+        Firstname = ["Bryn", "Kallie", "Trista", "Riona", "Salina", "Ebony", "Killian",
+                      "Sirena", "Treva", "Ambika", "Lysha", "Hedda", "Lilith", "Bryn",
+                      "Kacila", "Quella", "Deirdre", "Adrianne", "Drucilla", "Hedda", "Mia",
+                      "Alvita", "Fantine", "Maura", "Basha", "Jerica", "Severin", "Lysha",
+                      "Adena", "Fuscienne", "Adrianne", "Salina", "Cassandra", "Winta"]
+        Second_name = ["Russell", "Green", "Thomas", "Julian", "Baker", "cox", "copper",
+                       "Wilson", "Clark", "Scott", "Wright", "Howard Jr.", "Juan Jose",
+                       "Young", "Evans", "Sebastian", "Phillips", "Carter", "White",
+                       "Davis", "Palmer", "Morgan", "Damian", "Brown", "Reed", "Bailey",
+                       "Jones", "Cook", "Hall", "Wood", "Nicolas", "Moore", "Lee",
+                       "Jackson", "Tomas", "Wright"]
+        countries = ["India", "USA", "CANADA", "AUSTRALIA"]
+        languanges = ["Sinhalese", "German", "Italian", "English", "Quechua",
+                            "Portuguese", "Thai", "Hindi", "Africans", "Urdu", "Malay",
+                            "Spanish", "French", "Nepalese", "Dutch", "Vietnamese", "Arabic",
+                            "Japanese"]
+        join_yr = [2010, 2011,2012,2013,2014,2015,2016]
+        join_mo = xrange(1, 12 + 1)
+        join_day = xrange(1, 28 + 1)
+        options = [True,False]
+        salary = range(100000, 200000)
         count = 1
-        for info in types:
-            for year in join_yr:
-                for month in join_mo:
-                    for day in join_day:
-                        random.seed(count)
-                        count+=1
-                        prefix = "employee"+str(random.random()*100000)
-                        name = ["employee-%s" % (str(day))]
-                        email = ["%s-mail@couchbase.com" % (str(day))]
-                        vms = [{"RAM": month, "os": "ubuntu",
-                                "name": "vm_%s" % month, "memory": month},
-                               {"RAM": month, "os": "windows",
-                                "name": "vm_%s"% (month + 1), "memory": month}
-                             ]
-                        generators.append(DocumentGenerator("query-test" + prefix,
-                                               template,
-                                               name, [year], [month], [day],
-                                               email, [info], range(1,10), range(1,10),
-                                               [float("%s.%s" % (month, month))],
-                                               [["skill%s" % y for y in join_yr]],
-                                               [vms],random.sample(permanent,1),
-                                               [random.sample(hikes,3)],
-                                               start=start, end=docs_per_day))
-        return generators
+        templates = []
+        for i in range(start, docs_per_day):
+            random.seed(i)
+            prefix = "employee"+str(i)
+            name = random.choice(Firstname) + " " + random.choice(Second_name)
+            email = ["%s-mail@couchbase.com" % (str(name))]
+            emp_id = 10000 + int(i)
+            month = random.choice(join_mo)
+            is_manager = random.choice(options)
+            languanges_known = {}
+            languanges_known["first"] = random.choice(languanges)
+            languanges_known["second"] = random.choice(languanges)
+            languanges_known["third"] = random.choice(languanges)
+            if is_manager:
+                manages = {}
+                manages["team_size"] = random.choice(range(4, 8))
+                manages["reports"] = []
+                for _ in range(manages["team_size"]):
+                    manages["reports"].append(random.choice(Firstname) + " "
+                                              + random.choice(Second_name))
+            count+=1
+            template = JsonObject.create()
+            template.put("name", name)
+            template.put("join_yr", random.choice(join_yr))
+            template.put("join_mo" , month)
+            template.put("join_day" , random.choice(join_day))
+            template.put("email" , email)
+            template.put("emp_id", emp_id)
+            template.put("dept" , random.choice(types))
+            template.put("skills" , random.sample(skills, 3))
+            template.put("is_manager", is_manager)
+            template.put("salary", random.choice(salary))
+            template.put("citizen_of", random.choice(countries))
+            template.put("Working_country", random.choice(countries))
+            template.put("languanges_known",languanges_known)
+            if is_manager:
+                template.put("manages", manages)
+            templates.append(template)
+        gen_load = DocumentGenerator(key_prefix + prefix,
+                                               templates,
+                                               start=start, end=docs_per_day)
+        return gen_load
 
-    def generate_docs_employee_array(self, docs_per_day = 1, start=0, isShuffle = False):
+    def generate_docs_employee_array(self, key_prefix, docs_per_day=1, start=0):
         generators = []
         #simple array
-        department = self._shuffle(['Developer', 'Support','HR','Tester','Manager'],isShuffle)
+        department = ['Developer', 'Support','HR','Tester','Manager']
         sport = ['Badminton','Cricket','Football','Basketball','American Football','ski']
         dance = ['classical','bollywood','salsa','hip hop','contemporary','bhangra']
-        join_yr = self._shuffle([2010, 2011,2012,2013,2014,2015,2016],isShuffle)
-        join_mo = self._shuffle(xrange(1, 12 + 1),isShuffle)
-        join_day = self._shuffle(xrange(1, 28 + 1),isShuffle)
+        join_yr = [2010, 2011,2012,2013,2014,2015,2016]
+        join_mo = xrange(1, 12 + 1)
+        join_day = xrange(1, 28 + 1)
         engineer = ["Query","Search","Indexing","Storage","Android","IOS"]
         marketing = ["East","West","North","South","International"]
         cities = ['Mumbai','Delhi','New York','San Francisco']
@@ -671,209 +697,224 @@ class JsonGenerator:
         template += '"VMs": {6} , '
         template += '"address" : {7} }}'
         count = 1
+        templates = []
+        for i in range(start, docs_per_day):
+            random.seed(count)
+            month = random.choice(join_mo)
+            prefix = "employee" + str(i)
+            # array of  single objects
+            name = [{"FirstName": "employeefirstname-%s" % (str(i))},
+                    {"MiddleName": "employeemiddlename-%s" % (str(i))},
+                    {"LastName": "employeelastname-%s" % (str(i))}]
 
-        for dept in department:
-            for month in join_mo:
-                for day in join_day:
-                    random.seed(count)
-                    count += 1
-                    prefix = "employee" + str(random.random() * 100000)
-                    # array of  single objects
-                    name = [{"FirstName": "employeefirstname-%s" % (str(day))},
-                            {"MiddleName": "employeemiddlename-%s" % (str(day))},
-                            {"LastName": "employeelastname-%s" % (str(day))}]
+            # array inside array inside object
+            sportValue = random.sample(sport, 3)
+            danceValue = random.sample(dance, 3)
+            hobbies = [{"sports": sportValue}, {"dance": danceValue},"art"]
+            email = ["%s-mail@couchbase.com" % (str(i))]
+            joining = random.sample(join_yr,3)
+            # array inside array
+            enggValue = random.sample(engineer, 2)
+            marketingValue = [{"region1" :random.choice(marketing),"region2" :random.choice(marketing)},{"region2" :random.choice(marketing)}]
+            taskValue = [{"Developer": enggValue,"Marketing": marketingValue},"Sales","QA"]
+            # array of multiple objects
+            vms = [{"RAM": month, "os": "ubuntu",
+                    "name": "vm_%s" % month, "memory": month},
+                   {"RAM": month, "os": "windows",
+                    "name": "vm_%s" % (month + 1), "memory": month},
+                   {"RAM": month, "os": "centos", "name": "vm_%s" % (month + 2), "memory": month},
+                   {"RAM": month, "os": "macos", "name": "vm_%s" % (month + 3), "memory": month}
+                   ]
+            addressvalue = [[ {"city": random.choice(cities)},{"street":random.choice(streets)}],[{"apartment":123,"country":random.choice(countries)}]]
+            count += 1
+            template = JsonObject.create()
+            template.put("fullname", [name])
+            template.put("department", random.choice(department))
+            template.put("join_yr", [[ y for y in joining]])
+            template.put("email", email)
+            template.put("hobbies", random.choice(hobbies))
+            template.put("vms", [vms])
+            template.put("address", [addressvalue])
+            template.put("task", taskValue)
+            templates.append(template)
+        gen_docs = DocumentGenerator(key_prefix + prefix, templates,
+                                        start=start, end=docs_per_day)
 
-                    # array inside array inside object
-                    sportValue = random.sample(sport, 3)
-                    danceValue = random.sample(dance, 3)
-                    hobbies = [{"sports": sportValue}, {"dance": danceValue},"art"]
-                    email = ["%s-mail@couchbase.com" % (str(day))]
-                    joining = random.sample(join_yr,3)
-                    # array inside array
-                    enggValue = random.sample(engineer, 2)
-                    marketingValue = [{"region1" :random.choice(marketing),"region2" :random.choice(marketing)},{"region2" :random.choice(marketing)}]
-                    taskValue = [{"Developer": enggValue,"Marketing": marketingValue},"Sales","QA"]
-                    # array of multiple objects
-                    vms = [{"RAM": month, "os": "ubuntu",
-                            "name": "vm_%s" % month, "memory": month},
-                           {"RAM": month, "os": "windows",
-                            "name": "vm_%s" % (month + 1), "memory": month},
-                           {"RAM": month, "os": "centos", "name": "vm_%s" % (month + 2), "memory": month},
-                           {"RAM": month, "os": "macos", "name": "vm_%s" % (month + 3), "memory": month}
-                           ]
+        return gen_docs
 
-                    addressvalue = [[ {"city": random.choice(cities)},{"street":random.choice(streets)}],[{"apartment":123,"country":random.choice(countries)}]]
-
-                    generators.append(DocumentGenerator("query-test" + prefix,
-                                                        template,
-                                                        [name], [dept], [[ y for y in joining]],
-                                                        email, [hobbies],
-                                                        [taskValue],
-                                                        [vms],[addressvalue],
-                                                        start=start, end=docs_per_day))
-
-        return generators
-
-    def generate_docs_sabre(self, docs_per_day=1, start=0, isShuffle=False, years=2, indexes=[1,4,8]):
-        generators = []
+    def generate_docs_sabre(self, key_prefix, docs_per_day=1, start=0, isShuffle=False, years=2, indexes=[1,4,8]):
         all_airports = ["ABR", "ABI", "ATL","BOS", "BUR", "CHI", "MDW", "DAL", "SFO", "SAN", "SJC", "LGA", "JFK", "MSP",
                         "MSQ", "MIA", "LON", "DUB"]
         dests = [all_airports[i] for i in indexes]
         join_yr = self._shuffle(xrange(2010, 2010 + years), isShuffle)
         join_mo = self._shuffle(xrange(1, 12 + 1),isShuffle)
         join_day = self._shuffle(xrange(1, 28 + 1),isShuffle)
-        template = '{{ "Amount":{0}, "CurrencyCode":"{1}",'
-        template += ' "TotalTax":{{"DecimalPlaces" : {2}, "Amount" : {3}, "CurrencyCode" : "{4}"}},'
-        template += ' "Tax":{5}, "FareBasisCode":{6}, "PassengerTypeQuantity":{7}, "TicketType":"{8}",'
-        template += '"SequenceNumber": {9},'
-        template += ' "DirectionInd" : "{10}",  "Itinerary" : {11}, "Destination" : "{12}",'
-        template += '"join_yr":{13}, "join_mo":{14}, "join_day":{15}, "Codes":{16}}}'
         count = 1
-        for dest in dests:
-            for year in join_yr:
-                for month in join_mo:
-                    for day in join_day:
-                        random.seed(count)
-                        count +=1
-                        prefix = '%s_%s-%s-%s' % (dest, year, month, day)
-                        amount = [float("%s.%s" % (month, month))]
-                        currency = [("USD", "EUR")[month in [1,3,5]]]
-                        decimal_tax = [1,2]
-                        amount_tax = [day]
-                        currency_tax = currency
-                        taxes = [{"DecimalPlaces": 2, "Amount": float(amount_tax[0])/3,
-                                  "TaxCode": "US1", "CurrencyCode": currency},
-                                 {"DecimalPlaces": 2, "Amount": float(amount_tax[0])/4,
-                                  "TaxCode": "US2", "CurrencyCode": currency},
-                                 {"DecimalPlaces": 2, "Amount": amount_tax[0] - float(amount_tax[0])/4-\
-                                  float(amount_tax[0])/3,
-                                  "TaxCode": "US2", "CurrencyCode": currency}]
-
-                        fare_basis = [{"content": "XA21A0NY", "DepartureAirportCode": dest,
-                                       "BookingCode": "X", "ArrivalAirportCode": "MSP"},
-                                      {"content": "XA21A0NY", "DepartureAirportCode": "MSP",
-                                       "AvailabilityBreak": True, "BookingCode": "X",
-                                       "ArrivalAirportCode": "BOS"}]
-                        pass_amount = [day]
-                        ticket_type = [("eTicket", "testType")[month in [1,3,5]]]
-                        sequence = [year]
-                        direction = [("oneWay", "return")[month in [2,6,10]]]
-                        itinerary = {"OriginDestinationOptions":
-                                     {"OriginDestinationOption": [
-                                       {"FlightSegment": [
-                                         {"TPA_Extensions":
-                                           {"eTicket": {"Ind": True}},
-                                           "MarketingAirline": {"Code": dest},
-                                           "StopQuantity": month,
-                                           "DepartureTimeZone": {"GMTOffset": -7},
-                                           "OperatingAirline": {"Code": "DL",
-                                                                "FlightNumber": year + month},
-                                           "DepartureAirport": {"LocationCode": "SFO"},
-                                           "ArrivalTimeZone": {"GMTOffset": -5},
-                                           "ResBookDesigCode": "X",
-                                           "FlightNumber": year + day,
-                                           "ArrivalDateTime": "2014-07-12T06:07:00",
-                                           "ElapsedTime": 212,
-                                           "Equipment": {"AirEquipType": 763},
-                                           "DepartureDateTime": "2014-07-12T00:35:00",
-                                           "MarriageGrp": "O",
-                                           "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}},
-                                        {"TPA_Extensions":
-                                           {"eTicket": {"Ind": False}},
-                                           "MarketingAirline": {"Code": dest},
-                                           "StopQuantity": month,
-                                           "DepartureTimeZone": {"GMTOffset": -7},
-                                           "OperatingAirline": {"Code": "DL",
-                                                                "FlightNumber": year + month + 1},
-                                           "DepartureAirport": {"LocationCode": random.sample(all_airports, 1)},
-                                           "ArrivalTimeZone": {"GMTOffset": -3},
-                                           "ResBookDesigCode": "X",
-                                           "FlightNumber": year + day,
-                                           "ArrivalDateTime": "2014-07-12T06:07:00",
-                                           "ElapsedTime": 212,
-                                           "Equipment": {"AirEquipType": 764},
-                                           "DepartureDateTime": "2014-07-12T00:35:00",
-                                           "MarriageGrp": "1",
-                                           "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}}],
-                                    "ElapsedTime": 619},
-                                   {"FlightSegment": [
-                                         {"TPA_Extensions":
-                                           {"eTicket": {"Ind": True}},
-                                           "MarketingAirline": {"Code": dest},
-                                           "StopQuantity": month,
-                                           "DepartureTimeZone": {"GMTOffset": -7},
-                                           "OperatingAirline": {"Code": "DL",
-                                                                "FlightNumber": year + month},
-                                           "DepartureAirport": {"LocationCode": random.sample(all_airports, 1)},
-                                           "ArrivalTimeZone": {"GMTOffset": -5},
-                                           "ResBookDesigCode": "X",
-                                           "FlightNumber": year + day,
-                                           "ArrivalDateTime": "2014-07-12T06:07:00",
-                                           "ElapsedTime": 212,
-                                           "Equipment": {"AirEquipType": 763},
-                                           "DepartureDateTime": "2014-07-12T00:35:00",
-                                           "MarriageGrp": "O",
-                                           "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}},
-                                        {"TPA_Extensions":
-                                           {"eTicket": {"Ind": False}},
-                                           "MarketingAirline": {"Code": dest},
-                                           "StopQuantity": month,
-                                           "DepartureTimeZone": {"GMTOffset": -7},
-                                           "OperatingAirline": {"Code": "DL",
-                                                                "FlightNumber": year + month + 1},
-                                           "DepartureAirport": {"LocationCode": random.sample(all_airports, 1)},
-                                           "ArrivalTimeZone": {"GMTOffset": -3},
-                                           "ResBookDesigCode": "X",
-                                           "FlightNumber": year + day,
-                                           "ArrivalDateTime": "2014-07-12T06:07:00",
-                                           "ElapsedTime": 212,
-                                           "Equipment": {"AirEquipType": 764},
-                                           "DepartureDateTime": "2014-07-12T00:35:00",
-                                           "MarriageGrp": "1",
-                                           "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}}]}]},
-                                     "DirectionInd": "Return"}
-                        generators.append(DocumentGenerator(prefix, template,
-                                               amount, currency, decimal_tax, amount_tax, currency_tax,
-                                               [taxes], [fare_basis], pass_amount, ticket_type, sequence,
-                                               direction, [itinerary], [dest], [year], [month], [day],
-                                               [[dest, dest]], start=start, end=docs_per_day))
-        return generators
+        templates = []
+        for i in range(start, docs_per_day):
+            random.seed(count)
+            dest = random.choice(all_airports)
+            year = random.choice(join_yr)
+            month = random.choice(join_mo)
+            day = random.choice(join_day)
+            count +=1
+            prefix = '%s_%s-%s-%s' % (dest, year, month, day)
+            amount = [float("%s.%s" % (month, month))]
+            currency = [("USD", "EUR")[month in [1,3,5]]]
+            decimal_tax = [1,2]
+            amount_tax = [day]
+            currency_tax = currency
+            taxes = [{"DecimalPlaces": 2, "Amount": float(amount_tax[0])/3,
+                      "TaxCode": "US1", "CurrencyCode": currency},
+                     {"DecimalPlaces": 2, "Amount": float(amount_tax[0])/4,
+                      "TaxCode": "US2", "CurrencyCode": currency},
+                     {"DecimalPlaces": 2, "Amount": amount_tax[0] - float(amount_tax[0])/4-\
+                      float(amount_tax[0])/3,
+                      "TaxCode": "US2", "CurrencyCode": currency}]
+            fare_basis = [{"content": "XA21A0NY", "DepartureAirportCode": dest,
+                           "BookingCode": "X", "ArrivalAirportCode": "MSP"},
+                          {"content": "XA21A0NY", "DepartureAirportCode": "MSP",
+                           "AvailabilityBreak": True, "BookingCode": "X",
+                           "ArrivalAirportCode": "BOS"}]
+            pass_amount = [day]
+            ticket_type = [("eTicket", "testType")[month in [1,3,5]]]
+            sequence = [year]
+            direction = [("oneWay", "return")[month in [2,6,10]]]
+            itinerary = {"OriginDestinationOptions":
+                         {"OriginDestinationOption": [
+                           {"FlightSegment": [
+                             {"TPA_Extensions":
+                               {"eTicket": {"Ind": True}},
+                               "MarketingAirline": {"Code": dest},
+                               "StopQuantity": month,
+                               "DepartureTimeZone": {"GMTOffset": -7},
+                               "OperatingAirline": {"Code": "DL",
+                                                    "FlightNumber": year + month},
+                               "DepartureAirport": {"LocationCode": "SFO"},
+                               "ArrivalTimeZone": {"GMTOffset": -5},
+                               "ResBookDesigCode": "X",
+                               "FlightNumber": year + day,
+                               "ArrivalDateTime": "2014-07-12T06:07:00",
+                               "ElapsedTime": 212,
+                               "Equipment": {"AirEquipType": 763},
+                               "DepartureDateTime": "2014-07-12T00:35:00",
+                               "MarriageGrp": "O",
+                               "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}},
+                            {"TPA_Extensions":
+                               {"eTicket": {"Ind": False}},
+                               "MarketingAirline": {"Code": dest},
+                               "StopQuantity": month,
+                               "DepartureTimeZone": {"GMTOffset": -7},
+                               "OperatingAirline": {"Code": "DL",
+                                                    "FlightNumber": year + month + 1},
+                               "DepartureAirport": {"LocationCode": random.sample(all_airports, 1)},
+                               "ArrivalTimeZone": {"GMTOffset": -3},
+                               "ResBookDesigCode": "X",
+                               "FlightNumber": year + day,
+                               "ArrivalDateTime": "2014-07-12T06:07:00",
+                               "ElapsedTime": 212,
+                               "Equipment": {"AirEquipType": 764},
+                               "DepartureDateTime": "2014-07-12T00:35:00",
+                               "MarriageGrp": "1",
+                               "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}}],
+                        "ElapsedTime": 619},
+                       {"FlightSegment": [
+                             {"TPA_Extensions":
+                               {"eTicket": {"Ind": True}},
+                               "MarketingAirline": {"Code": dest},
+                               "StopQuantity": month,
+                               "DepartureTimeZone": {"GMTOffset": -7},
+                               "OperatingAirline": {"Code": "DL",
+                                                    "FlightNumber": year + month},
+                               "DepartureAirport": {"LocationCode": random.sample(all_airports, 1)},
+                               "ArrivalTimeZone": {"GMTOffset": -5},
+                               "ResBookDesigCode": "X",
+                               "FlightNumber": year + day,
+                               "ArrivalDateTime": "2014-07-12T06:07:00",
+                               "ElapsedTime": 212,
+                               "Equipment": {"AirEquipType": 763},
+                               "DepartureDateTime": "2014-07-12T00:35:00",
+                               "MarriageGrp": "O",
+                               "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}},
+                            {"TPA_Extensions":
+                               {"eTicket": {"Ind": False}},
+                               "MarketingAirline": {"Code": dest},
+                               "StopQuantity": month,
+                               "DepartureTimeZone": {"GMTOffset": -7},
+                               "OperatingAirline": {"Code": "DL",
+                                                    "FlightNumber": year + month + 1},
+                               "DepartureAirport": {"LocationCode": random.sample(all_airports, 1)},
+                               "ArrivalTimeZone": {"GMTOffset": -3},
+                               "ResBookDesigCode": "X",
+                               "FlightNumber": year + day,
+                               "ArrivalDateTime": "2014-07-12T06:07:00",
+                               "ElapsedTime": 212,
+                               "Equipment": {"AirEquipType": 764},
+                               "DepartureDateTime": "2014-07-12T00:35:00",
+                               "MarriageGrp": "1",
+                               "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}}]}]},
+                         "DirectionInd": "Return"}
+            TotalTax = {"DecimalPlaces" : decimal_tax, "Amount" : amount_tax,\
+            "CurrencyCode" : currency_tax}
+            template = JsonObject.create()
+            template.put("Amount", amount)
+            template.put("CurrencyCode", currency)
+            template.put("TotalTax", TotalTax)
+            template.put("Tax", [taxes])
+            template.put( "FareBasisCode", [fare_basis])
+            template.put("PassengerTypeQuantity", pass_amount)
+            template.put("TicketType", ticket_type)
+            template.put("SequenceNumber", sequence)
+            template.put("DirectionInd", direction)
+            template.put("Itinerary", [itinerary])
+            template.put("Destination", [dest])
+            template.put("join_yr", [year])
+            template.put("join_mo", [month])
+            template.put("join_day", [day])
+            template.put("Codes",[[dest, dest]])
+            templates.append(template)
+            count += 1
+        gen_load = DocumentGenerator(key_prefix + prefix, templates,
+                                                start=start, end=docs_per_day)
+        return gen_load
 
     def generate_docs_sales(self, key_prefix = "sales_dataset", test_data_type = True, start=0, docs_per_day=None, isShuffle = False):
-        generators = []
-        if end is None:
-            end = self.docs_per_day
-        join_yr = self._shuffle(range(2008, 2008 + self.years),isShuffle)
-        join_mo = self._shuffle(range(1, self.months + 1),isShuffle)
-        join_day = self._shuffle(range(1, self.days + 1),isShuffle)
+        end = docs_per_day
+        join_yr = [2010, 2011,2012,2013,2014,2015,2016]
+        join_mo = xrange(1, 12 + 1)
+        join_day = xrange(1, 28 + 1)
+        is_support = ['true', 'false']
+        is_priority = ['true', 'false']
         count = 1
-        if test_data_type:
-            template = '{{ "join_yr" : {0}, "join_mo" : {1}, "join_day" : {2},'
-            template += ' "sales" : {3}, "delivery_date" : "{4}", "is_support_included" : {5},'
-            template += ' "is_high_priority_client" : {6}, "client_contact" :  "{7}",'
-            template += ' "client_name" : "{8}", "client_reclaims_rate" : {9}}}'
-            sales = self._shuffle([200000, 400000, 600000, 800000],isShuffle)
-
-            is_support = self._shuffle(['true', 'false'],isShuffle)
-            is_priority = self._shuffle(['true', 'false'],isShuffle)
-            contact = "contact_"+str(random.random()*10000000)
-            name ="name_"+str(random.random()*100000)
-            rate = [x * 0.1 for x in range(0, 10)]
-            for year in join_yr:
-                for month in join_mo:
-                    for day in join_day:
-                        random.seed(count)
-                        count +=1
-                        prefix = "prefix_"+str(random.random()*100000)
-                        delivery = str(datetime.date(year, month, day))
-                        generators.append(DocumentGenerator(key_prefix + prefix,
-                                                  template,
-                                                  [year], [month], [day],
-                                                  sales, [delivery], is_support,
-                                                  is_priority, [contact],
-                                                  [name], rate,
-                                                  start=start, end=end))
-        return generators
+        templates = []
+        sales = [200000, 400000, 600000, 800000]
+        rate = [x * 0.1 for x in range(0, 10)]
+        for i in range(start, docs_per_day):
+            contact = "contact_"+ str(random.random()*10000000)
+            name ="name_"+ str(random.random()*100000)
+            year = random.choice(join_yr)
+            month = random.choice(join_mo)
+            day = random.choice(join_day)
+            random.seed(count)
+            count +=1
+            prefix = "prefix_"+str(i)
+            delivery = str(datetime.date(year, month, day))
+            template = JsonObject.create()
+            template.put("join_yr" , [year])
+            template.put("join_mo" , [month])
+            template.put("join_day" , [day])
+            template.put("sales" , random.choice(sales))
+            template.put("delivery_date" , [delivery])
+            template.put("is_support_included" , random.choice(is_support))
+            template.put("is_high_priority_client" , random.choice(is_priority))
+            template.put("client_contact" , [contact])
+            template.put("client_name" , [name])
+            template.put("client_reclaims_rate" , random.choice(rate))
+            templates.append(template)
+        gen_load = DocumentGenerator(key_prefix + prefix,
+                                                  templates,
+                                                  start=start, end=end)
+        return gen_load
 
     def generate_docs_bigdata(self, key_prefix="big_dataset", value_size=1024,
                               start=0, docs_per_day=1, end=None):
@@ -908,7 +949,7 @@ class JsonGenerator:
         return gen_load
 
     def generate_docs_array(self, key_prefix="array_dataset", start=0,
-                            docs_per_day=1, isShuffle=False):
+                            docs_per_day=1):
         COUNTRIES = ["India", "US", "UK", "Japan", "France", "Germany", "China", "Korea", "Canada", "Cuba",
              "West Indies", "Australia", "New Zealand", "Nepal", "Sri Lanka", "Pakistan", "Mexico",
              "belgium", "Netherlands", "Brazil", "Costa Rica", "Cambodia", "Fiji", "Finland", "haiti",
@@ -921,12 +962,11 @@ class JsonGenerator:
                 "Ira123", "Ira123", "Ita123", "Gre123", "Jam123", "Ken123", "Kuw123", "Mac123", "Spa123",
                 "Mor123", "Mal123", "Nor123"]
         end = docs_per_day
-        generators = []
-        template = '{{"name": "{0}", "email": "{1}", \
-                   "countries": {2}, "code": {3}}}'
+        templates = []
         for i in range(start, end):
             countries = []
             codes = []
+            random.seed(i)
             name = ["Passenger-{0}".format(i)]
             email = ["passenger_{0}@abc.com".format(i)]
             start_pnt = random.randint(0, len(COUNTRIES)-2)
@@ -936,9 +976,69 @@ class JsonGenerator:
             cde = COUNTRY_CODE[start_pnt:end_pnt]
             codes.append(cde)
             prefix = "{0}-{1}".format(key_prefix,i)
-            generators.append(DocumentGenerator(prefix, template,
-                                                name, email, countries, codes,  start=start, end=end))
-        return generators
+            template = JsonObject.create()
+            template.put("email", email)
+            template.put("name", name)
+            template.put("countries", countries)
+            template.put("code", codes)
+            templates.append(template)
+        gen_load = DocumentGenerator(prefix, templates,
+                                                 start=start, end=end)
+        return gen_load
+
+    def random_date(self):
+        earliest = datetime.date(1910,1,1)
+        latest  = datetime.date(2018,1,1)
+        delta = latest - earliest
+        int_delta = (delta.days * 24 * 60 * 60) + delta.seconds
+        random_second = random.randrange(int_delta)
+        return earliest + datetime.timedelta(seconds = random_second)
+
+    def generate_earthquake_doc(self, key_prefix="array_dataset", start=0,
+                            end=1):
+        Src = ['ac', 'ci', 'ak', 'pr', 'us', 'uw']
+        Region = ["Central California", "Lassen Peak area, California", "Southern California",
+                   "Rat Islands, Aleutian Islands, Alaska","offshore Oregon", "Andreanof Islands",
+                    "Aleutian Islands, Alaska", "Southern Alaska", "Virgin Islands region",
+                    "Baja California, Mexico", "Alaska Peninsula", "Central Alaska", "Northern California",
+                    "San Francisco Bay area, California","Fox Islands, Aleutian Islands, Alaska",
+                    "Central California", "Unimak Island region, Alaska","Oaxaca, Mexico", "Kenai Peninsula, Alaska",
+                    "Washington", "Guatemala", "Anegada, British Virgin Islands","Dominican Republic region",
+                    "Nevada", "Island of Hawaii, Hawaii", "Kodiak Island region, Alaska", "western Honshu, Japan",
+                    "Philippine Islands region", "Hindu Kush region, Afghanistan", "Kodiak Island region, Alaska",
+                    "Long Valley area, California", "Wasatch Front Urban Corridor, Utah", "San Pedro Channel, California",
+                    "Greater Los Angeles area, California", "Tarapaca, Chile","Arkansas", "Reykjanes Ridge",
+                    "Alaska Peninsula", "Gulf of California", "Turkmenistan", "Oregon", "Bismarck Sea",
+                    "Myanmar", "Puerto Rico region","Banda Sea", "Tonga", "offshore Oregon", "Kodiak Island region, Alaska",
+                    "Mindanao, Philippines","Yellowstone National Park, Wyoming", "Greece", "south of Java, Indonesia",
+                    "Kenai Peninsula, Alaska", "eastern Turkey","Baja California, Mexico", "Kepulauan Tanimbar, Indonesia",
+                    "Nevada", "Utah", "Ontario-Quebec border region, Canada", "Timor region", "Pagan region, Northern Mariana Islands",
+                    "Mendoza, Argentina", "Antofagasta, Chile", "New Britain region, Papua New Guinea", "Nevada", "Missouri",
+                    "Solomon Islands", "offshore El Salvador", "eastern Mediterranean Sea", "Costa Rica", "Tanzania",
+                    "Seattle-Tacoma urban area, Washington","Mona Passage, Puerto Rico",
+                    "Mindanao, Philippines", "Philippine Islands region", "Halmahera, Indonesia",
+                    "Newberry Caldera area, Oregon", "south of Africa", "south of the Mariana Islands", "Ascension Island region"]
+        Magnitude = [1.1, 1.9, 2.3, 4, 6, 7.2, 5.3, 3.7, 9.2, 7.1, 6.3, 6.7, 6.5]
+        Depth = range(10, 40)
+        Version = range(3)
+        NST = range(1, 10)
+        templates = []
+        for i in range(start, end):
+            random.seed(i)
+            prefix = "{0}-{1}".format(key_prefix,i)
+            template = JsonObject.create()
+            template.put("src", random.choice(Src))
+            template.put("Region", random.choice(Region))
+            template.put("Magnitude", random.choice(Magnitude))
+            template.put("Depth", random.choice(Depth))
+            template.put("Version", random.choice(Version))
+            template.put("NST", random.choice(NST))
+            random_date = self.random_date()
+            template.put("Date", random_date)
+            templates.append(template)
+        gen_load = DocumentGenerator(prefix, templates,
+                                                 start=start, end=end)
+        return gen_load
 
     def generate_all_type_documents_for_gsi(self, start=0, docs_per_day=10):
         """
@@ -971,6 +1071,7 @@ class JsonGenerator:
         """
         generators = []
         bool_vals = [True, False]
+        templates = []
         template = r'{{ "name":"{0}", "email":"{1}", "age":{2}, "premium_customer":{3}, ' \
                    '"address":{4}, "travel_history":{5}, "travel_history_code":{6}, "travel_details":{7},' \
                    '"booking":{8}, "credit_cards":{9}, "secret_combination":{10}, "countries_visited":{11}, ' \
@@ -1003,11 +1104,22 @@ class JsonGenerator:
             booking = {"source": random.choice(COUNTRIES), "destination": random.choice(COUNTRIES)}
             confirm_question_values = [random.choice(bool_vals) for i in range(5)]
             prefix = "airline_record_" + str(random.random()*100000)
-            generators.append(DocumentGenerator(prefix, template, [name], [email], [age], [premium_customer],
-                                                [address], [travel_history], [travel_history_code], [travel_details],
-                                                [booking], [credit_cards], [secret_combo], [countries_visited],
-                                                [confirm_question_values], start=start, end=1))
-        return generators
+            template = JsonObject.create()
+            template.put("name", [name])
+            template.put("email", email)
+            template.put("age", age)
+            template.put("premium_customer", premium_customer)
+            template.put("travel_history", travel_history)
+            template.put("travel_history_code", travel_history_code)
+            template.put("travel_details", travel_details)
+            template.put("booking", booking)
+            template.put("credit_cards", credit_cards)
+            template.put("secret_combo", secret_combo)
+            template.put("countries_visited", countries_visited)
+            template.put("confirm_question_values", confirm_question_values)
+            templates.append(template)
+        gen_load = DocumentGenerator(prefix, template, start=start, end=docs_per_day)
+        return gen_load
 
     def generate_docs_employee_data(self, key_prefix ="employee_dataset", start=0, docs_per_day = 1, isShuffle = False):
         generators = []

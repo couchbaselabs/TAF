@@ -252,7 +252,10 @@ class DocumentGenerator(KVGenerator):
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
-        template = self.template
+        if type(self.template) is list:
+            template = self.template[self.itr]
+        else:
+            template = self.template
         # Assigning  self.template to template without
         # using deep copy  will result in documents in same batch
         # (BatchedDocumentGenerator)

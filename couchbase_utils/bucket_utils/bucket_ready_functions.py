@@ -60,6 +60,7 @@ from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
                           MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
+from couchbase_helper.tuq_generators import JsonGenerator
 
 
 """
@@ -131,7 +132,7 @@ class DocLoaderUtils(object):
     @staticmethod
     def get_doc_generator(op_type, collection_obj, num_items,
                           generic_key, mutation_num=0,
-                          target_vbuckets="all"):
+                          target_vbuckets="all", type="default"):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -165,10 +166,32 @@ class DocLoaderUtils(object):
             # Hence subtracting to get only the num_items back
             end -= start
 
-        return doc_generator(generic_key, start, end,
+        if type == "default":
+            gen_docs = doc_generator(generic_key, start, end,
                              target_vbucket=target_vbuckets,
                              mutation_type=op_type,
                              mutate=mutation_num)
+        else:
+            json_generator = JsonGenerator()
+            if type == "employee":
+                gen_docs = json_generator.generate_docs_employee(
+                                generic_key, docs_per_day=end, start=start)
+            elif type == "array":
+                gen_docs = json_generator.generate_docs_employee_array(
+                                generic_key, docs_per_day=end, start=start)
+            elif type == "employee_more_field":
+                gen_docs = json_generator.generate_docs_employee_more_field_types(
+                                generic_key, docs_per_day=end, start=start)
+            elif type == "sales":
+                gen_docs = json_generator.generate_docs_sales(
+                                generic_key, docs_per_day=end, start=start)
+            elif type == "earthquake":
+                gen_docs = json_generator.generate_earthquake_doc(
+                                generic_key, docs_per_day=end, start=start)
+            else:
+                gen_docs = json_generator.generate_docs_array(
+                                generic_key, docs_per_day=end, start=start)
+        return gen_docs
 
     @staticmethod
     def get_subdoc_generator(op_type, collection_obj, num_items,
@@ -304,15 +327,22 @@ class DocLoaderUtils(object):
                                 ignore_exceptions
                             c_crud_data[op_type]["retry_exceptions"] = \
                                 retry_exceptions
+                            if type(doc_gen_type) is list:
+                                random.seed(c_name)
+                                c_crud_data[op_type]["doc_gen_type"] = \
+                                        random.choice(doc_gen_type)
+                            else:
+                                c_crud_data[op_type]["doc_gen_type"] = doc_gen_type
                             if op_type in DocLoading.Bucket.DOC_OPS:
-                                c_crud_data[op_type]["doc_gen"] = \
-                                    DocLoaderUtils.get_doc_generator(
-                                        op_type,
-                                        collection,
-                                        num_items,
-                                        doc_key,
-                                        target_vbuckets=target_vbs,
-                                        mutation_num=mutation_num)
+                                    c_crud_data[op_type]["doc_gen"] = \
+                                        DocLoaderUtils.get_doc_generator(
+                                            op_type,
+                                            collection,
+                                            num_items,
+                                            doc_key,
+                                            target_vbuckets=target_vbs,
+                                            mutation_num=mutation_num,
+                                            type=c_crud_data[op_type]["doc_gen_type"])
                             else:
                                 c_crud_data[op_type]["xattr_test"] = \
                                     is_xattr_test
@@ -346,6 +376,8 @@ class DocLoaderUtils(object):
             MetaCrudParams.IGNORE_EXCEPTIONS, [])
         retry_exceptions = input_spec.get(
             MetaCrudParams.RETRY_EXCEPTIONS, [])
+        doc_gen_type = input_spec.get(
+            MetaCrudParams.DOC_GEN_TYPE, "default")
 
         # Fetch doc_loading options to use while doc_loading
         doc_ttl = input_spec.get(MetaCrudParams.DOC_TTL, 0)

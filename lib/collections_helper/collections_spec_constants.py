@@ -32,6 +32,7 @@ class MetaCrudParams(object):
     BUCKET_CONSIDERED_FOR_OPS = "buckets_considered_for_ops"
     SCOPES_CONSIDERED_FOR_OPS = "scopes_considered_for_ops"
     COLLECTIONS_CONSIDERED_FOR_OPS = "collections_considered_for_ops"
+    DOC_GEN_TYPE = "doc_gen_type"
 
     class DocCrud(object):
         NUM_ITEMS_FOR_NEW_COLLECTIONS = "num_items_for_new_collections"
