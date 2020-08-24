@@ -334,7 +334,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
-        divisor = self.input.param("divisor", 10000)
+        divisor = self.input.param("divisor", 5)
         ops_len = len(self.doc_ops.split(":"))
 
         if self.nodes_init < 2 or self.num_replicas < 1:
