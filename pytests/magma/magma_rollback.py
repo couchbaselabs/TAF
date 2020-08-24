@@ -334,6 +334,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
+        divisor = self.input.param("divisor", 10000)
         ops_len = len(self.doc_ops.split(":"))
 
         if self.nodes_init < 2 or self.num_replicas < 1:
@@ -452,9 +453,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                           format(i, self.get_state_files(self.buckets[0])))
 
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
-            self.bucket_util.verify_stats_all_buckets(items, timeout=300)
-            for bucket in self.bucket_util.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
+            #self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+            #for bucket in self.bucket_util.buckets:
+            #    self.log.debug(cbstats.failover_stats(bucket.name))
             ###################################################################
             '''
             STEP -5
@@ -463,6 +464,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             self.log.debug("Iteration=={}, Re-Starting persistence".format(i))
             Cbepctl(shell).persistence(self.bucket_util.buckets[0].name, "start")
+            self.sleep(5, "Iteration=={}, sleep after restarting persistence".format(i))
             ###################################################################
             '''
             STEP - 6
@@ -470,23 +472,23 @@ class MagmaRollbackTests(MagmaBaseTest):
               -- Loading of doc for 60 seconds
               -- Ensures creation of new state file
             '''
-            self.create_start = items
-            self.create_end = items + items // 3
-            self.generate_docs(doc_ops="create", target_vbucket=None)
+            if i != self.num_rollbacks:
+                self.create_start = items
+                self.create_end = items + items // divisor
+                self.generate_docs(doc_ops="create", target_vbucket=None)
 
-            time_end = time.time() + 60
-            while time.time() < time_end:
-                time_start = time.time()
-                _ = self.loadgen_docs(self.retry_exceptions,
-                                      self.ignore_exceptions,
-                                      _sync=True,
-                                      doc_ops="create")
-                self.bucket_util._wait_for_stats_all_buckets()
-                if time.time() < time_start + 60:
-                    self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
-
-            items = items + items // 3
-            self.log.debug("Iteration == {}, Total num_items {}".format(i, items))
+                time_end = time.time() + 60
+                while time.time() < time_end:
+                    time_start = time.time()
+                    _ = self.loadgen_docs(self.retry_exceptions,
+                                          self.ignore_exceptions,
+                                          _sync=True,
+                                          doc_ops="create")
+                    self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+                    if time.time() < time_start + 60:
+                        self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
+                items = items + items // 3
+                self.log.debug("Iteration == {}, Total num_items {}".format(i, items))
 
         shell.disconnect()
 
