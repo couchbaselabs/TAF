@@ -2,6 +2,7 @@ from com.jcraft.jsch import JSchException
 from com.jcraft.jsch import JSch
 from org.python.core.util import FileUtil
 import os
+import sys
 
 failed = []
 def run(command, session):
@@ -74,7 +75,12 @@ def scan_all_slaves():
         session = connection(server)
         if session is None:
             continue
-        output, error = run("find /data/workspace/ -iname '*collect*2020*.zip'", session)
+
+        cmd = "find /data/workspace/ -iname '*collect*2020*.zip'"
+        if len(sys.argv) > 1:
+            cmd = "find /data/workspace/ -iname '*collect*{}*.zip'".format(sys.argv[1])
+
+        output, error = run(cmd, session)
         try:
             for cbcollect_zips in output:
                 log_files, error = run("zipinfo -1 {}".format(cbcollect_zips), session)
@@ -84,7 +90,7 @@ def scan_all_slaves():
                         print file.rstrip()
                         run("rm -rf /root/cbcollect*", session)[0]
                         run("unzip {}".format(cbcollect_zips), session)[0]
-                        print "".join(run("grep CRITICAL {} | grep -v 'Rollback point not found'".format("/root/cbcollect*/memcached.log.*"), session)[0])
+                        print "".join(run("grep CRITICAL {} | grep -v 'Rollback point not found'".format("/root/cbcollect*/memcached.log*"), session)[0])
                         print "#######################"
                         break
         except:
@@ -308,10 +314,11 @@ def scan_all_servers():
         print "--+--+--+--+-- {}. CHECKING ON SERVER: {} --+--+--+--+--".format(count, server)
         count += 1
         check_coredump_exist(server)
-        
-scan_all_servers()
-scan_all_slaves()
 
-if failed:
-    for server in failed:
-        print "ssh failed: %s" % server
+if __name__ == "__main__":
+    scan_all_slaves()
+    scan_all_servers()
+
+    if failed:
+        for server in failed:
+            print "ssh failed: %s" % server
