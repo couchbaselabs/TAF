@@ -184,12 +184,6 @@ class DocumentGenerator(KVGenerator):
         self.template = template
         KVGenerator.__init__(self, key_prefix)
 
-        # random string will be used of random_val is true or random_key is true
-        random.seed(key_prefix)
-        self.random_string = [''.join(random.choice(letters)
-                                      for _ in range(4*1024))][0]
-        self.len_random_string = len(self.random_string)
-
         if 'start' in kwargs:
             self.start = kwargs['start']
             self.itr = kwargs['start']
@@ -222,6 +216,12 @@ class DocumentGenerator(KVGenerator):
 
         if 'deep_copy' in kwargs:
             self.deep_copy = kwargs['deep_copy']
+
+        if self.randomize_value or self.randomize:
+            random.seed(key_prefix)
+            self.random_string = [''.join(random.choice(letters)
+                                          for _ in range(4*1024))][0]
+            self.len_random_string = len(self.random_string)
 
     def next_key(self):
         if self.name == "random_keys":
