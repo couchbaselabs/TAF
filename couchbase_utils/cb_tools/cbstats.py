@@ -1,4 +1,3 @@
-import logging
 import re
 import zlib
 
@@ -227,7 +226,7 @@ class Cbstats(CbCmdBase):
 
         return stats
 
-    def vkey_stat(self, bucket_name, doc_key, field_to_grep,
+    def vkey_stat(self, bucket_name, doc_key,
                   vbucket_num=None, total_vbuckets=1024):
         """
         Get vkey stats from the command,
@@ -236,40 +235,40 @@ class Cbstats(CbCmdBase):
         Arguments:
         :bucket_name    - Name of the bucket to get the stats
         :doc_key        - Document key to validate for
-        :field_to_grep  - Target stat name string to grep
         :vbucket_num    - Target vbucket_number to fetch the stats.
                           If 'None', calculate the vbucket_num locally
         :total_vbuckets - Total vbuckets configured for the bucket.
                           Default=1024
 
         Returns:
-        :result - Value of the 'field_to_grep' using regexp.
-                  If not matched, 'None'
+        :result - Dictionary of stat:values
 
         Raise:
         :Exception returned from command line execution (if any)
         """
 
-        result = None
+        result = dict()
         if vbucket_num is None:
             vbucket_num = self.__calculate_vbucket_num(doc_key, total_vbuckets)
 
-        cmd = "%s localhost:%s -u %s -p %s -b %s vkey %s %s | grep %s" \
+        cmd = "%s localhost:%s -u %s -p %s -b %s vkey %s %s" \
               % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name, doc_key, vbucket_num, field_to_grep)
+                 bucket_name, doc_key, vbucket_num)
 
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        pattern = "[ \t]*{0}[ \t]*:[ \t]+([a-zA-Z0-9]+)" \
-                  .format(field_to_grep)
-        regexp = re.compile(pattern)
+        # In case of cluster_run, output is plain string due to direct exec
+        if type(output) is str:
+            output = output.split("\n")
+
+        pattern = "[ \t]*key_([a-zA-Z_]+)[: \t]+([0-9A-Za-z]+)"
+        pattern = re.compile(pattern)
         for line in output:
-            match_result = regexp.match(line)
+            match_result = pattern.match(line)
             if match_result:
-                result = match_result.group(1)
-                break
+                result[match_result.group(1)] = match_result.group(2)
 
         return result
 
@@ -414,12 +413,8 @@ class Cbstats(CbCmdBase):
             raise Exception("\n".join(error))
         for line in output:
             line = line.strip()
-            list_all = line.rsplit(":",1)
+            list_all = line.rsplit(":", 1)
             stat = list_all[0]
             val = list_all[1].strip()
-            stats[stat]=val
+            stats[stat] = val
         return stats
-
-
-
-

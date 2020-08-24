@@ -1215,11 +1215,11 @@ class Durability(Task):
                         if self.op_type == 'create':
                             try:
                                 for node in nodes:
-                                    key_is_dirty = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key, "key_is_dirty")
-                                    if key_is_dirty in ["true", "True", "TRUE"]:
-                                        self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                    key_stat = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key)
+                                    if key_stat["is_dirty"].lower() == "true":
+                                        self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_stat["is_dirty"]))
                                     else:
-                                        self.test_log.info("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                        self.test_log.info("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_stat["is_dirty"]))
                                         count += 1
                             except:
                                 pass
@@ -1242,11 +1242,11 @@ class Durability(Task):
                             if key not in self.update_failed[self.instance].keys():
                                 try:
                                     for node in nodes:
-                                        key_is_dirty = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key, "key_is_dirty")
-                                        if key_is_dirty in ["true", "True", "TRUE"]:
-                                            self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                        key_stat = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key)
+                                        if key_stat["is_dirty"].lower() == "true":
+                                            self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_stat["is_dirty"]))
                                         else:
-                                            self.test_log.debug("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                            self.test_log.debug("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_stat["is_dirty"]))
                                             count += 1
                                 except:
                                     pass
@@ -1257,11 +1257,11 @@ class Durability(Task):
                         if self.op_type == 'delete':
                             for node in nodes:
                                 try:
-                                    key_is_dirty = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key, "key_is_dirty")
-                                    if key_is_dirty in ["true", "True", "TRUE"]:
-                                        self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                    key_stat = shells[node.split(":")[0]].vkey_stat(self.bucket.name, key)
+                                    if key_stat["is_dirty"].lower() == "true":
+                                        self.test_log.error("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_stat["is_dirty"]))
                                     else:
-                                        self.test_log.debug("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_is_dirty))
+                                        self.test_log.debug("Node: %s, Key: %s, key_is_dirty = %s"%(node.split(":")[0], key, key_stat["is_dirty"]))
                                         count += 1
                                 except Exception as e:
                                     pass
