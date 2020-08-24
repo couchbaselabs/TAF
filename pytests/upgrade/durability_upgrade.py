@@ -3,6 +3,9 @@ from threading import Thread
 
 from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper, \
+    BucketDurability
+from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from upgrade.upgrade_base import UpgradeBase
 
@@ -10,6 +13,12 @@ from upgrade.upgrade_base import UpgradeBase
 class UpgradeTests(UpgradeBase):
     def setUp(self):
         super(UpgradeTests, self).setUp()
+        self.durability_helper = DurabilityHelper(
+            self.log,
+            len(self.cluster.nodes_in_cluster))
+        self.verification_dict = dict()
+        self.verification_dict["ops_create"] = self.num_items
+        self.verification_dict["ops_delete"] = 0
 
     def tearDown(self):
         super(UpgradeTests, self).tearDown()
@@ -40,7 +49,7 @@ class UpgradeTests(UpgradeBase):
 
             try:
                 self.cluster.update_master(self.cluster.servers[0])
-            except:
+            except Exception:
                 self.cluster.update_master(
                     self.cluster.servers[self.nodes_init-1])
             # Validate sync_write results after upgrade
@@ -346,4 +355,3 @@ class UpgradeTests(UpgradeBase):
             sync=self.sync, defer=self.defer,
             retries=0)
         self.task_manager.get_task_result(trans_task)
-
