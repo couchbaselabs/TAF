@@ -74,7 +74,7 @@ def scan_all_slaves():
         session = connection(server)
         if session is None:
             continue
-        output, error = run("find /data/workspace/ -iname '*collect*2020-08-19*.zip'", session)
+        output, error = run("find /data/workspace/ -iname '*collect*2020*.zip'", session)
         try:
             for cbcollect_zips in output:
                 log_files, error = run("zipinfo -1 {}".format(cbcollect_zips), session)

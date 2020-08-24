@@ -63,6 +63,22 @@ task iptables(type:Exec) {
     }
 }
 
+task sniffer(type:Exec) {
+    if (project.hasProperty("args") && project.hasProperty("jython")) {
+        def jythonpath = sourceSets.main.runtimeClasspath.asPath
+
+        def jythonLocation = project.property("jython")
+        def testRunnerArgs = project.property("args").split()
+        def cmd = [jythonLocation, '-J-cp', jythonpath, 'scripts/eagles_all_around.py']
+
+        testRunnerArgs.each { cmd.add(it) }
+
+        println("Running: " + cmd.join(" "))
+
+        commandLine cmd
+    }
+}
+
 task install(type:Exec) {
     if (project.hasProperty("args") && project.hasProperty("jython")) {
         def jythonpath = sourceSets.main.runtimeClasspath.asPath
