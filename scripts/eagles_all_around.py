@@ -90,7 +90,9 @@ def scan_all_slaves():
                         print file.rstrip()
                         run("rm -rf /root/cbcollect*", session)[0]
                         run("unzip {}".format(cbcollect_zips), session)[0]
-                        print "".join(run("grep CRITICAL {} | grep -v 'Rollback point not found'".format("/root/cbcollect*/memcached.log*"), session)[0])
+                        exclude = "'Rollback point not found\|No space left on device'"
+                        memcached = "/root/cbcollect*/memcached.log*"
+                        print "".join(run("grep CRITICAL {} | grep -v {}".format(memcached, exclude), session)[0])
                         print "#######################"
                         break
         except:
