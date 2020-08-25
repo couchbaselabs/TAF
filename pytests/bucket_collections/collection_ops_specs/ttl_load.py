@@ -33,6 +33,8 @@ spec = {
         MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION: 0,
     },
 
+    MetaCrudParams.RETRY_EXCEPTIONS: [],
+    MetaCrudParams.IGNORE_EXCEPTIONS: [],
     MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
     MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
     MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all",

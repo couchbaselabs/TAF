@@ -9,6 +9,8 @@ from couchbase_utils.cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 
+from sdk_exceptions import SDKException
+
 
 class CollectionsRebalance(CollectionBase):
     def setUp(self):
@@ -73,6 +75,17 @@ class CollectionsRebalance(CollectionBase):
                                                     self.cluster.master.rest_password,
                                                     memoryQuota=2500)
         self.assertTrue(status, "RAM quota wasn't changed")
+
+    def set_retry_exceptions(self, doc_loading_spec):
+        retry_exceptions = []
+        if self.data_load_stage == "during" or (self.data_load_stage == "before" and self.data_load_type == "async"):
+            retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+            retry_exceptions.append(SDKException.TimeoutException)
+            retry_exceptions.append(SDKException.RequestCanceledException)
+            if self.durability_level:
+                retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+                retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def get_active_resident_threshold(self, bucket_name):
         self.rest_client = BucketHelper(self.cluster.master)
@@ -505,6 +518,7 @@ class CollectionsRebalance(CollectionBase):
             data_load_spec = self.data_load_spec
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
+        self.set_retry_exceptions(doc_loading_spec)
         if self.dgm_test:
             if data_load_spec == "dgm_load":
                 # pre-load to dgm
