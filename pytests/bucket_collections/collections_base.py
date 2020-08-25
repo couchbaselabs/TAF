@@ -30,6 +30,7 @@ class CollectionBase(BaseTestCase):
                                           "single_bucket.default")
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
+        self.remove_default_collection = self.input.param("remove_default_collection", False)
 
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
@@ -168,6 +169,9 @@ class CollectionBase(BaseTestCase):
             elif over_ride_param == "num_items":
                 bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
                     self.num_items
+            elif over_ride_param == "remove_default_collection":
+                bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                    self.remove_default_collection
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
