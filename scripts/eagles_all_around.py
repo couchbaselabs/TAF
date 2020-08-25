@@ -152,7 +152,8 @@ def check_coredump_exist(server):
     logsDir = libCb + "logs/"
     logFiles = run("ls " + logsDir + "memcached.log.*", session)[0]
     for logFile in logFiles:
-        criticalMessages = run("grep -r 'CRITICAL' " + logFile.strip("\n")+ "| grep -v 'Rollback point not found'", session)[0]
+        exclude = "'Rollback point not found\|No space left on device'"
+        criticalMessages = run("grep -r 'CRITICAL' {} | grep -v {}".format(logFile.strip("\n"), exclude), session)[0]
         index = findIndexOf(criticalMessages, "Fatal error encountered during exception handling")
         criticalMessages = criticalMessages[:index]
         if (criticalMessages):
@@ -318,7 +319,7 @@ def scan_all_servers():
         check_coredump_exist(server)
 
 if __name__ == "__main__":
-    scan_all_slaves()
+#     scan_all_slaves()
     scan_all_servers()
 
     if failed:
