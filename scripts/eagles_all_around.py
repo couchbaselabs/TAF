@@ -319,7 +319,7 @@ def scan_all_servers():
         check_coredump_exist(server)
 
 if __name__ == "__main__":
-#     scan_all_slaves()
+    scan_all_slaves()
     scan_all_servers()
 
     if failed:
