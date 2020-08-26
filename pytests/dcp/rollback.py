@@ -191,11 +191,11 @@ class DCPRollBack(DCPBase):
 
         node1_shell_conn = RemoteMachineShellConnection(cluster.servers[0])
         node2_shell_conn = RemoteMachineShellConnection(cluster.servers[1])
-        node1_cb_stat_obj = Cbstats(node1_shell_conn)
-        node2_cb_stat_obj = Cbstats(node2_shell_conn)
+        node1_cb_stat = Cbstats(node1_shell_conn)
+        node2_cb_stat = Cbstats(node2_shell_conn)
 
-        node1_items = node1_cb_stat_obj.all_stats(bucket, "curr_items_tot")
-        node2_items = node2_cb_stat_obj.all_stats(bucket, "curr_items_tot")
+        node1_items = node1_cb_stat.all_stats(bucket.name)["curr_items_tot"]
+        node2_items = node2_cb_stat.all_stats(bucket.name)["curr_items_tot"]
 
         # Disconnect the opened connections
         node1_shell_conn.disconnect()
