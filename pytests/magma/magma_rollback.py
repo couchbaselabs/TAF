@@ -178,6 +178,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
         ops_len = len(self.doc_ops.split(":"))
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
 
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
@@ -275,11 +277,11 @@ class MagmaRollbackTests(MagmaBaseTest):
                 vb_replica_queue_size_map.update({node: 0})
 
             for bucket in self.bucket_util.buckets:
-                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map, timeout=300)
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
-                    stat_name="vb_replica_queue_size")
+                    stat_name="vb_replica_queue_size", timeout=300)
 
             # replica vBuckets
             for bucket in self.bucket_util.buckets:
@@ -336,6 +338,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         mem_only_items = self.input.param("rollback_items", 10000)
         divisor = self.input.param("divisor", 5)
         ops_len = len(self.doc_ops.split(":"))
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
 
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
@@ -427,11 +431,11 @@ class MagmaRollbackTests(MagmaBaseTest):
                 vb_replica_queue_size_map.update({node: 0})
 
             for bucket in self.bucket_util.buckets:
-                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map, timeout=300)
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
-                    stat_name="vb_replica_queue_size")
+                    stat_name="vb_replica_queue_size", timeout=300)
 
             # replica vBuckets
             for bucket in self.bucket_util.buckets:
@@ -487,7 +491,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
                     if time.time() < time_start + 60:
                         self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
-                items = items + items // 3
+                items = items + items // divisor
                 self.log.debug("Iteration == {}, Total num_items {}".format(i, items))
 
         shell.disconnect()
