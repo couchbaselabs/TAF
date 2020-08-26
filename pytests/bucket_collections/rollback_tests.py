@@ -4,6 +4,7 @@ from bucket_collections.collections_base import CollectionBase
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
+from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -24,6 +25,9 @@ class RollbackTests(CollectionBase):
         # Used to calculate expected queue size of validation before rollnback
         self.total_rollback_items = 0
         self.kv_nodes = self.cluster_util.get_kv_nodes()
+
+        self.sync_write_enabled = self.durability_helper.is_sync_write_enabled(
+            self.bucket_durability_level, self.durability_level)
 
         # Open shell connections to kv nodes and create cbstat objects
         self.node_shells = dict()
@@ -57,25 +61,41 @@ class RollbackTests(CollectionBase):
                                             vb_stat_dict[stat],
                                             n_dict[init_stat_key][vb][stat]))
 
-    def load_docs(self, rewind_index=True):
+    def __rewind_doc_index(self, doc_loading_task):
+        for bucket, s_dict in doc_loading_task.loader_spec.items():
+            for s_name, c_dict in s_dict["scopes"].items():
+                for c_name, _ in c_dict["collections"].items():
+                    c_crud_data = doc_loading_task.loader_spec[
+                        bucket]["scopes"][
+                        s_name]["collections"][c_name]
+                    for op_type in c_crud_data.keys():
+                        self.bucket_util.rewind_doc_index(
+                            bucket.scopes[s_name].collections[c_name],
+                            op_type,
+                            c_crud_data[op_type]["doc_gen"],
+                            update_num_items=True)
+
+    def load_docs(self, doc_ops):
         load_spec = dict()
         load_spec["doc_crud"] = dict()
         load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
             = "test_collections"
-        load_spec[MetaCrudParams.TARGET_VBUCKETS] = self.target_vbucket
+        load_spec[MetaCrudParams.TARGET_VBUCKETS] = self.target_vbuckets
+        load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 3
+        load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
         load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
 
         mutation_num = 0
-        if "create" in self.doc_ops:
+        if "create" in doc_ops:
             load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 100
-        if "update" in self.doc_ops:
+        if "update" in doc_ops:
             load_spec["doc_crud"][
-                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 100
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 50
             mutation_num = 1
-        elif "delete" in self.doc_ops:
+        if "delete" in doc_ops:
             load_spec["doc_crud"][
-                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 100
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 10
 
         if self.durability_level:
             load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
@@ -88,7 +108,7 @@ class RollbackTests(CollectionBase):
                 load_spec,
                 mutation_num=mutation_num)
         if doc_loading_task.result is False:
-            self.log_failure("Doc operation failed for '%s'" % self.doc_ops)
+            self.log_failure("Doc operation failed for '%s'" % doc_ops)
 
         # Fetch total affected mutation count
         for bucket, s_dict in doc_loading_task.loader_spec.items():
@@ -101,14 +121,10 @@ class RollbackTests(CollectionBase):
                         self.total_rollback_items += \
                             c_crud_data[op_type]["doc_gen"].end \
                             - c_crud_data[op_type]["doc_gen"].start
-                        if rewind_index:
-                            self.bucket_util.rewind_doc_index(
-                                bucket.scopes[s_name].collections[c_name],
-                                op_type,
-                                c_crud_data[op_type]["doc_gen"],
-                                update_num_items=True)
+        return doc_loading_task
 
     def test_rollback_n_times(self):
+        doc_loading_task_2 = None
         ep_queue_size_map = dict()
         vb_replica_queue_size_map = dict()
         expected_num_items = \
@@ -127,36 +143,42 @@ class RollbackTests(CollectionBase):
 
         target_node = choice(self.kv_nodes)
         shell = self.node_shells[target_node]["shell"]
+        error_sim = CouchbaseError(self.log, shell)
         cb_stats = self.node_shells[target_node]["cbstat"]
-        self.target_vbucket = cb_stats.vbucket_list(self.bucket.name)
+        self.target_vbuckets = cb_stats.vbucket_list(self.bucket.name)
 
         for _ in xrange(1, self.num_rollbacks + 1):
             self.total_rollback_items = 0
-            self.log.info("Stopping persistence on '%s'" % target_node.ip)
-            Cbepctl(shell).persistence(self.bucket.name, "stop")
-            self.load_docs()
+            error_sim.create(CouchbaseError.STOP_PERSISTENCE, self.bucket.name)
+            doc_loading_task_1 = self.load_docs(self.doc_ops)
 
             if self.rollback_with_multiple_mutation:
-                self.doc_ops = "update"
-                self.load_docs()
+                doc_loading_task_2 = self.load_docs("update")
             for node in self.cluster.nodes_in_cluster:
                 ep_queue_size = 0
                 if node.ip == target_node.ip:
                     ep_queue_size = self.total_rollback_items
+                if self.sync_write_enabled:
+                    # Includes prepare+commit mutation
+                    ep_queue_size *= 2
                 ep_queue_size_map.update({node: ep_queue_size})
                 vb_replica_queue_size_map.update({node: 0})
 
             self.log.info("Validating stats")
             for bucket in self.bucket_util.buckets:
-                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map, timeout=self.wait_timeout)
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                                timeout=self.wait_timeout)
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
                     stat_name="vb_replica_queue_size",
                     timeout=self.wait_timeout)
 
-            self.log.info("Killing memcached to trigger rollback")
-            shell.kill_memcached()
+            if self.rollback_with_multiple_mutation:
+                self.__rewind_doc_index(doc_loading_task_2)
+            self.__rewind_doc_index(doc_loading_task_1)
+
+            error_sim.create(CouchbaseError.KILL_MEMCACHED)
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [target_node],
                 self.bucket,
@@ -177,6 +199,7 @@ class RollbackTests(CollectionBase):
 
         keys_to_verify = ["high_completed_seqno",
                           "purge_seqno"]
+        doc_loading_task_2 = None
         # Override num_items to load data into each collection
         self.num_items = 10000
 
@@ -193,37 +216,45 @@ class RollbackTests(CollectionBase):
         target_node = choice(self.cluster_util.get_kv_nodes())
         shell = self.node_shells[target_node]["shell"]
         cbstats = self.node_shells[target_node]["cbstat"]
-        self.target_vbucket = cbstats.vbucket_list(self.bucket.name)
+        self.target_vbuckets = cbstats.vbucket_list(self.bucket.name)
 
-        self.log.info("Stopping persistence on %s" % target_node.ip)
-        Cbepctl(shell).persistence(self.bucket.name, "stop")
-
-        self.total_rollback_items = 0
         for i in xrange(1, self.num_rollbacks + 1):
-            self.load_docs(rewind_index=False)
+            self.total_rollback_items = 0
+            self.log.info("Stopping persistence on %s" % target_node.ip)
+            Cbepctl(shell).persistence(self.bucket.name, "stop")
+
+            doc_loading_task_1 = self.load_docs(self.doc_ops)
             if self.rollback_with_multiple_mutation:
-                self.doc_ops = "update"
-                self.load_docs(rewind_index=False)
+                doc_loading_task_2 = self.load_docs("update")
             stat_map = dict()
             for node in self.cluster.nodes_in_cluster:
                 expected_val = 0
                 if node.ip == target_node.ip:
                     expected_val = self.total_rollback_items
+                    if self.sync_write_enabled:
+                        # Includes prepare+commit mutation
+                        expected_val *= 2
                 stat_map.update({node: expected_val})
 
             for bucket in self.bucket_util.buckets:
-                self.bucket_util._wait_for_stat(bucket, stat_map, timeout=self.wait_timeout)
-            self.sleep(60)
+                self.bucket_util._wait_for_stat(bucket, stat_map,
+                                                timeout=self.wait_timeout)
+
+            if doc_loading_task_2:
+                self.__rewind_doc_index(doc_loading_task_2)
+            self.__rewind_doc_index(doc_loading_task_1)
+
+            self.log.info("Killing memcached to trigger rollback")
+            shell.kill_memcached()
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                [target_node],
+                self.bucket,
+                wait_time=300))
+
+            self.sleep(10, "Wait after bucket warmup for cbstats to work")
             self.get_vb_details_cbstats_for_all_nodes("post_rollback")
             self.validate_seq_no_post_rollback("pre_rollback", "post_rollback",
                                                keys_to_verify)
-
-        self.log.info("Killing memcached to trigger rollback")
-        shell.kill_memcached()
-        self.assertTrue(self.bucket_util._wait_warmup_completed(
-            [target_node],
-            self.bucket,
-            wait_time=300))
 
         # Reset expected values to '0' for validation
         for bucket in self.bucket_util.buckets:
