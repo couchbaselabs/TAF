@@ -481,7 +481,7 @@ class DocLoaderUtils(object):
         unwanted_retry_succeeded_table.set_headers(table_headers)
         unwanted_retry_failed_table.set_headers(failure_table_header)
 
-        exception_pattern = ".*(com.[a-zA-Z0-9\.]+)"
+        exception_pattern = ".*(com\.[a-zA-Z0-9\.]+)"
 
         # Fetch client for retry operations
         client = \
