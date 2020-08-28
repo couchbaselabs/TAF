@@ -635,7 +635,7 @@ class CollectionsRebalance(CollectionBase):
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_out",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
                                                  remove_nodes=self.cluster.servers[:self.nodes_init][-self.nodes_out:],
-                                                 taks=tasks)
+                                                 tasks=tasks)
         elif rebalance_operation == "swap_rebalance":
             rebalance = self.rebalance_operation(rebalance_operation="swap_rebalance",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
