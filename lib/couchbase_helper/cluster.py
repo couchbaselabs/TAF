@@ -305,8 +305,8 @@ class ServerTasks(object):
         gen_range = max(int((generator.end - generator.start)
                             / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
-            temp_bucket_list = []
-            temp_client_list = []
+            temp_bucket_list = list()
+            temp_client_list = list()
             for bucket in buckets:
                 client = SDKClient([cluster.master], bucket,
                                    scope, collection)
@@ -317,7 +317,7 @@ class ServerTasks(object):
 
         _task = jython_tasks.Atomicity(
             cluster, self.jython_task_manager, bucket_list,
-            client, client_list, [generator], op_type, exp,
+            client_list, [generator], op_type, exp,
             flag=flag, persist_to=persist_to,
             replicate_to=replicate_to, only_store_hash=only_store_hash,
             batch_size=batch_size,
