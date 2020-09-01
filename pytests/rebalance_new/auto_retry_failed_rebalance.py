@@ -2,8 +2,12 @@ import json
 import random
 
 from rebalance_base import RebalanceBaseTest
+
+from collections_helper.collections_spec_constants import MetaCrudParams
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
+
+from sdk_exceptions import SDKException
 
 
 class AutoRetryFailedRebalance(RebalanceBaseTest):
@@ -43,9 +47,20 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             if zone != "Group 1":
                 rest.delete_zone(zone)
 
+    def set_retry_exceptions(self, doc_loading_spec):
+        retry_exceptions = []
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+
     def async_data_load(self):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(
             "volume_test_load")
+        self.set_retry_exceptions(doc_loading_spec)
         tasks = self.bucket_util.run_scenario_from_spec(
             self.task,
             self.cluster,
