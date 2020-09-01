@@ -174,22 +174,10 @@ class DocLoaderUtils(object):
         else:
             json_generator = JsonGenerator()
             if type == "employee":
-                gen_docs = json_generator.generate_docs_employee(
-                                generic_key, docs_per_day=end, start=start)
-            elif type == "array":
-                gen_docs = json_generator.generate_docs_employee_array(
-                                generic_key, docs_per_day=end, start=start)
-            elif type == "employee_more_field":
                 gen_docs = json_generator.generate_docs_employee_more_field_types(
                                 generic_key, docs_per_day=end, start=start)
-            elif type == "sales":
-                gen_docs = json_generator.generate_docs_sales(
-                                generic_key, docs_per_day=end, start=start)
-            elif type == "earthquake":
-                gen_docs = json_generator.generate_earthquake_doc(
-                                generic_key, docs_per_day=end, start=start)
             else:
-                gen_docs = json_generator.generate_docs_array(
+                gen_docs = json_generator.generate_earthquake_doc(
                                 generic_key, docs_per_day=end, start=start)
         return gen_docs
 

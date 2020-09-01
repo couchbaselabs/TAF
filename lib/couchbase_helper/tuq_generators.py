@@ -632,7 +632,7 @@ class JsonGenerator:
         join_mo = xrange(1, 12 + 1)
         join_day = xrange(1, 28 + 1)
         options = [True,False]
-        salary = range(100000, 200000)
+        salary = range(10000, 200000)
         count = 1
         templates = []
         for i in range(start, docs_per_day):
@@ -640,7 +640,7 @@ class JsonGenerator:
             prefix = "employee"+str(i)
             name = random.choice(Firstname) + " " + random.choice(Second_name)
             email = ["%s-mail@couchbase.com" % (str(name))]
-            emp_id = 10000 + int(i)
+            emp_id = range(0, 10000)
             month = random.choice(join_mo)
             is_manager = random.choice(options)
             languanges_known = {}
@@ -661,7 +661,7 @@ class JsonGenerator:
             template.put("join_mo" , month)
             template.put("join_day" , random.choice(join_day))
             template.put("email" , email)
-            template.put("emp_id", emp_id)
+            template.put("emp_id", random.choice(emp_id))
             template.put("dept" , random.choice(types))
             template.put("skills" , random.sample(skills, 3))
             template.put("is_manager", is_manager)
@@ -672,7 +672,7 @@ class JsonGenerator:
             if is_manager:
                 template.put("manages", manages)
             templates.append(template)
-        gen_load = DocumentGenerator(key_prefix + prefix,
+        gen_load = DocumentGenerator(key_prefix,
                                                templates,
                                                start=start, end=docs_per_day)
         return gen_load
@@ -737,7 +737,7 @@ class JsonGenerator:
             template.put("address", [addressvalue])
             template.put("task", taskValue)
             templates.append(template)
-        gen_docs = DocumentGenerator(key_prefix + prefix, templates,
+        gen_docs = DocumentGenerator(key_prefix, templates,
                                         start=start, end=docs_per_day)
 
         return gen_docs
@@ -874,7 +874,7 @@ class JsonGenerator:
             template.put("Codes",[[dest, dest]])
             templates.append(template)
             count += 1
-        gen_load = DocumentGenerator(key_prefix + prefix, templates,
+        gen_load = DocumentGenerator(key_prefix, templates,
                                                 start=start, end=docs_per_day)
         return gen_load
 
@@ -911,7 +911,7 @@ class JsonGenerator:
             template.put("client_name" , [name])
             template.put("client_reclaims_rate" , random.choice(rate))
             templates.append(template)
-        gen_load = DocumentGenerator(key_prefix + prefix,
+        gen_load = DocumentGenerator(key_prefix,
                                                   templates,
                                                   start=start, end=end)
         return gen_load

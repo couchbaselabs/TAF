@@ -1,3 +1,4 @@
+
 import base64
 import json
 import urllib
@@ -1515,6 +1516,39 @@ class RestConnection(object):
         status, content, header = self._http_request(api, 'POST', post)
         if not status:
             self.test_log.error('Unable to logClientError')
+
+    def execute_statement_on_cbas(self, statement, mode, pretty=True,
+                                  timeout=70, client_context_id=None):
+        self.cbas_base_url = "http://{0}:{1}".format(self.ip, 8095)
+        api = self.cbas_base_url + "/analytics/service"
+        headers = self._create_capi_headers()
+
+        params = {'statement': statement, 'pretty': pretty, 'client_context_id': client_context_id}
+
+        if mode is not None:
+            params['mode'] = mode
+
+        params = json.dumps(params)
+        status, content, header = self._http_request(api, 'POST',
+                                                     headers=headers,
+                                                     params=params,
+                                                     timeout=timeout)
+        if status:
+            return content
+        elif str(header['status']) == '503':
+            self.test_log.info("Request Rejected")
+            raise Exception("Request Rejected")
+        elif str(header['status']) in ['500', '400']:
+            json_content = json.loads(content)
+            msg = json_content['errors'][0]['msg']
+            if "Job requirement" in  msg and "exceeds capacity" in msg:
+                raise Exception("Capacity cannot meet job requirement")
+            else:
+                return content
+        else:
+            self.test_log.error("/analytics/service status:{0},content:{1}".format(
+                status, content))
+            raise Exception("Analytics Service API failed")
 
     def get_buckets_itemCount(self):
         # get all the buckets

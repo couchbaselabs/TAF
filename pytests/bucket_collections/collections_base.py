@@ -28,9 +28,12 @@ class CollectionBase(BaseTestCase):
         self.doc_ops = self.input.param("doc_ops", None)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
+        self.data_spec_name = self.input.param("data_spec_name",
+                                               "initial_load")
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
-        self.remove_default_collection = self.input.param("remove_default_collection", False)
+        self.remove_default_collection = \
+            self.input.param("remove_default_collection", False)
 
         self.action_phase = self.input.param("action_phase",
                                              "before_default_load")
@@ -56,7 +59,7 @@ class CollectionBase(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
@@ -103,7 +106,8 @@ class CollectionBase(BaseTestCase):
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
         doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("initial_load")
+            self.bucket_util.get_crud_template_from_package(
+                self.data_spec_name)
 
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
