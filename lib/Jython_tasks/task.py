@@ -610,13 +610,17 @@ class GenericLoadingTask(Task):
         return success, fail
 
     def batch_read(self, keys, shared_client=None):
-        success = dict()
-        fail = dict()
         self.client = self.client or shared_client
-        try:
-            success, fail = self.client.get_multi(keys, self.timeout)
-        except Exception as error:
-            self.set_exception(error)
+        success, fail = self.client.get_multi(keys, self.timeout)
+        if fail and not self.suppress_error_table:
+            failed_item_view = TableView(self.test_log.info)
+            failed_item_view.set_headers(["Read Key", "Exception"])
+            for key, exception in fail.items():
+                failed_item_view.add_row([key, exception])
+            failed_item_view.display("Keys failed in %s:%s:%s"
+                                     % (self.bucket.name,
+                                        self.scope,
+                                        self.collection))
         return success, fail
 
     def batch_sub_doc_insert(self, key_value, persist_to=0,
