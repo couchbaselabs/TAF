@@ -757,6 +757,9 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
+
         ops_len = len(self.doc_ops.split(":"))
         self.gen_read = copy.deepcopy(self.gen_create)
 
@@ -853,9 +856,11 @@ class MagmaRollbackTests(MagmaBaseTest):
                         vb_replica_queue_size_map.update({nod: 0})
 
                 for bucket in self.bucket_util.buckets:
-                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                                    timeout=300)
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
-                                                    stat_name="vb_replica_queue_size")
+                                                    stat_name="vb_replica_queue_size",
+                                                    timeout=300)
                 # replica vBuckets
                 for bucket in self.bucket_util.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
@@ -875,9 +880,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
                           format(i, x, self.get_state_files(self.buckets[0])))
 
-                self.bucket_util.verify_stats_all_buckets(items, timeout=300)
-                for bucket in self.bucket_util.buckets:
-                    self.log.debug(cbstats.failover_stats(bucket.name))
+                #self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+                #for bucket in self.bucket_util.buckets:
+                #    self.log.debug(cbstats.failover_stats(bucket.name))
 
                 ###############################################################
                 '''
@@ -929,6 +934,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
         ops_len = len(self.doc_ops.split(":"))
 
         if self.nodes_init < 2 or self.num_replicas < 1:
@@ -1023,9 +1030,11 @@ class MagmaRollbackTests(MagmaBaseTest):
                         vb_replica_queue_size_map.update({nod: 0})
 
                 for bucket in self.bucket_util.buckets:
-                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                                    timeout=300)
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
-                                                    stat_name="vb_replica_queue_size")
+                                                    stat_name="vb_replica_queue_size",
+                                                    timeout=300)
                 # replica vBuckets
                 for bucket in self.bucket_util.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
@@ -1045,9 +1054,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
                           format(i, node, self.get_state_files(self.buckets[0])))
 
-                self.bucket_util.verify_stats_all_buckets(items, timeout=300)
-                for bucket in self.bucket_util.buckets:
-                    self.log.debug(cbstats.failover_stats(bucket.name))
+                #self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+                #for bucket in self.bucket_util.buckets:
+                #    self.log.debug(cbstats.failover_stats(bucket.name))
 
                 ###############################################################
                 '''
@@ -1081,7 +1090,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions, _sync=True,
                                   doc_ops="create")
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
             items = items + items // 3
@@ -1111,6 +1120,8 @@ class MagmaRollbackTests(MagmaBaseTest):
          -- After every iteration of roll back on all nodes
          -- Repeat all the above steps for num_rollback times
         '''
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
             to test rollback")
@@ -1345,6 +1356,8 @@ class MagmaRollbackTests(MagmaBaseTest):
          -- ReStart persistence on all the x nodes
          -- Repeat all the above steps for num_rollback times
         '''
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
         mem_only_items = self.input.param("rollback_items", 10000)
         target_active_nodes = self.input.param("target_active_nodes", 1)
         num_crashes = self.input.param("num_crashes", 5)
