@@ -237,7 +237,7 @@ class FlushTests(CollectionBase):
         self.sleep(5, "Wait for mutation task to start")
 
         self.log.info("Flushing bucket: %s" % self.bucket.name)
-        self.bucket_util.update_bucket_property(self.bucket, flush_enabled=True)
+        self.bucket_util.update_bucket_property(self.bucket, flush_enabled=1)
         self.bucket_util.flush_bucket(self.cluster.master, self.bucket)
 
         # Wait for mutation task to complete
