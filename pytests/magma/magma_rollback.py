@@ -982,8 +982,9 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         for i in range(1, self.num_rollbacks+1):
             self.log.info("Roll back Iteration == {}".format(i))
+            start = items
             for x, node in enumerate(self.cluster.nodes_in_cluster):
-                start = items
+                #start = items
                 shell = RemoteMachineShellConnection(node)
                 cbstats = Cbstats(shell)
                 self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
@@ -1084,8 +1085,17 @@ class MagmaRollbackTests(MagmaBaseTest):
                               format(i, self.get_state_files(self.buckets[0])))
 
                 self.sleep(5, "Sleep after re-starting persistence, Iteration{}".format(i))
-
-            shell.disconnect()
+                for nod in self.cluster.nodes_in_cluster:
+                    ep_queue_size_map.update({nod: 0})
+                    vb_replica_queue_size_map.update({nod: 0})
+                self.log.info("Iteration-{}, node-{}, check for wait for stats".format(i, x+1))
+                for bucket in self.bucket_util.buckets:
+                    self.bucket_util._wait_for_stat(bucket,
+                                                    ep_queue_size_map, timeout=300)
+                    self.bucket_util._wait_for_stat(bucket,
+                                                    vb_replica_queue_size_map,
+                                                    stat_name="vb_replica_queue_size", timeout=300)
+                shell.disconnect()
             ###################################################################
             '''
             STEP - 6
