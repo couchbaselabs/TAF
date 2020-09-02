@@ -4,6 +4,8 @@ class MetaConstants(object):
     NUM_COLLECTIONS_PER_SCOPE = "num_collections_per_scope"
     NUM_ITEMS_PER_COLLECTION = "num_items"
     REMOVE_DEFAULT_COLLECTION = "remove_default_collection"
+    CREATE_COLLECTIONS_USING_MANIFEST_IMPORT = \
+        "create_collections_using_manifest_import"
 
     @staticmethod
     def get_params():

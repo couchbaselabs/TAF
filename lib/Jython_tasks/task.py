@@ -3245,20 +3245,48 @@ class BucketCreateFromSpecTask(Task):
                 .collections \
                 .pop(CbServer.default_collection, None)
 
-        scope_create_threads = list()
-        for scope_name, scope_spec in self.bucket_spec["scopes"].items():
-            scope_spec["name"] = scope_name
-            scope_create_thread = threading.Thread(
-                target=self.create_scope_from_spec,
-                args=[scope_spec])
-            scope_create_thread.start()
-            scope_create_thread.join()
-            # scope_create_threads.append(scope_create_thread)
+        if self.bucket_spec["create_collections_using_manifest_import"]:
+            self.create_collections_using_manifest_import()
+            for scope_name, scope_spec in self.bucket_spec["scopes"].items():
+                scope_spec["name"] = scope_name
+                for collection_name, collection_spec \
+                        in scope_spec["collections"].items():
+                    if collection_name == CbServer.default_collection:
+                        continue
+                    collection_spec["name"] = collection_name
+        else:
+            scope_create_threads = list()
+            for scope_name, scope_spec in self.bucket_spec["scopes"].items():
+                scope_spec["name"] = scope_name
+                scope_create_thread = threading.Thread(
+                    target=self.create_scope_from_spec,
+                    args=[scope_spec])
+                scope_create_thread.start()
+                scope_create_thread.join()
+                # scope_create_threads.append(scope_create_thread)
 
-        # for scope_create_thread in scope_create_threads:
-        #     scope_create_thread.join(30)
+            # for scope_create_thread in scope_create_threads:
+            #     scope_create_thread.join(30)
 
         self.complete_task()
+
+    def create_collections_using_manifest_import(self):
+        json_content = dict()
+        json_content["scopes"] = list()
+        for s_name, s_dict in self.bucket_spec["scopes"].items():
+            scope = dict()
+            scope["name"] = s_name
+            scope["collections"] = list()
+            for c_name, c_dict in s_dict["collections"].items():
+                col = dict()
+                col["name"] = c_name
+                if "maxTTL" in c_dict:
+                    col["maxTTL"] = c_dict["maxTTL"]
+                scope["collections"].append(col)
+            json_content["scopes"].append(scope)
+
+        self.bucket_helper.import_collection_using_manifest(
+            self.bucket_spec["name"], str(json_content).replace("'", '"'))
 
     def create_bucket(self):
         self.bucket_obj.threadsNumber = 3

@@ -685,3 +685,14 @@ class BucketHelper(RestConnection):
         json_parsed = json.loads(content)
         manifest_uid = json_parsed["uid"]
         return manifest_uid
+
+    def import_collection_using_manifest(self, bucket_name, manifest_data):
+        url = "pools/default/buckets/%s/collections" \
+              % urllib.quote_plus(bucket_name)
+        json_header = self.get_headers_for_content_type_json()
+        api = self.baseUrl + url
+        status, content, _ = self._http_request(api, 'PUT', manifest_data,
+                                                headers=json_header)
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
