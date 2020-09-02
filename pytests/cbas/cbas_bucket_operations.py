@@ -260,7 +260,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
-            self.num_items)
+            self.num_items, mutation_num=1)
 
         # Validate no. of items in CBAS dataset
         if not self.cbas_util.validate_cbas_dataset_items_count(

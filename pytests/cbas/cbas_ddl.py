@@ -4,14 +4,17 @@ import time
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import TravelSample, BeerSample
 from cbas_base import CBASBaseTest
+from TestInput import TestInputSingleton
 
 
 class CBASDDLTests(CBASBaseTest):
     def setUp(self, add_default_cbas_node=True):
-        super(CBASDDLTests, self).setUp(add_default_cbas_node)
+        self.input = TestInputSingleton.input
 
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
+        
+        super(CBASDDLTests, self).setUp(add_default_cbas_node)
 
         self.validate_error = False
         if self.expected_error:
@@ -29,7 +32,6 @@ class CBASDDLTests(CBASBaseTest):
         self.sample_bucket = TravelSample()
         result = self.bucket_util.load_sample_bucket(self.sample_bucket)
         self.assertTrue(result, msg="Load sample bucket failed")
-        self.cbas_util.createConn(self.sample_bucket.name)
 
     def test_create_link_Local(self):
         code = self.input.param('error_code', None)
@@ -196,7 +198,7 @@ class CBASDDLTests(CBASBaseTest):
         self.assertTrue(deleted, "Failed to delete KV bucket")
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
                             "ds1",
-                            beer_sample.stats.expected_item_count),
+                            self.sample_bucket.stats.expected_item_count),
                         "Data loss in CBAS.")
 
     def test_create_dataset_on_connected_link(self):

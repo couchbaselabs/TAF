@@ -3815,8 +3815,7 @@ class RemoteMachineShellConnection:
         if server:
             cluster_util.wait_for_ns_servers_or_assert(
                 [server],
-                wait_time=wait_timeout,
-                wait_if_warmup=True)
+                wait_time=wait_timeout)
 
     def start_couchbase(self):
         self.extract_remote_info()
