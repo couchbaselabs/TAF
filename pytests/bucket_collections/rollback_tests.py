@@ -13,6 +13,8 @@ class RollbackTests(CollectionBase):
     def setUp(self):
         super(RollbackTests, self).setUp()
         self.num_rollbacks = self.input.param("num_rollbacks", 2)
+        self.collection_ops_type = self.index_quota_percent.param(
+            "collection_ops", None)
         self.rollback_with_multiple_mutation = self.input.param(
             "rollback_with_multiple_mutation", False)
         self.bucket = self.bucket_util.buckets[0]
@@ -22,7 +24,7 @@ class RollbackTests(CollectionBase):
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        # Used to calculate expected queue size of validation before rollnback
+        # Used to calculate expected queue size of validation before rollback
         self.total_rollback_items = 0
         self.kv_nodes = self.cluster_util.get_kv_nodes()
 
@@ -85,20 +87,36 @@ class RollbackTests(CollectionBase):
         load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
         load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
 
-        mutation_num = 0
-        if "create" in doc_ops:
-            load_spec["doc_crud"][
-                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 100
-        if "update" in doc_ops:
-            load_spec["doc_crud"][
-                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 50
-            mutation_num = 1
-        if "delete" in doc_ops:
-            load_spec["doc_crud"][
-                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 10
-
         if self.durability_level:
             load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
+
+        mutation_num = 0
+        if self.collection_ops_type != "without_cruds":
+            if "create" in doc_ops:
+                load_spec["doc_crud"][
+                    MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] \
+                    = 100
+            if "update" in doc_ops:
+                load_spec["doc_crud"][
+                    MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] \
+                    = 50
+                mutation_num = 1
+            if "delete" in doc_ops:
+                load_spec["doc_crud"][
+                    MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] \
+                    = 10
+
+        if self.collection_ops_type in ["without_cruds", "with_cruds"]:
+            load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS] = "all"
+            load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_OPS] = "all"
+            load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
+            load_spec[MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET] = 1
+            load_spec[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 2
+            load_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 2
+            load_spec[MetaCrudParams.SCOPES_TO_RECREATE] = 1
+
+            load_spec["doc_crud"][
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 100
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
