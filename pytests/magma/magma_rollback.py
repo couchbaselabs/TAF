@@ -1386,6 +1386,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         num_crashes = self.input.param("num_crashes", 5)
         collections_for_rollback = self.input.param("collections_for_rollback", 1)
         load_during_rollback = self.input.param("load_during_rollback", False)
+        divisor = self.input.param("divisor", 30)
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
             to test rollback")
@@ -1431,8 +1432,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=600)
 
         shell_conn = list()
         for node in self.cluster.nodes_in_cluster:
@@ -1532,7 +1533,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             for server in self.cluster.nodes_in_cluster:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
                     [server], self.bucket_util.buckets[0],
-                    wait_time=self.wait_timeout * 20))
+                    wait_time=self.wait_timeout * 30))
             if not load_during_rollback:
                 crash_count = 1
                 while num_crashes > 0:
@@ -1605,7 +1606,7 @@ class MagmaRollbackTests(MagmaBaseTest):
               -- Ensures creation of new state file
             '''
             self.create_start = start_items
-            self.create_end = start_items + start_items // 5
+            self.create_end = start_items + start_items // divisor
             tasks_info = dict()
             self.generate_docs(doc_ops="create", target_vbucket=None)
             time_start = time.time()
@@ -1625,14 +1626,14 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
             if time.time() < time_start + 60:
                 self.sleep(time_start + 60 - time.time(),
                                "After new creates, sleeping , itr={}".
                                format(i))
 
-            start_items = start_items + start_items // 5
+            start_items = start_items + start_items // divisor
             self.log.debug("Iteration == {}, start_items={}".format(i, start_items))
 
         for shell in shell_conn:

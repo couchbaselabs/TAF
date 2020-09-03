@@ -152,7 +152,7 @@ class MagmaBaseTest(BaseTestCase):
                     self.end = self.num_items
 
             self.log.info("Verifying num_items counts after doc_ops")
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
