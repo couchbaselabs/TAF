@@ -2,6 +2,8 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 
+from sdk_exceptions import SDKException
+
 
 class AutoFailoverTests(AutoFailoverBaseTest):
     def setUp(self):
@@ -27,13 +29,27 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     doc_type=self.doc_type)
 
     def tearDown(self):
+        self.log.info("Printing bucket stats before teardown")
+        self.bucket_util.print_bucket_stats()
         super(AutoFailoverTests, self).tearDown()
+
+    def set_retry_exceptions(self, doc_loading_spec):
+        retry_exceptions = []
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def data_load_from_spec(self, async_load=False):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
         if self.durability_level:
             doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                 self.durability_level
+        self.set_retry_exceptions(doc_loading_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
                                                         self.bucket_util.buckets,
@@ -74,6 +90,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.enable_autofailover_and_validate()
         self.sleep(5)
 
+        self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -96,7 +113,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(60)
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -126,6 +143,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.enable_autofailover_and_validate()
         self.sleep(5)
 
+        self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -154,7 +172,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master = self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -184,6 +202,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.enable_autofailover_and_validate()
         self.sleep(5)
 
+        self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -213,7 +232,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -243,7 +262,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.enable_autofailover_and_validate()
         self.sleep(5)
 
-        self.cluster.master = self.orchestrator
+        self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -293,7 +312,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -324,6 +343,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.enable_autofailover_and_validate()
         self.sleep(5)
 
+        self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -370,7 +390,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -403,6 +423,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.enable_autofailover_and_validate()
         self.sleep(5)
 
+        self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -443,7 +464,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
