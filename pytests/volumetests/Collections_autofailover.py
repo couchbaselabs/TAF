@@ -1,17 +1,14 @@
-import urllib
-from math import ceil
-
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
+
+from collections_helper.collections_spec_constants import MetaCrudParams
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
-import random
-from BucketLib.BucketOperations import BucketHelper
-from remote.remote_util import RemoteMachineShellConnection
-from error_simulation.cb_error import CouchbaseError
-from bucket_collections.collections_base import CollectionBase
+
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
+
+from sdk_exceptions import SDKException
 
 
 class volume(AutoFailoverBaseTest):
@@ -57,6 +54,29 @@ class volume(AutoFailoverBaseTest):
             servers_to_fail = self.nodes_in_cluster[1:self.num_node_failures + 1]
         return servers_to_fail
 
+    def custom_induce_and_remove_failure(self):
+        """
+        1. Induce failure
+        2. sleep for timeout amount of time
+        3. remove the failure, so that autoreprovision kicks in
+        :return: None
+        """
+        if self.failover_action == "stop_server":
+            self.cluster_util.stop_server(self.server_to_fail[0])
+            self.sleep(self.timeout, "keeping the failure")
+            self.cluster_util.start_server(self.server_to_fail[0])
+        elif self.failover_action == "firewall":
+            self.cluster_util.start_firewall_on_node(self.server_to_fail[0])
+            self.sleep(self.timeout, "keeping the failure")
+            self.cluster_util.stop_firewall_on_node(self.server_to_fail[0])
+        elif self.failover_action == "stop_memcached":
+            self.cluster_util.stop_memcached_on_node(self.server_to_fail[0])
+            self.sleep(self.timeout, "keeping the failure")
+            self.cluster_util.start_memcached_on_node(self.server_to_fail[0])
+        else:
+            # for restart server, machine restart, and network restart use base libraries
+            self.failover_actions[self.failover_action](self)
+
     def rebalance_after_autofailover(self):
         """
         Test autofailover for different failure scenarios and then rebalance
@@ -82,17 +102,22 @@ class volume(AutoFailoverBaseTest):
 
         # Initiate failure, and let the autofailover/autoreprovison kick-in
         self.log.info("Inducing failure {0} on nodes: {1}".format(self.failover_action, self.server_to_fail))
-        self.failover_actions[self.failover_action](self)
+        if self.auto_reprovision:
+            self.custom_induce_and_remove_failure()
+        else:
+            self.failover_actions[self.failover_action](self)
 
-        self.sleep(300, "keep the cluster with the failure")
+        self.sleep(300, "keep the cluster with the failure(autofailover test)/warmup to complete(autoreprovision test)")
 
         # Wait for async data load to complete
         self.wait_for_async_data_load_to_complete(task)
         self.data_validation_collection()
 
-        # Bring back the node up
-        self.bring_back_failed_nodes_up()
-        self.sleep(30)
+        # Bring back the node up in the case of autofailover.
+        # In the case of autoreprovision we would have done it already in function: custom_induce_and_remove_failure
+        if not self.auto_reprovision:
+            self.bring_back_failed_nodes_up()
+            self.sleep(30)
 
         if self.auto_reprovision:
             # Rebalance the cluster
@@ -127,9 +152,22 @@ class volume(AutoFailoverBaseTest):
         self.task.jython_task_manager.get_task_result(task)
         self.assertTrue(task.result, "Rebalance Failed")
 
+    def set_retry_exceptions(self, doc_loading_spec):
+        retry_exceptions = []
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+
     def data_load_collection(self, async_load=True):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        self.set_retry_exceptions(doc_loading_spec)
+        self.over_ride_doc_loading_template_params(doc_loading_spec)
         task = self.bucket_util.run_scenario_from_spec(self.task,
                                                        self.cluster,
                                                        self.bucket_util.buckets,
@@ -208,6 +246,7 @@ class volume(AutoFailoverBaseTest):
         self.log.info("Step {0}: Initial data data load into ephemeral buckets".format(step_count))
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
+        self.over_ride_doc_loading_template_params(doc_loading_spec)
 
         # TODO: remove this once the bug is fixed
         self.sleep(120, "MB-38497")

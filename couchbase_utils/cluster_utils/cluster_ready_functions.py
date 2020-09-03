@@ -405,6 +405,23 @@ class ClusterUtils:
                 remote_client.kill_memcached()
                 remote_client.disconnect()
 
+    def start_memcached_on_node(self, node):
+        """ Method to start memcached on a server which is subject to failover """
+        for server in self.cluster.servers:
+            if server.ip == node.ip:
+                remote_client = RemoteMachineShellConnection(server)
+                remote_client.start_memcached()
+                remote_client.disconnect()
+
+    def stop_memcached_on_node(self, node):
+        """ Method to stop memcached on a server which is subject to failover """
+        for server in self.cluster.servers:
+            if server.ip == node.ip:
+                remote_client = RemoteMachineShellConnection(server)
+                remote_client.stop_memcached()
+                remote_client.disconnect()
+
+
     def start_firewall_on_node(self, node):
         """ Method to start a server which is subject to failover """
         for server in self.cluster.servers:
