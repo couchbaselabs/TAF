@@ -2513,24 +2513,26 @@ class BucketUtils(ScopeUtils):
         return tasks_info
 
     def _async_validate_docs(self, cluster, kv_gen, op_type, exp,
-                            flag=0, only_store_hash=True, batch_size=1,
-                            pause_secs=1, timeout_secs=5, compression=True,
-                            process_concurrency=4, check_replica=False,
-                            ignore_exceptions=[], retry_exceptions=[],
-                            scope=CbServer.default_scope,
-                            collection=CbServer.default_collection):
+                             flag=0, only_store_hash=True, batch_size=1,
+                             pause_secs=1, timeout_secs=5, compression=True,
+                             process_concurrency=4, check_replica=False,
+                             ignore_exceptions=[], retry_exceptions=[],
+                             scope=CbServer.default_scope,
+                             collection=CbServer.default_collection,
+                             suppress_error_table=False):
         task_info = dict()
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
             task = self.task.async_validate_docs(cluster,
-                                                bucket, gen,
-                                                op_type, exp,
-                                                flag, only_store_hash,
-                                                batch_size, pause_secs,
-                                                timeout_secs, compression,
-                                                process_concurrency,
-                                                check_replica,
-                                                scope, collection)
+                                                 bucket, gen,
+                                                 op_type, exp,
+                                                 flag, only_store_hash,
+                                                 batch_size, pause_secs,
+                                                 timeout_secs, compression,
+                                                 process_concurrency,
+                                                 check_replica,
+                                                 scope, collection,
+                                                 suppress_error_table=suppress_error_table)
             task_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,

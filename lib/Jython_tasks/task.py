@@ -1973,7 +1973,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 is_sub_doc=False):
+                 is_sub_doc=False,
+                 suppress_error_table=False):
         super(ValidateDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
@@ -1991,8 +1992,10 @@ class ValidateDocumentsTask(GenericLoadingTask):
         self.op_type = op_type
         self.exp = exp
         self.flag = flag
-        self.failed_item_table = TableView(self.test_log.info)
-        self.failed_item_table.set_headers(["READ Key", "Exception"])
+        self.suppress_error_table = suppress_error_table
+        if not self.suppress_error_table:
+            self.failed_item_table = TableView(self.test_log.info)
+            self.failed_item_table.set_headers(["READ Key", "Exception"])
         self.missing_keys = []
         self.wrong_values = []
         self.failed_reads = dict()
@@ -2113,10 +2116,12 @@ class ValidateDocumentsTask(GenericLoadingTask):
         if self.sdk_client_pool:
             self.sdk_client_pool.release_client(self.client)
             self.client = None
-        for key, value in self.failed_reads.items():
-            if SDKException.DocumentNotFoundException \
-                    not in str(self.failed_reads[key]["error"]):
-                self.failed_item_table.add_row([key, value['error']])
+
+        if not self.suppress_error_table:
+            for key, value in self.failed_reads.items():
+                if SDKException.DocumentNotFoundException \
+                        not in str(self.failed_reads[key]["error"]):
+                    self.failed_item_table.add_row([key, value['error']])
         missing_keys, wrong_values = self.validate_key_val(result_map,
                                                            key_value)
         if self.op_type == 'delete':
@@ -2185,7 +2190,8 @@ class DocumentsValidatorTask(Task):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  sdk_client_pool=None,
-                 is_sub_doc=False):
+                 is_sub_doc=False,
+                 suppress_error_table=False):
         super(DocumentsValidatorTask, self).__init__(
             "DocumentsValidatorTask_%s_%s_%s" % (
                 bucket.name, op_type, time.time()))
@@ -2205,6 +2211,7 @@ class DocumentsValidatorTask(Task):
         self.input_generators = generators
         self.op_types = None
         self.buckets = None
+        self.suppress_error_table = suppress_error_table
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -2244,10 +2251,11 @@ class DocumentsValidatorTask(Task):
             self.task_manager.add_new_task(task)
         for task in tasks:
             self.task_manager.get_task_result(task)
-            task.failed_item_table.display("DocValidator failure for %s:%s:%s"
-                                           % (self.bucket.name,
-                                              self.scope,
-                                              self.collection))
+            if not self.suppress_error_table:
+                task.failed_item_table.display("DocValidator failure for %s:%s:%s"
+                                               % (self.bucket.name,
+                                                  self.scope,
+                                                  self.collection))
             if task.missing_keys:
                 exception = "Total %d keys missing -> %s" \
                             % (task.missing_keys.__len__(), task.missing_keys)
@@ -2288,7 +2296,8 @@ class DocumentsValidatorTask(Task):
                 compression=self.compression, check_replica=self.check_replica,
                 scope=self.scope, collection=self.collection,
                 sdk_client_pool=self.sdk_client_pool,
-                is_sub_doc=self.is_sub_doc)
+                is_sub_doc=self.is_sub_doc,
+                suppress_error_table=self.suppress_error_table)
             tasks.append(task)
         return tasks
 

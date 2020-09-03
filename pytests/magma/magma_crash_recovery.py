@@ -300,7 +300,8 @@ class MagmaCrashTests(MagmaBaseTest):
                     process_concurrency=self.process_concurrency,
                     pause_secs=5, timeout_secs=self.sdk_timeout,
                     retry_exceptions=self.retry_exceptions,
-                    ignore_exceptions=self.ignore_exceptions)
+                    ignore_exceptions=self.ignore_exceptions,
+                    suppress_error_table=False)
                 tasks_info.update(read_task_info.items())
                 count += 1
         for task in tasks_info:
