@@ -1559,7 +1559,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.gen_update = None
                     self.gen_delete = None
                     self.gen_expiry = None
-                    self.generate_docs(doc_ops=self.doc_ops,
+                    self.generate_docs(doc_ops="create:expiry:update",
                                        target_vbucket=target_vbs_replica)
                     tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                                        scope=scope_name,
