@@ -13,8 +13,7 @@ class RollbackTests(CollectionBase):
     def setUp(self):
         super(RollbackTests, self).setUp()
         self.num_rollbacks = self.input.param("num_rollbacks", 2)
-        self.collection_ops_type = self.index_quota_percent.param(
-            "collection_ops", None)
+        self.collection_ops_type = self.input.param("collection_ops", None)
         self.rollback_with_multiple_mutation = self.input.param(
             "rollback_with_multiple_mutation", False)
         self.bucket = self.bucket_util.buckets[0]
