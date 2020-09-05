@@ -34,6 +34,9 @@ class IsolationDocTest(BaseTestCase):
             eviction_policy=self.bucket_eviction_policy,
             compression_mode=self.compression_mode)
 
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
+
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
 
