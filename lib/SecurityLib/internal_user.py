@@ -74,5 +74,7 @@ class InternalUser(UserBase):
         # check if the atleast some users exist before running
         resp = self.exists_users()
         if resp:
-         self.delete_user()
+            for user_role in resp:
+                if user_role["id"] == self.user_id:
+                    self.delete_user()
         self.create_user()
