@@ -323,8 +323,8 @@ class BasicUpsertTests(BasicCrudTests):
             while count < self.update_itr:
                 tasks_info = dict()
                 self.doc_ops = "update"
-                self.gen_update = self.genrate_docs_basic(0, self.num_item //2,
-                                                   mutate=mutated)
+                self.gen_update = self.genrate_docs_basic(0, self.num_items //2,
+                                                          mutate=mutated)
                 tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                    self.ignore_exceptions,
                                                    _sync=False)
