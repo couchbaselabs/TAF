@@ -34,7 +34,7 @@ dependencies {
 
     // This will transitively pull in all dependencies of transactions, including Couchbase java-client
     compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.1.0'
-    compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.8-SNAPSHOT'
+    //compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.8-SNAPSHOT'
 
     // For creating ssh sessions for testing
     compile group: 'com.jcraft', name: 'jsch', version: '0.1.54'
