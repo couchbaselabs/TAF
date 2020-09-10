@@ -22,18 +22,16 @@ repositories {
 
 
 dependencies {
-    /*
     // Use this if Java-client version is < Transaction's transitive dependency version
-    implementation 'com.couchbase.client:couchbase-transactions:1.1.0-SNAPSHOT'
+    implementation 'com.couchbase.client:couchbase-transactions:1.1.0'
     implementation('com.couchbase.client:java-client') {
         version {
-            strictly '3.0.6-SNAPSHOT'
+            strictly '3.0.6'
         }
     }
-    */
 
     // This will transitively pull in all dependencies of transactions, including Couchbase java-client
-    compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.1.0'
+    //compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.1.0'
     //compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.8-SNAPSHOT'
 
     // For creating ssh sessions for testing
@@ -41,7 +39,8 @@ dependencies {
 }
 
 task copyDeps(type: Copy) {
-  from configurations.runtime
+  // from configurations.compileClasspath
+  from configurations.compileClasspath
   into 'jars'
 }
 
