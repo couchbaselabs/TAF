@@ -89,14 +89,6 @@ class CBASExternalLinks(CBASBaseTest):
 
         for cluster in self._cb_cluster:
             cluster.cluster_util.stop_firewall_on_node(cluster.master)
-            nodes = cluster.rest.node_statuses()
-            for node in nodes:
-                if node.ip == cluster.master.ip:
-                    nodes.remove(node)
-                    break
-            if nodes:
-                cluster.cluster_util.remove_all_nodes_then_rebalance(nodes)
-            cluster.cluster_util.reset_cluster()
 
         super(CBASExternalLinks, self).tearDown()
         self.log.info("================================================================")

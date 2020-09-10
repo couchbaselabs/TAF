@@ -511,8 +511,7 @@ class CBASBaseTest(BaseTestCase):
     def create_testcase_for_rbac_user(self, description, rbac_users_created):
         testcases = []
         for user in rbac_users_created:
-            if user in ["admin", "analytics_admin", "cluster_admin",
-                        self.analytics_username]:
+            if user in ["admin", "analytics_admin", self.analytics_username]:
                 test_params = {
                     "description": description.format(user),
                     "validate_error_msg": False
@@ -526,7 +525,8 @@ class CBASBaseTest(BaseTestCase):
                           "views_admin",  "views_reader",
                           "query_delete", "query_insert",
                           "query_manage_index",  "query_select",
-                          "query_update", "fts_admin", "fts_searcher", ]:
+                          "query_update", "fts_admin", "fts_searcher",
+                          "cluster_admin"]:
                 test_params = {
                     "description": description.format(user),
                     "validate_error_msg": True,
