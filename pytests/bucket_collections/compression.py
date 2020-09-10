@@ -5,12 +5,11 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_client3 import SDKClient
 
-
 class SDKCompression(CollectionBase):
     def setUp(self):
         super(SDKCompression, self).setUp()
 
-        self.key = "test-compression"
+        self.key =  self.input.param("key","test-compression")
         self.bucket = self.bucket_util.buckets[0]
 
         self.diff_client_for_validation = \
@@ -60,6 +59,17 @@ class SDKCompression(CollectionBase):
            This validating client can be both snappy/non-snappy client.
         """
         random_clients = self.input.param("random_clients", False)
+        s_name = None
+        c_name = None
+        bucket_dict = BucketUtils.get_random_collections(
+            self.bucket_util.buckets,
+            req_num=1,
+            consider_scopes="all", consider_buckets="all")
+        for bucket_name, scope_dict in bucket_dict.items():
+            for scope_name, col_dict in scope_dict["scopes"].items():
+                for collection_name, _ in col_dict["collections"].items():
+                    s_name = scope_name
+                    c_name = collection_name
 
         # Select clients for doc_ops based on user input params
         create_client = self.snappy_client
@@ -123,12 +133,13 @@ class SDKCompression(CollectionBase):
                 while self.update_gen.has_next():
                     key, value = self.update_gen.next()
                     result = read_client.crud("read", key)
-                    if result["value"] != value:
+                    if str(result["value"]) != str(value):
                         self.log_failure(
                             "Value mismatch for %s in collection %s: %s"
                             % (key, collection.name, result))
 
         self.validate_test_failure()
+        self.bucket.scopes[s_name].collections[c_name].num_items += self.num_items
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
 
     def test_compression_with_parallel_mutations_on_same_collection(self):
