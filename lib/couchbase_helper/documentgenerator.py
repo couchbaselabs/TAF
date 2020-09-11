@@ -79,43 +79,65 @@ def doc_generator(key, start, end,
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
-                      target_vbucket=None, vbuckets=1024, key_size=8):
-    first_name = ['james', 'sharon']
-    last_name = [''.rjust(doc_size - 10, 'a')]
-    city = ["Chicago", "Dallas", "Seattle", "Aurora", "Columbia"]
-    state = ["AL", "CA", "IN", "NV", "NY"]
-    pin_code = [135, 246, 396, 837, 007]
-    template = '{{ "full_name.first": "{0}", "full_name.last": "{1}", \
-                   "addr.city": "{2}", "addr.state": "{3}", \
-                   "addr.pincode": {4} }}'
-    return SubdocDocumentGenerator(key, template,
-                                   first_name, last_name,
-                                   city, state, pin_code,
-                                   start=start, end=end,
-                                   target_vbucket=target_vbucket,
-                                   vbuckets=vbuckets,
-                                   key_size=key_size)
+                      target_vbucket=None, vbuckets=1024, key_size=8, xattr_test=False):
+    if xattr_test:
+        last_name = [''.rjust(doc_size - 10, 'a')]
+        template = '{{ "full_name.last": "{0}"}}'
+        return SubdocDocumentGenerator(key, template,
+                                       last_name,
+                                       start=start, end=end,
+                                       target_vbucket=target_vbucket,
+                                       vbuckets=vbuckets,
+                                       key_size=key_size)
+    else:
+        first_name = ['james', 'sharon']
+        last_name = [''.rjust(doc_size - 10, 'a')]
+        city = ["Chicago", "Dallas", "Seattle", "Aurora", "Columbia"]
+        state = ["AL", "CA", "IN", "NV", "NY"]
+        pin_code = [135, 246, 396, 837, 007]
+        template = '{{ "full_name.first": "{0}", "full_name.last": "{1}", \
+                       "addr.city": "{2}", "addr.state": "{3}", \
+                       "addr.pincode": {4} }}'
+        return SubdocDocumentGenerator(key, template,
+                                       first_name, last_name,
+                                       city, state, pin_code,
+                                       start=start, end=end,
+                                       target_vbucket=target_vbucket,
+                                       vbuckets=vbuckets,
+                                       key_size=key_size)
 
 
 def sub_doc_generator_for_edit(key, start, end, template_index=0,
                                target_vbucket=None, vbuckets=1024,
-                               key_size=8):
-    template = list()
-    template.append('{{ "full_name.last": "LastNameUpdate", \
-                        "addr.city": "CityUpdate", \
-                        "addr.pincode": "TypeChange", \
-                        "todo.morning": [\"get\", \"up\"] }}')
-    template.append('{{ "full_name.first": "FirstNameUpdate", \
-                        "addr.state": "NewState", \
-                        "todo.night": [1, \"nothing\", 3] }}')
-    template.append('{{ "full_name.first": "", \
-                        "addr": "", \
-                        "full_name.last": "" }}')
-    return SubdocDocumentGenerator(key, template[template_index],
-                                   start=start, end=end,
-                                   target_vbucket=target_vbucket,
-                                   vbuckets=vbuckets,
-                                   key_size=key_size)
+                               key_size=8, xattr_test=False):
+    if xattr_test:
+        template = list()
+        template.append('{{ "full_name.last": "LastNameUpdate"}}')
+        template.append('{{ "full_name.last": "LastNameUpdate"}}')
+        template.append('{{ "full_name.last": ""}}')
+        return SubdocDocumentGenerator(key, template[template_index],
+                                       start=start, end=end,
+                                       target_vbucket=target_vbucket,
+                                       vbuckets=vbuckets,
+                                       key_size=key_size)
+
+    else:
+        template = list()
+        template.append('{{ "full_name.last": "LastNameUpdate", \
+                            "addr.city": "CityUpdate", \
+                            "addr.pincode": "TypeChange", \
+                            "todo.morning": [\"get\", \"up\"] }}')
+        template.append('{{ "full_name.first": "FirstNameUpdate", \
+                            "addr.state": "NewState", \
+                            "todo.night": [1, \"nothing\", 3] }}')
+        template.append('{{ "full_name.first": "", \
+                            "addr": "", \
+                            "full_name.last": "" }}')
+        return SubdocDocumentGenerator(key, template[template_index],
+                                       start=start, end=end,
+                                       target_vbucket=target_vbucket,
+                                       vbuckets=vbuckets,
+                                       key_size=key_size)
 
 
 class KVGenerator(object):

@@ -195,7 +195,7 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def get_subdoc_generator(op_type, collection_obj, num_items,
-                             generic_key, target_vbuckets="all"):
+                             generic_key, target_vbuckets="all", xattr_test=False):
         if target_vbuckets == "all":
             target_vbuckets = None
 
@@ -207,7 +207,7 @@ class DocLoaderUtils(object):
             if target_vbuckets is not None:
                 end -= start
             return sub_doc_generator(generic_key, start, end,
-                                     target_vbucket=target_vbuckets)
+                                     target_vbucket=target_vbuckets, xattr_test=xattr_test)
         elif op_type == DocLoading.Bucket.SubDocOps.REMOVE:
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
@@ -223,7 +223,7 @@ class DocLoaderUtils(object):
             end -= start
         return sub_doc_generator_for_edit(generic_key, start, end,
                                           subdoc_gen_template_num,
-                                          target_vbucket=target_vbuckets)
+                                          target_vbucket=target_vbuckets, xattr_test=xattr_test)
 
     @staticmethod
     def perform_doc_loading_for_spec(task_manager,
@@ -362,7 +362,8 @@ class DocLoaderUtils(object):
                                         collection,
                                         num_items,
                                         doc_key,
-                                        target_vbuckets=target_vbs)
+                                        target_vbuckets=target_vbs,
+                                        xattr_test=is_xattr_test)
         crud_spec = dict()
         spec_percent_data = dict()
 
