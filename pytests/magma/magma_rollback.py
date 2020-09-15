@@ -1712,8 +1712,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+        #self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         #######################################################################
         '''
@@ -1833,7 +1833,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_update = None
                 self.gen_delete = None
                 self.gen_expiry = None
-                self.generate_docs(doc_ops=self.doc_ops,
+                self.generate_docs(doc_ops="create:expiry:update",
                                    target_vbucket=target_vbs_replicas)
                 tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                                    scope=scope_name,
