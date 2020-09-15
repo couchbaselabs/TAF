@@ -159,8 +159,8 @@ class Cbstats(CbCmdBase):
                              "[ \t]+([a-zA-Z_0-9%-]+)"
         col_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:" \
                            "[ \t]+([a-zA-Z_0-9%-]+)"
-        collection_items_pattern = \
-            "[ \t]*%s:%s:items:[ \t]+([0-9]+)"
+        collection_stat_pattern = \
+            "[ \t]*%s:%s:([0-9A-Za-z_]+):[ \t]+([0-9]+)"
 
         manifest_uid_pattern = re.compile(manifest_uid_pattern)
         scope_name_pattern = re.compile(scope_name_pattern)
@@ -189,13 +189,18 @@ class Cbstats(CbCmdBase):
             if scope_name not in collection_data:
                 collection_data[scope_name] = dict()
 
-            curr_col_items_pattern = collection_items_pattern % (s_id, c_id)
-            curr_col_items_pattern = re.compile(curr_col_items_pattern)
-            items_match = int(curr_col_items_pattern.findall(str(output))[0])
+            curr_col_stats_pattern = collection_stat_pattern % (s_id, c_id)
+            curr_col_stats_pattern = re.compile(curr_col_stats_pattern)
+            pattern_match = curr_col_stats_pattern.findall(str(output))
 
             collection_data[scope_name][c_name] = dict()
             collection_data[scope_name][c_name]["id"] = c_id
-            collection_data[scope_name][c_name]["num_items"] = items_match
+            for match in pattern_match:
+                try:
+                    collection_data[scope_name][c_name][match[0]] \
+                        = int(match[1])
+                except ValueError:
+                    collection_data[scope_name][c_name][match[0]] = match[1]
             collection_data["count"] += 1
 
         return collection_data

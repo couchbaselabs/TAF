@@ -4292,7 +4292,7 @@ class BucketUtils(ScopeUtils):
             # Validate expected collection values
             for collection in active_collections:
                 expected_items = collection_data[scope.name][
-                    collection.name]["num_items"]
+                    collection.name]["items"]
                 if expected_items != collection.num_items:
                     status = False
                     self.log.error(
@@ -4329,8 +4329,8 @@ class BucketUtils(ScopeUtils):
                 for key, value in tem_collection_data.items():
                     if type(value) is dict:
                         for col_name, c_data in value.items():
-                            collection_data[key][col_name]['num_items'] \
-                                += c_data['num_items']
+                            collection_data[key][col_name]['items'] \
+                                += c_data['items']
         # Validate scope-collection hierarchy with doc_count
         status = \
             status \
