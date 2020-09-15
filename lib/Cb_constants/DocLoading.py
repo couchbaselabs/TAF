@@ -12,6 +12,7 @@ class Bucket(object):
         UPSERT = "upsert"
         REMOVE = "remove"
         LOOKUP = "lookup"
+        COUNTER = "counter"
 
     DOC_OPS = [DocOps.DELETE,
                DocOps.CREATE,

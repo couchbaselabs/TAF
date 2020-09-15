@@ -1047,7 +1047,7 @@ class SDKClient(object):
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
             result = self.__translate_upsert_multi_sub_doc_result(result)
-        elif op_type == "subdoc_read":
+        elif op_type in [DocLoading.Bucket.SubDocOps.LOOKUP, "subdoc_read"]:
             mutate_in_specs = list()
             mutate_in_specs.append(
                 SDKClient.sub_doc_op.getLookUpInSpec(value, xattr))
@@ -1055,6 +1055,23 @@ class SDKClient(object):
             result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
                 self.collection, [content])
             result = self.__translate_get_multi_results(result)
+        elif op_type == DocLoading.Bucket.SubDocOps.COUNTER:
+            sub_key, step_value = value[0], value[1]
+            mutate_in_specs = list()
+            if not xattr:
+                mutate_in_specs.append(
+                    SDKClient.sub_doc_op.getIncrMutateInSpec(sub_key,
+                                                             step_value))
+            content = Tuples.of(key, mutate_in_specs)
+            options = self.get_mutate_in_options(exp, time_unit,
+                                                 persist_to, replicate_to,
+                                                 timeout, time_unit,
+                                                 durability)
+            if cas > 0:
+                options = options.cas(cas)
+            result = SDKClient.sub_doc_op.bulkSubDocOperation(
+                self.collection, [content], options)
+            result = self.__translate_upsert_multi_sub_doc_result(result)
         else:
             self.log.error("Unsupported operation %s" % op_type)
         return result
