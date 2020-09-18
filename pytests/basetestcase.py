@@ -80,6 +80,8 @@ class BaseTestCase(unittest.TestCase):
             self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
         self.bucket_durability_level = self.input.param(
             "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
+        self.bucket_purge_interval = self.input.param("bucket_purge_interval",
+                                                      1)
         self.bucket_durability_level = \
             BucketDurability[self.bucket_durability_level]
         # End of bucket parameters

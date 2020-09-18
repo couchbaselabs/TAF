@@ -15,6 +15,7 @@ class Bucket(object):
     compressionMode = "compressionMode"
     uuid = "uuid"
     durability_level = "durability_level"
+    purge_interval = "purge_interval"
 
     class Type(object):
         EPHEMERAL = "ephemeral"
@@ -93,6 +94,7 @@ class Bucket(object):
         self.lww = new_params.get(Bucket.lww, False)
         self.maxTTL = new_params.get(Bucket.maxTTL, 0)
         self.flushEnabled = new_params.get(Bucket.flushEnabled, 1)
+        self.purge_interval = new_params.get(Bucket.purge_interval, 1)
         self.compressionMode = new_params.get(
             Bucket.compressionMode,
             Bucket.CompressionMode.PASSIVE)

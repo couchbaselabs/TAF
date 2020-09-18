@@ -301,13 +301,14 @@ class BucketHelper(RestConnection):
                        'durabilityMinLevel': bucket_params.get(
                            'durability_level')}
 
-        # Remove 'replicaNumber' in case of MEMCACHED bucket
         if bucket_params.get("bucketType") == Bucket.Type.MEMCACHED:
+            # Remove 'replicaNumber' in case of MEMCACHED bucket
             init_params.pop('replicaNumber', None)
-
-        # Remove 'replicaIndex' parameter in case of EPHEMERAL bucket
-        if bucket_params.get("bucketType") == Bucket.Type.EPHEMERAL:
+        elif bucket_params.get("bucketType") == Bucket.Type.EPHEMERAL:
+            # Remove 'replicaIndex' parameter in case of EPHEMERAL bucket
             init_params.pop('replicaIndex', None)
+            # Add purgeInterval only for Ephemeral case
+            init_params['purgeInterval'] = bucket_params.get('purge_interval')
 
         if bucket_params.get('lww'):
             init_params['conflictResolutionType'] = 'lww'
