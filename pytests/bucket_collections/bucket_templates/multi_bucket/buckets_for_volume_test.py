@@ -7,6 +7,8 @@ spec = {
     MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 2,
     MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
+    MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT: True,
+
     Bucket.bucketType: Bucket.Type.MEMBASE,
     Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
     Bucket.ramQuotaMB: 100,
@@ -20,7 +22,7 @@ spec = {
     Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
     "buckets": {
         "default": {
-            MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
+            MetaConstants.NUM_SCOPES_PER_BUCKET: 20,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 50,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 40000,
             Bucket.ramQuotaMB: 17000
