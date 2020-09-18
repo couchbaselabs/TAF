@@ -3527,7 +3527,7 @@ class MutateDocsFromSpecTask(Task):
                         time_unit=op_data["sdk_timeout_unit"],
                         skip_read_on_error=op_data["skip_read_on_error"],
                         suppress_error_table=op_data["suppress_error_table"],
-                        skip_success_reads=op_data["skip_success_reads"])
+                        skip_read_success_results=op_data["skip_read_success_results"])
                 else:
                     doc_load_task = LoadSubDocumentsTask(
                         self.cluster, bucket, None, doc_gen,
