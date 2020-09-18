@@ -333,6 +333,8 @@ class DocLoaderUtils(object):
                                 skip_read_on_error
                             c_crud_data[op_type]["suppress_error_table"] = \
                                 suppress_error_table
+                            c_crud_data[op_type]["skip_read_success_results"] = \
+                                skip_read_success_results
                             c_crud_data[op_type]["ignore_exceptions"] = \
                                 ignore_exceptions
                             c_crud_data[op_type]["retry_exceptions"] = \
@@ -403,6 +405,8 @@ class DocLoaderUtils(object):
             MetaCrudParams.SKIP_READ_ON_ERROR, False)
         suppress_error_table = input_spec.get(
             MetaCrudParams.SUPPRESS_ERROR_TABLE, False)
+        skip_read_success_results = input_spec.get(
+            MetaCrudParams.SKIP_READ_SUCCESS_RESULTS, False)
         target_vbs = input_spec.get(
             MetaCrudParams.TARGET_VBUCKETS, "all")
 

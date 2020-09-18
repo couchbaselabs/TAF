@@ -67,6 +67,8 @@ spec = {
     MetaCrudParams.TARGET_VBUCKETS: "all",
     MetaCrudParams.SKIP_READ_ON_ERROR: False,
     MetaCrudParams.SUPPRESS_ERROR_TABLE: False,
+    # The below is to skip populating success dictionary for reads
+    MetaCrudParams.SKIP_READ_SUCCESS_RESULTS: False,
 
     MetaCrudParams.RETRY_EXCEPTIONS: [],
     MetaCrudParams.IGNORE_EXCEPTIONS: [],

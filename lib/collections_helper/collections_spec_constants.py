@@ -68,6 +68,7 @@ class MetaCrudParams(object):
     DURABILITY_LEVEL = "durability_level"
     SKIP_READ_ON_ERROR = "skip_read_on_error"
     SUPPRESS_ERROR_TABLE = "suppress_error_table"
+    SKIP_READ_SUCCESS_RESULTS = "skip_read_success_results"
     TARGET_VBUCKETS = "target_vbuckets"
 
     RETRY_EXCEPTIONS = "retry_exceptions"

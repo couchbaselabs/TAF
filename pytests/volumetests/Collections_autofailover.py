@@ -163,9 +163,10 @@ class volume(AutoFailoverBaseTest):
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
-    def data_load_collection(self, async_load=True):
+    def data_load_collection(self, async_load=True, skip_read_success_results=True):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
         self.set_retry_exceptions(doc_loading_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         task = self.bucket_util.run_scenario_from_spec(self.task,

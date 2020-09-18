@@ -746,7 +746,8 @@ class LoadDocumentsTask(GenericLoadingTask):
                  suppress_error_table=False, sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 track_failures=True):
+                 track_failures=True,
+                 skip_read_success_results = False):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
@@ -776,6 +777,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.success = dict()
         self.skip_read_on_error = skip_read_on_error
         self.track_failures = track_failures
+        self.skip_read_success_results = skip_read_success_results
 
         if proxy_client:
             self.log.debug("Changing client to proxy %s:%s..."
@@ -851,7 +853,8 @@ class LoadDocumentsTask(GenericLoadingTask):
             success, fail = self.batch_read(dict(key_value).keys())
             if self.track_failures:
                 self.fail.update(fail)
-            self.success.update(success)
+            if not self.skip_read_success_results:
+                self.success.update(success)
         else:
             self.set_exception(Exception("Bad operation: %s" % self.op_type))
 
@@ -3523,7 +3526,8 @@ class MutateDocsFromSpecTask(Task):
                         timeout_secs=op_data["sdk_timeout"],
                         time_unit=op_data["sdk_timeout_unit"],
                         skip_read_on_error=op_data["skip_read_on_error"],
-                        suppress_error_table=op_data["suppress_error_table"])
+                        suppress_error_table=op_data["suppress_error_table"],
+                        skip_success_reads=op_data["skip_success_reads"])
                 else:
                     doc_load_task = LoadSubDocumentsTask(
                         self.cluster, bucket, None, doc_gen,

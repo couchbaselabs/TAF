@@ -4,6 +4,8 @@ import urllib
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
+
+from collections_helper.collections_spec_constants import MetaCrudParams
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
 import random
@@ -95,9 +97,10 @@ class volume(CollectionBase):
         self.task.jython_task_manager.get_task_result(task)
         self.assertTrue(task.result, "Rebalance Failed")
 
-    def data_load_collection(self, async_load=True):
+    def data_load_collection(self, async_load=True, skip_read_success_results=True):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
         task = self.bucket_util.run_scenario_from_spec(self.task,
                                                        self.cluster,
                                                        self.bucket_util.buckets,
