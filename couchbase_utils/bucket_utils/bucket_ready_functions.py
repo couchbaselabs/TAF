@@ -1563,7 +1563,8 @@ class BucketUtils(ScopeUtils):
             storage=Bucket.StorageBackend.couchstore,
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
             flush_enabled=Bucket.FlushBucket.DISABLED,
-            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE]):
+            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
+            purge_interval=1):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -1585,7 +1586,8 @@ class BucketUtils(ScopeUtils):
                                  Bucket.storageBackend: storage,
                                  Bucket.evictionPolicy: eviction_policy,
                                  Bucket.flushEnabled: flush_enabled,
-                                 Bucket.durabilityMinLevel: bucket_durability})
+                                 Bucket.durabilityMinLevel: bucket_durability,
+                                 Bucket.purge_interval: purge_interval})
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])

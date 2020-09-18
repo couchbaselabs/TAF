@@ -128,6 +128,7 @@ class Bucket(object):
     compressionMode = "compressionMode"
     uuid = "uuid"
     durabilityMinLevel = "durabilityMinLevel"
+    purge_interval = "purge_interval"
 
     class Type(object):
         EPHEMERAL = "ephemeral"
@@ -207,6 +208,7 @@ class Bucket(object):
         self.durability_level = new_params.get(
             Bucket.durabilityMinLevel,
             Bucket.DurabilityLevel.NONE.lower())
+        self.purge_interval = new_params.get(Bucket.purge_interval, 1)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
