@@ -35,6 +35,7 @@ WINDOWS_SERVER = ["2016", "2019", "windows"]
 SUPPORTED_OS = LINUX_DISTROS + MACOS_VERSIONS + WINDOWS_SERVER
 X86 = CENTOS + SUSE + RHEL + OEL + AMAZON
 AMD64 = DEBIAN + UBUNTU + WINDOWS_SERVER
+DEBUG_INFO_SUPPORTED = CENTOS + SUSE + RHEL + OEL + AMAZON + DEBIAN + UBUNTU
 
 DOWNLOAD_DIR = {"LINUX_DISTROS": "/tmp/",
                 "MACOS_VERSIONS": "~/Downloads/",
@@ -88,6 +89,7 @@ CMDS = {
     "deb": {
         "uninstall":
             "dpkg -r couchbase-server; " +
+            "dpkg -r couchbase-server-dbg; " +
             "rm -rf " + DEFAULT_INSTALL_DIR["LINUX_DISTROS"] + " > /dev/null && echo 1 || echo 0",
         "pre_install": None,
         "install":
@@ -139,6 +141,7 @@ CMDS = {
         "uninstall":
             "systemctl stop couchbase-server; " +
             "rpm -e couchbase-server; " +
+            "rpm -e couchbase-server-debuginfo; " +
             "rm -rf " + DEFAULT_INSTALL_DIR["LINUX_DISTROS"] + "> /dev/null && echo 1 || echo 0; " +
             "rm -rf " + DEFAULT_NONROOT_INSTALL_DIR["LINUX_DISTROS"] + "> /dev/null && echo 1 || echo 0; ",
         "pre_install": None,
