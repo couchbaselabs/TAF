@@ -4407,8 +4407,7 @@ class Atomicity(Task):
                 scope=scope, collection=collection)
 
             self.generator = generator
-            self.op_type = []
-            self.op_type.extend(op_type.split(';'))
+            self.op_type = op_type.split(';')
             self.thread_name = "Atomicity_Loader-%s_%s_%s_%s_%s" \
                                % (op_type, bucket,
                                   generator._doc_gen.start,
@@ -4437,6 +4436,9 @@ class Atomicity(Task):
             self.defer = defer
             self.sync = sync
             self.record_fail = record_fail
+
+            if self.op_type[-1] == "delete":
+                self.suppress_error_table = True
 
         def has_next(self):
             return self.generator.has_next()
