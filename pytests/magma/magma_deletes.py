@@ -1,4 +1,5 @@
 import copy
+import time
 
 from magma_basic_crud import BasicCrudTests
 
@@ -53,11 +54,16 @@ class BasicDeleteTests(BasicCrudTests):
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
 
-            disk_usage = self.get_disk_usage(self.buckets[0],
-                                             self.cluster.nodes_in_cluster)
-            _res = disk_usage[0]
-            self.log.info("Delete Iteration{}, Disk Usage= {}MB \
-            ".format(count+1, _res))
+            time_end = time.time() + 60 * 2
+            while time.time() < time_end:
+                disk_usage = self.get_disk_usage(self.buckets[0],
+                                                 self.cluster.nodes_in_cluster)
+                _res = disk_usage[0]
+                self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
+                ".format(count+1, time_end - time.time(), _res))
+                if _res < 0.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                    break
+
             msg = "Disk Usage={}MB > {} * init_Usage={}MB"
             self.assertIs(_res > 0.5 * self.disk_usage[
                 self.disk_usage.keys()[0]], False,
