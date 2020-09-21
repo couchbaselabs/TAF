@@ -470,7 +470,7 @@ class GenericLoadingTask(Task):
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
                     failed_item_table.display("Keys failed in %s:%s:%s"
-                                              % (self.bucket.name,
+                                              % (self.client.bucket.name,
                                                  self.scope,
                                                  self.collection))
             return success, copy.deepcopy(fail)
@@ -517,7 +517,7 @@ class GenericLoadingTask(Task):
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
                     failed_item_table.display("Keys failed in %s:%s:%s"
-                                              % (self.bucket.name,
+                                              % (self.client.bucket.name,
                                                  self.scope,
                                                  self.collection))
             return success, copy.deepcopy(fail)
@@ -562,7 +562,7 @@ class GenericLoadingTask(Task):
                         failed_item_table.add_row([key, value['error']])
                 if not self.suppress_error_table:
                     failed_item_table.display("Keys failed in %s:%s:%s"
-                                              % (self.bucket.name,
+                                              % (self.client.bucket.name,
                                                  self.scope,
                                                  self.collection))
             return success, copy.deepcopy(fail)
@@ -586,7 +586,7 @@ class GenericLoadingTask(Task):
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
             failed_item_view.display("Keys failed in %s:%s:%s"
-                                     % (self.bucket.name,
+                                     % (self.client.bucket.name,
                                         self.scope,
                                         self.collection))
         return success, fail
@@ -604,7 +604,7 @@ class GenericLoadingTask(Task):
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
             failed_item_view.display("Keys failed in %s:%s:%s"
-                                     % (self.bucket.name,
+                                     % (self.client.bucket.name,
                                         self.scope,
                                         self.collection))
         return success, fail
@@ -618,7 +618,7 @@ class GenericLoadingTask(Task):
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
             failed_item_view.display("Keys failed in %s:%s:%s"
-                                     % (self.bucket.name,
+                                     % (self.client.bucket.name,
                                         self.scope,
                                         self.collection))
         return success, fail
