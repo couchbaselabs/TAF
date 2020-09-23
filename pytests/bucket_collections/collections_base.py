@@ -173,6 +173,9 @@ class CollectionBase(BaseTestCase):
                 bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
                     self.remove_default_collection
 
+        # Blindly override the following params
+        bucket_spec[Bucket.storageBackend] = self.bucket_storage
+
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
             if over_ride_param == "durability":
