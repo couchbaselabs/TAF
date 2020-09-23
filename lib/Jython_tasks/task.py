@@ -239,10 +239,10 @@ class RebalanceTask(Task):
         services_for_node = None
         node_index = 0
         for node in self.to_add:
-            self.table.add_row([node.ip, services_for_node, "<--- IN ---"])
             if self.services is not None:
                 services_for_node = [self.services[node_index]]
                 node_index += 1
+            self.table.add_row([node.ip, services_for_node, "<--- IN ---"])
             if self.use_hostnames:
                 self.rest.add_node(master.rest_username, master.rest_password,
                                    node.hostname, node.port,
