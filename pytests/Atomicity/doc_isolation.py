@@ -20,9 +20,14 @@ class IsolationDocTest(BaseTestCase):
         self.transaction_fail_count = self.input.param("fail_count", 99999)
         self.transaction_fail = self.input.param("fail", True)
 
+        services = list()
+        for service in self.services_init.split("-"):
+            services.append(service.replace(":", ","))
+
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
+        self.task.rebalance([self.cluster.master], nodes_init, [],
+                            services=services)
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.add_rbac_user()
 
