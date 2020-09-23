@@ -158,7 +158,7 @@ class CBASClusterManagement(CBASBaseTest):
         wait_for_rebalance = True
         test_docs = self.num_items
         docs_to_verify = test_docs
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, test_docs)
 
         if self.cbas_node.ip == self.cluster.master.ip:
@@ -211,7 +211,7 @@ class CBASClusterManagement(CBASBaseTest):
         Author: Ritesh Agarwal
         '''
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
         self.cluster_util.add_node(node=self.cbas_node)
         self.setup_cbas_bucket_dataset_connect("default", self.num_items)
@@ -228,7 +228,7 @@ class CBASClusterManagement(CBASBaseTest):
         Author: Ritesh Agarwal
         '''
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
         self.cluster_util.add_node(node=self.cbas_node)
         self.cluster_util.add_node(node=self.cluster.kv_nodes[1],wait_for_rebalance_completion=False)
@@ -249,7 +249,7 @@ class CBASClusterManagement(CBASBaseTest):
         '''
         set_up_cbas = False
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
 
         if self.cbas_node.ip == self.cluster.master.ip:

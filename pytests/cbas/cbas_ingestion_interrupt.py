@@ -21,7 +21,7 @@ class IngestionInterrupt_CBAS(CBASBaseTest):
         if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 0:
             self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes))
 
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
         self.cb_bucket_name = self.input.param('cb_bucket_name', 'default')
         self.cbas_util.createConn("default")
     def setup_for_test(self, skip_data_loading=False):

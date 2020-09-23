@@ -354,7 +354,7 @@ class BucketOperations(CBASBaseTest):
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.dataset_name, self.num_items))
 
         self.log.info("Recreate CB bucket")
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
 
         self.log.info("Wait for ingestion to complete and verify count")
         self.cbas_util.wait_for_ingestion_complete([self.dataset_name], self.num_items)

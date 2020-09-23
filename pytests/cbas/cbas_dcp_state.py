@@ -146,7 +146,7 @@ class CBASDCPState(CBASBaseTest):
         self.assertTrue("nullifying its DCP state" in result[0], msg="Expected message 'nullifying its DCP state' not found")
         
         self.log.info("Recreate KV bucket")
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
         
         self.log.info("Load documents in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets(self.num_items // 100, "create", 0, self.num_items // 100)

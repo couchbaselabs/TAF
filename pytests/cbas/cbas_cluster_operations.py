@@ -20,7 +20,7 @@ class CBASClusterOperations(CBASBaseTest):
         self.wait_for_rebalance=True
         super(CBASClusterOperations, self).setUp()
         self.num_items = self.input.param("items", 1000)
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
 #         self.cbas_util.createConn("default")
         if 'nodeType' in self.input.test_params:
             self.nodeType = self.input.test_params['nodeType']

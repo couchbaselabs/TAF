@@ -317,7 +317,7 @@ class CBASErrorValidator(CBASBaseTest):
             "Bucket deletion failed")
 
         self.log.info("Recreate KV bucket")
-        self.bucket_util.create_default_bucket()
+        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
 
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
