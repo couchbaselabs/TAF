@@ -592,8 +592,11 @@ class IsolationDocTest(BaseTestCase):
             nodes_to_add, nodes_to_remove)
 
         # Wait for transactions and rebalance task to complete
-        self.task_manager.get_task_result(trans_task_1)
-        self.task_manager.get_task_result(trans_task_2)
+        try:
+            self.task_manager.get_task_result(trans_task_1)
+        except BaseException as e:
+            self.task_manager.get_task_result(trans_task_2)
+            raise e
         self.task_manager.get_task_result(rebalance_task)
 
         if rebalance_task.result is False:
