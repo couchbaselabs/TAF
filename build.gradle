@@ -22,18 +22,30 @@ repositories {
 
 
 dependencies {
-    // This will transitively pull in all dependencies of transactions, including Couchbase java-client
-    /*
-    implementation 'com.couchbase.client:couchbase-transactions:1.1.0-SNAPSHOT'
-    implementation('com.couchbase.client:java-client') {
-        version {
-            strictly '3.0.6-SNAPSHOT'
+    def trans_version = "1.1.0"
+    def java_client = "default"
+
+    if (project.hasProperty("transaction_version")) {
+        trans_version = project.property("transaction_version")
+    }
+    if (project.hasProperty("client_version")) {
+        java_client = project.property("client_version")
+    }
+
+    println("Using Transaction_client :: " + trans_version)
+    implementation 'com.couchbase.client:couchbase-transactions:' + trans_version
+
+    if (java_client != "default") {
+        println("Using Java_client :: " + java_client)
+        implementation('com.couchbase.client:java-client') {
+            version {
+                strictly java_client
+            }
         }
     }
-    */
-
-    compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.1.0'
-    compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.8-SNAPSHOT'
+    // This will transitively pull in all dependencies of transactions, including Couchbase java-client
+    // compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.1.0'
+    // compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.8'
 
     compile group: 'com.jcraft', name: 'jsch', version: '0.1.54'
 }
