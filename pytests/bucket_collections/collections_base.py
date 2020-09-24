@@ -175,6 +175,8 @@ class CollectionBase(BaseTestCase):
 
         # Blindly override the following params
         bucket_spec[Bucket.storageBackend] = self.bucket_storage
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            bucket_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.FULL_EVICTION
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
