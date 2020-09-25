@@ -130,6 +130,7 @@ class BaseTestCase(unittest.TestCase):
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
         self.durability_level = self.input.param("durability", "").upper()
         self.sdk_client_pool = self.input.param("sdk_client_pool", None)
+        self.sdk_pool_capacity = self.input.param("sdk_pool_capacity", 1)
         # Client compression settings
         self.sdk_compression = self.input.param("sdk_compression", None)
         compression_min_ratio = self.input.param("min_ratio", None)

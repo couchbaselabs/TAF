@@ -132,13 +132,22 @@ class SDKClientPool(object):
         """
         self.log.debug("Fetching client for %s" % bucket.name)
         client = None
+        col_name = scope + collection
         if bucket.name not in self.clients:
             return client
         while client is None:
             self.clients[bucket.name]["lock"].acquire()
-            if self.clients[bucket.name]["idle_clients"]:
+            if col_name in self.clients[bucket.name]:
+                # Increment tasks' reference counter using this client object
+                client = self.clients[bucket.name][col_name]["client"]
+                self.clients[bucket.name][col_name]["counter"] += 1
+            elif self.clients[bucket.name]["idle_clients"]:
                 client = self.clients[bucket.name]["idle_clients"].pop()
                 self.clients[bucket.name]["busy_clients"].append(client)
+                # Create scope/collection reference using the client object
+                self.clients[bucket.name][col_name] = dict()
+                self.clients[bucket.name][col_name]["client"] = client
+                self.clients[bucket.name][col_name]["counter"] = 1
             self.clients[bucket.name]["lock"].release()
         client.select_collection(scope, collection)
         self.log.debug("Client fetched for %s" % bucket.name)
@@ -153,10 +162,15 @@ class SDKClientPool(object):
         bucket = client.bucket
         if bucket.name not in self.clients:
             return
+        col_name = client.scope_name + client.collection_name
         self.log.debug("Releasing client for %s" % bucket.name)
         self.clients[bucket.name]["lock"].acquire()
-        self.clients[bucket.name]["busy_clients"].remove(client)
-        self.clients[bucket.name]["idle_clients"].append(client)
+        if self.clients[bucket.name][col_name]["counter"] == 1:
+            self.clients[bucket.name].pop(col_name)
+            self.clients[bucket.name]["busy_clients"].remove(client)
+            self.clients[bucket.name]["idle_clients"].append(client)
+        else:
+            self.clients[bucket.name][col_name]["counter"] -= 1
         self.clients[bucket.name]["lock"].release()
         self.log.debug("Released client for %s" % bucket.name)
 
@@ -586,6 +600,8 @@ class SDKClient(object):
         """
         self.log.debug("Selecting bucket:scope::collection %s:%s:%s"
                        % (self.bucket.name, scope_name, collection_name))
+        self.scope_name = scope_name
+        self.collection_name = collection_name
         if collection_name != CbServer.default_collection:
             self.collection = self.bucketObj \
                 .scope(scope_name) \

@@ -426,7 +426,7 @@ class GenericLoadingTask(Task):
         raise NotImplementedError
 
     # start of batch methods
-    def batch_create(self, key_val, shared_client=None, persist_to=0,
+    def batch_create(self, key_val, client=None, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
                      doc_type="json", durability="", skip_read_on_error=False):
         """
@@ -434,12 +434,12 @@ class GenericLoadingTask(Task):
 
         arguments:
             key_val -- array of key/value dicts to load size = self.batch_size
-            shared_client -- optional client to use for data loading
+            client -- optional client to use for data loading
         """
         success = dict()
         fail = dict()
         try:
-            client = shared_client or self.client
+            client = client or self.client
             success, fail = client.set_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
@@ -478,13 +478,13 @@ class GenericLoadingTask(Task):
             self.test_log.error(error)
         return success, copy.deepcopy(fail)
 
-    def batch_update(self, key_val, shared_client=None, persist_to=0,
+    def batch_update(self, key_val, client=None, persist_to=0,
                      replicate_to=0, timeout=5, time_unit="seconds",
                      doc_type="json", durability="", skip_read_on_error=False):
         success = dict()
         fail = dict()
         try:
-            client = self.client or shared_client
+            client = client or self.client
             success, fail = client.upsert_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
@@ -525,14 +525,14 @@ class GenericLoadingTask(Task):
             self.test_log.error(error)
         return success, copy.deepcopy(fail)
 
-    def batch_replace(self, key_val, shared_client=None, persist_to=0,
+    def batch_replace(self, key_val, client=None, persist_to=0,
                       replicate_to=0, timeout=5, time_unit="seconds",
                       doc_type="json", durability="",
                       skip_read_on_error=False):
         success = dict()
         fail = dict()
         try:
-            client = self.client or shared_client
+            client = client or self.client
             success, fail = client.replace_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
@@ -570,30 +570,29 @@ class GenericLoadingTask(Task):
             self.test_log.error(error)
         return success, copy.deepcopy(fail)
 
-    def batch_delete(self, key_val, shared_client=None, persist_to=None,
+    def batch_delete(self, key_val, client=None, persist_to=None,
                      replicate_to=None, timeout=None, timeunit=None,
                      durability=""):
-        self.client = self.client or shared_client
-        success, fail = self.client.delete_multi(dict(key_val).keys(),
-                                                 persist_to=persist_to,
-                                                 replicate_to=replicate_to,
-                                                 timeout=timeout,
-                                                 time_unit=timeunit,
-                                                 durability=durability)
+        client = client or self.client
+        success, fail = client.delete_multi(dict(key_val).keys(),
+                                            persist_to=persist_to,
+                                            replicate_to=replicate_to,
+                                            timeout=timeout,
+                                            time_unit=timeunit,
+                                            durability=durability)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Delete Key", "Exception"])
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
             failed_item_view.display("Keys failed in %s:%s:%s"
-                                     % (self.client.bucket.name,
+                                     % (client.bucket.name,
                                         self.scope,
                                         self.collection))
         return success, fail
 
-    def batch_touch(self, key_val, exp=0, shared_client=None,
+    def batch_touch(self, key_val, exp=0,
                     timeout=None, timeunit=None):
-        self.client = self.client or shared_client
         success, fail = self.client.touch_multi(dict(key_val).keys(),
                                                 exp=exp,
                                                 timeout=timeout,
@@ -609,23 +608,23 @@ class GenericLoadingTask(Task):
                                         self.collection))
         return success, fail
 
-    def batch_read(self, keys, shared_client=None):
-        self.client = self.client or shared_client
-        success, fail = self.client.get_multi(keys, self.timeout)
+    def batch_read(self, keys, client=None):
+        client = client or self.client
+        success, fail = client.get_multi(keys, self.timeout)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Read Key", "Exception"])
             for key, exception in fail.items():
                 failed_item_view.add_row([key, exception])
             failed_item_view.display("Keys failed in %s:%s:%s"
-                                     % (self.client.bucket.name,
+                                     % (client.bucket.name,
                                         self.scope,
                                         self.collection))
         return success, fail
 
-    def batch_sub_doc_insert(self, key_value, persist_to=0,
-                             replicate_to=0, timeout=5,
-                             time_unit="seconds",
+    def batch_sub_doc_insert(self, key_value,
+                             persist_to=0, replicate_to=0,
+                             timeout=5, time_unit="seconds",
                              durability="",
                              create_path=True, xattr=False):
         success = dict()
@@ -648,9 +647,9 @@ class GenericLoadingTask(Task):
                                .format(error))
         return success, fail
 
-    def batch_sub_doc_upsert(self, key_value, persist_to=0,
-                             replicate_to=0, timeout=5,
-                             time_unit="seconds",
+    def batch_sub_doc_upsert(self, key_value,
+                             persist_to=0, replicate_to=0,
+                             timeout=5, time_unit="seconds",
                              durability="",
                              create_path=True, xattr=False):
         success = dict()
@@ -673,11 +672,10 @@ class GenericLoadingTask(Task):
                                .format(error))
         return success, fail
 
-    def batch_sub_doc_replace(self, key_value, persist_to=0,
-                              replicate_to=0, timeout=5,
-                              time_unit="seconds",
-                              durability="",
-                              xattr=False):
+    def batch_sub_doc_replace(self, key_value,
+                              persist_to=0, replicate_to=0,
+                              timeout=5, time_unit="seconds",
+                              durability="", xattr=False):
         success = dict()
         fail = dict()
         try:
@@ -697,11 +695,10 @@ class GenericLoadingTask(Task):
                                .format(error))
         return success, fail
 
-    def batch_sub_doc_remove(self, key_value, persist_to=0,
-                             replicate_to=0, timeout=5,
-                             time_unit="seconds",
-                             durability="",
-                             xattr=False):
+    def batch_sub_doc_remove(self, key_value,
+                             persist_to=0, replicate_to=0,
+                             timeout=5, time_unit="seconds",
+                             durability="", xattr=False):
         success = dict()
         fail = dict()
         try:
@@ -747,7 +744,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  track_failures=True,
-                 skip_read_success_results = False):
+                 skip_read_success_results=False):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
