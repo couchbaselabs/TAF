@@ -143,13 +143,13 @@ class SDKClientPool(object):
                 self.clients[bucket.name][col_name]["counter"] += 1
             elif self.clients[bucket.name]["idle_clients"]:
                 client = self.clients[bucket.name]["idle_clients"].pop()
+                client.select_collection(scope, collection)
                 self.clients[bucket.name]["busy_clients"].append(client)
                 # Create scope/collection reference using the client object
                 self.clients[bucket.name][col_name] = dict()
                 self.clients[bucket.name][col_name]["client"] = client
                 self.clients[bucket.name][col_name]["counter"] = 1
             self.clients[bucket.name]["lock"].release()
-        client.select_collection(scope, collection)
         self.log.debug("Client fetched for %s" % bucket.name)
         return client
 
