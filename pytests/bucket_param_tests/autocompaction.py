@@ -18,7 +18,7 @@ from cb_tools.cbstats import Cbstats
 class AutoCompactionTests(CollectionBase):
     def setUp(self):
         super(AutoCompactionTests, self).setUp()
-        self.key = self.input.param("key","compact")
+        self.key = self.input.param("key", "compact")
         self.is_crashed = Event()
         self.autocompaction_value = self.input.param("autocompaction_value", 0)
         self.during_ops = self.input.param("during_ops", None)
@@ -30,6 +30,7 @@ class AutoCompactionTests(CollectionBase):
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         mutation_type="update")
+        self.stop_loading_thread = False
         self.bucket = self.bucket_util.buckets[0]
         self.log.info("======= Finished Autocompaction base setup =========")
 
@@ -51,7 +52,7 @@ class AutoCompactionTests(CollectionBase):
             server, bucket_name, compaction_value)
         end_time = time.time() + self.wait_timeout * 5
         # generate load until fragmentation reached
-        while not monitor_fragm.completed:
+        while not monitor_fragm.completed and not self.stop_loading_thread:
             if self.is_crashed.is_set():
                 self.cluster.shutdown(force=True)
                 return
@@ -72,7 +73,8 @@ class AutoCompactionTests(CollectionBase):
                                 batch_size=10,
                                 process_concurrency=8,
                                 scope=scope.name,
-                                collection=collection.name)
+                                collection=collection.name,
+                                sdk_client_pool=self.sdk_client_pool)
                             self.task.jython_task_manager.get_task_result(task)
             except Exception, ex:
                 self.is_crashed.set()
@@ -92,7 +94,8 @@ class AutoCompactionTests(CollectionBase):
                         batch_size=batch_size,
                         process_concurrency=process_concurrency,
                         scope=scope.name,
-                        collection=collection.name)
+                        collection=collection.name,
+                        sdk_client_pool=self.sdk_client_pool)
                     self.task.jython_task_manager.get_task_result(task)
                     bucket.scopes[scope.name] \
                         .collections[collection.name] \
@@ -121,6 +124,7 @@ class AutoCompactionTests(CollectionBase):
             viewFragmntThresholdPercentage=None)
 
         rest = RestConnection(server_info)
+        items = 0
         if (output and
                 MIN_COMPACTION_THRESHOLD <= percent_threshold <= max_run):
             node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
@@ -202,12 +206,11 @@ class AutoCompactionTests(CollectionBase):
                     elif self.during_ops == "change_port":
                         self.cluster_util.change_port(new_port='8091',
                                                       current_port=new_port)
+                self.stop_loading_thread = True
                 if str(ex).find("enospc") != -1:
                     self.is_crashed.set()
                     self.log.error("Disk is out of space, unable to load data")
-                    insert_thread._Thread_stop()
                 else:
-                    insert_thread._Thread__stop()
                     raise ex
             else:
                 compaction_task = self.task.async_monitor_compaction(
@@ -252,7 +255,7 @@ class AutoCompactionTests(CollectionBase):
             dbFragmentThresholdPercentage=self.autocompaction_value,
             bucket=self.bucket.name)
         compaction_task = self.task.async_monitor_compaction(self.cluster,
-                                                                self.bucket)
+                                                             self.bucket)
         self._monitor_DB_fragmentation(self.bucket)
         servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
         rebalance = self.task.async_rebalance(
@@ -371,7 +374,8 @@ class AutoCompactionTests(CollectionBase):
                                                              self.bucket)
         self._monitor_DB_fragmentation(self.bucket)
         rebalance = self.task.async_rebalance(servs_init,
-                                              servs_in, servs_out, check_vbucket_shuffling=False)
+                                              servs_in, servs_out,
+                                              check_vbucket_shuffling=False)
         self.task_manager.get_task_result(compaction_task)
         self.task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance failed with compaction")

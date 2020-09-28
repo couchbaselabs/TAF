@@ -66,19 +66,21 @@ class basic_ops(BaseTestCase):
             .collections[self.collection_name] \
             .num_items = self.num_items
 
-        if self.sdk_client_pool:
-            self.log.info("Creating SDK client pool")
-            self.sdk_client_pool.create_clients(
-                self.bucket_util.buckets[0],
-                self.cluster.nodes_in_cluster,
-                req_clients=self.task_manager.number_of_threads,
-                compression_settings=self.sdk_compression)
-
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.nodes_in_cluster),
             durability=self.durability_level,
             replicate_to=self.replicate_to,
             persist_to=self.persist_to)
+
+        # Create sdk_clients for pool
+        if self.sdk_client_pool:
+            self.log.info("Creating SDK client pool")
+            self.sdk_client_pool.create_clients(
+                self.bucket_util.buckets[0],
+                self.cluster.nodes_in_cluster,
+                req_clients=self.sdk_pool_capacity,
+                compression_settings=self.sdk_compression)
+
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
         self.cluster_util.print_cluster_stats()
