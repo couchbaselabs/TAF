@@ -10,6 +10,8 @@ class CollectionsNetworkSplit(CollectionBase):
         super(CollectionsNetworkSplit, self).setUp()
         self.involve_orchestrator = self.input.param("involve_orchestrator", True)
         self.subsequent_action = self.input.param("subsequent-action", "rebalance-out")
+        self.failover_orchestrator = self.input.param("failover_orchestrator", False)
+        self.set_master_node()
         self.recovery_type = self.input.param("recovery_type", "delta")
 
     def tearDown(self):
@@ -20,6 +22,16 @@ class CollectionsNetworkSplit(CollectionBase):
             shell.disconnect()
         self.bucket_util._wait_warmup_completed(self.cluster.servers, self.bucket_util.buckets[0])
         super(CollectionsNetworkSplit, self).tearDown()
+
+    def set_master_node(self):
+        """
+        changes the master node to third init node if all the below conditions are met:
+        a. subsequent rebalance action is rebalance-out &
+        b. if it involves orchestrator &
+        c. node to be failovered (and rebalanced-out) is orchestrator
+        """
+        if self.subsequent_action == "rebalance-out" and self.involve_orchestrator and self.failover_orchestrator:
+            self.master = self.cluster.master = self.cluster.servers[2]
 
     def split_brain(self, node1, node2):
         shell = RemoteMachineShellConnection(node1)
@@ -38,14 +50,17 @@ class CollectionsNetworkSplit(CollectionBase):
 
     def pick_nodes_and_network_split(self):
         if self.involve_orchestrator:
-            self.node1 = self.cluster.master
+            self.node1 = self.cluster.servers[0]
             self.node2 = self.cluster.servers[1]
         else:
             self.node1 = self.cluster.servers[1]
             self.node2 = self.cluster.servers[2]
         self.split_brain(self.node1, self.node2)
         self.split_brain(self.node2, self.node1)
-        self.nodes_failover = [self.node2]
+        if self.failover_orchestrator:
+            self.nodes_failover = [self.node1]
+        else:
+            self.nodes_failover = [self.node2]
         self.nodes_affected = [self.node1, self.node2]
 
     def get_common_spec(self):
@@ -132,7 +147,8 @@ class CollectionsNetworkSplit(CollectionBase):
         """
         1. Simulate split-brain scenario by introducing network partition with parallel data load
         2. Sync Data load after network split
-        3. (Hard) Failover the nodes (except orchestrator node if it was involved) with data load in parallel
+        3. (Hard) Failover the node + data load in parallel
+            -> Failover orchestrator if involve_orchestrator and failover_orchestrator are set true. else the other node
         4. Sync Data load after failover
         5. Rebalance-out/ delta-recover/ full recover the nodes with data load in parallel
         """
