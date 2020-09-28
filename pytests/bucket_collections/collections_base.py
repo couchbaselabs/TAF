@@ -30,8 +30,6 @@ class CollectionBase(BaseTestCase):
                                           "single_bucket.default")
         self.data_spec_name = self.input.param("data_spec_name",
                                                "initial_load")
-        self.over_ride_spec_params = \
-            self.input.param("override_spec_params", "").split(";")
         self.remove_default_collection = \
             self.input.param("remove_default_collection", False)
 
@@ -92,22 +90,26 @@ class CollectionBase(BaseTestCase):
         super(CollectionBase, self).tearDown()
 
     def collection_setup(self):
+        self.bucket_util.add_rbac_user()
+
+        # Create bucket(s) and add rbac user
         if self.bucket_storage == Bucket.StorageBackend.magma:
             # get the TTL value
-            buckets_spec_from_conf = self.bucket_util.get_bucket_template_from_package(self.spec_name)
+            buckets_spec_from_conf = \
+                self.bucket_util.get_bucket_template_from_package(
+                    self.spec_name)
             bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
             # Blindly override the bucket spec if the backend storage is magma.
             # So, Bucket spec in conf file will not take any effect.
             self.spec_name = "single_bucket.bucket_for_magma_collections"
-            magma_bucket_spec = self.bucket_util.get_bucket_template_from_package(self.spec_name)
+            magma_bucket_spec = \
+                self.bucket_util.get_bucket_template_from_package(
+                    self.spec_name)
             magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
-
-        # Create bucket(s) and add rbac user
-        self.bucket_util.add_rbac_user()
-        buckets_spec = self.bucket_util.get_bucket_template_from_package(
-            self.spec_name)
-        if self.bucket_storage == Bucket.StorageBackend.magma:
             buckets_spec = magma_bucket_spec
+        else:
+            buckets_spec = self.bucket_util.get_bucket_template_from_package(
+                self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(
                 self.data_spec_name)
@@ -168,29 +170,31 @@ class CollectionBase(BaseTestCase):
         self.bucket_util.print_bucket_stats()
 
     def over_ride_bucket_template_params(self, bucket_spec):
-        # no need of overriding bucket template params if bucket storage is magma.
-        if self.bucket_storage != Bucket.StorageBackend.magma:
-            for over_ride_param in self.over_ride_spec_params:
-                if over_ride_param == "replicas":
-                    bucket_spec[Bucket.replicaNumber] = self.num_replicas
-                elif over_ride_param == "bucket_size":
-                    bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
-                elif over_ride_param == "num_items":
-                    bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
-                        self.num_items
-                elif over_ride_param == "remove_default_collection":
-                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
-                        self.remove_default_collection
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            # Blindly override the following params
+            bucket_spec[Bucket.evictionPolicy] = \
+                Bucket.EvictionPolicy.FULL_EVICTION
+        else:
+            for key, val in self.input.test_params.items():
+                if key == "replicas":
+                    bucket_spec[Bucket.replicaNumber] = val
+                elif key == "bucket_size":
+                    bucket_spec[Bucket.ramQuotaMB] = val
+                elif key == "num_items":
+                    bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = val
+                elif key == "remove_default_collection":
+                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = val
+                elif key == "bucket_storage":
+                    bucket_spec[Bucket.storageBackend] = self.bucket_storage
 
     def over_ride_doc_loading_template_params(self, target_spec):
-        for over_ride_param in self.over_ride_spec_params:
-            if over_ride_param == "durability":
-                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
-                    self.durability_level
-            elif over_ride_param == "sdk_timeout":
-                target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
-            elif over_ride_param == "doc_size":
-                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
+        for key, value in self.input.test_params.items():
+            if key == "durability":
+                target_spec[MetaCrudParams.DURABILITY_LEVEL] = value
+            elif key == "sdk_timeout":
+                target_spec[MetaCrudParams.SDK_TIMEOUT] = value
+            elif key == "doc_size":
+                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = value
 
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
