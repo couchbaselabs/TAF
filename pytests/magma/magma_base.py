@@ -16,6 +16,7 @@ class MagmaBaseTest(BaseTestCase):
     def setUp(self):
         super(MagmaBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
+        self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.check_temporary_failure_exception = False
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
@@ -170,6 +171,7 @@ class MagmaBaseTest(BaseTestCase):
     def _create_default_bucket(self):
         self.bucket_util.create_default_bucket(
             bucket_type=self.bucket_type,
+            ram_quota=self.bucket_ram_quota,
             replica=self.num_replicas,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
