@@ -1,8 +1,10 @@
 from bucket_collections.collections_base import CollectionBase
 
+from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from bucket_utils.bucket_ready_functions import BucketUtils
 
 
 class CollectionsNetworkSplit(CollectionBase):
@@ -15,12 +17,12 @@ class CollectionsNetworkSplit(CollectionBase):
         self.recovery_type = self.input.param("recovery_type", "delta")
 
     def tearDown(self):
-        for server in self.servers:
+        for server in self.cluster.servers[:self.nodes_init]:
             shell = RemoteMachineShellConnection(server)
             command = "/sbin/iptables -F"
             shell.execute_command(command)
             shell.disconnect()
-        self.bucket_util._wait_warmup_completed(self.cluster.servers, self.bucket_util.buckets[0])
+        self.bucket_util._wait_warmup_completed(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets[0])
         super(CollectionsNetworkSplit, self).tearDown()
 
     def set_master_node(self):
@@ -182,6 +184,44 @@ class CollectionsNetworkSplit(CollectionBase):
             self.assertTrue(result, "Rebalance-in failed")
             self.wait_for_async_data_load_to_complete(task)
             #self.data_validation_collection()
+
+    def test_MB_41383(self):
+        """
+        1. Introduce network split between orchestrator(node1) and the last node.
+        2. Create collections on node1
+        3. Create collections on the last node.
+        4. Perform data validation
+        """
+        self.involve_orchestrator = True
+        self.node1 = self.cluster.servers[0]
+        self.node2 = self.cluster.servers[self.nodes_init-1]
+        self.split_brain(self.node1, self.node2)
+        self.split_brain(self.node2, self.node1)
+        self.sleep(120, "wait for network split to finish")
+
+        BucketUtils.create_collections(
+            self.cluster,
+            self.bucket_util.buckets[0],
+            5,
+            CbServer.default_scope,
+            collection_name="collection_from_first_node")
+
+        self.cluster.master = self.master = self.node2
+        BucketUtils.create_collections(
+            self.cluster,
+            self.bucket_util.buckets[0],
+            5,
+            CbServer.default_scope,
+            collection_name="collection_from_last_node")
+        self.remove_network_split()
+        self.sleep(30, "wait for iptables rules to take effect")
+        self.data_validation_collection()
+
+
+
+
+
+
 
 
 
