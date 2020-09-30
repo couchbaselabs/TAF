@@ -6,8 +6,8 @@ from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.documentgenerator import DocumentGenerator
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from threading import Thread
-import subprocess
 from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
+from couchbase_helper.tuq_helper import N1QLHelper
 
 rbac_users_created = {}
 
@@ -150,6 +150,7 @@ class CBASExternalLinks(CBASBaseTest):
         retry = 0
         while (not self.aws_bucket_created) and retry < 3:
             try:
+                self.log.info("Creating AWS bucket - {0}".format(self.aws_bucket_name))
                 if not perform_S3_operation(
                         aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
                         aws_session_token=self.aws_session_token, create_bucket=True,
@@ -165,10 +166,18 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("link creation failed")
         self.link_created = True
         self.get_dataset_parameters()
+        
+        self.shell = RemoteMachineShellConnection(self.cluster.master)
+        self.n1ql_helper = N1QLHelper(shell=self.shell, buckets=self.bucket_util.buckets,
+                                      item_flag=0, n1ql_port=8093, log=self.log,
+                                      input=self.input, master=self.cluster.master, 
+                                      use_rest=True)
+        
         self.s3_data_helper = S3DataHelper(
             aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
             aws_session_token=self.aws_session_token, cluster=self.cluster,
-            bucket_util=self.bucket_util, rest=self.rest, task=self.task, log=self.log)
+            bucket_util=self.bucket_util, rest=self.rest, task=self.task, log=self.log, 
+            n1ql_helper=self.n1ql_helper)
 
     def execute_cbas_query(self, cbas_query, result, timeout=120, analytics_timeout=120):
         status, metrics, errors, cbas_result, handle = self.cbas_util.execute_statement_on_cbas_util(cbas_query,

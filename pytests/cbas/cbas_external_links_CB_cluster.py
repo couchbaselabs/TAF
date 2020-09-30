@@ -1041,10 +1041,10 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                                        self.analytics_username)):
                     raise Exception("Error while creating dataset")
                 if not testcase.get("validate_error_msg", False):
-                    if not self.analytics_cluster.cbas_util.validate_dataset_in_metadata_collection(dataset_name=testcase["dataset_name"],
-                                                                                                    link_name=self.link_info["name"],
-                                                                                                    dataverse=self.link_info["dataverse"],
-                                                                                                    bucket_name=testcase["bucket_name"]):
+                    if not self.analytics_cluster.cbas_util.validate_dataset_in_metadata(dataset_name=testcase["dataset_name"],
+                                                                                         dataverse=self.link_info["dataverse"],
+                                                                                         link_name=self.link_info["name"],
+                                                                                         bucket_name=testcase["bucket_name"]):
                         raise Exception("Dataset entry not present in Metadata.Dataset collection")
                     self.analytics_cluster.cbas_util.drop_dataset(cbas_dataset_name=testcase["dataset_name"],
                                                              dataverse=self.link_info["dataverse"])

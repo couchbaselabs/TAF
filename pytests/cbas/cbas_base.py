@@ -1,28 +1,36 @@
-import random
-
 from BucketLib.bucket import TravelSample, BeerSample, Bucket
 from basetestcase import BaseTestCase
-from bucket_utils.bucket_ready_functions import BucketUtils
 from cbas_utils.cbas_utils import CbasUtil
-from cluster_utils.cluster_ready_functions import ClusterUtils
+from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.rest_client import RestHelper, RestConnection
-from rbac_utils.Rbac_ready_functions import RbacUtils
 from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 
-from com.couchbase.client.java.json import JsonObject
+from cluster_utils.cluster_ready_functions import ClusterUtils
+from bucket_utils.bucket_ready_functions import BucketUtils
+from rbac_utils.Rbac_ready_functions import RbacUtils
+
+import random
+from remote.remote_util import RemoteMachineShellConnection
+
+import traceback
+from java.lang import Exception as Java_base_exception
+from sdk_exceptions import SDKException
+from collections_helper.collections_spec_constants import \
+    MetaConstants, MetaCrudParams
+from math import ceil
 
 
 class CBASBaseTest(BaseTestCase):
     def setUp(self, add_default_cbas_node=True):
         super(CBASBaseTest, self).setUp()
-
+        
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
                           % (self._testMethodName, self._testMethodDoc))
         else:
             self.log.info("Starting Test: %s" % self._testMethodName)
-
+        
         invalid_ip = '10.111.151.109'
         self.cb_bucket_name = self.input.param('cb_bucket_name',
                                                'travel-sample')
@@ -74,9 +82,11 @@ class CBASBaseTest(BaseTestCase):
             self._cb_cluster = self.cluster
         else:
             self._cb_cluster = self.get_clusters()
-
+            
         self.expected_error = self.input.param("error", None)
-
+        
+        self.spec_name = self.input.param("bucket_spec", None)
+        
         # Single cluster support
         if hasattr(self, "cluster"):
             for server in self.servers:
@@ -148,19 +158,28 @@ class CBASBaseTest(BaseTestCase):
                         it is automatically cleaned-up.'''
                     self.cleanup_cbas()
                     self.cluster.cbas_nodes.remove(self.cbas_node)
-            if self.default_bucket:
-                self.bucket_util.create_default_bucket(
-                    bucket_type=self.bucket_type,
-                    ram_quota=self.bucket_size,
-                    replica=self.num_replicas,
-                    conflict_resolution=self.bucket_conflict_resolution_type,
-                    replica_index=self.bucket_replica_index,
-                    storage=self.bucket_storage,
-                    eviction_policy=self.bucket_eviction_policy,
-                    flush_enabled=self.flush_enabled)
-            elif self.cb_bucket_name in self.sample_bucket_dict.keys():
-                self.sample_bucket = \
-                    self.sample_bucket_dict[self.cb_bucket_name]
+            if self.spec_name is not None:
+                try:
+                    self.collectionSetUp(self.cluster, self.bucket_util, 
+                                         self.cluster_util)
+                except Java_base_exception as exception:
+                    self.handle_collection_setup_exception(exception)
+                except Exception as exception:
+                    self.handle_collection_setup_exception(exception)
+            else:
+                if self.default_bucket:
+                    self.bucket_util.create_default_bucket(
+                        bucket_type=self.bucket_type,
+                        ram_quota=self.bucket_size,
+                        replica=self.num_replicas,
+                        conflict_resolution=self.bucket_conflict_resolution_type,
+                        replica_index=self.bucket_replica_index,
+                        storage=self.bucket_storage,
+                        eviction_policy=self.bucket_eviction_policy,
+                        flush_enabled=self.flush_enabled)
+                elif self.cb_bucket_name in self.sample_bucket_dict.keys():
+                    self.sample_bucket = \
+                        self.sample_bucket_dict[self.cb_bucket_name]
 
         else:
             # Multi Cluster Support
@@ -180,7 +199,7 @@ class CBASBaseTest(BaseTestCase):
                     rest.set_data_path(data_path=server.data_path,
                                        index_path=server.index_path,
                                        cbas_path=server.cbas_path)
-
+                
                 if self.expected_error:
                     cluster.expected_error = \
                         self.expected_error.replace("INVALID_IP", invalid_ip)
@@ -190,8 +209,9 @@ class CBASBaseTest(BaseTestCase):
 
                 cluster.otpNodes = list()
                 cluster.cbas_path = server.cbas_path
-
+                
                 cluster.rest = RestConnection(cluster.master)
+
                 self.log.info(
                     "Setting the min possible memory quota so that adding "
                     "more nodes to the cluster wouldn't be a problem.")
@@ -221,6 +241,7 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("Setting %d memory quota for CBAS"
                                   % CBAS_QUOTA)
                     cluster.cbas_memory_quota = CBAS_QUOTA
+
                     cluster.rest.set_service_memoryQuota(
                         service='cbasMemoryQuota',
                         memoryQuota=CBAS_QUOTA)
@@ -248,18 +269,27 @@ class CBASBaseTest(BaseTestCase):
                         """
                         self.cleanup_cbas(cluster.cbas_util)
                         cluster.cbas_nodes.remove(cluster.cbas_node)
-                if self.default_bucket:
-                    cluster.bucket_util.create_default_bucket(
-                        bucket_type=self.bucket_type,
-                        ram_quota=self.bucket_size,
-                        replica=self.num_replicas,
-                        conflict_resolution=self.bucket_conflict_resolution_type,
-                        replica_index=self.bucket_replica_index,
-                        storage=self.bucket_storage,
-                        eviction_policy=self.bucket_eviction_policy,
-                        flush_enabled=self.flush_enabled)
-                elif self.cb_bucket_name in self.sample_bucket_dict.keys():
-                    self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
+                if self.spec_name is not None:
+                    try:
+                        self.collectionSetUp(cluster, cluster.bucket_util, 
+                                             cluster.cluster_util)
+                    except Java_base_exception as exception:
+                        self.handle_collection_setup_exception(exception)
+                    except Exception as exception:
+                        self.handle_collection_setup_exception(exception)
+                else:
+                    if self.default_bucket:
+                        cluster.bucket_util.create_default_bucket(
+                            bucket_type=self.bucket_type,
+                            ram_quota=self.bucket_size,
+                            replica=self.num_replicas,
+                            conflict_resolution=self.bucket_conflict_resolution_type,
+                            replica_index=self.bucket_replica_index,
+                            storage=self.bucket_storage,
+                            eviction_policy=self.bucket_eviction_policy,
+                            flush_enabled=self.flush_enabled)
+                    elif self.cb_bucket_name in self.sample_bucket_dict.keys():
+                        self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
 
                 cluster.bucket_util.add_rbac_user()
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
@@ -268,7 +298,7 @@ class CBASBaseTest(BaseTestCase):
     def tearDown(self):
         if hasattr(self, "cluster"):
             self.cbas_util.closeConn()
-        else:
+        else:            
             for cluster in self._cb_cluster:
                 if cluster.cbas_util:
                     cluster.cbas_util.closeConn()
@@ -310,7 +340,7 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("********* Dropped all buckets *********")
             else:
                 self.log.info("********* No buckets to drop *********")
-
+            
             self.log.info("Drop Dataverse other than Default and Metadata")
             cmd_get_dataverse = 'select DataverseName from Metadata.`Dataverse` where DataverseName != "Metadata" and DataverseName != "Default";'
             status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_dataverse)
@@ -396,7 +426,7 @@ class CBASBaseTest(BaseTestCase):
                     suppress_error_table=True)
         except Exception as e:
             self.log.error(e.message)
-
+    
     def remove_node(self, otpnode=None, wait_for_rebalance=True, rest=None):
         """
         Method to remove nodes from a cluster.
@@ -428,7 +458,7 @@ class CBASBaseTest(BaseTestCase):
             self.assertTrue(removed,
                             "Rebalance operation failed while removing %s"
                             % otpnode)
-
+    
     def create_dataverse_link_map(self, cbas_util, dataverse=0, link=0):
         """
         This function creates a hash map, depicting links in different dataverses.
@@ -436,8 +466,8 @@ class CBASBaseTest(BaseTestCase):
          and any link if present will be associated with the "Default" dataverse.
         :param link: total number of links to be created.
         :returns hash map with dataverse names as keys and associated links as values.
-
-        Sample dataverse map:
+        
+        Sample dataverse map: 
         Note - Default dataverse will always be present
         Note - 2 different dataverses can have links with same name.
         dataverse_map = {
@@ -547,7 +577,7 @@ class CBASBaseTest(BaseTestCase):
             pass
         finally:
             return itemlist
-
+    
     def set_primary_index(self, rest, bucket_name):
         query = "CREATE PRIMARY INDEX ON `{0}`;".format(bucket_name)
         result = rest.query_tool(query)
@@ -564,3 +594,112 @@ class CBASBaseTest(BaseTestCase):
                 return False
             else:
                 return value
+    
+    def handle_collection_setup_exception(self, exception_obj):
+        if self.sdk_client_pool is not None:
+            self.sdk_client_pool.shutdown()
+        traceback.print_exc()
+        raise exception_obj
+    
+    def collectionSetUp(self, cluster, bucket_util, cluster_util):
+        """
+        Setup the buckets, scopes and collecitons based on the spec passed.
+        """
+        self.over_ride_spec_params = self.input.param(
+            "override_spec_params", "").split(";")
+        self.remove_default_collection = self.input.param(
+            "remove_default_collection", False)
+        
+        # Create bucket(s) and add rbac user
+        bucket_util.add_rbac_user()
+        buckets_spec = bucket_util.get_bucket_template_from_package(
+            self.spec_name)
+        doc_loading_spec = \
+            bucket_util.get_crud_template_from_package("initial_load")
+
+        # Process params to over_ride values if required
+        self.over_ride_bucket_template_params(buckets_spec)
+        self.over_ride_doc_loading_template_params(doc_loading_spec)
+        
+        # MB-38438, adding CollectionNotFoundException in retry exception
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
+            SDKException.CollectionNotFoundException)
+
+        bucket_util.create_buckets_using_json_data(buckets_spec)
+        bucket_util.wait_for_collection_creation_to_complete()
+
+        # Prints bucket stats before doc_ops
+        bucket_util.print_bucket_stats()
+
+        # Init sdk_client_pool if not initialized before
+        if self.sdk_client_pool is None:
+            self.init_sdk_pool_object()
+
+        # Create clients in SDK client pool
+        if self.sdk_client_pool:
+            self.log.info("Creating required SDK clients for client_pool")
+            bucket_count = len(bucket_util.buckets)
+            max_clients = self.task_manager.number_of_threads
+            clients_per_bucket = int(ceil(max_clients / bucket_count))
+            for bucket in bucket_util.buckets:
+                self.sdk_client_pool.create_clients(
+                    bucket,
+                    [cluster.master],
+                    clients_per_bucket,
+                    compression_settings=self.sdk_compression)
+
+        # TODO: remove this once the bug is fixed
+        #self.sleep(120, "MB-38497")
+        self.sleep(10, "MB-38497")
+
+        doc_loading_task = \
+            bucket_util.run_scenario_from_spec(
+                self.task,
+                cluster,
+                bucket_util.buckets,
+                doc_loading_spec,
+                mutation_num=0,
+                batch_size=self.batch_size)
+        if doc_loading_task.result is False:
+            self.fail("Initial doc_loading failed")
+
+        cluster_util.print_cluster_stats()
+
+        ttl_buckets = [
+            "multi_bucket.buckets_for_rebalance_tests_with_ttl",
+            "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
+            "multi_bucket.buckets_for_volume_tests_with_ttl"]
+
+        # Verify initial doc load count
+        bucket_util._wait_for_stats_all_buckets()
+        if self.spec_name not in ttl_buckets:
+            bucket_util.validate_docs_per_collections_all_buckets()
+
+        # Prints bucket stats after doc_ops
+        bucket_util.print_bucket_stats()
+    
+    def over_ride_bucket_template_params(self, bucket_spec):
+        for over_ride_param in self.over_ride_spec_params:
+            if over_ride_param == "replicas":
+                bucket_spec[Bucket.replicaNumber] = self.num_replicas
+            elif over_ride_param == "bucket_size":
+                bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+            elif over_ride_param == "num_items":
+                bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                    self.num_items
+            elif over_ride_param == "remove_default_collection":
+                bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                    self.remove_default_collection
+
+    def over_ride_doc_loading_template_params(self, target_spec):
+        for over_ride_param in self.over_ride_spec_params:
+            if over_ride_param == "durability":
+                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
+                    self.durability_level
+            elif over_ride_param == "sdk_timeout":
+                target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
+            elif over_ride_param == "doc_size":
+                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
+
+        
+        

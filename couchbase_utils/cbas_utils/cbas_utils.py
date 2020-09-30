@@ -8,12 +8,13 @@ import json
 import threading
 import time
 from threading import Thread
+import string,random
+import urllib
 
 from CbasLib.CBASOperations import CBASHelper
 from common_lib import sleep
 from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
-import urllib
 
 
 class CbasUtil:
@@ -189,7 +190,7 @@ class CbasUtil:
                             expected_error_code=None):
 
         if link_name == "Local" or link_name is None:
-            cmd = "create link Local;"
+            cmd = "create link Local"
         else:
             cmd = "create link %s WITH {'nodes': %s, 'user': %s, 'password': %s}"\
                   % (link_name, ip_address, username, password)
@@ -407,7 +408,8 @@ class CbasUtil:
         """
         Creates a shadow dataset on a CBAS bucket
         """
-        cbas_bucket_name = "`"+cbas_bucket_name+"`"
+        if '`' not in cbas_bucket_name:
+            cbas_bucket_name = "`"+cbas_bucket_name+"`"
 
         cmd_create_dataset = "create dataset {0} ".format(cbas_dataset_name)
         if compress_dataset:
@@ -1625,34 +1627,713 @@ class CbasUtil:
 
         return ds_compression_type
     
-    def validate_dataset_in_metadata_collection(self, dataset_name, link_name, dataverse, 
-                                                bucket_name, username=None, password=None):
+    def validate_dataset_in_metadata(self, dataset_name, dataverse, 
+                                     username=None, password=None, **kwargs):
         """
         validates metadata information about a dataset with entry in Metadata.Dataset collection.
         """
-        cmd = 'SELECT * FROM `Metadata.Dataset` WHERE DatasetName="{0}" and DataverseName = "{1}";'.format(dataset_name, 
-                                                                                                           dataverse)
+        self.log.debug("Validating dataset entry in Metadata")
+        cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE DatasetName="{0}" \
+        and DataverseName = "{1}";'.format(dataset_name, dataverse)
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cmd, username=username, password=password)
-        if status == "success":
+        if status == "success" and results:
             for result in results:
-                if result["Metadata.Dataset"]["DatasetType"] == "INTERNAL":
-                    actual_link_name = result["Metadata.Dataset"]["LinkName"]
-                    actual_bucket_name = result["Metadata.Dataset"]["BucketName"]
-                elif result["Metadata.Dataset"]["DatasetType"] == "EXTERNAL":
-                    for prop in results["Metadata.Dataset"]["ExternalDetails"]["Properties"]:
+                if result["DatasetType"] == "INTERNAL":
+                    for key,value in kwargs.items():
+                        if value != result.get(key, ''):
+                            self.log.error("Data Mismatch. Expected - {0} /t Actual - {1}".format(
+                                result.get(key, ''), value))
+                            return False
+                elif result["DatasetType"] == "EXTERNAL":
+                    for prop in results["ExternalDetails"]["Properties"]:
                         if prop["Name"] == "container":
                             actual_link_name = prop["Value"]
                         if prop["Name"] == "name":
                             actual_bucket_name = prop["Value"]
-                if not (actual_link_name == link_name):
-                    self.log.error("Link name mismatch. Expected - {0} /t Actual - {1}".format(
-                        result["Metadata.Dataset"]["LinkName"], link_name))
-                    return False
-                if not (actual_bucket_name == bucket_name):
-                    self.log.error("Bucket name mismatch. Expected - {0} /t Actual - {1}".format(
-                        result["Metadata.Dataset"]["BucketName"], bucket_name))
-                    return False
+                    if actual_link_name != kwargs["link_name"]:
+                        self.log.error("Link name mismatch. Expected - {0} /t Actual - {1}".format(
+                            kwargs["link_name"], actual_link_name))
+                        return False
+                    if actual_bucket_name != kwargs["bucket_name"]:
+                        self.log.error("Bucket name mismatch. Expected - {0} /t Actual - {1}".format(
+                            kwargs["bucket_name"], actual_bucket_name))
+                        return False
             return True
         else:
             return False
+    
+    def validate_dataverse_in_metadata(self, dataverse, username=None, password=None):
+        """
+        Validates whether a dataverse is present in Metadata.Dataverse
+        :param dataverse : str, Name of the dataverse, which has to be validated.
+        :param username : str
+        :param password : str
+        :return boolean
+        """
+        self.log.debug("Validating dataverse entry in Metadata")
+        cmd = "select value dv from Metadata.`Dataverse` as dv where\
+         dv.DataverseName = {0};".format(dataverse)
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd, username=username, password=password)
+        if status == "success":
+            if results:
+                return True
+            else:
+                return False
+        else:
+            return False
+    
+    def create_analytics_scope(self, scope_name=None,
+                               username=None, password=None,
+                               validate_error_msg=False,
+                               expected_error=None,
+                               expected_error_code=None):
+        """
+        Creates analytics scope. This method is synthetic sugar for creating
+        dataverse in analytics.
+        :param scope_name: str, name of the scope to be created. Supports 1-part and 2-part names.
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :return boolean
+        """
+
+        if not scope_name:
+            cmd = "create analytics scope Default;"
+        else:
+            cmd = "create analytics scope %s" % scope_name
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = \
+            self.execute_statement_on_cbas_util(cmd,
+                                                username=username,
+                                                password=password)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error,
+                                                   expected_error_code)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def drop_analytics_scope(self, scope_name=None,
+                             username=None, password=None,
+                             validate_error_msg=False,
+                             expected_error=None,
+                             expected_error_code=None):
+        """
+        Creates analytics scope. This method is synthetic sugar for creating
+        dataverse in analytics.
+        :param scope_name: str, name of the scope to be created. Supports 1-part and 2-part names.
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :return boolean
+        """
+        if scope_name:
+            cmd = "drop analytics scope %s;" % scope_name
+        else:
+            cmd = "drop analytics scope Default;"
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = \
+            self.execute_statement_on_cbas_util(cmd,
+                                                username=username,
+                                                password=password)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error,
+                                                   expected_error_code)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+    
+    def create_analytics_collection(
+            self, KV_entity_name, cbas_collection_name, where_field=None, 
+            where_value = None, validate_error_msg=False, expected_error=None, 
+            dataverse=None, compress_dataset=False, link_name=None,
+            username = None, password = None, timeout=120, analytics_timeout=120):
+        """
+        Creates a analytics collection which is syntactic sugar for creating datasets.
+        :param KV_bucket_name: string, name of the KV entity on which dataset is to be created.
+        Can be bucket name or collection name.
+        :param cbas_collection_name: string, name of the analytics collection to be created.
+        :param where field: string, name of the filters to be applied while creating cbas collections.
+        :param where_value: string, value of the filters to be applied while creating cbas collections.
+        :param validating_error_msg: boolean, if True, then validate error occurred during 
+        cbas collection creation.
+        :param expected_error: string, error msg to be validated.
+        :param dataverse: string, dataverse name under which the cbas collection needs to be created.
+        :param compress_cbas_collection: boolean
+        :param link_name: string, name of the link to create cbas collection on.
+        :param username: string,
+        :param password: string,
+        :param timeout: int,
+        :param analytics_timeout: int,
+        """
+
+        cmd_create_dataset = "create analytics collection {0} ".format(cbas_collection_name)
+        if compress_dataset:
+            cmd_create_dataset = cmd_create_dataset + "with {'storage-block-compression': {'scheme': 'snappy'}} "
+
+        cmd_create_dataset = cmd_create_dataset + "on {0} ".format(KV_entity_name)
+        
+        if link_name:
+            cmd_create_dataset = cmd_create_dataset + "at {0} ".format(link_name)
+
+        if where_field and where_value:
+            cmd_create_dataset = cmd_create_dataset + "WHERE `{0}`=\"{1}\";".format(where_field, where_value)
+        else:
+            cmd_create_dataset = cmd_create_dataset + ";"
+
+        if dataverse is not None:
+            dataverse_prefix = 'use ' + dataverse + ';\n'
+            cmd_create_dataset = dataverse_prefix + cmd_create_dataset
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd_create_dataset))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd_create_dataset, username=username, password=password,timeout=timeout, 
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+    
+    def drop_analytics_collection(self, cbas_collection_name, 
+                                  dataverse="Default", validate_error_msg=False, 
+                                  expected_error=None, username=None, password=None):
+        """
+        Drop a analytics collection which is syntactic sugar for dropping datasets.
+        :param cbas_collection_name: string, name of the analytics collection to be created.
+        :param dataverse: string, dataverse name under which the cbas collection needs to be created.
+        :param validating_error_msg: boolean, if True, then validate error occurred during 
+        cbas collection creation.
+        :param expected_error: string, error msg to be validated.
+        :param username: string,
+        :param password: string,
+        """
+        if dataverse == "Default":
+            cmd_drop_dataset = "drop analytics collection {0};".format(cbas_collection_name)
+        else:
+            cmd_drop_dataset = "drop analytics collection {0}.{1};".format(dataverse, cbas_collection_name)
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd_drop_dataset))
+        status, metrics, errors, results, _ = \
+            self.execute_statement_on_cbas_util(cmd_drop_dataset,
+                                                username=username,
+                                                password=password)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+    
+    def enable_analytics_from_KV(self, kv_entity_name, compress_dataset=False,
+                                 validate_error_msg=False, 
+                                 expected_error=None, username=None, password=None,
+                                 timeout=120, analytics_timeout=120):
+        """
+        Enables analytics directly from KV.
+        :param kv_entity_name: string, can be fully quantified collection name
+        (bucket.scope.collection) or a bucket name. 
+        :param compress_cbas_collection: boolean, to enable compression on created dataset.
+        :param validate_error_msg: boolean,
+        :param expected_error: string,
+        :param username: string,
+        :param password: string,
+        :param timeout: int,
+        :param analytics_timeout: int,
+        """
+        cmd = "Alter collection {0} enable analytics ".format(kv_entity_name)
+        if compress_dataset:
+            cmd = cmd + "with {'storage-block-compression': {'scheme': 'snappy'}}"
+        cmd = cmd + ";"
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd, username=username, password=password, timeout=timeout, 
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+    
+    def disable_analytics_from_KV(self, kv_entity_name,
+                                 validate_error_msg=False, 
+                                 expected_error=None, username=None, password=None,
+                                 timeout=120, analytics_timeout=120):
+        """
+        Disables analytics directly from KV.
+        :param kv_entity_name: string, can be fully quantified collection name
+        (bucket.scope.collection) or a bucket name. 
+        :param validate_error_msg: boolean,
+        :param expected_error: string,
+        :param username: string,
+        :param password: string,
+        :param timeout: int,
+        :param analytics_timeout: int,
+        """
+        cmd = "Alter collection {0} disable analytics;".format(kv_entity_name)
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd, username=username, password=password, timeout=timeout, 
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+    
+    def validate_synonym_in_metadata(self, synonym, synonym_dataverse,
+                                     dataset_dataverse, dataset, 
+                                     username=None, password=None):
+        """
+        Validates whether an entry for Synonym is present in Metadata.Synonym.
+        :param synonym : str, Name of the Synonym, which has to be validated.
+        :param synonym_dataverse : str, Name of the dataverse under which the synonym is created
+        :param dataset_dataverse : str, Name of the dataset's dataverse on which the synonym was created.
+        :param dataset : str, Name of the dataset on which the synonym was created.
+        :param username : str
+        :param password : str
+        :return boolean
+        """
+        self.log.debug("Validating Synonym entry in Metadata")
+        cmd = "select value sy from Metadata.`Synonym` as sy where \
+        sy.SynonymName = {0} and sy.DataverseName = {1};".format(synonym,synonym_dataverse)
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd, username=username, password=password)
+        if status == "success":
+            for result in results:
+                if result['ObjectDataverseName'] == dataset_dataverse and result['ObjectName'] == dataset:
+                    return True
+            return False
+        else:
+            return False
+    
+    def create_analytics_synonym(self, synonym_name, object_name,
+                                 synonym_dataverse=None, object_dataverse=None, 
+                                 validate_error_msg=False, expected_error=None, 
+                                 username=None, password=None,
+                                 timeout=120, analytics_timeout=120):
+        cmd = "create analytics synonym "
+        
+        if synonym_dataverse:
+            cmd += "{0}.".format(synonym_dataverse)
+        
+        cmd += "{0} for ".format(synonym_name)
+        
+        if object_dataverse:
+            cmd += "{0}.".format(object_dataverse)
+        
+        cmd += "{0};".format(object_name)
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd, username=username, password=password,timeout=timeout, 
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+    
+    def drop_analytics_synonym(self, synonym_name, synonym_dataverse=None, 
+                               validate_error_msg=False, expected_error=None, 
+                               username=None, password=None,
+                               timeout=120, analytics_timeout=120):
+        cmd = "drop analytics synonym "
+        
+        if synonym_dataverse:
+            cmd += "{0}.".format(synonym_dataverse)
+        
+        cmd += "{0};".format(synonym_name)
+        
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd, username=username, password=password,timeout=timeout, 
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+        
+            
+class Dataset:
+    """
+    This class has helper methods to create datasets on randomly select 
+    KV buckets or collections.
+    """
+    
+    def __init__(self, 
+                 bucket_util,
+                 cbas_util,
+                 consider_default_KV_scope=True, 
+                 consider_default_KV_collection=True,
+                 dataset_name_cardinality=1,
+                 bucket_cardinality=1,
+                 random_dataset_name=True,
+                 exclude_bucket=[],
+                 exclude_scope=[],
+                 exclude_collection=[]
+                 ):
+        """
+        :param bucket_util: object, object of BucketUtil class.
+        :param cbas_util: object, object of CBASUtil class.
+        :param consider_default_KV_scope: boolean, if set to False, skips
+        _default KV scope of the selected bucket while choosing collection to
+        create dataset on.
+        :param consider_default_KV_collection: boolean, if set to False, skips
+        _default KV collection of the selected bucket while choosing collection to
+        create dataset on.
+        :param dataset_name_cardinality: int, number of parts in dataset name. 
+        Valid values are 1,2,3
+        :param bucket_cardinality: int, number of parts in KV entity name. 
+        Valid values are 1,2,3
+        :param random_dataset_name: boolean, if True, create a random dataset name based
+        on dataset_name_cardinality, otherwise it is set to KV entity name.
+        """
+        self.log = logger.get("test")
+        self.bucket_util = bucket_util
+        self.cbas_util = cbas_util
+        self.bucket_cardinality=bucket_cardinality
+        self.set_kv_entity(*self.get_random_kv_entity(
+            self.bucket_util, self.bucket_cardinality, 
+            consider_default_KV_scope, 
+            consider_default_KV_collection,exclude_bucket,exclude_scope,exclude_collection))
+        
+        if random_dataset_name:
+            self.full_dataset_name = self.create_name_with_cardinality(dataset_name_cardinality)
+        else:
+            self.full_dataset_name = self.get_fully_quantified_kv_entity_name(dataset_name_cardinality)
+        
+        self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name)
+        
+    def set_kv_entity(self, kv_bucket_obj=None, kv_scope_obj=None, kv_collection_obj=None):
+        """
+        Set dataset object's properties.
+        :param kv_bucket_obj: KV bucket object
+        :param kv_scope_obj: KV scope object
+        :param kv_collection_obj: KV collection object
+        """
+        if kv_bucket_obj:
+            self.kv_bucket_obj = kv_bucket_obj
+        if kv_scope_obj:
+            self.kv_scope_obj = kv_scope_obj
+        if kv_collection_obj:
+            self.kv_collection_obj = kv_collection_obj
+    
+    def set_dataset_name(self, dataset_name):
+        """
+        Set dataset object's name property
+        """
+        self.name = dataset_name
+    
+    def set_dataverse_name(self, dataverse_name):
+        """
+        Set dataset object's dataverse property
+        """
+        self.dataverse = dataverse_name
+    
+    def set_bucket_cardinality(self, bucket_cardinality):
+        """
+        Set dataset object's bucket_cardinality property
+        """
+        self.bucket_cardinality = bucket_cardinality
+    
+    @staticmethod
+    def split_dataverse_dataset_name(full_dataset_name, strip_back_qoutes=False):
+        """
+        This method splits multipart dataset name into dataverse and dataset name.
+        :param full_dataset_name: string, multipart dataset name
+        :param strip_back_qoutes: boolean, strips "`" from each part of dataset name 
+        """
+        full_dataset_name_split = full_dataset_name.split(".")
+        if strip_back_qoutes:
+            full_dataset_name_split = [x.strip("`") for x in full_dataset_name_split]
+        if len(full_dataset_name_split) > 1:
+            dataset_name = full_dataset_name_split[-1]
+            dataverse_name = ".".join(full_dataset_name_split[:-1])
+        else:
+            dataset_name = full_dataset_name_split[0]
+            dataverse_name = "Default"
+        return dataverse_name, dataset_name
+        
+    @staticmethod
+    def format_name(*args):
+        """
+        This method encloses each part of the name separated by "." with "`"
+        """
+        return '.'.join(('`' +  _ + '`') for name in args for _ in name.split("."))
+    
+    def get_fully_quantified_dataset_name(self):
+        """
+        Returns fully quantified dataset name. 
+        """
+        if self.dataverse in "Default":
+            return Dataset.format_name(self.name)
+        else:
+            return Dataset.format_name(self.dataverse, self.name)
+    
+    def get_fully_quantified_dataverse_name(self):
+        """
+        Returns fully quantified dataverse name to which dataset belongs.
+        """
+        return Dataset.format_name(self.dataverse)
+    
+    def get_fully_quantified_kv_entity_name(self, cardinality=1):
+        """
+        Returns fully quantified KV collection or bucket name.
+        """
+        if cardinality == 1:
+            return Dataset.format_name(self.kv_bucket_obj.name)
+        elif cardinality == 2:
+            return Dataset.format_name(self.kv_bucket_obj.name, 
+                                       self.kv_scope_obj.name)
+        elif cardinality == 3:
+            return Dataset.format_name(self.kv_bucket_obj.name, 
+                                       self.kv_scope_obj.name, 
+                                       self.kv_collection_obj.name)
+    
+    @staticmethod
+    def get_random_kv_entity(bucket_util,
+                             bucket_cardinality=1,
+                             consider_default_scope=True, 
+                             consider_default_collection=True,
+                             exclude_bucket=[],
+                             exclude_scope=[],
+                             exclude_collection=[]):
+        """
+        Returns KV entity name based on cardinality.
+        :param cardinality: int, accepted values are - 1,2,3
+        :return bucket, scope and collection object.
+        """
+        bucket = random.choice(bucket_util.buckets)
+        while bucket.name in exclude_bucket:
+            bucket = random.choice(bucket_util.buckets)
+        if bucket_cardinality == 1:
+            scope = bucket_util.get_scope_obj(bucket, "_default")
+            collection = bucket_util.get_collection_obj(scope, "_default")
+        else:
+            scope = random.choice(
+                bucket_util.get_active_scopes(bucket))
+            if not consider_default_scope:
+                while (scope.name == "_default") and (scope.name in exclude_scope):
+                    scope = random.choice(bucket_util.get_active_scopes(bucket))
+            collection = random.choice(bucket_util.get_active_collections(
+                bucket, scope.name))
+            if not consider_default_collection:
+                while (collection.name == "_default") and (collection.name in exclude_collection):
+                    collection = random.choice(bucket_util.get_active_collections(
+                        bucket, scope.name))
+        return bucket, scope, collection
+    
+    @staticmethod
+    def create_name_with_cardinality(name_cardinality=0, no_of_char=255, 
+                                     fixed_length=False):
+        """
+        Creates a name based on name_cadinality.
+        :param name_cardinality: int, accepted values are -
+            0 - Creates string 'Default'
+            1 - Creates a string of random letters and digits of format 
+            "exampleString"
+            2 - Creates a string of random letters and digits of format 
+            "exampleString.exampleString"
+            3 - Creates a string of random letters and digits of format 
+            "exampleString.exampleString.exampleString"
+            4 - Creates string 'Metadata'
+        :param name_length: int, number of characters in the name.
+        :param fixed_length: bool, If True, creates a name with length equals to no_of_char
+        specified, otherwise creates a name with length upto no_of_char specified.  
+        """
+        if name_cardinality == 0:
+            return "Default"
+        elif name_cardinality == 4:
+            return "Metadata"
+        elif name_cardinality > 4:
+            return None
+        else:
+            max_name_len = no_of_char/name_cardinality
+            if fixed_length:
+                return '.'.join(''.join(random.choice(
+                    string.ascii_letters + string.digits) 
+                    for _ in range(max_name_len)) 
+                    for _ in range(name_cardinality))
+            else:
+                return '.'.join(''.join(random.choice(
+                    string.ascii_letters + string.digits) 
+                    for _ in range(random.randint(1,max_name_len))) 
+                    for _ in range(name_cardinality))
+    
+    @staticmethod
+    def get_item_count_in_collection(bucket_util, bucket, 
+                                     scope_name="_default", 
+                                     collection_name="_default"):
+        """
+        This is a temporary method, use collection stat when 
+        https://issues.couchbase.com/browse/MB-38392 is resolved.
+        """
+        for collection in bucket_util.get_active_collections(
+            bucket, scope_name):
+            if collection.name == collection_name:
+                return collection.num_items
+        return 0
+    
+    def setup_dataset(self, dataset_creation_method="cbas_dataset",
+                      validate_metadata=True,
+                      validate_doc_count=True,
+                      create_dataverse=True, 
+                      validate_error=False, error_msg=None,
+                      compress_dataset=False,
+                      username=None, password=None,
+                      timeout=120, analytics_timeout=120): 
+        
+        if self.dataverse and create_dataverse:
+            self.log.info("Creating Dataverse {0}".format(self.dataverse))
+            if not self.cbas_util.create_dataverse_on_cbas(
+                dataverse_name=self.get_fully_quantified_dataverse_name()):
+                self.log.error("Creation of Dataverse {0} failed".format(self.dataverse))
+                return False
+        
+        if dataset_creation_method == "cbas_collection":
+            self.log.info("Creating analytics collection {0}".format(self.full_dataset_name))
+            if not self.cbas_util.create_analytics_collection(
+                KV_entity_name=self.get_fully_quantified_kv_entity_name(self.bucket_cardinality), 
+                cbas_collection_name=self.get_fully_quantified_dataset_name(),
+                validate_error_msg=validate_error, 
+                expected_error=error_msg,
+                username=username, password=password,
+                compress_dataset=compress_dataset,
+                timeout=timeout, analytics_timeout=analytics_timeout):
+                self.log.error("Error creating analytics collection {0}".format(self.full_dataset_name))
+                return False
+        elif dataset_creation_method == "cbas_dataset":
+            self.log.info("Creating dataset {0}".format(self.full_dataset_name))
+            if not self.cbas_util.create_dataset_on_bucket(
+                self.get_fully_quantified_kv_entity_name(self.bucket_cardinality), 
+                self.get_fully_quantified_dataset_name(),
+                validate_error_msg=validate_error, 
+                expected_error=error_msg,
+                username=username, password=password,
+                compress_dataset=compress_dataset,
+                timeout=timeout, analytics_timeout=analytics_timeout):
+                self.log.error("Error creating dataset {0}".format(self.full_dataset_name))
+                return False
+        elif dataset_creation_method == "enable_cbas_from_kv":
+            self.full_dataset_name = self.get_fully_quantified_kv_entity_name(3)
+            self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name)
+            self.log.info("Enabling Analytics on {0}".format(self.full_dataset_name))
+            if not self.cbas_util.enable_analytics_from_KV(
+                self.get_fully_quantified_kv_entity_name(self.bucket_cardinality),
+                compress_dataset=compress_dataset, 
+                validate_error_msg=validate_error, 
+                expected_error=error_msg, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout):
+                self.log.error("Error enabling analytics on {0}".format(self.full_dataset_name))
+                return False
+        
+        if not validate_error:
+            if validate_metadata:
+                self.log.info("Validating Metadata entries")
+                if self.bucket_cardinality == 1 and dataset_creation_method != "enable_cbas_from_kv":
+                    if not self.cbas_util.validate_dataset_in_metadata(
+                        self.name, self.dataverse, BucketName=self.kv_bucket_obj.name):
+                        return False
+                else:
+                    if not self.cbas_util.validate_dataset_in_metadata(
+                        self.name, self.dataverse, BucketName=self.kv_bucket_obj.name,
+                        ScopeName=self.kv_scope_obj.name, 
+                        CollectionName=self.kv_collection_obj.name):
+                        return False
+            
+            if validate_doc_count:
+                self.log.info("Validating item count")
+                if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.get_fully_quantified_dataset_name(),
+                    self.get_item_count_in_collection(
+                        self.bucket_util,self.kv_bucket_obj, 
+                        self.kv_scope_obj.name, self.kv_collection_obj.name)):
+                        return False
+        
+        return True
+    
+    def teardown_dataset(self, dataset_drop_method = "cbas_collection",
+                         validate_error=False, error_msg=None,
+                         validate_metadata=True,
+                         username=None, password=None
+                         ):
+        if dataset_drop_method == "cbas_collection":
+            self.log.info("Dropping analytics collection {0}".format(self.full_dataset_name))
+            if not self.cbas_util.drop_analytics_collection( 
+                cbas_collection_name=self.get_fully_quantified_dataset_name(),
+                validate_error_msg=validate_error, 
+                expected_error=error_msg,
+                username=username, password=password):
+                self.log.error("Error Dropping analytics collection {0}".format(self.full_dataset_name))
+                return False
+        elif dataset_drop_method == "cbas_dataset":
+            self.log.info("Dropping dataset {0}".format(self.full_dataset_name))
+            if not self.cbas_util.drop_dataset(
+                cbas_dataset_name=self.get_fully_quantified_dataset_name(),
+                validate_error_msg=validate_error,
+                username=username, password=password, expected_error=error_msg):
+                self.log.error("Error dropping dataset {0}".format(self.full_dataset_name))
+                return False
+        elif dataset_drop_method == "disable_cbas_from_kv":
+            self.full_dataset_name = self.get_fully_quantified_kv_entity_name(3)
+            self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name)
+            self.log.info("Disabling Analytics on {0}".format(self.full_dataset_name))
+            if not self.cbas_util.disable_analytics_from_KV(
+                kv_entity_name=self.full_dataset_name,
+                validate_error_msg=validate_error, 
+                expected_error=error_msg, username=username, password=password):
+                self.log.error("Error disabling analytics on {0}".format(self.full_dataset_name))
+                return False
+        
+        if (not validate_error) and validate_metadata:
+            self.log.info("Validating Metadata entries")
+            if self.cbas_util.validate_dataset_in_metadata(
+                self.name, self.dataverse, 
+                BucketName=self.get_fully_quantified_kv_entity_name(1)):
+                self.log.error("Dropped dataset entry still present in Metadata")
+                return False
+        return True
+        
