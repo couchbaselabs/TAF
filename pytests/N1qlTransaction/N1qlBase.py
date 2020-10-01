@@ -426,12 +426,11 @@ class N1qlBase(CollectionBase):
         result = self.run_cbq_query(queries[-1], query_params=query_params)
         if result["status"] == "success":
             list_docs = [d.get('id').encode() for d in result["results"]]
-            # print("update results are %s"%list_docs)
             self.validate_update_results(clause[0], list_docs, clause[3],
                                          query_params)
         else:
+            self.fail("delete query failed %s"%queries[-1])
             list_docs = list()
-            self.log.debug(result["results"])
         return list_docs, queries
 
     def run_insert_query(self, clause, query_params):
@@ -451,13 +450,16 @@ class N1qlBase(CollectionBase):
                 key = t["name"]
                 docs[key] = t
             self.validate_insert_results(clause[0], docs, query_params)
-        else:
+        elif N1qlException.DocumentAlreadyExistsException \
+                in str(result["errors"][0]["msg"]):
             docs = {}
+        else:
+            self.fail("insert query failed %s"%queries[-1])
         return docs, queries
 
     def run_delete_query(self, clause, query_params):
         name = clause[0].split('.')
-        if len(clause) > 4:
+        if len(clause) > 5:
             query = "DELETE FROM default:`%s`.`%s`.`%s` " \
                     "USE KEYS %s RETURNING meta().id"\
                     % (name[0], name[1], name[2], clause[4])
@@ -471,6 +473,8 @@ class N1qlBase(CollectionBase):
         if result["status"] == "success":
             docs = [d.get('id').encode() for d in result["results"]]
             self.validate_delete_results(clause[0], docs, query_params)
+        else:
+            self.fail("delete query failed %s"%queries[-1])
         return docs, queries
 
     def run_savepoint_query(self, clause, query_params):
@@ -547,7 +551,6 @@ class N1qlBase(CollectionBase):
                 query, result = self.end_txn(query_params, commit,
                                              savepoint[-1].split(':')[0])
                 queries[txid].append(query)
-
             if commit is False:
                 savepoint = []
                 collection_savepoint = {}
@@ -560,10 +563,11 @@ class N1qlBase(CollectionBase):
                 results = self.run_cbq_query(query)
                 self.log.debug(results)
                 query, result = self.end_txn(query_params, commit=True)
-                if not result:
+                if isinstance(result, str) or 'errors' in result:
+                    self.validate_error_during_commit(result,
+                                     collection_savepoint, savepoint)
                     savepoint = []
                     collection_savepoint = {}
-
             if write_conflict and write_conflict_result:
                 collection_savepoint['last'] = copy.deepcopy(write_conflict_result)
                 savepoint.append("last")
@@ -640,6 +644,50 @@ class N1qlBase(CollectionBase):
                       % (len(success.keys()), len(key_value.keys()),
                          len(deleted_key)))
         DocLoaderUtils.sdk_client_pool.release_client(client)
+
+    def validate_error_during_commit(self, result,
+                                      collection_savepoint, savepoint):
+        dict_to_verify = {}
+        count = 0
+        if N1qlException.CasMismatchException \
+            in str(result["errors"][0]["msg"]) \
+            or N1qlException.DocumentExistsException \
+            in str(result["errors"][0]["msg"]):
+            for key in savepoint:
+                for index in collection_savepoint[key].keys():
+                    keys = collection_savepoint[key][index]["INSERT"].keys()
+                    try:
+                        dict_to_verify[index].extend(keys)
+                    except:
+                        dict_to_verify[index] = keys
+            for index, docs in dict_to_verify.items():
+                name = index.split('.')
+                query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
+                    "WHERE META().id in %s"\
+                    % (name[0], name[1], name[2], docs)
+                result = self.run_cbq_query(query)
+                if result["metrics"]["resultCount"] == 0:
+                    count += 1
+        elif N1qlException.DocumentNotFoundException in \
+            str(result["errors"][0]["msg"]):
+            for key in savepoint:
+                for index in collection_savepoint[key].keys():
+                    try:
+                        dict_to_verify[index].extend(
+                            collection_savepoint[key][index]["DELETE"])
+                    except:
+                        dict_to_verify[index] = \
+                            collection_savepoint[key][index]["DELETE"]
+            for index, docs in dict_to_verify.items():
+                name = index.split('.')
+                query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
+                        "WHERE META().id in %s"\
+                        % (name[0], name[1], name[2], docs)
+                result = self.run_cbq_query(query)
+                if result["metrics"]["resultCount"] == len(docs):
+                    count += 1
+        if count == len(dict_to_verify.keys()):
+            self.log.info("commit fails with CAS MISMATCH error retry the txn")
 
     def process_value_for_verification(self, bucket_col, doc_gen_list,
                                        results):
