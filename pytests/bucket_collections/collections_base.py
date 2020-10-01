@@ -70,9 +70,9 @@ class CollectionBase(BaseTestCase):
         try:
             self.collection_setup()
         except Java_base_exception as exception:
-            self.handle_collection_setup_exception(exception)
+            self.handle_setup_exception(exception)
         except Exception as exception:
-            self.handle_collection_setup_exception(exception)
+            self.handle_setup_exception(exception)
         self.supported_d_levels = \
             self.bucket_util.get_supported_durability_levels()
         self.log_setup_status("CollectionBase", "complete")
@@ -90,15 +90,6 @@ class CollectionBase(BaseTestCase):
         if self.validate_docs_count_during_teardown:
             self.bucket_util.validate_docs_per_collections_all_buckets()
         super(CollectionBase, self).tearDown()
-
-    def handle_collection_setup_exception(self, exception_obj):
-        # Shutdown client pool in case of any error before failing
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.shutdown()
-        # print the tracback of the failure
-        traceback.print_exc()
-        # Throw the exception so that the test will fail at setUp
-        raise exception_obj
 
     def collection_setup(self):
         # Create bucket(s) and add rbac user

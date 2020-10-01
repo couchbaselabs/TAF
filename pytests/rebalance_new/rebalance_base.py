@@ -62,9 +62,9 @@ class RebalanceBaseTest(BaseTestCase):
             try:
                 self.collection_setup()
             except Java_base_exception as exception:
-                self.handle_collection_setup_exception(exception)
+                self.handle_setup_exception(exception)
             except Exception as exception:
-                self.handle_collection_setup_exception(exception)
+                self.handle_setup_exception(exception)
         else:
             if self.standard_buckets > 10:
                 self.bucket_util.change_max_buckets(self.standard_buckets)
@@ -176,12 +176,6 @@ class RebalanceBaseTest(BaseTestCase):
     def tearDown(self):
         self.cluster_util.print_cluster_stats()
         super(RebalanceBaseTest, self).tearDown()
-
-    def handle_collection_setup_exception(self, exception_obj):
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.shutdown()
-        traceback.print_exc()
-        raise exception_obj
 
     def collection_setup(self):
         self.log.info("Creating buckets from spec")

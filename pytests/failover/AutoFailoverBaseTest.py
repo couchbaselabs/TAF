@@ -33,9 +33,9 @@ class AutoFailoverBaseTest(BaseTestCase):
             try:
                 self.collectionSetUp()
             except Java_base_exception as exception:
-                self.handle_collection_setup_exception(exception)
+                self.handle_setup_exception(exception)
             except Exception as exception:
-                self.handle_collection_setup_exception(exception)
+                self.handle_setup_exception(exception)
         else:
             self.auto_reprovision = self.input.param("auto_reprovision", False)
             self._get_params()
@@ -81,12 +81,6 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.get_vbucket_info_from_failover_nodes()
             self.cluster_util.print_cluster_stats()
             self.bucket_util.print_bucket_stats()
-
-    def handle_collection_setup_exception(self, exception_obj):
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.shutdown()
-        traceback.print_exc()
-        raise exception_obj
 
     def collectionSetUp(self):
         self.auto_reprovision = self.input.param("auto_reprovision", False)
@@ -975,9 +969,9 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             try:
                 self.collectionSetUp()
             except Java_base_exception as exception:
-                self.handle_collection_setup_exception(exception)
+                self.handle_setup_exception(exception)
             except Exception as exception:
-                self.handle_collection_setup_exception(exception)
+                self.handle_setup_exception(exception)
 
         # If updated, update in 'DurabilityHelper.durability_succeeds' as well
         self.failover_actions['disk_failure'] = self.fail_disk_via_disk_failure
@@ -985,11 +979,6 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
         self.loadgen_tasks = []
         self.log.info("=========Finished Diskautofailover base setup=========")
-
-    def handle_collection_setup_exception(self, exception_obj):
-        self.sdk_client_pool.shutdown()
-        traceback.print_exc()
-        raise exception_obj
 
     def collectionSetUp(self):
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
