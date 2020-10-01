@@ -39,6 +39,15 @@ class CasBaseTest(BaseTestCase):
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.bucket = self.bucket_util.buckets[0]
+
+        # Create sdk_clients for pool
+        if self.sdk_client_pool:
+            self.log.info("Creating SDK client pool")
+            self.sdk_client_pool.create_clients(
+                self.bucket,
+                self.cluster.nodes_in_cluster,
+                req_clients=self.sdk_pool_capacity,
+                compression_settings=self.sdk_compression)
         self.log.info("======= Finished Cas Base setup =========")
 
     def tearDown(self):

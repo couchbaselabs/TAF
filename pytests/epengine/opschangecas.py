@@ -15,7 +15,6 @@ class OpsChangeCasTests(CasBaseTest):
         self.key = "test_cas"
         self.expire_time = self.input.param("expire_time", 35)
         self.item_flag = self.input.param("item_flag", 0)
-        self.client = SDKClient([self.cluster.master], self.bucket)
         self.load_gen = doc_generator(self.key, 0, self.num_items,
                                       doc_size=self.doc_size)
         self.node_data = dict()
@@ -31,6 +30,11 @@ class OpsChangeCasTests(CasBaseTest):
             self.node_data[node.ip]["replica"] = cb_stat.vbucket_list(
                 self.bucket,
                 "replica")
+        if self.sdk_client_pool:
+            self.client = self.sdk_client_pool.get_client_for_bucket(
+                self.bucket)
+        else:
+            self.client = SDKClient([self.cluster.master], self.bucket)
 
     def tearDown(self):
         # Close opened shell connections
@@ -946,7 +950,8 @@ class OpsChangeCasTests(CasBaseTest):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=self.num_items)
+                batch_size=self.num_items,
+                sdk_client_pool=self.sdk_client_pool)
             for task, _ in tasks_info.items():
                 if task.fail:
                     self.log_failure("Failures observed during %s" % op_type)

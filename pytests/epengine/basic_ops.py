@@ -405,7 +405,8 @@ class basic_ops(BaseTestCase):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
 
         # check if all the documents(250) are loaded with default timeout
@@ -426,7 +427,8 @@ class basic_ops(BaseTestCase):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
             if self.doc_size > 20:
                 if len(task.fail.keys()) == 0:
@@ -455,7 +457,8 @@ class basic_ops(BaseTestCase):
                     persist_to=self.persist_to,
                     durability=self.durability_level,
                     compression=self.sdk_compression,
-                    timeout_secs=self.sdk_timeout)
+                    timeout_secs=self.sdk_timeout,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.task.jython_task_manager.get_task_result(task)
                 if len(task.fail.keys()) != 1:
                     self.log_failure("Large docs inserted for keys: %s"
@@ -571,7 +574,8 @@ class basic_ops(BaseTestCase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
@@ -598,7 +602,8 @@ class basic_ops(BaseTestCase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items*2)

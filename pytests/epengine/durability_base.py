@@ -56,6 +56,16 @@ class DurabilityTestsBase(BaseTestCase):
 
         self.cluster_util.print_cluster_stats()
         self.bucket = self.bucket_util.buckets[0]
+
+        # Create sdk_clients for pool
+        if self.sdk_client_pool:
+            self.log.info("Creating SDK client pool")
+            self.sdk_client_pool.create_clients(
+                self.bucket,
+                self.cluster.nodes_in_cluster,
+                req_clients=self.sdk_pool_capacity,
+                compression_settings=self.sdk_compression)
+
         if not self.skip_init_load:
             if self.target_vbucket and type(self.target_vbucket) is not list:
                 self.target_vbucket = [self.target_vbucket]
@@ -78,7 +88,8 @@ class DurabilityTestsBase(BaseTestCase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
 
             # Verify initial doc load count
@@ -304,7 +315,8 @@ class BucketDurabilityBase(BaseTestCase):
                 batch_size=1,
                 skip_read_on_error=True,
                 suppress_error_table=True,
-                start_task=False)
+                start_task=False,
+                sdk_client_pool=self.sdk_client_pool)
 
             self.sleep(5, "Wait for sdk_client to get warmed_up")
             # Simulate target error condition
@@ -341,7 +353,8 @@ class BucketDurabilityBase(BaseTestCase):
             exp=self.maxttl,
             durability=doc_durability,
             timeout_secs=2,
-            batch_size=1)
+            batch_size=1,
+            sdk_client_pool=self.sdk_client_pool)
         self.task_manager.get_task_result(doc_load_task)
         if doc_load_task.fail:
             self.log_failure("Failures seen during CRUD without "
