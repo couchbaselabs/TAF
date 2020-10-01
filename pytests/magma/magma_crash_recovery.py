@@ -33,7 +33,7 @@ class MagmaCrashTests(MagmaBaseTest):
         super(MagmaCrashTests, self).tearDown()
 
     def compute_docs_ranges(self):
-        self.multiplier = self.input.param("multiplier", 2)
+        self.multiplier = self.input.param("multiplier", 10)
         ops_len = len(self.doc_ops.split(":"))
 
         self.create_start = self.num_items
