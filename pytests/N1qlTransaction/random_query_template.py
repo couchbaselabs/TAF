@@ -24,7 +24,7 @@ class WhereClause(object):
                 "join_yr > 2016 OR job_title='Engineer':mutated=1",
                 "join_mo =1:join_month='January'",
                 "job_title='Sales':VISA=['US', 'CANADA']",
-                "['Development'] in skills:gaming=True"
+                "['Development'] in skills:gaming=True",
                 "citizen_of='INDIA':rating=exceeded_expectation",
                 "Working_country='USA':temp_emp=True"
             ]
