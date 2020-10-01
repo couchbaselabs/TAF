@@ -2433,7 +2433,8 @@ class BucketUtils(ScopeUtils):
                           scope=CbServer.default_scope,
                           collection=CbServer.default_collection,
                           monitor_stats=["doc_ops"],
-                          track_failures=True):
+                          track_failures=True,
+                          sdk_client_pool=None):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp, flag=flag,
             persist_to=persist_to, replicate_to=replicate_to,
@@ -2448,7 +2449,8 @@ class BucketUtils(ScopeUtils):
             dgm_batch=dgm_batch,
             scope=scope, collection=collection,
             monitor_stats=monitor_stats,
-            track_failures=track_failures)
+            track_failures=track_failures,
+            sdk_client_pool=sdk_client_pool)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                                 persist_to=0, replicate_to=0,
@@ -2464,7 +2466,8 @@ class BucketUtils(ScopeUtils):
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection,
                                 monitor_stats=["doc_ops"],
-                                track_failures=True):
+                                track_failures=True,
+                                sdk_client_pool=None):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -2492,7 +2495,8 @@ class BucketUtils(ScopeUtils):
                 dgm_batch=dgm_batch,
                 scope=scope, collection=collection,
                 monitor_stats=monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=sdk_client_pool)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,
@@ -2512,20 +2516,18 @@ class BucketUtils(ScopeUtils):
                              ignore_exceptions=[], retry_exceptions=[],
                              scope=CbServer.default_scope,
                              collection=CbServer.default_collection,
-                             suppress_error_table=False):
+                             suppress_error_table=False,
+                             sdk_client_pool=None):
         task_info = dict()
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
-            task = self.task.async_validate_docs(cluster,
-                                                 bucket, gen,
-                                                 op_type, exp,
-                                                 flag, only_store_hash,
-                                                 batch_size, pause_secs,
-                                                 timeout_secs, compression,
-                                                 process_concurrency,
-                                                 check_replica,
-                                                 scope, collection,
-                                                 suppress_error_table=suppress_error_table)
+            task = self.task.async_validate_docs(
+                cluster, bucket, gen, op_type, exp, flag, only_store_hash,
+                batch_size, pause_secs, timeout_secs, compression,
+                process_concurrency, check_replica,
+                scope, collection,
+                suppress_error_table=suppress_error_table,
+                sdk_client_pool=sdk_client_pool)
             task_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,
@@ -2551,7 +2553,8 @@ class BucketUtils(ScopeUtils):
                               scope=CbServer.default_scope,
                               collection=CbServer.default_collection,
                               monitor_stats=["doc_ops"],
-                              track_failures=True):
+                              track_failures=True,
+                              sdk_client_pool=None):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -2581,7 +2584,8 @@ class BucketUtils(ScopeUtils):
             dgm_batch=dgm_batch,
             scope=scope, collection=collection,
             monitor_stats=monitor_stats,
-            track_failures=track_failures)
+            track_failures=track_failures,
+            sdk_client_pool=sdk_client_pool)
 
         for task in tasks_info.keys():
             self.task_manager.get_task_result(task)
