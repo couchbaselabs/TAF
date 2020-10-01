@@ -33,7 +33,7 @@ class MagmaCrashTests(MagmaBaseTest):
         super(MagmaCrashTests, self).tearDown()
 
     def compute_docs_ranges(self):
-        self.multiplier = self.input.param("multiplier", 10)
+        self.multiplier = self.input.param("multiplier", 2)
         ops_len = len(self.doc_ops.split(":"))
 
         self.create_start = self.num_items
@@ -59,14 +59,14 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.delete_start = 0
                 self.delete_end = self.num_items // 2
                 self.expiry_start = self.num_items // 2
-                self.expiry_end = self.num_items * self.multiplier/2
+                self.expiry_end = self.num_items * self.multiplier
         else:
             self.update_start = 0
             self.update_end = self.num_items // 3
             self.delete_start = self.num_items // 3
             self.delete_end = (2 * self.num_items) // 3
             self.expiry_start = (2 * self.num_items) // 3
-            self.expiry_end = self.num_items * self.multiplier/2
+            self.expiry_end = self.num_items * self.multiplier
 
     def kill_magma_check_wal_file_size(self):
         nIter = 200
