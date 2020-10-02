@@ -91,7 +91,7 @@ class N1qlBase(CollectionBase):
             stmt = "COMMIT WORK"
         else:
             stmt = "ROLLBACK WORK"
-        self.log.debug("commit work for txn %s"%query_params)
+        self.log.info("commit work for txn %s"%query_params)
         result = self.run_cbq_query(stmt, query_params=query_params)
         return stmt, result
 
@@ -134,7 +134,7 @@ class N1qlBase(CollectionBase):
                 query = query.replace(from_clause, from_clause + hint)
 
             if not is_prepared:
-                self.log.debug('RUN QUERY %s' % query)
+                self.log.info('RUN QUERY %s' % query)
 
             if self.analytics:
                 query = query + ";"
@@ -190,7 +190,7 @@ class N1qlBase(CollectionBase):
                                        % ex.message)
                         self.log.error("INCORRECT DOCUMENT IS: %s " % output1)
         if 'metrics' in result:
-            self.log.debug("TOTAL ELAPSED TIME: %s" % result["metrics"]["elapsedTime"])
+            self.log.info("TOTAL ELAPSED TIME: %s" % result["metrics"]["elapsedTime"])
 
         if isinstance(result, str) or 'errors' in result:
             self.log.info("txn failed")
@@ -342,7 +342,7 @@ class N1qlBase(CollectionBase):
         collection = index.split('.')[-1]
 
         for doc in result["results"]:
-            value = doc[collection].get(dict_to_add[0])
+            value = doc[collection].get(dict_to_add[0].encode())
             if isinstance(value, list):
                 value = [x.encode('UTF8') for x in value]
                 if isinstance(dict_to_add[1], str):
@@ -350,8 +350,7 @@ class N1qlBase(CollectionBase):
             else:
                 value = str(value)
             if value != dict_to_add[1]:
-                print(list(set(value) - set(dict_to_add[1])))
-                self.log.info("actual %s and expected value %s are different"
+                self.fail("actual %s and expected value %s are different"
                              % (value, dict_to_add[1]))
 
     def validate_insert_results(self, index, docs, query_params={}):
@@ -378,7 +377,7 @@ class N1qlBase(CollectionBase):
                 "WHERE META().id in %s"\
                 % (name[0], name[1], name[2], docs)
         result = self.run_cbq_query(query, query_params=query_params)
-        self.log.debug("delete result is %s"%(result["results"]))
+        self.log.info("delete result is %s"%(result["results"]))
         if result["results"]:
             self.fail("Deleted doc is present %s" %(result["results"]))
 
@@ -662,9 +661,11 @@ class N1qlBase(CollectionBase):
                         dict_to_verify[index] = keys
             for index, docs in dict_to_verify.items():
                 name = index.split('.')
+                docs = [d.encode() for d in docs]
                 query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
                     "WHERE META().id in %s"\
                     % (name[0], name[1], name[2], docs)
+                self.log.info("query is %s"%query)
                 result = self.run_cbq_query(query)
                 if result["metrics"]["resultCount"] == 0:
                     count += 1
@@ -680,9 +681,11 @@ class N1qlBase(CollectionBase):
                             collection_savepoint[key][index]["DELETE"]
             for index, docs in dict_to_verify.items():
                 name = index.split('.')
+                docs = [d.encode() for d in docs]
                 query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
                         "WHERE META().id in %s"\
                         % (name[0], name[1], name[2], docs)
+                self.log.info("query is %s"%query)
                 result = self.run_cbq_query(query)
                 if result["metrics"]["resultCount"] == len(docs):
                     count += 1
@@ -754,7 +757,7 @@ class N1qlBase(CollectionBase):
         stmt = []
         for bucket_col in collections:
             self.get_random_number_stmt(self.num_stmt_txn)
-            self.log.debug("insert, delete and update %s %s %s"
+            self.log.info("insert, delete and update %s %s %s"
                            % (self.num_insert, self.num_update,
                               self.num_delete))
             stmt.extend(self.clause.get_where_clause(

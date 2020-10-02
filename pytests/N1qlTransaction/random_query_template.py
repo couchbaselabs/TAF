@@ -16,7 +16,7 @@ class WhereClause(object):
                 "join_mo=9"
                 ]
             WHERE_CLAUSE = [
-                "join_mo < 3 OR join_mo > 11: period='winter'",
+                "join_mo < 3 OR join_mo > 11:period='winter'",
                 "join_day > 25:joined='towards_end'",
                 "join_day > 10 AND join_mo > 10:join_month='October'",
                 "job_title='Engineer' and 'Testing' in skills:QE=True",
