@@ -67,7 +67,7 @@ class S3DataHelper():
     """
 
     def __init__(self, aws_access_key, aws_secret_key, aws_session_token,
-                 cluster, bucket_util, rest, task, log, max_thread_count=5):
+                 cluster, bucket_util, rest, task, log, n1ql_helper, max_thread_count=5):
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
         self.aws_session_token = aws_session_token
@@ -78,6 +78,7 @@ class S3DataHelper():
         self.log = log
         self.failed_uploads = []
         self.max_thread_count = max_thread_count
+        self.n1ql_helper = n1ql_helper
 
     @staticmethod
     def generate_folder(no_of_folder, max_depth, root_path=""):
@@ -190,6 +191,9 @@ class S3DataHelper():
         self.bucket = bucket
         self.filenames = sorted(S3DataHelper.generate_filenames(no_of_files, formats=file_formats))
         self.folders = S3DataHelper.generate_folder(no_of_folders, max_folder_depth)
+        
+        self.n1ql_helper.create_primary_index()
+        
         tasks = self.load_data_in_bucket(folders=self.folders, filenames=self.filenames,
                                          missing_field=missing_field,
                                          operation=operation,
@@ -199,11 +203,7 @@ class S3DataHelper():
                                          exp=exp, durability=durability,
                                          mutation_num=mutation_num, key=key)
         result = self.task.jython_task_manager.get_task_result(tasks)
-
-        query = "CREATE PRIMARY INDEX ON `{0}`;".format(self.bucket.name)
-        result = self.rest.query_tool(query)
-        if not (result["status"] == "success"):
-            return False
+        self.bucket_util._wait_for_stats_all_buckets()
 
         item_list = [(folder, filename) for folder in self.folders for filename in self.filenames]
         threads = list()
@@ -251,7 +251,13 @@ class S3DataHelper():
         """
         self.log.info("Creating file {0} and uploading to S3".format(filename))
         query = "select * from `{0}` where folder='{1}' and filename='{2}';".format(self.bucket.name, folder, filename)
-        n1ql_result = self.rest.query_tool(query)["results"]
+        retry = 0
+        while retry < 5:
+            try:
+                n1ql_result = self.n1ql_helper.run_cbq_query(query)["results"]
+                break
+            except Exception:
+                retry += 1
         list_of_json_obj = list()
         cur_dir = os.path.dirname(__file__)
         filepath = os.path.join(cur_dir, "-".join(folder.split("/")) + filename)
