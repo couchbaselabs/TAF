@@ -53,6 +53,21 @@ class Cbstats(CbCmdBase):
 
         return self._execute_cmd(cmd)
 
+    def get_timings(self, command="raw"):
+        """
+        Fetches timings stat
+        :param command: default="raw", to print in readable format
+        :return output: Output for the cbstats command
+        :return error:  Buffer containing warnings/errors from the execution
+        """
+
+        cmd = "%s localhost:%s %s -u %s -p %s timings" % (self.cbstatCmd,
+                                                          self.mc_port,
+                                                          command,
+                                                          self.username,
+                                                          self.password)
+        return self._execute_cmd(cmd)
+
     def get_kvtimings(self, command="raw"):
         """
         Fetches kvtiming using cbstats
