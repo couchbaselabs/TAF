@@ -29,8 +29,9 @@ class UpgradeTests(UpgradeBase):
 
         if self.upgrade_with_data_load:
             self.log.info("Starting async doc updates")
-            update_task = self.task.async_continuous_update_docs(
+            update_task = self.task.async_continuous_doc_ops(
                 self.cluster, self.bucket, self.gen_load,
+                op_type="update",
                 process_concurrency=1,
                 persist_to=1,
                 replicate_to=1,
@@ -133,8 +134,9 @@ class UpgradeTests(UpgradeBase):
 
         if self.upgrade_with_data_load:
             self.log.info("Starting async doc updates")
-            update_task = self.task.async_continuous_update_docs(
+            update_task = self.task.async_continuous_doc_ops(
                 self.cluster, self.bucket, self.gen_load,
+                op_type="update",
                 process_concurrency=1,
                 persist_to=1,
                 replicate_to=1,

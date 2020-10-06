@@ -264,27 +264,31 @@ class ServerTasks(object):
             self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_continuous_update_docs(self, cluster, bucket, generator, exp=0,
-                                     persist_to=0, replicate_to=0,
-                                     durability="",
-                                     batch_size=200,
-                                     timeout_secs=5,
-                                     process_concurrency=4,
-                                     scope=CbServer.default_scope,
-                                     collection=CbServer.default_collection):
+    def async_continuous_doc_ops(self, cluster, bucket, generator,
+                                 op_type="update", exp=0,
+                                 persist_to=0, replicate_to=0,
+                                 durability="",
+                                 batch_size=200,
+                                 timeout_secs=5,
+                                 process_concurrency=4,
+                                 scope=CbServer.default_scope,
+                                 collection=CbServer.default_collection,
+                                 sdk_client_pool=None):
         clients = list()
         for _ in range(process_concurrency):
-            client = SDKClient([cluster.master], bucket,
-                               scope, collection)
-            clients.append(client)
-        _task = jython_tasks.ContinuousDocUpdateTask(
+            if sdk_client_pool is None:
+                clients.append(SDKClient([cluster.master], bucket))
+            else:
+                clients.append(None)
+        _task = jython_tasks.ContinuousDocOpsTask(
             cluster, self.jython_task_manager, bucket, clients, generator,
-            exp, persist_to=persist_to,
-            replicate_to=replicate_to,
+            op_type=op_type, exp=exp,
+            persist_to=persist_to, replicate_to=replicate_to,
             durability=durability,
             batch_size=batch_size,
             timeout_secs=timeout_secs,
-            process_concurrency=process_concurrency)
+            process_concurrency=process_concurrency,
+            sdk_client_pool=sdk_client_pool)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

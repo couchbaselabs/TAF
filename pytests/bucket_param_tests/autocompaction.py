@@ -601,8 +601,9 @@ class AutoCompactionTests(CollectionBase):
         compaction_monitor_task = self.task.async_monitor_compaction(
             self.cluster, self.bucket)
 
-        doc_update_task = self.task.async_continuous_update_docs(
+        doc_update_task = self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_update,
+            op_type="update",
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             batch_size=10,
@@ -689,14 +690,15 @@ class AutoCompactionTests(CollectionBase):
         scope_name = scope_dict.keys()[0]
         collection_name = scope_dict[scope_name]["collections"].keys()[0]
 
-        doc_update_task = self.task.async_continuous_update_docs(
-                            self.cluster, bucket, self.gen_update,
-                            durability=self.durability_level,
-                            timeout_secs=self.sdk_timeout,
-                            batch_size=300,
-                            process_concurrency=1,
-                            scope=scope_name,
-                            collection=collection_name)
+        doc_update_task = self.task.async_continuous_doc_ops(
+            self.cluster, bucket, self.gen_update,
+            op_type="update",
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            batch_size=300,
+            process_concurrency=4,
+            scope=scope_name,
+            collection=collection_name)
 
         while monitor_fragm.completed is False:
             if end_time < time.time():
