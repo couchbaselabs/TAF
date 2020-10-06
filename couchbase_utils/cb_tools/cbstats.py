@@ -261,6 +261,23 @@ class Cbstats(CbCmdBase):
             cmd = "%s | grep %s" % (cmd, field_to_grep)
         return self._execute_cmd(cmd)
 
+    def get_timings(self, bucket_name, command="raw"):
+        """
+        Fetches timings stat
+        :param bucket_name: Name of the bucket to get timings
+        :param command: default="raw", to print in readable format
+        :return output: Output for the cbstats command
+        :return error:  Buffer containing warnings/errors from the execution
+        """
+
+        cmd = "%s localhost:%s %s -u %s -p %s -b %s timings" % (self.cbstatCmd,
+                                                                self.mc_port,
+                                                                command,
+                                                                self.username,
+                                                                self.password,
+                                                                bucket_name)
+        return self._execute_cmd(cmd)
+
     def get_kvtimings(self, command="raw"):
         """
         Fetches kvtiming using cbstats
