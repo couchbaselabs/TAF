@@ -66,8 +66,10 @@ class N1qlBase(CollectionBase):
                                         load_spec)
         self.doc_gen_type = input_spec.get(
                                 MetaCrudParams.DOC_GEN_TYPE, "default")
+        self.index_map = {}
 
     def tearDown(self):
+        self.drop_index()
         super(N1qlBase, self).tearDown()
 
     def get_txid(self, records):
@@ -222,7 +224,7 @@ class N1qlBase(CollectionBase):
             self.num_update = random.choice(range(num_range))
         self.num_delete = (num_range - self.num_update)
 
-    def create_primary_index(self):
+    def get_collections(self):
         keyspaces = []
         collections = self.bucket_util.get_random_collections(
             self.buckets, self.num_collection, "all", self.num_buckets)
@@ -230,14 +232,44 @@ class N1qlBase(CollectionBase):
             for s_name, c_dict in scope_dict["scopes"].items():
                 for c_name, c_data in c_dict["collections"].items():
                     keyspace = self.get_collection_name(bucket, s_name, c_name)
-                    name = keyspace.split('.')
-                    primary_index_query = "CREATE PRIMARY INDEX ix1a " \
-                                          "on default:`%s`.`%s`.`%s` " \
-                                          "USING GSI" \
-                                          % (name[0], name[1], name[2])
-                    _ = self.run_cbq_query(primary_index_query)
                     keyspaces.append(keyspace)
         return keyspaces
+
+    def process_index_to_create(self, stmts, collection):
+        self.index_map[collection] = []
+        for stmt in stmts:
+            index=""
+            clause = stmt.split(":")
+            if len(self.index_map[collection]) == 0:
+                self.create_index(collection)
+            while index == "":
+                index = BucketUtils.get_random_name()
+                if ('%' in index) or (index in self.index_map[collection]):
+                    index=""
+            self.create_index(collection, index, clause[-1])
+            self.index_map[collection].append(index)
+
+    def create_index(self, collection, index=None, params=[]):
+        name = collection.split('.')
+        if params:
+            query = "CREATE INDEX `%s` ON default:`%s`.`%s`.`%s`(%s)" \
+                    " USING GSI" %(index, name[0],
+                     name[1], name[2], params)
+        else:
+            query = "CREATE PRIMARY INDEX " \
+              "on default:`%s`.`%s`.`%s` " \
+              "USING GSI" \
+              % (name[0], name[1], name[2])
+        _ = self.run_cbq_query(query)
+
+    def drop_index(self):
+        for collection in self.index_map.keys():
+            name = collection.split('.')
+            for index in self.index_map[collection]:
+                query = "DROP INDEX default:`%s`.`%s`.`%s`.`%s` "\
+                        "USING GSI" %(name[0],name[1], name[2],
+                                     index)
+                _ = self.run_cbq_query(query)
 
     def get_tuq_results_object(self, gen_load):
         return TuqGenerators(self.log,
@@ -388,6 +420,7 @@ class N1qlBase(CollectionBase):
             stmt.extend(self.clause.get_where_clause(
                 doc_type_list[bucket_col], bucket_col,
                 self.num_insert, self.num_update, self.num_delete))
+            self.process_index_to_create(stmt, bucket_col)
         stmt = random.sample(stmt, self.num_stmt_txn)
         for i in range(self.num_savepoints):
             for _ in range(self.override_savepoint):
@@ -413,7 +446,7 @@ class N1qlBase(CollectionBase):
 
     def run_update_query(self, clause, query_params):
         name = clause[0].split('.')
-        if len(clause) > 4:
+        if len(clause) > 5:
             update_query = "UPDATE default:`%s`.`%s`.`%s` USE KEYS %s " \
                            "SET %s RETURNING meta().id"\
                             % (name[0], name[1], name[2], clause[4], clause[3])
@@ -763,6 +796,7 @@ class N1qlBase(CollectionBase):
             stmt.extend(self.clause.get_where_clause(
                 doc_type_list[bucket_col], bucket_col,
                 self.num_insert, self.num_update, self.num_delete))
+            self.process_index_to_create(stmt, bucket_col)
         random.shuffle(stmt)
         stmt_list = self.__chunks(stmt, int(len(stmt)/self.num_txn))
 

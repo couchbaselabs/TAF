@@ -21,7 +21,7 @@ class BasicOps(N1qlBase):
         3. run a simple query
         """
         results = ""
-        bucket_col = self.create_primary_index()
+        bucket_col = self.get_collections()
         query_params = self.create_txn()
         stmt = self.get_stmt(bucket_col)
         collection_savepoint, savepoints, queries = \
@@ -34,7 +34,7 @@ class BasicOps(N1qlBase):
         self.process_value_for_verification(bucket_col, doc_gen_list, results)
 
     def test_concurrent_txn(self):
-        collections = self.create_primary_index()
+        collections = self.get_collections()
         doc_type_list = self.get_doc_type_collection()
         doc_gen_list = self.get_doc_gen_list(collections)
         results, fail = self.get_stmt_for_threads(
@@ -49,7 +49,7 @@ class BasicOps(N1qlBase):
             self.fail("One of the thread failed with unexpected errors")
 
     def test_negative_txn(self):
-        self.create_primary_index()
+        self.get_collections()
         queries = []
         query_params = self.create_txn()
         stmt = "CREATE PRIMARY INDEX a1 on %s USING GSI" % self.bucket.name
@@ -98,7 +98,7 @@ class BasicOps(N1qlBase):
                                                            "")
 
     def test_with_use_keys(self):
-        collections = self.create_primary_index()
+        collections = self.get_collections()
         stmts = []
         query_params = self.create_txn()
         doc_type_list = self.get_doc_type_collection()
