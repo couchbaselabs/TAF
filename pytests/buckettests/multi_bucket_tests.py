@@ -125,8 +125,9 @@ class MultiBucketTests(BaseTestCase):
         update_dict(bucket_3, "create", None, 20, self.num_items)
 
         gen_update = doc_generator(self.key, 0, self.num_items)
-        update_task = self.task.async_continuous_update_docs(
-            self.cluster, bucket_4, gen_update, exp=0,
+        update_task = self.task.async_continuous_doc_ops(
+            self.cluster, bucket_4, gen_update,
+            op_type="update",
             batch_size=10,
             process_concurrency=2,
             replicate_to=self.replicate_to,

@@ -1705,15 +1705,15 @@ class LoadSubDocumentsGeneratorsTask(Task):
         return tasks
 
 
-class ContinuousDocUpdateTask(Task):
+class ContinuousDocOpsTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generator,
-                 exp, flag=0, persist_to=0, replicate_to=0,
+                 op_type="update", exp=0, flag=0, persist_to=0, replicate_to=0,
                  durability="", time_unit="seconds",
                  only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=5, compression=True,
                  process_concurrency=4, print_ops_rate=True):
-        super(ContinuousDocUpdateTask, self).__init__(
-            "ContinuousDocUpdateTask_{}_{}".format(bucket.name, time.time()))
+        super(ContinuousDocOpsTask, self).__init__(
+            "ContinuousDocOpsTask_{}_{}".format(bucket.name, time.time()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -1738,7 +1738,8 @@ class ContinuousDocUpdateTask(Task):
         self.doc_start_num = self.generator.start
         self.doc_end_num = self.generator.end
         self.doc_type = self.generator.doc_type
-        self.op_type = "update"
+        self.op_type = op_type
+        self.itr_count = 0
         self.__stop_updates = False
 
         if isinstance(bucket, list):
@@ -1750,8 +1751,10 @@ class ContinuousDocUpdateTask(Task):
         self.__stop_updates = True
 
     def _start_doc_updates(self, bucket):
-        self.test_log.info("Updating docs in %s" % bucket.name)
+        self.test_log.info("Performing doc ops '%s' on %s" % (self.op_type,
+                                                              bucket.name))
         while not self.__stop_updates:
+            self.itr_count += 1
             doc_gens = list()
             doc_tasks = list()
             for _ in self.clients:
@@ -1762,7 +1765,7 @@ class ContinuousDocUpdateTask(Task):
                                                      self.batch_size)
                 task = LoadDocumentsTask(
                     self.cluster, bucket, self.clients[index],
-                    batch_gen, "update", self.exp,
+                    batch_gen, self.op_type, self.exp,
                     persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
                     durability=self.durability,
@@ -1774,10 +1777,12 @@ class ContinuousDocUpdateTask(Task):
 
             for task in doc_tasks:
                 self.task_manager.get_task_result(task)
+                del task
         self.test_log.info("Closing SDK clients..")
         for client in self.clients:
             client.close()
-        self.test_log.info("Done updating docs in %s" % bucket.name)
+        self.test_log.info("Done doc_ops on %s. Total iterations: %d"
+                           % (bucket.name, self.itr_count))
 
     def call(self):
         self.start_task()

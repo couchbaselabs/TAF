@@ -241,19 +241,20 @@ class ServerTasks(object):
             self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_continuous_update_docs(self, cluster, bucket, generator, exp=0,
-                                     persist_to=0, replicate_to=0,
-                                     durability="",
-                                     batch_size=10,
-                                     timeout_secs=5,
-                                     process_concurrency=4):
+    def async_continuous_doc_ops(self, cluster, bucket, generator,
+                                 op_type="update", exp=0,
+                                 persist_to=0, replicate_to=0,
+                                 durability="",
+                                 batch_size=10,
+                                 timeout_secs=5,
+                                 process_concurrency=4):
         clients = list()
         for _ in range(process_concurrency):
             clients.append(SDKClient([cluster.master], bucket))
-        _task = jython_tasks.ContinuousDocUpdateTask(
+        _task = jython_tasks.ContinuousDocOpsTask(
             cluster, self.jython_task_manager, bucket, clients, generator,
-            exp, persist_to=persist_to,
-            replicate_to=replicate_to,
+            op_type=op_type, exp=exp,
+            persist_to=persist_to, replicate_to=replicate_to,
             durability=durability,
             batch_size=batch_size,
             timeout_secs=timeout_secs,

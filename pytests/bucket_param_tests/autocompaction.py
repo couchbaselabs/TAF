@@ -527,8 +527,9 @@ class AutoCompactionTests(BaseTestCase):
         compaction_monitor_task = self.task.async_monitor_compaction(
             self.cluster, self.bucket)
 
-        doc_update_task = self.task.async_continuous_update_docs(
+        doc_update_task = self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_update,
+            op_type="update",
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             batch_size=10,
@@ -621,8 +622,9 @@ class AutoCompactionTests(BaseTestCase):
             self.autocompaction_value)
         end_time = time.time() + self.wait_timeout * 30
         failure_msg = None
-        doc_update_task = self.task.async_continuous_update_docs(
+        doc_update_task = self.task.async_continuous_doc_ops(
             self.cluster, bucket, self.gen_update,
+            op_type="update",
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             batch_size=10,
