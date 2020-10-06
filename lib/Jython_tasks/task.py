@@ -1869,7 +1869,10 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  dgm_batch=5000,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 task_identifier=""):
+                 task_identifier="",
+                 doc_key_size=8,
+                 doc_size=256,
+                 sdk_client_pool=None):
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
             "create", exp,
@@ -1892,6 +1895,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.active_resident_threshold = active_resident_threshold
         self.dgm_batch = dgm_batch
         self.key = key
+        self.key_size = doc_key_size
+        self.doc_size = doc_size
         self.task_identifier = task_identifier
         self.op_type = "create"
         self.rest_client = BucketHelper(self.cluster.master)
@@ -1903,6 +1908,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
             self.buckets = [bucket]
         self.scope = scope
         self.collection = collection
+        self.sdk_client_pool = sdk_client_pool
 
     def _get_bucket_dgm(self, bucket):
         return self.rest_client.fetch_bucket_stats(
@@ -1914,7 +1920,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.test_log.debug("Doc load from index %d" % self.doc_index)
         for _ in self.clients:
             doc_gens.append(doc_generator(
-                self.key, self.doc_index, self.doc_index+self.dgm_batch))
+                self.key, self.doc_index, self.doc_index+self.dgm_batch,
+                key_size=self.key_size, doc_size=self.doc_size))
             self.doc_index += self.dgm_batch
             self.docs_loaded_per_bucket[bucket] += self.dgm_batch
 
@@ -1931,7 +1938,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                 replicate_to=self.replicate_to,
                 durability=self.durability,
                 timeout_secs=self.timeout_secs,
-                skip_read_on_error=True)
+                skip_read_on_error=True,
+                sdk_client_pool=self.sdk_client_pool)
             self.task_manager.add_new_task(task)
             doc_tasks.append(task)
 

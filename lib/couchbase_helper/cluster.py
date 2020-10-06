@@ -182,12 +182,16 @@ class ServerTasks(object):
                     check_persistence=check_persistence)
         else:
             for _ in range(process_concurrency):
-                client = SDKClient([cluster.master], bucket,
-                                   scope, collection)
+                client = None
+                if sdk_client_pool is None:
+                    client = SDKClient([cluster.master], bucket,
+                                       scope, collection)
                 clients.append(client)
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, clients,
-                generator.name, 0,
+                key=generator.name, exp=0,
+                doc_key_size=generator.key_size,
+                doc_size=generator.doc_size,
                 doc_index=generator.start,
                 batch_size=batch_size,
                 persist_to=persist_to,
@@ -196,7 +200,8 @@ class ServerTasks(object):
                 timeout_secs=timeout_secs,
                 process_concurrency=process_concurrency,
                 active_resident_threshold=active_resident_threshold,
-                dgm_batch=dgm_batch)
+                dgm_batch=dgm_batch,
+                sdk_client_pool=sdk_client_pool)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task
