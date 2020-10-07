@@ -36,37 +36,37 @@ class MagmaCrashTests(MagmaBaseTest):
         self.multiplier = self.input.param("multiplier", 2)
         ops_len = len(self.doc_ops.split(":"))
 
-        self.create_start = self.num_items
-        self.create_end = self.num_items * self.multiplier
+        self.create_start = self.init_items_per_collection
+        self.create_end = self.init_items_per_collection * self.multiplier
 
         if "create" in self.doc_ops:
-            self.create_end = self.num_items * self.multiplier
+            self.create_end = self.init_items_per_collection * self.multiplier
 
         if ops_len == 1:
             self.update_start = 0
-            self.update_end = self.num_items
+            self.update_end = self.init_items_per_collection
             self.expiry_start = 0
-            self.expiry_end = self.num_items * self.multiplier
+            self.expiry_end = self.init_items_per_collection * self.multiplier
             self.delete_start = 0
-            self.delete_end = self.num_items
+            self.delete_end = self.init_items_per_collection
         elif ops_len == 2:
             self.update_start = 0
-            self.update_end = self.num_items // 2
-            self.delete_start = self.num_items // 2
-            self.delete_end = self.num_items
+            self.update_end = self.init_items_per_collection // 2
+            self.delete_start = self.init_items_per_collection // 2
+            self.delete_end = self.init_items_per_collection
 
             if "expiry" in self.doc_ops:
                 self.delete_start = 0
-                self.delete_end = self.num_items // 2
-                self.expiry_start = self.num_items // 2
-                self.expiry_end = self.num_items * self.multiplier
+                self.delete_end = self.init_items_per_collection // 2
+                self.expiry_start = self.init_items_per_collection // 2
+                self.expiry_end = self.init_items_per_collection * self.multiplier
         else:
             self.update_start = 0
-            self.update_end = self.num_items // 3
-            self.delete_start = self.num_items // 3
-            self.delete_end = (2 * self.num_items) // 3
-            self.expiry_start = (2 * self.num_items) // 3
-            self.expiry_end = self.num_items * self.multiplier
+            self.update_end = self.init_items_per_collection // 3
+            self.delete_start = self.init_items_per_collection // 3
+            self.delete_end = (2 * self.init_items_per_collection) // 3
+            self.expiry_start = (2 * self.init_items_per_collection) // 3
+            self.expiry_end = self.init_items_per_collection * self.multiplier
 
     def kill_magma_check_wal_file_size(self):
         nIter = 200
@@ -118,44 +118,54 @@ class MagmaCrashTests(MagmaBaseTest):
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)
         wait_warmup = self.input.param("wait_warmup", True)
+        self.log.info("====test_crash_during_ops starts====")
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
 
         self.compute_docs_ranges()
-        self.generate_docs(doc_ops=self.doc_ops)
 
         th = threading.Thread(target=self.crash,
                               kwargs=dict(graceful=self.graceful,
                                           wait=wait_warmup))
         th.start()
+        tasks_info = dict()
+        for collection in self.collections:
+            self.generate_docs(doc_ops=self.doc_ops, target_vbucket=None)
+            tem_tasks_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=self.scope_name,
+                collection=collection,
+                _sync=False,
+                doc_ops=self.doc_ops)
+            tasks_info.update(tem_tasks_info.items())
 
-        tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
-                                  skip_read_on_error=True,
-                                  suppress_error_table=True,
-                                  _sync=False,
-                                  track_failures=False)
-
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
 
         self.stop_crash = True
         th.join()
 
     def test_crash_during_recovery(self):
         self.compute_docs_ranges()
-        self.generate_docs(doc_ops=self.doc_ops)
-
-        tasks = self.loadgen_docs(retry_exceptions=retry_exceptions,
-                                  skip_read_on_error=True,
-                                  suppress_error_table=True,
-                                  _sync=False,
-                                  track_failures=False)
 
         th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
         th.start()
 
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
+        tasks_info = dict()
+        for collection in self.collections:
+            self.generate_docs(doc_ops=self.doc_ops, target_vbucket=None)
+            tem_tasks_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=self.scope_name,
+                collection=collection,
+                _sync=False,
+                doc_ops=self.doc_ops)
+            tasks_info.update(tem_tasks_info.items())
+
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
 
         self.stop_crash = True
         th.join()

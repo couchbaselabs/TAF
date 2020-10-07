@@ -51,8 +51,23 @@ class MagmaBaseTest(BaseTestCase):
             self._create_multiple_buckets()
 
         self.buckets = self.bucket_util.buckets
-        self.num_collections = self.input.param("num_collections", 2)
+        # sel.num_collections=1 signifies only default collection
+        self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
+
+        self.scope_name = CbServer.default_scope
+        collection_prefix = "FunctionCollection"
+        # Creation of collection of num_collections is > 1
+        for i in range(1, self.num_collections):
+            collection_name = collection_prefix + str(i)
+            self.log.info("Creating scope::collection {} {}\
+            ".format(self.scope_name, collection_name))
+            self.bucket_util.create_collection(
+                self.cluster.master, self.buckets[0],
+                self.scope_name, {"name": collection_name})
+            self.sleep(2)
+        self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
+        self.log.debug("Collections list == {}".format(self.collections))
 
         # Update Magma/Storage Properties
         props = "magma"
@@ -114,6 +129,7 @@ class MagmaBaseTest(BaseTestCase):
         self.expiry_start = None
         self.expiry_end = None
         self.mutate = 0
+        self.init_items_per_collection = self.num_items
 
         # Common test params
         self.test_itr = self.input.param("test_itr", 4)
@@ -133,40 +149,36 @@ class MagmaBaseTest(BaseTestCase):
 
     def initial_load(self):
         self.create_start = 0
-        self.create_end = self.num_items
+        self.create_end = self.init_items_per_collection
         if self.rev_write:
-            self.create_start = -int(self.num_items - 1)
+            self.create_start = -int(self.init_items_per_collection - 1)
             self.create_end = 1
 
         self.generate_docs(doc_ops="create")
         self.init_loading = self.input.param("init_loading", True)
         self.dgm_batch = self.input.param("dgm_batch", 5000)
         if self.init_loading:
-            self.result_task = self._load_all_buckets(
-                self.cluster, self.gen_create,
-                "create", 0,
-                batch_size=self.batch_size,
-                dgm_batch=self.dgm_batch)
-            if self.active_resident_threshold != 100:
-                for task in self.result_task.keys():
-                    self.num_items = task.doc_index
-                    self.end = self.num_items
+            self.log.debug("initial_items_in_each_collection {}".format(self.init_items_per_collection))
 
-            self.log.info("Verifying num_items counts after doc_ops")
+            tasks_info = dict()
+            for collection in self.collections:
+                self.generate_docs(doc_ops="create", target_vbucket=None)
+                tem_tasks_info = self.loadgen_docs(
+                    self.retry_exceptions,
+                    self.ignore_exceptions,
+                    scope=self.scope_name,
+                    collection=collection,
+                    _sync=False,
+                    doc_ops="create")
+                tasks_info.update(tem_tasks_info.items())
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
-
-            if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
-                for bucket in self.bucket_util.get_all_buckets():
-                    disk_usage = self.get_disk_usage(
-                        bucket, self.cluster.nodes_in_cluster)
-                    self.disk_usage[bucket.name] = disk_usage[0]
-                    self.log.info(
-                        "For bucket {} disk usage after initial creation is {}MB\
-                        ".format(bucket.name,
-                                 self.disk_usage[bucket.name]))
         self.read_start = 0
-        self.read_end = self.num_items
+        self.read_end = self.init_items_per_collection
 
     def _create_default_bucket(self):
         self.bucket_util.create_default_bucket(

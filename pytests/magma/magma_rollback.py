@@ -1399,16 +1399,20 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         start_items = self.num_items
         scope_name = CbServer.default_scope
-        collection_prefix = "FunctionCollection"
+        '''
+        Commenting below code, since we have
+        added collection creation in magma_base
+        '''
+        #collection_prefix = "FunctionCollection"
 
-        for i in range(self.num_collections):
-            collection_name = collection_prefix + str(i)
-            self.log.info("Creating scope::collection {} {}\
-            ".format(scope_name, collection_name))
-            self.bucket_util.create_collection(
-                self.cluster.master, self.buckets[0],
-                scope_name, {"name": collection_name})
-            self.sleep(2)
+        #for i in range(self.num_collections):
+        #    collection_name = collection_prefix + str(i)
+        #    self.log.info("Creating scope::collection {} {}\
+        #    ".format(scope_name, collection_name))
+        #    self.bucket_util.create_collection(
+        #        self.cluster.master, self.buckets[0],
+        #        scope_name, {"name": collection_name})
+        #    self.sleep(2)
 
         collections = self.buckets[0].scopes[scope_name].collections.keys()
         self.log.debug("Collections list == {}".format(collections))
@@ -1679,16 +1683,6 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         start_items = self.num_items
         scope_name = CbServer.default_scope
-        collection_prefix = "FunctionCollection"
-
-        for i in range(self.num_collections):
-            collection_name = collection_prefix + str(i)
-            self.log.info("Creating scope::collection {} {}\
-            ".format(scope_name, collection_name))
-            self.bucket_util.create_collection(
-                self.cluster.master, self.buckets[0],
-                scope_name, {"name": collection_name})
-            self.sleep(2)
 
         collections = self.buckets[0].scopes[scope_name].collections.keys()
         self.log.debug("Collections list == {}".format(collections))
