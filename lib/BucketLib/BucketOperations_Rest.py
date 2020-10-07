@@ -299,7 +299,7 @@ class BucketHelper(RestConnection):
             Bucket.threadsNumber: Bucket.Priority.LOW,
             Bucket.durabilityMinLevel:  bucket_params.get('durability_level')}
 
-        server_info = dict({"ip": self.ip, "port": 8091,
+        server_info = dict({"ip": self.ip, "port": self.port,
                             "username": self.username,
                             "password": self.password})
         rest = RC(server_info)

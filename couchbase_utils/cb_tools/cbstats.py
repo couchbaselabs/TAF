@@ -259,7 +259,6 @@ class Cbstats(CbCmdBase):
 
         if field_to_grep:
             cmd = "%s | grep %s" % (cmd, field_to_grep)
-
         return self._execute_cmd(cmd)
 
     def get_kvtimings(self, command="raw"):
@@ -542,15 +541,16 @@ class Cbstats(CbCmdBase):
         regexp = re.compile(pattern)
         for line in output:
             match_result = regexp.match(line)
-            vb_num = match_result.group(1)
-            stat_name = match_result.group(2)
-            stat_value = match_result.group(3)
+            if match_result:
+                vb_num = match_result.group(1)
+                stat_name = match_result.group(2)
+                stat_value = match_result.group(3)
 
-            # Create a sub_dict to state vbucket level stats
-            if vb_num not in stats:
-                stats[vb_num] = dict()
-            # Populate the values to the stats dictionary
-            stats[vb_num][stat_name] = stat_value
+                # Create a sub_dict to state vbucket level stats
+                if vb_num not in stats:
+                    stats[vb_num] = dict()
+                # Populate the values to the stats dictionary
+                stats[vb_num][stat_name] = stat_value
 
         return stats
 

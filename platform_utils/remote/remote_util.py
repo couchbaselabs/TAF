@@ -3265,9 +3265,14 @@ class RemoteMachineShellConnection:
         output = []
         error = []
         if not self.remote:
-            p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE)
+            p = Popen(str(command), shell=True, stdout=PIPE, stderr=PIPE)
             output, error = p.communicate()
-
+            if output:
+                output = output.split('\n')
+                output = [i for i in output if i]
+            if error:
+                error = error.split('\n')
+                error = [i for i in error if i]
         else:
             try:
                 self._ssh_client = self.session.openChannel("exec")

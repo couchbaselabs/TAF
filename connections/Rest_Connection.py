@@ -70,7 +70,7 @@ class RestConnection(object):
             self.ip = serverInfo.ip
             self.username = serverInfo.rest_username
             self.password = serverInfo.rest_password
-            port = serverInfo.port
+            self.port = serverInfo.port
             self.hostname = ''
             self.services = "kv"
             if hasattr(serverInfo, "services"):
@@ -101,7 +101,7 @@ class RestConnection(object):
         if self.hostname:
             url_host = "%s" % self.hostname
 
-        self.baseUrl = generic_url % (url_host, port)
+        self.baseUrl = generic_url % (url_host, self.port)
         self.indexUrl = generic_url % (url_host, index_port)
         self.queryUrl = generic_url % (url_host, query_port)
         self.ftsUrl = generic_url % (url_host, fts_port)
@@ -121,7 +121,7 @@ class RestConnection(object):
                 sleep(5, log_type="infra")
                 if iteration == 2:
                     self.log.error("Node {0}:{1} is in a broken state!"
-                                   .format(self.ip, port))
+                                   .format(self.ip, self.port))
                     raise ServerUnavailableException(self.ip)
                 continue
             else:
