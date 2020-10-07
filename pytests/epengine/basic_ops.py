@@ -3,6 +3,7 @@ import json
 
 from basetestcase import BaseTestCase
 from Cb_constants import constants
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
@@ -459,6 +460,72 @@ class basic_ops(BaseTestCase):
             else:
                 self.assertNotEquals("API is accessible from localhost only",
                                      output[0])
+
+    def test_MB_40967(self):
+        """
+        1. Load initial docs into the bucket
+        2. Perform continuous reads until get_cmd stats breaks in
+           'cbstats timings' command
+        """
+        total_gets = 0
+        max_gets = 2500000000
+        bucket = self.bucket_util.buckets[0]
+        doc_gen = doc_generator(self.key, 0, self.num_items,
+                                doc_size=1)
+        create_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, "create", 0,
+            batch_size=100,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
+        self.task_manager.get_task_result(create_task)
+
+        cbstat = dict()
+        kv_nodes = self.cluster_util.get_kv_nodes()
+        for node in kv_nodes:
+            shell = RemoteMachineShellConnection(node)
+            cbstat[node] = Cbstats(shell)
+
+        self.log.info("Start doc_reads until total_gets cross: %s" % max_gets)
+        read_task = self.task.async_continuous_doc_ops(
+            self.cluster, bucket, doc_gen,
+            op_type="read", batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
+        self.sleep(60, "Wait for read task to start")
+        while total_gets < max_gets:
+            total_gets = 0
+            for node in kv_nodes:
+                output, error = cbstat[node].get_timings()
+                if error:
+                    self.log_failure("Error during cbstat timings: %s" % error)
+                    break
+
+                get_cmd_found = False
+                for line in output:
+                    if "get_cmd_" in line:
+                        if "get_cmd_mean" in line:
+                            break
+                        get_cmd_found = True
+                if not get_cmd_found:
+                    self.log.error(output)
+                    self.log_failure("cbstat timings get_cmd stats not found")
+                    break
+                vb_details = cbstat[node].vbucket_details(bucket.name)
+                for _, vb_stats in vb_details.items():
+                    total_gets += long(vb_stats["ops_get"])
+            if self.test_failure:
+                break
+            self.sleep(120, "Total_gets: %s, itr: %s" % (total_gets,
+                                                         read_task.itr_count))
+
+        read_task.end_task()
+        self.task_manager.get_task_result(read_task)
+
+        # Close all shell connections
+        for node in kv_nodes:
+            cbstat[node].shellConn.disconnect()
+
+        self.validate_test_failure()
 
     def verify_stat(self, items, value="active"):
         mc = MemcachedClient(self.cluster.master.ip,

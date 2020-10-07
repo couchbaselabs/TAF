@@ -258,7 +258,8 @@ class ServerTasks(object):
             durability=durability,
             batch_size=batch_size,
             timeout_secs=timeout_secs,
-            process_concurrency=process_concurrency)
+            process_concurrency=process_concurrency,
+            skip_read_success_results=True)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

@@ -758,7 +758,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=True, retries=5,
                  durability="", task_identifier="", skip_read_on_error=False,
-                 suppress_error_table=False):
+                 suppress_error_table=False, skip_read_success_results=False):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
@@ -785,6 +785,7 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.success = dict()
         self.docs_loaded = 0
         self.skip_read_on_error = skip_read_on_error
+        self.skip_read_success_results = skip_read_success_results
 
         if proxy_client:
             self.log.debug("Changing client to proxy %s:%s..."
@@ -849,7 +850,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         elif self.op_type == 'read':
             success, fail = self.batch_read(key_value.keys())
             self.fail.update(fail)
-            self.success.update(success)
+            if not self.skip_read_success_results:
+                self.success.update(success)
         else:
             self.set_exception(Exception("Bad operation: %s" % self.op_type))
         self.docs_loaded += len(key_value)
@@ -1711,7 +1713,8 @@ class ContinuousDocOpsTask(Task):
                  durability="", time_unit="seconds",
                  only_store_hash=True, batch_size=1,
                  pause_secs=1, timeout_secs=5, compression=True,
-                 process_concurrency=4, print_ops_rate=True):
+                 process_concurrency=4, print_ops_rate=True,
+                 skip_read_success_results=False):
         super(ContinuousDocOpsTask, self).__init__(
             "ContinuousDocOpsTask_{}_{}".format(bucket.name, time.time()))
         self.cluster = cluster
@@ -1733,6 +1736,7 @@ class ContinuousDocOpsTask(Task):
         self.buckets = None
 #         self.success = dict()
         self.fail = dict()
+        self.skip_read_success_results = skip_read_success_results
 
         self.key = self.generator.name
         self.doc_start_num = self.generator.start
@@ -1770,7 +1774,8 @@ class ContinuousDocOpsTask(Task):
                     replicate_to=self.replicate_to,
                     durability=self.durability,
                     batch_size=self.batch_size,
-                    timeout_secs=self.timeout_secs)
+                    timeout_secs=self.timeout_secs,
+                    skip_read_success_results=self.skip_read_success_results)
                 self.task_manager.add_new_task(task)
                 doc_tasks.append(task)
                 self.fail.update(task.fail)
