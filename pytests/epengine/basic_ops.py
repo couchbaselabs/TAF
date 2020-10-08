@@ -1,9 +1,11 @@
 import time
 import json
+from threading import Thread
 
 from basetestcase import BaseTestCase
 from Cb_constants import constants
 from cb_tools.cbstats import Cbstats
+from cb_tools.mc_stat import McStat
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.tuq_generators import JsonGenerator
@@ -225,7 +227,8 @@ class basic_ops(BaseTestCase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -332,7 +335,8 @@ class basic_ops(BaseTestCase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -524,6 +528,115 @@ class basic_ops(BaseTestCase):
         # Close all shell connections
         for node in kv_nodes:
             cbstat[node].shellConn.disconnect()
+
+        self.validate_test_failure()
+
+    def test_MB_41510(self):
+        """
+        1. Load initial docs into the bucket
+        2. Perform continuous reads
+        3. Perform 'mcstat reset' in parallel to the reads
+        4. Perform 'cbstats timings' command to read the current values
+        5. Validate there is no crash when stats are getting reset continuously
+        """
+
+        def reset_mcstat(bucket_name):
+            mc_stat = dict()
+            for t_node in kv_nodes:
+                shell_conn = RemoteMachineShellConnection(t_node)
+                mc_stat[t_node] = McStat(shell_conn)
+
+            while not stop_thread:
+                for t_node in mc_stat.keys():
+                    try:
+                        mc_stat[t_node].reset(bucket_name)
+                    except Exception as mcstat_err:
+                        self.log_failure(mcstat_err)
+                if self.test_failure:
+                    break
+
+            for t_node in mc_stat.keys():
+                mc_stat[t_node].shellConn.disconnect()
+
+        def get_timings(bucket_name):
+            cb_stat = dict()
+            for t_node in kv_nodes:
+                shell_conn = RemoteMachineShellConnection(t_node)
+                cb_stat[t_node] = Cbstats(shell_conn)
+
+            while not stop_thread:
+                for t_node in cb_stat.keys():
+                    try:
+                        cb_stat[t_node].get_timings(bucket_name)
+                    except Exception as cbstat_err:
+                        self.log_failure(cbstat_err)
+                if self.test_failure:
+                    break
+
+            for t_node in cb_stat.keys():
+                cb_stat[t_node].shellConn.disconnect()
+
+        total_gets = 0
+        max_gets = 50000000
+        stop_thread = False
+        bucket = self.bucket_util.buckets[0]
+        cb_stat_obj = dict()
+        kv_nodes = self.cluster_util.get_kv_nodes()
+        for node in self.cluster_util.get_kv_nodes():
+            shell = RemoteMachineShellConnection(node)
+            cb_stat_obj[node] = Cbstats(shell)
+
+        doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=1)
+        create_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, "create", 0,
+            batch_size=500,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
+        self.task_manager.get_task_result(create_task)
+
+        mc_stat_reset_thread = Thread(target=reset_mcstat,
+                                      args=[bucket.name])
+        get_timings_thread = Thread(target=get_timings,
+                                    args=[bucket.name])
+        mc_stat_reset_thread.start()
+        get_timings_thread.start()
+
+        read_task = self.task.async_continuous_doc_ops(
+            self.cluster, bucket, doc_gen,
+            op_type="read", batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
+
+        while total_gets < max_gets:
+            total_gets = 0
+            try:
+                for node in cb_stat_obj.keys():
+                    vb_details = cb_stat_obj[node].vbucket_details(bucket.name)
+                    for _, vb_stats in vb_details.items():
+                        total_gets += long(vb_stats["ops_get"])
+            except Exception as err:
+                self.log_failure(err)
+
+            self.log.info("Total gets: %s" % total_gets)
+            result, core_msg, stream_msg = self.check_coredump_exist(
+                self.servers, force_collect=True)
+
+            if result is not False:
+                self.log_failure(core_msg + stream_msg)
+                break
+            elif self.test_failure:
+                break
+
+            self.sleep(60, "Wait before next check")
+
+        stop_thread = True
+        read_task.end_task()
+        mc_stat_reset_thread.join()
+        get_timings_thread.join()
+
+        # Close all shell connections
+        for node in cb_stat_obj.keys():
+            cb_stat_obj[node].shellConn.disconnect()
 
         self.validate_test_failure()
 
