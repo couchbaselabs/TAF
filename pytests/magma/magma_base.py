@@ -658,7 +658,7 @@ class MagmaBaseTest(BaseTestCase):
                 else:
                     while count > 0:
                         shell.kill_memcached()
-                        self.sleep(1)
+                        self.sleep(3, "Sleep before killing memcached on same node again.")
                         count -= 1
                     count = kill_itr
 
