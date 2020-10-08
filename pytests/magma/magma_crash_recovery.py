@@ -136,8 +136,10 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.ignore_exceptions,
                 scope=self.scope_name,
                 collection=collection,
+                suppress_error_table=True,
                 _sync=False,
-                doc_ops=self.doc_ops)
+                doc_ops=self.doc_ops,
+                track_failures=False)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
@@ -160,8 +162,10 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.ignore_exceptions,
                 scope=self.scope_name,
                 collection=collection,
+                suppress_error_table=True,
                 _sync=False,
-                doc_ops=self.doc_ops)
+                doc_ops=self.doc_ops,
+                track_failures=False)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
