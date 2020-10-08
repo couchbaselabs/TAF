@@ -4559,12 +4559,25 @@ class BucketUtils(ScopeUtils):
         #     ops_spec[MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS])
 
         # Fetch random Collections to drop
+        exclude_from = cols_to_flush
+        # If recreating dropped collections then exclude dropping default collection
+        if input_spec.get(MetaCrudParams.COLLECTIONS_TO_RECREATE, 0):
+            for bucket in buckets:
+                if bucket.name not in exclude_from:
+                    exclude_from[bucket.name] = dict()
+                    exclude_from[bucket.name]["scopes"] = dict()
+                if CbServer.default_scope not in exclude_from[bucket.name]["scopes"]:
+                    exclude_from[bucket.name]["scopes"][CbServer.default_scope] = dict()
+                    exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"] = dict()
+                exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"][
+                    CbServer.default_collection] = \
+                    dict()
         cols_to_drop = BucketUtils.get_random_collections(
             buckets,
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_DROP, 0),
             input_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, 0),
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1),
-            exclude_from=cols_to_flush)
+            exclude_from=exclude_from)
 
         # Start threads to drop collections
         c_flush_thread = threading.Thread(
