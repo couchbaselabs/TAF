@@ -8,6 +8,7 @@ import copy
 import importlib
 import re
 import threading
+import datetime
 from random import sample, choice
 
 import crc32
@@ -1212,7 +1213,7 @@ class BucketUtils(ScopeUtils):
             char_set += invalid_chars
 
         rand_name = ""
-        name_len = random.randint(1, 30)
+        name_len = random.randint(1, 20)
 
         while rand_name == "":
             rand_name = ''.join(random.choice(char_set)
@@ -1224,6 +1225,9 @@ class BucketUtils(ScopeUtils):
             # Remove if name starts with invalid_start_charset
             elif rand_name[0] in invalid_start_chars:
                 rand_name = ""
+        now = datetime.datetime.now()
+        postfix = str(now.second) + "-" + str(int(round(now.microsecond, 6)))
+        rand_name = rand_name + "-" + postfix
         return rand_name
 
     @staticmethod
