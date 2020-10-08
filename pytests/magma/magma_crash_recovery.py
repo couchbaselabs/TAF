@@ -137,6 +137,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 scope=self.scope_name,
                 collection=collection,
                 suppress_error_table=True,
+                skip_read_on_error=True,
                 _sync=False,
                 doc_ops=self.doc_ops,
                 track_failures=False)
@@ -163,6 +164,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 scope=self.scope_name,
                 collection=collection,
                 suppress_error_table=True,
+                skip_read_on_error=True,
                 _sync=False,
                 doc_ops=self.doc_ops,
                 track_failures=False)
