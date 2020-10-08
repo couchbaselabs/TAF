@@ -56,12 +56,13 @@ class N1qlBase(CollectionBase):
         self.buckets = self.bucket_util.get_all_buckets()
         self.collection_map = {}
         self.get_random_number_stmt(self.num_stmt_txn)
-        self.executed_query = []
+        self.txtimeout = self.input.param("txntimeout", 0)
         load_spec = self.input.param("load_spec", self.data_spec_name)
         self.num_commit = self.input.param("num_commit", 3)
         self.num_rollback_to_savepoint = \
-            self.input.param("num_rollback_to_savepoint", 0)
+        self.input.param("num_rollback_to_savepoint", 0)
         self.num_conflict = self.input.param("num_conflict", 0)
+        self.write_conflict = self.input.param("write_conflict", False)
         input_spec = self.bucket_util.get_crud_template_from_package(
                                         load_spec)
         self.doc_gen_type = input_spec.get(
@@ -79,7 +80,12 @@ class N1qlBase(CollectionBase):
             txid = ""
         return txid
 
-    def create_txn(self, query_params={}):
+    def create_txn(self, txtimeout=0, durability_level=""):
+        query_params = {}
+        if self.durability_level:
+            query_params["Durability"] = durability_level
+        if self.txtimeout:
+            query_params["txtimeout"] = str(txtimeout) + "m"
         stmt = "BEGIN WORK"
         results = self.run_cbq_query(stmt, query_params=query_params)
         txid = self.get_txid(results)
@@ -195,8 +201,10 @@ class N1qlBase(CollectionBase):
             self.log.info("TOTAL ELAPSED TIME: %s" % result["metrics"]["elapsedTime"])
 
         if isinstance(result, str) or 'errors' in result:
-            self.log.info("txn failed")
-            if N1qlException.CasMismatchException \
+            if "INDEX" in query:
+                self.log.info("Index creation failed")
+                result = None
+            elif N1qlException.CasMismatchException \
                 in str(result["errors"][0]["msg"]) \
                 or N1qlException.DocumentExistsException \
                 in str(result["errors"][0]["msg"]) or \
@@ -237,6 +245,7 @@ class N1qlBase(CollectionBase):
 
     def process_index_to_create(self, stmts, collection):
         self.index_map[collection] = []
+        all_index = []
         for stmt in stmts:
             index=""
             clause = stmt.split(":")
@@ -244,10 +253,12 @@ class N1qlBase(CollectionBase):
                 self.create_index(collection)
             while index == "":
                 index = BucketUtils.get_random_name()
-                if ('%' in index) or (index in self.index_map[collection]):
+                if ('%' in index) or (index in all_index):
                     index=""
-            self.create_index(collection, index, clause[-1])
-            self.index_map[collection].append(index)
+            result = self.create_index(collection, index, clause[-1])
+            if result:
+                self.index_map[collection].append(index)
+                all_index.append(index)
 
     def create_index(self, collection, index=None, params=[]):
         name = collection.split('.')
@@ -260,7 +271,7 @@ class N1qlBase(CollectionBase):
               "on default:`%s`.`%s`.`%s` " \
               "USING GSI" \
               % (name[0], name[1], name[2])
-        _ = self.run_cbq_query(query)
+        return self.run_cbq_query(query)
 
     def drop_index(self):
         for collection in self.index_map.keys():
@@ -422,13 +433,7 @@ class N1qlBase(CollectionBase):
                 self.num_insert, self.num_update, self.num_delete))
             self.process_index_to_create(stmt, bucket_col)
         stmt = random.sample(stmt, self.num_stmt_txn)
-        for i in range(self.num_savepoints):
-            for _ in range(self.override_savepoint):
-                save_stmt = "SAVEPOINT:a" + str(random.choice(range(self.num_savepoints)))
-                stmt.append(save_stmt)
-            save_stmt = "SAVEPOINT:a" + str(i)
-            stmt.append(save_stmt)
-        random.shuffle(stmt)
+        stmt = self.add_savepoints(stmt)
         return stmt
 
     def get_prepare_stmt(self, query, query_params):
@@ -449,7 +454,7 @@ class N1qlBase(CollectionBase):
         if len(clause) > 5:
             update_query = "UPDATE default:`%s`.`%s`.`%s` USE KEYS %s " \
                            "SET %s RETURNING meta().id"\
-                            % (name[0], name[1], name[2], clause[4], clause[3])
+                            % (name[0], name[1], name[2], clause[5], clause[3])
         else:
             update_query = "UPDATE default:`%s`.`%s`.`%s` SET %s " \
                            "WHERE %s LIMIT 100 RETURNING meta().id"\
@@ -494,7 +499,7 @@ class N1qlBase(CollectionBase):
         if len(clause) > 5:
             query = "DELETE FROM default:`%s`.`%s`.`%s` " \
                     "USE KEYS %s RETURNING meta().id"\
-                    % (name[0], name[1], name[2], clause[4])
+                    % (name[0], name[1], name[2], clause[5])
         else:
             query = "DELETE FROM default:`%s`.`%s`.`%s` " \
                     "WHERE %s LIMIT 200 RETURNING meta().id"\
@@ -577,7 +582,7 @@ class N1qlBase(CollectionBase):
                 self.sleep(issleep)
             if write_conflict:
                 write_conflict_result = \
-                    self.write_conflict(stmts, random.choice([True, False]))
+                    self.simulate_write_conflict(stmts, random.choice([True, False]))
             if rollback_to_savepoint and (len(savepoint) > 0):
                 savepoint = self.get_savepoint_to_verify(savepoint)
                 query, result = self.end_txn(query_params, commit,
@@ -596,20 +601,26 @@ class N1qlBase(CollectionBase):
                 self.log.debug(results)
                 query, result = self.end_txn(query_params, commit=True)
                 if isinstance(result, str) or 'errors' in result:
-                    self.validate_error_during_commit(result,
+                    #retry the entire transaction
+                    rerun = self.validate_error_during_commit(result,
                                      collection_savepoint, savepoint)
-                    savepoint = []
-                    collection_savepoint = {}
+                    if rerun:
+                        query_params = self.create_txn()
+                        self.full_execute_query(stmts, commit, query_params,
+                             rollback_to_savepoint, write_conflict, issleep)
+                    else:
+                        savepoint = []
+                        collection_savepoint = {}
             if write_conflict and write_conflict_result:
                 collection_savepoint['last'] = copy.deepcopy(write_conflict_result)
                 savepoint.append("last")
             queries[txid].append(query)
         except Exception as e:
             self.log.info(e)
-            collection_savepoint = "txn failed"
+            collection_savepoint = e
         return collection_savepoint, savepoint, queries
 
-    def write_conflict(self, stmts, commit):
+    def simulate_write_conflict(self, stmts, commit):
         collection_map = {}
         clause = list()
         for i in range(5):
@@ -682,8 +693,8 @@ class N1qlBase(CollectionBase):
         dict_to_verify = {}
         count = 0
         if N1qlException.CasMismatchException \
-            in str(result["errors"][0]["msg"]) \
-            or N1qlException.DocumentExistsException \
+            in str(result["errors"][0]["msg"]) or \
+            N1qlException.DocumentExistsException \
             in str(result["errors"][0]["msg"]):
             for key in savepoint:
                 for index in collection_savepoint[key].keys():
@@ -702,6 +713,9 @@ class N1qlBase(CollectionBase):
                 result = self.run_cbq_query(query)
                 if result["metrics"]["resultCount"] == 0:
                     count += 1
+            if count == len(dict_to_verify.keys()):
+                self.log.info("txn failed with CAS mismatch")
+                return True
         elif N1qlException.DocumentNotFoundException in \
             str(result["errors"][0]["msg"]):
             for key in savepoint:
@@ -722,8 +736,10 @@ class N1qlBase(CollectionBase):
                 result = self.run_cbq_query(query)
                 if result["metrics"]["resultCount"] == len(docs):
                     count += 1
-        if count == len(dict_to_verify.keys()):
-            self.log.info("commit fails with CAS MISMATCH error retry the txn")
+            if count == len(dict_to_verify.keys()):
+                self.fail("got %s error when doc exist" %
+                                N1qlException.DocumentNotFoundException)
+        return False
 
     def process_value_for_verification(self, bucket_col, doc_gen_list,
                                        results):
@@ -822,11 +838,11 @@ class N1qlBase(CollectionBase):
 
         while not que.empty():
             result = que.get()
-            if "txn failed" in str(result[0]):
-                self.log.info("One of the thread has failed")
-                fail = True
-            else:
+            if isinstance(result[0], dict):
                 self.results.append(result)
+            else:
+                self.log.info(result[0])
+                fail = True
         return self.results, fail
 
     @staticmethod
