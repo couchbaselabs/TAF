@@ -614,7 +614,7 @@ class BucketHelper(RestConnection):
         return json.loads(content)
 
     # Collection/Scope specific APIs
-    def create_collection(self, bucket, scope, collection_spec):
+    def create_collection(self, bucket, scope, collection_spec, session=None):
         api = self.baseUrl + 'pools/default/buckets/%s/collections/%s' \
                              % (urllib.quote_plus("%s" % bucket),
                                 urllib.quote_plus(scope))
@@ -624,42 +624,54 @@ class BucketHelper(RestConnection):
                 params[key] = value
         params = urllib.urlencode(params)
         headers = self._create_headers()
-        status, content, _ = self._http_request(api,
-                                                'POST',
-                                                params=params,
-                                                headers=headers)
+        if session is None:
+            status, content, _ = self._http_request(api,
+                                                    'POST',
+                                                    params=params,
+                                                    headers=headers)
+        else:
+            status, content, _ = self._http_session_post(api, params=params, headers=headers, session=session)
         return status, content
 
-    def create_scope(self, bucket, scope):
+    def create_scope(self, bucket, scope, session=None):
         api = self.baseUrl + 'pools/default/buckets/%s/collections' \
                              % urllib.quote_plus("%s" % bucket)
         params = urllib.urlencode({'name': scope})
         headers = self._create_headers()
-        status, content, _ = self._http_request(api,
-                                                'POST',
-                                                params=params,
-                                                headers=headers)
+        if session is None:
+            status, content, _ = self._http_request(api,
+                                                    'POST',
+                                                    params=params,
+                                                    headers=headers)
+        else:
+            status, content, _ = self._http_session_post(api, params=params, headers=headers, session=session)
         return status, content
 
-    def delete_scope(self, bucket, scope):
+    def delete_scope(self, bucket, scope, session=None):
         api = self.baseUrl + 'pools/default/buckets/%s/collections/%s' \
                              % (urllib.quote_plus("%s" % bucket),
                                 urllib.quote_plus(scope))
         headers = self._create_headers()
-        status, content, _ = self._http_request(api,
-                                                'DELETE',
-                                                headers=headers)
+        if session is None:
+            status, content, _ = self._http_request(api,
+                                                    'DELETE',
+                                                    headers=headers)
+        else:
+            status, content, _ = self._http_session_delete(api,headers=headers, session=session)
         return status, content
 
-    def delete_collection(self, bucket, scope, collection):
+    def delete_collection(self, bucket, scope, collection, session=None):
         api = self.baseUrl + 'pools/default/buckets/%s/collections/%s/%s' \
                              % (urllib.quote_plus("%s" % bucket),
                                 urllib.quote_plus(scope),
                                 urllib.quote_plus(collection))
         headers = self._create_headers()
-        status, content, _ = self._http_request(api,
-                                                'DELETE',
-                                                headers=headers)
+        if session is None:
+            status, content, _ = self._http_request(api,
+                                                    'DELETE',
+                                                    headers=headers)
+        else:
+            status, content, _ = self._http_session_delete(api, headers=headers, session=session)
         return status, content
 
     def list_collections(self, bucket):
