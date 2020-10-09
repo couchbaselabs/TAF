@@ -420,6 +420,16 @@ class RestConnection(object):
             pass
         return json_parsed
 
+    def get_terse_cluster_info(self):
+        api = self.baseUrl + 'pools/default/terseClusterInfo'
+        status, content, _ = self._http_request(api, 'GET')
+        if status:
+            return json.loads(content)
+        else:
+            self.test_log.error("{0} - /pools/default/terseClusterInfo status:{1},content:{2}"
+                                .format(self.ip, status, content))
+            raise Exception("terseClusterInfo API failed")
+
     # DEPRECATED: use create_ddoc() instead.
     def create_view(self, design_doc_name, bucket_name, views, options=None):
         return self.create_ddoc(design_doc_name, bucket_name, views, options)
@@ -1367,6 +1377,31 @@ class RestConnection(object):
         status, content, header = self._http_request(api, "GET")
         self.test_log.debug("diag/masterEvents?o=1 status: {0} content: {1}"
                             .format(status, content))
+        return status, content
+
+    def set_heartbeat_interval(self, heartbeat_interval):
+        status, content = self.diag_eval("'ns_config:set({mb_master, heartbeat_interval}," + str(heartbeat_interval)
+                                         + ").'")
+        return status, content
+
+    def set_timeout_interval_count(self, timeout_interval_count):
+        status, content = self.diag_eval("'ns_config:set({mb_master, timeout_interval_count}," +
+                                         str(timeout_interval_count) + ").'")
+        return status, content
+
+    def set_lease_time(self, lease_time):
+        status, content = self.diag_eval("'ns_config:set({leader_lease_acquire_worker, lease_time}," +
+                                         str(lease_time) + ").'")
+        return status, content
+
+    def set_lease_grace_time(self, lease_grace_time):
+        status, content = self.diag_eval("'ns_config:set({leader_lease_acquire_worker, lease_grace_time}," +
+                                         str(lease_grace_time) + ").'")
+        return status, content
+
+    def set_lease_renew_after(self, lease_renew_after):
+        status, content = self.diag_eval("'ns_config:set({leader_lease_acquire_worker, lease_time}," +
+                                         str(lease_renew_after) + ").'")
         return status, content
 
     def get_admin_credentials(self):

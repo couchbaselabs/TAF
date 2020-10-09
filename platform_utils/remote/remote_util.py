@@ -500,6 +500,27 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
         return o, r
 
+    def kill_babysitter(self, os="unix"):
+        self.log.debug("%s - Killing babysittter process" % self.ip)
+        if os == "windows":
+            # TODO: look at the windows part later.
+            o, r = self.execute_command("taskkill /F /T /IM epmd.exe*")
+            self.log_command_output(o, r)
+            o, r = self.execute_command("taskkill /F /T /IM erl*")
+            self.log_command_output(o, r)
+            o, r = self.execute_command("tasklist | grep erl.exe")
+            kill_all = False
+            while len(o) >= 1 and not kill_all:
+                self.execute_command("taskkill /F /T /IM erl*")
+                o, r = self.execute_command("tasklist | grep erl.exe")
+                if len(o) == 0:
+                    kill_all = True
+                    self.log.debug("%s - Erlang processes killed" % self.ip)
+        else:
+            o, r = self.execute_command("kill -9  $(ps aux | grep 'beam.smp' | grep ns_babysitter_bootstrap | awk '{print $2}')")
+            self.log_command_output(o, r)
+        return o, r
+
     def kill_cbft_process(self):
         self.log.debug("%s - Killing cbft process" % self.ip)
         self.extract_remote_info()
