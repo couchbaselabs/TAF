@@ -77,52 +77,6 @@ class MagmaCrashTests(MagmaBaseTest):
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
-    def test_crash_magma_n_times(self):
-        self.num_crashes = self.input.param("num_crashes", 10)
-        items = self.num_items
-
-        self.create_start = self.num_items
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
-                        "AutoFailover disabling failed")
-        for _ in xrange(1, self.num_crashes+1):
-            self.create_end = self.create_start + random.randint(items, items*2)
-            for node in self.cluster.nodes_in_cluster:
-                shell = RemoteMachineShellConnection(node)
-                shell.kill_memcached()
-                shell.disconnect()
-
-            self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
-                self.bucket_util.buckets[0],
-                wait_time=self.wait_timeout * 20))
-
-            self.generate_docs(doc_ops="create")
-            self.loadgen_docs(
-                self.retry_exceptions,
-                self.ignore_exceptions,
-                scope=self.scope_name,
-                collection=self.collections,
-                suppress_error_table=True,
-                skip_read_on_error=True,
-                _sync=True,
-                doc_ops=self.doc_ops,
-                track_failures=False)
-
-            self.bucket_util._wait_for_stats_all_buckets()
-
-            data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_create, "create", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
-            self.task.jython_task_manager.get_task_result(data_validation)
-            self.create_start = self.create_end
-            self.bucket_util.verify_stats_all_buckets(self.create_end,
-                                                      timeout=300)
-
-            self.gen_update = self.gen_create
-
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)
         wait_warmup = self.input.param("wait_warmup", True)
