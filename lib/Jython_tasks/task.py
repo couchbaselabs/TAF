@@ -608,9 +608,9 @@ class GenericLoadingTask(Task):
                                         self.collection))
         return success, fail
 
-    def batch_read(self, keys, client=None):
+    def batch_read(self, keys, client=None, timeout=5):
         client = client or self.client
-        success, fail = client.get_multi(keys, self.timeout)
+        success, fail = client.get_multi(keys, timeout=timeout)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Read Key", "Exception"])
@@ -847,7 +847,8 @@ class LoadDocumentsTask(GenericLoadingTask):
                 self.fail.update(fail)
 
         elif self.op_type == DocLoading.Bucket.DocOps.READ:
-            success, fail = self.batch_read(dict(key_value).keys())
+            success, fail = self.batch_read(dict(key_value).keys(),
+                                            timeout=self.timeout)
             if self.track_failures:
                 self.fail.update(fail)
             if not self.skip_read_success_results:
@@ -2099,7 +2100,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
                                                            self.scope,
                                                            self.collection)
-        key_value = dict(doc_gen.next_batch(self.op_type))
+        # force_gen_docs to get docs even with READ doc_ops from the generator
+        key_value = dict(doc_gen.next_batch(self.op_type, force_gen_docs=True))
         if self.check_replica:
             # change to getFromReplica
             result_map = dict()

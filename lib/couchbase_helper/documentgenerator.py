@@ -9,6 +9,7 @@ import zlib
 from random import choice
 from string import ascii_uppercase, ascii_lowercase, digits
 
+from Cb_constants import DocLoading
 from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 from com.couchbase.client.java.json import JsonObject
@@ -599,16 +600,20 @@ class BatchedDocumentGenerator(object):
     def has_next(self):
         return self._doc_gen.has_next()
 
-    def next_batch(self, op_type=None):
+    def next_batch(self, op_type=None, force_gen_docs=False):
         self.count = 0
-        key_val = []
-        # Value is not required for
-        # delete/touch ops, so below empty string
-        # string is used
-        val = ""
+        key_val = list()
+        # Value is not required for delete/touch/read, so val is set to None
+        val = None
         while self.count < self._batch_size and self.has_next():
-            if op_type == "touch" or op_type == "delete":
+            if op_type in [DocLoading.Bucket.DocOps.DELETE,
+                           DocLoading.Bucket.DocOps.TOUCH]:
                 key = self._doc_gen.next_key()
+            elif op_type == DocLoading.Bucket.DocOps.READ:
+                if force_gen_docs:
+                    key, val = self._doc_gen.next()
+                else:
+                    key = self._doc_gen.next_key()
             else:
                 key, val = self._doc_gen.next()
             key_val.append(Tuples.of(key, val))
