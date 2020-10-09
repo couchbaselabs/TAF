@@ -97,9 +97,17 @@ class MagmaCrashTests(MagmaBaseTest):
                 wait_time=self.wait_timeout * 20))
 
             self.generate_docs(doc_ops="create")
+            self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=self.scope_name,
+                collection=self.collections,
+                suppress_error_table=True,
+                skip_read_on_error=True,
+                _sync=True,
+                doc_ops=self.doc_ops,
+                track_failures=False)
 
-            self.loadgen_docs(_sync=True,
-                              retry_exceptions=retry_exceptions)
             self.bucket_util._wait_for_stats_all_buckets()
 
             data_validation = self.task.async_validate_docs(
@@ -199,9 +207,18 @@ class MagmaCrashTests(MagmaBaseTest):
                     self.update_end = 1
 
                 self.generate_docs(doc_ops="update")
-                _ = self.loadgen_docs(self.retry_exceptions,
-                                      self.ignore_exceptions,
-                                      _sync=True)
+
+                _ = self.loadgen_docs(
+                    self.retry_exceptions,
+                    self.ignore_exceptions,
+                    scope=self.scope_name,
+                    collection=self.collections,
+                    suppress_error_table=True,
+                    skip_read_on_error=True,
+                    _sync=True,
+                    doc_ops="update",
+                    track_failures=False)
+
                 self.bucket_util._wait_for_stats_all_buckets()
 
             count += 1
@@ -229,7 +246,14 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.generate_docs(doc_ops="update")
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
-                                      _sync=True)
+                                      scope=self.scope_name,
+                                      collection=self.collections,
+                                      suppress_error_table=True,
+                                      skip_read_on_error=True,
+                                      _sync=True,
+                                      doc_ops="update",
+                                      track_failures=False)
+
                 self.bucket_util._wait_for_stats_all_buckets()
 
                 count += 1
@@ -249,7 +273,14 @@ class MagmaCrashTests(MagmaBaseTest):
             self.generate_docs(doc_ops="delete")
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True)
+                                  scope=self.scope_name,
+                                  collection=self.collections,
+                                  suppress_error_table=True,
+                                  skip_read_on_error=True,
+                                  _sync=True,
+                                  doc_ops="delete",
+                                  track_failures=False)
+
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
@@ -258,10 +289,16 @@ class MagmaCrashTests(MagmaBaseTest):
 
             self.gen_create = copy.deepcopy(self.gen_delete)
             self.doc_ops = "create"
-
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True)
+                                  scope=self.scope_name,
+                                  collection=self.collections,
+                                  suppress_error_table=True,
+                                  skip_read_on_error=True,
+                                  _sync=True,
+                                  doc_ops="create",
+                                  track_failures=False)
+
             self.bucket_util._wait_for_stats_all_buckets()
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
@@ -284,11 +321,16 @@ class MagmaCrashTests(MagmaBaseTest):
             self.update_end = itr
             self.mutate = -1
             self.generate_docs(doc_ops="update")
-
             update_task_info = self.loadgen_docs(
-                self.retry_exceptions,
-                self.ignore_exceptions,
-                _sync=False)
+                self.retry_exceptions, self.ignore_exceptions,
+                scope=self.scope_name, collection=self.collections,
+                suppress_error_table=True, skip_read_on_error=True,
+                _sync=False, track_failures=False)
+
+            #update_task_info = self.loadgen_docs(
+            #    self.retry_exceptions,
+            #    self.ignore_exceptions,
+            #    _sync=False)
             tasks_info.update(update_task_info.items())
 
         self.doc_ops = "read"
@@ -303,10 +345,15 @@ class MagmaCrashTests(MagmaBaseTest):
 
         count = 0
         while count < self.read_thread_count:
-            read_task_info = self.loadgen_docs(
-                self.retry_exceptions,
-                self.ignore_exceptions,
-                _sync=False)
+            read_task_info = self.loadgen_docs(self.retry_exceptions,
+                                               self.ignore_exceptions,
+                                               scope=self.scope_name,
+                                               collection=self.collections,
+                                               suppress_error_table=True,
+                                               skip_read_on_error=True,
+                                               _sync=False,
+                                               track_failures=False)
+
             tasks_info.update(read_task_info.items())
             count += 1
             if count < self.read_thread_count:
