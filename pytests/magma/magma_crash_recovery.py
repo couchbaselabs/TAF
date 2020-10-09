@@ -165,8 +165,6 @@ class MagmaCrashTests(MagmaBaseTest):
                 _ = self.loadgen_docs(
                     self.retry_exceptions,
                     self.ignore_exceptions,
-                    scope=self.scope_name,
-                    collection=self.collections,
                     suppress_error_table=True,
                     _sync=True,
                     doc_ops="update")
@@ -198,8 +196,6 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.generate_docs(doc_ops="update")
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
-                                      scope=self.scope_name,
-                                      collection=self.collections,
                                       suppress_error_table=True,
                                       _sync=True,
                                       doc_ops="update")
@@ -223,8 +219,6 @@ class MagmaCrashTests(MagmaBaseTest):
             self.generate_docs(doc_ops="delete")
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  scope=self.scope_name,
-                                  collection=self.collections,
                                   suppress_error_table=True,
                                   _sync=True,
                                   doc_ops="delete")
@@ -239,8 +233,6 @@ class MagmaCrashTests(MagmaBaseTest):
             self.doc_ops = "create"
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  scope=self.scope_name,
-                                  collection=self.collections,
                                   suppress_error_table=True,
                                   _sync=True,
                                   doc_ops="create")
@@ -269,7 +261,6 @@ class MagmaCrashTests(MagmaBaseTest):
             self.generate_docs(doc_ops="update")
             update_task_info = self.loadgen_docs(
                 self.retry_exceptions, self.ignore_exceptions,
-                scope=self.scope_name, collection=self.collections,
                 suppress_error_table=True, _sync=False)
 
             #update_task_info = self.loadgen_docs(
@@ -292,8 +283,6 @@ class MagmaCrashTests(MagmaBaseTest):
         while count < self.read_thread_count:
             read_task_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
-                                               collection=self.collections,
                                                suppress_error_table=True,
                                                _sync=False)
 
