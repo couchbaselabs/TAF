@@ -4559,7 +4559,7 @@ class BucketUtils(ScopeUtils):
         #     ops_spec[MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS])
 
         # Fetch random Collections to drop
-        exclude_from = cols_to_flush
+        exclude_from = copy.deepcopy(cols_to_flush)
         # If recreating dropped collections then exclude dropping default collection
         if input_spec.get(MetaCrudParams.COLLECTIONS_TO_RECREATE, 0):
             for bucket in buckets:
