@@ -254,7 +254,9 @@ class SDKClient(object):
                 .ioConfig(IoConfig.numKvConnections(25)) \
                 .timeoutConfig(TimeoutConfig.builder()
                                .connectTimeout(Duration.ofSeconds(20))
-                               .kvTimeout(Duration.ofSeconds(10)))
+                               .kvTimeout(Duration.ofSeconds(10))
+                               .socketConnectTimeout(Duration.ofSeconds(20))
+                               )
 
             # Having 'None' will enable us to test without sending any
             # compression settings and explicitly setting to 'False' as well
