@@ -11,7 +11,7 @@ import threading
 import datetime
 from random import sample, choice
 
-from pip._vendor import requests
+import requests
 import concurrent.futures
 
 import crc32

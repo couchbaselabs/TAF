@@ -15,7 +15,7 @@ from common_lib import sleep
 from global_vars import logger
 from membase.api import httplib2
 from membase.api.exception import ServerUnavailableException
-from pip._vendor import requests
+import requests
 
 
 class RestConnection(object):
