@@ -457,7 +457,6 @@ class MagmaCrashTests(MagmaBaseTest):
         self.stop_crash = True
         th.join()
 
-        self.validate_data("update", self.gen_update)
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
