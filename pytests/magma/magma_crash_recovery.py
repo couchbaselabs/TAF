@@ -330,7 +330,10 @@ class MagmaCrashTests(MagmaBaseTest):
             update_task_info = self.loadgen_docs(
                 self.retry_exceptions,
                 self.ignore_exceptions,
-                _sync=False)
+                suppress_error_table=True,
+                skip_read_on_error=True,
+                _sync=False,
+                track_failures=False)
             tasks_info.update(update_task_info.items())
             count += 1
             self.sleep(5)
@@ -445,18 +448,25 @@ class MagmaCrashTests(MagmaBaseTest):
                                             deep_copy=self.deep_copy)
 
             _ = self.loadgen_docs(self.retry_exceptions,
-                                  self.ignore_exceptions, _sync=True)
+                                  self.ignore_exceptions,
+                                  suppress_error_table=True,
+                                  skip_read_on_error=True,
+                                  _sync=True,
+                                  track_failures=False)
             self.bucket_util._wait_for_stats_all_buckets()
 
             self.generate_docs(doc_ops="update")
             _ = self.loadgen_docs(self.retry_exceptions,
-                                  self.ignore_exceptions, _sync=True)
+                                  self.ignore_exceptions,
+                                  suppress_error_table=True,
+                                  skip_read_on_error=True,
+                                  _sync=True,
+                                  track_failures=False)
             self.bucket_util._wait_for_stats_all_buckets()
 
             count += 1
         self.stop_crash = True
         th.join()
-
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
