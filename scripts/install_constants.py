@@ -146,6 +146,10 @@ CMDS = {
             "rm -rf " + DEFAULT_NONROOT_INSTALL_DIR["LINUX_DISTROS"] + "> /dev/null && echo 1 || echo 0; ",
         "pre_install": None,
         "install": "yes | yum localinstall -y buildpath > /dev/null && echo 1 || echo 0",
+        "set_vm_swappiness_and_thp":
+            "/sbin/sysctl vm.swappiness=0; " +
+            "echo never > /sys/kernel/mm/transparent_hugepage/enabled; " +
+            "echo never > /sys/kernel/mm/transparent_hugepage/defrag; ",
         "suse_install": "rpm -i buildpath",
         "post_install": "systemctl -q is-active couchbase-server && echo 1 || echo 0",
         "post_install_retry": "systemctl daemon-reexec; systemctl restart couchbase-server",
