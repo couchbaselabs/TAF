@@ -6,6 +6,7 @@ from math import floor
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
+from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 
 from com.couchbase.client.core.msg.kv import DurabilityLevel
@@ -289,3 +290,21 @@ class DurabilityHelper:
                                   ops_val[op_type],
                                   expected_val[op_type]))
         return verification_failed
+
+    @staticmethod
+    def get_vb_and_error_type(d_level):
+        # Select target_vb type for testing with CRUDs
+        target_vb_type = "replica"
+        simulate_error = CouchbaseError.STOP_MEMCACHED
+
+        if d_level == Bucket.DurabilityLevel.MAJORITY:
+            target_vb_type = "replica"
+            simulate_error = CouchbaseError.STOP_MEMCACHED
+        elif d_level == \
+                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+            target_vb_type = "active"
+            simulate_error = CouchbaseError.STOP_PERSISTENCE
+        elif d_level == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+            target_vb_type = "replica"
+            simulate_error = CouchbaseError.STOP_PERSISTENCE
+        return target_vb_type, simulate_error

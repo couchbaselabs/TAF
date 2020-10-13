@@ -235,24 +235,6 @@ class BucketDurabilityBase(BaseTestCase):
                     Bucket.DurabilityLevel.MAJORITY]
         return self.bucket_util.get_supported_durability_levels()
 
-    @staticmethod
-    def get_vb_and_error_type(d_level):
-        # Select target_vb type for testing with CRUDs
-        target_vb_type = "replica"
-        simulate_error = CouchbaseError.STOP_MEMCACHED
-
-        if d_level == Bucket.DurabilityLevel.MAJORITY:
-            target_vb_type = "replica"
-            simulate_error = CouchbaseError.STOP_MEMCACHED
-        elif d_level == \
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
-            target_vb_type = "active"
-            simulate_error = CouchbaseError.STOP_PERSISTENCE
-        elif d_level == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
-            target_vb_type = "replica"
-            simulate_error = CouchbaseError.STOP_PERSISTENCE
-        return target_vb_type, simulate_error
-
     def validate_durability_with_crud(
             self, bucket, bucket_durability,
             verification_dict,
@@ -297,7 +279,7 @@ class BucketDurabilityBase(BaseTestCase):
             random_node = choice(self.vbs_in_node.keys())
 
             target_vb_type, simulate_error = \
-                self.get_vb_and_error_type(d_level_to_test)
+                self.durability_helper.get_vb_and_error_type(d_level_to_test)
 
             doc_gen = doc_generator(
                 self.key, doc_start_index, num_items_to_load,

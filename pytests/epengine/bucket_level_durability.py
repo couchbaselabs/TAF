@@ -564,7 +564,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         prev_d_level = supported_d_levels[0]
         for bucket_durability in supported_d_levels[1:]:
             target_vb_type, simulate_error = \
-                self.get_vb_and_error_type(bucket_durability)
+                self.durability_helper.get_vb_and_error_type(bucket_durability)
 
             # Pick a random node to perform error sim and load
             random_node = choice(self.vbs_in_node.keys())
