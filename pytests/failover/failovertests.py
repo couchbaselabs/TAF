@@ -247,8 +247,9 @@ class FailoverTests(FailoverBaseTest):
         if not self.atomicity:
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
         # Perform Compaction
         if self.compact:
@@ -292,7 +293,8 @@ class FailoverTests(FailoverBaseTest):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -373,8 +375,9 @@ class FailoverTests(FailoverBaseTest):
         self.assertTrue(rebalance.result)
 
         if not self.atomicity:
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         # Perform Compaction
@@ -437,8 +440,9 @@ class FailoverTests(FailoverBaseTest):
         if not self.atomicity:
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         # Check if node has to be killed or restarted during rebalance
@@ -455,7 +459,8 @@ class FailoverTests(FailoverBaseTest):
             for task, tasks_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -680,13 +685,15 @@ class FailoverTests(FailoverBaseTest):
                     self.log.info("nodeStatuses: {0}".format(json_parsed))
                     self.fail("node status is not unhealthy even after waiting for 5 minutes")
             nodes = self.filter_servers(self.servers, chosen)
-            success_failed_over = self.rest.fail_over(node.id, graceful=(self.graceful))
+            success_failed_over = self.rest.fail_over(node.id,
+                                                      graceful=self.graceful)
             # failed_over = self.task.async_failover([self.master], failover_nodes=chosen, graceful=self.graceful)
             # Perform Compaction
             compact_tasks = []
             if self.compact:
                 for bucket in self.buckets:
-                    compact_tasks.append(self.task.async_compact_bucket(self.master, bucket))
+                    compact_tasks.append(self.task.async_compact_bucket(
+                        self.master, bucket))
             # Run View Operations
             if self.withViewsOps:
                 self.query_and_monitor_view_tasks(nodes)
@@ -696,7 +703,8 @@ class FailoverTests(FailoverBaseTest):
             # failed_over.result()
             msg = "rebalance failed while removing failover nodes {0}" \
                   .format(node.id)
-            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
+            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
+                            msg=msg)
             for task in compact_tasks:
                 task.result()
         # msg = "rebalance failed while removing failover nodes {0}".format(node.id)
@@ -725,7 +733,8 @@ class FailoverTests(FailoverBaseTest):
                     batch_size=20,
                     process_concurrency=1,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout))
+                    timeout_secs=self.sdk_timeout,
+                    sdk_client_pool=self.sdk_client_pool))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
 

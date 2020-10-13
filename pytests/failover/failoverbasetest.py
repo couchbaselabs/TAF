@@ -105,6 +105,16 @@ class FailoverBaseTest(BaseTestCase):
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
+
+        if self.sdk_client_pool:
+            self.log.info("Creating SDK clients for client_pool")
+            for bucket in self.bucket_util.buckets:
+                self.sdk_client_pool.create_clients(
+                    bucket,
+                    [self.cluster.master],
+                    self.sdk_pool_capacity,
+                    compression_settings=self.sdk_compression)
+
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.buckets = self.bucket_util.get_all_buckets()
@@ -142,7 +152,8 @@ class FailoverBaseTest(BaseTestCase):
             durability=self.durability_level, pause_secs=5,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
             retry_exceptions=retry_exceptions,
-            ignore_exceptions=ignore_exceptions)
+            ignore_exceptions=ignore_exceptions,
+            sdk_client_pool=self.sdk_client_pool)
 
     def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
         tasks = []
@@ -152,7 +163,8 @@ class FailoverBaseTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 batch_size=batch_size, timeout_secs=self.sdk_timeout,
                 process_concurrency=8, retries=self.sdk_retries,
-                durability=self.durability_level)
+                durability=self.durability_level,
+                sdk_client_pool=self.sdk_client_pool)
             tasks.append(task)
         return tasks
 
@@ -166,7 +178,8 @@ class FailoverBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -175,7 +188,8 @@ class FailoverBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "delete" in self.doc_ops:
@@ -185,13 +199,15 @@ class FailoverBaseTest(BaseTestCase):
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
         if task_verification:
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         return tasks_info
