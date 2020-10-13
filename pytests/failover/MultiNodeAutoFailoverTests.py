@@ -8,7 +8,8 @@ from membase.api.rest_client import RestConnection
 class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
     def setUp(self):
         super(MultiNodeAutoFailoverTests, self).setUp()
-        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
+        self.data_load_spec = self.input.param("data_load_spec",
+                                               "volume_test_load")
         self.master = self.servers[0]
 
     def tearDown(self):
@@ -71,7 +72,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             self.failover_actions[self.failover_action](self)
         except:
             result = self._check_for_autofailover_initiation_for_server_group_failover(self.server_to_fail)
-            self.assertTrue(result, "Server group failover message was not seen in logs")
+            self.assertTrue(result,
+                            "Server group failover msg was not seen in logs")
         finally:
             self.sleep(300)
             self.start_couchbase_server()
@@ -96,8 +98,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.enable_autofailover_and_validate()
         self.sleep(5)
         rebalance_task = self.task.async_rebalance(self.servers,
-                                                      self.servers_to_add,
-                                                      self.servers_to_remove)
+                                                   self.servers_to_add,
+                                                   self.servers_to_remove)
         self.sleep(5)
         tasks = self.subsequent_load_gen()
         self._multi_node_failover()
@@ -107,7 +109,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             pass
         except ServerUnavailableException:
             pass
-        except:
+        except Exception:
             pass
         else:
             self.fail("Rebalance should fail since a node went down")
@@ -135,8 +137,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.enable_autofailover_and_validate()
         self.sleep(5)
         rebalance_success = self.task.rebalance(self.servers,
-                                                   self.servers_to_add,
-                                                   self.servers_to_remove)
+                                                self.servers_to_add,
+                                                self.servers_to_remove)
         if not rebalance_success:
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
@@ -214,11 +216,9 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             self.rest.set_recovery_type("ns_1@{}".format(node.ip),
                                         self.recovery_strategy)
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
-        msg = "rebalance failed while recovering failover nodes " \
-              "{0}".format(
-            self.server_to_fail[0])
-        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
-                        msg)
+        msg = "rebalance failed while recovering failover nodes {0}" \
+              .format(self.server_to_fail[0])
+        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
         if self.spec_name is None:
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
@@ -246,9 +246,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.nodes = self.rest.node_statuses()
         self.remove_after_failover = True
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
-        msg = "rebalance failed while removing failover nodes " \
-              "{0}".format(
-            self.server_to_fail[0])
+        msg = "rebalance failed while removing failover nodes {0}" \
+              .format(self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
                         msg)
         if self.spec_name is None:
@@ -257,13 +256,14 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.wait_for_async_data_load_to_complete(tasks)
 
-    def _check_for_autofailover_initiation_for_server_group_failover(self, failed_over_nodes):
+    def _check_for_autofailover_initiation_for_server_group_failover(
+            self, failed_over_nodes):
         rest = RestConnection(self.master)
         ui_logs = rest.get_logs(10)
         ui_logs_text = [t["text"] for t in ui_logs]
         ui_logs_time = [t["serverTime"] for t in ui_logs]
         expected_log = "Starting failing over ['ns_1@{}','ns_1@{}']".format(
-            failed_over_nodes[0].ip,failed_over_nodes[1].ip)
+            failed_over_nodes[0].ip, failed_over_nodes[1].ip)
         self.log.info("ui_logs_text: {0}".format(ui_logs_text))
         if expected_log in ui_logs_text:
             failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
@@ -278,16 +278,19 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                                                 key_size=self.key_size,
                                                 doc_size=self.doc_size,
                                                 doc_type=self.doc_type)
-            tasks = self.async_load_all_buckets(subsequent_load_gen, "create", 0)
+            tasks = self.async_load_all_buckets(
+                subsequent_load_gen, "create", 0)
             return tasks
         else:
-            doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
-            tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                            self.cluster,
-                                                            self.bucket_util.buckets,
-                                                            doc_loading_spec,
-                                                            mutation_num=0,
-                                                            async_load=async_load)
+            doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+                self.data_load_spec)
+            tasks = self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.bucket_util.buckets,
+                doc_loading_spec,
+                mutation_num=0,
+                async_load=async_load)
             return tasks
 
     def wait_for_async_data_load_to_complete(self, task):

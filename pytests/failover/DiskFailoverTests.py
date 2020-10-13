@@ -9,8 +9,9 @@ from membase.api.exception import \
 class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def setUp(self):
         super(DiskAutofailoverTests, self).setUp()
-        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
-        self.skip_validations = self.input.param("skip_validations",True)
+        self.data_load_spec = self.input.param("data_load_spec",
+                                               "volume_test_load")
+        self.skip_validations = self.input.param("skip_validations", True)
         if self.spec_name is None:
             if self.atomicity:
                 self.run_time_create_load_gen = doc_generator(
@@ -33,16 +34,18 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         super(DiskAutofailoverTests, self).tearDown()
 
     def data_load_from_spec(self, async_load=False):
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+            self.data_load_spec)
         if self.durability_level:
             doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                 self.durability_level
-        tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                        self.cluster,
-                                                        self.bucket_util.buckets,
-                                                        doc_loading_spec,
-                                                        mutation_num=0,
-                                                        async_load=async_load)
+        tasks = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.bucket_util.buckets,
+            doc_loading_spec,
+            mutation_num=0,
+            async_load=async_load)
         return tasks
 
     def data_validation_collection(self):
@@ -58,7 +61,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.fail("Doc_loading failed")
 
     def test_disk_autofailover_rest_api(self):
-        disk_timeouts = self.input.param("disk_failover_timeouts", "5,10,30,60,120")
+        disk_timeouts = self.input.param("disk_failover_timeouts",
+                                         "5,10,30,60,120")
         disk_timeouts = disk_timeouts.split(",")
         for disk_timeout in disk_timeouts:
             self.disk_timeout = disk_timeout
@@ -85,7 +89,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def test_disk_failure_for_reads(self):
         self.enable_disk_autofailover_and_validate()
         tasks = []
-        tasks.extend(self.async_load_all_buckets(self.initial_load_gen, "read", 0))
+        tasks.extend(self.async_load_all_buckets(self.initial_load_gen,
+                                                 "read", 0))
         self.loadgen_tasks = tasks
         self.failover_expected = (not self.failover_action == "disk_full")
         self.failover_actions[self.failover_action]()
@@ -98,6 +103,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.disable_autofailover_and_validate()
 
     def test_disk_failure_for_read_and_writes(self):
+        task = None
         self.enable_disk_autofailover_and_validate()
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
@@ -127,11 +133,12 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
 
         :return: None
         """
+        task = None
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
-            self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
@@ -170,17 +177,18 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         4. Disable autofailover and validate.
         :return: None
         """
+        task = None
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
-            self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
         rebalance_success = self.task.rebalance(self.servers,
-                                                   self.servers_to_add,
-                                                   self.servers_to_remove)
+                                                self.servers_to_add,
+                                                self.servers_to_remove)
         if not rebalance_success:
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
@@ -204,17 +212,19 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         4. Disable autofailover and validate.
         :return: None
         """
+        task = None
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
-            self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
         self.failover_actions[self.failover_action]()
         count = 0
-        while self.get_failover_count() != self.num_node_failures and count < 5:
+        while self.get_failover_count() != self.num_node_failures \
+                and count < 5:
             self.sleep(30)
             count += 1
         for node in self.servers_to_add:
@@ -248,6 +258,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         3. Addback node and validate that the addback was successful.
         :return: None
         """
+        task = None
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
@@ -256,7 +267,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.sleep(5)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
-            self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
@@ -291,6 +302,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         3. Rebalance of node if failover was successful and validate.
         :return: None
         """
+        task = None
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
@@ -299,7 +311,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.sleep(5)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
-            self.loadgen_tasks.extend(self._async_load_all_buckets(
+            self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)

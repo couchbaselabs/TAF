@@ -9,7 +9,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
     def setUp(self):
         super(AutoFailoverTests, self).setUp()
         self.skip_validations = self.input.param("skip_validations", True)
-        self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
+        self.data_load_spec = self.input.param("data_load_spec",
+                                               "volume_test_load")
         if self.spec_name is None:
             if self.atomicity:
                 self.run_time_create_load_gen = doc_generator(
@@ -34,7 +35,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         super(AutoFailoverTests, self).tearDown()
 
     def set_retry_exceptions(self, doc_loading_spec):
-        retry_exceptions = []
+        retry_exceptions = list()
         retry_exceptions.append(SDKException.AmbiguousTimeoutException)
         retry_exceptions.append(SDKException.TimeoutException)
         retry_exceptions.append(SDKException.RequestCanceledException)
@@ -45,18 +46,20 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def data_load_from_spec(self, async_load=False):
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+            self.data_load_spec)
         if self.durability_level:
             doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                 self.durability_level
         self.set_retry_exceptions(doc_loading_spec)
-        tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                        self.cluster,
-                                                        self.bucket_util.buckets,
-                                                        doc_loading_spec,
-                                                        mutation_num=0,
-                                                        async_load=async_load,
-                                                        validate_task=self.skip_validations)
+        tasks = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.bucket_util.buckets,
+            doc_loading_spec,
+            mutation_num=0,
+            async_load=async_load,
+            validate_task=self.skip_validations)
         return tasks
 
     def data_validation_collection(self):
@@ -83,6 +86,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         3. Disable autofailover and validate.
         :return: None
         """
+        task = None
         if self.auto_reprovision:
             self.disable_autofailover_and_validate()
             self.enable_autoreprovision()
@@ -107,13 +111,15 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        rebalance = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
-        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
+                        if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master = self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -136,6 +142,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         :return: None
         """
+        task = None
         if self.auto_reprovision:
             self.disable_autofailover_and_validate()
             self.enable_autoreprovision()
@@ -158,7 +165,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.failover_actions[self.failover_action](self)
         self.sleep(300)
         self.task.jython_task_manager.get_task_result(rebalance_task)
-        self.assertFalse(rebalance_task.result, "Rebalance should fail since a node went down")
+        self.assertFalse(rebalance_task.result,
+                         "Rebalance should fail since a node went down")
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
                 for task in self.loadgen_tasks:
@@ -167,10 +175,12 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.wait_for_async_data_load_to_complete(task)
 
         self.sleep(60)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        rebalance = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
-        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
+                        if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
         self.cluster.master = self.master = self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
@@ -195,6 +205,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Disable autofailover and validate.
         :return: None
         """
+        task = None
         if self.auto_reprovision:
             self.disable_autofailover_and_validate()
             self.enable_autoreprovision()
@@ -210,10 +221,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             task = self.data_load_from_spec(async_load=True)
 
-        rebalance_task = self.task.async_rebalance(self.servers,
-                                                   self.servers_to_add,
-                                                   self.servers_to_remove,
-                                                   check_vbucket_shuffling=False)
+        rebalance_task = self.task.async_rebalance(
+            self.servers,
+            self.servers_to_add,
+            self.servers_to_remove,
+            check_vbucket_shuffling=False)
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.disable_firewall()
@@ -227,12 +239,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.wait_for_async_data_load_to_complete(task)
         self.sleep(60)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        rebalance = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
-        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
+                        if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master = self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -255,6 +269,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Disable autofailover and validate.
         :return: None
         """
+        task = None
         if self.auto_reprovision:
             self.disable_autofailover_and_validate()
             self.enable_autoreprovision()
@@ -298,7 +313,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.bucket_util.update_all_bucket_replicas(self.new_replica)
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
-                .format(self.replicas, self.new_replica)
+                .format(self.num_replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
         if self.spec_name is None:
@@ -307,12 +322,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        rebalance = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
-        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
+                        if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master = self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -332,6 +349,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         3. Addback node and validate that the addback was successful.
         :return: None
         """
+        task = None
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
@@ -377,7 +395,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.bucket_util.update_all_bucket_replicas(self.new_replica)
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
-                .format(self.replicas, self.new_replica)
+                .format(self.num_replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
@@ -385,12 +403,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        rebalance = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
-        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
+                        if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master = self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
@@ -411,11 +431,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         3. Rebalance of node if failover was successful and validate.
         :return: None
         """
+        task = None
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
             return
-        bucket = self.bucket_util.buckets[0]
         if self.auto_reprovision:
             self.disable_autofailover_and_validate()
             self.enable_autoreprovision()
@@ -450,7 +470,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.bucket_util.update_all_bucket_replicas(self.new_replica)
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
-                .format(self.replicas, self.new_replica)
+                .format(self.num_replicas, self.new_replica)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
 
         if self.spec_name is None:
@@ -459,12 +479,14 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+        rebalance = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
-        result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
+        result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
+                        if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
-        self.cluster.master = self.master =  self.cluster.nodes_in_cluster[0]
+        self.cluster.master = self.master = self.cluster.nodes_in_cluster[0]
         if self.spec_name is None:
             if self.durability_level:
                 self.data_load_after_autofailover()
