@@ -1,8 +1,9 @@
 import json
+from random import choice, randint, sample
 from threading import Thread
 
 from basetestcase import BaseTestCase
-from Cb_constants import constants, CbServer
+from Cb_constants import constants, CbServer, DocLoading
 from cb_tools.cbstats import Cbstats
 from cb_tools.mc_stat import McStat
 from couchbase_helper.documentgenerator import doc_generator
@@ -31,6 +32,8 @@ class basic_ops(BaseTestCase):
     def setUp(self):
         super(basic_ops, self).setUp()
 
+        self.doc_ops = self.input.param("doc_ops", "").split(";")
+        self.observe_test = self.input.param("observe_test", False)
         # Scope/collection name can be default or create a random one to test
         self.scope_name = self.input.param("scope", CbServer.default_scope)
         self.collection_name = self.input.param("collection",
@@ -478,6 +481,97 @@ class basic_ops(BaseTestCase):
                 self.bucket_util.verify_stats_all_buckets(1)
         self.validate_test_failure()
 
+    def test_parallel_cruds(self):
+        data_op_dict = dict()
+        num_items = self.num_items
+        half_of_num_items = self.num_items / 2
+        supported_d_levels = self.bucket_util.get_supported_durability_levels()
+        exp_values_to_test = [0, 900, 4000, 12999]
+
+        # Initial doc_loading
+        initial_load = doc_generator(self.key, 0, self.num_items,
+                                     doc_size=self.doc_size)
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket_util.buckets[0], initial_load,
+            DocLoading.Bucket.DocOps.CREATE, 0,
+            batch_size=100, process_concurrency=8,
+            compression=self.sdk_compression,
+            timeout_secs=self.sdk_timeout,
+            sdk_client_pool=self.sdk_client_pool)
+        self.task.jython_task_manager.get_task_result(task)
+
+        # Create required doc_gens and doc_op task object
+        for doc_op in self.doc_ops:
+            if doc_op == DocLoading.Bucket.DocOps.CREATE:
+                num_items += half_of_num_items
+                gen_start = self.num_items
+                gen_end = self.num_items + half_of_num_items
+            elif doc_op == DocLoading.Bucket.DocOps.DELETE:
+                gen_start = 0
+                gen_end = half_of_num_items
+            else:
+                gen_start = half_of_num_items
+                gen_end = self.num_items
+
+            d_level = ""
+            replicate_to = persist_to = 0
+            if self.num_replicas > 0:
+                replicate_to = randint(1, self.num_replicas)
+                persist_to = randint(0, self.num_replicas + 1)
+            if not self.observe_test and choice([True, False]):
+                d_level = choice(supported_d_levels)
+
+            self.log.info("Doc_op %s, range (%d, %d), "
+                          "replicate_to=%s, persist_to=%s, d_level=%s"
+                          % (doc_op, gen_start, gen_end,
+                             replicate_to, persist_to, d_level))
+
+            data_op_dict[doc_op] = dict()
+            data_op_dict[doc_op]["doc_gen"] = doc_generator(
+                self.key, gen_start, gen_end,
+                doc_size=self.doc_size,
+                mutation_type=doc_op)
+            data_op_dict[doc_op]["task"] = self.task.async_load_gen_docs(
+                self.cluster, self.bucket_util.buckets[0],
+                data_op_dict[doc_op]["doc_gen"], doc_op,
+                exp=choice(exp_values_to_test),
+                compression=self.sdk_compression,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=d_level, timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool,
+                process_concurrency=1, batch_size=1,
+                print_ops_rate=False, start_task=False)
+
+        # Start all tasks
+        for doc_op in self.doc_ops:
+            self.task_manager.add_new_task(data_op_dict[doc_op]["task"])
+        # Wait for doc_ops to complete and validate final doc value result
+        for doc_op in self.doc_ops:
+            self.task_manager.get_task_result(data_op_dict[doc_op]["task"])
+            self.log.info("%s task completed" % doc_op)
+            if data_op_dict[doc_op]["task"].fail:
+                self.log_failure("Doc_loading failed for %s: %s"
+                                 % (doc_op, data_op_dict[doc_op]["task"].fail))
+            elif doc_op in [DocLoading.Bucket.DocOps.CREATE,
+                            DocLoading.Bucket.DocOps.UPDATE,
+                            DocLoading.Bucket.DocOps.REPLACE,
+                            DocLoading.Bucket.DocOps.DELETE]:
+                suppress_err_tbl = False
+                if doc_op == DocLoading.Bucket.DocOps.DELETE:
+                    suppress_err_tbl = True
+                self.log.info("Validating %s results" % doc_op)
+                # Read all the values to validate doc_operation values
+                task = self.task.async_validate_docs(
+                    self.cluster, self.bucket_util.buckets[0],
+                    data_op_dict[doc_op]["doc_gen"], doc_op, 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    sdk_client_pool=self.sdk_client_pool,
+                    suppress_error_table=suppress_err_tbl)
+                self.task.jython_task_manager.get_task_result(task)
+
+        self.validate_test_failure()
+
     def test_diag_eval_curl(self):
         # Check if diag/eval can be done only by local host
         self.disable_diag_eval_on_non_local_host = \
@@ -487,8 +581,8 @@ class basic_ops(BaseTestCase):
         # check if local host can work fine
         cmd = []
         cmd_base = 'curl http://{0}:{1}@localhost:{2}/diag/eval ' \
-                   .format(self.cluster.master.rest_username,
-                           self.cluster.master.rest_password, port)
+            .format(self.cluster.master.rest_username,
+                    self.cluster.master.rest_password, port)
         command = cmd_base + '-X POST -d \'os:cmd("env")\''
         cmd.append(command)
         command = cmd_base + '-X POST -d \'case file:read_file("/etc/passwd") of {ok, B} -> io:format("~p~n", [binary_to_term(B)]) end.\''
