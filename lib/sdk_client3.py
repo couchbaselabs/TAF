@@ -498,10 +498,12 @@ class SDKClient(object):
 
         return options
 
-    def get_replace_options(self, persist_to=0, replicate_to=0,
+    def get_replace_options(self, exp=0, exp_unit="seconds",
+                            persist_to=0, replicate_to=0,
                             timeout=5, time_unit="seconds",
                             durability="", cas=0):
         options = ReplaceOptions.replaceOptions() \
+            .expiry(self.get_duration(exp, exp_unit)) \
             .timeout(self.get_duration(timeout, time_unit))
 
         if cas > 0:
@@ -1154,7 +1156,8 @@ class SDKClient(object):
                       persist_to=0, replicate_to=0,
                       timeout=5, time_unit="seconds",
                       doc_type="json", durability=""):
-        options = self.get_replace_options(persist_to=persist_to,
+        options = self.get_replace_options(exp=exp, exp_unit=exp_unit,
+                                           persist_to=persist_to,
                                            replicate_to=replicate_to,
                                            timeout=timeout,
                                            time_unit=time_unit,
@@ -1164,8 +1167,7 @@ class SDKClient(object):
         elif doc_type.lower() == "string":
             options = options.transcoder(RawStringTranscoder.INSTANCE)
         result = SDKClient.doc_op.bulkReplace(
-            self.collection, docs, exp, exp_unit,
-            options)
+            self.collection, docs, options)
         return self.__translate_upsert_multi_results(result)
 
     def get_multi(self, keys, timeout=5, time_unit="seconds"):
