@@ -33,11 +33,13 @@ class RebalanceInTests(RebalanceBaseTest):
 
         tasks_info = self.bucket_util._async_load_all_buckets(
             self.cluster, self.gen_create, "create", 0,
-            batch_size=self.batch_size, process_concurrency=self.process_concurrency,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
             durability=self.durability_level,
-            ryow=self.ryow, check_persistence=self.check_persistence)
+            ryow=self.ryow, check_persistence=self.check_persistence,
+            sdk_client_pool=self.sdk_client_pool)
 
         self.task_manager.get_task_result(rebalance_task)
         for task in tasks_info.keys():
@@ -103,7 +105,8 @@ class RebalanceInTests(RebalanceBaseTest):
 
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -123,7 +126,8 @@ class RebalanceInTests(RebalanceBaseTest):
                                        task_verification=True)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -186,7 +190,8 @@ class RebalanceInTests(RebalanceBaseTest):
 
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -206,7 +211,8 @@ class RebalanceInTests(RebalanceBaseTest):
             self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -240,7 +246,8 @@ class RebalanceInTests(RebalanceBaseTest):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 pause_secs=5, timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries))
+                retries=self.sdk_retries,
+                sdk_client_pool=self.sdk_client_pool))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
@@ -346,8 +353,9 @@ class RebalanceInTests(RebalanceBaseTest):
         self.cluster.nodes_in_cluster.extend(servs_in)
         for task in tasks_info:
             self.task_manager.get_task_result(task)
-        self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                       self.cluster)
+        self.bucket_util.verify_doc_op_task_exceptions(
+            tasks_info, self.cluster,
+            sdk_client_pool=self.sdk_client_pool)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util.validate_docs_per_collections_all_buckets(timeout=self.wait_timeout)
         self.bucket_util.verify_cluster_stats(self.num_items, check_ep_items_remaining=True, timeout=self.wait_timeout)
@@ -385,15 +393,17 @@ class RebalanceInTests(RebalanceBaseTest):
         tasks = []
         for bucket in self.bucket_util.buckets:
             tasks.append(self.task.async_load_gen_docs(
-                                    self.cluster, bucket, self.gen_update, "update", 0,
-                                    batch_size=20, persist_to=self.persist_to,
-                                    replicate_to=self.replicate_to, pause_secs=5,
-                                    durability=self.durability_level,
-                                    timeout_secs=self.sdk_timeout,
-                                    retries=self.sdk_retries))
+                self.cluster, bucket, self.gen_update, "update", 0,
+                batch_size=20, persist_to=self.persist_to,
+                replicate_to=self.replicate_to, pause_secs=5,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries,
+                sdk_client_pool=self.sdk_client_pool))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-        servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
+        servs_in = [self.cluster.servers[i + self.nodes_init]
+                    for i in range(self.nodes_in)]
         self.sleep(20)
         for bucket in self.bucket_util.buckets:
             current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
@@ -502,7 +512,8 @@ class RebalanceInTests(RebalanceBaseTest):
             self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -653,7 +664,8 @@ class RebalanceInTests(RebalanceBaseTest):
                             replicate_to=self.replicate_to, pause_secs=5,
                             durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
-                            retries=self.sdk_retries)
+                            retries=self.sdk_retries,
+                            sdk_client_pool=self.sdk_client_pool)
                 elif "create" in self.doc_ops:
                     op_type = "create"
                     # 1/2th of initial data will be added in each iteration
@@ -679,7 +691,8 @@ class RebalanceInTests(RebalanceBaseTest):
                             replicate_to=self.replicate_to, pause_secs=5,
                             durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
-                            retries=self.sdk_retries)
+                            retries=self.sdk_retries,
+                            sdk_client_pool=self.sdk_client_pool)
                 elif "delete" in self.doc_ops:
                     op_type = "delete"
                     # 1/(num_servers) of initial data will be removed after
@@ -709,7 +722,8 @@ class RebalanceInTests(RebalanceBaseTest):
                             replicate_to=self.replicate_to, pause_secs=5,
                             durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
-                            retries=self.sdk_retries)
+                            retries=self.sdk_retries,
+                            sdk_client_pool=self.sdk_client_pool)
                 if task:
                     if self.atomicity:
                         self.task.jython_task_manager.get_task_result(task)
@@ -742,7 +756,8 @@ class RebalanceInTests(RebalanceBaseTest):
             # Validate + retry doc_ops outcomes
             if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
-                    tasks_info, self.cluster)
+                    tasks_info, self.cluster,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(

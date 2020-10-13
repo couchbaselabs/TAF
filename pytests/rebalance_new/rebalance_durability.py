@@ -1,7 +1,6 @@
 from math import floor
 
 from BucketLib.BucketOperations import BucketHelper
-from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from rebalance_base import RebalanceBaseTest
@@ -55,7 +54,8 @@ class RebalanceDurability(RebalanceBaseTest):
 
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -77,7 +77,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.task_manager.get_task_result(task)
             if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
-                    tasks_info, self.cluster)
+                    tasks_info, self.cluster,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
@@ -95,7 +96,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.task_manager.get_task_result(task)
             if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
-                    tasks_info, self.cluster)
+                    tasks_info, self.cluster,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
@@ -113,7 +115,8 @@ class RebalanceDurability(RebalanceBaseTest):
             self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -144,7 +147,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.task_manager.get_task_result(task)
             if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
-                    tasks_info, self.cluster)
+                    tasks_info, self.cluster,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
@@ -166,7 +170,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.task_manager.get_task_result(task)
             if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
-                    tasks_info, self.cluster)
+                    tasks_info, self.cluster,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
@@ -228,14 +233,16 @@ class RebalanceDurability(RebalanceBaseTest):
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,
-                    batch_size=20, process_concurrency=4))
+                    batch_size=20, process_concurrency=4,
+                    sdk_client_pool=self.sdk_client_pool))
 
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, def_bucket, gen_update, "update", 0,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,
-                    batch_size=20, process_concurrency=4))
+                    batch_size=20, process_concurrency=4,
+                    sdk_client_pool=self.sdk_client_pool))
 
             # Wait for all CRUD tasks to complete
             for task in tasks:
@@ -267,10 +274,12 @@ class RebalanceDurability(RebalanceBaseTest):
                 # Create tasks for doc verification
                 tasks.append(self.task.async_validate_docs(
                     self.cluster, def_bucket, gen_update, "update", 0,
-                    batch_size=10, process_concurrency=4))
+                    batch_size=10, process_concurrency=4,
+                    sdk_client_pool=self.sdk_client_pool))
                 tasks.append(self.task.async_validate_docs(
                     self.cluster, def_bucket, gen_create, "create", 0,
-                    batch_size=10, process_concurrency=4))
+                    batch_size=10, process_concurrency=4,
+                    sdk_client_pool=self.sdk_client_pool))
 
                 # Wait for all verification tasks to complete
                 for task in tasks:
@@ -306,14 +315,16 @@ class RebalanceDurability(RebalanceBaseTest):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=20))
+                batch_size=20,
+                sdk_client_pool=self.sdk_client_pool))
 
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_update, "update", 0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=20))
+                batch_size=20,
+                sdk_client_pool=self.sdk_client_pool))
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -335,10 +346,12 @@ class RebalanceDurability(RebalanceBaseTest):
             # Create tasks for doc verification
             tasks.append(self.task.async_validate_docs(
                 self.cluster, def_bucket, gen_update, "update", 0,
-                batch_size=10, process_concurrency=4))
+                batch_size=10, process_concurrency=4,
+                sdk_client_pool=self.sdk_client_pool))
             tasks.append(self.task.async_validate_docs(
                 self.cluster, def_bucket, gen_create, "create", 0,
-                batch_size=10, process_concurrency=4))
+                batch_size=10, process_concurrency=4,
+                sdk_client_pool=self.sdk_client_pool))
 
             # Wait for all doc verification tasks to complete
             for task in tasks:
@@ -364,7 +377,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.task_manager.get_task_result(task)
             if not self.atomicity:
                 self.bucket_util.verify_doc_op_task_exceptions(
-                    tasks_info, self.cluster)
+                    tasks_info, self.cluster,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 for task, task_info in tasks_info.items():
                     self.assertFalse(
@@ -453,8 +467,9 @@ class RebalanceDurability(RebalanceBaseTest):
 
             if not self.atomicity:
                 # Ensure there are no failures
-                self.bucket_util.verify_doc_op_task_exceptions(task_update,
-                                                               self.cluster)
+                self.bucket_util.verify_doc_op_task_exceptions(
+                    task_update, self.cluster,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.bucket_util.log_doc_ops_task_failures(task_update)
             # Delete the rebalance test condition to recover from the error
             self.delete_rebalance_test_condition(test_failure_condition)
@@ -466,8 +481,9 @@ class RebalanceDurability(RebalanceBaseTest):
             for task in task_update:
                 self.task_manager.get_task_result(task)
             if not self.atomicity:
-                self.bucket_util.verify_doc_op_task_exceptions(task_update,
-                                                               self.cluster)
+                self.bucket_util.verify_doc_op_task_exceptions(
+                    task_update, self.cluster,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.bucket_util.log_doc_ops_task_failures(task_update)
         finally:
             self.delete_rebalance_test_condition(test_failure_condition)

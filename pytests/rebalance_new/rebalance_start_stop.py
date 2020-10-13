@@ -1,6 +1,5 @@
-from couchbase_helper.documentgenerator import BlobGenerator, doc_generator
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection, RestHelper
-from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_base import RebalanceBaseTest
 
 
@@ -10,8 +9,10 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         extra_nodes_in = self.input.param("extra_nodes_in", 0)
         extra_nodes_out = self.input.param("extra_nodes_out", 0)
         self.servs_init = self.servers[:self.nodes_init]
-        self.servs_in = [self.servers[i + self.nodes_init] for i in range(self.nodes_in)]
-        self.servs_out = [self.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
+        self.servs_in = [self.servers[i + self.nodes_init]
+                         for i in range(self.nodes_in)]
+        self.servs_out = [self.servers[self.nodes_init - i - 1]
+                          for i in range(self.nodes_out)]
         self.extra_servs_in = [self.servers[i + self.nodes_init + self.nodes_in] for i in range(extra_nodes_in)]
         self.extra_servs_out = [self.servers[self.nodes_init - i - 1 - self.nodes_out] for i in range(extra_nodes_out)]
         self.withMutationOps = self.input.param("withMutationOps", True)
@@ -19,9 +20,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         if self.spec_name is not None:
             self.num_items = 20000
             self.items = 20000
-            # We need to use "test_collections" key for update, since doc_loading was done from spec
-            self.gen_update = doc_generator("test_collections", 0, (self.items / 2),  mutation_type="SET")
-
+            # We need to use "test_collections" key for update,
+            # since doc_loading was done from spec
+            self.gen_update = doc_generator("test_collections", 0,
+                                            (self.items / 2),
+                                            mutation_type="SET")
 
     def tearDown(self):
         super(RebalanceStartStopTests, self).tearDown()
@@ -39,7 +42,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                         batch_size=10,
                         process_concurrency=8,
                         scope=scope.name,
-                        collection=collection.name))
+                        collection=collection.name,
+                        sdk_client_pool=self.sdk_client_pool))
                     if op == "create":
                         bucket.scopes[scope.name] \
                             .collections[collection.name] \
@@ -74,7 +78,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
         add_in_once = self.extra_servs_in
-        result_nodes = set(self.servs_init + self.servs_in) - set(self.servs_out)
+        _ = set(self.servs_init + self.servs_in) - set(self.servs_out)
         # the latest iteration will be with i=5, for this case rebalance should be completed,
         # that also is verified and tracked
         for i in range(1, 6):
@@ -87,8 +91,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     self.servs_init[:self.nodes_init] + self.servs_in,
                     add_in_once, self.servs_out + self.extra_servs_out)
                 add_in_once = []
-                result_nodes = set(self.servs_init + self.servs_in + self.extra_servs_in) - set(
-                    self.servs_out + self.extra_servs_out)
+                _ = set(self.servs_init + self.servs_in + self.extra_servs_in) \
+                    - set(self.servs_out + self.extra_servs_out)
             self.sleep(20)
             expected_progress = 20 * i
             reached = RestHelper(rest).rebalance_reached(expected_progress)
@@ -131,7 +135,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
         add_in_once = self.extra_servs_in
-        result_nodes = set(self.servs_init + self.servs_in) - set(self.servs_out)
+        _ = set(self.servs_init + self.servs_in) - set(self.servs_out)
         # the last iteration will be with i=5,for this case rebalance
         # should be completed, that also is verified and tracked
         for i in range(1, 6):
@@ -148,8 +152,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     add_in_once, self.servs_out + self.extra_servs_out,
                     sleep_before_rebalance=self.sleep_before_rebalance)
                 add_in_once = []
-                result_nodes = set(self.servs_init + self.servs_in + self.extra_servs_in) \
-                               - set(self.servs_out + self.extra_servs_out)
+                _ = set(self.servs_init + self.servs_in + self.extra_servs_in) \
+                    - set(self.servs_out + self.extra_servs_out)
             self.sleep(20)
             expected_progress = 20 * i
             reached = RestHelper(rest).rebalance_reached(expected_progress)
@@ -266,22 +270,26 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         prev_failover_stats = self.bucket_util.get_failovers_logs(
             self.servers[:self.nodes_init], self.bucket_util.buckets)
         _, _ = self.bucket_util.get_and_compare_active_replica_data_set_all(
-            self.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
+            self.servers[:self.nodes_init], self.bucket_util.buckets,
+            path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats,
                                                          prev_failover_stats)
         self.rest = RestConnection(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
-        result_nodes = list(set(self.servers[:self.nodes_init] + self.servs_in)
-                            - set(self.servs_out))
+        _ = list(set(self.servers[:self.nodes_init] + self.servs_in)
+                 - set(self.servs_out))
         for node in self.servs_in:
             self.rest.add_node(self.cluster.master.rest_username,
-                               self.cluster.master.rest_password, node.ip, node.port)
+                               self.cluster.master.rest_password,
+                               node.ip, node.port)
         # Mark Node for failover
         self.rest.fail_over(chosen[0].id, graceful=fail_over)
 
         # Doc_mutation after failing over the nodes
-        self.gen_create_more = self.get_doc_generator(self.num_items, self.num_items * 2)
-        tasks = self.load_all_buckets(self.gen_create_more, "create", num_items_to_create=self.num_items)
+        self.gen_create_more = self.get_doc_generator(self.num_items,
+                                                      self.num_items * 2)
+        tasks = self.load_all_buckets(self.gen_create_more, "create",
+                                      num_items_to_create=self.num_items)
         self.tasks_result(tasks)
         self.task.async_rebalance(
             self.servers[:self.nodes_init], self.servs_in, self.servs_out)
@@ -299,5 +307,6 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.sleep(30)
         self.bucket_util.verify_unacked_bytes_all_buckets()
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
-        self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0,
-                                                  total_vbuckets=self.cluster_util.vbuckets)
+        self.bucket_util.vb_distribution_analysis(
+            servers=nodes, std=1.0,
+            total_vbuckets=self.cluster_util.vbuckets)

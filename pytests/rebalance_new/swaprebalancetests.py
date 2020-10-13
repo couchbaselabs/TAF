@@ -244,7 +244,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                self.loaders, self.cluster)
+                self.loaders, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(self.loaders)
             for task, task_info in self.loaders.items():
                 self.assertFalse(
@@ -366,7 +367,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                self.loaders, self.cluster)
+                self.loaders, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(self.loaders)
             for task, task_info in self.loaders.items():
                 self.assertFalse(
@@ -460,7 +462,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                self.loaders, self.cluster)
+                self.loaders, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(self.loaders)
             for task, task_info in self.loaders.items():
                 self.assertFalse(
@@ -523,7 +526,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                self.loaders, self.cluster)
+                self.loaders, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(self.loaders)
             for task, task_info in self.loaders.items():
                 self.assertFalse(

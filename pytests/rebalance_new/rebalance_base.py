@@ -1,7 +1,6 @@
 import json
 from math import ceil
 
-import traceback
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
 from basetestcase import BaseTestCase
@@ -109,6 +108,17 @@ class RebalanceBaseTest(BaseTestCase):
                     bucket.scopes[self.scope_name] \
                         .collections[self.collection_name] \
                         .num_items = 0
+
+            # Create clients in SDK client pool
+            if self.sdk_client_pool:
+                self.log.info("Creating SDK clients for client_pool")
+                for bucket in self.bucket_util.buckets:
+                    self.sdk_client_pool.create_clients(
+                        bucket,
+                        [self.cluster.master],
+                        self.sdk_pool_capacity,
+                        compression_settings=self.sdk_compression)
+
             if not self.atomicity:
                 _ = self._load_all_buckets(self.cluster, self.gen_create,
                                            "create", 0,
@@ -323,7 +333,8 @@ class RebalanceBaseTest(BaseTestCase):
             retry_exceptions=retry_exceptions_local,
             active_resident_threshold=self.active_resident_threshold,
             scope=self.scope_name,
-            collection=self.collection_name)
+            collection=self.collection_name,
+            sdk_client_pool=self.sdk_client_pool)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
                 self.num_items = task.doc_index
@@ -406,7 +417,8 @@ class RebalanceBaseTest(BaseTestCase):
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
-                scope=self.scope_name, collection=self.collection_name)
+                scope=self.scope_name, collection=self.collection_name,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -418,7 +430,8 @@ class RebalanceBaseTest(BaseTestCase):
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
-                scope=self.scope_name, collection=self.collection_name)
+                scope=self.scope_name, collection=self.collection_name,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
             for bucket in self.bucket_util.buckets:
@@ -436,7 +449,8 @@ class RebalanceBaseTest(BaseTestCase):
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
-                scope=self.scope_name, collection=self.collection_name)
+                scope=self.scope_name, collection=self.collection_name,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
             for bucket in self.bucket_util.buckets:
                 bucket \
@@ -450,8 +464,9 @@ class RebalanceBaseTest(BaseTestCase):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
 
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         return tasks_info
@@ -563,7 +578,7 @@ class RebalanceBaseTest(BaseTestCase):
                     self.fail("Retrying of rebalance still did not help. "
                               "All the retries exhausted...")
                 self.log.info("Attempts remaining: {0}, Retry rebalance: {1}"
-                               .format(attempts_remaining, retry_rebalance))
+                              .format(attempts_remaining, retry_rebalance))
             else:
                 self.log.info("Retry rebalanced fixed the rebalance failure")
                 break
