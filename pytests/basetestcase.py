@@ -611,6 +611,7 @@ class BaseTestCase(unittest.TestCase):
             self.log.info("%s - cbcollect status: %s" % (node.ip, status))
 
             if status is True:
+                completed = 0
                 self.log.info("Polling active_tasks to check cbcollect status")
                 cb_collect_response = dict()
                 retry = 0
@@ -622,32 +623,37 @@ class BaseTestCase(unittest.TestCase):
                                            retry,
                                            cb_collect_response["status"]))
                     if cb_collect_response['status'] == 'completed':
+                        while completed < 10:
+                            self.log.info("Copying cbcollect ZIP file to Client")
+                            remote_client = RemoteMachineShellConnection(node)
+                            if 'perNode' in cb_collect_response:
+                                cb_collect_path = \
+                                    cb_collect_response['perNode'][params['nodes']]['path']
+                                zip_file_copied = remote_client.get_file(
+                                    os.path.dirname(cb_collect_path),
+                                    os.path.basename(cb_collect_path),
+                                    log_path)
+                                self.log.info(
+                                    "%s node cb collect zip coped on client : %s"
+                                    % (node.ip, zip_file_copied))
+                                if zip_file_copied is False:
+                                    self.sleep(5, "According to cbcollect API logs collection is completed but file is missing.")
+                                    completed += 1
+                                    continue
+                                if zip_file_copied:
+                                    remote_client.execute_command("rm -f %s"
+                                                                  % cb_collect_path)
+                                    remote_client.disconnect()
+                                    break
+                            else:
+                                self.log.error(
+                                    "Failed to retrieve zip file path on node %s"
+                                    % node.ip)
                         self.log.debug(cb_collect_response)
                         break
                     else:
                         retry += 1
                         sleep(10, "CB collect still running", log_type="infra")
-
-                self.log.info("Copying cbcollect ZIP file to Client")
-                remote_client = RemoteMachineShellConnection(node)
-                if 'perNode' in cb_collect_response:
-                    cb_collect_path = \
-                        cb_collect_response['perNode'][params['nodes']]['path']
-                    zip_file_copied = remote_client.get_file(
-                        os.path.dirname(cb_collect_path),
-                        os.path.basename(cb_collect_path),
-                        log_path)
-                    self.log.info(
-                        "%s node cb collect zip coped on client : %s"
-                        % (node.ip, zip_file_copied))
-                    if zip_file_copied:
-                        remote_client.execute_command("rm -f %s"
-                                                      % cb_collect_path)
-                        remote_client.disconnect()
-                else:
-                    self.log.error(
-                        "Failed to retrieve zip file path on node %s"
-                        % node.ip)
             else:
                 self.log.error("API perform_cb_collect returned False")
 
