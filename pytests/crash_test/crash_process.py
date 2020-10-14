@@ -1,12 +1,14 @@
-from random import randint
+from random import randint, choice
 
 from BucketLib.bucket import Bucket
+from Cb_constants import DocLoading
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
@@ -47,6 +49,15 @@ class CrashTest(BaseTestCase):
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
+        if self.sdk_client_pool:
+            self.log.info("Creating SDK clients for client_pool")
+            for bucket in self.bucket_util.buckets:
+                self.sdk_client_pool.create_clients(
+                    bucket,
+                    [self.cluster.master],
+                    self.sdk_pool_capacity,
+                    compression_settings=self.sdk_compression)
+
         verification_dict = dict()
         verification_dict["ops_create"] = self.num_items
         verification_dict["sync_write_aborted_count"] = 0
@@ -56,6 +67,7 @@ class CrashTest(BaseTestCase):
             verification_dict["sync_write_committed_count"] = self.num_items
 
         # Load initial documents into the buckets
+        self.log.info("Loading initial documents")
         gen_create = doc_generator(
             self.key, 0, self.num_items,
             key_size=self.key_size,
@@ -81,11 +93,13 @@ class CrashTest(BaseTestCase):
         else:
             for bucket in self.bucket_util.buckets:
                 task = self.task.async_load_gen_docs(
-                    self.cluster, bucket, gen_create, "create", self.maxttl,
+                    self.cluster, bucket, gen_create,
+                    DocLoading.Bucket.DocOps.CREATE, self.maxttl,
                     persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
                     durability=self.durability_level,
-                    batch_size=10, process_concurrency=8)
+                    batch_size=10, process_concurrency=8,
+                    sdk_client_pool=self.sdk_client_pool)
                 self.task.jython_task_manager.get_task_result(task)
 
                 self.bucket_util._wait_for_stats_all_buckets()
@@ -100,6 +114,8 @@ class CrashTest(BaseTestCase):
                     self.fail("Cbstats verification failed")
 
             self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.cluster_util.print_cluster_stats()
+        self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished CrashTest setup========")
 
     def tearDown(self):
@@ -332,6 +348,85 @@ class CrashTest(BaseTestCase):
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
                         def_bucket, self.cluster_util.get_kv_nodes(),
-                        vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+                        vbuckets=self.cluster_util.vbuckets,
+                        expected_val=verification_dict)
                 if stats_failed:
                     self.fail("Cbstats verification failed")
+
+    def test_process_error_on_nodes(self):
+        """
+        Test to validate OoO returns feature
+        1. Start parallel CRUDs using single client
+        2. Perform process crash / stop with doc_ops in parallel
+        3. Make sure no crash or ep_eng issue is seen with the err_simulation
+        """
+        tasks = list()
+        node_data = dict()
+        bucket = self.bucket_util.buckets[0]
+        revert_errors = [CouchbaseError.STOP_MEMCACHED,
+                         CouchbaseError.STOP_SERVER,
+                         CouchbaseError.STOP_BEAMSMP,
+                         CouchbaseError.STOP_PERSISTENCE]
+        # Overriding sdk_timeout to max
+        self.sdk_timeout = 60
+
+        # Disable auto-failover to avoid failover of nodes
+        status = RestConnection(self.cluster.master) \
+            .update_autofailover_settings(False, 120, False)
+        self.assertTrue(status, msg="Failure during disabling auto-failover")
+
+        # Can take 'all_nodes' / 'single node'
+        crash_on = self.input.param("crash_on", "single_node")
+        error_to_simulate = self.input.param("simulate_error",
+                                             CouchbaseError.KILL_MEMCACHED)
+        num_times_to_affect = self.input.param("times_to_affect", 20)
+        nodes_to_affect = self.cluster_util.get_kv_nodes()
+        if crash_on == "single_node":
+            nodes_to_affect = [choice(nodes_to_affect)]
+
+        create_gen = doc_generator(self.key, self.num_items, self.num_items*2)
+        update_gen = doc_generator(self.key, 0, self.num_items/2)
+        delete_gen = doc_generator(self.key, self.num_items/2, self.num_items)
+
+        for node in nodes_to_affect:
+            shell = RemoteMachineShellConnection(node)
+            node_data[node] = dict()
+            node_data[node]["cb_err"] = CouchbaseError(self.log, shell)
+
+        self.log.info("Starting doc-ops")
+        for doc_op in self.doc_ops:
+            load_gen = update_gen
+            if doc_op == DocLoading.Bucket.DocOps.CREATE:
+                load_gen = create_gen
+            elif doc_op == DocLoading.Bucket.DocOps.DELETE:
+                load_gen = delete_gen
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, load_gen, doc_op,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool,
+                batch_size=10,
+                process_concurrency=1,
+                skip_read_on_error=True,
+                print_ops_rate=False)
+            tasks.append(task)
+
+        self.log.info("Starting error_simulation on %s" % nodes_to_affect)
+        for itr in range(1, num_times_to_affect+1):
+            self.log.info("Iteration :: %d" % itr)
+            for node in nodes_to_affect:
+                node_data[node]["cb_err"].create(error_to_simulate,
+                                                 bucket.name)
+            if error_to_simulate in revert_errors:
+                self.sleep(30, "Sleep before reverting the error")
+                for node in nodes_to_affect:
+                    node_data[node]["cb_err"].revert(error_to_simulate,
+                                                     bucket.name)
+            else:
+                self.sleep(10, "Wait for process to come back online")
+
+        # Wait for doc_ops to complete
+        for task in tasks:
+            self.task_manager.get_task_result(task)
