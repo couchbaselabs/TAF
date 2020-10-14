@@ -244,10 +244,11 @@ class SDKClient(object):
                            self.bucket.name)
             System.setProperty("com.couchbase.forceIPv4", "false")
             sdk_logger = Logger.getLogger("com.couchbase.client")
-            sdk_logger.setLevel(Level.SEVERE)
+            # TO-DO: Make it SEVERE after bug is fixed
+            sdk_logger.setLevel(Level.OFF)
             for h in sdk_logger.getParent().getHandlers():
                 if isinstance(h, ConsoleHandler):
-                    h.setLevel(Level.SEVERE)
+                    h.setLevel(Level.OFF)
             cluster_env = \
                 ClusterEnvironment \
                 .builder() \
