@@ -595,60 +595,54 @@ class BaseTestCase(unittest.TestCase):
         return quota
 
     def fetch_cb_collect_logs(self):
-        log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
-        for node in self.servers:
+        for cluster in self.__cb_clusters:
             params = dict()
-            if len(self.servers) != 1:
-                params['nodes'] = 'ns_1@' + node.ip
-            else:
+            rest = RestConnection(cluster.master)
+            nodes = rest.get_nodes()
+            node_ids = [node.id for node in nodes]
+            params['nodes'] = ",".join(node_ids)
+            log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+            if len(self.servers) == 1:
                 # In case of single node we have to pass ip as below
                 params['nodes'] = 'ns_1@' + '127.0.0.1'
 
-            self.log.info('Running cbcollect on node ' + node.ip)
-            rest = RestConnection(node)
+            self.log.info('Running cbcollect on node ' + params['nodes'])
             status, _, _ = rest.perform_cb_collect(params)
             sleep(10, "Wait for CB collect to start", log_type="infra")
-            self.log.info("%s - cbcollect status: %s" % (node.ip, status))
+            self.log.info("%s - cbcollect status: %s" % (",".join(node_ids), status))
 
             if status is True:
-                completed = 0
                 self.log.info("Polling active_tasks to check cbcollect status")
                 cb_collect_response = dict()
                 retry = 0
                 while retry < 60:
                     cb_collect_response = rest.ns_server_tasks(
                         "clusterLogsCollection")
-                    self.log.debug("{}: CBCollectInfo Iteration {} - {}"
-                                   .format(node.ip,
-                                           retry,
+                    self.log.debug("CBCollectInfo Iteration {} - {}"
+                                   .format(retry,
                                            cb_collect_response["status"]))
                     if cb_collect_response['status'] == 'completed':
-                        while completed < 10:
-                            self.log.info("Copying cbcollect ZIP file to Client")
-                            remote_client = RemoteMachineShellConnection(node)
-                            if 'perNode' in cb_collect_response:
+                        if 'perNode' in cb_collect_response:
+                            for idx, node in enumerate(nodes):
+                                self.log.info("%s: Copying cbcollect ZIP file to Client"%node_ids[idx])
+                                server = [server for server in cluster.servers if server.ip == node.ip][0]
+                                remote_client = RemoteMachineShellConnection(server)
                                 cb_collect_path = \
-                                    cb_collect_response['perNode'][params['nodes']]['path']
+                                    cb_collect_response['perNode'][node_ids[idx]]['path']
                                 zip_file_copied = remote_client.get_file(
                                     os.path.dirname(cb_collect_path),
                                     os.path.basename(cb_collect_path),
                                     log_path)
-                                self.log.info(
-                                    "%s node cb collect zip coped on client : %s"
-                                    % (node.ip, zip_file_copied))
-                                if zip_file_copied is False:
-                                    self.sleep(5, "According to cbcollect API logs collection is completed but file is missing.")
-                                    completed += 1
-                                    continue
                                 if zip_file_copied:
                                     remote_client.execute_command("rm -f %s"
                                                                   % cb_collect_path)
                                     remote_client.disconnect()
-                                    break
-                            else:
-                                self.log.error(
-                                    "Failed to retrieve zip file path on node %s"
-                                    % node.ip)
+                                self.log.error("%s node cb collect zip coped on client : %s"
+                                               % (node.ip, zip_file_copied))
+                        else:
+                            self.log.error(
+                                "Failed to retrieve zip file path on node %s"
+                                % node.ip)
                         self.log.debug(cb_collect_response)
                         break
                     else:
