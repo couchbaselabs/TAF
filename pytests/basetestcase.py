@@ -615,7 +615,7 @@ class BaseTestCase(unittest.TestCase):
                 self.log.info("Polling active_tasks to check cbcollect status")
                 cb_collect_response = dict()
                 retry = 0
-                while retry < 30:
+                while retry < 60:
                     cb_collect_response = rest.ns_server_tasks(
                         "clusterLogsCollection")
                     self.log.debug("{}: CBCollectInfo Iteration {} - {}"
