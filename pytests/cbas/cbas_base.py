@@ -690,6 +690,11 @@ class CBASBaseTest(BaseTestCase):
             elif over_ride_param == "remove_default_collection":
                 bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
                     self.remove_default_collection
+            elif over_ride_param == "enable_flush":
+                if self.input.param("enable_flush", False):
+                    bucket_spec[Bucket.flushEnabled] = Bucket.FlushBucket.ENABLED
+                else:
+                    bucket_spec[Bucket.flushEnabled] = Bucket.FlushBucket.DISABLED
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:

@@ -17,6 +17,7 @@ from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
 
 
+
 class CbasUtil:
     def __init__(self, master, cbas_node, server_task=None):
         self.log = logger.get("test")
@@ -1216,7 +1217,12 @@ class CbasUtil:
             nodes = response['nodes']
             for node in nodes:
                 if only_cc_node_url and node["nodeId"] == cc_node_id:
-                    cc_node_config_url = node['configUri']
+                    # node['apiBase'] will not be present in pre-6.5.0 clusters, 
+                    #hence the check
+                    if 'apiBase' in node:
+                        cc_node_config_url = node['apiBase'] + response['nodeConfigUri']
+                    else:
+                        cc_node_config_url = node['configUri']
                     break
 
         self.log.debug("cc_config_urls=%s, ccNodeId=%s"
@@ -1336,7 +1342,8 @@ class CbasUtil:
         for node in nodes:
             address, port = \
                 self.retrieve_analyticsHttpAdminListen_address_port(
-                    node['configUri'], shell)
+                    node['apiBase']+"/analytics/node/config", 
+                    shell)
             partitons[node['nodeName']] = \
                 self.retrieve_number_of_partitions(address, port, shell)
 
@@ -1674,7 +1681,7 @@ class CbasUtil:
         """
         self.log.debug("Validating dataverse entry in Metadata")
         cmd = "select value dv from Metadata.`Dataverse` as dv where\
-         dv.DataverseName = {0};".format(dataverse)
+         dv.DataverseName = \"{0}\";".format(dataverse)
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cmd, username=username, password=password)
@@ -1941,16 +1948,35 @@ class CbasUtil:
             return False
     
     def create_analytics_synonym(self, synonym_name, object_name,
-                                 synonym_dataverse=None, object_dataverse=None, 
+                                 synonym_dataverse=None, object_dataverse=None,
+                                 if_not_exists=False,
                                  validate_error_msg=False, expected_error=None, 
                                  username=None, password=None,
                                  timeout=120, analytics_timeout=120):
+        """
+        Creates an analytics synonym on a dataset.
+        :param synonym_name : str, Name of the Synonym, which has to be created.
+        :param object_name : str, Name of the dataset on which the synonym is to be created.
+        :param synonym_dataverse : str, Name of the dataverse under which the synonym is to be created
+        :param object_dataverse : str, Name of the dataset's dataverse on which the synonym is to be created.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : str
+        :param analytics_timeout : str
+        """
         cmd = "create analytics synonym "
         
         if synonym_dataverse:
             cmd += "{0}.".format(synonym_dataverse)
         
-        cmd += "{0} for ".format(synonym_name)
+        cmd += "{0} ".format(synonym_name)
+        
+        if if_not_exists:
+            cmd += "If Not Exists "
+        
+        cmd += "for "
         
         if object_dataverse:
             cmd += "{0}.".format(object_dataverse)
@@ -1975,6 +2001,18 @@ class CbasUtil:
                                validate_error_msg=False, expected_error=None, 
                                username=None, password=None,
                                timeout=120, analytics_timeout=120):
+        """
+        Drop an analytics synonym.
+        :param synonym_name : str, Name of the Synonym, which has to be dropped.
+        :param synonym_dataverse : str, Name of the dataverse under which the synonym is present.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : str
+        :param analytics_timeout : str
+        """
+        
         cmd = "drop analytics synonym "
         
         if synonym_dataverse:
@@ -1995,11 +2033,60 @@ class CbasUtil:
                 return False
             else:
                 return True
+    
+    def validate_synonym_doc_count(self, full_synonym_name, full_dataset_name,
+                                   validate_error_msg=False, expected_error=None,
+                                   timeout=300, analytics_timeout=300):
+        """
+        Validate that doc count in synonym is same as the dataset on which it was created.
+        :param full_synonym_name : str, Name of the Synonym
+        :param full_dataset_name : str, Name of the dataset on which the synonym was created.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param timeout : int
+        :param analytics_timeout : int
+        """
+        
+        cmd_get_num_items = "select count(*) from %s;"
+
+        synonym_status, metrics, errors, synonym_results, _ = \
+            self.execute_statement_on_cbas_util(
+                cmd_get_num_items % full_synonym_name,
+                timeout=timeout,
+                analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(synonym_status, errors,
+                                                   expected_error)
+        else:
+            if synonym_status != "success":
+                self.log.error("Querying synonym failed")
+                synonym_results = 0
+            else:
+                self.log.debug("No. of items in synonym {0} : {1}"
+                               .format(full_synonym_name, synonym_results[0]['$1']))
+                synonym_results = synonym_results[0]['$1']
+    
+            dataset_status, metrics, errors, dataset_results, _ = \
+                self.execute_statement_on_cbas_util(
+                    cmd_get_num_items % full_dataset_name,
+                    timeout=timeout,
+                    analytics_timeout=analytics_timeout)
+            if dataset_status != "success":
+                self.log.error("Querying dataset failed")
+                dataset_results = 0
+            else:
+                self.log.debug("No. of items in dataset {0} : {1}"
+                               .format(full_dataset_name, dataset_results[0]['$1']))
+                dataset_results = dataset_results[0]['$1']
+            
+            if dataset_results != synonym_results:
+                return False
+            return True
         
             
 class Dataset:
     """
-    This class has helper methods to create datasets on randomly select 
+    This class has helper methods to create datasets and synonyms on randomly select 
     KV buckets or collections.
     """
     
@@ -2013,7 +2100,8 @@ class Dataset:
                  random_dataset_name=True,
                  exclude_bucket=[],
                  exclude_scope=[],
-                 exclude_collection=[]
+                 exclude_collection=[],
+                 set_kv_entity=True
                  ):
         """
         :param bucket_util: object, object of BucketUtil class.
@@ -2035,10 +2123,11 @@ class Dataset:
         self.bucket_util = bucket_util
         self.cbas_util = cbas_util
         self.bucket_cardinality=bucket_cardinality
-        self.set_kv_entity(*self.get_random_kv_entity(
-            self.bucket_util, self.bucket_cardinality, 
-            consider_default_KV_scope, 
-            consider_default_KV_collection,exclude_bucket,exclude_scope,exclude_collection))
+        if set_kv_entity:
+            self.set_kv_entity(*self.get_random_kv_entity(
+                self.bucket_util, self.bucket_cardinality, 
+                consider_default_KV_scope, 
+                consider_default_KV_collection,exclude_bucket,exclude_scope,exclude_collection))
         
         if random_dataset_name:
             self.full_dataset_name = self.create_name_with_cardinality(dataset_name_cardinality)
@@ -2155,19 +2244,26 @@ class Dataset:
         else:
             scope = random.choice(
                 bucket_util.get_active_scopes(bucket))
-            if not consider_default_scope:
+            if consider_default_scope:
+                while scope.name in exclude_scope:
+                    scope = random.choice(bucket_util.get_active_scopes(bucket))
+            else:
                 while (scope.name == "_default") and (scope.name in exclude_scope):
                     scope = random.choice(bucket_util.get_active_scopes(bucket))
             collection = random.choice(bucket_util.get_active_collections(
                 bucket, scope.name))
-            if not consider_default_collection:
+            if consider_default_collection:
+                while collection.name in exclude_collection:
+                    collection = random.choice(bucket_util.get_active_collections(
+                        bucket, scope.name))
+            else:
                 while (collection.name == "_default") and (collection.name in exclude_collection):
                     collection = random.choice(bucket_util.get_active_collections(
                         bucket, scope.name))
         return bucket, scope, collection
     
     @staticmethod
-    def create_name_with_cardinality(name_cardinality=0, no_of_char=255, 
+    def create_name_with_cardinality(name_cardinality=0, max_length=255, 
                                      fixed_length=False):
         """
         Creates a name based on name_cadinality.
@@ -2180,7 +2276,7 @@ class Dataset:
             3 - Creates a string of random letters and digits of format 
             "exampleString.exampleString.exampleString"
             4 - Creates string 'Metadata'
-        :param name_length: int, number of characters in the name.
+        :param max_length: int, number of characters in the name.
         :param fixed_length: bool, If True, creates a name with length equals to no_of_char
         specified, otherwise creates a name with length upto no_of_char specified.  
         """
@@ -2191,7 +2287,7 @@ class Dataset:
         elif name_cardinality > 4:
             return None
         else:
-            max_name_len = no_of_char/name_cardinality
+            max_name_len = max_length/name_cardinality
             if fixed_length:
                 return '.'.join(''.join(random.choice(
                     string.ascii_letters + string.digits) 
@@ -2226,7 +2322,7 @@ class Dataset:
                       username=None, password=None,
                       timeout=120, analytics_timeout=120): 
         
-        if self.dataverse and create_dataverse:
+        if self.dataverse and self.dataverse != "Default" and create_dataverse:
             self.log.info("Creating Dataverse {0}".format(self.dataverse))
             if not self.cbas_util.create_dataverse_on_cbas(
                 dataverse_name=self.get_fully_quantified_dataverse_name()):
@@ -2335,5 +2431,68 @@ class Dataset:
                 BucketName=self.get_fully_quantified_kv_entity_name(1)):
                 self.log.error("Dropped dataset entry still present in Metadata")
                 return False
+        return True
+    
+    def setup_synonym(self, new_synonym_name=False,
+                      synonym_dataverse="Default",
+                      validate_error_msg=False,
+                      expected_error=None,
+                      validate_metadata=True,
+                      validate_doc_count=True,
+                      if_not_exists=False):
+        
+        if new_synonym_name:
+            self.synonym_name = self.create_name_with_cardinality(1)
+        else:
+            self.synonym_name = self.name
+            
+        if synonym_dataverse == "dataset":
+            self.synonym_dataverse = self.dataverse
+        elif synonym_dataverse == "new":
+            self.synonym_dataverse = self.create_name_with_cardinality(2)
+            # create dataverse if it does not exists.
+            if not self.cbas_util.validate_dataverse_in_metadata(
+                self.synonym_dataverse) and not \
+                self.cbas_util.create_dataverse_on_cbas(
+                dataverse_name=self.format_name(self.synonym_dataverse)):
+                self.log.error("Creation of Dataverse {0} failed".format(
+                    self.synonym_dataverse))
+                return False
+        elif synonym_dataverse == "Default":
+            self.synonym_dataverse = "Default"
+            
+        self.log.info("Creating synonym")
+        if not self.cbas_util.create_analytics_synonym(
+            synonym_name=self.format_name(self.synonym_name), 
+            object_name=self.format_name(self.full_dataset_name),
+            synonym_dataverse=self.format_name(self.synonym_dataverse), 
+            validate_error_msg=validate_error_msg, 
+            expected_error=expected_error,
+            if_not_exists=if_not_exists):
+            self.log.error("Error while creating synonym {0} on dataset {1}".format(
+                self.synonym_name, self.full_dataset_name))
+            return False
+        
+        if not validate_error_msg:
+            if validate_metadata:
+                self.log.info("Validating created Synonym entry in Metadata")
+                if not self.cbas_util.validate_synonym_in_metadata(
+                    synonym=self.synonym_name,
+                    synonym_dataverse=self.synonym_dataverse,
+                    dataset_dataverse=self.dataverse, dataset=self.name):
+                    self.log.error("Synonym metadata entry not created")
+                    return False
+            
+            if validate_doc_count:
+                self.log.info(
+                    "Validating whether querying synonym return expected result")
+                if not self.cbas_util.validate_synonym_doc_count(
+                    full_synonym_name=self.format_name(
+                        self.synonym_dataverse,self.synonym_name), 
+                    full_dataset_name=self.format_name(
+                        self.full_dataset_name)):
+                    self.log.error(
+                        "Doc count in Synonym does not match with dataset on which it was created.")
+                    return False
         return True
         
