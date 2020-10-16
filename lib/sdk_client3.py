@@ -297,7 +297,7 @@ class SDKClient(object):
                     i += 1
 
             self.bucketObj = self.cluster.bucket(self.bucket.name)
-            self.bucketObj.waitUntilReady(self.get_duration(60, "seconds"))
+            self.bucketObj.waitUntilReady(self.get_duration(120, "seconds"))
             self.select_collection(self.scope_name, self.collection_name)
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))
