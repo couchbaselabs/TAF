@@ -23,17 +23,8 @@ class BasicOps(N1qlBase):
         results = ""
         bucket_col = self.get_collections()
         stmt = self.get_stmt(bucket_col)
-        query_params = self.create_txn()
-        collection_savepoint, savepoints, queries = \
-            self.full_execute_query(stmt, self.commit, query_params,
-                                    self.rollback_to_savepoint)
-        doc_gen_list = self.get_doc_gen_list(bucket_col)
-        if isinstance(collection_savepoint, dict):
-            results = [[collection_savepoint, savepoints]]
-            self.log.info("queries ran are %s" % queries)
-            self.process_value_for_verification(bucket_col, doc_gen_list, results)
-        else:
-            self.fail(collection_savepoint)
+        self.execute_query_and_validate_results(stmt,
+                             bucket_col)
 
     def test_concurrent_txn(self):
         collections = self.get_collections()
@@ -73,15 +64,106 @@ class BasicOps(N1qlBase):
                 stmts.append(stmt)
         doc_gen_list = self.get_doc_gen_list(collections)
         stmts = self.add_savepoints(stmts)
-        query_params = self.create_txn()
-        collection_savepoint, savepoints, queries = \
-            self.full_execute_query(stmts, self.commit,
-                                    query_params, False)
+        self.execute_query_and_validate_results(stmts,
+                                            collections)
 
-        if isinstance(collection_savepoint, dict):
-            results = [[collection_savepoint, savepoints]]
-            self.log.info("queries ran are %s" % queries)
-            self.process_value_for_verification(collections,
-                                doc_gen_list, results)
-        else:
-            self.fail(collection_savepoint)
+    def test_txn_same_collection_diff_scope(self):
+        '''
+        get 2 scopes and create same collection on both scopes,
+        run quries and validate data
+        execute test with single and multi bucket
+        '''
+        bucket_collections = []
+        doc_gen_list = {}
+        doc_gen = self.gen_docs("test_collections", 0,
+                                          2000, type="employee")
+        scope_considered = \
+            self.bucket_util.get_random_scopes(self.buckets,
+                                          2, "all")
+        collection = self.bucket_util.get_random_name()
+        for bucket_name, scope_dict in scope_considered.items():
+            bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
+                                                bucket_name)
+            for scope in scope_dict["scopes"].keys():
+                self.bucket_util.create_collection(self.cluster.master,
+                                              bucket,
+                                              scope,
+                                              {"name": collection})
+                name = self.get_collection_name(
+                    bucket_name, scope, collection)
+                bucket_collections.append(name)
+                doc_gen_list[name] = doc_gen
+                task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, doc_gen, "create", 0,
+                    batch_size=10, process_concurrency=8,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    durability=self.durability_level,
+                    compression=self.sdk_compression,
+                    timeout_secs=self.sdk_timeout,
+                    scope=scope,
+                    collection=collection)
+                self.task_manager.get_task_result(task)
+        stmts = self.get_stmt(bucket_collections)
+        self.execute_query_and_validate_results(stmts,
+                                            bucket_collections)
+
+    def text_txn_same_collection_diff_bucket(self):
+        '''
+        create same scope and collection on different buckets
+        execute query and validate data
+        '''
+        bucket_collections = []
+        doc_gen_list = {}
+        doc_gen = self.gen_docs("test_collections", 0,
+                                          2000, type="employee")
+        scope = self.bucket_util.get_random_name()
+        collection = self.bucket_util.get_random_name()
+        for bucket in self.bucket_util.buckets:
+            self.bucket_util.create_scope(self.cluster.master,
+                                      bucket,
+                                      {"name": scope})
+            self.bucket_util.create_collection(self.cluster.master,
+                                              bucket,
+                                              scope,
+                                              {"name": collection})
+            name = self.get_collection_name(
+                bucket.name, scope, collection)
+            bucket_collections.append(name)
+            doc_gen_list[name] = doc_gen
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_gen, "create", 0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
+                compression=self.sdk_compression,
+                timeout_secs=self.sdk_timeout,
+                scope=scope,
+                collection=collection)
+            self.task_manager.get_task_result(task)
+        stmts = self.get_stmt(bucket_collections)
+        self.execute_query_and_validate_results(stmts,
+                                            bucket_collections)
+
+    def test_txn_same_keys(self):
+        collections = self.get_collections()
+        doc_type_list = self.get_doc_type_collection()
+        doc_gen_list = self.get_doc_gen_list(collections, True)
+        keys_list = random.sample(doc_gen_list[collections[0]], 20)
+        modify_stmt = []
+        for bucket_col in collections:
+            stmts = self.clause.get_where_clause(
+                doc_type_list[bucket_col], bucket_col,
+                0, 6, 1)
+            self.process_index_to_create(stmts, bucket_col)
+            modify_stmt.extend(stmts)
+        stmts = []
+        for stmt in modify_stmt:
+            clause = stmt.split(":")
+            if clause[1] == "UPDATE" or clause[1] == "DELETE":
+                stmt = stmt + ": " + str(keys_list)
+                stmts.append(stmt)
+            else:
+                stmts.append(stmt)
+        stmts = self.add_savepoints(stmts)
+        self.execute_query_and_validate_results(stmts,
+                                            collections)

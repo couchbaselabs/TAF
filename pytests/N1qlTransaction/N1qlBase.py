@@ -2,6 +2,7 @@ import Queue
 import copy
 import json
 import random
+import string
 import re
 import testconstants
 from threading import Thread
@@ -16,7 +17,6 @@ from n1ql_exceptions import N1qlException
 from remote.remote_util import RemoteMachineShellConnection
 from random_query_template import WhereClause
 from sdk_exceptions import SDKException
-
 from com.couchbase.client.java.json import JsonObject
 
 
@@ -68,6 +68,7 @@ class N1qlBase(CollectionBase):
         self.doc_gen_type = input_spec.get(
                                 MetaCrudParams.DOC_GEN_TYPE, "default")
         self.index_map = {}
+        self.name_list = []
 
     def tearDown(self):
         self.drop_index()
@@ -436,14 +437,28 @@ class N1qlBase(CollectionBase):
         stmt = self.add_savepoints(stmt)
         return stmt
 
+    def get_random_name(self):
+        char_set = string.ascii_letters
+        name_len = random.randint(1, 20)
+        rand_name = ""
+        rand_name = ''.join(random.choice(char_set)
+                                for _ in range(name_len))
+        return rand_name
+
     def get_prepare_stmt(self, query, query_params):
         queries = []
-        prepare = False
-        if prepare:
-            query = "PREPARE p_stmt as " + query
+        name = ""
+        while name == "":
+            name = self.get_random_name()
+            if name in self.name_list:
+                name=""
+            else:
+                self.name_list.append(name)
+        if self.prepare:
+            query = "PREPARE %s as %s"%(name, query)
             queries.append(query)
             _ = self.run_cbq_query(query, query_params=query_params)
-            query = "EXECUTE p_stmt"
+            query = "EXECUTE %s"%(name)
             queries.append(query)
         else:
             queries.append(query)
@@ -591,6 +606,7 @@ class N1qlBase(CollectionBase):
             if commit is False:
                 savepoint = []
                 collection_savepoint = {}
+                queries[txid].append(query)
                 query, result = self.end_txn(query_params, commit=False)
             else:
                 if (not rollback_to_savepoint) or len(savepoint) == 0:
@@ -599,6 +615,7 @@ class N1qlBase(CollectionBase):
                 query = "SELECT * FROM system:transactions"
                 results = self.run_cbq_query(query)
                 self.log.debug(results)
+                queries[txid].append(query)
                 query, result = self.end_txn(query_params, commit=True)
                 if isinstance(result, str) or 'errors' in result:
                     #retry the entire transaction
@@ -614,7 +631,6 @@ class N1qlBase(CollectionBase):
             if write_conflict and write_conflict_result:
                 collection_savepoint['last'] = copy.deepcopy(write_conflict_result)
                 savepoint.append("last")
-            queries[txid].append(query)
         except Exception as e:
             self.log.info(e)
             collection_savepoint = e
@@ -693,8 +709,9 @@ class N1qlBase(CollectionBase):
         dict_to_verify = {}
         count = 0
         if N1qlException.CasMismatchException \
-            in str(result["errors"][0]["msg"]) or \
-            N1qlException.DocumentExistsException \
+            in str(result["errors"][0]["msg"]):
+            return True
+        elif N1qlException.DocumentExistsException \
             in str(result["errors"][0]["msg"]):
             for key in savepoint:
                 for index in collection_savepoint[key].keys():
@@ -714,8 +731,10 @@ class N1qlBase(CollectionBase):
                 if result["metrics"]["resultCount"] == 0:
                     count += 1
             if count == len(dict_to_verify.keys()):
-                self.log.info("txn failed with CAS mismatch")
+                self.log.info("txn failed with document exists")
                 return True
+            else:
+                return False
         elif N1qlException.DocumentNotFoundException in \
             str(result["errors"][0]["msg"]):
             for key in savepoint:
@@ -739,7 +758,9 @@ class N1qlBase(CollectionBase):
             if count == len(dict_to_verify.keys()):
                 self.fail("got %s error when doc exist" %
                                 N1qlException.DocumentNotFoundException)
-        return False
+                return False
+            else:
+                return True
 
     def process_value_for_verification(self, bucket_col, doc_gen_list,
                                        results):
@@ -858,3 +879,18 @@ class N1qlBase(CollectionBase):
         """Yield successive n-sized chunks from input_list."""
         for i in range(0, len(i_list), n):
             yield i_list[i:i + n]
+
+    def execute_query_and_validate_results(self, stmt, bucket_col, doc_gen_list=None):
+        query_params = self.create_txn()
+        collection_savepoint, savepoints, queries = \
+            self.full_execute_query(stmt, self.commit, query_params,
+                                    self.rollback_to_savepoint)
+        if not doc_gen_list:
+            doc_gen_list = self.get_doc_gen_list(bucket_col)
+        if isinstance(collection_savepoint, dict):
+            results = [[collection_savepoint, savepoints]]
+            self.log.info("queries ran are %s" % queries)
+            self.process_value_for_verification(bucket_col,
+                                 doc_gen_list, results)
+        else:
+            self.fail(collection_savepoint)

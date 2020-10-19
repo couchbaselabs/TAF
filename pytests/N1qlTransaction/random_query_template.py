@@ -13,7 +13,9 @@ class WhereClause(object):
                 "citizen_of='USA' AND job_title='Sales':citizen_of,job_title",
                 "salary > 100000:salary",
                 "job_title='Engineer':job_title",
-                "join_mo=9:join_mo"
+                "join_mo=9:join_mo",
+                "job_title='Sales':job_title",
+                "'C++' in skills:skills"
                 ]
             WHERE_CLAUSE = [
                 "join_mo < 3 OR join_mo > 11:period='winter':join_mo",
@@ -25,7 +27,7 @@ class WhereClause(object):
                 "join_mo =1:join_month='January':join_mo",
                 "job_title='Sales':VISA=['US', 'CANADA']",
                 "['Development'] in skills:gaming=True:job_title",
-                "citizen_of='INDIA':rating=exceeded_expectation:citizen_of",
+                "citizen_of='INDIA':rating='exceeded_expectation':citizen_of",
                 "Working_country='USA':temp_emp=True:Working_country"
             ]
         else:
