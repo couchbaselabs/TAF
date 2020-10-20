@@ -2609,7 +2609,8 @@ class BucketUtils(ScopeUtils):
             self.task_manager.get_task_result(task)
 
         # Wait for all doc_loading tasks to complete and populate failures
-        self.verify_doc_op_task_exceptions(tasks_info, cluster)
+        self.verify_doc_op_task_exceptions(tasks_info, cluster,
+                                           sdk_client_pool=sdk_client_pool)
         self.log_doc_ops_task_failures(tasks_info)
         return tasks_info
 

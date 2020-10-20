@@ -143,7 +143,6 @@ class ServerTasks(object):
                     client = SDKClient([cluster.master], bucket,
                                        scope, collection)
                 clients.append(client)
-            self.log.debug("Loading documents to %s" % bucket.name)
             if not ryow:
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
                     cluster, self.jython_task_manager, bucket, clients,

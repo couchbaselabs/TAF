@@ -319,7 +319,6 @@ class RebalanceBaseTest(BaseTestCase):
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True):
-
         retry_exceptions_local = retry_exceptions \
                                  + [SDKException.RequestCanceledException]
 
