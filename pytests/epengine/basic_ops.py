@@ -501,7 +501,7 @@ class basic_ops(BaseTestCase):
         self.task.jython_task_manager.get_task_result(task)
 
         # Create required doc_gens and doc_op task object
-        for doc_op in self.doc_ops:
+        for op_index, doc_op in enumerate(self.doc_ops):
             if doc_op == DocLoading.Bucket.DocOps.CREATE:
                 num_items += half_of_num_items
                 gen_start = self.num_items
@@ -540,7 +540,8 @@ class basic_ops(BaseTestCase):
                 durability=d_level, timeout_secs=self.sdk_timeout,
                 sdk_client_pool=self.sdk_client_pool,
                 process_concurrency=1, batch_size=1,
-                print_ops_rate=False, start_task=False)
+                print_ops_rate=False, start_task=False,
+                task_identifier="%s_%d" % (doc_op, op_index))
 
         # Start all tasks
         for doc_op in self.doc_ops:
