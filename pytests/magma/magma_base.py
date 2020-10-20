@@ -682,7 +682,7 @@ class MagmaBaseTest(BaseTestCase):
                     if not result:
                         self.stop_crash = True
                         self.task.jython_task_manager.abort_all_tasks()
-                        break
+                        self.assertFalse(result)
 
         for shell in connections:
             shell.disconnect()
