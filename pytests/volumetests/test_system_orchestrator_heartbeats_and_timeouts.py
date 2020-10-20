@@ -14,7 +14,7 @@ from sdk_exceptions import SDKException
 import threading
 import time
 import re
-
+import json
 
 class volume(BaseTestCase):  # will add the __init__ functions after the test has been stabilised
     def setUp(self):
@@ -52,7 +52,7 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
         self.lease_grace_time = self.input.param("lease_grace_time", 2000)
         self.lease_renew_after = self.input.param("lease_renew_after", 500)
         self.skip_data_validation = self.input.param("skip_data_validation", True)
-        self.services_init = self.input.param("services_init", "kv-kv-kv-kv-index-n1ql")
+        self.services_init = self.input.param("services_init", "kv-kv-kv-kv-kv-index-n1ql")
         self.services = self.cluster_util.get_services(self.cluster.servers, self.services_init)
         self.query_thread = None
 
@@ -252,15 +252,15 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
         self.log.info("Killing babysitter on : {0}".format(node.ip))
         remote.kill_babysitter()
         remote.disconnect()
+        self.sleep(2)
 
     def start_couchbase_server(self, target_node):
         node = self.get_server_info(target_node)
         remote = RemoteMachineShellConnection(node)
         self.log.info("Starting couchbase server on : {0}".format(node.ip))
         remote.start_couchbase()
-        self.sleep(150)
         remote.disconnect()
-        self.sleep(150)
+        self.sleep(600)
 
     def rebalance(self, nodes_in=0, nodes_out=0):
         servs_in = random.sample(self.available_servers, nodes_in)
@@ -468,6 +468,15 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
                 failover_count += 1
         return failover_count
 
+    def set_rebalance_moves_per_node(self, rebalanceMovesPerNode=4):
+        # build the body
+        body = dict()
+        body["rebalanceMovesPerNode"] = rebalanceMovesPerNode
+        rest = RestConnection(self.cluster.master)
+        rest.set_rebalance_settings(body)
+        result = rest.get_rebalance_settings()
+        self.log.info("Changed Rebalance settings: {0}".format(json.loads(result)))
+
     def rebalance_in(self, bucket):
         self.generate_docs()
         self.gen_delete_users = None
@@ -521,11 +530,12 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
             except Exception:
                 pass
             num_failed_over_nodes = self.get_failover_count(other_server)
+            self.log.info("Number of failed over nodes : {0}".format(num_failed_over_nodes))
             if num_failed_over_nodes:
                 break
         # restart couchbase-server
         self.start_couchbase_server(orchestrator)
-        try :
+        try:
             for bucket in self.bucket_util.buckets:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
                     self.cluster_util.get_kv_nodes(), bucket))
@@ -533,26 +543,40 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
             self.start_couchbase_server(orchestrator)
         else:
             pass
+        self.generate_docs()
+        tasks_info1 = self.data_load()
         if num_failed_over_nodes:
             self.log.info("Doing a delta recovery")
             self.rest.set_recovery_type(otpNode=orchestrator.id, recoveryType="delta")
         else:
             self.fail("failover was not successful, hence could not recover")
+        self.sleep(300)
         if not self.atomicity:
             self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                    num_reader_threads=self.new_num_reader_threads)
 
-        rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [])
         if not self.atomicity:
             self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                    num_reader_threads="disk_io_optimized")
-        self.task.jython_task_manager.get_task_result(rebalance_task)
-        reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
-        self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+        try:
+            rebalance_task = self.task.async_rebalance(
+                self.cluster.servers[:self.nodes_init], [], [])
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
+            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+        except Exception as e:
+            self.log.info("Inside exception, rebalance failed with : {0}".format(str(e)))
+            self.sleep(300)
+            rebalance_task = self.task.async_rebalance(
+                self.cluster.servers[:self.nodes_init], [], [])
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
+            self.assertTrue(reached, "rebalance failed, stuck or did not complete")
+        # self.assertTrue(RestHelper(self.rest).is_cluster_rebalanced(), msg="cluster need rebalance")
         self.sleep(10)
         if not self.skip_data_validation:
             self.data_validation_mode(tasks_info)
+            self.data_validation_mode(tasks_info1)
             self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster,
                                                     self.bucket_util.buckets)
             self.sleep(10)
@@ -595,6 +619,8 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
         ########################################################################################################################
         self.log.info("Step 1: Set Non default orchestrator heartbeats and timeouts")
         self.set_non_default_orchestrator_heartbeats_and_timeouts()
+        # default is 4, we are changing this to increase the rebalance run time which is crucial for this test
+        self.set_rebalance_moves_per_node(rebalanceMovesPerNode=1)
         ########################################################################################################################
         self.log.info("Step 2: Create a n node cluster")
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
