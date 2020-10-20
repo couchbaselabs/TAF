@@ -588,10 +588,24 @@ def pre_install_steps():
             if NodeHelpers[0].shell.is_url_live(params["url"]):
                 params["all_nodes_same_os"] = True
                 for node in NodeHelpers:
-                    build_binary = __get_build_binary_name(node)
                     build_url = params["url"]
+                    build_binary = build_url.split("/")[-1].split("#")[0]
+
+                    if node.get_os() in install_constants.X86:
+                        if "couchbase-server-enterprise" in build_url:
+                            debug_url = build_url.replace("couchbase-server-enterprise", "couchbase-server-enterprise-debuginfo")
+                        elif "couchbase-server-community" in build_url:
+                            debug_url = build_url.replace("couchbase-server-community", "couchbase-server-community-debuginfo")
+                    elif node.get_os() in install_constants.AMD64:
+                        if "couchbase-server-enterprise" in build_url:
+                            debug_url = build_url.replace("couchbase-server-enterprise", "couchbase-server-enterprise-dbg")
+                        elif "couchbase-server-community" in build_url:
+                            debug_url = build_url.replace("couchbase-server-community", "couchbase-server-community-dbg")
+                    debug_binary = debug_url.split("/")[-1].split("#")[0]
+
                     filepath = __get_download_dir(node) + build_binary
-                    node.build = build(build_binary, build_url, filepath)
+                    filepath_debug = __get_download_dir(node) + debug_binary
+                    node.build = build(build_binary, build_url, filepath, debug_binary, debug_url, filepath_debug)
             else:
                 print_result_and_exit("URL {0} is not live. Exiting."
                                       .format(params["url"]))
