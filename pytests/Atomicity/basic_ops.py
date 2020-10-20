@@ -23,6 +23,7 @@ class basic_ops(BaseTestCase):
                 self.num_replicas,
                 bucket_count=self.num_buckets,
                 bucket_type=self.bucket_type,
+                ram_quota=self.bucket_size,
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy)
         else:

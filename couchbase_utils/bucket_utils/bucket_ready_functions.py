@@ -1912,7 +1912,8 @@ class BucketUtils(ScopeUtils):
             storage={Bucket.StorageBackend.couchstore: 3,
                      Bucket.StorageBackend.magma: 0},
             compression_mode=Bucket.CompressionMode.ACTIVE,
-            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE]):
+            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
+            ram_quota=None):
         success = True
         rest = RestConnection(server)
         info = rest.get_nodes_self()
@@ -1921,11 +1922,14 @@ class BucketUtils(ScopeUtils):
             self.log.error("At least need 450MB memoryQuota")
             success = False
         else:
-            available_ram = info.memoryQuota * bucket_ram_ratio
-            if available_ram / bucket_count > 100:
-                bucket_ram = int(available_ram / bucket_count)
+            if ram_quota is not None:
+                bucket_ram = ram_quota
             else:
-                bucket_ram = 100
+                available_ram = info.memoryQuota * bucket_ram_ratio
+                if available_ram / bucket_count > 100:
+                    bucket_ram = int(available_ram / bucket_count)
+                else:
+                    bucket_ram = 100
                 # choose a port that is not taken by this ns server
             if type(storage) is not dict:
                 storage = {storage: bucket_count}
