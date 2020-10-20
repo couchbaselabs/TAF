@@ -5,6 +5,7 @@ from java.time import Duration
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.core.env import TimeoutConfig, IoConfig
+import sys
 failed = []
 
 
@@ -70,9 +71,9 @@ try:
     if "thp" in param.lower():
         execute(thp_cmd)
     if "firewall" in param.lower():
-        execute(thp_cmd)
+        execute(disable_firewall)
     if "swapiness" in param.lower():
-        execute(thp_cmd)
+        execute(swapiness_cmd)
 except:
     execute()
 
