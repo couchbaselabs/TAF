@@ -3,6 +3,7 @@ from TestInput import TestInputSingleton
 from testconstants import \
     LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \
     WIN_COUCHBASE_BIN_PATH, MAC_COUCHBASE_BIN_PATH
+import os
 
 
 class CbCmdBase:
@@ -21,9 +22,8 @@ class CbCmdBase:
         if int(shell_conn.port) in range(ClusterRun.port,
                                          ClusterRun.port+10):
             # Cluster run case
-            self.cbstatCmd = "%s/%s" \
-                % (TestInputSingleton.input.servers[0].cli_path,
-                   self.binaryName)
+            self.cbstatCmd = os.path.join(TestInputSingleton.input.servers[0].cli_path,
+                                          "build", "kv_engine", self.binaryName)
         elif self.shellConn.extract_remote_info().type.lower() == 'windows':
             # Windows case
             self.cbstatCmd = "%s%s.exe" % (WIN_COUCHBASE_BIN_PATH,

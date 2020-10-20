@@ -700,13 +700,18 @@ class BaseTestCase(unittest.TestCase):
             gdbOut = " ".join(gdbOut)
             return gdbOut
 
-        for server in servers:
+        for idx, server in enumerate(servers):
             shell = RemoteMachineShellConnection(server)
             shell.extract_remote_info()
             self.log.info(server.ip + " : Looking for crash dump files")
             crashDir = libCb + "crash/"
             if shell.info.type.lower() == "windows":
                 crashDir = crashDirWin
+            if int(self.cluster.master.port) in range(ClusterRun.port,
+                                                  ClusterRun.port+10):
+                crashDir = os.path.join(TestInputSingleton.input.servers[0].cli_path,
+                                        "ns_server", "data",
+                                        "n_%s" % str(idx), "crash")
             dmpFiles = shell.execute_command("ls -lt " + crashDir)[0]
             dmpFiles = [f for f in dmpFiles if ".core" not in f]
             dmpFiles = [f for f in dmpFiles if "total" not in f]
@@ -726,7 +731,11 @@ class BaseTestCase(unittest.TestCase):
 
             self.log.info(server.ip + " : Looking for CRITICAL messages in log")
             logsDir = libCb + "logs/"
-            logFiles = shell.execute_command("ls " + logsDir + "memcached.log.*" )[0]
+            if int(self.cluster.master.port) in range(ClusterRun.port,
+                                                      ClusterRun.port+10):
+                logsDir = os.path.join(TestInputSingleton.input.servers[0].cli_path,
+                                       "ns_server", "logs", "n_%s" % str(idx))
+            logFiles = shell.execute_command("ls " + os.path.join(logsDir, "memcached.log.*" ))[0]
             for logFile in logFiles:
                 criticalMessages = shell.execute_command("grep -r 'CRITICAL' " + logFile.strip("\n")+
                                                          "| grep -v 'Rollback point not found'")[0]
