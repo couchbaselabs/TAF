@@ -409,6 +409,7 @@ class volume(BaseTestCase):
                         process_concurrency=self.process_concurrency,
                         pause_secs=5, timeout_secs=self.sdk_timeout,
                         check_replica=self.check_replica,
+                        suppress_error_table=True,
                         scope=scope, collection=collection))
                 if self.gen_expiry is not None:
                     self.sleep(self.maxttl,
@@ -419,6 +420,7 @@ class volume(BaseTestCase):
                         process_concurrency=self.process_concurrency,
                         pause_secs=5, timeout_secs=self.sdk_timeout,
                         check_replica=self.check_replica,
+                        suppress_error_table=True,
                         scope=scope, collection=collection))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
@@ -875,11 +877,11 @@ class volume(BaseTestCase):
             '''
             temp = self.key_prefix
             self.key_prefix = "random_keys"
-            self.update_perc = 100*2
+            self.create_perc = 100*2
             self.PrintStep("Step 4: Create %s random keys" %
                            str(self.num_items*self.update_perc/100))
 
-            self.generate_docs(doc_ops="update")
+            self.generate_docs(doc_ops="create")
             self.perform_load(validate_data=False)
 
             self.key_prefix = temp
@@ -902,11 +904,11 @@ class volume(BaseTestCase):
             self.update_perc = 100*2
             self.PrintStep("Step 5: Update %s random keys to create 50 percent\
              fragmentation" % str(self.num_items*self.update_perc/100))
-
             self.generate_docs(doc_ops="update")
             self.perform_load(validate_data=False)
 
             self.key_prefix = temp
+            self.update_perc = 100
             self.generate_docs(doc_ops="update")
             self.perform_load(validate_data=False)
 
