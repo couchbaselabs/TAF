@@ -447,36 +447,36 @@ class volume(BaseTestCase):
         error_sim.revert(error_to_simulate)
         remote.disconnect()
 
-    def _induce_error(self, error_condition, node=None):
-        if node is None:
-            node = self.cluster.nodes_in_cluster[0]
-        if error_condition == "stop_server":
-            self.cluster_util.stop_server(node)
-        elif error_condition == "enable_firewall":
-            self.cluster_util.start_firewall_on_node(node)
-        elif error_condition == "kill_memcached":
-            self.cluster_util.kill_server_memcached(node)
-        elif error_condition == "reboot_server":
-            shell = RemoteMachineShellConnection(node)
-            shell.reboot_node()
-        elif error_condition == "kill_erlang":
-            shell = RemoteMachineShellConnection(node)
-            shell.kill_erlang()
-            self.sleep(self.sleep_time * 3)
-        else:
-            self.fail("Invalid error induce option")
+    def _induce_error(self, error_condition):
+        for node in self.cluster.nodes_in_cluster:
+            if error_condition == "stop_server":
+                self.cluster_util.stop_server(node)
+            elif error_condition == "enable_firewall":
+                self.cluster_util.start_firewall_on_node(node)
+            elif error_condition == "kill_memcached":
+                self.cluster_util.kill_server_memcached(node)
+            elif error_condition == "reboot_server":
+                shell = RemoteMachineShellConnection(node)
+                shell.reboot_node()
+            elif error_condition == "kill_erlang":
+                shell = RemoteMachineShellConnection(node)
+                shell.kill_erlang()
+                self.sleep(self.sleep_time * 3)
+            else:
+                self.fail("Invalid error induce option")
 
-    def _recover_from_error(self, error_condition, node=None):
-        if node is None:
-            node = self.cluster.nodes_in_cluster[0]
-        if error_condition == "stop_server" or error_condition == "kill_erlang":
-            self.cluster_util.start_server(node)
-        elif error_condition == "enable_firewall":
-            self.cluster_util.stop_firewall_on_node(node)
-        result = self.cluster_util.wait_for_ns_servers_or_assert([node],
-                                                                 wait_time=1200)
-        self.assertTrue(result, "Server warmup failed")
-        self.check_warmup_complete(node)
+    def _recover_from_error(self, error_condition):
+        for node in self.cluster.nodes_in_cluster:
+            if error_condition == "stop_server" or error_condition == "kill_erlang":
+                self.cluster_util.start_server(node)
+            elif error_condition == "enable_firewall":
+                self.cluster_util.stop_firewall_on_node(node)
+
+        for node in self.cluster.nodes_in_cluster:
+            result = self.cluster_util.wait_for_ns_servers_or_assert([node],
+                                                                     wait_time=1200)
+            self.assertTrue(result, "Server warmup failed")
+            self.check_warmup_complete(node)
 
     def rebalance(self, nodes_in=0, nodes_out=0):
         servs_in = random.sample(self.available_servers, nodes_in)
