@@ -1105,7 +1105,7 @@ class volume(BaseTestCase):
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
                 servers=nodes, buckets=self.bucket_util.buckets,
-                num_replicas=2,
+                num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
 #             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
 #             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1181,7 +1181,7 @@ class volume(BaseTestCase):
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
                 servers=nodes, buckets=self.bucket_util.buckets,
-                num_replicas=2,
+                num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
 
             ###################################################################
@@ -1256,7 +1256,7 @@ class volume(BaseTestCase):
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
                 servers=nodes, buckets=self.bucket_util.buckets,
-                num_replicas=2,
+                num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
 
             ###################################################################
