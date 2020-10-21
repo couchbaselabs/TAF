@@ -1,6 +1,7 @@
 from random import choice
 from threading import Thread, Lock
 
+from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
@@ -9,6 +10,9 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+
+from com.couchbase.test.transactions import SimpleTransaction as Transaction
+from reactor.util.function import Tuples
 
 
 class OutOfOrderReturns(BaseTestCase):
@@ -225,5 +229,149 @@ class OutOfOrderReturns(BaseTestCase):
         async_op.join()
         cb_err.revert(simulate_error, self.bucket.name)
         sync_op.join()
+
+        self.validate_test_failure()
+
+    def __durability_level(self):
+        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
+            return 1
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+            return 2
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+            return 3
+        else:
+            return 0
+
+    def trans_doc_gen(self, start, end, op_type):
+        docs = list()
+        value = {'value': 'value1'}
+        content = self.client.translate_to_json_object(value)
+        for i in range(start, end):
+            key = "%s-%s" % (self.key, i)
+            if op_type == DocLoading.Bucket.DocOps.CREATE:
+                doc = Tuples.of(key, content)
+                docs.append(doc)
+            else:
+                docs.append(key)
+        return docs
+
+    def __transaction_runner(self, trans_obj, docs, op_type):
+        exception = None
+        if op_type == DocLoading.Bucket.DocOps.CREATE:
+            exception = trans_obj.RunTransaction(
+                self.client.cluster, self.transaction,
+                [self.client.collection], docs, [], [], True, True, 1)
+        elif op_type == DocLoading.Bucket.DocOps.UPDATE:
+            exception = trans_obj.RunTransaction(
+                self.client.cluster, self.transaction,
+                [self.client.collection], [], docs, [], True, True, 1)
+        elif op_type == DocLoading.Bucket.DocOps.DELETE:
+            exception = trans_obj.RunTransaction(
+                self.client.cluster, self.transaction,
+                [self.client.collection], [], [], docs, True, True, 1)
+        if exception:
+            self.log_failure("'%s' transx failed: %s" % (op_type, exception))
+
+    def test_transaction_with_crud(self):
+        doc_op = self.doc_ops[0]
+        transx_op = self.doc_ops[1]
+        trans_obj = Transaction()
+        supported_d_levels = self.bucket_util.get_supported_durability_levels()
+
+        self.client = self.sdk_client_pool.get_client_for_bucket(
+            self.bucket, self.scope_name, self.collection_name)
+
+        half_of_num_items = self.num_items / 2
+        doc_gen = doc_generator(self.key, 0, half_of_num_items)
+        t_doc_gen = self.trans_doc_gen(half_of_num_items, self.num_items,
+                                       transx_op)
+
+        # Create trans config and object
+        transaction_config = trans_obj.createTransactionConfig(
+            self.transaction_timeout, self.__durability_level())
+        self.transaction = trans_obj.createTansaction(self.client.cluster,
+                                                      transaction_config)
+
+        # Create docs for update/delete ops
+        if doc_op != DocLoading.Bucket.DocOps.CREATE:
+            task = self.task.async_load_gen_docs(
+                self.cluster, self.bucket, doc_gen,
+                DocLoading.Bucket.DocOps.CREATE,
+                timeout_secs=self.sdk_timeout,
+                process_concurrency=8,
+                batch_size=100,
+                sdk_client_pool=self.sdk_client_pool)
+            self.task_manager.get_task_result(task)
+        if transx_op != DocLoading.Bucket.DocOps.CREATE:
+            docs = self.trans_doc_gen(0, half_of_num_items,
+                                      DocLoading.Bucket.DocOps.CREATE)
+            self.__transaction_runner(trans_obj, docs,
+                                      DocLoading.Bucket.DocOps.CREATE)
+
+        replicate_to = choice(range(0, self.num_replicas))
+        persist_to = choice(range(0, self.num_replicas + 1))
+        durability = choice(supported_d_levels)
+        self.log.info("%s replicate_to=%s, persist_to=%s, durability=%s"
+                      % (doc_op, replicate_to, persist_to, durability))
+
+        trans_thread = Thread(target=self.__transaction_runner,
+                              args=[trans_obj, t_doc_gen, transx_op])
+        crud_task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, doc_gen, doc_op,
+            replicate_to=replicate_to, persist_to=persist_to,
+            durability=durability,
+            timeout_secs=self.sdk_timeout,
+            process_concurrency=1,
+            batch_size=1,
+            sdk_client_pool=self.sdk_client_pool)
+        trans_thread.start()
+        trans_thread.join()
+        self.task_manager.get_task_result(crud_task)
+        if crud_task.fail:
+            self.log_failure("Failures seen during doc_crud: %s"
+                             % crud_task.fail)
+        self.validate_test_failure()
+
+    def test_parallel_transactions(self):
+        trans_obj = Transaction()
+        self.client = self.sdk_client_pool.get_client_for_bucket(
+            self.bucket, self.scope_name, self.collection_name)
+
+        # Create trans config and object
+        transaction_config = trans_obj.createTransactionConfig(
+            self.transaction_timeout, self.__durability_level())
+        self.transaction = trans_obj.createTansaction(self.client.cluster,
+                                                      transaction_config)
+
+        # Create docs for update/delete ops
+        if self.doc_ops[0] != DocLoading.Bucket.DocOps.CREATE:
+            docs = self.trans_doc_gen(0, self.num_items/2,
+                                      DocLoading.Bucket.DocOps.CREATE)
+            self.__transaction_runner(trans_obj, docs,
+                                      DocLoading.Bucket.DocOps.CREATE)
+        if self.doc_ops[1] != DocLoading.Bucket.DocOps.CREATE:
+            docs = self.trans_doc_gen(self.num_items/2, self.num_items,
+                                      DocLoading.Bucket.DocOps.CREATE)
+            self.__transaction_runner(trans_obj, docs,
+                                      DocLoading.Bucket.DocOps.CREATE)
+
+        # Create doc_gens for test
+        doc_set = list()
+        doc_set.append(self.trans_doc_gen(0, self.num_items/2,
+                                          self.doc_ops[0]))
+        doc_set.append(self.trans_doc_gen(self.num_items/2, self.num_items,
+                                          self.doc_ops[1]))
+
+        t1 = Thread(target=self.__transaction_runner,
+                    args=[trans_obj, doc_set[0], self.doc_ops[0]])
+        t2 = Thread(target=self.__transaction_runner,
+                    args=[trans_obj, doc_set[1], self.doc_ops[1]])
+
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
 
         self.validate_test_failure()
