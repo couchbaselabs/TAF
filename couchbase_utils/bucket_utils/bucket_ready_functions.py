@@ -2973,15 +2973,15 @@ class BucketUtils(ScopeUtils):
                 if (len(nodes) - num_replicas) >= 1:
                     self.assertTrue(replica_result["total"] == num_replicas * total_vbuckets,
                                     "total vbuckets do not match for replica data set (= criteria), actual {0} expected {1}"
-                                    .format(replica_result["total"], num_replicas ** total_vbuckets))
+                                    .format(replica_result["total"], num_replicas * total_vbuckets))
                 else:
                     self.assertTrue(replica_result["total"] < num_replicas * total_vbuckets,
                                     "total vbuckets do not match for replica data set (<= criteria), actual {0} expected {1}"
-                                    .format(replica_result["total"], num_replicas ** total_vbuckets))
+                                    .format(replica_result["total"], num_replicas * total_vbuckets))
             else:
                 self.assertTrue(replica_result["total"] <= num_replicas * total_vbuckets,
                                 "total vbuckets do not match for replica data set (<= criteria), actual {0} expected {1}"
-                                .format(replica_result["total"], num_replicas ** total_vbuckets))
+                                .format(replica_result["total"], num_replicas * total_vbuckets))
             self.assertTrue(active_result["std"] >= 0.0 and active_result["std"] <= std,
                             "std test failed for active vbuckets")
             self.assertTrue(replica_result["std"] >= 0.0 and replica_result["std"] <= std,
