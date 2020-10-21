@@ -12,7 +12,8 @@ Basic test cases with commit,rollback scenarios
 class basic_ops(BaseTestCase):
     def setUp(self):
         super(basic_ops, self).setUp()
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.add_rbac_user()
@@ -61,18 +62,19 @@ class basic_ops(BaseTestCase):
                                       doc_type=self.doc_type)
         return generator
 
-    def generate_docs_bigdata(self, docs_per_day, start=0, document_size=1024000):
+    @staticmethod
+    def generate_docs_bigdata(docs_per_day, start=0, document_size=1024000):
         json_generator = JsonGenerator()
         return json_generator.generate_docs_bigdata(end=docs_per_day,
                                                     start=start,
                                                     value_size=document_size)
 
     def test_basic_commit(self):
-        '''
+        """
         Test transaction commit, rollback, time ahead,
         time behind scenarios with replica, persist_to and
         replicate_to settings
-        '''
+        """
         # Atomicity.basic_ops.basic_ops.test_basic_commit
         self.drift_ahead = self.input.param("drift_ahead", False)
         self.drift_behind = self.input.param("drift_behind", False)
@@ -111,7 +113,7 @@ class basic_ops(BaseTestCase):
         self.task.jython_task_manager.get_task_result(task)
 
         if self.op_type == "time_out":
-            self.sleep(90, "sleep for 90 seconds so that the staged docs will be cleared")
+            self.sleep(90, "Wait for staged docs to get cleared")
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets,
                 gen_create, "create", exp=0,
