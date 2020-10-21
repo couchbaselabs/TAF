@@ -44,6 +44,9 @@ class SDKException(object):
         "com.couchbase.client.core.retry.reactor.RetryExhaustedException"
     TransactionExpired = "com.couchbase.transactions.error.TransactionExpired"
 
+    ServerOutOfMemoryException = \
+        "com.couchbase.client.core.error.ServerOutOfMemoryException"
+
     class RetryReason(object):
         KV_SYNC_WRITE_IN_PROGRESS = \
             "KV_SYNC_WRITE_IN_PROGRESS"

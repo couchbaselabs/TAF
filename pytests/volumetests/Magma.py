@@ -321,7 +321,8 @@ class volume(BaseTestCase):
             collection = CbServer.default_collection
         retry_exceptions = [
             SDKException.AmbiguousTimeoutException,
-            SDKException.RequestCanceledException
+            SDKException.RequestCanceledException,
+            SDKException.ServerOutOfMemoryException
         ]
         tasks_info = self.bucket_util._async_load_all_buckets(
             self.cluster, kv_gen, op_type, exp,
