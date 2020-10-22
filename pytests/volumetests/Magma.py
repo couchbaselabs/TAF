@@ -783,7 +783,8 @@ class volume(BaseTestCase):
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
                 rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
-                                                           [], [])
+                                                           [], [],
+                                                           retry_get_process_num=100)
                 self.sleep(10, "Rebalance % ={}. Let the rebalance begin!".
                            format(expected_progress))
             i += 1
@@ -1164,7 +1165,8 @@ class volume(BaseTestCase):
                                             recoveryType="full")
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+                self.cluster.servers[:self.nodes_init], [], [],
+                retry_get_process_num=100)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1237,7 +1239,8 @@ class volume(BaseTestCase):
                 num_reader_threads=self.new_num_reader_threads)
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+                self.cluster.servers[:self.nodes_init], [], [],
+                retry_get_process_num=100)
             self.set_num_writer_and_reader_threads(
                 num_writer_threads="disk_io_optimized",
                 num_reader_threads="disk_io_optimized")
@@ -1317,7 +1320,8 @@ class volume(BaseTestCase):
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
             rebalance_task = self.task.async_rebalance(self.cluster.servers,
-                                                       [], [])
+                                                       [], [],
+                                                       retry_get_process_num=100)
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
@@ -1342,7 +1346,8 @@ class volume(BaseTestCase):
                         int(len(self.cluster.nodes_in_cluster)
                             - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out)
+                        self.cluster.servers[:self.nodes_init], [], servs_out,
+                        retry_get_process_num=100)
 
                     self.task.jython_task_manager.get_task_result(
                         rebalance_task)
@@ -1846,7 +1851,8 @@ class volume(BaseTestCase):
                                             recoveryType="full")
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+                self.cluster.servers[:self.nodes_init], [], [],
+                retry_get_process_num=100)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
@@ -1878,7 +1884,8 @@ class volume(BaseTestCase):
                                             recoveryType="delta")
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+                self.cluster.servers[:self.nodes_init], [], [],
+                retry_get_process_num=100)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
@@ -1923,8 +1930,9 @@ class volume(BaseTestCase):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
 
-            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
-                                                       [], [])
+            rebalance_task = self.task.async_rebalance(
+                self.cluster.nodes_in_cluster, [], [],
+                retry_get_process_num=100)
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
 
@@ -1953,7 +1961,8 @@ class volume(BaseTestCase):
                         int(len(self.cluster.nodes_in_cluster)
                             - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out)
+                        self.cluster.servers[:self.nodes_init], [], servs_out,
+                        retry_get_process_num=100)
 
                     self.task.jython_task_manager.get_task_result(
                         rebalance_task)
