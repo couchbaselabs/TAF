@@ -54,7 +54,7 @@ class volume(BaseTestCase):
         self.num_buckets = self.input.param("num_buckets", 1)
         self.mutate = 0
         self.iterations = self.input.param("iterations", 2)
-        self.step_iterations = self.input.param("step_iterations", 5)
+        self.step_iterations = self.input.param("step_iterations", 1)
         self.rollback = self.input.param("rollback", True)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.new_num_writer_threads = self.input.param(
@@ -666,7 +666,7 @@ class volume(BaseTestCase):
             servers = self.cluster.nodes_in_cluster
 
         for _ in xrange(num_kills):
-            self.sleep(2, "Sleep for 2 seconds between continuous memc kill")
+            self.sleep(5, "Sleep for 5 seconds between continuous memc kill")
             for server in servers:
                 shell = RemoteMachineShellConnection(server)
 
@@ -699,7 +699,7 @@ class volume(BaseTestCase):
             self.stop_crash = True
             self.task.jython_task_manager.abort_all_tasks()
             self.assertTrue(result, "Warm-up failed in %s seconds"
-                            % self.wait_timeout * 20)
+                            % (self.wait_timeout * 20))
         else:
             self.log.info("Bucket warm-up completed in %s." %
                           str(time.time() - start_time))
@@ -708,28 +708,37 @@ class volume(BaseTestCase):
                          doc_type="create", kill_rollback=1):
         if not self.rollback:
             return
+        rollbacks = self.input.param("rollbacks", 2)
+        mem_only_items = random.randint(mem_only_items, mem_only_items*2)
         _iter = 0
-        while _iter < 10:
+        while _iter < rollbacks:
+            self.PrintStep("Rollback with %s: %s" % (doc_type,
+                                                     str(_iter)))
             tasks_info = dict()
-
+            if doc_type == "delete":
+                node = self.cluster.nodes_in_cluster[1]
+            else:
+                node = self.cluster.nodes_in_cluster[0]
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
-                self.cluster.nodes_in_cluster[0], self.bucket_util.buckets[0])
+                node, self.bucket_util.buckets[0])
             mem_client.stop_persistence()
 
-            shell = RemoteMachineShellConnection(self.cluster.nodes_in_cluster[0])
+            shell = RemoteMachineShellConnection(node)
             cbstats = Cbstats(shell)
             self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
                                                        name)
-
             gen_docs = doc_generator(
-                self.key, start, mem_only_items,
-                doc_size=self.doc_size, doc_type=self.doc_type,
+                self.key_prefix,
+                start, mem_only_items,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
+                key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value)
-
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size)
             if doc_type == "expiry":
                 if self.maxttl == 0:
                     self.maxttl = self.input.param("maxttl", 10)
@@ -742,13 +751,13 @@ class volume(BaseTestCase):
                                                   collection=collection))
             self.wait_for_doc_load_completion(tasks_info, wait_for_stats=False)
 
-            ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
-                                 mem_only_items}
-            vb_replica_queue_size_map = {self.cluster.nodes_in_cluster[0]: 0}
+            ep_queue_size_map = {node: mem_only_items}
+            vb_replica_queue_size_map = {node: 0}
 
-            for node in self.cluster.nodes_in_cluster[1:]:
-                ep_queue_size_map.update({node: 0})
-                vb_replica_queue_size_map.update({node: 0})
+            for server in self.cluster.nodes_in_cluster:
+                if server.ip != node.ip:
+                    ep_queue_size_map.update({server: 0})
+                    vb_replica_queue_size_map.update({server: 0})
 
             for bucket in self.bucket_util.buckets:
                 self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
@@ -1393,7 +1402,9 @@ class volume(BaseTestCase):
         self.create_perc = 200
         self.PrintStep("Step 4: Load %s items, sequential keys" %
                        str(self.num_items*self.create_perc/100))
-        self.generate_docs(doc_ops="create")
+        self.generate_docs(doc_ops="create",
+                           create_start=self.start,
+                           create_end=self.end*self.create_perc/100)
         self.perform_load(validate_data=False)
         if self.end_step == 4:
             exit(4)
@@ -1492,7 +1503,9 @@ class volume(BaseTestCase):
                            (str(_iter),
                             str(self.num_items*self.update_perc/100),
                             str(self.step_iterations)))
-            self.generate_docs(doc_ops="update")
+            self.generate_docs(doc_ops="update",
+                               update_start=self.start,
+                               update_end=self.end*self.update_perc/100)
             self.perform_load(crash=False, validate_data=True)
             _iter += 1
 
@@ -1520,7 +1533,9 @@ class volume(BaseTestCase):
         '''
         fragmentation: 50, total data: 3X, stale: 1.5X
         '''
-        self.generate_docs(doc_ops="create")
+        self.generate_docs(doc_ops="create",
+                           create_start=self.start,
+                           create_end=self.end)
         self.perform_load(crash=False, validate_data=True)
 
         self.key_prefix = temp
@@ -1537,7 +1552,7 @@ class volume(BaseTestCase):
                                   str(self.num_items*self.update_perc/100),
                                   str(self.step_iterations)))
         _iter = 0
-        while _iter < self.step_iterations/2:
+        while _iter < self.step_iterations:
             self.PrintStep("Step 10.%s: Update %s percent(%s) items %s times \
             and crash during recovery" % (str(_iter), str(self.update_perc),
                                           str(self.num_items *
@@ -1554,7 +1569,7 @@ class volume(BaseTestCase):
         '''
         Final Docs = 30M (0-20M, 10M Random)
         '''
-        mem_only_items = self.input.param("rollback_items", 1000000)
+        mem_only_items = self.input.param("rollback_items", 100000)
         self.perform_rollback(self.final_items, mem_only_items,
                               doc_type="create")
 
@@ -1565,33 +1580,45 @@ class volume(BaseTestCase):
         '''
         Final Docs = 30M (0-20M, 10M Random)
         '''
-        self.perform_rollback(self.start, mem_only_items, doc_type="update")
+        self.perform_rollback(0, mem_only_items, doc_type="update")
 
         if self.end_step == 12:
             exit(12)
         #######################################################################
-        self.PrintStep("Step 13: Normal Rollback with deletes")
-        '''
-        Final Docs = 30M (0-20M, 10M Random)
-        '''
-        self.perform_rollback(self.start, mem_only_items, doc_type="delete")
-
+        self.PrintStep("Step 13: Drop a collection")
+        for i in range(1, self.num_collections, 2):
+            collection_name = self.collection_prefix + str(i)
+            self.bucket_util.drop_collection(self.cluster.master,
+                                             self.bucket,
+                                             self.scope_name,
+                                             collection_name)
+            self.bucket.scopes[self.scope_name].collections.pop(
+                collection_name)
         if self.end_step == 13:
             exit(13)
         #######################################################################
-        self.PrintStep("Step 14: Normal Rollback with expiry")
+        self.PrintStep("Step 14: Normal Rollback with deletes")
         '''
         Final Docs = 30M (0-20M, 10M Random)
         '''
-        self.perform_rollback(self.start, mem_only_items, doc_type="expiry")
+        self.perform_rollback(0, mem_only_items, doc_type="delete")
 
         if self.end_step == 14:
             exit(14)
         #######################################################################
+        self.PrintStep("Step 15: Normal Rollback with expiry")
+        '''
+        Final Docs = 30M (0-20M, 10M Random)
+        '''
+        self.perform_rollback(0, mem_only_items, doc_type="expiry")
+
+        if self.end_step == 15:
+            exit(15)
+        #######################################################################
         self.skip_read_on_error = True
         self.suppress_error_table = True
         self.track_failures = False
-        self.PrintStep("Step 15: Random crashes during CRUD-Expiry")
+        self.PrintStep("Step 16: Random crashes during CRUD-Expiry")
         '''
         Creates: 20M-50M
         Final Docs = 60M (0-50M, 10M Random)
@@ -1626,11 +1653,13 @@ class volume(BaseTestCase):
             self.task_manager.get_task_result(task)
         self.stop_crash = True
         th.join()
+        if self.end_step == 16:
+            exit(16)
         #######################################################################
         self.skip_read_on_error = True
         self.suppress_error_table = True
         self.track_failures = False
-        self.PrintStep("Step 15: Random crashes during CRUD-Expiry")
+        self.PrintStep("Step 17: Random crashes during CRUD-Expiry")
         '''
         Creates: 50M-80M
         Final Docs = 90M (0-80M, 10M Random)
@@ -1662,8 +1691,10 @@ class volume(BaseTestCase):
             self.task_manager.get_task_result(task)
         self.stop_crash = True
         th.join()
+        if self.end_step == 17:
+            exit(17)
         #######################################################################
-        self.PrintStep("Step 20: Drop a collection")
+        self.PrintStep("Step 18: Drop a collection")
         for i in range(1, self.num_collections, 2):
             collection_name = self.collection_prefix + str(i)
             self.bucket_util.drop_collection(self.cluster.master,
@@ -1674,8 +1705,8 @@ class volume(BaseTestCase):
                 collection_name)
             self.kill_memcached()
             self.get_magma_disk_usage()
-        if self.end_step == 20:
-            exit(20)
+        if self.end_step == 18:
+            exit(18)
 
     def SystemTestMagma(self):
         #######################################################################

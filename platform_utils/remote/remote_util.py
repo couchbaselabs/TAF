@@ -3447,7 +3447,7 @@ class RemoteMachineShellConnection:
                             os_version = os_shortname_dict[os_name] + " " + os_version
                         if os_distro:
                             is_linux_distro = True
-                    self.log.info("os_distro: " + os_distro + ", os_version: " + os_version +
+                    self.log.debug("os_distro: " + os_distro + ", os_version: " + os_version +
                                   ", is_linux_distro: " + str(is_linux_distro))
                     file.close()
                     # now remove this file

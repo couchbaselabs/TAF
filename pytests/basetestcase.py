@@ -703,7 +703,6 @@ class BaseTestCase(unittest.TestCase):
         for server in servers:
             shell = RemoteMachineShellConnection(server)
             shell.extract_remote_info()
-            self.log.info(server.ip + " : SSH Successful")
             self.log.info(server.ip + " : Looking for crash dump files")
             crashDir = libCb + "crash/"
             if shell.info.type.lower() == "windows":
@@ -723,7 +722,7 @@ class BaseTestCase(unittest.TestCase):
                     shell.stop_couchbase()
                 result = True
             else:
-                self.log.info(server.ip + " : No crash files found")
+                self.log.debug(server.ip + " : No crash files found")
 
             self.log.info(server.ip + " : Looking for CRITICAL messages in log")
             logsDir = libCb + "logs/"
