@@ -9,7 +9,6 @@ from bucket_collections.app.lib.common_util import \
     get_random_scenario
 from global_vars import logger
 
-from com.couchbase.client.core.error import IndexFailureException
 from java.lang import Exception as Java_base_exception
 
 
@@ -119,8 +118,6 @@ class Guest(Thread):
                 self.exception = e
                 traceback.print_exc()
                 break
-            except IndexFailureException as e:
-                self.log.warning(e)
             except Java_base_exception as e:
                 self.exception = e
                 traceback.print_exc()

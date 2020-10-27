@@ -3,7 +3,6 @@ from datetime import timedelta
 from random import choice, randint, randrange
 from threading import Thread
 
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from bucket_collections.app.constants import global_vars
 from bucket_collections.app.constants.global_vars import sdk_clients
@@ -16,7 +15,6 @@ from bucket_collections.app.constants.user import \
     FIRST_NAMES, LAST_NAMES
 from global_vars import logger
 
-from com.couchbase.client.core.error import IndexFailureException
 from com.couchbase.client.java.json import JsonObject
 from java.lang import Exception as Java_base_exception
 
@@ -274,8 +272,6 @@ class User(Thread):
                 self.exception = e
                 traceback.print_exc()
                 break
-            except IndexFailureException as e:
-                self.log.warning(e)
             except Java_base_exception as e:
                 self.exception = e
                 traceback.print_exc()
