@@ -394,7 +394,7 @@ class CrashTest(BaseTestCase):
             node_data[node]["cb_err"] = CouchbaseError(self.log, shell)
 
         self.log.info("Starting doc-ops")
-        for doc_op in self.doc_ops:
+        for index, doc_op in enumerate(self.doc_ops):
             load_gen = update_gen
             if doc_op == DocLoading.Bucket.DocOps.CREATE:
                 load_gen = create_gen
@@ -410,7 +410,8 @@ class CrashTest(BaseTestCase):
                 batch_size=10,
                 process_concurrency=1,
                 skip_read_on_error=True,
-                print_ops_rate=False)
+                print_ops_rate=False,
+                task_identifier="%s_%s" % (doc_op, index))
             tasks.append(task)
 
         self.log.info("Starting error_simulation on %s" % nodes_to_affect)
