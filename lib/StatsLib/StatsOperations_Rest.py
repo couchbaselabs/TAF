@@ -67,8 +67,6 @@ class StatsHelper(RestConnection):
                         else:
                             map[metric_name][labels_name_value[0]] = labels_name_value[1]
                             map[metric_name]["value"] = value
-                system_processes = False
-                label = None
         return map
 
 
