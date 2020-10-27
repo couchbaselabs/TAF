@@ -1920,28 +1920,29 @@ class CbasUtil:
                 return True
     
     def validate_synonym_in_metadata(self, synonym, synonym_dataverse,
-                                     dataset_dataverse, dataset, 
+                                     object_dataverse, object_name, 
                                      username=None, password=None):
         """
         Validates whether an entry for Synonym is present in Metadata.Synonym.
         :param synonym : str, Name of the Synonym, which has to be validated.
         :param synonym_dataverse : str, Name of the dataverse under which the synonym is created
-        :param dataset_dataverse : str, Name of the dataset's dataverse on which the synonym was created.
-        :param dataset : str, Name of the dataset on which the synonym was created.
+        :param object_dataverse : str, Name of the object's dataverse on which the synonym was created.
+        :param object_name : str, Name of the object on which the synonym was created.
         :param username : str
         :param password : str
         :return boolean
         """
         self.log.debug("Validating Synonym entry in Metadata")
         cmd = "select value sy from Metadata.`Synonym` as sy where \
-        sy.SynonymName = {0} and sy.DataverseName = {1};".format(synonym,synonym_dataverse)
+        sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\";".format(
+            synonym,synonym_dataverse)
         
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cmd, username=username, password=password)
         if status == "success":
             for result in results:
-                if result['ObjectDataverseName'] == dataset_dataverse and result['ObjectName'] == dataset:
+                if result['ObjectDataverseName'] == object_dataverse and result['ObjectName'] == object_name:
                     return True
             return False
         else:
@@ -2122,19 +2123,26 @@ class Dataset:
         self.log = logger.get("test")
         self.bucket_util = bucket_util
         self.cbas_util = cbas_util
-        self.bucket_cardinality=bucket_cardinality
+        self.bucket_cardinality = bucket_cardinality
         if set_kv_entity:
+            exclude_scope = list()
+            exclude_collection = list()
+            if not consider_default_KV_scope:
+                exclude_scope.append("_default")
+            if not consider_default_KV_collection:
+                exclude_collection.append("_default")
             self.set_kv_entity(*self.get_random_kv_entity(
                 self.bucket_util, self.bucket_cardinality, 
-                consider_default_KV_scope, 
-                consider_default_KV_collection,exclude_bucket,exclude_scope,exclude_collection))
+                exclude_bucket,exclude_scope,exclude_collection))
         
         if random_dataset_name:
-            self.full_dataset_name = self.create_name_with_cardinality(dataset_name_cardinality)
+            self.full_dataset_name = Dataset.format_name(
+                self.create_name_with_cardinality(dataset_name_cardinality))
         else:
             self.full_dataset_name = self.get_fully_quantified_kv_entity_name(dataset_name_cardinality)
         
-        self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name)
+        self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name,
+                                                                      strip_back_qoutes=True)
         
     def set_kv_entity(self, kv_bucket_obj=None, kv_scope_obj=None, kv_collection_obj=None):
         """
@@ -2193,6 +2201,19 @@ class Dataset:
         """
         return '.'.join(('`' +  _ + '`') for name in args for _ in name.split("."))
     
+    @staticmethod
+    def format_name_for_error(check_for_special_char_in_name=False,
+                              *args):
+        full_name = list()
+        for name in args:
+            for _ in name.split("."):
+                if _[0].isdigit() or (
+                    check_for_special_char_in_name and "-" in _):
+                    full_name.append("`{0}`".format(_))
+                else:
+                    full_name.append(_)
+        return '.'.join(full_name)
+    
     def get_fully_quantified_dataset_name(self):
         """
         Returns fully quantified dataset name. 
@@ -2225,8 +2246,6 @@ class Dataset:
     @staticmethod
     def get_random_kv_entity(bucket_util,
                              bucket_cardinality=1,
-                             consider_default_scope=True, 
-                             consider_default_collection=True,
                              exclude_bucket=[],
                              exclude_scope=[],
                              exclude_collection=[]):
@@ -2244,22 +2263,13 @@ class Dataset:
         else:
             scope = random.choice(
                 bucket_util.get_active_scopes(bucket))
-            if consider_default_scope:
-                while scope.name in exclude_scope:
-                    scope = random.choice(bucket_util.get_active_scopes(bucket))
-            else:
-                while (scope.name == "_default") and (scope.name in exclude_scope):
-                    scope = random.choice(bucket_util.get_active_scopes(bucket))
+            while scope.name in exclude_scope:
+                scope = random.choice(bucket_util.get_active_scopes(bucket))
             collection = random.choice(bucket_util.get_active_collections(
                 bucket, scope.name))
-            if consider_default_collection:
-                while collection.name in exclude_collection:
-                    collection = random.choice(bucket_util.get_active_collections(
-                        bucket, scope.name))
-            else:
-                while (collection.name == "_default") and (collection.name in exclude_collection):
-                    collection = random.choice(bucket_util.get_active_collections(
-                        bucket, scope.name))
+            while collection.name in exclude_collection:
+                collection = random.choice(bucket_util.get_active_collections(
+                    bucket, scope.name))
         return bucket, scope, collection
     
     @staticmethod
@@ -2354,9 +2364,10 @@ class Dataset:
                 self.log.error("Error creating dataset {0}".format(self.full_dataset_name))
                 return False
         elif dataset_creation_method == "enable_cbas_from_kv":
-            self.full_dataset_name = self.get_fully_quantified_kv_entity_name(3)
-            self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name)
             self.log.info("Enabling Analytics on {0}".format(self.full_dataset_name))
+            self.full_dataset_name = self.get_fully_quantified_kv_entity_name(3)
+            self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name,
+                                                                          True)
             if not self.cbas_util.enable_analytics_from_KV(
                 self.get_fully_quantified_kv_entity_name(self.bucket_cardinality),
                 compress_dataset=compress_dataset, 
@@ -2415,7 +2426,7 @@ class Dataset:
                 return False
         elif dataset_drop_method == "disable_cbas_from_kv":
             self.full_dataset_name = self.get_fully_quantified_kv_entity_name(3)
-            self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name)
+            self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name,True)
             self.log.info("Disabling Analytics on {0}".format(self.full_dataset_name))
             if not self.cbas_util.disable_analytics_from_KV(
                 kv_entity_name=self.full_dataset_name,
@@ -2464,7 +2475,7 @@ class Dataset:
         self.log.info("Creating synonym")
         if not self.cbas_util.create_analytics_synonym(
             synonym_name=self.format_name(self.synonym_name), 
-            object_name=self.format_name(self.full_dataset_name),
+            object_name=self.full_dataset_name,
             synonym_dataverse=self.format_name(self.synonym_dataverse), 
             validate_error_msg=validate_error_msg, 
             expected_error=expected_error,
@@ -2479,7 +2490,7 @@ class Dataset:
                 if not self.cbas_util.validate_synonym_in_metadata(
                     synonym=self.synonym_name,
                     synonym_dataverse=self.synonym_dataverse,
-                    dataset_dataverse=self.dataverse, dataset=self.name):
+                    object_dataverse=self.dataverse, object_name=self.name):
                     self.log.error("Synonym metadata entry not created")
                     return False
             
@@ -2489,8 +2500,7 @@ class Dataset:
                 if not self.cbas_util.validate_synonym_doc_count(
                     full_synonym_name=self.format_name(
                         self.synonym_dataverse,self.synonym_name), 
-                    full_dataset_name=self.format_name(
-                        self.full_dataset_name)):
+                    full_dataset_name=self.full_dataset_name):
                     self.log.error(
                         "Doc count in Synonym does not match with dataset on which it was created.")
                     return False

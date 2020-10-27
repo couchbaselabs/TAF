@@ -695,6 +695,9 @@ class CBASBaseTest(BaseTestCase):
                     bucket_spec[Bucket.flushEnabled] = Bucket.FlushBucket.ENABLED
                 else:
                     bucket_spec[Bucket.flushEnabled] = Bucket.FlushBucket.DISABLED
+            elif over_ride_param == "num_collections":
+                bucket_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE] = int(
+                    self.input.param("num_collections", 1))
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:

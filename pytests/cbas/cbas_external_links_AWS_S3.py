@@ -8,6 +8,7 @@ from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from threading import Thread
 from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
 from couchbase_helper.tuq_helper import N1QLHelper
+from cbas_utils.cbas_utils import Dataset
 
 rbac_users_created = {}
 
@@ -90,13 +91,23 @@ class CBASExternalLinks(CBASBaseTest):
             cred = json.loads(fh.read())
         return cred[user]["aws_access_key"], cred[user]["aws_secret_key"], cred[user]["aws_session_token"]
 
-    def get_link_property_dict(self, access_key, secret_key, serviceEndpoint=None):
+    def get_link_property_dict(self, access_key, secret_key, serviceEndpoint=None,
+                               create_dataverse=False, dataverse_cardinality=1):
         """
         Creates a dict of all the properties required to create external link to
         AWS S3 bucket.
         """
+        if create_dataverse:
+            dataverse_name = Dataset.create_name_with_cardinality(dataverse_cardinality)
+            if not self.cbas_util.validate_dataverse_in_metadata(
+                dataverse_name) and not self.cbas_util.create_dataverse_on_cbas(
+                    dataverse_name=Dataset.format_name(dataverse_name)):
+                self.fail("Creation of Dataverse {0} failed".format(
+                    dataverse_name))
+        else:
+            dataverse_name = "Default"
         self.link_info = dict()
-        self.link_info["dataverse"] = "Default"
+        self.link_info["dataverse"] = dataverse_name
         self.link_info["name"] = "newAwsLink"
         self.link_info["type"] = "s3"
         self.link_info["region"] = self.region
@@ -146,7 +157,7 @@ class CBASExternalLinks(CBASBaseTest):
         else:
             self.dataset_params["links_dataverse"] = self.link_info["dataverse"]
 
-    def setup_for_dataset(self):
+    def setup_for_dataset(self, create_dataverse=False, dataverse_cardinality=1):
         retry = 0
         while (not self.aws_bucket_created) and retry < 3:
             try:
@@ -161,7 +172,8 @@ class CBASExternalLinks(CBASBaseTest):
                 self.aws_bucket_name = self.input.test_params.get("aws_bucket_name", "cbas-regression-{0}".format(
                     random.randint(1, 1000)))
                 retry += 1
-        self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
+        self.get_link_property_dict(self.aws_access_key, self.aws_secret_key,
+                                    create_dataverse=False, dataverse_cardinality=1)
         if not self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info):
             self.fail("link creation failed")
         self.link_created = True
@@ -1591,3 +1603,23 @@ class CBASExternalLinks(CBASBaseTest):
                                                                 doc_counts[file_format], timeout=7200,
                                                                 analytics_timeout=7200):
             self.fail("Expected data does not match actual data")
+    
+    def test_create_and_drop_link_with_2_part_dataverse_name(self):
+        
+        self.get_link_property_dict(self.aws_access_key, self.aws_secret_key,
+                                    create_dataverse=True, dataverse_cardinality=2)
+
+        if not self.cbas_util.create_external_link_on_cbas(
+            link_properties=self.link_info):
+            self.fail("Error while creating link")
+
+        if not self.cbas_util.drop_link_on_cbas(
+            link_name=Dataset.format_name(self.link_info["dataverse"],
+                                          self.link_info["name"])):
+            self.fail("Error while dropping link")
+    
+    def test_create_dataset_with_3_part_dataset_name(self):
+        self.setup_for_dataset(create_dataverse=True, dataverse_cardinality=2)
+
+        if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
+            self.fail("Error while creating dataset")
