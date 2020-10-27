@@ -1,8 +1,8 @@
-import time
 from basetestcase import BaseTestCase
 from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
-from couchbase_helper.documentgenerator import DocumentGenerator
+from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
+from sdk_client3 import SDKClient
 
 """
 Basic test cases with commit,rollback scenarios
@@ -15,8 +15,16 @@ class basic_ops(BaseTestCase):
 
         self.key = 'test_docs'.rjust(self.key_size, '0')
 
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
+        services = None
+        if self.services_init:
+            services = list()
+            for service in self.services_init.split("-"):
+                services.append(service.replace(":", ","))
+
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
+        self.task.rebalance([self.cluster.master], nodes_init, [],
+                            services=services)
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.bucket_util.add_rbac_user()
 
@@ -37,7 +45,7 @@ class basic_ops(BaseTestCase):
                 eviction_policy=self.bucket_eviction_policy,
                 compression_mode=self.compression_mode)
 
-        time.sleep(20)
+        self.sleep(20)
 
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
@@ -56,18 +64,20 @@ class basic_ops(BaseTestCase):
                                       end=end)
         return generator
 
-    def generate_docs_bigdata(self, docs_per_day, start=0, document_size=1024000):
+    @staticmethod
+    def generate_docs_bigdata(docs_per_day, start=0,
+                              document_size=1024000):
         json_generator = JsonGenerator()
         return json_generator.generate_docs_bigdata(end=docs_per_day,
                                                     start=start,
                                                     value_size=document_size)
 
     def test_basic_commit(self):
-        '''
+        """
         Test transaction commit, rollback, time ahead,
         time behind scenarios with replica, persist_to and
         replicate_to settings
-        '''
+        """
         # Atomicity.basic_ops.basic_ops.test_basic_commit
         self.drift_ahead = self.input.param("drift_ahead", False)
         self.drift_behind = self.input.param("drift_behind", False)
@@ -106,7 +116,7 @@ class basic_ops(BaseTestCase):
         self.task.jython_task_manager.get_task_result(task)
 
         if self.op_type == "time_out":
-            self.sleep(90, "sleep for 90 seconds so that the staged docs will be cleared")
+            self.sleep(90, "Wait for staged docs to get cleared")
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets,
                 gen_create, "create", exp=0,
@@ -139,3 +149,72 @@ class basic_ops(BaseTestCase):
 
         self.log.info("going to execute the task")
         self.task.jython_task_manager.get_task_result(task)
+
+    def test_MB_41944(self):
+        num_index = self.input.param("num_index", 1)
+        # Create doc_gen for loading
+        doc_gen = doc_generator(self.key, 0, self.num_items)
+        # Get key for delete op and reset the gen
+        key, v = doc_gen.next()
+        doc_gen.reset()
+        # Open SDK client connection
+        client = SDKClient([self.cluster.master], self.bucket_util.buckets[0])
+        query = list()
+        query.append("CREATE PRIMARY INDEX index_0 on %s USING GSI"
+                     % self.bucket_util.buckets[0].name)
+        if num_index == 2:
+            query.append("CREATE INDEX index_1 on %s(name,age) "
+                         "WHERE mutated=0 USING GSI"
+                         % self.bucket_util.buckets[0].name)
+
+        # Create primary index on the bucket
+        for q in query:
+            client.cluster.query(q)
+
+        # Wait for index to become online`
+        for index, _ in enumerate(query):
+            query = "SELECT state FROM system:indexes WHERE name='index_%s'" \
+                    % index
+
+            index = 0
+            state = None
+            while index < 30:
+                state = client.cluster.query(query) \
+                    .rowsAsObject()[0].get("state")
+                if state == "online":
+                    break
+                self.sleep(1)
+
+            if state != "online":
+                self.log_failure("Index 'index_%s' not yet online" % index)
+
+        # Start transaction to create the doc
+        trans_task = self.task.async_load_gen_docs_atomicity(
+            self.cluster, self.bucket_util.buckets,
+            doc_gen, "create")
+        self.task_manager.get_task_result(trans_task)
+
+        # Perform sub_doc operation on same key
+        _, fail = client.crud("subdoc_insert",
+                              key=key, value=["_sysxattr", "sysxattr-payload"],
+                              xattr=True)
+        if fail:
+            self.log_failure("Subdoc insert failed: %s" % fail)
+        else:
+            self.log.info("Subdoc insert success")
+
+        # Delete the created doc
+        result = client.crud("delete", key)
+        if result["status"] is False:
+            self.log_failure("Doc delete failed: %s" % result["error"])
+        else:
+            self.log.info("Document deleted")
+            # Re-insert same doc through transaction
+            trans_task = self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets,
+                doc_gen, "create")
+            self.task_manager.get_task_result(trans_task)
+
+        # Close SDK Client connection
+        client.close()
+        self.validate_test_failure()
