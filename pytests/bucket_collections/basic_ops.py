@@ -64,6 +64,17 @@ class BasicOps(CollectionBase):
                     self.bucket_util \
                         .validate_docs_per_collections_all_buckets()
 
+    def __validate_cas_for_key(self, key, crud_result, known_cas):
+        vb = self.bucket_util.get_vbucket_num_for_key(key)
+        if crud_result["cas"] in known_cas:
+            if vb in known_cas[crud_result["cas"]]:
+                self.log_failure(
+                    "Duplicate CAS within vb-%s" % vb)
+            else:
+                known_cas[crud_result["cas"]].append(vb)
+        else:
+            known_cas[crud_result["cas"]] = [vb]
+
     def test_delete_default_collection(self):
         """
         Test to delete '_default' collection under '_default' scope.
@@ -135,7 +146,7 @@ class BasicOps(CollectionBase):
             self.log_failure("Invalid client_type '%s'" % client_type)
 
         self.sleep(60)
-        
+
         # Wait for doc_loading task to complete
         if data_load == "during_drop":
             self.task_manager.get_task_result(task)
@@ -438,7 +449,8 @@ class BasicOps(CollectionBase):
                                 mix_key_size=False,
                                 randomize_doc_size=False)
         # Set to keep track of all inserted CAS values
-        known_cas = set()
+        # Format know_cas[CAS] = list(vb_lists)
+        known_cas = dict()
 
         # Client to insert docs under different collections
         client = SDKClient([self.cluster.master], self.bucket,
@@ -459,11 +471,8 @@ class BasicOps(CollectionBase):
                                          % (key, scope.name, collection.name,
                                             result))
                     else:
-                        if result["cas"] in known_cas:
-                            self.log_failure("Same CAS exists under different "
-                                             "collection: %s" % result)
+                        self.__validate_cas_for_key(key, result, known_cas)
                         collection.num_items += 1
-                        known_cas.add(result["cas"])
 
         # Close SDK connection
         client.close()
@@ -510,7 +519,8 @@ class BasicOps(CollectionBase):
                                     mix_key_size=False,
                                     randomize_doc_size=False)
         # Set to keep track of all inserted CAS values
-        known_cas = set()
+        # Format know_cas[CAS] = list(vb_lists)
+        known_cas = dict()
 
         # Client to insert docs under different collections
         client = SDKClient([self.cluster.master], self.bucket,
@@ -534,13 +544,8 @@ class BasicOps(CollectionBase):
                                                 collection.name,
                                                 result))
                         else:
-                            if result["cas"] in known_cas:
-                                self.log_failure(
-                                    "Same CAS exists under different "
-                                    "collection: %s" % result)
+                            self.__validate_cas_for_key(key, result, known_cas)
                             collection.num_items += 1
-                            known_cas.add(result["cas"])
-
         # Close SDK connection
         client.close()
 
@@ -569,7 +574,8 @@ class BasicOps(CollectionBase):
                                          mix_key_size=False,
                                          randomize_doc_size=False)
         # Set to keep track of all inserted CAS values
-        known_cas = set()
+        # Format know_cas[CAS] = list(vb_lists)
+        known_cas = dict()
 
         # Client to insert docs under different collections
         client = SDKClient([self.cluster.master], self.bucket,
@@ -593,12 +599,8 @@ class BasicOps(CollectionBase):
                                                 collection.name,
                                                 result))
                         else:
-                            if result["cas"] in known_cas:
-                                self.log_failure(
-                                    "Same CAS exists under different "
-                                    "collection: %s" % result)
+                            self.__validate_cas_for_key(key, result, known_cas)
                             collection.num_items += 1
-                            known_cas.add(result["cas"])
 
         # Close SDK connection
         client.close()
