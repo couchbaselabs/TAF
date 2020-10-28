@@ -1259,14 +1259,17 @@ class RestConnection(object):
         if break_out >= 60:
             raise Exception("Couchbase server did not start after 60 seconds")
 
-    def fail_over(self, otpNode=None, graceful=False):
+    def fail_over(self, otpNode=None, graceful=False, allowUnsafe=False):
         if otpNode is None:
             self.test_log.error('Required otpNode parameter')
             return False
         api = self.baseUrl + 'controller/failOver'
         if graceful:
             api = self.baseUrl + 'controller/startGracefulFailover'
-        params = urllib.urlencode({'otpNode': otpNode})
+        if allowUnsafe:
+            params = urllib.urlencode({'otpNode': otpNode, 'allowUnsafe': 'true'})
+        else:
+            params = urllib.urlencode({'otpNode': otpNode})
         status, content, header = self._http_request(api, 'POST', params)
         if status:
             self.test_log.debug('{0} - Failover successful'.format(otpNode))
