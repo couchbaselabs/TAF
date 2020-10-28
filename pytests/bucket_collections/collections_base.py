@@ -184,7 +184,8 @@ class CollectionBase(BaseTestCase):
                     bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
                         self.num_items
                 elif key == "remove_default_collection":
-                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = val
+                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                        self.input.param(key)
                 elif key == "bucket_storage":
                     bucket_spec[Bucket.storageBackend] = self.bucket_storage
 
@@ -194,8 +195,7 @@ class CollectionBase(BaseTestCase):
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                     self.durability_level
             elif key == "sdk_timeout":
-                target_spec[MetaCrudParams.SDK_TIMEOUT] = \
-                    self.sdk_timeout
+                target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
             elif key == "doc_size":
                 target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
 
