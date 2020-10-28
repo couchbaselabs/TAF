@@ -46,3 +46,25 @@ class StatsBasicOps(CollectionBase):
         map = stats_helper_object.get_prometheus_metrics()
         number_of_metrics = len(map)
         self.log.info("Got metrics with user Full admin. Number of metrics: {0}".format(number_of_metrics))
+
+    def test_range_api_metrics(self):
+        """
+        Example to retrieve range_api_metrics
+        """
+        # Example 1
+        metric_name = "kv_curr_items"
+        label_values = {"bucket": self.bucket_util.buckets[0].name, "nodes": self.cluster.master.ip}
+        content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
+        print(content)
+
+        # Example 2
+        metric_name = "kv_curr_items"
+        label_values = {"bucket": self.bucket_util.buckets[0].name, "aggregationFunction":"max"}
+        content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
+        print(content)
+
+    def test_instant_api_metrics(self):
+        """
+        API not exposed yet
+        """
+        pass
