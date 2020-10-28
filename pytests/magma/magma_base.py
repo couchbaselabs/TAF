@@ -186,6 +186,7 @@ class MagmaBaseTest(BaseTestCase):
                         "For bucket {} disk usage after initial creation is {}MB\
                         ".format(bucket.name,
                                  self.disk_usage[bucket.name]))
+            self.num_items = self.init_items_per_collection * self.num_collections
         self.read_start = 0
         self.read_end = self.init_items_per_collection
 
