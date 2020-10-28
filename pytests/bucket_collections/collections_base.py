@@ -177,11 +177,12 @@ class CollectionBase(BaseTestCase):
         else:
             for key, val in self.input.test_params.items():
                 if key == "replicas":
-                    bucket_spec[Bucket.replicaNumber] = val
+                    bucket_spec[Bucket.replicaNumber] = self.num_replicas
                 elif key == "bucket_size":
-                    bucket_spec[Bucket.ramQuotaMB] = val
+                    bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
                 elif key == "num_items":
-                    bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = val
+                    bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                        self.num_items
                 elif key == "remove_default_collection":
                     bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = val
                 elif key == "bucket_storage":
@@ -190,11 +191,13 @@ class CollectionBase(BaseTestCase):
     def over_ride_doc_loading_template_params(self, target_spec):
         for key, value in self.input.test_params.items():
             if key == "durability":
-                target_spec[MetaCrudParams.DURABILITY_LEVEL] = value
+                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
+                    self.durability_level
             elif key == "sdk_timeout":
-                target_spec[MetaCrudParams.SDK_TIMEOUT] = value
+                target_spec[MetaCrudParams.SDK_TIMEOUT] = \
+                    self.sdk_timeout
             elif key == "doc_size":
-                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = value
+                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
 
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
