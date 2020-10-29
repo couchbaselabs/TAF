@@ -573,6 +573,9 @@ class RemoteMachineShellConnection:
     def stop_prometheus(self):
         return self.kill_process("prometheus", "prometheus", signum=19)
 
+    def kill_indexer(self):
+        return self.kill_process("indexer", "indexer", signum=9)
+    
     def start_prometheus(self):
         return self.kill_process("prometheus", "prometheus", signum=18)
 

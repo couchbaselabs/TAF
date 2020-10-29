@@ -10,6 +10,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from BucketLib.BucketOperations import BucketHelper
+import time
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -27,14 +29,30 @@ class MagmaBaseTest(BaseTestCase):
         # Create Cluster
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
-        nodes_init = self.cluster.servers[
-            1:self.nodes_init] if self.nodes_init != 1 else []
-        if nodes_init:
-            result = self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.assertTrue(result, "Initial rebalance failed")
-        self.cluster.nodes_in_cluster.extend(
-            [self.cluster.master] + nodes_init)
 
+        nodes_init = self.cluster.servers[1:self.nodes_init]
+
+        self.services = []
+        if nodes_init:
+            self.services = ["kv"]*(self.nodes_init)
+
+        self.dcp_services = self.input.param("dcp_services", None)
+        self.dcp_servers = []
+        if self.dcp_services:
+            self.dcp_services = [service.replace(":", ",") for service in self.dcp_services.split("-")]
+            self.services.extend(self.dcp_services)
+            self.dcp_servers = self.cluster.servers[self.nodes_init:
+                                                    self.nodes_init+len(self.dcp_services)]
+        nodes_in = nodes_init + self.dcp_servers
+        result = self.task.rebalance([self.cluster.master],
+                                     nodes_in,
+                                     [],
+                                     services=self.services[1:])
+        self.assertTrue(result, "Initial rebalance failed")
+        self.cluster.nodes_in_cluster.extend(
+            [self.cluster.master] + nodes_in)
+        for idx, node in enumerate(self.cluster.nodes_in_cluster):
+            node.services = self.services[idx]
         # Create Buckets
         self.bucket_storage = self.input.param("bucket_storage",
                                                Bucket.StorageBackend.magma)
@@ -51,6 +69,7 @@ class MagmaBaseTest(BaseTestCase):
             self._create_multiple_buckets()
 
         self.buckets = self.bucket_util.buckets
+
         # sel.num_collections=1 signifies only default collection
         self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
@@ -69,6 +88,14 @@ class MagmaBaseTest(BaseTestCase):
         self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
         self.log.debug("Collections list == {}".format(self.collections))
 
+        if self.dcp_services:
+            self.initial_query = "CREATE INDEX initial_idx on default:`%s`.`%s`.`%s`(meta().id) with \
+            {\"defer_build\": true};" % (self.buckets[0].name,
+                                         self.scope_name,
+                                         self.collections[0])
+            self.query_client = RestConnection(self.dcp_servers[0])
+            result = self.query_client.query_tool(self.initial_query)
+            self.assertTrue(result["status"] == "success", "Index query failed!")
         # Update Magma/Storage Properties
         props = "magma"
         update_bucket_props = False
@@ -216,7 +243,49 @@ class MagmaBaseTest(BaseTestCase):
             self.assertTrue(ready, msg="Wait_for_memcached failed")
 
     def tearDown(self):
+        if self.dcp_services:
+            count_query = "Select count(*) as items from default:`%s`.`%s`.`%s`;" % (
+                self.buckets[0].name, self.scope_name, self.collections[0])
+            self.sleep(10)
+            initial_result = 0
+            start = time.time()
+            while initial_result == 0 and start + 60 > time.time() and "expiry" not in self.doc_ops:
+                initial_result = self.query_client.query_tool(count_query)["results"][0]["items"]
+                self.sleep(5)
+            self.log.info("## Initial item count in %s:%s:%s == %s" % (
+                self.buckets[0].name, self.scope_name, self.collections[0], initial_result))
+
+            drop_index = "Drop index %s.initial_idx;" % self.buckets[0].name
+            result = self.query_client.query_tool(drop_index)
+            self.assertTrue(result["status"] == "success", "Index query failed!")
+
+            final_index = "CREATE INDEX final_idx on default:`%s`.`%s`.`%s`(meta().id) with \
+            {\"defer_build\": true};" % (self.buckets[0].name,
+                                         self.scope_name,
+                                         self.collections[0])
+            result = self.query_client.query_tool(final_index)
+            self.assertTrue(result["status"] == "success", "Index query failed!")
+
+            final_result = self.query_client.query_tool(count_query)["results"][0]["items"]
+            self.log.info("## Final item count in %s:%s:%s == %s" % (
+                self.buckets[0].name, self.scope_name, self.collections[0], final_result))
+
+            start = time.time()
+            while initial_result != final_result and time.time() < start + 300:
+                self.log.info("Final item count in %s:%s:%s == %s" % (
+                    self.buckets[0].name, self.scope_name, self.collections[0], final_result))
+                final_result = self.query_client.query_tool(count_query)["results"][0]["items"]
+                self.sleep(5)
+            if "expiry" not in self.doc_ops:
+                self.assertTrue(initial_result == final_result, 
+                                "Indexer failed. Initial: %s, Final: %s".
+                                format(initial_result, final_result))
+
         self.cluster_util.print_cluster_stats()
+        dgm = BucketHelper(self.cluster.master).fetch_bucket_stats(
+            self.buckets[0].name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+        self.log.info("## Active Resident Threshold of {0} is {1} ##".format(
+            self.buckets[0].name, dgm))
         super(MagmaBaseTest, self).tearDown()
 
     def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0):
@@ -650,10 +719,10 @@ class MagmaBaseTest(BaseTestCase):
 
         nodes = nodes or self.cluster.nodes_in_cluster
 
-        connections = list()
+        connections = dict()
         for node in nodes:
             shell = RemoteMachineShellConnection(node)
-            connections.append(shell)
+            connections.update({node: shell})
 
         while not self.stop_crash:
             loop_itr += 1
@@ -662,12 +731,14 @@ class MagmaBaseTest(BaseTestCase):
                        "Iteration:{} waiting for {} sec to kill memcached on all nodes".
                        format(loop_itr, sleep))
 
-            for shell in connections:
+            for node, shell in connections.items():
                 if graceful:
                     shell.restart_couchbase()
                 else:
                     while count > 0:
                         shell.kill_memcached()
+                        if "index" in node.services:
+                            shell.kill_indexer()
                         self.sleep(3, "Sleep before killing memcached on same node again.")
                         count -= 1
                     count = kill_itr
@@ -684,17 +755,18 @@ class MagmaBaseTest(BaseTestCase):
                 self.assertFalse(result)
 
             if wait:
-                for server in nodes:
-                    result = self.bucket_util._wait_warmup_completed(
-                                [server],
-                                self.bucket_util.buckets[0],
-                                wait_time=self.wait_timeout * 5)
-                    if not result:
-                        self.stop_crash = True
-                        self.task.jython_task_manager.abort_all_tasks()
-                        self.assertFalse(result)
+                for node in nodes:
+                    if "kv" in node.services:
+                        result = self.bucket_util._wait_warmup_completed(
+                                    [node],
+                                    self.bucket_util.buckets[0],
+                                    wait_time=self.wait_timeout * 5)
+                        if not result:
+                            self.stop_crash = True
+                            self.task.jython_task_manager.abort_all_tasks()
+                            self.assertFalse(result)
 
-        for shell in connections:
+        for _, shell in connections.items():
             shell.disconnect()
 
     def get_state_files(self, bucket, server=None):
