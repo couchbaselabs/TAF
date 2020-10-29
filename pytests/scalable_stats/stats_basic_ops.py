@@ -1,3 +1,4 @@
+from BucketLib.bucket import TravelSample, BeerSample
 from StatsLib.StatsOperations import StatsHelper
 from bucket_collections.collections_base import CollectionBase
 from rbac_utils.Rbac_ready_functions import RbacUtils
@@ -16,13 +17,15 @@ class StatsBasicOps(CollectionBase):
         ie; Low cardinality metrics are collected by default
         Also serves as a check if prometheus is running on all nodes
         """
+        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(BeerSample())
         for server in self.cluster.servers[:self.nodes_init]:
             try:
                 map = StatsHelper(server).get_prometheus_metrics()
                 number_of_metrics = len(map)
                 if len(map) == 0:
                     self.warn("No metrics were returned")
-                self.log.info("Number of metrics returned on {0}: {1}".format(server.ip, number_of_metrics))
+                self.log.info("Number of metrics names returned on {0}: {1}".format(server.ip, number_of_metrics))
             except Exception as e:
                 self.fail("Exception in getting _prometheusMetrics: {0}".format(e))
 
