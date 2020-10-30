@@ -572,7 +572,6 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-        # self.assertTrue(RestHelper(self.rest).is_cluster_rebalanced(), msg="cluster need rebalance")
         self.sleep(10)
         if not self.skip_data_validation:
             self.data_validation_mode(tasks_info)
@@ -617,12 +616,10 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
 
     def test_volume_MB_41562(self):
         ########################################################################################################################
-        self.log.info("Step 1: Set Non default orchestrator heartbeats and timeouts")
-        self.set_non_default_orchestrator_heartbeats_and_timeouts()
         # default is 4, we are changing this to increase the rebalance run time which is crucial for this test
         self.set_rebalance_moves_per_node(rebalanceMovesPerNode=1)
         ########################################################################################################################
-        self.log.info("Step 2: Create a n node cluster")
+        self.log.info("Step 1: Create a n node cluster")
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master],
                             nodes_init,
@@ -638,6 +635,8 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
                                                                        master=self.cluster.master)
         self.n1ql_rest = RestConnection(self.n1ql_node)
         ########################################################################################################################
+        self.log.info("Step 2: Set Non default orchestrator heartbeats and timeouts")
+        self.set_non_default_orchestrator_heartbeats_and_timeouts()
         self.log.info("Step 3: Create required buckets and indexes.")
         bucket = self.create_required_buckets()
         self.create_primary_indexes()
@@ -674,7 +673,7 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
             if self.loop < self.iterations:
                 # Flush the bucket
                 self.bucket_util.flush_all_buckets(self.cluster.master)
-                self.sleep(10)
+                self.sleep(300)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
                     self.nodes_cluster = self.cluster.nodes_in_cluster[:]
                     self.nodes_cluster.remove(self.cluster.master)
