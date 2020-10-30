@@ -24,6 +24,8 @@ import threading
 import time
 from membase.api.exception import RebalanceFailedException
 import math
+import subprocess
+import os
 
 
 class volume(BaseTestCase):
@@ -149,6 +151,13 @@ class volume(BaseTestCase):
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
 
+    def get_memory_footprint(self):
+        out = subprocess.Popen(['ps', 'v', '-p', str(os.getpid())],stdout=subprocess.PIPE).communicate()[0].split(b'\n')
+        vsz_index = out[0].split().index(b'RSS')
+        mem = float(out[1].split()[vsz_index]) / 1024
+        self.PrintStep("Memory FootPrint: %s" % str(mem))
+        return mem
+
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
         self.info = self.rest.get_nodes_self()
@@ -198,6 +207,7 @@ class volume(BaseTestCase):
                       update_end=None, update_start=None,
                       delete_end=None, delete_start=None,
                       expire_end=None, expire_start=None):
+        self.get_memory_footprint()
         self.gen_delete = None
         self.gen_create = None
         self.gen_update = None
@@ -230,7 +240,6 @@ class volume(BaseTestCase):
                 self.update_end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
@@ -253,7 +262,6 @@ class volume(BaseTestCase):
                 self.delete_end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
@@ -280,7 +288,6 @@ class volume(BaseTestCase):
                 self.expire_end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
@@ -306,7 +313,6 @@ class volume(BaseTestCase):
                 self.create_start, self.create_end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
@@ -650,6 +656,7 @@ class volume(BaseTestCase):
             nodes = self.cluster.nodes_in_cluster
 
         while not self.stop_crash:
+            self.get_memory_footprint()
             sleep = random.randint(60, 120)
             self.sleep(sleep,
                        "Iteration:{} waiting to kill memc on all nodes".
@@ -726,14 +733,14 @@ class volume(BaseTestCase):
 
             shell = RemoteMachineShellConnection(node)
             cbstats = Cbstats(shell)
-            self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
+            target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
                                                        name)
             gen_docs = doc_generator(
                 self.key_prefix,
                 start, mem_only_items,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
+                target_vbucket=target_vbucket,
                 vbuckets=self.cluster_util.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
@@ -750,7 +757,7 @@ class volume(BaseTestCase):
                                                   scope=self.scope_name,
                                                   collection=collection))
             self.wait_for_doc_load_completion(tasks_info, wait_for_stats=False)
-
+            del gen_docs
             ep_queue_size_map = {node: mem_only_items}
             vb_replica_queue_size_map = {node: 0}
 
