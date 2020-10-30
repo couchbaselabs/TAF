@@ -21,7 +21,7 @@ class StatsBasicOps(CollectionBase):
         self.bucket_util.load_sample_bucket(BeerSample())
         for server in self.cluster.servers[:self.nodes_init]:
             try:
-                map = StatsHelper(server).get_prometheus_metrics()
+                map = StatsHelper(server).get_prometheus_metrics(parse=True)
                 number_of_metrics = len(map)
                 if len(map) == 0:
                     self.warn("No metrics were returned")

@@ -17,22 +17,31 @@ class StatsHelper(RestConnection):
         self.memcached_ssl_base_url = "http://{0}:{1}".format(self.ip, 11207)
         self.memcached_base_url = "http://{0}:{1}".format(self.ip, 11210)
 
-    def get_prometheus_metrics(self):
+    def get_prometheus_metrics(self, component="ns_server", parse=False):
         """
         API to get low cardinality metrics from the cluster
+        :component: component specific metrics to retrieve
+        :parse: whether to parse the response or not?
+        :returns parsed dictionary or the response content
         """
-        api = '%s%s' % (self.base_url, '/_prometheusMetrics')
+        url = self._get_url_from_service(component)
+        api = '%s%s' % (url, '/_prometheusMetrics')
         status, content, _ = self._http_request(api)
         if not status:
             raise Exception(content)
-        map = self._promtheus_low_cardinality_stats_parser(content)
-        return map
+        if parse:
+            return self._call_component_parser(content=content, component=component, cardinality="low")
+        else:
+            return content
 
-    def get_prometheus_metrics_high(self):
+    def get_prometheus_metrics_high(self, component="kv"):
         """
         API to get high cardinality metrics from the cluster
+        :component: component specific metrics to retrieve
+        :returns response content
         """
-        api = '%s%s' % (self.base_url, '/_prometheusMetricsHigh')
+        url = self._get_url_from_service(component)
+        api = '%s%s' % (url, '/_prometheusMetricsHigh')
         status, content, _ = self._http_request(api)
         if not status:
             raise Exception(content)
@@ -102,9 +111,39 @@ class StatsHelper(RestConnection):
         return_string = return_string[:-1]  # To remove the last '&" character
         return return_string
 
-    def _promtheus_low_cardinality_stats_parser(self, content):
+    def _get_url_from_service(self, component):
+        if component == "kv":
+            return self.memcached_base_url
+        elif component == "ns_server":
+            return self.base_url
+        elif component == "index":
+            return self.index_base_url
+        elif component == "n1ql":
+            return self.n1ql_base_url
+        elif component == "cbas":
+            return self.cbas_base_url
+        # ToDo enumerate other services that support exposition of prometheus metrics
+        else:
+            raise Exception("unknown component name")
+
+    def _call_component_parser(self, content, component="ns_server", cardinality="low"):
         """
-        Method to parse content from _prometheusMetrics (low cardinality metrics)
+        Helper method that calls the metrics parser
+        :content: Response content from low/high cardinality metrics endpoint
+        :component:  Respective component parser to call
+        :cardinality: low or high cardinality content to be parsed
+        :returns parsed dictionary from the respective parser
+        """
+        if cardinality == "low":
+            if component == "ns_server":
+                map = self._prometheus_low_cardinality_stats_parser_ns_server(content)
+                return map
+            else:
+                raise Exception("Low cardinality parser for component {0} not implemented".format(component))
+
+    def _prometheus_low_cardinality_stats_parser_ns_server(self, content):
+        """
+        Method to parse content from _prometheusMetrics (low cardinality metrics) of ns server
         :returns dict which looks nested like below
             a. For audit: metric_name->metric_value
             b: For sysproc: metric_name->process_name->metric_value
