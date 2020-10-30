@@ -881,7 +881,7 @@ class N1qlBase(CollectionBase):
             yield i_list[i:i + n]
 
     def execute_query_and_validate_results(self, stmt, bucket_col, doc_gen_list=None):
-        query_params = self.create_txn()
+        query_params = self.create_txn(self.txtimeout)
         collection_savepoint, savepoints, queries = \
             self.full_execute_query(stmt, self.commit, query_params,
                                     self.rollback_to_savepoint)
