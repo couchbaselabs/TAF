@@ -151,7 +151,7 @@ class CBASExternalLinks(CBASBaseTest):
                 self.sleep(5, "Sleeping before uploading root certs.")
                 cluster.x509.setup_master(self.client_cert_state, self.paths, self.prefixs, self.delimeters)
                 self.sleep(5, "Sleeping before uploading node certs.")
-                cluster.x509.setup_cluster_nodes_ssl(cluster.servers)
+                cluster.x509.setup_cluster_nodes_ssl(cluster.servers,reload_cert=True)
             copytree(cluster.x509.CACERTFILEPATH, cluster.CACERTFILEPATH)
             self.log.info (" list of server {0}".format(copy_servers))
         self.setup_certs_status = True
