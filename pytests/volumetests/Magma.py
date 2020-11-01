@@ -39,6 +39,7 @@ class volume(BaseTestCase):
         self.max_tasks_per_collection = 8
         self.process_concurrency = math.ceil(self.max_tasks_per_collection/
                                              float(len(self.doc_ops)))
+        self.process_concurrency = self.input.param("pc", self.process_concurrency)
         main_tasks = (self.num_collections+1) * len(self.doc_ops)
         sub_tasks = main_tasks * self.process_concurrency
         self.thread_to_use = main_tasks + sub_tasks + 10
@@ -146,7 +147,7 @@ class volume(BaseTestCase):
                                                    self.scope_name,
                                                    {"name": collection_name})
                 self.sleep(5)
-
+            self.num_collections += 1
         self.rest = RestConnection(self.cluster.master)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
@@ -547,7 +548,8 @@ class volume(BaseTestCase):
                                  scopes[self.scope_name].collections.keys())
 
         self.print_stats()
-        result, cores, streamFailures = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+        result, cores, streamFailures = self.check_coredump_exist(self.cluster.
+                                                                  nodes_in_cluster)
         if result:
             if cores:
                 self.PrintStep("Issues found on server: %s" % cores)
@@ -722,10 +724,7 @@ class volume(BaseTestCase):
             self.PrintStep("Rollback with %s: %s" % (doc_type,
                                                      str(_iter)))
             tasks_info = dict()
-            if doc_type == "delete":
-                node = self.cluster.nodes_in_cluster[1]
-            else:
-                node = self.cluster.nodes_in_cluster[0]
+            node = self.cluster.nodes_in_cluster[0]
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
                 node, self.bucket_util.buckets[0])
@@ -734,7 +733,7 @@ class volume(BaseTestCase):
             shell = RemoteMachineShellConnection(node)
             cbstats = Cbstats(shell)
             target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
-                                                       name)
+                                                  name)
             gen_docs = doc_generator(
                 self.key_prefix,
                 start, mem_only_items,
@@ -758,7 +757,8 @@ class volume(BaseTestCase):
                                                   collection=collection))
             self.wait_for_doc_load_completion(tasks_info, wait_for_stats=False)
             del gen_docs
-            ep_queue_size_map = {node: mem_only_items}
+            ep_queue_size_map = {node: mem_only_items *
+                                 len(self.bucket.scopes[self.scope_name].collections)}
             vb_replica_queue_size_map = {node: 0}
 
             for server in self.cluster.nodes_in_cluster:
@@ -1569,6 +1569,7 @@ class volume(BaseTestCase):
             self.perform_load(crash=True, validate_data=True)
             _iter += 1
 
+        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
         if self.end_step == 10:
             exit(10)
         #######################################################################
@@ -1593,7 +1594,8 @@ class volume(BaseTestCase):
             exit(12)
         #######################################################################
         self.PrintStep("Step 13: Drop a collection")
-        for i in range(1, self.num_collections, 2):
+        count = 0
+        for i in range(1, self.num_collections-1, 2):
             collection_name = self.collection_prefix + str(i)
             self.bucket_util.drop_collection(self.cluster.master,
                                              self.bucket,
@@ -1601,6 +1603,12 @@ class volume(BaseTestCase):
                                              collection_name)
             self.bucket.scopes[self.scope_name].collections.pop(
                 collection_name)
+            count += 1
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.final_items = self.final_items * (self.num_collections-count)/self.num_collections
+        self.num_collections -= count
+        self.bucket_util.verify_stats_all_buckets(self.final_items,
+                                                  timeout=1500)
         if self.end_step == 13:
             exit(13)
         #######################################################################
@@ -1702,7 +1710,7 @@ class volume(BaseTestCase):
             exit(17)
         #######################################################################
         self.PrintStep("Step 18: Drop a collection")
-        for i in range(1, self.num_collections, 2):
+        for i in range(1, self.num_collections-1, 2):
             collection_name = self.collection_prefix + str(i)
             self.bucket_util.drop_collection(self.cluster.master,
                                              self.bucket,
