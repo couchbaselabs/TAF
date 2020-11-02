@@ -1,5 +1,6 @@
 import threading
 import time
+import json
 
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
@@ -16,14 +17,24 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.data_load_flag = False  # When to start/stop drop/recreate
         self.recovery_type = self.input.param("recovery_type", "delta")
         self.data_loading_thread = None
+        self.set_rebalance_moves_per_node(rebalanceMovesPerNode=1)
 
     def tearDown(self):
+        self.set_rebalance_moves_per_node(rebalanceMovesPerNode=4)
         if self.data_loading_thread:
             # stop data loading before tearDown if its still running
             self.data_load_flag = False
             self.data_loading_thread.join()
             self.data_loading_thread = None
         super(CollectionsDropRecreateRebalance, self).tearDown()
+
+    def set_rebalance_moves_per_node(self, rebalanceMovesPerNode=4):
+        body = dict()
+        body["rebalanceMovesPerNode"] = rebalanceMovesPerNode
+        rest = RestConnection(self.cluster.master)
+        rest.set_rebalance_settings(body)
+        result = rest.get_rebalance_settings()
+        self.log.info("Changed Rebalance settings: {0}".format(json.loads(result)))
 
     def pick_nodes_for_rebalance(self):
         if self.nodes_swap:

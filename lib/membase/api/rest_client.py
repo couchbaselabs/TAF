@@ -3306,6 +3306,29 @@ class RestConnection(object):
             raise Exception("unable to get random document/key for bucket %s" % (bucket))
         return json_parsed
 
+    # These methods are added change rebalance settings like rebalanceMovesPerNode
+    # See https://docs.couchbase.com/server/current/rest-api/rest-limit-rebalance-moves.html for more details
+    def set_rebalance_settings(self, body):
+        url = "settings/rebalance"
+        api = self.baseUrl + url
+        params = urllib.urlencode(body)
+        headers = self._create_headers()
+        status, content, header = self._http_request(api, 'POST', headers=headers, params=params)
+
+        if not status:
+            raise Exception(content)
+        return content
+
+    def get_rebalance_settings(self):
+        url = "settings/rebalance"
+        api = self.baseUrl + url
+        headers = self._create_headers()
+        status, content, header = self._http_request(api, 'GET', headers=headers)
+
+        if not status:
+            raise Exception(content)
+        return content
+
     # These methods are added for Auto-Rebalance On Failure tests
     def set_retry_rebalance_settings(self, body):
         url = "settings/retryRebalance"
