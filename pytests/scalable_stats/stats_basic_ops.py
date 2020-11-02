@@ -3,6 +3,8 @@ from StatsLib.StatsOperations import StatsHelper
 from bucket_collections.collections_base import CollectionBase
 from rbac_utils.Rbac_ready_functions import RbacUtils
 
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
+
 
 class StatsBasicOps(CollectionBase):
     def setUp(self):
@@ -66,8 +68,35 @@ class StatsBasicOps(CollectionBase):
         content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
         print(content)
 
+    def test_execute_promql_query(self):
+        """
+        Does not seem to get it to work yet
+        """
+        query = "kv_curr_items"
+        content = StatsHelper(self.cluster.master).execute_promql_query(query)
+        print(content)
+
     def test_instant_api_metrics(self):
         """
         API not exposed yet
         """
         pass
+
+    def configure_stats_settings_from_diag_eval(self):
+        """
+        Example to change the stats settings.
+        """
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        # Example 1 to change scrape interval
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval", 30)
+
+        # Example 2 to disable high cardinality
+        value = "[{kv,[{high_cardinality_enabled,false}]}, {index,[{high_cardinality_enabled,false}]}]"
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("services", value)
+
+        #ToDo: Is there a way to reset them all to defaults at once, before running the next test?
+
+
+
+

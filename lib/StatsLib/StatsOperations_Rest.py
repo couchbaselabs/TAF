@@ -80,6 +80,12 @@ class StatsHelper(RestConnection):
         # ToDo - Think of a way to a parse time series, instead of returning the entire content
         return json.loads(content)
 
+    def execute_promql_query(self, query):
+        api = '%s%s%s' % (self.base_url, '/pools/default/stats?query=', urllib.quote_plus("%s" % query))
+        status, content, _ = self._http_request(api)
+        if not status:
+            raise Exception(content)
+
     def get_instant_api_metrics(self, metric_name, label_values=None, optional_params=None):
         """
         :metric_name: metric_name to query
@@ -98,6 +104,26 @@ class StatsHelper(RestConnection):
             raise Exception(content)
         # ToDo - Think of a way to a parse time series, instead of returning the entire content dictionary
         return json.loads(content)
+
+    def configure_stats_settings_from_diag_eval(self, key, value):
+        """
+        To change stats config settings thorugh diag/eval
+        :key:  scrape_interval, retention_size, prometheus_metrics_scrape_interval etc
+        :value: new_value to be set for the above key.
+        """
+        def diag_eval(code, print_log=True):
+            api = '{0}{1}'.format(self.baseUrl, 'diag/eval/')
+            status_i, content_i, header = self._http_request(api, "POST", code)
+            if print_log:
+                self.log.debug(
+                    "/diag/eval status on {0}:{1}: {2} content: {3} command: {4}"
+                        .format(self.ip, self.port, status_i, content_i, code))
+            return status_i, content_i
+
+        key_value = "{%s, %s}" % (key, str(value))
+        status, content = diag_eval("ns_config:set_sub(stats_settings, [%s])" % key_value)
+        if not status:
+            raise Exception(content)
 
     def _build_params_for_get_request(self, params_dict):
         """
