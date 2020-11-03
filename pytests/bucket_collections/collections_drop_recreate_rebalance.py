@@ -7,6 +7,8 @@ from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils
 
+from table_view import TableView
+
 
 class CollectionsDropRecreateRebalance(CollectionBase):
     def setUp(self):
@@ -14,10 +16,11 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.known_nodes = self.cluster.servers[:self.nodes_init]
         self.nodes_failover = self.input.param("nodes_failover", 1)
         self.nodes_swap = self.input.param("nodes_swap", 0)
-        self.data_load_flag = False  # When to start/stop drop/recreate
         self.recovery_type = self.input.param("recovery_type", "delta")
+        self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 2)
+        self.set_rebalance_moves_per_node(rebalanceMovesPerNode=self.rebalance_moves_per_node)
+        self.data_load_flag = False  # When to start/stop drop/recreate
         self.data_loading_thread = None
-        self.set_rebalance_moves_per_node(rebalanceMovesPerNode=1)
 
     def tearDown(self):
         self.set_rebalance_moves_per_node(rebalanceMovesPerNode=4)
@@ -110,12 +113,30 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         }
         return spec
 
+    def print_spec_details(self, spec, cycles, elapsed_time):
+        table = TableView(self.log.info)
+        table.set_headers(["Operation", "Value"])
+        table.add_row(["Collections dropped and recreated", str(spec[MetaCrudParams.COLLECTIONS_TO_RECREATE])])
+        table.add_row(["Scopes dropped and recreated", str(spec[MetaCrudParams.SCOPES_TO_RECREATE])])
+        table.add_row(["Cycles of data load", str(cycles)])
+        table.add_row(["Time Elapsed in secs", str(elapsed_time)])
+        table.display("Data load details")
+
     def data_load(self):
+        # Cycles calculation is wrong here as we still continue with the test even when ops fail due to the bug
+        # MB-40654. So cycles is incremented even when the cycle has not completed (and has failed midway). This will
+        # be rectified after CMD comes. So for time being, cycles is not actually the "fully completed cycles"
+        cycles = 0
+        start_time = time.time()
         while self.data_load_flag:
             doc_loading_spec = self.spec_for_drop_recreate()
             op_details = BucketUtils.perform_tasks_from_spec(self.cluster,
                                                              self.bucket_util.buckets,
                                                              doc_loading_spec)
+            cycles = cycles + 1
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        self.print_spec_details(self.spec_for_drop_recreate(), cycles, elapsed_time)
 
     def load_collections_with_rebalance(self, rebalance_operation):
         self.pick_nodes_for_rebalance()
@@ -125,21 +146,21 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.data_loading_thread.start()
 
         if rebalance_operation == "rebalance_in":
-            operation = self.task.async_rebalance(self.known_nodes, self.add_nodes, [])
+            operation = self.task.async_rebalance(self.known_nodes, self.add_nodes, [], retry_get_process_num=100)
         elif rebalance_operation == "rebalance_out":
-            operation = self.task.async_rebalance(self.known_nodes, [], self.remove_nodes)
+            operation = self.task.async_rebalance(self.known_nodes, [], self.remove_nodes, retry_get_process_num=100)
         elif rebalance_operation == "swap_rebalance":
             for node in self.add_nodes:
                 self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                    node.ip, self.cluster.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(self.known_nodes, [], self.remove_nodes,
-                                                  check_vbucket_shuffling=False)
+                                                  check_vbucket_shuffling=False, retry_get_process_num=100)
         elif rebalance_operation == "rebalance_in_out":
             for node in self.add_nodes:
                 self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                    node.ip, self.cluster.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(self.known_nodes, [], self.remove_nodes,
-                                                  check_vbucket_shuffling=False)
+                                                  check_vbucket_shuffling=False, retry_get_process_num=100)
 
         self.wait_for_rebalance_to_complete(operation)
         self.data_load_flag = False
@@ -165,9 +186,9 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             for failover_node in self.failover_nodes:
                 self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
                                             recoveryType=self.recovery_type)
-            operation = self.task.async_rebalance(self.known_nodes, [], [])
+            operation = self.task.async_rebalance(self.known_nodes, [], [], retry_get_process_num=100)
         else:
-            operation = self.task.async_rebalance(self.known_nodes, [], self.failover_nodes)
+            operation = self.task.async_rebalance(self.known_nodes, [], self.failover_nodes, retry_get_process_num=100)
 
         self.wait_for_rebalance_to_complete(operation)
         self.sleep(60, "Wait after rebalance completes before stopping data load")
