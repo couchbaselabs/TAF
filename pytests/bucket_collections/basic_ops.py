@@ -899,20 +899,23 @@ class BasicOps(CollectionBase):
         """ Get a random collection/scope ,
             delete collection/scope while loading"""
         delete_scope = self.input.param("delete_scope", False)
-        retry = 5
-        scope_dict = dict()
-        scope_name = ""
-
-        while retry > 0:
-            bucket_dict = BucketUtils.get_random_collections(
-                [self.bucket], 1, "all", "all")
-            scope_dict = bucket_dict[self.bucket.name]["scopes"]
-            scope_name = scope_dict.keys()[0]
-            # Check to prevent default scope deletion, which is not allowed
-            if (scope_name != CbServer.default_scope) or not delete_scope:
+        exclude_dict = dict()
+        if delete_scope:
+            exclude_dict = {
+                self.bucket.name:
+                {"scopes": {
+                    CbServer.default_scope: {
+                        "collections": {}}}}}
+        bucket_dict = BucketUtils.get_random_collections(
+            [self.bucket], 1, "all", "all", exclude_from=exclude_dict)
+        scope_name = collection_name = None
+        scope_dict = bucket_dict[self.bucket.name]["scopes"]
+        for t_scope, scope_data in scope_dict.items():
+            print(scope_data["collections"])
+            if scope_data["collections"]:
+                scope_name = t_scope
+                collection_name = scope_data["collections"].keys()[0]
                 break
-            retry -= 1
-        collection_name = scope_dict[scope_name]["collections"].keys()[0]
 
         self.num_items = \
             self.bucket \
@@ -928,8 +931,10 @@ class BasicOps(CollectionBase):
             exp=self.maxttl,
             batch_size=200, process_concurrency=1,
             scope=scope_name,
-            compression=self.sdk_compression,
             collection=collection_name,
+            sdk_client_pool=self.sdk_client_pool,
+            suppress_error_table=True,
+            compression=self.sdk_compression,
             print_ops_rate=True, retries=0)
 
         self.sleep(5)
@@ -941,17 +946,15 @@ class BasicOps(CollectionBase):
                 self.bucket_util.drop_scope(self.cluster.master,
                                             self.bucket,
                                             scope_name)
-                del self.bucket.scopes[scope_name]
 
         else:
             self.bucket_util.drop_collection(self.cluster.master,
                                              self.bucket,
                                              scope_name,
                                              collection_name)
-            del self.bucket.scopes[scope_name].collections[collection_name]
 
         # validate task failure
-        self.task_manager.stop_task(task)
+        self.task_manager.get_task_result(task)
 
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
