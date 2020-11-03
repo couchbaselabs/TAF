@@ -15,7 +15,9 @@ class StatsHelper(RestConnection):
         self.eventing_base_url = "http://{0}:{1}".format(self.ip, 8096)
         self.index_base_url = "http://{0}:{1}".format(self.ip, 9102)
         self.memcached_ssl_base_url = "http://{0}:{1}".format(self.ip, 11207)
-        self.memcached_base_url = "http://{0}:{1}".format(self.ip, 11210)
+        # Prometheus scrapes from KV metrics from this port, and not 11210.
+        # Look at: /opt/couchbase/var/lib/couchbase/config/prometheus.yaml for ports
+        self.memcached_base_url = "http://{0}:{1}".format(self.ip, 11280)
 
     def get_prometheus_metrics(self, component="ns_server", parse=False):
         """
