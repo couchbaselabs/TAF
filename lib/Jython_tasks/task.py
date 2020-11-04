@@ -1979,6 +1979,12 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                 self.scope].collections[
                 self.collection] \
                 .num_items += self.docs_loaded_per_bucket[bucket]
+
+        # Close all SDK clients
+        if self.clients is not None:
+            for client in self.clients:
+                client.close()
+
         self.complete_task()
         self.test_log.info("Done loading docs for DGM")
 
