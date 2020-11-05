@@ -2133,7 +2133,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                             SDKException.DocumentNotFoundException
                         self.failed_reads[key]["value"] = dict()
                 except Exception as error:
-                    self.set_exception(error)
+                    self.exception = error
+                    return
         else:
             result_map, self.failed_reads = self.batch_read(key_value.keys())
         if self.sdk_client_pool:
@@ -2154,17 +2155,19 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     if key not in missing_keys:
                         not_missing.append(key)
                 if not_missing:
-                    self.set_exception(Exception("Keys were not deleted. "
-                                                 "Keys not deleted: {}"
-                                                 .format(','.join(not_missing))))
+                    self.exception = Exception("Keys were not deleted. "
+                                               "Keys not deleted: {}"
+                                               .format(','.join(not_missing)))
         else:
             if missing_keys:
-                self.set_exception(Exception("Keys missing: {}"
-                                             .format(','.join(missing_keys))))
+                self.exception = Exception("Total %d keys missing: %s"
+                                           % (missing_keys.__len__(),
+                                              missing_keys))
                 self.missing_keys.extend(missing_keys)
             if wrong_values:
-                self.set_exception(Exception("Keys with wrong values: {}"
-                                             .format(','.join(wrong_values))))
+                self.exception = Exception("Total %s wrong key-values :: %s"
+                                           % (wrong_values.__len__(),
+                                              wrong_values))
                 self.wrong_values.extend(wrong_values)
 
     def next(self, override_generator=None):
@@ -2274,18 +2277,13 @@ class DocumentsValidatorTask(Task):
             self.task_manager.add_new_task(task)
         for task in tasks:
             self.task_manager.get_task_result(task)
+            if task.exception is not None:
+                exception = task.exception
+
             if not self.suppress_error_table:
-                task.failed_item_table.display("DocValidator failure for %s:%s:%s"
-                                               % (self.bucket.name,
-                                                  self.scope,
-                                                  self.collection))
-            if task.missing_keys:
-                exception = "Total %d keys missing -> %s" \
-                            % (task.missing_keys.__len__(), task.missing_keys)
-            if task.wrong_values:
-                exception = "%s values were wrong. Wrong key-value: %s" \
-                             % (task.wrong_values.__len__(),
-                                task.wrong_values)
+                task.failed_item_table.display(
+                    "DocValidator failure for %s:%s:%s"
+                    % (self.bucket.name, self.scope, self.collection))
         if self.sdk_client_pool is None:
             for client in self.clients:
                 client.close()
