@@ -42,14 +42,24 @@ class NonDefaultOrchestratorHeartbeatAndTimeout(RebalanceBaseTest):
         self.rest_client = RestConnection(self.cluster.master)
         if self.heartbeat_interval:
             self.rest_client.set_heartbeat_interval(self.heartbeat_interval)
+            status, content = self.rest_client.get_heartbeat_interval()
+            self.log.info("get_heartbeat_interval : {0}".format(content))
         if self.timeout_interval_count:
             self.rest_client.set_timeout_interval_count(self.timeout_interval_count)
+            status, content = self.rest_client.get_timeout_interval_count()
+            self.log.info("get_timeout_interval_count : {0}".format(content))
         if self.lease_time:
             self.rest_client.set_lease_time(self.lease_time)
+            status, content = self.rest_client.get_lease_time()
+            self.log.info("get_lease_time : {0}".format(content))
         if self.lease_grace_time:
             self.rest_client.set_lease_grace_time(self.lease_grace_time)
+            status, content = self.rest_client.get_lease_grace_time()
+            self.log.info("get_lease_grace_time : {0}".format(content))
         if self.lease_renew_after:
             self.rest_client.set_lease_renew_after(self.lease_renew_after)
+            status, content = self.rest_client.get_lease_renew_after()
+            self.log.info("get_lease_renew_after : {0}".format(content))
 
     def get_node(self, other_server, orchestrator=True):
         self.rest = RestConnection(other_server)
