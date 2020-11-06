@@ -53,10 +53,17 @@ class CollectionBase(BaseTestCase):
             self.log, len(self.cluster.nodes_in_cluster),
             self.durability_level)
 
+        services = None
+        if self.services_init:
+            services = list()
+            for service in self.services_init.split("-"):
+                services.append(service.replace(":", ","))
+            services = services[1:] if len(services) > 1 else None
+
         # Initialize cluster using given nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
+        self.task.rebalance([self.cluster.master], nodes_init, [], services=services)
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
 
         # Disable auto-failover to avoid failover of nodes

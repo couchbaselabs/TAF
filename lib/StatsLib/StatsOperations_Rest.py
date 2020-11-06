@@ -2,12 +2,15 @@ import json
 import urllib
 import re
 
+import testconstants
 from connections.Rest_Connection import RestConnection
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
 
 class StatsHelper(RestConnection):
     def __init__(self, server):
         super(StatsHelper, self).__init__(server)
+        self.server = server
         self.base_url = "http://{0}:{1}".format(self.ip, 8091)
         self.fts_base_url = "http://{0}:{1}".format(self.ip, 8092)
         self.n1ql_base_url = "http://{0}:{1}".format(self.ip, 8093)
@@ -19,34 +22,56 @@ class StatsHelper(RestConnection):
         # Look at: /opt/couchbase/var/lib/couchbase/config/prometheus.yaml for ports
         self.memcached_base_url = "http://{0}:{1}".format(self.ip, 11280)
 
+        self.curl_path = "curl"
+        shell = RemoteMachineShellConnection(self.server)
+        type = shell.extract_remote_info().distribution_type
+        if type.lower() == 'windows':
+            self.path = testconstants.WIN_COUCHBASE_BIN_PATH
+            self.curl_path = "%scurl" % self.path
+
     def get_prometheus_metrics(self, component="ns_server", parse=False):
         """
         API to get low cardinality metrics from the cluster
         :component: component specific metrics to retrieve
         :parse: whether to parse the response or not?
-        :returns parsed dictionary or the response content
+        :returns parsed dictionary or the response content as a list
         """
-        url = self._get_url_from_service(component)
-        api = '%s%s' % (url, '/_prometheusMetrics')
-        status, content, _ = self._http_request(api)
-        if not status:
-            raise Exception(content)
+        if component == "kv":
+            # For KV the endpoint is not accessible from non-localhost. So we do the following
+            cmd = "{3} -i -o - --silent -u {0}:{1} http://{2}:11280/_prometheusMetrics". \
+                format(self.username, self.password, "localhost", self.curl_path)
+            content = self._run_curl_command_from_localhost(cmd)
+
+        else:
+            url = self._get_url_from_service(component)
+            api = '%s%s' % (url, '/_prometheusMetrics')
+            status, content, _ = self._http_request(api)
+            if not status:
+                raise Exception(content)
+            content = content.splitlines()
         if parse:
             return self._call_component_parser(content=content, component=component, cardinality="low")
         else:
             return content
 
-    def get_prometheus_metrics_high(self, component="kv"):
+    def get_prometheus_metrics_high(self, component="kv", parse=False):
         """
         API to get high cardinality metrics from the cluster
         :component: component specific metrics to retrieve
-        :returns response content
+        :returns response content as a list
         """
-        url = self._get_url_from_service(component)
-        api = '%s%s' % (url, '/_prometheusMetricsHigh')
-        status, content, _ = self._http_request(api)
-        if not status:
-            raise Exception(content)
+        if component == "kv":
+            # For KV the endpoint is not accessible from non-localhost. So we do the following
+            cmd = "{3} -i -o - --silent -u {0}:{1} http://{2}:11280/_prometheusMetricsHigh". \
+                format(self.username, self.password, "localhost", self.curl_path)
+            content = self._run_curl_command_from_localhost(cmd)
+        else:
+            url = self._get_url_from_service(component)
+            api = '%s%s' % (url, '/_prometheusMetricsHigh')
+            status, content, _ = self._http_request(api)
+            if not status:
+                raise Exception(content)
+            content = content.splitlines()
         # ToDo - Think of a way to a parse this "high cardinality metrics", instead of returning the entire content
         return content
 
@@ -58,6 +83,7 @@ class StatsHelper(RestConnection):
         status, content, _ = self._http_request(api)
         if not status:
             raise Exception(content)
+        content = content.splitlines()
         # ToDo - Think of a way to a parse this "all metrics", instead of returning the entire content
         return content
 
@@ -127,7 +153,8 @@ class StatsHelper(RestConnection):
         if not status:
             raise Exception(content)
 
-    def _build_params_for_get_request(self, params_dict):
+    @staticmethod
+    def _build_params_for_get_request(params_dict):
         """
         To build a string to be passed for GET request
         :params_dict: dictionary of key value pairs
@@ -154,6 +181,32 @@ class StatsHelper(RestConnection):
         else:
             raise Exception("unknown component name")
 
+    def _run_curl_command_from_localhost(self, cmd):
+        """
+        Method to run curl cmd get request from localhost by SSHing into self.server
+        :cmd: curl command  (get request)
+        :returns True, body(content) as a list
+        :Raises exception if response code not in 200 series
+        """
+        shell = RemoteMachineShellConnection(self.server)
+        output, error = shell.execute_command(cmd)
+
+        if error:
+            self.log.error("Error making Curl request on server {0} {1}".format(self.server.ip, error))
+
+        output_index = 0
+        for line in output:
+            if line.startswith("HTTP"):
+                status_code_line = line.split(" ")
+                status_code = status_code_line[1]
+                status_msg = " ".join(status_code_line[2:])
+                if status_code not in ['200', '201', '202']:
+                    raise Exception("Exception {0} {1}".format(status_code, status_msg))
+            elif not line.strip():
+                content = output[output_index + 1:]
+                return content
+            output_index = output_index + 1
+
     def _call_component_parser(self, content, component="ns_server", cardinality="low"):
         """
         Helper method that calls the metrics parser
@@ -169,7 +222,8 @@ class StatsHelper(RestConnection):
             else:
                 raise Exception("Low cardinality parser for component {0} not implemented".format(component))
 
-    def _prometheus_low_cardinality_stats_parser_ns_server(self, content):
+    @staticmethod
+    def _prometheus_low_cardinality_stats_parser_ns_server(content):
         """
         Method to parse content from _prometheusMetrics (low cardinality metrics) of ns server
         :returns dict which looks nested like below
@@ -177,11 +231,15 @@ class StatsHelper(RestConnection):
             b: For sysproc: metric_name->process_name->metric_value
             c: For sys: metric_name->metric_value
             d: for couch: metric_name->bucket_name->metric_value
+        :Raises exception
+            a. If a metric name does not start with the above prefixes
+            b. If duplicate metrics are returned
+            c. If no metrics were there to parse
         """
         map = dict()
         # Format of metrics exposed to prometheus
         # metric_name["{"label_name"="`"`label_value`"`{","label_name"="`"` label_value `"`} [","]"}"] value[timestamp]
-        results = content.split("\n")
+        results = content
         match_pattern = "(.*){(.*)}(.*)"
         count_lines = 0
         for line in results:
@@ -230,4 +288,41 @@ class StatsHelper(RestConnection):
                             break
                 else:
                     raise Exception("Found some other metric type {0}".format(line))
+        if len(map) == 0:
+            raise Exception("NS server did not return nay low cardinality metrics")
         return map
+
+    @staticmethod
+    def _validate_metrics(content):
+        """
+        Method to validate exposition of metrics in /_getPrometheusMetrics, /_getPrometheusMetricsHigh, /metrics endpoints
+            1. Check for duplicate entries (for component other than ns-server
+            2. Check if entries are prefixed with service name
+        :content: content response from the above endpoints, in the form of list
+        Raises Exception if:
+            1. Duplicate metrics are seen
+            2. If a metric is not prefixed appropriately
+        #TODo Not sure how it will behave for very large content - may result in stack overflow while checking duplicity ...
+        #TODo...for example 20 metrics per index translates to a max of 200,000 metrics and hence should do not be ...
+        #ToDo...called when cluster is heavy
+        """
+
+        def check_prefixes(line_to_check):
+            allowed_prefixes = ["audit", "sysproc", "sys", "couch",
+                                "exposer", "kv",
+                                "index", "n1ql", "fts", "eventing", "xdcr"
+                                ]
+            for prefix in allowed_prefixes:
+                if line_to_check.startswith(prefix):
+                    return True
+            return False
+
+        lines_seen = set()
+        for line in content:
+            if not line.startswith("#"):
+                if line not in lines_seen:
+                    lines_seen.add(line)
+                else:
+                    raise Exception("Duplicate metrics entry {0}".format(line))
+                if not check_prefixes(line):
+                    raise Exception("Invalid prefix for metric {0}".format(line))

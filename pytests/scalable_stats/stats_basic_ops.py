@@ -19,17 +19,35 @@ class StatsBasicOps(CollectionBase):
         ie; Low cardinality metrics are collected by default
         Also serves as a check if prometheus is running on all nodes
         """
+        component = self.input.param("component", "ns_server")
+        parse = self.input.param("parse", False)
+
         self.bucket_util.load_sample_bucket(TravelSample())
         self.bucket_util.load_sample_bucket(BeerSample())
         for server in self.cluster.servers[:self.nodes_init]:
-            try:
-                map = StatsHelper(server).get_prometheus_metrics(parse=True)
-                number_of_metrics = len(map)
-                if len(map) == 0:
-                    self.warn("No metrics were returned")
-                self.log.info("Number of metrics names returned on {0}: {1}".format(server.ip, number_of_metrics))
-            except Exception as e:
-                self.fail("Exception in getting _prometheusMetrics: {0}".format(e))
+            content = StatsHelper(server).get_prometheus_metrics(component=component, parse=parse)
+            if not parse:
+                StatsHelper(server)._validate_metrics(content)
+        for line in content:
+            print(line.strip("\n"))
+
+    def test_check_high_cardinality_metrics(self):
+        """
+        Check if _prometheusMetrics returns high cardinality metrics by default
+        ie; High cardinality metrics are collected by default
+        Also serves as a check if prometheus is running on all nodes
+        """
+        component = self.input.param("component", "kv")
+        parse = self.input.param("parse", False)
+
+        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(BeerSample())
+        for server in self.cluster.servers[:self.nodes_init]:
+            content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=parse)
+            if not parse:
+                StatsHelper(server)._validate_metrics(content)
+        for line in content:
+            print(line.strip("\n"))
 
     def test_check_authorization_prometheus_metrics(self):
         """
@@ -64,7 +82,7 @@ class StatsBasicOps(CollectionBase):
 
         # Example 2
         metric_name = "kv_curr_items"
-        label_values = {"bucket": self.bucket_util.buckets[0].name, "aggregationFunction":"max"}
+        label_values = {"bucket": self.bucket_util.buckets[0].name, "aggregationFunction": "max"}
         content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
         print(content)
 
@@ -82,7 +100,7 @@ class StatsBasicOps(CollectionBase):
         """
         pass
 
-    def configure_stats_settings_from_diag_eval(self):
+    def test_configure_stats_settings_from_diag_eval(self):
         """
         Example to change the stats settings.
         """
@@ -95,8 +113,4 @@ class StatsBasicOps(CollectionBase):
         value = "[{kv,[{high_cardinality_enabled,false}]}, {index,[{high_cardinality_enabled,false}]}]"
         StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("services", value)
 
-        #ToDo: Is there a way to reset them all to defaults at once, before running the next test?
-
-
-
-
+        # ToDo: Is there a way to reset them all to defaults at once, before running the next test?
