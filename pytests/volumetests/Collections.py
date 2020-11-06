@@ -49,16 +49,6 @@ class volume(CollectionBase):
         if self.crash_warning and result:
             self.log.warn(core_msg + stream_msg)
 
-    def set_metadata_purge_interval(self, interval=0.04):
-        # set it to 0.04 ie 1 hour if not given
-        rest = RestConnection(self.cluster.master)
-        params = {}
-        api = rest.baseUrl + "controller/setAutoCompaction"
-        params["purgeInterval"] = interval
-        params["parallelDBAndViewCompaction"] = "false"
-        params = urllib.urlencode(params)
-        return rest._http_request(api, "POST", params)
-
     # Stopping and restarting the memcached process
     def stop_process(self):
         target_node = self.servers[2]
@@ -176,7 +166,7 @@ class volume(CollectionBase):
 
     def test_volume_taf(self):
         self.loop = 0
-        # self.set_metadata_purge_interval()
+        # self.cluster_utils.set_metadata_purge_interval()
         while self.loop < self.iterations:
             self.log.info("Finished steps 1-4 successfully in setup")
             self.log.info("Step 5: Rebalance in with Loading of docs")

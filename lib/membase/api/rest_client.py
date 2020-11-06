@@ -1975,6 +1975,20 @@ class RestConnection(object):
         status, content, header = self._http_request(api, 'POST', params)
         return status
 
+    def set_metadata_purge_interval(self, interval=0.04):
+        params = dict()
+        api = self.baseUrl + "controller/setAutoCompaction"
+        params["purgeInterval"] = interval
+        params["parallelDBAndViewCompaction"] = "false"
+        status, content, _ = self._http_request(api, "POST", urllib.urlencode(params))
+        if status:
+            self.test_log.info("Successfully set Metadata Purge Interval to {}".
+                               format(interval))
+        else:
+            self.test_log.error("Setting Metadata Purge Interval failed {0}"
+                                .format(content))
+        return status
+
     def stop_rebalance(self, wait_timeout=10):
         api = self.baseUrl + '/controller/stopRebalance'
         status, content, header = self._http_request(api, 'POST')

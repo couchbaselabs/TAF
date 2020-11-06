@@ -90,6 +90,11 @@ class ClusterUtils:
 
         return status, content
 
+    def set_metadata_purge_interval(self, interval=0.04):
+        # set it to 0.04 i.e. 1 hour if not given
+        rest = RestConnection(self.cluster.master)
+        return rest.set_metadata_purge_interval(interval)
+
     def cluster_cleanup(self, bucket_util):
         rest = RestConnection(self.cluster.master)
         if rest._rebalance_progress_status() == 'running':
