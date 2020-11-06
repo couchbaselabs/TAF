@@ -210,29 +210,23 @@ class CbasUtil:
             else:
                 return True
 
-    
     def create_external_link_on_cbas(self, link_properties, username=None, password=None, timeout=120,
                                      validate_error_msg=False, expected_error=None, expected_error_code=None):
         """
         Create an external link to AWS S3 service or an external couchbase server.
-        
         :param username : used for authentication while calling API.
         :param password : used for authentication while calling API.
         :param timeout : timeout for API response
         :param validate_error_msg : boolean, If set to true, it will compare the error raised while creating the link
-        with the error msg or error code passed. 
+        with the error msg or error code passed.
         :param expected_error : str, expected error string
         :param expected_error_code: str, expected error code
-        
         :param link_properties: dict, contains all the properties required to create a link.
-         
         Common for both AWS and couchbase link.
         <Required> name : name of the link to be created.
         <Required> dataverse : name of the dataverse under which the link has to be created.
         <Required> type : s3/couchbase
-        
         For links to external couchbase cluster.
-        
         <Required> hostname : The hostname of the link
         <Optional> username : The username for host authentication. Required if encryption is set to 
         "none" or "half. Optional if encryption is set to "full".
@@ -245,36 +239,29 @@ class CbasUtil:
         Required only if encryption is set to "full" and username and password is not used.
         <Optional> clientKey : The client key for user authentication.
         Required only if encryption is set to "full" and username and password is not used.
-        
         For links to AWS S3
-        
         <Required> accessKeyId : The access key of the link
         <Required> secretAccessKey : The secret key of the link
         <Required> region : The region of the link
         <Optional> serviceEndpoint : The service endpoint of the link.
-        
         Note - please use the exact key names as provided above in link properties dict.
         """
         params = dict()
         for key, value in link_properties.iteritems():
+            if key == "dataverse":
+                key = "scope"
             if value:
                 if isinstance(value, unicode):
                     params[key] = str(value)
                 else:
                     params[key] = value
-        
         params = urllib.urlencode(params)
-        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(method="POST", 
-                                                                                          params=params, 
-                                                                                          timeout=timeout, 
-                                                                                          username=username, 
-                                                                                          password=password)
+        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
+            method="POST", params=params, timeout=timeout, username=username, password=password)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
         return status
-                
-    
-    
+
     def get_link_info(self, dataverse=None, link_name=None, link_type=None,
                       username=None, password=None, timeout=120, restapi=True, 
                       validate_error_msg=False, expected_error=None, expected_error_code=None):
@@ -296,45 +283,36 @@ class CbasUtil:
         if restapi:
             params = dict()
             if dataverse:
-                params["dataverse"] = dataverse
+                params["scope"] = dataverse
             if link_name:
                 params["name"] = link_name
             if link_type:
                 params["type"] = link_type
             params = urllib.urlencode(params)
-            status, status_code, content, errors = self.cbas_helper.analytics_link_operations(method="GET", 
-                                                                                              params=params, 
-                                                                                              timeout=timeout, 
-                                                                                              username=username, 
-                                                                                              password=password)
+            status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
+                method="GET", params=params, timeout=timeout, username=username, password=password)
             if validate_error_msg:
                 return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
             if status:
                 return content
-                
-    
+
     def update_external_link_properties(self, link_properties, username=None, password=None, timeout=120,
                                         validate_error_msg=False, expected_error=None, expected_error_code=None):
         """
         Update all the link properties with the new values.
-        
         :param username : used for authentication while calling API.
         :param password : used for authentication while calling API.
         :param timeout : timeout for API response
         :param validate_error_msg : boolean, If set to true, it will compare the error raised while creating the link
-        with the error msg or error code passed. 
+        with the error msg or error code passed.
         :param expected_error : str, expected error string
         :param expected_error_code: str, expected error code
-        
         :param link_properties: dict, contains all the properties required to create a link.
-         
         Common for both AWS and couchbase link.
         <Required> name : name of the link to be created.
         <Required> dataverse : name of the dataverse under which the link has to be created.
         <Required> type : s3/couchbase
-        
         For links to external couchbase cluster.
-        
         <Required> hostname : The hostname of the link
         <Optional> username : The username for host authentication. Required if encryption is set to 
         "none" or "half. Optional if encryption is set to "full".
@@ -347,35 +325,29 @@ class CbasUtil:
         Required only if encryption is set to "full" and username and password is not used.
         <Optional> clientKey : The client key for user authentication.
         Required only if encryption is set to "full" and username and password is not used.
-        
         For links to AWS S3
-        
         <Required> accessKeyId : The access key of the link
         <Required> secretAccessKey : The secret key of the link
         <Required> region : The region of the link
         <Optional> serviceEndpoint : The service endpoint of the link.
-        
         Note - please use the exact key names as provided above in link properties dict.
         """
-        
         params = dict()
         for key, value in link_properties.iteritems():
+            if key == "dataverse":
+                key = "scope"
             if value:
                 if isinstance(value, unicode):
                     params[key] = str(value)
                 else:
                     params[key] = value
         params = urllib.urlencode(params)
-        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(method="PUT", 
-                                                                                  params=params, 
-                                                                                  timeout=timeout, 
-                                                                                  username=username, 
-                                                                                  password=password)
+        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
+            method="PUT", params=params, timeout=timeout, username=username, password=password)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
         return status
-    
-                
+
     def drop_link_on_cbas(self, link_name=None,
                           username=None,
                           password=None,
