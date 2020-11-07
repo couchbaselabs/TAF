@@ -556,7 +556,7 @@ class CBASBaseTest(BaseTestCase):
                           "query_delete", "query_insert",
                           "query_manage_index",  "query_select",
                           "query_update", "fts_admin", "fts_searcher",
-                          "cluster_admin"]:
+                          "cluster_admin","bucket_admin"]:
                 test_params = {
                     "description": description.format(user),
                     "validate_error_msg": True,

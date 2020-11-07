@@ -707,7 +707,7 @@ class BaseTestCase(unittest.TestCase):
             crashDir = libCb + "crash/"
             if shell.info.type.lower() == "windows":
                 crashDir = crashDirWin
-            if int(self.cluster.master.port) in range(ClusterRun.port,
+            if int(server.port) in range(ClusterRun.port,
                                                   ClusterRun.port+10):
                 crashDir = os.path.join(TestInputSingleton.input.servers[0].cli_path,
                                         "ns_server", "data",
@@ -731,7 +731,7 @@ class BaseTestCase(unittest.TestCase):
 
             self.log.info(server.ip + " : Looking for CRITICAL messages in log")
             logsDir = libCb + "logs/"
-            if int(self.cluster.master.port) in range(ClusterRun.port,
+            if int(server.port) in range(ClusterRun.port,
                                                       ClusterRun.port+10):
                 logsDir = os.path.join(TestInputSingleton.input.servers[0].cli_path,
                                        "ns_server", "logs", "n_%s" % str(idx))

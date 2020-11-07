@@ -297,13 +297,14 @@ class CBASExternalLinks(CBASBaseTest):
                 {
                     "description": "Create a link with an invalid hostname",
                     "hostname": self.invalid_ip,
-                    "expected_error": "Link authentication failed"
+                    "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
                 {
                     "description": "Create a link with an invalid credentials",
                     "password": self.invalid_value,
-                    "expected_error": "Invalid credentials for link {0}.{1}".format(self.link_info["dataverse"],
-                                                                                    self.link_info["name"])
+                    "expected_error": "Invalid credentials for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
                 {
                     "description": "Create a link with an invalid encryption value",
@@ -314,7 +315,8 @@ class CBASExternalLinks(CBASBaseTest):
                     "description": "Create a link with an invalid root certificate",
                     "encryption": "full",
                     "certificate": self.read_file(self.analytics_cluster.root_ca_path),
-                    "expected_error": "Link authentication failed"
+                    "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
                 {
                     "description": "Create a link with an invalid client certificate",
@@ -323,25 +325,30 @@ class CBASExternalLinks(CBASBaseTest):
                     "clientKey": self.read_file(to_cluster.client_certs[self.link_info["hostname"]]["cert_key"]),
                     "username": None,
                     "password": None,
-                    "clientCertificate": self.read_file(self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_pem"]),
-                    "expected_error": "Link authentication failed"
+                    "clientCertificate": self.read_file(
+                        self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_pem"]),
+                    "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
                 {
                     "description": "Create a link with an invalid client key",
                     "encryption": "full",
-                    "clientKey": self.read_file(self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_key"]),
+                    "clientKey": self.read_file(
+                        self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_key"]),
                     "certificate": self.read_file(to_cluster.root_ca_path),
-                    "clientCertificate": self.read_file(to_cluster.client_certs[self.link_info["hostname"]]["cert_pem"]),
+                    "clientCertificate": self.read_file(
+                        to_cluster.client_certs[self.link_info["hostname"]]["cert_pem"]),
                     "username": None,
                     "password": None,
-                    "expected_error": "Link authentication failed"
+                    "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
                 {
                     "description": "Create a link with a name that already exists in the dataverse",
                     "recreate_link": True,
                     "validate_error_msg": False,
-                    "expected_error": "Link {0}.{1} already exists".format(self.link_info["dataverse"],
-                                                                           self.link_info["name"])
+                    "expected_error": "Link {0}.{1} already exists".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
                 {
                     "description": "Create a link with a name of form Local*",
@@ -368,8 +375,10 @@ class CBASExternalLinks(CBASBaseTest):
                     "description": "Create a link with full encryption using root certificate, client certificate and client key",
                     "encryption": "full",
                     "certificate": self.read_file(to_cluster.root_ca_path),
-                    "clientCertificate": self.read_file(to_cluster.client_certs[self.link_info["hostname"]]["cert_pem"]),
-                    "clientKey": self.read_file(to_cluster.client_certs[self.link_info["hostname"]]["cert_key"]),
+                    "clientCertificate": self.read_file(
+                        to_cluster.client_certs[self.link_info["hostname"]]["cert_pem"]),
+                    "clientKey": self.read_file(
+                        to_cluster.client_certs[self.link_info["hostname"]]["cert_key"]),
                     "username": None,
                     "password": None,
                     "validate_error_msg": False,
@@ -724,7 +733,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Changing hostname to an invalid hostname",
                 "hostname": self.invalid_ip,
                 "validate_error_msg": True,
-                "expected_error": "Link authentication failed"
+                "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
             {
                 "description": "Changing credentials to invalid credentials",
@@ -757,7 +767,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "encryption": "full",
                 "certificate": self.read_file(self.analytics_cluster.root_ca_path),
                 "validate_error_msg": True,
-                "expected_error": "Link authentication failed"
+                "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
             {
                 "description": "Changing encryption type to full, with valid root certificate, clientcertificate and client key",
@@ -775,9 +786,11 @@ class CBASExternalLinks(CBASBaseTest):
                 "password": None,
                 "certificate": self.read_file(to_cluster.root_ca_path),
                 "clientCertificate": self.read_file(to_cluster.client_certs[self.link_info["hostname"]]["cert_pem"]),
-                "clientKey": self.read_file(self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_key"]),
+                "clientKey": self.read_file(
+                    self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_key"]),
                 "validate_error_msg": True,
-                "expected_error": "Link authentication failed"
+                "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 },
             {
                 "description": "Changing encryption type to full, with valid root certificate and clientKey and invalid clientcertificate",
@@ -788,7 +801,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "clientKey": self.read_file(to_cluster.client_certs[self.link_info["hostname"]]["cert_key"]),
                 "clientCertificate": self.read_file(self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_pem"]),
                 "validate_error_msg": True,
-                "expected_error": "Link authentication failed"
+                "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                        self.link_info["dataverse"], self.link_info["name"])
                 }
             ]
 
