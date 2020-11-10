@@ -77,14 +77,15 @@ class MagmaBaseTest(BaseTestCase):
         self.scope_name = CbServer.default_scope
         collection_prefix = "FunctionCollection"
         # Creation of collection of num_collections is > 1
-        for i in range(1, self.num_collections):
-            collection_name = collection_prefix + str(i)
-            self.log.info("Creating scope::collection {} {}\
-            ".format(self.scope_name, collection_name))
-            self.bucket_util.create_collection(
-                self.cluster.master, self.buckets[0],
-                self.scope_name, {"name": collection_name})
-            self.sleep(2)
+        for bucket in self.bucket_util.buckets:
+            for i in range(1, self.num_collections):
+                collection_name = collection_prefix + str(i)
+                self.log.info("Creating scope::collection {} {}\
+                ".format(self.scope_name, collection_name))
+                self.bucket_util.create_collection(
+                    self.cluster.master, bucket,
+                    self.scope_name, {"name": collection_name})
+                self.sleep(2)
         self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
         self.log.debug("Collections list == {}".format(self.collections))
 
@@ -686,16 +687,25 @@ class MagmaBaseTest(BaseTestCase):
         self.log.info("Upsert list {}".format(upsert_doc_list))
         return upsert_doc_list
 
-    def validate_data(self,  op_type, kv_gen):
+    def validate_data(self,  op_type, kv_gen, _sync=True):
         self.log.info("Validating Docs")
-        for bucket in self.bucket_util.buckets:
-            task = self.task.async_validate_docs(
-                    self.cluster, bucket, kv_gen, op_type, 0,
-                    batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency,
-                    pause_secs=5, timeout_secs=self.sdk_timeout)
-
-        self.task.jython_task_manager.get_task_result(task)
+        validate_tasks_info = dict()
+        for collection in self.collections:
+            temp_tasks_info = self.bucket_util._async_validate_docs(
+                self.cluster, kv_gen, op_type, 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                pause_secs=5, timeout_secs=self.sdk_timeout,
+                scope=self.scope_name,
+                collection=collection,
+                retry_exceptions=self.retry_exceptions,
+                ignore_exceptions=self.ignore_exceptions)
+            validate_tasks_info.update(temp_tasks_info.items())
+        if _sync:
+            for task in validate_tasks_info:
+                self.task_manager.get_task_result(task)
+        else:
+            return validate_tasks_info
 
     def sigkill_memcached(self, nodes=None, graceful=False):
         nodes = nodes or self.cluster.nodes_in_cluster
