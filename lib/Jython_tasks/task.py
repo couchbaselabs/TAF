@@ -1981,7 +1981,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                 .num_items += self.docs_loaded_per_bucket[bucket]
 
         # Close all SDK clients
-        if self.clients is not None:
+        if self.sdk_client_pool is None:
             for client in self.clients:
                 client.close()
 
