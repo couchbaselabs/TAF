@@ -5,6 +5,7 @@ import re
 import testconstants
 from connections.Rest_Connection import RestConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from global_vars import logger
 
 
 class StatsHelper(RestConnection):
@@ -317,6 +318,8 @@ class StatsHelper(RestConnection):
                     return True
             return False
 
+        log = logger.get("test")
+        log.info("Validating metrics")
         lines_seen = set()
         for line in content:
             if not line.startswith("#"):
@@ -326,3 +329,6 @@ class StatsHelper(RestConnection):
                     raise Exception("Duplicate metrics entry {0}".format(line))
                 if not check_prefixes(line):
                     raise Exception("Invalid prefix for metric {0}".format(line))
+
+        if len(content) == 0:
+            log.error("No metrics are present to validate")
