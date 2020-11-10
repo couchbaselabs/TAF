@@ -1001,3 +1001,58 @@ class ClusterUtils:
                 self.log.error("=== CORE DUMPS SEEN ON SERVER %s: %s crashes seen ==="
                                % (server.ip, core_dump_count))
             shell.disconnect()
+
+    def trigger_cb_collect_on_cluster(self, rest, nodes, single_node=False):
+        params = dict()
+        node_ids = [node.id for node in nodes]
+        params['nodes'] = ",".join(node_ids)
+        if single_node:
+            # In case of single node we have to pass ip as below
+            params['nodes'] = 'ns_1@' + '127.0.0.1'
+
+        self.log.info('Running cbcollect on node ' + params['nodes'])
+        status, _, _ = rest.perform_cb_collect(params)
+        sleep(10, "Wait for CB collect to start", log_type="infra")
+        self.log.info("%s - cbcollect status: %s"
+                      % (",".join(node_ids), status))
+        return status
+
+    def wait_for_cb_collect_to_complete(self, rest, retry_count=60):
+        self.log.info("Polling active_tasks to check cbcollect status")
+        retry = 0
+        while retry < retry_count:
+            cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
+            self.log.debug("CBCollectInfo Iteration {} - {}"
+                           .format(retry,
+                                   cb_collect_response["status"]))
+            if cb_collect_response['status'] != 'completed':
+                retry += 1
+                sleep(10, "CB collect still running", log_type="infra")
+
+    def copy_cb_collect_logs(self, rest, nodes, cluster, log_path):
+        cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
+        self.log.debug(cb_collect_response)
+        node_ids = [node.id for node in nodes]
+        if 'perNode' in cb_collect_response:
+            for idx, node in enumerate(nodes):
+                self.log.info(
+                    "%s: Copying cbcollect ZIP file to Client" %
+                    node_ids[idx])
+                server = [server for server in cluster.servers if
+                          server.ip == node.ip][0]
+                remote_client = RemoteMachineShellConnection(server)
+                cb_collect_path = \
+                    cb_collect_response['perNode'][node_ids[idx]][
+                        'path']
+                zip_file_copied = remote_client.get_file(
+                    os.path.dirname(cb_collect_path),
+                    os.path.basename(cb_collect_path),
+                    log_path)
+                if zip_file_copied:
+                    remote_client.execute_command("rm -f %s"
+                                                  % cb_collect_path)
+                    remote_client.disconnect()
+                self.log.error(
+                    "%s node cb collect zip coped on client : %s"
+                    % (node.ip, zip_file_copied))
+
