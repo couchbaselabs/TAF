@@ -2,6 +2,7 @@ import time
 import json
 from threading import Thread
 
+from BucketLib.BucketOperations import BucketHelper
 from basetestcase import BaseTestCase
 from Cb_constants import constants
 from cb_tools.cbstats import Cbstats
@@ -43,6 +44,7 @@ class basic_ops(BaseTestCase):
         self.bucket_util.create_default_bucket(
             replica=self.num_replicas, compression_mode=self.compression_mode,
             bucket_type=self.bucket_type, storage=self.bucket_storage,
+            ram_quota=self.bucket_size,
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user()
 
@@ -52,8 +54,6 @@ class basic_ops(BaseTestCase):
             durability=self.durability_level,
             replicate_to=self.replicate_to,
             persist_to=self.persist_to)
-        # Reset active_resident_threshold to avoid further data load as DGM
-        self.active_resident_threshold = 0
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished Basic_ops base setup========")
@@ -638,6 +638,122 @@ class basic_ops(BaseTestCase):
         for node in cb_stat_obj.keys():
             cb_stat_obj[node].shellConn.disconnect()
 
+        self.validate_test_failure()
+
+    def test_MB_41255(self):
+        def create_docs_with_xattr():
+            value = {'val': 'a' * self.doc_size}
+            xattr_kv = ["field", "value"]
+            while not stop_loader:
+                t_key = "%s-%s" % (self.key, self.num_items)
+                crud_result = client.crud("create", t_key, value,
+                                          timeout=60)
+                if crud_result["status"] is False:
+                    self.log_failure("Create key %s failed: %s"
+                                     % (t_key, crud_result["error"]))
+                    break
+                self.num_items += 1
+                client.crud("subdoc_insert", t_key, xattr_kv, xattr=True)
+
+        nodes_data = dict()
+        stop_loader = False
+        non_resident_keys = list()
+        non_resident_keys_len = 0
+        self.num_items = 0
+        max_keys_to_del = 250
+        self.active_resident_threshold = \
+            int(self.input.param("active_resident_threshold", 99))
+        bucket = self.bucket_util.buckets[0]
+
+        for node in self.cluster_util.get_kv_nodes():
+            nodes_data[node] = dict()
+            nodes_data[node]["shell"] = RemoteMachineShellConnection(node)
+            nodes_data[node]["cbstats"] = Cbstats(nodes_data[node]["shell"])
+            nodes_data[node]["active_vbs"] = nodes_data[node][
+                "cbstats"].vbucket_list(bucket.name, "active")
+            nodes_data[node]["replica_vbs"] = nodes_data[node][
+                "cbstats"].vbucket_list(bucket.name, "replica")
+
+        bucket_helper = BucketHelper(self.cluster.master)
+        client = SDKClient([self.cluster.master], bucket)
+
+        self.log.info("Loading documents until %s%% DGM is achieved"
+                      % self.active_resident_threshold)
+        dgm_thread = Thread(target=create_docs_with_xattr)
+        dgm_thread.start()
+
+        # Run doc_loading until the targeted DGM value is hit
+        while not stop_loader:
+            dgm_value = bucket_helper.fetch_bucket_stats(bucket.name)["op"][
+                "samples"]["vb_active_resident_items_ratio"][-1]
+            if dgm_value <= self.active_resident_threshold:
+                self.log.info("DGM value: %s" % dgm_value)
+                stop_loader = True
+
+        dgm_thread.join()
+        self.log.info("Loaded %s documents" % self.num_items)
+
+        # Wait for ep_engine_queue size to become '0'
+        self.bucket_util._wait_for_stats_all_buckets()
+
+        # Fetch evicted keys
+        self.log.info("Fetching keys evicted from replica vbs")
+        for doc_index in range(self.num_items):
+            key = "%s-%s" % (self.key, doc_index)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            for node, n_data in nodes_data.items():
+                if vb_for_key in n_data["replica_vbs"]:
+                    stat = n_data["cbstats"].vkey_stat(bucket.name, key,
+                                                       vbucket_num=vb_for_key)
+                    if stat["is_resident"] == "false":
+                        non_resident_keys.append(key)
+                        non_resident_keys_len += 1
+                    break
+
+            if non_resident_keys_len >= max_keys_to_del:
+                break
+
+        self.log.info("Non-resident key count: %d" % non_resident_keys_len)
+
+        # Start rebalance-out operation
+        rebalance_out = self.task.async_rebalance(
+            self.cluster.servers[0:self.nodes_init], [],
+            [self.cluster.servers[-1]])
+        self.sleep(10, "Wait for rebalance to start")
+
+        # Start deleting the evicted docs in parallel to rebalance task
+        self.log.info("Deleting evicted keys")
+        for key in non_resident_keys:
+            result = client.crud("delete", key)
+            if result["status"] is False:
+                self.log_failure("Key %s deletion failed: %s"
+                                 % (key, result["error"]))
+
+        # Wait for rebalance to complete
+        self.task_manager.get_task_result(rebalance_out)
+
+        # Wait for ep_engine_queue size to become '0'
+        self.bucket_util._wait_for_stats_all_buckets()
+
+        # Trigger compaction
+        self.bucket_util._run_compaction(number_of_times=1)
+
+        # Read all deleted keys (include replica read) to validate
+        for key in non_resident_keys:
+            result = client.getFromAllReplica(key)
+            if result:
+                self.log_failure("Key '%s' exists on %d replica(s)"
+                                 % (key, len(result)))
+
+        # Close SDK and shell connections
+        client.close()
+        for node in nodes_data.keys():
+            nodes_data[node]["shell"].disconnect()
+
+        self.assertTrue(rebalance_out.result, "Rebalance_out failed")
+
+        self.bucket_util.verify_stats_all_buckets(self.num_items
+                                                  - non_resident_keys_len)
         self.validate_test_failure()
 
     def verify_stat(self, items, value="active"):
