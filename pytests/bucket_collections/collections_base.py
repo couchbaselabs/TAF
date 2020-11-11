@@ -8,7 +8,6 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-import traceback
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
 
@@ -63,7 +62,8 @@ class CollectionBase(BaseTestCase):
         # Initialize cluster using given nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [], services=services)
+        self.task.rebalance([self.cluster.master], nodes_init, [],
+                            services=services)
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
 
         # Disable auto-failover to avoid failover of nodes

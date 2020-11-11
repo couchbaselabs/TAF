@@ -5,6 +5,7 @@ Created on Sep 26, 2017
 """
 
 import copy
+import re
 import time
 import os
 
@@ -13,6 +14,7 @@ import testconstants
 from Cb_constants import constants
 from Jython_tasks.task import MonitorActiveTask
 from TestInput import TestInputSingleton, TestInputServer
+from cb_tools.cb_collectinfo import CbCollectInfo
 from common_lib import sleep
 from couchbase_cli import CouchbaseCLI
 from global_vars import logger
@@ -1058,3 +1060,46 @@ class ClusterUtils:
                     "%s node cb collect zip coped on client : %s"
                     % (node.ip, zip_file_copied))
 
+    def run_cb_collect(self, node, file_name,
+                       options="", result=dict()):
+        """
+        Triggers cb_collect_info on target node from command line (uses shell)
+        """
+        self.log.info("%s - Running cb_collect_info" % node.ip)
+        shell = RemoteMachineShellConnection(node)
+        output, error = \
+            CbCollectInfo(shell).start_collection(
+                file_name,
+                options=options,
+                compress_output=True)
+        result["output"] = output
+        result["error"] = error
+        self.log.info("%s - cb_collect_info completed" % node.ip)
+        shell.disconnect()
+
+        self.validate_cb_collect_file_size(node, file_name, result)
+
+    def validate_cb_collect_file_size(self, node, file_name, result=dict()):
+        result["file_name"] = "NA"
+        result["file_size"] = 0
+        shell = RemoteMachineShellConnection(node)
+        output, error = shell.execute_command("du -sh %s" % file_name)
+        if error:
+            self.log.error("%s - Error during cb_collect_file validation: %s"
+                           % (node.ip, error))
+            return
+        output = "".join(output)
+
+        du_output_pattern = "([0-9.A-Za-z]+)[\t ]+([0-9A-Za-z/_.-]+)"
+        du_output_pattern = re.compile(du_output_pattern)
+        du_match = du_output_pattern.match(output)
+        if du_match:
+            result["file_name"] = du_match.group(2)
+            result["file_size"] = du_match.group(1)
+            self.log.info("%s - %s::%s" % (node.ip, result["file_name"],
+                                           result["file_size"]))
+            if result["file_size"] == "0":
+                self.log.warning("%s - file size is zero" % node.ip)
+        else:
+            self.log.error("%s - du command failure: %s" % (node.ip, output))
+        shell.disconnect()

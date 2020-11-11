@@ -281,6 +281,8 @@ class ServerTasks(object):
                 clients.append(None)
         _task = jython_tasks.ContinuousDocOpsTask(
             cluster, self.jython_task_manager, bucket, clients, generator,
+            scope=scope,
+            collection=collection,
             op_type=op_type, exp=exp,
             persist_to=persist_to, replicate_to=replicate_to,
             durability=durability,
