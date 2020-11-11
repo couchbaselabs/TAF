@@ -1025,7 +1025,9 @@ class ClusterUtils:
             self.log.debug("CBCollectInfo Iteration {} - {}"
                            .format(retry,
                                    cb_collect_response["status"]))
-            if cb_collect_response['status'] != 'completed':
+            if cb_collect_response['status'] == 'completed':
+                break
+            else:
                 retry += 1
                 sleep(10, "CB collect still running", log_type="infra")
 
