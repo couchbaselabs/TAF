@@ -241,7 +241,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.rest = RestConnection(self.orchestrator)
         self.rest.reset_autofailover()
         self.disable_autofailover()
-        self._cleanup_cluster()
+        #self._cleanup_cluster()
         super(AutoFailoverBaseTest, self).tearDown()
 
     def _loadgen(self):
@@ -1040,12 +1040,10 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.targetMaster = True
         if hasattr(self, "original_data_path"):
             self.bring_back_failed_nodes_up()
-            self.reset_cluster()
             for server in self.cluster.servers:
                 self._initialize_node_with_new_data_location(
                     server, self.original_data_path)
         super(DiskAutoFailoverBasetest, self).tearDown()
-        self.log.info("=========Finished Diskautofailover teardown ==========")
 
     def enable_disk_autofailover(self):
         status = self.rest.update_autofailover_settings(
