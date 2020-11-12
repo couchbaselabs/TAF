@@ -283,7 +283,7 @@ class MagmaBaseTest(BaseTestCase):
 
         self.cluster_util.print_cluster_stats()
         dgm = BucketHelper(self.cluster.master).fetch_bucket_stats(
-            self.buckets[0].name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+            self.buckets[0].name, "hour")["op"]["samples"]["vb_active_resident_items_ratio"][-1]
         self.log.info("## Active Resident Threshold of {0} is {1} ##".format(
             self.buckets[0].name, dgm))
         super(MagmaBaseTest, self).tearDown()
