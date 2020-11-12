@@ -107,7 +107,7 @@ class CBASExternalLinks(CBASBaseTest):
         else:
             dataverse_name = "Default"
         self.link_info = dict()
-        self.link_info["dataverse"] = dataverse_name
+        self.link_info["dataverse"] = Dataset.format_name(dataverse_name)
         self.link_info["name"] = "newAwsLink"
         self.link_info["type"] = "s3"
         self.link_info["region"] = self.region
@@ -173,7 +173,8 @@ class CBASExternalLinks(CBASBaseTest):
                     random.randint(1, 1000)))
                 retry += 1
         self.get_link_property_dict(self.aws_access_key, self.aws_secret_key,
-                                    create_dataverse=False, dataverse_cardinality=1)
+                                    create_dataverse=create_dataverse, 
+                                    dataverse_cardinality=dataverse_cardinality)
         if not self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info):
             self.fail("link creation failed")
         self.link_created = True
@@ -250,7 +251,13 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Check for link creation failure scenario
         if no_of_link == 1:
-            self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
+            
+            if self.input.param("multipart_dataverse", False):
+                self.get_link_property_dict(self.aws_access_key, self.aws_secret_key, None ,True, 2)
+                invalid_dv = "invalid.invalid"
+            else:
+                self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
+                invalid_dv = "invalid"
 
             # Create users with all RBAC roles.
             self.create_or_delete_users(self.rbac_util, rbac_users_created)
@@ -258,7 +265,7 @@ class CBASExternalLinks(CBASBaseTest):
             testcases = [
                 {
                     "description": "Create a link with a non-existent dataverse",
-                    "dataverse": self.invalid_value,
+                    "dataverse": invalid_dv,
                     "expected_error": "Cannot find dataverse with name {0}".format(self.invalid_value)
                 },
                 {
@@ -280,8 +287,9 @@ class CBASExternalLinks(CBASBaseTest):
                     "description": "Create a link with a name that already exists in the dataverse",
                     "recreate_link": True,
                     "validate_error_msg": False,
-                    "expected_error": "Link {0}.{1} already exists".format(self.link_info["dataverse"],
-                                                                           self.link_info["name"])
+                    "expected_error": "Link {0} already exists".format(
+                        Dataset.format_name_for_error(True, self.link_info["dataverse"],
+                                                      self.link_info["name"]))
                 },
                 {
                     "description": "Create a link with a name of form Local*",
@@ -380,7 +388,11 @@ class CBASExternalLinks(CBASBaseTest):
                 self.fail("Exception Occured - " + str(err))
 
     def test_list_external_links(self):
-        self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
+        if self.input.param("multipart_dataverse", False):
+            self.get_link_property_dict(self.aws_access_key, self.aws_secret_key, None, True, 2)
+        else:
+            self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
+        
         if self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info,
                                                        username=self.analytics_username):
             self.link_created = True
@@ -457,7 +469,8 @@ class CBASExternalLinks(CBASBaseTest):
                             raise Exception(
                                 "Expected links - {0} \t Actual links - {1}".format(testcase["expected_hits"],
                                                                                     len(response)))
-                        if not (response[0]["dataverse"] == self.link_info["dataverse"]):
+                        if not (response[0]["dataverse"] == Dataset.format_name_for_error(
+                            True,self.link_info["dataverse"])):
                             raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["dataverse"],
                                                                                    response[0]["dataverse"]))
                         if not (response[0]["name"] == self.link_info["name"]):
@@ -487,10 +500,17 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Link creation failed")
 
     def test_alter_link_properties(self):
-        self.setup_for_dataset()
+        if self.input.param("multipart_dataverse", False):
+            self.setup_for_dataset(True, 2)
+            invalid_dv = "invalid.invalid"
+        else:
+            self.setup_for_dataset()
+            invalid_dv = "invalid"
 
         # Create users with all RBAC roles.
         self.create_or_delete_users(self.rbac_util, rbac_users_created)
+        
+        self.dataset_params["dataverse"] = self.link_info["dataverse"]
 
         aws_access_key_1, aws_secret_key_1, aws_session_token_1 = self.get_aws_credentials("full_access_2")
         region2 = random.choice(self.remove_and_return_new_list(self.aws_region_list, self.link_info["region"]))
@@ -504,7 +524,7 @@ class CBASExternalLinks(CBASBaseTest):
             },
             {
                 "description": "Changing dataverse to a non-existing dataverse",
-                "dataverse": self.invalid_value,
+                "dataverse": invalid_dv,
                 "validate_error_msg": True,
                 "expected_error": "Cannot find dataverse with name {0}".format(self.invalid_value)
             },
@@ -570,7 +590,9 @@ class CBASExternalLinks(CBASBaseTest):
         if result:
             self.fail("Error while uploading files to S3")
 
-        cbas_query = "Select count(*) from `{0}`;".format(self.dataset_params["cbas_dataset_name"])
+        cbas_query = "Select count(*) from {0};".format(
+            Dataset.format_name_for_error(True, self.dataset_params["dataverse"],
+                                          self.dataset_params["cbas_dataset_name"]))
         status, metrics, errors, cbas_result, handle = self.cbas_util.execute_statement_on_cbas_util(
             cbas_query, timeout=120, analytics_timeout=120)
 
@@ -1604,22 +1626,43 @@ class CBASExternalLinks(CBASBaseTest):
                                                                 analytics_timeout=7200):
             self.fail("Expected data does not match actual data")
     
-    def test_create_and_drop_link_with_2_part_dataverse_name(self):
-        
-        self.get_link_property_dict(self.aws_access_key, self.aws_secret_key,
-                                    create_dataverse=True, dataverse_cardinality=2)
-
-        if not self.cbas_util.create_external_link_on_cbas(
-            link_properties=self.link_info):
-            self.fail("Error while creating link")
-
-        if not self.cbas_util.drop_link_on_cbas(
-            link_name=Dataset.format_name(self.link_info["dataverse"],
-                                          self.link_info["name"])):
-            self.fail("Error while dropping link")
-    
-    def test_create_dataset_with_3_part_dataset_name(self):
+    def test_create_query_drop_dataset_with_3_part_dataset_name(self):
         self.setup_for_dataset(create_dataverse=True, dataverse_cardinality=2)
 
+        # read dataset params from test config
+        for param in self.dataset_params:
+            if param in self.input.test_params:
+                self.dataset_params[param] = self.convert_string_to_bool(self.input.test_params.get(param))
+        
+        self.dataset_params["dataverse"] = self.link_info["dataverse"]
+
+        missing_field = [False]
+        result = self.s3_data_helper.generate_data_for_s3_and_upload(
+            aws_bucket_name=self.dataset_params["aws_bucket_name"],
+            key=self.key, no_of_files=5,
+            file_formats=json.loads(self.input.test_params.get("file_format_for_upload", "[\"json\"]")),
+            no_of_folders=0, max_folder_depth=0, header=False, null_key="", operation="create",
+            bucket=self.bucket_util.buckets[0],
+            no_of_docs=int(self.input.test_params.get("no_of_docs", 100)),
+            randomize_header=False, large_file=False, missing_field=missing_field)
+        if result:
+            self.fail("Error while uploading files to S3")
+
+        # run query on dataset and on bucket that was used to generate AWS data.
+        n1ql_query = self.get_n1ql_query(self.input.test_params.get("n1ql_query", "count_all"))
+
+        # create dataset
         if not self.cbas_util.create_dataset_on_external_resource(**self.dataset_params):
-            self.fail("Error while creating dataset")
+            self.fail("Failed to create dataset")
+        self.dataset_created = True
+
+        n1ql_result = self.rest.query_tool(n1ql_query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
+        if not self.cbas_util.validate_cbas_dataset_items_count(
+            ".".join([self.dataset_params["links_dataverse"], self.dataset_params["cbas_dataset_name"]]), 
+            n1ql_result, timeout=300, analytics_timeout=300):
+            self.fail("Expected data does not match actual data")
+        
+        if not self.cbas_util.drop_dataset(cbas_dataset_name=self.dataset_params["cbas_dataset_name"], 
+                                           dataverse=self.dataset_params["links_dataverse"]):
+            self.fail("Error while dropping dataset")
+        
