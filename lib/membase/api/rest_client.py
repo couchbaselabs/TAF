@@ -1382,6 +1382,24 @@ class RestConnection(object):
                             .format(status, content))
         return status, content
 
+    def restart_ns_server(self):
+        status, content = self.diag_eval("erlang:halt()")
+        return status, content
+
+    def restart_all_ns_server(self):
+        status, content = self.diag_eval("[rpc:call(X, erlang, halt, []) || X <- [node() | nodes() ]]")
+        return status, content
+
+    def get_process_ids_of_all_mb_master_processes(self):
+        status, content = self.diag_eval(
+            "[rpc:call(X, erlang, apply, [fun() -> whereis(mb_master) end, []]) || X <- [node() | nodes() ]]")
+        return status, content
+
+    def kill_all_mb_masters(self):
+        status, content = self.diag_eval(
+            "[rpc:call(X, erlang, apply, [fun() -> erlang:exit(whereis(mb_master),kill) end, []]) || X <- [node() | nodes() ]]")
+        return status, content
+
     def set_heartbeat_interval(self, heartbeat_interval):
         status, content = self.diag_eval("ns_config:set({mb_master, heartbeat_interval}," + str(heartbeat_interval)
                                          + ").")

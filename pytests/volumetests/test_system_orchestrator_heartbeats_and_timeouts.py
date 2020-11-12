@@ -626,14 +626,36 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
 
     def test_volume_MB_41562(self):
         ########################################################################################################################
+        for server in self.servers:
+            shell = RemoteMachineShellConnection(server)
+            shell.enable_diag_eval_on_non_local_hosts()
+            shell.disconnect()
+        self.log.info("Display process IDs of all mb_master processes before ns_serv restart")
+        status, content = self.rest.get_process_ids_of_all_mb_master_processes()
+        self.log.info("Status : {0} Content : {1}".format(status, content))
+        self.log.info("Step 1: Set Non default orchestrator heartbeats and timeouts")
+        self.set_non_default_orchestrator_heartbeats_and_timeouts()
+        try:
+            self.rest.restart_ns_server()
+        except Exception as e:
+            self.log.info("Exception : {0}".format(str(e)))
+            pass
+        self.sleep(180)
+        self.rest = RestConnection(self.servers[0])
+        self.log.info("Display process IDs of all mb_master processes after ns_serv restart")
+        status, content = self.rest.get_process_ids_of_all_mb_master_processes()
+        self.log.info("Status : {0} Content : {1}".format(status, content))
         # default is 4, we are changing this to increase the rebalance run time which is crucial for this test
         self.set_rebalance_moves_per_node(rebalanceMovesPerNode=1)
         ########################################################################################################################
-        self.log.info("Step 1: Create a n node cluster")
+        self.log.info("Step 2: Create a n node cluster")
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master],
                             nodes_init,
                             [], services=self.services)
+        self.log.info("Display process IDs of all mb_master processes after rebalancing all the nodes in the cluster")
+        status, content = self.rest.get_process_ids_of_all_mb_master_processes()
+        self.log.info("Status : {0} Content : {1}".format(status, content))
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.index_node = self.cluster_util.get_nodes_from_services_map(service_type="index",
                                                                         get_all_nodes=False,
@@ -645,8 +667,6 @@ class volume(BaseTestCase):  # will add the __init__ functions after the test ha
                                                                        master=self.cluster.master)
         self.n1ql_rest = RestConnection(self.n1ql_node)
         ########################################################################################################################
-        self.log.info("Step 2: Set Non default orchestrator heartbeats and timeouts")
-        self.set_non_default_orchestrator_heartbeats_and_timeouts()
         self.log.info("Step 3: Create required buckets and indexes.")
         bucket = self.create_required_buckets()
         self.create_primary_indexes()
