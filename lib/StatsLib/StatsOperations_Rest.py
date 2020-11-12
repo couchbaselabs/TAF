@@ -209,7 +209,7 @@ class StatsHelper(RestConnection):
             return self.cbas_base_url
         # ToDo enumerate other services that support exposition of prometheus metrics
         else:
-            raise Exception("unknown component name")
+            raise Exception("unknown component name : {0}".format(component))
 
     def _run_curl_command_from_localhost(self, cmd):
         """
