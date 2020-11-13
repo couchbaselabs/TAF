@@ -134,14 +134,6 @@ class StatsBasicOps(CollectionBase):
         content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
         print(content)
 
-    def test_execute_promql_query(self):
-        """
-        Does not seem to get it to work yet
-        """
-        query = "kv_curr_items"
-        content = StatsHelper(self.cluster.master).execute_promql_query(query)
-        print(content)
-
     def test_instant_api_metrics(self):
         """
         API not exposed yet

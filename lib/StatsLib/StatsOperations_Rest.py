@@ -109,12 +109,6 @@ class StatsHelper(RestConnection):
         # ToDo - Think of a way to a parse time series, instead of returning the entire content
         return json.loads(content)
 
-    def execute_promql_query(self, query):
-        api = '%s%s%s' % (self.base_url, '/pools/default/stats?query=', urllib.quote_plus("%s" % query))
-        status, content, _ = self._http_request(api)
-        if not status:
-            raise Exception(content)
-
     def get_instant_api_metrics(self, metric_name, label_values=None, optional_params=None):
         """
         :metric_name: metric_name to query
