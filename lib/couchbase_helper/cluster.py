@@ -80,7 +80,7 @@ class ServerTasks(object):
         Returns:
           NodeInitTask - A task future that is a handle to the scheduled task
         """
-        _task = conc.NodeInitializeTask(
+        _task = jython_tasks.NodeInitializeTask(
             server, self.jython_task_manager, disabled_consistent_view,
             rebalanceIndexWaitingDisabled, rebalanceIndexPausingDisabled,
             maxParallelIndexers, maxParallelReplicaIndexers,
