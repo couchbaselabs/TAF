@@ -1,5 +1,5 @@
 import json
-from random import choice, randint, sample
+from random import choice, randint
 from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
@@ -909,6 +909,111 @@ class basic_ops(BaseTestCase):
 
         self.bucket_util.verify_stats_all_buckets(self.num_items
                                                   - non_resident_keys_len)
+        self.validate_test_failure()
+
+    def test_MB_41405(self):
+        """
+        1. Pick random vbucket number
+        2. Create, Delete doc_keys and validate on_disk_deleted counter moves
+        3. Fetch bloom_filter_size during first delete op and run_compaction
+        4. Create-delete 10K more items and run compaction again
+        5. Make sure current bloom_filter_size is > the value during step#3
+        """
+        def validate_crud_result(op_type, doc_key, crud_result):
+            if crud_result["status"] is False:
+                self.log_failure("Key %s %s failed: %s"
+                                 % (doc_key, op_type, crud_result["error"]))
+
+        on_disk_deletes = 0
+        bloom_filter_size = None
+        bucket = self.bucket_util.buckets[0]
+        target_vb = choice(range(self.cluster_util.vbuckets))
+        vb_str = str(target_vb)
+        doc_gen = doc_generator(self.key, 0, self.num_items,
+                                target_vbucket=[target_vb])
+
+        target_node = None
+        nodes_data = dict()
+        for node in self.cluster_util.get_kv_nodes():
+            nodes_data[node] = dict()
+            nodes_data[node]["shell"] = RemoteMachineShellConnection(node)
+            nodes_data[node]["cbstats"] = Cbstats(nodes_data[node]["shell"])
+            nodes_data[node]["active_vbs"] = nodes_data[node][
+                "cbstats"].vbucket_list(bucket.name, "active")
+            if target_vb in nodes_data[node]["active_vbs"]:
+                target_node = node
+
+        # Open SDK client for doc_ops
+        client = SDKClient([self.cluster.master], bucket)
+
+        self.log.info("Testing using vbucket %s" % target_vb)
+        while doc_gen.has_next():
+            key, val = doc_gen.next()
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+
+            # Create and delete a key
+            result = client.crud("create", key, val)
+            validate_crud_result("create", key, result)
+            result = client.crud("delete", key, val)
+            validate_crud_result("delete", key, result)
+            on_disk_deletes += 1
+
+            # Wait for ep_queue_size to become zero
+            self.bucket_util._wait_for_stats_all_buckets()
+
+            dcp_vb_takeover_stats = nodes_data[target_node][
+                "cbstats"].dcp_vbtakeover(bucket.name, vb_for_key, key)
+            if dcp_vb_takeover_stats["on_disk_deletes"] != on_disk_deletes:
+                self.log_failure("Stat on_disk_deleted mismatch. "
+                                 "Actual :: %s, Expected :: %s"
+                                 % (dcp_vb_takeover_stats["on_disk_deletes"],
+                                    on_disk_deletes))
+
+            # Record bloom filter and perform compaction for the first item
+            if bloom_filter_size is None:
+                vb_details_stats = nodes_data[target_node][
+                    "cbstats"].vbucket_details(bucket.name)
+                bloom_filter_size = \
+                    vb_details_stats[vb_str]["bloom_filter_size"]
+                self.log.info("Bloom filter size before compaction: %s"
+                              % bloom_filter_size)
+
+                self.bucket_util._run_compaction(number_of_times=1)
+
+                vb_details_stats = nodes_data[target_node][
+                    "cbstats"].vbucket_details(bucket.name)
+                bloom_filter_size_after_compaction = \
+                    vb_details_stats[vb_str]["bloom_filter_size"]
+                self.log.info("Bloom filter size after compaction: %s"
+                              % bloom_filter_size_after_compaction)
+
+        # Create and delete 10K more items to validate bloom_filter_size
+        doc_gen = doc_generator(self.key, self.num_items, self.num_items+10000,
+                                target_vbucket=[target_vb])
+        self.log.info("Loading 10K items for bloom_filter_size validation")
+        while doc_gen.has_next():
+            key, val = doc_gen.next()
+            # Create and delete a key
+            client.crud("create", key, val)
+            client.crud("delete", key, val)
+            # self.bucket_util._wait_for_stats_all_buckets()
+
+        self.bucket_util._run_compaction(number_of_times=1)
+        self.sleep(5, "Compaction complete")
+        vb_details_stats = nodes_data[target_node][
+            "cbstats"].vbucket_details(bucket.name)
+        bloom_filter_size_after_compaction = \
+            vb_details_stats[vb_str]["bloom_filter_size"]
+        self.log.info("Bloom filter size after compaction: %s"
+                      % bloom_filter_size_after_compaction)
+        if int(bloom_filter_size_after_compaction) <= int(bloom_filter_size):
+            self.log_failure("Bloom filter init_size <= curr_size")
+
+        # Close SDK and shell connections
+        client.close()
+        for node in nodes_data.keys():
+            nodes_data[node]["shell"].disconnect()
+
         self.validate_test_failure()
 
     def verify_stat(self, items, value="active"):

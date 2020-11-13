@@ -681,3 +681,42 @@ class Cbstats(CbCmdBase):
             val = list_all[1].strip()
             stats[stat] = val
         return stats
+
+    def dcp_vbtakeover(self, bucket_name, vb_num, key):
+        """
+        Fetches dcp-vbtakeover stats for the target vb,key
+          cbstats localhost:port -b bucket_name dcp-vbtakeover vb_num key
+
+        Arguments:
+        :bucket_name - Name of the bucket
+        :vb_num - Target vBucket
+        :key - Document key
+
+        Returns:
+        :stats - Dictionary of stats field::value
+
+        Raise:
+        :Exception returned from command line execution (if any)
+        """
+
+        stats = dict()
+        cmd = "%s localhost:%s -u %s -p %s -b %s dcp-vbtakeover %s %s" \
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
+                 bucket_name, vb_num, key)
+
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+
+        for line in output:
+            line = line.strip()
+            list_all = line.rsplit(":", 1)
+            stat = list_all[0]
+            val = list_all[1].strip()
+            try:
+                val = int(val)
+            except ValueError:
+                pass
+            stats[stat] = val
+
+        return stats
