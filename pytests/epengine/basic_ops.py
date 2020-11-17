@@ -895,7 +895,7 @@ class basic_ops(BaseTestCase):
 
         # Read all deleted keys (include replica read) to validate
         for key in non_resident_keys:
-            result = client.getFromAllReplica(key)
+            result = client.get_from_all_replicas(key)
             if result:
                 self.log_failure("Key '%s' exists on %d replica(s)"
                                  % (key, len(result)))
