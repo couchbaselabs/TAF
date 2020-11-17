@@ -142,21 +142,35 @@ class StatsBasicOps(CollectionBase):
 
     def test_disable_high_cardinality_metrics(self):
         """
-        Test to disable high cardinality metrics(kv and index) and validate if returned content is 0
-        #ToDo: Will it get truncated from /metrics endpoint too? If yes, we should validate from there as well.
+        Disable Prometheus from scraping high cardinality metrics
+        Validate by querying Prometheus directly for its active targets
         """
         self.bucket_util.load_sample_bucket(TravelSample())
         self.bucket_util.load_sample_bucket(BeerSample())
+
+        self.log.info("Disabling high cardinality metrics of all services")
         value = "[{index,[{high_cardinality_enabled,false}]}, {fts,[{high_cardinality_enabled,false}]},\
                  {kv,[{high_cardinality_enabled,false}]}, {cbas,[{high_cardinality_enabled,false}]}, \
                  {eventing,[{high_cardinality_enabled,false}]}]"
         StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("services", value)
+
+        self.log.info("Validating by querying prometheus")
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("prometheus_auth_enabled", "false")
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("listen_addr_type", "any")
+        self.sleep(10, "Waiting for prometheus federation")
+        query = "targets?state=active"
         for server in self.cluster.servers[:self.nodes_init]:
-            server_services = self.get_services_from_node(server)
-            for component in server_services:
-                content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=False)
-                if len(content) != 0:
-                    self.fail("Metrics were returned for component {0} on node {1}".format(component, server.ip))
+            content = StatsHelper(server).query_prometheus_federation(query)
+            active_targets = content["data"]["activeTargets"]
+            if len(active_targets) == 0:
+                self.fail("Prometheus did not return any active targets")
+            for active_targets_dict in active_targets:
+                job = active_targets_dict["labels"]["job"]
+                self.log.info("Job name {0}".format(job))
+                if "high_cardinality" in job:
+                    self.fail("Prometheus is still scraping target with job name {0} on {1}".format(job, server.ip))
+
+        self.log.info("Reverting settings to default")
         StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
 
     def test_stats_1000_collections(self):
