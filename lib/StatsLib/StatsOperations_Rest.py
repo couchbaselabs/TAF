@@ -4,8 +4,10 @@ import re
 
 import testconstants
 from connections.Rest_Connection import RestConnection
+from membase.api.rest_client import RestConnection as RestClientConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from global_vars import logger
+from pytests.scalable_stats import constants
 
 
 class StatsHelper(RestConnection):
@@ -22,6 +24,8 @@ class StatsHelper(RestConnection):
         # Prometheus scrapes from KV metrics from this port, and not 11210.
         # Look at: /opt/couchbase/var/lib/couchbase/config/prometheus.yaml for ports
         self.memcached_base_url = "http://{0}:{1}".format(self.ip, 11280)
+
+        self.rest = RestClientConnection(server)
 
         self.curl_path = "curl"
         shell = RemoteMachineShellConnection(self.server)
@@ -130,23 +134,34 @@ class StatsHelper(RestConnection):
 
     def configure_stats_settings_from_diag_eval(self, key, value):
         """
-        To change stats config settings thorugh diag/eval
+        To change stats config settings through diag/eval
         :key:  scrape_interval, retention_size, prometheus_metrics_scrape_interval etc
         :value: new_value to be set for the above key.
         """
-        def diag_eval(code, print_log=True):
-            api = '{0}{1}'.format(self.baseUrl, 'diag/eval/')
-            status_i, content_i, header = self._http_request(api, "POST", code)
-            if print_log:
-                self.log.debug(
-                    "/diag/eval status on {0}:{1}: {2} content: {3} command: {4}"
-                        .format(self.ip, self.port, status_i, content_i, code))
-            return status_i, content_i
-
         key_value = "{%s, %s}" % (key, str(value))
-        status, content = diag_eval("ns_config:set_sub(stats_settings, [%s])" % key_value)
+        status, content = self.rest.diag_eval("ns_config:set_sub(stats_settings, [%s])" % key_value)
         if not status:
             raise Exception(content)
+
+    def reset_stats_settings_from_diag_eval(self, key=None):
+        """
+        To restore stats config to defaults through diag/eval
+        :key: Specific key to restore eg: retention_size
+        """
+        default_config_dict = constants.stats_default_config
+        if key:
+            value = default_config_dict[key]
+            key_value = "{%s, %s}" % (key, str(value))
+            status, content = self.rest.diag_eval("ns_config:set_sub(stats_settings, [%s])" % key_value)
+            if not status:
+                raise Exception(content)
+        else:
+            # Reset all
+            for key, value in default_config_dict.items():
+                key_value = "{%s, %s}" % (key, str(value))
+                status, content = self.rest.diag_eval("ns_config:set_sub(stats_settings, [%s])" % key_value)
+                if not status:
+                    raise Exception(content)
 
     @staticmethod
     def _build_params_for_get_request(params_dict):

@@ -140,20 +140,24 @@ class StatsBasicOps(CollectionBase):
         """
         pass
 
-    def test_configure_stats_settings_from_diag_eval(self):
+    def test_disable_high_cardinality_metrics(self):
         """
-        Example to change the stats settings.
+        Test to disable high cardinality metrics(kv and index) and validate if returned content is 0
+        #ToDo: Will it get truncated from /metrics endpoint too? If yes, we should validate from there as well.
         """
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        shell.enable_diag_eval_on_non_local_hosts()
-        # Example 1 to change scrape interval
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval", 30)
-
-        # Example 2 to disable high cardinality
-        value = "[{kv,[{high_cardinality_enabled,false}]}, {index,[{high_cardinality_enabled,false}]}]"
+        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(BeerSample())
+        value = "[{index,[{high_cardinality_enabled,false}]}, {fts,[{high_cardinality_enabled,false}]},\
+                 {kv,[{high_cardinality_enabled,false}]}, {cbas,[{high_cardinality_enabled,false}]}, \
+                 {eventing,[{high_cardinality_enabled,false}]}]"
         StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("services", value)
-
-        # ToDo: Is there a way to reset them all to defaults at once, before running the next test?
+        for server in self.cluster.servers[:self.nodes_init]:
+            server_services = self.get_services_from_node(server)
+            for component in server_services:
+                content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=False)
+                if len(content) != 0:
+                    self.fail("Metrics were returned for component {0} on node {1}".format(component, server.ip))
+        StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
 
     def test_stats_1000_collections(self):
         """
@@ -176,7 +180,3 @@ class StatsBasicOps(CollectionBase):
                 self.log.info("calling high cardinality metrics on {0} with component {1}".format(server.ip, component))
                 content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=False)
                 StatsHelper(server)._validate_metrics(content)
-
-
-
-
