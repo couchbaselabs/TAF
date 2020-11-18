@@ -73,16 +73,16 @@ class CollectionsTTL(CollectionBase):
             self.fail("collections_ttl value was considered instead of the doc_ttl. Num docs : {0}".format(items))
 
     def test_collections_ttl_greater_than_doc_expiry(self):
+        self.bucket_util._expiry_pager(val=1)
         self.task.load_gen_docs(
-            self.cluster, self.bucket, self.load_gen, "create", exp=2,
+            self.cluster, self.bucket, self.load_gen, "create", exp=1,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_2")
-        self.bucket_util._expiry_pager()
-        # Validate the bucket doc count is '0' after drop collection
+        # Validate the bucket doc count is '0' after doc expiry timeout
         self.sleep(15, "waiting for maxTTL to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
         if items != 0:
