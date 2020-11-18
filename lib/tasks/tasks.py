@@ -156,8 +156,9 @@ class NodeInitializeTask(Task):
             self.state = FINISHED
             self. set_unexpected_exception(error)
             return
+        # Change timeout back to 10 after https://issues.couchbase.com/browse/MB-40670 is resolved
         info = Task.wait_until(lambda: rest.get_nodes_self(),
-                               lambda x: x.memoryTotal > 0, 10)
+                               lambda x: x.memoryTotal > 0, 30)
         self.test_log.debug("server: %s, nodes/self: %s", self.server,
                             info.__dict__)
 
