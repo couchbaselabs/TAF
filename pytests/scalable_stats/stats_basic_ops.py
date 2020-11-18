@@ -4,7 +4,7 @@ from bucket_collections.collections_base import CollectionBase
 from rbac_utils.Rbac_ready_functions import RbacUtils
 from membase.api.rest_client import RestConnection
 
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from ruamel.yaml import YAML # using ruamel.yaml as "import yaml" (pyyaml) doesn't work with jython
 
 
 class StatsBasicOps(CollectionBase):
@@ -13,6 +13,8 @@ class StatsBasicOps(CollectionBase):
         self.rest = RestConnection(self.cluster.master)
 
     def tearDown(self):
+        self.log.info("Reverting settings to default")
+        StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
         super(StatsBasicOps, self).tearDown()
 
     def get_services_from_node(self, server):
@@ -170,8 +172,87 @@ class StatsBasicOps(CollectionBase):
                 if "high_cardinality" in job:
                     self.fail("Prometheus is still scraping target with job name {0} on {1}".format(job, server.ip))
 
-        self.log.info("Reverting settings to default")
-        StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
+    def test_disable_external_prometheus_high_cardinality_metrics(self):
+        """
+        Disable exposition of high cardinality metrics by ns-server's /metrics endpoint
+        Validate by checking that there are no high cardinality metrics returned at
+        /metrics endpoint ie; check if
+        total number low cardinality metrics = total number of metrics at /metrics endpoint
+        """
+        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(BeerSample())
+
+        self.log.info("Disabling external prometheus high cardinality metrics of all services")
+        value = "[{index,[{high_cardinality_enabled,false}]}, {fts,[{high_cardinality_enabled,false}]},\
+                         {kv,[{high_cardinality_enabled,false}]}, {cbas,[{high_cardinality_enabled,false}]}, \
+                         {eventing,[{high_cardinality_enabled,false}]}]"
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("external_prometheus_services", value)
+        for server in self.cluster.servers[:self.nodes_init]:
+            len_low_cardinality_metrics = 0
+            content = StatsHelper(server).get_prometheus_metrics(component="ns_server", parse=False)
+            self.log.info("lc count of ns_server on {0} is {1}".format(server.ip, len(content)))
+            len_low_cardinality_metrics = len_low_cardinality_metrics + len(content)
+            server_services = self.get_services_from_node(server)
+            for component in server_services:
+                content = StatsHelper(server).get_prometheus_metrics(component=component, parse=False)
+                self.log.info("lc count of {2} on {0} is {1}".format(server.ip, len(content), component))
+                len_low_cardinality_metrics = len_low_cardinality_metrics + len(content)
+            content = StatsHelper(server).get_all_metrics()
+            len_metrics = len(content)
+            if len_metrics != len_low_cardinality_metrics:
+                self.fail("Number mismatch on node {0} , Total lc metrics count {1}, Total metrics count {2}".
+                          format(server.ip, len_low_cardinality_metrics, len_metrics))
+
+    def test_change_global_scrape_interval(self):
+        """
+        Change global scrape interval and verify the prometheus config by querying Prometheus Federation
+        """
+        scrape_interval = self.input.param("scrape_interval", 15)
+        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(BeerSample())
+
+        self.log.info("Changing scrape interval to {0}".format(scrape_interval))
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval", scrape_interval)
+
+        self.log.info("Validating by querying prometheus")
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("prometheus_auth_enabled", "false")
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("listen_addr_type", "any")
+        self.sleep(10, "Waiting for prometheus federation")
+        query = "status/config"
+        yaml = YAML()
+        for server in self.cluster.servers[:self.nodes_init]:
+            content = StatsHelper(server).query_prometheus_federation(query)
+            yaml_code = yaml.load(content["data"]["yaml"])
+            global_scrape_interval = yaml_code["global"]["scrape_interval"]
+            if str(global_scrape_interval) != (str(scrape_interval) + "s"):
+                self.fail("Expected scrape interval {0}, but Actual {1}"
+                          .format(scrape_interval, global_scrape_interval))
+
+    def test_change_global_scrape_timeout(self):
+        """
+        Change global scrape timeout and verify the prometheus config by querying Prometheus Federation
+        (Positive test case as a valid scrape_timeout is always less than scrape_interval)
+        """
+        scrape_timeout = self.input.param("scrape_timeout", 5)
+        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(BeerSample())
+
+        self.log.info("Changing scrape interval to {0}".format(scrape_timeout))
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_timeout", scrape_timeout)
+
+        self.log.info("Validating by querying prometheus")
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("prometheus_auth_enabled", "false")
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("listen_addr_type", "any")
+        self.sleep(10, "Waiting for prometheus federation")
+        query = "status/config"
+        yaml = YAML()
+        for server in self.cluster.servers[:self.nodes_init]:
+            content = StatsHelper(server).query_prometheus_federation(query)
+            yaml_code = yaml.load(content["data"]["yaml"])
+            global_scrape_timeout = yaml_code["global"]["scrape_timeout"]
+            if str(global_scrape_timeout) != (str(scrape_timeout) + "s"):
+                self.fail("Expected scrape timeout {0}, but Actual {1}"
+                          .format(scrape_timeout, global_scrape_timeout))
 
     def test_stats_1000_collections(self):
         """
