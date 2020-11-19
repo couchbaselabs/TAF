@@ -37,7 +37,8 @@ class BucketHelper(RestConnection):
 
     def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
         api = '%s%s%s?basic_stats=true' \
-               % (self.baseUrl, 'pools/default/buckets/',  urllib.quote_plus(bucket.name))
+               % (self.baseUrl, 'pools/default/buckets/',
+                  urllib.quote_plus(bucket.name))
         status, content, _ = self._http_request(api)
         num = 1
         while not status and num_attempt > num:
@@ -150,7 +151,8 @@ class BucketHelper(RestConnection):
         Keyword argument:
         bucket -- bucket name
         """
-        api = self.baseUrl + 'pools/default/buckets/' + urllib.quote_plus("%s" % bucket)
+        api = self.baseUrl + 'pools/default/buckets/' \
+              + urllib.quote_plus("%s" % bucket)
         _, content, _ = self._http_request(api)
         _stats = json.loads(content)
         return _stats['vBucketServerMap']['vBucketMap']
@@ -159,7 +161,8 @@ class BucketHelper(RestConnection):
         """ Return server list, replica and vbuckets map
         that matches to server list """
         # vbucket_map = self.fetch_vbucket_map(bucket)
-        api = self.baseUrl + 'pools/default/buckets/' + urllib.quote_plus("%s" % bucket)
+        api = self.baseUrl + 'pools/default/buckets/' \
+              + urllib.quote_plus("%s" % bucket)
         _, content, _ = self._http_request(api)
         _stats = json.loads(content)
         num_replica = _stats['vBucketServerMap']['numReplicas']
@@ -178,7 +181,8 @@ class BucketHelper(RestConnection):
         stats = {}
         api = "{0}{1}{2}{3}{4}:{5}{6}" \
               .format(self.baseUrl, 'pools/default/buckets/',
-                      urllib.quote_plus("%s" % bucket), "/nodes/", node.ip, node.port, "/stats")
+                      urllib.quote_plus("%s" % bucket), "/nodes/",
+                      node.ip, node.port, "/stats")
         status, content, _ = self._http_request(api)
         if status:
             json_parsed = json.loads(content)
@@ -249,7 +253,8 @@ class BucketHelper(RestConnection):
 
     def get_bucket_stats_json(self, bucket_name='default'):
         api = "{0}{1}{2}{3}".format(self.baseUrl, 'pools/default/buckets/',
-                                    urllib.quote_plus("%s" % bucket_name), "/stats")
+                                    urllib.quote_plus("%s" % bucket_name),
+                                    "/stats")
         status, content, _ = self._http_request(api)
         json_parsed = json.loads(content)
         return status, json_parsed
@@ -264,7 +269,8 @@ class BucketHelper(RestConnection):
         return json.loads(content)
 
     def delete_bucket(self, bucket='default'):
-        api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/', urllib.quote_plus("%s" % bucket))
+        api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/',
+                          urllib.quote_plus("%s" % bucket))
         status, _, header = self._http_request(api, 'DELETE')
 
         if int(header['status']) == 500:
@@ -455,20 +461,24 @@ class BucketHelper(RestConnection):
             bucket_info = self.get_bucket_json(bucket)
 #             quota = self.get_bucket_json(bucket)["quota"]["ram"] / (1048576 * num_nodes)
 #             params["ramQuotaMB"] = quota
-            if bucket_info["authType"] == "sasl" and bucket_info["name"] != "default":
+            if bucket_info["authType"] == "sasl" \
+                    and bucket_info["name"] != "default":
                 params["authType"] = self.get_bucket_json(bucket)["authType"]
                 params["saslPassword"] = self.get_bucket_json(bucket)["saslPassword"]
 
         params["parallelDBAndViewCompaction"] = parallelDBAndVC
         # Need to verify None because the value could be = 0
         if dbFragmentThreshold is not None:
-            params["databaseFragmentationThreshold[size]"] = dbFragmentThreshold
+            params["databaseFragmentationThreshold[size]"] = \
+                dbFragmentThreshold
         if viewFragmntThreshold is not None:
             params["viewFragmentationThreshold[size]"] = viewFragmntThreshold
         if dbFragmentThresholdPercentage is not None:
-            params["databaseFragmentationThreshold[percentage]"] = dbFragmentThresholdPercentage
+            params["databaseFragmentationThreshold[percentage]"] = \
+                dbFragmentThresholdPercentage
         if viewFragmntThresholdPercentage is not None:
-            params["viewFragmentationThreshold[percentage]"] = viewFragmntThresholdPercentage
+            params["viewFragmentationThreshold[percentage]"] = \
+                viewFragmntThresholdPercentage
         if allowedTimePeriodFromHour is not None:
             params["allowedTimePeriod[fromHour]"] = allowedTimePeriodFromHour
         if allowedTimePeriodFromMin is not None:
@@ -507,7 +517,8 @@ class BucketHelper(RestConnection):
 
     def get_bucket_CCCP(self, bucket):
         self.log.debug("Getting CCCP config")
-        api = '%spools/default/b/%s' % (self.baseUrl, urllib.quote_plus("%s" % bucket))
+        api = '%spools/default/b/%s' % (self.baseUrl,
+                                        urllib.quote_plus("%s" % bucket))
         status, content, _ = self._http_request(api)
         if status:
             return json.loads(content)
