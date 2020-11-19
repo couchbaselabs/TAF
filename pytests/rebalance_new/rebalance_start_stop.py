@@ -109,6 +109,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     "Rebalance was completed when tried to stop rebalance on {0}%".format(str(expected_progress)))
                 break
             else:
+                # Trigger cb_collected with rebalance_stopped condition
+                self.cbcollect_info(trigger=True, validate=True)
                 self.log.info("Rebalance is still required. Verifying the data in the buckets")
                 self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -163,6 +165,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
+                # Trigger cb_collect with rebalance stopped and doc_ops running
+                self.cbcollect_info(trigger=True, validate=True)
                 if self.withMutationOps:
                     self.tasks_result(tasks)
                 self.sleep(5)
@@ -302,6 +306,10 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.log.info("Stop the rebalance")
             stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
             self.assertTrue(stopped, msg="Unable to stop rebalance")
+
+        # Trigger cbcollect with halted failover
+        self.cbcollect_info(trigger=True, validate=True)
+
         self.shuffle_nodes_between_zones_and_rebalance()
         self.validate_docs()
         self.sleep(30)

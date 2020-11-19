@@ -96,11 +96,15 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.assertTrue(rebalance.result, self.rebalance_failed_msg)
         except Exception as e:
             self.log.info("Rebalance failed with: {0}".format(str(e)))
+            # Trigger cbcollect after rebalance failure
+            self.cbcollect_info(trigger=True, validate=False)
             # Recover from the error
             self._recover_from_error(before_rebalance_failure)
             if self.data_load:
                 tasks = self.async_data_load()
             self.check_retry_rebalance_succeeded()
+            # Validate cbcollect result after rebalance retry
+            self.cbcollect_info(trigger=False, validate=True)
             if self.data_load:
                 self.data_validation(tasks)
         else:
@@ -122,6 +126,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             # induce the failure during the rebalance
             self._induce_error(during_rebalance_failure)
             self.task.jython_task_manager.get_task_result(rebalance)
+            # Trigger cbcollect after rebalance interrupted
+            self.cbcollect_info(trigger=True, validate=False)
             self.assertTrue(rebalance.result, self.rebalance_failed_msg)
         except Exception as e:
             self.log.info("Rebalance failed with: {0}".format(str(e)))
@@ -146,6 +152,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 self.fail("Rebalance did not fail as expected. "
                           "Hence could not validate auto-retry feature..")
         finally:
+            # Validate cbcollect results
+            self.cbcollect_info(trigger=False, validate=True)
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
             self.cluster_util.start_server(self.servers[1])
@@ -155,9 +163,13 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         _ = self._rebalance_operation(self.rebalance_operation)
         reached = RestHelper(self.rest).rebalance_reached(30)
         self.assertTrue(reached, "Rebalance failed or did not reach 30%")
+        # Trigger cbcollect before interrupting the rebalance
+        self.cbcollect_info(trigger=True, validate=False)
         self.rest.stop_rebalance(wait_timeout=self.sleep_time)
         result = json.loads(self.rest.get_pending_rebalance_info())
         self.log.info(result)
+        # Validate cbcollect results
+        self.cbcollect_info(trigger=False, validate=True)
         retry_rebalance = result["retry_rebalance"]
         if retry_rebalance != "not_pending":
             self.fail("Auto-retry succeeded even when Rebalance was stopped by user")
@@ -176,6 +188,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.assertTrue(rebalance.result, self.rebalance_failed_msg)
         except Exception as e:
             self.log.info("Rebalance failed with: %s" % e)
+            # Start cbcollect after rebalance failure
+            self.cbcollect_info(trigger=True, validate=False)
             # Recover from the error
             self._recover_from_error(during_rebalance_failure)
             # TODO : Data load at this stage fails;
@@ -188,6 +202,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             retry_rebalance = result["retry_rebalance"]
             rebalance_id = result["rebalance_id"]
             if retry_rebalance != "pending":
+                # Wait for cbcollect to complete before asserting
+                self.cbcollect_info(trigger=False, validate=True)
                 self.fail("Auto-retry of failed rebalance is not triggered")
             if post_failure_operation == "cancel_pending_rebalance":
                 # cancel pending rebalance
@@ -206,6 +222,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             # Now check and ensure retry won't happen
             result = json.loads(self.rest.get_pending_rebalance_info())
             self.log.info(result)
+            # Validate cbcollect results
+            self.cbcollect_info(trigger=False, validate=True)
             retry_rebalance = result["retry_rebalance"]
             if retry_rebalance != "not_pending":
                 self.fail("Auto-retry of failed rebalance is not cancelled")
@@ -249,7 +267,10 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             #     BucketOperationHelper.delete_all_buckets_or_assert(servers=self.servers, test_case=self)
             #     self.sleep(self.sleep_time)
             #     BucketOperationHelper.create_bucket(self.master, test_case=self)
-            elif post_failure_operation == "change_replica_count":
+
+            # Start cbcollect only if auto-retry of rebalance is triggered
+            self.cbcollect_info(trigger=True, validate=False)
+            if post_failure_operation == "change_replica_count":
                 # change replica count
                 self.log.info("Changing replica count of buckets")
                 for bucket in self.bucket_util.buckets:
@@ -270,8 +291,12 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             # then the retry will be attempted but fail
             try:
                 self.check_retry_rebalance_succeeded()
+                # Validate cbcollect results
+                self.cbcollect_info(trigger=False, validate=True)
             except Exception as e:
                 self.log.info(e)
+                # Wait for cbstat to complete before asserting
+                self.cbcollect_info(trigger=False, validate=True)
                 if "Retrying of rebalance still did not help. All the retries exhausted" not in str(e):
                     self.fail("Auto retry of failed rebalance succeeded when it was expected to fail")
         else:
@@ -300,20 +325,30 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         # induce the failure before the rebalance starts
         self._induce_rebalance_test_condition(test_failure_condition)
         self.sleep(self.sleep_time)
+        # Start cbcollect before rebalance starts
+        self.cbcollect_info(trigger=True, validate=False)
         try:
             rebalance = self._rebalance_operation(self.rebalance_operation)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, self.rebalance_failed_msg)
         except Exception as e:
             self.log.info("Rebalance failed with: %s" % e)
-            # Delete the rebalance test condition so that we recover from the error
+            # Validate cbcollect result
+            self.cbcollect_info(trigger=False, validate=True)
+            # Restart cbcollect to test with error recovery
+            self.cbcollect_info(trigger=True, validate=False)
+            # Delete the rebalance test condition to recover from the error
             self._delete_rebalance_test_condition(test_failure_condition)
             if self.data_load:
                 tasks = self.async_data_load()
             self.check_retry_rebalance_succeeded()
+            # Validate cbcollect result
+            self.cbcollect_info(trigger=False, validate=True)
             if self.data_load:
                 self.data_validation(tasks)
         else:
+            # Wait for cbcollect to complete
+            self.cbcollect_info(trigger=False, validate=True)
             self.fail("Rebalance did not fail as expected. "
                       "Hence could not validate auto-retry feature..")
         finally:
@@ -332,12 +367,15 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.assertTrue(rebalance.result, self.rebalance_failed_msg)
         except Exception as e:
             self.log.info("Rebalance failed with: {0}".format(str(e)))
+            self.cbcollect_info(trigger=True, validate=False)
             if self.auto_failover_timeout < self.afterTimePeriod:
                 self.sleep(self.auto_failover_timeout)
                 result = json.loads(self.rest.get_pending_rebalance_info())
                 self.log.info(result)
                 retry_rebalance = result["retry_rebalance"]
                 if retry_rebalance != "not_pending":
+                    # Wait for cbcollect to complete before asserting
+                    self.cbcollect_info(trigger=False, validate=True)
                     self.fail("Auto-failover did not cancel pending retry "
                               "of the failed rebalance")
             else:
@@ -351,6 +389,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                     self.sleep(self.auto_failover_timeout)
                     self.cluster.rebalance(self.servers[:self.nodes_init],
                                            [], [])
+                finally:
+                    self.cbcollect_info(trigger=False, validate=True)
         else:
             self.fail("Rebalance did not fail as expected. "
                       "Hence could not validate auto-retry feature..")
@@ -359,6 +399,27 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 self.rest.update_autofailover_settings(True, 120)
             self.cluster_util.start_server(self.servers[1])
             self.cluster_util.stop_firewall_on_node(self.servers[1])
+
+    def test_cbcollect_with_rebalance_delay_condition(self):
+        test_failure_condition = self.input.param("test_failure_condition")
+        vb_num = self.input.param("target_vb")
+        delay_milliseconds = self.input.param("delay_time", 60) * 1000
+        # induce the failure before the rebalance starts
+        self._induce_rebalance_test_condition(test_failure_condition,
+                                              vb_num=vb_num,
+                                              delay_time=delay_milliseconds)
+        self.sleep(self.sleep_time,
+                   "Wait for rebalance_test_condition to take effect")
+        rebalance = self._rebalance_operation(self.rebalance_operation)
+        # Start and validate cbcollect with rebalance delay
+        self.cbcollect_info(trigger=True, validate=True)
+        self.task.jython_task_manager.get_task_result(rebalance)
+        if self.disable_auto_failover:
+            self.rest.update_autofailover_settings(True, 120)
+        self._delete_rebalance_test_condition(test_failure_condition)
+        if rebalance.result is False:
+            self.fail("Rebalance failed with test_condition: %s"
+                      % test_failure_condition)
 
     def _rebalance_operation(self, rebalance_operation):
         operation = None
@@ -414,17 +475,33 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         elif error_condition == "reboot_server":
             self.sleep(self.sleep_time * 4)
             # wait till node is ready after warm-up
-            # ClusterOperationHelper.wait_for_ns_servers_or_assert([self.servers[1]], self)
+            # ClusterOperationHelper.wait_for_ns_servers
+            # or assert([self.servers[1]], self)
 
-    def _induce_rebalance_test_condition(self, test_failure_condition):
+    def _induce_rebalance_test_condition(self, test_failure_condition,
+                                         bucket_name="default",
+                                         vb_num=1,
+                                         delay_time=60000):
         if test_failure_condition == "verify_replication":
-            set_command = "testconditions:set(verify_replication, " \
-                          "{fail, \"default\"})"
+            set_command = 'testconditions:set(verify_replication, ' \
+                          '{fail, "%s"})' % bucket_name
         elif test_failure_condition == "backfill_done":
-            set_command = "testconditions:set(backfill_done, " \
-                          "{for_vb_move, \"default\", 1 , fail})"
+            set_command = 'testconditions:set(backfill_done, ' \
+                          '{for_vb_move, "%s", %s , fail})' \
+                          % (bucket_name, vb_num)
+        elif test_failure_condition == "delay_rebalance_start":
+            set_command = 'testconditions:set(rebalance_start, {delay, %s}).' \
+                          % delay_time
+        elif test_failure_condition == "delay_verify_replication":
+            set_command = 'testconditions:set(verify_replication, ' \
+                          '{delay, "%s", %s})' % (bucket_name, delay_time)
+        elif test_failure_condition == "delay_backfill_done":
+            set_command = 'testconditions:set(backfill_done, ' \
+                          '{for_vb_move, "%s", %s, {delay, %s}})' \
+                          % (bucket_name, vb_num, delay_time)
         else:
-            set_command = "testconditions:set(%s, fail)" % test_failure_condition
+            set_command = "testconditions:set(%s, fail)" \
+                          % test_failure_condition
         get_command = "testconditions:get(%s)" % test_failure_condition
         for server in self.servers:
             rest = RestConnection(server)
@@ -443,6 +520,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.log.info("Command: %s, Return: %s" % (get_command, content))
 
     def _delete_rebalance_test_condition(self, test_failure_condition):
+        if test_failure_condition.startswith("delay_"):
+            test_failure_condition = test_failure_condition[6:]
+
         delete_command = "testconditions:delete(%s)" % test_failure_condition
         get_command = "testconditions:get(%s)" % test_failure_condition
         for server in self.servers:

@@ -1,4 +1,5 @@
 import json
+import os
 from math import ceil
 
 from BucketLib.BucketOperations import BucketHelper
@@ -38,6 +39,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
         self.items = self.num_items
+        self.logs_folder = self.input.param("logs_folder")
         node_ram_ratio = self.bucket_util.base_bucket_ratio(
             self.cluster.servers)
         info = self.rest.get_nodes_self()
@@ -604,3 +606,26 @@ class RebalanceBaseTest(BaseTestCase):
         rest = RestConnection(self.cluster.master)
         rest.set_retry_rebalance_settings(body)
         self.log.debug("Retry Rebalance settings reset ....")
+
+    def cbcollect_info(self, trigger=True, validate=True):
+        rest = RestConnection(self.cluster.master)
+        nodes = rest.get_nodes()
+        if trigger:
+            status = self.cluster_util.trigger_cb_collect_on_cluster(rest,
+                                                                     nodes)
+            if status is False:
+                self.fail("API perform_cb_collect returned False")
+        if validate:
+            status = self.cluster_util.wait_for_cb_collect_to_complete(rest)
+            if status is False:
+                self.fail("cb_collect timed out")
+
+            status = self.cluster_util.copy_cb_collect_logs(
+                rest, nodes, self.cluster, self.logs_folder)
+            if status is False:
+                self.fail("cb_collect zip file copy failed")
+
+            # Remove local cb_collect files in log_dir/test_#
+            for file_name in os.listdir(self.logs_folder):
+                if file_name.endswith(".zip"):
+                    os.remove(os.path.join(self.logs_folder, file_name))
