@@ -18,6 +18,8 @@ from remote.remote_util import RemoteMachineShellConnection
 from random_query_template import WhereClause
 from sdk_exceptions import SDKException
 from com.couchbase.client.java.json import JsonObject
+from couchbase_helper.tuq_helper import N1QLHelper
+from global_vars import logger
 
 
 class N1qlBase(CollectionBase):
@@ -55,315 +57,54 @@ class N1qlBase(CollectionBase):
         self.clause = WhereClause()
         self.buckets = self.bucket_util.get_all_buckets()
         self.collection_map = {}
-        self.get_random_number_stmt(self.num_stmt_txn)
         self.txtimeout = self.input.param("txntimeout", 0)
+        self.atrcollection = self.input.param("atrcollection", True)
         load_spec = self.input.param("load_spec", self.data_spec_name)
         self.num_commit = self.input.param("num_commit", 3)
         self.num_rollback_to_savepoint = \
         self.input.param("num_rollback_to_savepoint", 0)
         self.num_conflict = self.input.param("num_conflict", 0)
         self.write_conflict = self.input.param("write_conflict", False)
-        input_spec = self.bucket_util.get_crud_template_from_package(
-                                        load_spec)
-        self.doc_gen_type = input_spec.get(
-                                MetaCrudParams.DOC_GEN_TYPE, "default")
-        self.index_map = {}
-        self.name_list = []
+        self.n1ql_helper = N1QLHelper(server=self.servers,
+                                      use_rest=True,
+                                      buckets = self.buckets,
+                                      log=self.log,
+                                      scan_consistency='REQUEST_PLUS',
+                                      num_collection=self.num_collection,
+                                      num_buckets=self.num_buckets,
+                                      num_savepoints=self.num_savepoints,
+                                      override_savepoint=self.override_savepoint,
+                                      num_stmt=self.num_stmt_txn,
+                                      load_spec=self.data_spec_name)
+        self.num_insert,self.num_update,self.num_delete = \
+                        self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
 
     def tearDown(self):
-        self.drop_index()
+        self.n1ql_helper.drop_index()
         super(N1qlBase, self).tearDown()
 
-    def get_txid(self, records):
-        try:
-            txid = records["results"][0]["txid"]
-        except:
-            txid = ""
-        return txid
-
-    def create_txn(self, txtimeout=0, durability_level=""):
-        query_params = {}
-        if self.durability_level:
-            query_params["Durability"] = durability_level
-        if self.txtimeout:
-            query_params["txtimeout"] = str(txtimeout) + "m"
-        stmt = "BEGIN WORK"
-        results = self.run_cbq_query(stmt, query_params=query_params)
-        txid = self.get_txid(results)
-        return {'txid': txid}
-
-    def end_txn(self, query_params, commit, savepoint=""):
-        # query_params = {'txid': txid}
-        if savepoint:
-            stmt = "ROLLBACK TO SAVEPOINT " + savepoint
-        elif commit:
-            stmt = "COMMIT WORK"
-        else:
-            stmt = "ROLLBACK WORK"
-        self.log.info("commit work for txn %s"%query_params)
-        result = self.run_cbq_query(stmt, query_params=query_params)
-        return stmt, result
-
-    def run_cbq_query(self, query=None, min_output_size=10,
-                      server=None, query_params={}, is_prepared=False,
-                      encoded_plan=None, username=None, password=None):
-        if query is None:
-            query = ""
-        if server is None:
-            server = self.cluster.master
-        cred_params = {'creds': []}
-        rest = RestConnection(server)
-        if username is None and password is None:
-            username = 'Administrator'
-            password = 'password'
-        cred_params['creds'].append({'user': username, 'pass': password})
-        for bucket in self.bucket_util.buckets:
-            if bucket.saslPassword:
-                cred_params['creds'].append({'user': 'local:%s' % bucket.name,
-                                             'pass': bucket.saslPassword})
-        query_params.update(cred_params)
-
-        if self.use_rest:
-            query_params.update({'scan_consistency': self.scan_consistency})
-            if hasattr(self, 'query_params') and self.query_params:
-                query_params = self.query_params
-            if self.hint_index and (query.lower().find('select') != -1):
-                from_clause = re.sub(r'let.*', '',
-                                     re.sub(r'.*from', '', re.sub(r'where.*', '', query)))
-                from_clause = re.sub(r'LET.*', '',
-                                     re.sub(r'.*FROM', '', re.sub(r'WHERE.*', '', from_clause)))
-                from_clause = re.sub(r'select.*', '', re.sub(r'order by.*', '',
-                                                             re.sub(r'group by.*', '',
-                                                                    from_clause)))
-                from_clause = re.sub(r'SELECT.*', '', re.sub(r'ORDER BY.*', '',
-                                                             re.sub(r'GROUP BY.*', '',
-                                                                    from_clause)))
-                hint = ' USE INDEX (%s using %s) ' % (self.hint_index,
-                                                      self.index_type)
-                query = query.replace(from_clause, from_clause + hint)
-
-            if not is_prepared:
-                self.log.info('RUN QUERY %s' % query)
-
-            if self.analytics:
-                query = query + ";"
-                for bucket in self.buckets:
-                    query = query.replace(bucket.name, bucket.name + "_shadow")
-                result1 = RestConnection(self.cluster.cbas_node) \
-                    .execute_statement_on_cbas(query, "immediate")
-                try:
-                    result = json.loads(result1)
-                    print result
-                except Exception as ex:
-                    self.log.error("CANNOT LOAD QUERY RESULT IN JSON: %s"
-                                   % ex.message)
-                    self.log.error("INCORRECT DOCUMENT IS: " + str(result1))
-            else:
-                result = rest.query_tool(query, self.n1ql_port,
-                                         query_params=query_params,
-                                         is_prepared=is_prepared,
-                                         named_prepare=self.named_prepare,
-                                         encoded_plan=encoded_plan,
-                                         servers=self.servers)
-        else:
-            self.shell = RemoteMachineShellConnection(self.cluster.master)
-            if self.version == "git_repo":
-                output = self.shell.execute_commands_inside(
-                    "$GOPATH/src/github.com/couchbase/query/"
-                    + "shell/cbq/cbq ", "", "", "", "", "", "")
-                self.shell.disconnect()
-            else:
-                if not self.isprepared:
-                    query = query.replace('"', '\\"')
-                    query = query.replace('`', '\\`')
-                    if self.ipv6:
-                        cmd = "%scbq  -engine=http://%s:%s/ -q -u %s -p %s" % (
-                            self.path, server.ip, self.n1ql_port,
-                            username, password)
-                    else:
-                        cmd = "%scbq  -engine=http://%s:%s/ -q -u %s -p %s" % (
-                            self.path, server.ip, server.port,
-                            username, password)
-                    print cmd
-
-                    output = self.shell.execute_commands_inside(
-                        cmd, query, "", "", "", "", "")
-                    if not (output[0] == '{'):
-                        output1 = '{%s' % output
-                    else:
-                        output1 = output
-                    try:
-                        result = json.loads(output1)
-                    except Exception as ex:
-                        self.log.error("CANNOT LOAD QUERY RESULT IN JSON: %s"
-                                       % ex.message)
-                        self.log.error("INCORRECT DOCUMENT IS: %s " % output1)
-        if 'metrics' in result:
-            self.log.info("TOTAL ELAPSED TIME: %s" % result["metrics"]["elapsedTime"])
-
-        if isinstance(result, str) or 'errors' in result:
-            if "INDEX" in query:
-                self.log.info("Index creation failed")
-                result = None
-            elif N1qlException.CasMismatchException \
-                in str(result["errors"][0]["msg"]) \
-                or N1qlException.DocumentExistsException \
-                in str(result["errors"][0]["msg"]) or \
-                N1qlException.DocumentNotFoundException in \
-                str(result["errors"][0]["msg"]) or \
-                N1qlException.DocumentAlreadyExistsException \
-                in str(result["errors"][0]["msg"]):
-                    self.log.info("txn failed with error %s"% result)
-                    return result
-            else:
-                self.fail("txn failed with unexpected errors %s"%result)
-                result = None
-        return result
-
-    def get_collection_name(self, bucket="default",
-                            scope="_default", collection="_default"):
-        query_default_bucket = bucket + '.' \
-                                + scope + '.' + collection
-        return query_default_bucket
-
-    def get_random_number_stmt(self, num_txn):
-        self.num_insert = random.choice(range(num_txn))
-        num_range = num_txn - self.num_insert
-        if num_range > 0:
-            self.num_update = random.choice(range(num_range))
-        self.num_delete = (num_range - self.num_update)
-
-    def get_collections(self):
-        keyspaces = []
-        collections = self.bucket_util.get_random_collections(
-            self.buckets, self.num_collection, "all", self.num_buckets)
-        for bucket, scope_dict in collections.items():
-            for s_name, c_dict in scope_dict["scopes"].items():
-                for c_name, c_data in c_dict["collections"].items():
-                    keyspace = self.get_collection_name(bucket, s_name, c_name)
-                    keyspaces.append(keyspace)
-        return keyspaces
-
-    def process_index_to_create(self, stmts, collection):
-        self.index_map[collection] = []
-        all_index = []
-        for stmt in stmts:
-            index=""
-            clause = stmt.split(":")
-            if len(self.index_map[collection]) == 0:
-                self.create_index(collection)
-            while index == "":
-                index = BucketUtils.get_random_name()
-                if ('%' in index) or (index in all_index):
-                    index=""
-            result = self.create_index(collection, index, clause[-1])
-            if result:
-                self.index_map[collection].append(index)
-                all_index.append(index)
-
-    def create_index(self, collection, index=None, params=[]):
-        name = collection.split('.')
-        if params:
-            query = "CREATE INDEX `%s` ON default:`%s`.`%s`.`%s`(%s)" \
-                    " USING GSI" %(index, name[0],
-                     name[1], name[2], params)
-        else:
-            query = "CREATE PRIMARY INDEX " \
-              "on default:`%s`.`%s`.`%s` " \
-              "USING GSI" \
-              % (name[0], name[1], name[2])
-        return self.run_cbq_query(query)
-
-    def drop_index(self):
-        for collection in self.index_map.keys():
-            name = collection.split('.')
-            for index in self.index_map[collection]:
-                query = "DROP INDEX default:`%s`.`%s`.`%s`.`%s` "\
-                        "USING GSI" %(name[0],name[1], name[2],
-                                     index)
-                _ = self.run_cbq_query(query)
-
-    def get_tuq_results_object(self, gen_load):
-        return TuqGenerators(self.log,
-                             [self.generate_full_docs_list([gen_load])])
-
-    def gen_docs(self, generic_key="", start=0, end=1, type="default"):
-        json_generator = JsonGenerator()
-        if type == "employee":
-            gen_docs = json_generator.generate_docs_employee_more_field_types(
-                            generic_key, docs_per_day=end, start=start)
-        else:
-            gen_docs = json_generator.generate_earthquake_doc(
-                                generic_key, end=end, start=start)
-        return gen_docs
-
-    def get_key_from_doc(self, gen_load):
-        key_list = []
-        doc_gen = copy.deepcopy(gen_load)
-        while doc_gen.has_next():
-            key, val = next(doc_gen)
-            key_list.append(key)
-        return key_list
-
-    def get_doc_gen_list(self, collections, keys=False):
-        doc_gen_list = {}
-        for bucket in self.buckets:
-            for s_name, scope in bucket.scopes.items():
-                for c_name, c_dict in scope.collections.items():
-                    bucket_collection = \
-                        self.get_collection_name(bucket.name, s_name, c_name)
-                    if isinstance(self.doc_gen_type, list):
-                        random.seed(c_name)
-                        type = random.choice(self.doc_gen_type)
-                    else:
-                        type = self.doc_gen_type
-                    if keys:
-                        key = []
-                        for i in range(c_dict.doc_index[0] ,c_dict.doc_index[1]):
-                            key.append("test_collections-" + str(i))
-                        doc_gen_list[bucket_collection] = key
-                    else:
-                        doc_gen_list[bucket_collection] = \
-                            self.gen_docs("test_collections", c_dict.doc_index[0],
-                                          c_dict.doc_index[1], type=type)
-        for key, value in doc_gen_list.items():
-            if key not in collections:
-                doc_gen_list.pop(key)
-        return doc_gen_list
-
-    def get_doc_type_collection(self):
-        doc_type_list = {}
-        for bucket in self.buckets:
-            for s_name, scope in bucket.scopes.items():
-                for c_name, c_dict in scope.collections.items():
-                    collection = \
-                        self.get_collection_name(bucket.name, s_name, c_name)
-                    if isinstance(self.doc_gen_type, list):
-                        random.seed(c_name)
-                        doc_type_list[collection] = random.choice(self.doc_gen_type)
-                    else:
-                        doc_type_list[collection] = self.doc_gen_type
-        return doc_type_list
-
-    def generate_full_docs_list(self, gens_load=[], update=False):
-        all_docs_list = dict()
-        for gen_load in gens_load:
-            doc_gen = copy.deepcopy(gen_load)
-            while doc_gen.has_next():
-                key, val = next(doc_gen)
-                try:
-                    val = json.loads(val)
-                    if isinstance(val, dict) and 'mutated' not in list(val.keys()):
-                        if update:
-                            val['mutated'] = 1
-                        else:
-                            val['mutated'] = 0
-                    else:
-                        val['mutated'] += val['mutated']
-                except TypeError:
-                    pass
-                all_docs_list[key]=val
-        return all_docs_list
+#     def create_txn(self, txtimeout=0, durability_level=""):
+#         query_params = {}
+#         if self.durability_level:
+#             query_params["durability"] = self.durability_level
+#         if self.txtimeout:
+#             query_params["txtimeout"] = str(txtimeout) + "m"
+#         if self.atrcollection:
+#             collections = self.bucket_util.get_random_collections(
+#             self.buckets, 1, "all", self.num_buckets)
+#             for bucket, scope_dict in collections.items():
+#                 for s_name, c_dict in scope_dict["scopes"].items():
+#                     for c_name, c_data in c_dict["collections"].items():
+#                         keyspace = ("`%s`.`%s`.`%s`"%(bucket, s_name, c_name))
+#             query_params["atrcollection"] = keyspace
+#         stmt = "BEGIN WORK"
+#         print query_params
+#         results = self.n1ql_helper.run_cbq_query(stmt, query_params=query_params)
+#         txid = self.get_txid(results)
+#         return {'txid': txid}
+#
+    def runTest(self):
+        pass
 
     def _verify_results(self, actual_result, expected_result, sort_key=""):
         if self.max_verify is not None:
@@ -382,7 +123,8 @@ class N1qlBase(CollectionBase):
                 % (name[0], name[1], name[2], docs)
         dict_to_add = dict_to_add.split("=")
         dict_to_add[1] = dict_to_add[1].replace('\'', '')
-        result = self.run_cbq_query(query, query_params=query_params)
+        result = self.n1ql_helper.run_cbq_query(query, 
+                                                query_params=query_params)
         collection = index.split('.')[-1]
 
         for doc in result["results"]:
@@ -404,7 +146,7 @@ class N1qlBase(CollectionBase):
         name = index.split('.')
         query = "SELECT  * from default:`%s`.`%s`.`%s` WHERE META().id in %s"\
                 % (name[0], name[1], name[2], keys)
-        result = self.run_cbq_query(query, query_params=query_params)
+        result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
         for doc in result["results"]:
             t = doc.values()[0]
             if t != docs[t["name"]]:
@@ -420,30 +162,10 @@ class N1qlBase(CollectionBase):
         query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
                 "WHERE META().id in %s"\
                 % (name[0], name[1], name[2], docs)
-        result = self.run_cbq_query(query, query_params=query_params)
+        result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
         self.log.info("delete result is %s"%(result["results"]))
         if result["results"]:
             self.fail("Deleted doc is present %s" %(result["results"]))
-
-    def get_stmt(self, collections):
-        doc_type_list = self.get_doc_type_collection()
-        stmt = []
-        for bucket_col in collections:
-            stmt.extend(self.clause.get_where_clause(
-                doc_type_list[bucket_col], bucket_col,
-                self.num_insert, self.num_update, self.num_delete))
-            self.process_index_to_create(stmt, bucket_col)
-        stmt = random.sample(stmt, self.num_stmt_txn)
-        stmt = self.add_savepoints(stmt)
-        return stmt
-
-    def get_random_name(self):
-        char_set = string.ascii_letters
-        name_len = random.randint(1, 20)
-        rand_name = ""
-        rand_name = ''.join(random.choice(char_set)
-                                for _ in range(name_len))
-        return rand_name
 
     def get_prepare_stmt(self, query, query_params):
         queries = []
@@ -457,7 +179,7 @@ class N1qlBase(CollectionBase):
         if self.prepare:
             query = "PREPARE %s as %s"%(name, query)
             queries.append(query)
-            _ = self.run_cbq_query(query, query_params=query_params)
+            _ = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
             query = "EXECUTE %s"%(name)
             queries.append(query)
         else:
@@ -475,7 +197,7 @@ class N1qlBase(CollectionBase):
                            "WHERE %s LIMIT 100 RETURNING meta().id"\
                            % (name[0], name[1], name[2], clause[3], clause[2])
         queries = self.get_prepare_stmt(update_query, query_params)
-        result = self.run_cbq_query(queries[-1], query_params=query_params)
+        result = self.n1ql_helper.run_cbq_query(queries[-1], query_params=query_params)
         if result["status"] == "success":
             list_docs = [d.get('id').encode() for d in result["results"]]
             self.validate_update_results(clause[0], list_docs, clause[3],
@@ -495,7 +217,7 @@ class N1qlBase(CollectionBase):
                 "(KEY k1, value t) %s RETURNING *" \
                 % (name[0], name[1], name[2], select_query)
         queries = self.get_prepare_stmt(query, query_params)
-        result = self.run_cbq_query(queries[-1], query_params=query_params)
+        result = self.n1ql_helper.run_cbq_query(queries[-1], query_params=query_params)
         if result["status"] == "success":
             for val in result["results"]:
                 t = val.values()[0]
@@ -521,7 +243,7 @@ class N1qlBase(CollectionBase):
                     % (name[0], name[1], name[2], clause[2])
         docs = list()
         queries = self.get_prepare_stmt(query, query_params)
-        result = self.run_cbq_query(queries[-1], query_params=query_params)
+        result = self.n1ql_helper.run_cbq_query(queries[-1], query_params=query_params)
         if result["status"] == "success":
             docs = [d.get('id').encode() for d in result["results"]]
             self.validate_delete_results(clause[0], docs, query_params)
@@ -531,7 +253,7 @@ class N1qlBase(CollectionBase):
 
     def run_savepoint_query(self, clause, query_params):
         query = "SAVEPOINT %s" % clause[1]
-        result = self.run_cbq_query(query, query_params=query_params)
+        result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
         return result
 
     def get_savepoint_to_verify(self, savepoint):
@@ -542,7 +264,7 @@ class N1qlBase(CollectionBase):
 
     def full_execute_query(self, stmts, commit, query_params={},
                            rollback_to_savepoint=False, write_conflict=False,
-                           issleep=0):
+                           issleep=0, N1qlhelper=None, prepare=False):
         """
         1. collection_map will store the values changed for a collection after savepoint
         it will be re-intialized after each savepoint and the values will be copied
@@ -554,10 +276,15 @@ class N1qlBase(CollectionBase):
                                  }..}
         3. savepoint list will have the order of savepoints
         """
+        self.name_list = []
+        self.prepare = prepare
+        self.log = logger.get("test")
         collection_savepoint = dict()
         savepoint = list()
         collection_map = dict()
         txid = query_params.values()[0]
+        if N1qlhelper:
+            self.n1ql_helper = N1qlhelper
         queries = dict()
         queries[txid] = list()
         try:
@@ -600,29 +327,29 @@ class N1qlBase(CollectionBase):
                     self.simulate_write_conflict(stmts, random.choice([True, False]))
             if rollback_to_savepoint and (len(savepoint) > 0):
                 savepoint = self.get_savepoint_to_verify(savepoint)
-                query, result = self.end_txn(query_params, commit,
+                query, result = self.n1ql_helper.end_txn(query_params, commit,
                                              savepoint[-1].split(':')[0])
                 queries[txid].append(query)
             if commit is False:
                 savepoint = []
                 collection_savepoint = {}
                 queries[txid].append(query)
-                query, result = self.end_txn(query_params, commit=False)
+                query, result = self.n1ql_helper.end_txn(query_params, commit=False)
             else:
                 if (not rollback_to_savepoint) or len(savepoint) == 0:
                     collection_savepoint['last'] = copy.deepcopy(collection_map)
                     savepoint.append('last')
                 query = "SELECT * FROM system:transactions"
-                results = self.run_cbq_query(query)
+                results = self.n1ql_helper.run_cbq_query(query)
                 self.log.debug(results)
                 queries[txid].append(query)
-                query, result = self.end_txn(query_params, commit=True)
+                query, result = self.n1ql_helper.end_txn(query_params, commit=True)
                 if isinstance(result, str) or 'errors' in result:
                     #retry the entire transaction
                     rerun = self.validate_error_during_commit(result,
                                      collection_savepoint, savepoint)
                     if rerun:
-                        query_params = self.create_txn()
+                        query_params = self.n1ql_helper.create_txn()
                         self.full_execute_query(stmts, commit, query_params,
                              rollback_to_savepoint, write_conflict, issleep)
                     else:
@@ -648,7 +375,7 @@ class N1qlBase(CollectionBase):
                                              "DELETE": []}
                 break
         # create a txn
-        query_params = self.create_txn()
+        query_params = self.n1ql_helper.create_txn()
         if clause[1] == "UPDATE":
             result, query = \
                 self.run_update_query(clause, query_params)
@@ -664,21 +391,19 @@ class N1qlBase(CollectionBase):
 
         # commit or rollback a txn
         if commit:
-            self.end_txn(query_params, True)
+            self.n1ql_helper.end_txn(query_params, True)
         else:
-            self.end_txn(query_params, False)
+            self.n1ql_helper.end_txn(query_params, False)
             collection_map = dict()
         return collection_map
 
-    def add_savepoints(self, stmt):
-        for i in range(self.num_savepoints):
-            for _ in range(self.override_savepoint):
-                save_stmt = "SAVEPOINT:a" + str(random.choice(range(self.num_savepoints)))
-                stmt.append(save_stmt)
-            save_stmt = "SAVEPOINT:a" + str(i)
-            stmt.append(save_stmt)
-        random.shuffle(stmt)
-        return stmt
+    def get_random_name(self):
+        char_set = string.ascii_letters
+        name_len = random.randint(1, 20)
+        rand_name = ""
+        rand_name = ''.join(random.choice(char_set)
+                                for _ in range(name_len))
+        return rand_name
 
     def validate_keys(self, client, key_value, deleted_key):
         # create a client
@@ -708,11 +433,14 @@ class N1qlBase(CollectionBase):
                                       collection_savepoint, savepoint):
         dict_to_verify = {}
         count = 0
+        error_msg = result["errors"][0]["cause"]["msg"]
+        self.log.info("cause is %s"%result["errors"][0]["cause"])
+        self.log.info("error message is %s"%error_msg)
         if N1qlException.CasMismatchException \
-            in str(result["errors"][0]["msg"]):
+            in str(error_msg):
             return True
         elif N1qlException.DocumentExistsException \
-            in str(result["errors"][0]["msg"]):
+            in str(error_msg):
             for key in savepoint:
                 for index in collection_savepoint[key].keys():
                     keys = collection_savepoint[key][index]["INSERT"].keys()
@@ -727,7 +455,7 @@ class N1qlBase(CollectionBase):
                     "WHERE META().id in %s"\
                     % (name[0], name[1], name[2], docs)
                 self.log.info("query is %s"%query)
-                result = self.run_cbq_query(query)
+                result = self.n1ql_helper.run_cbq_query(query)
                 if result["metrics"]["resultCount"] == 0:
                     count += 1
             if count == len(dict_to_verify.keys()):
@@ -736,7 +464,7 @@ class N1qlBase(CollectionBase):
             else:
                 return False
         elif N1qlException.DocumentNotFoundException in \
-            str(result["errors"][0]["msg"]):
+            str(error_msg):
             for key in savepoint:
                 for index in collection_savepoint[key].keys():
                     try:
@@ -752,7 +480,7 @@ class N1qlBase(CollectionBase):
                         "WHERE META().id in %s"\
                         % (name[0], name[1], name[2], docs)
                 self.log.info("query is %s"%query)
-                result = self.run_cbq_query(query)
+                result = self.n1ql_helper.run_cbq_query(query)
                 if result["metrics"]["resultCount"] == len(docs):
                     count += 1
             if count == len(dict_to_verify.keys()):
@@ -763,7 +491,7 @@ class N1qlBase(CollectionBase):
                 return True
 
     def process_value_for_verification(self, bucket_col, doc_gen_list,
-                                       results):
+                                       results, buckets=None):
         """
         1. get the collection
         2. get its doc_gen
@@ -796,6 +524,10 @@ class N1qlBase(CollectionBase):
                                     self.validate_dict[t_id].put(mutated[0],
                                                                  mutated[1])
             bucket_collection = collection.split('.')
+            if buckets:
+                self.buckets = buckets
+            else:
+                self.buckets = self.bucket_util.buckets
             bucket = BucketUtils.get_bucket_obj(self.buckets,
                                                 bucket_collection[0])
             client = \
@@ -826,19 +558,19 @@ class N1qlBase(CollectionBase):
         self.results = []
         stmt = []
         for bucket_col in collections:
-            self.get_random_number_stmt(self.num_stmt_txn)
+            self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
             self.log.info("insert, delete and update %s %s %s"
                            % (self.num_insert, self.num_update,
                               self.num_delete))
             stmt.extend(self.clause.get_where_clause(
                 doc_type_list[bucket_col], bucket_col,
                 self.num_insert, self.num_update, self.num_delete))
-            self.process_index_to_create(stmt, bucket_col)
+            self.n1ql_helper.process_index_to_create(stmt, bucket_col)
         random.shuffle(stmt)
         stmt_list = self.__chunks(stmt, int(len(stmt)/self.num_txn))
 
         for stmt in stmt_list:
-            stmt = self.add_savepoints(stmt)
+            stmt = self.n1ql_helper.add_savepoints(stmt)
             random.seed(stmt[0])
             num_rollback_to_savepoint, rollback_to_savepoint = \
                 self.num_count(num_rollback_to_savepoint)
@@ -846,7 +578,7 @@ class N1qlBase(CollectionBase):
                 self.num_count(num_commit)
             num_conflict, conflict = \
                 self.num_count(num_conflict)
-            query_params = self.create_txn()
+            query_params = self.n1ql_helper.create_txn()
             self.threads.append(
                 Thread(target=lambda q, arg1: q.put(self.thread_txn(arg1)),
                        args=(que, [stmt, query_params, commit,
@@ -881,12 +613,12 @@ class N1qlBase(CollectionBase):
             yield i_list[i:i + n]
 
     def execute_query_and_validate_results(self, stmt, bucket_col, doc_gen_list=None):
-        query_params = self.create_txn(self.txtimeout)
+        query_params = self.n1ql_helper.create_txn(self.txtimeout)
         collection_savepoint, savepoints, queries = \
             self.full_execute_query(stmt, self.commit, query_params,
                                     self.rollback_to_savepoint)
         if not doc_gen_list:
-            doc_gen_list = self.get_doc_gen_list(bucket_col)
+            doc_gen_list = self.n1ql_helper.get_doc_gen_list(bucket_col)
         if isinstance(collection_savepoint, dict):
             results = [[collection_savepoint, savepoints]]
             self.log.info("queries ran are %s" % queries)
@@ -894,3 +626,4 @@ class N1qlBase(CollectionBase):
                                  doc_gen_list, results)
         else:
             self.fail(collection_savepoint)
+

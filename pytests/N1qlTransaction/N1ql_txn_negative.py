@@ -15,25 +15,24 @@ class N1ql_txn_negative(N1qlBase):
         super(N1ql_txn_negative, self).tearDown()
 
     def test_negative_txn(self):
-        self.get_collections()
+        keyspace = self.n1ql_helper.get_collections()
         queries = []
-        query_params = self.create_txn()
-        stmt = "CREATE PRIMARY INDEX a1 on %s USING GSI" % self.bucket.name
-        queries.append(stmt)
-        stmt = "DROP INDEX a1 on %s USING GSI" % self.bucket.name
+        self.n1ql_helper.create_index(keyspace[0])
+        query_params = self.n1ql_helper.create_txn()
+        stmt = "DROP INDEX a1 on `%s` USING GSI" % self.bucket.name
         queries.append(stmt)
         stmt = "BUILD INDEX ON `%s` (`a1`) USING GSI" % self.bucket.name
         queries.append(stmt)
         stmt = "ALTER INDEX `%s`.idx1" % self.bucket.name
         queries.append(stmt)
-        stmt = "create scope default:%s.%s" % (self.bucket.name, "a1")
+        stmt = "create scope default:`%s`.%s" % (self.bucket.name, "a1")
         queries.append(stmt)
-        stmt = "delete scope default:%s.%s" % (self.bucket.name, "a1")
+        stmt = "delete scope default:`%s`.%s" % (self.bucket.name, "a1")
         queries.append(stmt)
-        stmt = "create collection default:%s.%s.%s" % (self.bucket.name,
+        stmt = "create collection default:`%s`.%s.%s" % (self.bucket.name,
                                                        "a1", "a2")
         queries.append(stmt)
-        stmt = "delete collection default:%s.%s.%s" % (self.bucket.name,
+        stmt = "delete collection default:`%s`.%s.%s" % (self.bucket.name,
                                                        "a1", "a2")
         queries.append(stmt)
         stmt = "CREATE FUNCTION celsius() " \
@@ -53,12 +52,13 @@ class N1ql_txn_negative(N1qlBase):
                "WHERE a.type='hotel' AND a.country='France" % self.bucket.name
         queries.append(stmt)
         for stmt in queries:
-            result = self.run_cbq_query(stmt, query_params=query_params)
-            if isinstance(result, str) or 'errors' in result:
-                self.log.info("failed as expected")
-            else:
-                self.fail("stmt failed %s" % stmt)
-        self.end_txn(query_params, self.commit)
+            try:
+                result = self.n1ql_helper.run_cbq_query(stmt, query_params=query_params)
+                if result:
+                    self.fail("stmt should fail %s" % stmt)
+            except:
+                pass
+        self.n1ql_helper.end_txn(query_params, self.commit)
         self.process_value_for_verification_with_savepoint(bucket_col,
                                                            doc_gen_list,
                                                            "")
@@ -85,7 +85,7 @@ class N1ql_txn_negative(N1qlBase):
             scope=scope,
             collection=collection)
         keyspace = self.get_collection_name(bucket.name, scope, collection)
-        self.create_index(keyspace)
+        self.n1ql_helper.create_index(keyspace)
         self.task_manager.get_task_result(task)
 
     def execute_query(self, stmts, query_params, sleep=200):
@@ -106,14 +106,14 @@ class N1ql_txn_negative(N1qlBase):
         4. commit the txn and validate data
         # txntimeout = 5 mins
         """
-        bucket_col = self.get_collections()
+        bucket_col = self.n1ql_helper.get_collections()
         for collection in bucket_col:
              if collection.split('.')[-1] != "_default":
                  break
-        doc_gen_list = self.get_doc_gen_list(bucket_col)
-        stmts = self.get_stmt(bucket_col)
+        doc_gen_list = self.n1ql_helper.get_doc_gen_list(bucket_col)
+        stmts = self.n1ql_helper.get_stmt(bucket_col)
         print("stmts are %s"%stmts)
-        query_params = self.create_txn(5)
+        query_params = self.n1ql_helper.create_txn(5)
         # recreate the collection
         scope_name = collection.split('.')[-2]
         collection_name = collection.split('.')[-1]
@@ -134,25 +134,25 @@ class N1ql_txn_negative(N1qlBase):
         let the txn timeout and retry the transaction
          and make sure it passes
         '''
-        bucket_col = self.get_collections()
-        stmt = self.get_stmt(bucket_col)
-        query_params = self.create_txn(1)
+        bucket_col = self.n1ql_helper.get_collections()
+        stmt = self.n1ql_helper.get_stmt(bucket_col)
+        query_params = self.n1ql_helper.create_txn(1)
         self.execute_query(stmt, query_params, 200)
         #retry the transaction
         self.execute_query_and_validate_results(stmt,
                                             bucket_col)
 
     def test_txn_duplicate_key_error(self):
-        collections = self.get_collections()
-        doc_type_list = self.get_doc_type_collection()
+        collections = self.n1ql_helper.get_collections()
+        doc_type_list = self.n1ql_helper.get_doc_type_collection()
         modify_stmt = []
         for bucket_col in collections:
             stmts = self.clause.get_where_clause(
                 doc_type_list[bucket_col], bucket_col,
                 self.num_insert, 0, 0)
-            self.process_index_to_create(stmts, bucket_col)
+            self.n1ql_helper.process_index_to_create(stmts, bucket_col)
             modify_stmt.extend(stmts)
             modify_stmt.extend(stmts)
-        modify_stmt = self.add_savepoints(modify_stmt)
+        modify_stmt = self.n1ql_helper.add_savepoints(modify_stmt)
         self.execute_query_and_validate_results(modify_stmt,
                                             collections)

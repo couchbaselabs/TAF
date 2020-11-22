@@ -5,6 +5,9 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 
+from couchbase_helper.tuq_helper import N1QLHelper
+from pytests.N1qlTransaction.N1qlBase import N1qlBase
+
 from couchbase_utils.cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
@@ -42,9 +45,57 @@ class CollectionsRebalance(CollectionBase):
         if self.compaction:
             self.compaction_tasks = list()
         self.dgm_test = self.input.param("dgm_test", False)
+        self.N1ql_txn = self.input.param("N1ql_txn", False)
+        if self.N1ql_txn:
+            self.num_stmt_txn = self.input.param("num_stmt_txn", 5)
+            self.num_collection = self.input.param("num_collection", 1)
+            self.num_savepoints = self.input.param("num_savepoints", 0)
+            self.override_savepoint = self.input.param("override_savepoint", 0)
+            self.num_buckets = self.input.param("num_buckets", 1)
 
     def tearDown(self):
         super(CollectionsRebalance, self).tearDown()
+
+    def setup_N1ql_txn(self):
+        self.n1ql_helper = N1QLHelper(server=self.servers,
+                                          use_rest=True,
+                                          buckets = self.bucket_util.buckets,
+                                          log=self.log,
+                                          scan_consistency='REQUEST_PLUS',
+                                          num_collection=self.num_collection,
+                                          num_buckets=self.num_buckets,
+                                          num_savepoints=self.num_savepoints,
+                                          override_savepoint=self.override_savepoint,
+                                          num_stmt=self.num_stmt_txn,
+                                          load_spec=self.data_spec_name)
+        self.bucket_col = self.n1ql_helper.get_collections()
+        self.stmts = self.n1ql_helper.get_stmt(self.bucket_col)
+
+    def execute_N1qltxn(self):
+        if self.N1ql_txn:
+            self.retry_n1qltxn = False
+            self.sleep(20, "wait for rebalance to start")
+            self.n1ql_fun = N1qlBase()
+            query_params = self.n1ql_helper.create_txn()
+            self.collection_savepoint, self.savepoints, self.queries = \
+                    self.n1ql_fun.full_execute_query(self.stmts, True, query_params,
+                                        N1qlhelper=self.n1ql_helper)
+            if not isinstance(self.collection_savepoint, dict):
+                self.log.info("N1ql txn failed will be retried")
+                self.retry_n1qltxn = True
+
+    def validate_N1qltxn_data(self):
+        if self.retry_n1qltxn:
+            self.execute_N1qltxn()
+        doc_gen_list = self.n1ql_helper.get_doc_gen_list(self.bucket_col)
+        if isinstance(self.collection_savepoint, dict):
+            results = [[self.collection_savepoint, self.savepoints]]
+            self.log.info("queries ran are %s" % self.queries)
+            self.n1ql_fun.process_value_for_verification(self.bucket_col,
+                                 doc_gen_list, results,
+                                 buckets = self.bucket_util.buckets)
+        else:
+            self.fail(self.collection_savepoint)
 
     def disable_auto_compaction(self):
         buckets = self.bucket_util.get_all_buckets()
@@ -149,6 +200,7 @@ class CollectionsRebalance(CollectionBase):
             failover_count = failover_count + 1
             self.wait_for_failover_or_assert(failover_count)
         operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+        self.execute_N1qltxn()
         self.data_load_after_failover()
         return operation
 
@@ -162,6 +214,7 @@ class CollectionsRebalance(CollectionBase):
                     node = known_nodes[-1]
                     self.warmup_node(node)
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                    self.execute_N1qltxn()
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -180,6 +233,7 @@ class CollectionsRebalance(CollectionBase):
                         self.bucket_util.print_bucket_stats()
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                    self.execute_N1qltxn()
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -209,6 +263,7 @@ class CollectionsRebalance(CollectionBase):
                     node = known_nodes[-1]
                     self.warmup_node(node)
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                    self.execute_N1qltxn()
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -227,6 +282,7 @@ class CollectionsRebalance(CollectionBase):
                         self.bucket_util.print_bucket_stats()
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                    self.execute_N1qltxn()
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -260,6 +316,7 @@ class CollectionsRebalance(CollectionBase):
                     self.warmup_node(node)
                     operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
                                                           check_vbucket_shuffling=False)
+                    self.execute_N1qltxn()
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -281,6 +338,7 @@ class CollectionsRebalance(CollectionBase):
                                            node.ip, self.cluster.servers[self.nodes_init].port)
                     operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
                                                           check_vbucket_shuffling=False)
+                    self.execute_N1qltxn()
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -317,6 +375,7 @@ class CollectionsRebalance(CollectionBase):
                 node = known_nodes[-1]
                 self.warmup_node(node)
                 operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                self.execute_N1qltxn()
                 self.task.jython_task_manager.get_task_result(operation)
                 if not operation.result:
                     self.log.info("rebalance was failed as expected")
@@ -337,6 +396,7 @@ class CollectionsRebalance(CollectionBase):
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                        node.ip, self.cluster.servers[self.nodes_init].port)
                 operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                self.execute_N1qltxn()
                 if self.compaction:
                     self.compact_all_buckets()
                 if self.change_ram_quota_cluster:
@@ -355,6 +415,7 @@ class CollectionsRebalance(CollectionBase):
                     self.compact_all_buckets()
                 self.data_load_after_failover()
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+                self.execute_N1qltxn()
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
@@ -369,6 +430,7 @@ class CollectionsRebalance(CollectionBase):
                 iter_count = 0
                 for new_failover_nodes in failover_list:
                     failover_count = 0
+                    self.execute_N1qltxn()
                     for failover_node in new_failover_nodes:
                         failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                                 graceful=True, wait_for_pending=wait_for_pending)
@@ -387,6 +449,7 @@ class CollectionsRebalance(CollectionBase):
         elif rebalance_operation == "hard_failover_rebalance_out":
             if step_count == -1:
                 failover_count = 0
+                self.execute_N1qltxn()
                 for failover_node in failover_nodes:
                     failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                             graceful=False, wait_for_pending=wait_for_pending)
@@ -412,6 +475,7 @@ class CollectionsRebalance(CollectionBase):
                 iter_count = 0
                 for new_failover_nodes in failover_list:
                     failover_count = 0
+                    self.execute_N1qltxn()
                     for failover_node in new_failover_nodes:
                         failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                                 graceful=False, wait_for_pending=wait_for_pending)
@@ -430,6 +494,7 @@ class CollectionsRebalance(CollectionBase):
         elif rebalance_operation == "graceful_failover_recovery":
             if (step_count == -1):
                 failover_count = 0
+                self.execute_N1qltxn()
                 for failover_node in failover_nodes:
                     failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                             graceful=True, wait_for_pending=wait_for_pending)
@@ -459,6 +524,7 @@ class CollectionsRebalance(CollectionBase):
                 iter_count = 0
                 for new_failover_nodes in failover_list:
                     failover_count = 0
+                    self.execute_N1qltxn()
                     for failover_node in new_failover_nodes:
                         failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                                 graceful=True, wait_for_pending=wait_for_pending)
@@ -481,6 +547,7 @@ class CollectionsRebalance(CollectionBase):
         elif rebalance_operation == "hard_failover_recovery":
             if (step_count == -1):
                 failover_count = 0
+                self.execute_N1qltxn()
                 for failover_node in failover_nodes:
                     failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                             graceful=False, wait_for_pending=wait_for_pending)
@@ -508,6 +575,7 @@ class CollectionsRebalance(CollectionBase):
                         failover_list.append(failover_nodes[i:i + step_count])
                 # For each set of step_count number of failover nodes we failover and recover
                 iter_count = 0
+                self.execute_N1qltxn()
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
@@ -624,6 +692,8 @@ class CollectionsRebalance(CollectionBase):
                 self.sync_data_load()
         if self.dgm_test:
             self.load_to_dgm()
+        if self.N1ql_txn:
+            self.setup_N1ql_txn()
         if rebalance_operation == "rebalance_in":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
@@ -700,6 +770,8 @@ class CollectionsRebalance(CollectionBase):
         if self.data_load_stage == "after":
             self.sync_data_load()
             self.data_validation_collection()
+        if self.N1ql_txn:
+            self.validate_N1qltxn_data()
 
     def test_data_load_collections_with_rebalance_in(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")

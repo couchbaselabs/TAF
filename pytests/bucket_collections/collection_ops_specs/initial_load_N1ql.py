@@ -31,7 +31,7 @@ spec = {
         # COLLECTIONS_TO_ADD_PER_BUCKET,
         # SCOPES_TO_RECREATE,
         # COLLECTIONS_TO_RECREATE
-        MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 0,
+        MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 100,
 
         # Applies to all active collections selected as per the
         # COLLECTIONS_CONSIDERED_FOR_CRUD value

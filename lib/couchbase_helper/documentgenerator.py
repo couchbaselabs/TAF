@@ -274,8 +274,6 @@ class DocumentGenerator(KVGenerator):
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
-        if type(self.template) is list:
-            template = self.template[self.itr]
         else:
             template = self.template
         # Assigning  self.template to template without
@@ -291,8 +289,11 @@ class DocumentGenerator(KVGenerator):
         self.random.seed(seed_hash)
         if self.randomize:
             for k in template.getNames():
-                if k in self.kwargs:
-                    template.put(k, self.random.choice(self.kwargs[k]))
+                if callable(self.kwargs[k]):
+                    t_val = self.kwargs[k]()
+                else:
+                    t_val = self.random.choice(self.kwargs[k])
+                template.put(k, t_val)
 
         doc_size = self.doc_size
         if self.randomize_doc_size:

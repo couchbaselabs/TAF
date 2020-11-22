@@ -2884,7 +2884,6 @@ class N1QLQueryTask(Task):
         except Exception as e:
             self.set_exception(e)
 
-
 class CreateIndexTask(Task):
     def __init__(self, server, bucket, index_name, query, n1ql_helper=None,
                  retry_time=2, defer_build=False, timeout=240):

@@ -631,49 +631,56 @@ class JsonGenerator:
         join_yr = [2010, 2011,2012,2013,2014,2015,2016]
         join_mo = xrange(1, 12 + 1)
         join_day = xrange(1, 28 + 1)
-        options = [True,False]
+        is_manager = [True,False]
         salary = range(10000, 200000)
+        emp_id = range(0, 10000)
         count = 1
         templates = []
-        for i in range(start, docs_per_day):
-            random.seed(i)
-            prefix = "employee"+str(i)
-            name = random.choice(Firstname) + " " + random.choice(Second_name)
-            email = ["%s-mail@couchbase.com" % (str(name))]
-            emp_id = range(0, 10000)
-            month = random.choice(join_mo)
-            is_manager = random.choice(options)
-            languanges_known = {}
-            languanges_known["first"] = random.choice(languanges)
-            languanges_known["second"] = random.choice(languanges)
-            languanges_known["third"] = random.choice(languanges)
-            if is_manager:
-                manages = {}
-                manages["team_size"] = random.choice(range(4, 8))
-                manages["reports"] = []
-                for _ in range(manages["team_size"]):
-                    manages["reports"].append(random.choice(Firstname) + " "
-                                              + random.choice(Second_name))
-            count+=1
-            template = JsonObject.create()
-            template.put("name", name)
-            template.put("join_yr", random.choice(join_yr))
-            template.put("join_mo" , month)
-            template.put("join_day" , random.choice(join_day))
-            template.put("email" , email)
-            template.put("emp_id", random.choice(emp_id))
-            template.put("dept" , random.choice(types))
-            template.put("skills" , random.sample(skills, 3))
-            template.put("is_manager", is_manager)
-            template.put("salary", random.choice(salary))
-            template.put("citizen_of", random.choice(countries))
-            template.put("Working_country", random.choice(countries))
-            template.put("languanges_known",languanges_known)
-            if is_manager:
-                template.put("manages", manages)
-            templates.append(template)
+#             languanges_known = {}
+#             languanges_known["first"] = random.choice(languanges)
+#             languanges_known["second"] = random.choice(languanges)
+#             languanges_known["third"] = random.choice(languanges)
+#             if is_manager:
+#                 manages = {}
+#                 manages["team_size"] = random.choice(range(4, 8))
+#                 manages["reports"] = []
+#                 for _ in range(manages["team_size"]):
+#                     manages["reports"].append(random.choice(Firstname) + " "
+
+#             template.put("name", name)
+#             template.put("email" , email)
+#             template.put("languanges_known",languanges_known)
+#             if is_manager:
+#                 template.put("manages", manages)
+        template = JsonObject.create()
+        template.put("name", None)
+        template.put("join_yr", None)
+        template.put("join_mo" , None)
+        template.put("join_day" , None)
+#         template.put("email" , email)
+        template.put("emp_id", None)
+        template.put("job_title" , None)
+        template.put("skills" ,None)
+        template.put("is_manager", None)
+        template.put("salary", None)
+        template.put("citizen_of", None)
+        template.put("Working_country", None)
+        template.put("languanges_known", None)
+#         if is_manager:
+#             template.put("manages", manages)
+        templates.append(template)
         gen_load = DocumentGenerator(key_prefix,
-                                               templates,
+                                               template,
+                                               name=lambda: random.choice(Firstname) + " " + random.choice(Second_name),
+                                               join_yr=join_yr,
+                                               join_mo=join_mo, emp_id=emp_id,
+                                               job_title=types, skills=skills,
+                                               is_manager=is_manager,
+                                               salary=salary, citizen_of=countries,
+                                               Working_country=countries,
+                                               languanges_known=languanges,
+                                               join_day=join_day, randomize=True,
+                                               deep_copy=True,
                                                start=start, end=docs_per_day)
         return gen_load
 

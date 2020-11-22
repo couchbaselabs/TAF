@@ -1,17 +1,27 @@
 import json
 import time
+import random
+import string
 
 import testconstants
 from common_lib import sleep
 from couchbase_helper.tuq_generators import TuqGenerators
+from couchbase_helper.tuq_generators import JsonGenerator
 from membase.api.exception import CBQError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from n1ql_exceptions import N1qlException
+from bucket_utils.bucket_ready_functions import BucketUtils
+from random_query_template import WhereClause
+from collections_helper.collections_spec_constants import MetaCrudParams
+from Cb_constants import CbServer
 
 
 class N1QLHelper:
-    def __init__(self, version=None, master=None, shell=None,  max_verify=0, buckets=[], item_flag=0,
-                 n1ql_port=8093, full_docs_list=[], log=None, input=None, database=None, use_rest=None):
+    def __init__(self, version=None, server=None, shell=None,  max_verify=0, buckets=[], item_flag=0,
+                 n1ql_port=8093, full_docs_list=[], log=None, input=None, database=None, use_rest=None,
+                 scan_consistency=None, hint_index=False, num_collection=1, num_buckets=1,
+                 num_savepoints=0, override_savepoint=0, num_stmt=3, load_spec=None):
         self.version = version
         self.shell = shell
         self.max_verify = max_verify
@@ -22,10 +32,28 @@ class N1QLHelper:
         self.log = log
         self.use_rest = use_rest
         self.full_docs_list = full_docs_list
-        self.master = master
+        self.server = server
         self.database = database
+        self.hint_index = hint_index
+        self.analytics = False
+        self.named_prepare = False
+        self.num_collection = num_collection
+        self.num_buckets = num_buckets
+        self.clause = WhereClause()
+        self.num_stmt_txn = num_stmt
+        self.scan_consistency = scan_consistency
+        self.num_savepoints = num_savepoints
+        self.override_savepoint = override_savepoint
+        self.load_spec = load_spec
         if self.full_docs_list and len(self.full_docs_list) > 0:
             self.gen_results = TuqGenerators(self.log, self.full_docs_list)
+        input_spec = BucketUtils.get_crud_template_from_package(
+                                        self.load_spec)
+        self.doc_gen_type = input_spec.get(
+                                MetaCrudParams.DOC_GEN_TYPE, "default")
+        self.get_random_number_stmt(self.num_stmt_txn)
+        self.index_map = {}
+        self.name_list = []
 
     def killall_tuq_process(self):
         self.shell.execute_command("killall cbq-engine")
@@ -38,65 +66,376 @@ class N1QLHelper:
         actual_result = self.run_cbq_query()
         return actual_result, expected_result
 
-    def run_cbq_query(self, query=None, min_output_size=10, server=None, query_params={}, is_prepared=False,
-                      scan_consistency=None, scan_vector=None, verbose=True):
-        if query is None:
-            query = self.query
-        if server is None:
-            server = self.master
-            if server.ip == "127.0.0.1":
-                self.n1ql_port = server.n1ql_port
+    def get_txid(self, records):
+        try:
+            txid = records["results"][0]["txid"]
+        except:
+            txid = ""
+        return txid
+
+    def create_txn(self, txtimeout=0, durability_level=""):
+        query_params = {}
+        if durability_level:
+            query_params["durability_level"] = durability_level
+        if txtimeout:
+            query_params["txtimeout"] = str(txtimeout) + "m"
+#         collections = BucketUtils.get_random_collections(
+#                 self.buckets, 1, "all", self.num_buckets)
+#         for bucket, scope_dict in collections.items():
+#             for s_name, c_dict in scope_dict["scopes"].items():
+#                 for c_name, c_data in c_dict["collections"].items():
+# #                     if random.choice([True, False]):
+#                     if False:
+#                         keyspace = ("`%s`.`%s`.`%s`"%(bucket, s_name, c_name))
+#                     else:
+#                         keyspace = ("`%s`.`%s`.`%s`"%(bucket,
+#                                      CbServer.default_scope,
+#                                      CbServer.default_collection))
+#         query_params["atrcollection"] = keyspace
+        stmt = "BEGIN WORK"
+        results = self.run_cbq_query(stmt, query_params=query_params)
+        txid = self.get_txid(results)
+        return {'txid': txid}
+
+    def end_txn(self, query_params, commit, savepoint=""):
+        # query_params = {'txid': txid}
+        if savepoint:
+            stmt = "ROLLBACK TO SAVEPOINT " + savepoint
+        elif commit:
+            stmt = "COMMIT WORK"
         else:
-            if server.ip == "127.0.0.1":
-                self.n1ql_port = server.n1ql_port
-            if self.input.tuq_client and "client" in self.input.tuq_client:
-                server = self.input.tuq_client
-        if self.n1ql_port is None or self.n1ql_port == '':
-            self.n1ql_port = self.input.param("n1ql_port", 8093)
-            if not self.n1ql_port:
-                self.log.warning("n1ql_port is not defined, processing will not proceed further")
-                raise Exception("n1ql_port is not defined, processing will not proceed further")
+            stmt = "ROLLBACK WORK"
+        self.log.info("commit work for txn %s"%query_params)
+        result = self.run_cbq_query(stmt, query_params=query_params)
+        return stmt, result
+
+    def run_cbq_query(self, query=None, min_output_size=10,
+                      server=None, query_params={}, is_prepared=False,
+                      encoded_plan=None, username=None, password=None):
+        if query is None:
+            query = ""
+        if server is None:
+            server = self.server
         cred_params = {'creds': []}
+        rest = RestConnection(server[0])
+        if username is None and password is None:
+            username = 'Administrator'
+            password = 'password'
+        cred_params['creds'].append({'user': username, 'pass': password})
         for bucket in self.buckets:
-            if hasattr(bucket, 'saslPassword') and bucket.saslPassword:
+            if bucket.saslPassword:
                 cred_params['creds'].append({'user': 'local:%s' % bucket.name,
                                              'pass': bucket.saslPassword})
         query_params.update(cred_params)
+
         if self.use_rest:
-            query_params = {}
-            if scan_consistency:
-                query_params['scan_consistency'] = scan_consistency
-            if scan_vector:
-                query_params['scan_vector'] = str(scan_vector).replace("'", '"')
-            if verbose:
-                self.log.info('Run Query: %s' % query)
-            result = RestConnection(server).query_tool(
-                query,
-                self.n1ql_port,
-                query_params=query_params,
-                is_prepared=is_prepared,
-                verbose=verbose)
+            query_params.update({'scan_consistency': self.scan_consistency})
+            if hasattr(self, 'query_params') and self.query_params:
+                query_params = self.query_params
+            if self.hint_index and (query.lower().find('select') != -1):
+                from_clause = re.sub(r'let.*', '',
+                                     re.sub(r'.*from', '', re.sub(r'where.*', '', query)))
+                from_clause = re.sub(r'LET.*', '',
+                                     re.sub(r'.*FROM', '', re.sub(r'WHERE.*', '', from_clause)))
+                from_clause = re.sub(r'select.*', '', re.sub(r'order by.*', '',
+                                                             re.sub(r'group by.*', '',
+                                                                    from_clause)))
+                from_clause = re.sub(r'SELECT.*', '', re.sub(r'ORDER BY.*', '',
+                                                             re.sub(r'GROUP BY.*', '',
+                                                                    from_clause)))
+                hint = ' USE INDEX (%s using %s) ' % (self.hint_index,
+                                                      self.index_type)
+                query = query.replace(from_clause, from_clause + hint)
+
+            if not is_prepared:
+                self.log.info('RUN QUERY %s' % query)
+
+            if self.analytics:
+                query = query + ";"
+                for bucket in self.buckets:
+                    query = query.replace(bucket.name, bucket.name + "_shadow")
+                result1 = RestConnection(self.cluster.cbas_node) \
+                    .execute_statement_on_cbas(query, "immediate")
+                try:
+                    result = json.loads(result1)
+                    print result
+                except Exception as ex:
+                    self.log.error("CANNOT LOAD QUERY RESULT IN JSON: %s"
+                                   % ex.message)
+                    self.log.error("INCORRECT DOCUMENT IS: " + str(result1))
+            else:
+                result = rest.query_tool(query, self.n1ql_port,
+                                         query_params=query_params,
+                                         is_prepared=is_prepared,
+                                         named_prepare=self.named_prepare,
+                                         encoded_plan=encoded_plan,
+                                         servers=server)
         else:
-            shell = RemoteMachineShellConnection(server)
-            url = "'http://%s:8093/query/service'" % server.ip
-            cmd = "%s/cbq  -engine=http://%s:8093/" % (testconstants.LINUX_COUCHBASE_BIN_PATH, server.ip)
-            query = query.replace('"', '\\"')
-            if "#primary" in query:
-                query = query.replace("'#primary'", '\\"#primary\\"')
-            query = "select curl('POST', " + url + ", {'data' : 'statement=%s'})" % query
-            output = shell.execute_commands_inside(cmd, query, "", "", "", "", "")
-            new_curl = json.dumps(output[47:])
-            string_curl = json.loads(new_curl)
-            result = json.loads(string_curl)
-            shell.disconnect()
+            self.shell = RemoteMachineShellConnection(self.cluster.master)
+            if self.version == "git_repo":
+                output = self.shell.execute_commands_inside(
+                    "$GOPATH/src/github.com/couchbase/query/"
+                    + "shell/cbq/cbq ", "", "", "", "", "", "")
+                self.shell.disconnect()
+            else:
+                if not self.isprepared:
+                    query = query.replace('"', '\\"')
+                    query = query.replace('`', '\\`')
+                    if self.ipv6:
+                        cmd = "%scbq  -engine=http://%s:%s/ -q -u %s -p %s" % (
+                            self.path, server.ip, self.n1ql_port,
+                            username, password)
+                    else:
+                        cmd = "%scbq  -engine=http://%s:%s/ -q -u %s -p %s" % (
+                            self.path, server.ip, server.port,
+                            username, password)
+                    print cmd
+
+                    output = self.shell.execute_commands_inside(
+                        cmd, query, "", "", "", "", "")
+                    if not (output[0] == '{'):
+                        output1 = '{%s' % output
+                    else:
+                        output1 = output
+                    try:
+                        result = json.loads(output1)
+                    except Exception as ex:
+                        self.log.error("CANNOT LOAD QUERY RESULT IN JSON: %s"
+                                       % ex.message)
+                        self.log.error("INCORRECT DOCUMENT IS: %s " % output1)
+        if 'metrics' in result:
+            self.log.info("TOTAL ELAPSED TIME: %s" % result["metrics"]["elapsedTime"])
+
         if isinstance(result, str) or 'errors' in result:
-            error_result = str(result)
-            length_display = len(error_result)
-            if length_display > 500:
-                error_result = error_result[:500]
-            raise CBQError(error_result, server.ip)
-        self.log.debug("Time taken: %s" % result["metrics"]["elapsedTime"])
+            for key, value in result["errors"][0].iteritems():
+                if "cause" in key:
+                    err = value
+                else:
+                    err = result["errors"][0]
+            if "INDEX" in query:
+                self.log.info("Index creation failed")
+                result = None
+            elif N1qlException.CasMismatchException \
+                in str(err) \
+                or N1qlException.DocumentExistsException \
+                in str(err) or \
+                N1qlException.DocumentNotFoundException in \
+                str(err) or \
+                N1qlException.DocumentAlreadyExistsException \
+                in str(err):
+                    self.log.info("txn failed with error %s"% result)
+                    return result
+            else:
+                raise Exception("txn failed with unexpected errors %s"%result)
+                result = None
         return result
+
+    def get_collection_name(self, bucket="default",
+                            scope="_default", collection="_default"):
+        query_default_bucket = bucket + '.' \
+                                + scope + '.' + collection
+        return query_default_bucket
+
+    def get_random_number_stmt(self, num_txn):
+        self.num_insert = random.choice(range(num_txn))
+        num_range = num_txn - self.num_insert
+        if num_range > 0:
+            self.num_update = random.choice(range(num_range))
+        self.num_delete = (num_range - self.num_update)
+        return self.num_insert,self.num_update,self.num_delete
+
+    def get_collections(self):
+        keyspaces = []
+        collections = BucketUtils.get_random_collections(
+            self.buckets, self.num_collection, "all", self.num_buckets)
+        for bucket, scope_dict in collections.items():
+            for s_name, c_dict in scope_dict["scopes"].items():
+                for c_name, c_data in c_dict["collections"].items():
+                    keyspace = self.get_collection_name(bucket, s_name, c_name)
+                    keyspaces.append(keyspace)
+        return keyspaces
+
+    def get_doc_type_collection(self):
+        doc_type_list = {}
+        for bucket in self.buckets:
+            for s_name, scope in bucket.scopes.items():
+                for c_name, c_dict in scope.collections.items():
+                    collection = \
+                        self.get_collection_name(bucket.name, s_name, c_name)
+                    if isinstance(self.doc_gen_type, list):
+                        random.seed(c_name)
+                        doc_type_list[collection] = random.choice(self.doc_gen_type)
+                    else:
+                        doc_type_list[collection] = self.doc_gen_type
+        return doc_type_list
+
+    def process_index_to_create(self, stmts, collection):
+        self.index_map[collection] = []
+        all_index = []
+        for stmt in stmts:
+            index=""
+            clause = stmt.split(":")
+            if len(self.index_map[collection]) == 0:
+                self.create_index(collection)
+            while index == "":
+                index = BucketUtils.get_random_name()
+                if ('%' in index) or (index in all_index):
+                    index=""
+            result = self.create_index(collection, index, clause[-1])
+            if result:
+                self.index_map[collection].append(index)
+                all_index.append(index)
+
+    def create_index(self, collection, index=None, params=[]):
+        name = collection.split('.')
+        if params:
+            query = "CREATE INDEX `%s` ON default:`%s`.`%s`.`%s`(%s)" \
+                    " USING GSI" %(index, name[0],
+                     name[1], name[2], params)
+        else:
+            query = "CREATE PRIMARY INDEX " \
+              "on default:`%s`.`%s`.`%s` " \
+              "USING GSI" \
+              % (name[0], name[1], name[2])
+        return self.run_cbq_query(query)
+
+    def drop_index(self):
+        for collection in self.index_map.keys():
+            name = collection.split('.')
+            for index in self.index_map[collection]:
+                query = "DROP INDEX default:`%s`.`%s`.`%s`.`%s` "\
+                        "USING GSI" %(name[0],name[1], name[2],
+                                     index)
+                _ = self.run_cbq_query(query)
+
+    def get_stmt(self, collections):
+        doc_type_list = self.get_doc_type_collection()
+        stmt = []
+        for bucket_col in collections:
+            stmt.extend(self.clause.get_where_clause(
+                doc_type_list[bucket_col], bucket_col,
+                self.num_insert, self.num_update, self.num_delete))
+            self.process_index_to_create(stmt, bucket_col)
+        stmt = random.sample(stmt, self.num_stmt_txn)
+        stmt = self.add_savepoints(stmt)
+        return stmt
+
+    def add_savepoints(self, stmt):
+        for i in range(self.num_savepoints):
+            for _ in range(self.override_savepoint):
+                save_stmt = "SAVEPOINT:a" + str(random.choice(
+                    range(self.num_savepoints)))
+                stmt.append(save_stmt)
+            save_stmt = "SAVEPOINT:a" + str(i)
+            stmt.append(save_stmt)
+        random.shuffle(stmt)
+        return stmt
+
+    def create_full_stmts(self, stmts):
+        queries = []
+        for stmt in stmts:
+            clause = stmt.split(":")
+            name = clause[0].split('.')
+            if clause[0] == "SAVEPOINT":
+                queries.append("SAVEPOINT %s" % clause[1])
+            elif clause[1] == "INSERT":
+                select_query = "SELECT DISTINCT t.name AS k1,t " \
+                       "FROM default:`%s`.`%s`.`%s` t WHERE %s LIMIT 10"\
+                       % (name[0], name[1], name[2], clause[2])
+                query = "INSERT INTO default:`%s`.`%s`.`%s` " \
+                    "(KEY k1, value t) %s RETURNING *" \
+                    % (name[0], name[1], name[2], select_query)
+                queries.append(query)
+            elif clause[1] == "DELETE":
+                if len(clause) > 5:
+                    query = "DELETE FROM default:`%s`.`%s`.`%s` " \
+                            "USE KEYS %s RETURNING meta().id"\
+                            % (name[0], name[1], name[2], clause[5])
+                else:
+                    query = "DELETE FROM default:`%s`.`%s`.`%s` " \
+                            "WHERE %s LIMIT 200 RETURNING meta().id"\
+                            % (name[0], name[1], name[2], clause[2])
+                queries.append(query)
+            elif clause[1] == "UPDATE":
+                if len(clause) > 5:
+                    update_query = "UPDATE default:`%s`.`%s`.`%s` USE KEYS %s " \
+                                   "SET %s RETURNING meta().id"\
+                                    % (name[0], name[1], name[2],
+                                       clause[5], clause[3])
+                else:
+                    update_query = "UPDATE default:`%s`.`%s`.`%s` SET %s " \
+                                   "WHERE %s LIMIT 100 RETURNING meta().id"\
+                                   % (name[0], name[1], name[2], clause[3], clause[2])
+                queries.append(update_query)
+        return queries
+
+    def get_tuq_results_object(self, gen_load):
+        return TuqGenerators(self.log,
+                             [self.generate_full_docs_list([gen_load])])
+
+    def gen_docs(self, generic_key="", start=0, end=1, type="default"):
+        json_generator = JsonGenerator()
+        if type == "employee":
+            gen_docs = json_generator.generate_docs_employee_more_field_types(
+                            generic_key, docs_per_day=end, start=start)
+        else:
+            gen_docs = json_generator.generate_earthquake_doc(
+                                generic_key, end=end, start=start)
+        return gen_docs
+
+    def get_key_from_doc(self, gen_load):
+        key_list = []
+        doc_gen = copy.deepcopy(gen_load)
+        while doc_gen.has_next():
+            key, val = next(doc_gen)
+            key_list.append(key)
+        return key_list
+
+    def get_doc_gen_list(self, collections, keys=False):
+        doc_gen_list = {}
+        for bucket in self.buckets:
+            for s_name, scope in bucket.scopes.items():
+                for c_name, c_dict in scope.collections.items():
+                    bucket_collection = \
+                        self.get_collection_name(bucket.name, s_name, c_name)
+                    if isinstance(self.doc_gen_type, list):
+                        random.seed(c_name)
+                        type = random.choice(self.doc_gen_type)
+                    else:
+                        type = self.doc_gen_type
+                    if keys:
+                        key = []
+                        for i in range(c_dict.doc_index[0] ,c_dict.doc_index[1]):
+                            key.append("test_collections-" + str(i))
+                        doc_gen_list[bucket_collection] = key
+                    else:
+                        doc_gen_list[bucket_collection] = \
+                            self.gen_docs("test_collections", c_dict.doc_index[0],
+                                          c_dict.doc_index[1], type=type)
+        for key, value in doc_gen_list.items():
+            if key not in collections:
+                doc_gen_list.pop(key)
+        return doc_gen_list
+
+    def generate_full_docs_list(self, gens_load=[], update=False):
+        all_docs_list = dict()
+        for gen_load in gens_load:
+            doc_gen = copy.deepcopy(gen_load)
+            while doc_gen.has_next():
+                key, val = next(doc_gen)
+                try:
+                    val = json.loads(val)
+                    if isinstance(val, dict) and 'mutated' not in list(val.keys()):
+                        if update:
+                            val['mutated'] = 1
+                        else:
+                            val['mutated'] = 0
+                    else:
+                        val['mutated'] += val['mutated']
+                except TypeError:
+                    pass
+                all_docs_list[key]=val
+        return all_docs_list
 
     def _verify_results(self, actual_result, expected_result, missing_count = 1, extra_count = 1):
         self.log.info("Analyzing Actual Result")
