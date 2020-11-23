@@ -940,9 +940,12 @@ class ClusterUtils:
                     break
         return node_picked
 
-    def pick_nodes(self, master, howmany=1, target_node=None):
+    def pick_nodes(self, master, howmany=1, target_node=None, exclude_nodes=None):
         rest = RestConnection(master)
         nodes = rest.node_statuses()
+        if exclude_nodes:
+            exclude_nodes_ips = [node.ip for node in exclude_nodes]
+            nodes = [node for node in nodes if node.ip not in exclude_nodes_ips]
         picked = []
         for node_for_stat in nodes:
             if node_for_stat.ip != master.ip or str(node_for_stat.port) != master.port:
