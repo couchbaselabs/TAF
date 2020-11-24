@@ -2137,13 +2137,12 @@ class StatsWaitTask(Task):
         self.value = value
         self.stop = False
         self.timeout = timeout
-        self.cbstatObj = None
+        self.cbstatObjList = list()
 
     def call(self):
         self.start_task()
         start_time = time.time()
         timeout = start_time + self.timeout
-        self.cbstatObjList = list()
         for remote_conn in self.shellConnList:
             self.cbstatObjList.append(Cbstats(remote_conn))
         try:
@@ -2173,13 +2172,9 @@ class StatsWaitTask(Task):
                 if tem_stat and tem_stat != "None":
                     stat_result += int(tem_stat)
         except MemcachedError as e:
-            self.test_log.warn("Hitting memcached error while running cbstats: %s" %
-                               e)
+            self.test_log.warn("Cbstats memcached error: %s" % e)
         except Exception as error:
-#             for shell in self.shellConnList:
-#                 shell.disconnect()
-#             self.set_exception(error)
-#             self.stop = True
+            self.test_log.error("Exception during get_all_stats: %s" % error)
             return False
         if not self._compare(self.comparison, str(stat_result), self.value):
             self.test_log.warn("Not Ready: %s %s %s %s. Received: %s for bucket '%s'"
