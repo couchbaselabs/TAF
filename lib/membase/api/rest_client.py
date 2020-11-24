@@ -725,8 +725,8 @@ class RestConnection(object):
             try:
                 response, content = httplib2.Http(timeout=timeout).request(api, method, params, headers)
                 if params.startswith("nodes=ns_1"):
-                    self.test_log.info(response)
-                    self.test_log.info(content)
+                    self.test_log.debug(response)
+                    self.test_log.debug(content)
 
                 if response['status'] in ['200', '201', '202']:
                     return True, content, response
@@ -2558,6 +2558,12 @@ class RestConnection(object):
         if status:
             return json_parsed["sendStats"]
         return None
+
+    def create_stats_snapshhot(self):
+        api = self.baseUrl + "_createStatsSnapshot"
+        return self._http_request(api,
+                                  method='POST',
+                                  headers=self._create_headers())
 
     def perform_cb_collect(self, params):
         headers = self._create_headers()

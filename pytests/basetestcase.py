@@ -458,12 +458,7 @@ class BaseTestCase(unittest.TestCase):
             try:
                 if self.skip_buckets_handle:
                     return
-                test_failed = (hasattr(self, '_resultForDoCleanups') and
-                               len(self._resultForDoCleanups.failures or
-                                   self._resultForDoCleanups.errors)) or \
-                              (hasattr(self, '_exc_info') and
-                               self._exc_info()[1] is not None)
-
+                test_failed = self.is_test_failed()
                 if test_failed \
                         and TestInputSingleton.input.param("stop-on-failure",
                                                            False) \
@@ -518,6 +513,13 @@ class BaseTestCase(unittest.TestCase):
         if not self.tear_down_while_setup:
             self.task_manager.shutdown_task_manager()
             self.task.shutdown(force=True)
+
+    def is_test_failed(self):
+        return (hasattr(self, '_resultForDoCleanups')
+                and len(self._resultForDoCleanups.failures
+                or self._resultForDoCleanups.errors)) \
+               or (hasattr(self, '_exc_info')
+                   and self._exc_info()[1] is not None)
 
     def handle_setup_exception(self, exception_obj):
         # Shutdown client pool in case of any error before failing

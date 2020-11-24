@@ -1,3 +1,5 @@
+import json
+import os
 from random import sample
 from threading import Thread
 
@@ -36,10 +38,17 @@ class CbCollectInfoTests(CollectionBase):
 
         self.snapshot_dir = \
             "/opt/couchbase/var/lib/couchbase/stats_data/snapshots"
+        self.log_path = self.input.param("logs_folder", "/tmp")
         self.log_setup_status("CbCollectInfo", "complete")
 
     def tearDown(self):
-        # Remove all cb_collect_info files and close shell connections
+        # Remove local cb_collect files in log_dir/test_#
+        if not self.is_test_failed():
+            for file_name in os.listdir(self.log_path):
+                if file_name.endswith(".zip"):
+                    os.remove(os.path.join(self.log_path, file_name))
+
+        # Remove remote cb_collect files and close shell connections
         for node in self.node_data:
             # Remove cb_collect file (if exists)
             self.node_data[node]["shell"].execute_command(
@@ -291,6 +300,81 @@ class CbCollectInfoTests(CollectionBase):
             self.task_manager.get_task_result(task)
 
         self.validate_test_failure()
+
+    def test_trigger_multiple_cbcollect(self):
+        """
+        Trigger cbcollect multiple times when one already running
+        """
+        num_retrigger = 5
+        expected_msg = "Logs collection task is already started"
+        rest = RestConnection(self.cluster.master)
+        nodes = rest.get_nodes()
+        params = dict()
+        node_ids = [node.id for node in nodes]
+        params['nodes'] = ",".join(node_ids)
+        self.log.info('Running cbcollect on node ' + params['nodes'])
+        status, _, _ = rest.perform_cb_collect(params)
+        self.sleep(10, "Wait for CB collect to start")
+        self.log.info("%s - cbcollect status: %s"
+                      % (",".join(node_ids), status))
+
+        # Re-trigger cb_collect
+        for index in range(1, num_retrigger):
+            self.log.info("Re-trigger count :: %s" % index)
+            status, content, _ = rest.perform_cb_collect(params)
+            if status is True:
+                self.log_failure("Cb_collect trigger succeeded while one "
+                                 "already running: %s" % content)
+            if json.loads(content)["_"] != expected_msg:
+                self.log_failure("Mismatch in response msg: %s, expected: %s"
+                                 % (content, expected_msg))
+
+        # Validate initial trigger logs
+        self.cluster_util.wait_for_cb_collect_to_complete(rest)
+        status = self.cluster_util.copy_cb_collect_logs(rest, nodes,
+                                                        self.cluster,
+                                                        self.log_path)
+        if status is False:
+            self.log_failure("Cb_collect log verification failed")
+
+        self.validate_test_failure()
+
+    def test_corrupt_snapshot(self):
+        """
+        Corrupt a snapshot and validate cb_collect_info
+        """
+        self.log.info("Creating stats snapshot")
+        status, content, response = \
+            self.cluster_util.create_stats_snapshot(self.cluster.master)
+        if status is False:
+            self.fail("Create snapshot failed")
+
+        nodes_in_cluster = self.__get_server_nodes()
+        for node in nodes_in_cluster:
+            # Corrupt the snapshot folder
+            self.node_data[node]["shell"].execute_command(
+                'echo "abc213" >> %s/stats')
+
+            # Trigger cb_collect_info after corruption
+            self.node_data[node]["cb_collect_task"] = Thread(
+                target=self.cluster_util.run_cb_collect,
+                args=[node, self.node_data[node]["shell"],
+                      self.node_data[node]["cb_collect_file"]],
+                kwargs={"options": "",
+                        "result": self.node_data[node]["cb_collect_result"]})
+            self.node_data[node]["cb_collect_task"].start()
+
+        # Wait for cb_collect_thread to complete
+        for node in nodes_in_cluster:
+            try:
+                t_node = self.node_data[node]
+                t_node["cb_collect_task"].join(300)
+                if str(t_node["cb_collect_result"]["file_size"]) == "0":
+                    self.log_failure("%s - cbcollect file size is zero"
+                                     % node.ip)
+            except RuntimeError as e:
+                self.log_failure("%s cbcollect_info timed-out: %s"
+                                 % (node.ip, e))
 
     def test_snapshot_lifecycle_management(self):
         """

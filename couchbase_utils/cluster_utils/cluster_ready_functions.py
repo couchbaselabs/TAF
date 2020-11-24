@@ -1007,6 +1007,11 @@ class ClusterUtils:
                                % (server.ip, core_dump_count))
             shell.disconnect()
 
+    def create_stats_snapshot(self, master):
+        self.log.debug("Triggering stats snapshot")
+        rest = RestConnection(master)
+        return rest.create_stats_snapshhot()
+
     def trigger_cb_collect_on_cluster(self, rest, nodes, single_node=False):
         params = dict()
         node_ids = [node.id for node in nodes]
