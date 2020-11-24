@@ -42,12 +42,12 @@ class volume(CollectionBase):
         self.bucket_util.print_bucket_stats()
         if self.collect_pcaps:
             self.start_fetch_pcaps()
-        result, core_msg, stream_msg = self.check_coredump_exist(self.servers,
-                                                                 force_collect=True)
+        result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(self.servers,
+                                                                          force_collect=True)
         if not self.crash_warning:
-            self.assertFalse(result, msg=core_msg + stream_msg)
+            self.assertFalse(result, msg=core_msg + stream_msg + asan_msg)
         if self.crash_warning and result:
-            self.log.warn(core_msg + stream_msg)
+            self.log.warn(core_msg + stream_msg + asan_msg)
 
     # Stopping and restarting the memcached process
     def stop_process(self):

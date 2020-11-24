@@ -743,7 +743,7 @@ class MagmaBaseTest(BaseTestCase):
                         count -= 1
                     count = kill_itr
 
-            result, core_msg, streamFailures = self.check_coredump_exist(
+            result, core_msg, streamFailures, asan_msg = self.check_coredump_exist(
                 self.cluster.nodes_in_cluster, force_collect=force_collect)
             if result:
                 self.stop_crash = True
@@ -752,6 +752,8 @@ class MagmaBaseTest(BaseTestCase):
                     self.log.error("Issues found on server: %s" % core_msg)
                 if streamFailures:
                     self.log.error("Issues found on server: %s" % streamFailures)
+                if asan_msg:
+                    self.log.error("Issues found on server: %s" % asan_msg)
                 self.assertFalse(result)
 
             if wait:

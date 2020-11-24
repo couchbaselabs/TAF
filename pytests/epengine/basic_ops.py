@@ -773,11 +773,11 @@ class basic_ops(BaseTestCase):
                 self.log_failure(err)
 
             self.log.info("Total gets: %s" % total_gets)
-            result, core_msg, stream_msg = self.check_coredump_exist(
+            result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(
                 self.servers, force_collect=True)
 
             if result is not False:
-                self.log_failure(core_msg + stream_msg)
+                self.log_failure(core_msg + stream_msg + asan_msg)
                 break
             elif self.test_failure:
                 break

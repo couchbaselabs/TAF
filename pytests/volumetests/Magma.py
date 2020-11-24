@@ -548,13 +548,15 @@ class volume(BaseTestCase):
                                  scopes[self.scope_name].collections.keys())
 
         self.print_stats()
-        result, cores, streamFailures = self.check_coredump_exist(self.cluster.
+        result, cores, streamFailures, asanFailures = self.check_coredump_exist(self.cluster.
                                                                   nodes_in_cluster)
         if result:
             if cores:
                 self.PrintStep("Issues found on server: %s" % cores)
             if streamFailures:
                 self.PrintStep("Issues found on server: %s" % streamFailures)
+            if asanFailures:
+                self.PrintStep("Issues found on server: %s" % asanFailures)
             if self.assert_crashes_on_load:
                 self.task.jython_task_manager.abort_all_tasks()
                 self.assertFalse(result)
@@ -686,12 +688,12 @@ class volume(BaseTestCase):
 
                 shell.disconnect()
 
-        result, core_msg, stream_msg = self.check_coredump_exist(
+        result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(
             self.cluster.nodes_in_cluster)
         if result:
             self.stop_crash = True
             self.task.jython_task_manager.abort_all_tasks()
-            self.log.error(core_msg + stream_msg)
+            self.log.error(core_msg + stream_msg + asan_msg)
             self.assertFalse(result, "Found crashes/issues on the nodes")
 
         if wait:
@@ -864,12 +866,12 @@ class volume(BaseTestCase):
                                  scopes[self.scope_name].collections.keys())
 
             self.print_stats()
-            result, core_msg, stream_msg = self.check_coredump_exist(
+            result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(
                 self.cluster.nodes_in_cluster)
             if result:
                 self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
-                self.log.error(core_msg + stream_msg)
+                self.log.error(core_msg + stream_msg + asan_msg)
                 self.assertFalse(result, "Found issues on the nodes")
 
         self.loop = 0
