@@ -11,6 +11,7 @@ from threading import Thread
 from cbas_utils.cbas_utils import Dataset
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator
+from security.rbac_base import RbacBase
 
 
 class CBASDataverseAndScopes(CBASBaseTest):
@@ -1780,3 +1781,78 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.fail("Index was not used while querying the dataset")
         
         self.log.info("Test finished")
+    
+    def test_analytics_select_rbac_role_for_collections(self):
+        
+        self.log.info("Test started")
+        
+        dataset_names = list()
+        
+        bucket_helper = BucketHelper(self.cluster.master)
+        
+        for bucket in self.bucket_util.buckets:
+            # Create dataset on all KV collections in the bucket.
+            status, content = bucket_helper.list_collections(bucket.name)
+            if not status:
+                self.fail("Failed to fetch all the collections in bucket {0}".format(bucket.name))
+            json_parsed = json.loads(content)
+
+            for scope in json_parsed["scopes"]:
+                count = 0
+                for collection in scope["collections"]:
+                    dataset_name = "{0}-{1}-{2}".format(bucket.name,scope["name"],collection["name"])
+                    dataset_names.append(dataset_name)
+                    if not self.cbas_util.create_dataset_on_bucket(
+                        cbas_bucket_name=Dataset.format_name(
+                            bucket.name,scope["name"],collection["name"]), 
+                        cbas_dataset_name=Dataset.format_name(dataset_name)):
+                        self.fail("Error while creating dataset {0}".format(dataset_name))
+                    count += 1
+                    if count == 2:
+                        break
+        
+        rbac_username = "test_user"
+        dataset_name = random.choice(dataset_names)
+        kv_entity = dataset_name.split("-")
+        user = [{'id': rbac_username, 'password': 'password', 'name': 'Some Name'}]
+        _ = RbacBase().create_user_source(user, 'builtin', self.cluster.master)
+        
+        if self.input.param('collection_user', False):
+            self.log.info("Granting analytics_select user access to following KV entity - {0}.{1}.{2}".format(
+                kv_entity[0], kv_entity[1], kv_entity[2]))
+            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + kv_entity[0] + ":" + kv_entity[1] + ":" + kv_entity[2] + "]"
+            response = self.rest.set_user_roles(rbac_username, payload)
+        if self.input.param('scope_user', False):
+            self.log.info("Granting analytics_select user access to following KV entity - {0}.{1}".format(
+                kv_entity[0], kv_entity[1]))
+            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + kv_entity[0] + ":" + kv_entity[1] + "]"
+            response = self.rest.set_user_roles(rbac_username, payload)
+        if self.input.param('bucket_user', False):
+            self.log.info("Granting analytics_select user access to following KV entity - {0}".format(
+                kv_entity[0]))
+            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + kv_entity[0] + "]"
+            response = self.rest.set_user_roles(rbac_username, payload)
+        
+        for dataset_name in dataset_names:
+            cmd_get_num_items = "select count(*) from %s;" % Dataset.format_name(dataset_name)
+            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
+                cmd_get_num_items, username=rbac_username, password="password")
+            validate_error = False
+            if self.input.param('bucket_user', False):
+                if kv_entity[0] in dataset_name and status == "success":
+                    self.log.info("Query passed with analytics select user")
+                else:
+                    validate_error = True
+            elif self.input.param('scope_user', False):
+                if kv_entity[1] in dataset_name and status == "success":
+                    self.log.info("Query passed with analytics select user")
+                else:
+                    validate_error = True
+            elif self.input.param('collection_user', False):
+                if kv_entity[2] in dataset_name and status == "success":
+                    self.log.info("Query passed with analytics select user")
+                else:
+                    validate_error = True
+            if validate_error and not self.cbas_util.validate_error_in_response(
+                status, errors, "User must have permission"):
+                self.fail("RBAC user is able to query dataset {0}".format(dataset_name))
