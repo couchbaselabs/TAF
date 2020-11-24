@@ -2,16 +2,18 @@ import json
 import time
 
 from BucketLib.BucketOperations import BucketHelper
-from bucket_utils.Bucket import TravelSample, BeerSample
+from BucketLib.bucket import TravelSample, BeerSample
 from cbas_base import CBASBaseTest
+from TestInput import TestInputSingleton
 
 
 class CBASDDLTests(CBASBaseTest):
     def setUp(self, add_default_cbas_node=True):
-        super(CBASDDLTests, self).setUp(add_default_cbas_node)
-
+        self.input = TestInputSingleton.input
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
+
+        super(CBASDDLTests, self).setUp(add_default_cbas_node)
 
         self.validate_error = False
         if self.expected_error:
@@ -101,10 +103,11 @@ class CBASDDLTests(CBASBaseTest):
             cmd_use_dataset = "use %s;" % dataverse_name
             status, metrics, errors, results, _ = \
                 self.cbas_util.execute_statement_on_cbas_util(cmd_use_dataset)
-            self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
-                                cbas_dataset_name,
-                                self.sample_bucket.BucketStats.itemCount),
-                            "Data loss in CBAS.")
+            self.assertTrue(
+                self.cbas_util.validate_cbas_dataset_items_count(
+                    cbas_dataset_name,
+                    self.sample_bucket.stats.expected_item_count),
+                "Data loss in CBAS.")
 
     def test_connect_link_dataverse_Local(self):
         # Create dataset on the CBAS bucket
@@ -124,17 +127,18 @@ class CBASDDLTests(CBASBaseTest):
 
             cmd_use_dataset = "use %s;" % dataverse_name
             cmd_create_dataset = 'create dataset %s on `%s`;' \
-                                 % (self.cbas_dataset_name,
+                                 % (cbas_dataset_name,
                                     self.sample_bucket.name)
             cmd = cmd_use_dataset+cmd_create_dataset
             status, metrics, errors, results, _ = \
                 self.cbas_util.execute_statement_on_cbas_util(cmd)
 
             self.cbas_util.connect_link(link_name=dataverse_name+".Local")
-            self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
-                                dataverse_name+"." + cbas_dataset_name,
-                                self.sample_bucket.BucketStats.itemCount),
-                            "Data loss in CBAS.")
+            self.assertTrue(
+                self.cbas_util.validate_cbas_dataset_items_count(
+                    dataverse_name+"." + cbas_dataset_name,
+                    self.sample_bucket.stats.expected_item_count),
+                "Data loss in CBAS.")
 
     def test_connect_link_delete_bucket(self):
         # Create dataset on the CBAS bucket
@@ -194,10 +198,10 @@ class CBASDDLTests(CBASBaseTest):
         deleted = BucketHelper(self.cluster.master).delete_bucket(
             beer_sample.name)
         self.assertTrue(deleted, "Failed to delete KV bucket")
-        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
-                            "ds1",
-                            self.sample_bucket.BucketStats.itemCount),
-                        "Data loss in CBAS.")
+        self.assertTrue(
+            self.cbas_util.validate_cbas_dataset_items_count(
+                "ds1", self.sample_bucket.stats.expected_item_count),
+            "Data loss in CBAS.")
 
     def test_create_dataset_on_connected_link(self):
         beer_sample = BeerSample()
@@ -217,7 +221,7 @@ class CBASDDLTests(CBASBaseTest):
         self.assertTrue(result, "Dataset Creation Failed.")
 
         self.cbas_util.connect_link()
-        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
-                            "ds1",
-                            self.sample_bucket.BucketStats.itemCount),
-                        "Data loss in CBAS.")
+        self.assertTrue(
+            self.cbas_util.validate_cbas_dataset_items_count(
+                "ds1", self.sample_bucket.stats.expected_item_count),
+            "Data loss in CBAS.")
