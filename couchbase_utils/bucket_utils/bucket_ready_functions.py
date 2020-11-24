@@ -2181,8 +2181,11 @@ class BucketUtils(ScopeUtils):
           check_ep_dcp_items_remaining - to check if replication is complete
           timeout - Waiting the end of the thread. (str)
         """
-        tasks = []
+        tasks = list()
         stat_cmd = "all"
+        dcp_cmd = "dcp"
+        ep_queue_size_str = 'ep_queue_size'
+        ep_dcp_items_remaining_str = 'ep_dcp_items_remaining'
         for server in self.cluster_util.get_kv_nodes():
             for bucket in self.buckets:
                 if bucket.bucketType == 'memcached':
@@ -2190,16 +2193,13 @@ class BucketUtils(ScopeUtils):
                 shell_conn = RemoteMachineShellConnection(server)
                 tasks.append(self.task.async_wait_for_stats(
                     [shell_conn], bucket, stat_cmd,
-                    'ep_queue_size', ep_queue_size_cond, ep_queue_size,
+                    ep_queue_size_str, ep_queue_size_cond, ep_queue_size,
                     timeout=timeout))
                 if check_ep_items_remaining:
-                    stat_cmd = 'dcp'
-                    ep_items_remaining = 'ep_{0}_items_remaining' \
-                        .format(stat_cmd)
                     shell_conn = RemoteMachineShellConnection(server)
                     tasks.append(self.task.async_wait_for_stats(
-                        [shell_conn], bucket, stat_cmd,
-                        ep_items_remaining, "==", 0,
+                        [shell_conn], bucket, dcp_cmd,
+                        ep_dcp_items_remaining_str, "==", 0,
                         timeout=timeout))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)

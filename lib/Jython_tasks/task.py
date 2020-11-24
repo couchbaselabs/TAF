@@ -2345,13 +2345,12 @@ class StatsWaitTask(Task):
         self.value = value
         self.stop = False
         self.timeout = timeout
-        self.cbstatObj = None
+        self.cbstatObjList = list()
 
     def call(self):
         self.start_task()
         start_time = time.time()
         timeout = start_time + self.timeout
-        self.cbstatObjList = list()
         for remote_conn in self.shellConnList:
             self.cbstatObjList.append(Cbstats(remote_conn))
         try:
