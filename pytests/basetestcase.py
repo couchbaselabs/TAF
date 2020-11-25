@@ -691,7 +691,7 @@ class BaseTestCase(unittest.TestCase):
             else:
                 self.log.debug(server.ip + " : No crash files found")
 
-            self.log.info(server.ip + " : Looking for CRITICAL messages in log")
+            self.log.info(server.ip + " : Looking for CRITICAL| ERROR | WARN | Run loop exception  messages in log")
             logsDir = libCb + "logs/"
             if int(server.port) in range(ClusterRun.port,
                                          ClusterRun.port + 10):
@@ -699,7 +699,8 @@ class BaseTestCase(unittest.TestCase):
                                        "ns_server", "logs", "n_%s" % str(idx))
             logFiles = shell.execute_command("ls " + os.path.join(logsDir, "memcached.log.*"))[0]
             for logFile in logFiles:
-                criticalMessages = shell.execute_command("grep -r 'CRITICAL' " + logFile.strip("\n") +
+                # Check for CRITICAL messages in logs
+                criticalMessages = shell.execute_command("grep -r 'CRITICAL' " + logFile.strip("\n")+
                                                          "| grep -v 'Rollback point not found'")[0]
                 index = findIndexOf(criticalMessages, "Fatal error encountered during exception handling")
                 criticalMessages = criticalMessages[:index]
@@ -708,7 +709,33 @@ class BaseTestCase(unittest.TestCase):
                     print("".join(criticalMessages))
                     if self.stop_server_on_crash:
                         shell.stop_couchbase()
+                    result = True
                     break
+                # Check for ERROR messages in logs
+                errorMessages = shell.execute_command("grep -r 'ERROR' " + logFile.strip("\n") +
+                                                      "| grep -v 'XERROR'")[0]
+                if errorMessages:
+                    print(server.ip + " : Found ERROR message in " + logFile.strip("\n"))
+                    print("".join(errorMessages))
+                    result = True
+                    break
+                # Check for "exception occurred in runloop" messages in logs
+                exceptionRunLoop = shell.execute_command("grep -r 'exception occurred in runloop' " +
+                                                         logFile.strip("\n"))[0]
+                if exceptionRunLoop:
+                    print(server.ip + " : Found exceptionRunLoop message in " + logFile.strip("\n"))
+                    print("".join(exceptionRunLoop))
+                    result = True
+                    break
+                # Check for WARN messages in logs
+                warnMessages = shell.execute_command("grep -r 'WARN'" + logFile.strip("\n")
+                                                     + "| grep -v Slow "
+                                                     + "| grep -v 'The stream closed early because the conn was"
+                                                       " disconnected'")[0]
+                if warnMessages:
+                    print(server.ip + " : Found WARN message in " + logFile.strip("\n"))
+                    print("".join(warnMessages))
+                    result = True
                 streamreqfailed = "Stream request failed because the snap start seqno"
                 found = shell.execute_command(("grep -r '{}' " + logFile.strip("\n")).
                                               format(streamreqfailed))[0]
