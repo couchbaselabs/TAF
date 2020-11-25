@@ -34,6 +34,8 @@ class CbCollectInfoTests(CollectionBase):
             self.node_data[node]["shell"].execute_command(
                 "rm -f %s" % self.node_data[node]["cb_collect_file"])
 
+        self.snapshot_dir = \
+            "/opt/couchbase/var/lib/couchbase/stats_data/snapshots"
         self.log_setup_status("CbCollectInfo", "complete")
 
     def tearDown(self):

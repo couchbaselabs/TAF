@@ -5,6 +5,7 @@ from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper, \
     BucketDurability
+from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from upgrade.upgrade_base import UpgradeBase
@@ -22,6 +23,23 @@ class UpgradeTests(UpgradeBase):
 
     def tearDown(self):
         super(UpgradeTests, self).tearDown()
+
+    def __trigger_cbcollect(self, log_path):
+        self.log.info("Triggering cb_collect_info")
+        rest = RestConnection(self.cluster.master)
+        nodes = rest.get_nodes()
+        status = self.cluster_util.trigger_cb_collect_on_cluster(rest,
+                                                                 nodes)
+
+        if status is True:
+            self.cluster_util.wait_for_cb_collect_to_complete(rest)
+            status = self.cluster_util.copy_cb_collect_logs(
+                rest, nodes, self.cluster, log_path)
+            if status is False:
+                self.log_failure("API copy_cb_collect_logs detected failure")
+        else:
+            self.log_failure("API perform_cb_collect returned False")
+        return status
 
     def test_upgrade(self):
         create_batch_size = 10000
@@ -85,8 +103,8 @@ class UpgradeTests(UpgradeBase):
                     if current_items < self.num_items+create_batch_size:
                         self.log_failure(
                             "Failures after cluster upgrade {} {}"
-                            .format(current_items,
-                                    self.num_items+create_batch_size))
+                                .format(current_items,
+                                        self.num_items+create_batch_size))
                 elif current_items > self.num_items:
                     self.log_failure(
                         "SyncWrite succeeded with mixed mode cluster")
@@ -357,3 +375,65 @@ class UpgradeTests(UpgradeBase):
             sync=self.sync, defer=self.defer,
             retries=0)
         self.task_manager.get_task_result(trans_task)
+
+    def test_cbcollect_info(self):
+        log_path = self.input.param("logs_folder")
+        self.log.info("Starting update tasks")
+        update_tasks = list()
+        update_tasks.append(self.task.async_continuous_doc_ops(
+            self.cluster, self.bucket, self.gen_load,
+            op_type="update",
+            persist_to=1,
+            replicate_to=1,
+            process_concurrency=1,
+            batch_size=10,
+            timeout_secs=30))
+        update_tasks.append(self.task.async_continuous_doc_ops(
+            self.cluster, self.bucket, self.gen_load,
+            op_type="update",
+            replicate_to=1,
+            process_concurrency=1,
+            batch_size=10,
+            timeout_secs=30))
+        update_tasks.append(self.task.async_continuous_doc_ops(
+            self.cluster, self.bucket, self.gen_load,
+            op_type="update",
+            persist_to=1,
+            process_concurrency=1,
+            batch_size=10,
+            timeout_secs=30))
+
+        node_to_upgrade = self.fetch_node_to_upgrade()
+        while node_to_upgrade is not None:
+            # Cbcollect with mixed mode cluster
+            status = self.__trigger_cbcollect(log_path)
+            if status is False:
+                break
+
+            self.log.info("Selected node for upgrade: %s"
+                          % node_to_upgrade.ip)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                     self.upgrade_version)
+            self.cluster_util.print_cluster_stats()
+
+            try:
+                self.cluster.update_master(self.cluster.servers[0])
+            except Exception:
+                self.cluster.update_master(
+                    self.cluster.servers[self.nodes_init-1])
+
+            node_to_upgrade = self.fetch_node_to_upgrade()
+
+            # Halt further upgrade if test has failed during current upgrade
+            if self.test_failure is True:
+                break
+
+        # Cbcollect with fully upgraded cluster
+        self.__trigger_cbcollect(log_path)
+
+        for update_task in update_tasks:
+            # Wait for update_task to complete
+            update_task.end_task()
+            self.task_manager.get_task_result(update_task)
+
+        self.validate_test_failure()
