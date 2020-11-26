@@ -23,7 +23,7 @@ class CollectionsNetworkSplit(CollectionBase):
             command = "/sbin/iptables -F"
             shell.execute_command(command)
             shell.disconnect()
-        self.bucket_util._wait_warmup_completed(self.cluster.servers[:self.nodes_init], self.bucket_util.buckets[0])
+        self.sleep(10)
         super(CollectionsNetworkSplit, self).tearDown()
 
     def set_master_node(self):
@@ -85,14 +85,14 @@ class CollectionsNetworkSplit(CollectionBase):
             # Doc loading params
             "doc_crud": {
 
-                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 5000,
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 100,
 
                 MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
-                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 30,
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 5,
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
-                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 20,
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 5,
                 MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
-                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 20,
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 5,
             },
 
             "subdoc_crud": {
@@ -123,7 +123,7 @@ class CollectionsNetworkSplit(CollectionBase):
         self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def set_retry_exceptions(self, doc_loading_spec):
-        retry_exceptions = []
+        retry_exceptions = list()
         retry_exceptions.append(SDKException.AmbiguousTimeoutException)
         retry_exceptions.append(SDKException.TimeoutException)
         retry_exceptions.append(SDKException.RequestCanceledException)
@@ -157,11 +157,8 @@ class CollectionsNetworkSplit(CollectionBase):
         """
         task = self.data_load(async_load=True)
         self.pick_nodes_and_network_split()
-        self.wait_for_async_data_load_to_complete(task)
         self.sleep(60, "wait for network split to finish")
-        self.data_load()
 
-        task = self.data_load(async_load=True)
         result = self.task.failover(self.cluster.servers[:self.nodes_init], failover_nodes=self.nodes_failover,
                            graceful=False, allow_unsafe=self.allow_unsafe)
         self.assertTrue(result, "Hard Failover failed")
