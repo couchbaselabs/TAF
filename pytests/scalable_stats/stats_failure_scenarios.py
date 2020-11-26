@@ -3,6 +3,7 @@ from StatsLib.StatsOperations import StatsHelper
 from bucket_collections.collections_base import CollectionBase
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
+from crash_test.constants import signum
 
 
 class StatsFailureScenarios(CollectionBase):
@@ -13,6 +14,9 @@ class StatsFailureScenarios(CollectionBase):
         self.parse = self.input.param("parse", False)
         self.metric_name = self.input.param("metric_name", "kv_curr_items")
         self.simulate_error = self.input.param("simulate_error", CouchbaseError.KILL_MEMCACHED)
+        self.sig_type = self.input.param("sig_type", "SIGKILL").upper()
+        self.process_name = self.input.param("process", "memcached")
+        self.service_name = self.input.param("service", "data")
 
     def tearDown(self):
         super(StatsFailureScenarios, self).tearDown()
@@ -35,6 +39,28 @@ class StatsFailureScenarios(CollectionBase):
         finally:
             # Revert the simulated error condition and close the ssh session
             error_sim.revert(self.simulate_error)
+            remote.disconnect()
+        self.log.info("After failure")
+        self.get_all_metrics(self.components, self.parse, self.metric_name)
+        # TODO: Add a method to compare the stats before and after failure scenarios
+
+    def test_prometheus_and_ns_server_stats_after_crash_scenarios(self):
+        """
+        Run all metrics before and after crash and validate
+        both ns_server and prometheus stats
+        """
+        self.bucket_util.load_sample_bucket(TravelSample())
+        target_node = self.servers[0]
+        remote = RemoteMachineShellConnection(target_node)
+        error_sim = CouchbaseError(self.log, remote)
+        self.log.info("Before failure")
+        self.get_all_metrics(self.components, self.parse, self.metric_name)
+        try:
+            self.log.info("Killing {0} on node {1}".format(self.process_name, target_node.ip))
+            remote.kill_process(self.process_name, self.service_name,
+                                signum=signum[self.sig_type])
+            self.sleep(20, "Wait for the process to come backup")
+        finally:
             remote.disconnect()
         self.log.info("After failure")
         self.get_all_metrics(self.components, self.parse, self.metric_name)
