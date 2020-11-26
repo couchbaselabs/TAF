@@ -736,7 +736,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Changing hostname to an invalid hostname",
                 "hostname": self.invalid_ip,
                 "validate_error_msg": True,
-                "expected_error": "Link authentication failed"
+                "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                    self.link_info["dataverse"], self.link_info["name"])
                 },
             {
                 "description": "Changing credentials to invalid credentials",
@@ -769,7 +770,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "encryption": "full",
                 "certificate": self.read_file(self.analytics_cluster.root_ca_path),
                 "validate_error_msg": True,
-                "expected_error": "Link authentication failed"
+                "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                    self.link_info["dataverse"], self.link_info["name"])
                 },
             {
                 "description": "Changing encryption type to full, with valid root certificate, clientcertificate and client key",
@@ -789,7 +791,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "clientCertificate": self.read_file(to_cluster.client_certs[self.link_info["hostname"]]["cert_pem"]),
                 "clientKey": self.read_file(self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_key"]),
                 "validate_error_msg": True,
-                "expected_error": "Link authentication failed"
+                "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                    self.link_info["dataverse"], self.link_info["name"])
                 },
             {
                 "description": "Changing encryption type to full, with valid root certificate and clientKey and invalid clientcertificate",
@@ -800,7 +803,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "clientKey": self.read_file(to_cluster.client_certs[self.link_info["hostname"]]["cert_key"]),
                 "clientCertificate": self.read_file(self.analytics_cluster.client_certs[self.analytics_cluster.master.ip]["cert_pem"]),
                 "validate_error_msg": True,
-                "expected_error": "Link authentication failed"
+                "expected_error": "Cannot connect to host for link {0}.{1}".format(
+                    self.link_info["dataverse"], self.link_info["name"])
                 }
             ]
 
