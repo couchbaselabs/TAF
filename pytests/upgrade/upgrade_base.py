@@ -44,12 +44,18 @@ class UpgradeBase(BaseTestCase):
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
 
+        self.cluster_supports_sync_write = False
+        if float(self.initial_version[:3]) >= 6.5:
+            self.cluster_supports_sync_write = True
+
         self.installer_job = InstallerJob()
 
         # Dict to map upgrade_type to action functions
         self.upgrade_function = dict()
         self.upgrade_function["online_swap"] = self.online_swap
         self.upgrade_function["online_incremental"] = self.online_incremental
+        self.upgrade_function["online_rebalance_in_out"] = \
+            self.online_rebalance_in_out
         self.upgrade_function["failover_delta_recovery"] = \
             self.failover_delta_recovery
         self.upgrade_function["failover_full_recovery"] = \
@@ -96,6 +102,7 @@ class UpgradeBase(BaseTestCase):
         self.bucket_util.create_default_bucket(
             replica=self.num_replicas,
             compression_mode=self.compression_mode,
+            ram_quota=self.bucket_size,
             bucket_type=self.bucket_type, storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
             bucket_durability=self.bucket_durability_level)
@@ -107,8 +114,13 @@ class UpgradeBase(BaseTestCase):
                                       doc_size=self.doc_size)
         async_load_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, self.gen_load, "create",
+            active_resident_threshold=self.active_resident_threshold,
             timeout_secs=self.sdk_timeout)
         self.task_manager.get_task_result(async_load_task)
+
+        # Update num_items in case of DGM run
+        if self.active_resident_threshold != 100:
+            self.num_items = async_load_task.doc_index
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
@@ -417,7 +429,57 @@ class UpgradeBase(BaseTestCase):
                                       vb_details[vb_type],
                                       vb_verification[vb_type]))
 
+        # Update master node
+        self.cluster.master = self.spare_node
+
         # Update spare_node to rebalanced-out node
+        self.spare_node = node_to_upgrade
+
+    def online_rebalance_in_out(self, node_to_upgrade, version):
+        """
+        cluster <-- Node with latest_build
+        cluster --> Node with previous version
+        """
+        # Fetch active services on node_to_upgrade
+        rest = self.__get_rest_node(node_to_upgrade)
+        services = rest.get_nodes_services()
+        services_on_target_node = services[(node_to_upgrade.ip + ":"
+                                            + node_to_upgrade.port)]
+
+        # Install target version on spare node
+        self.install_version_on_node([self.spare_node], version)
+
+        # Rebalance-in spare node into the cluster
+        rest.add_node(self.creds.rest_username,
+                      self.creds.rest_password,
+                      self.spare_node.ip,
+                      self.spare_node.port,
+                      services=services_on_target_node)
+        otp_nodes = [node.id for node in rest.node_statuses()]
+        rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
+        rebalance_passed = rest.monitorRebalance()
+        if not rebalance_passed:
+            self.log_failure("Rebalance-in failed during upgrade of {0}"
+                             .format(node_to_upgrade))
+
+        # Print cluster status
+        self.cluster_util.print_cluster_stats()
+
+        # Rebalance-out the target_node
+        rest = self.__get_rest_node(self.spare_node)
+        eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)
+        otp_nodes = [node.id for node in rest.node_statuses()]
+        rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[eject_otp_node.id])
+        rebalance_passed = rest.monitorRebalance()
+        if not rebalance_passed:
+            self.log_failure("Rebalance-out failed during upgrade of {0}"
+                             .format(node_to_upgrade))
+            return
+
+        # Update master node
+        self.cluster.master = self.spare_node
+
+        # Update spare node to rebalanced_out node
         self.spare_node = node_to_upgrade
 
     def online_incremental(self, node_to_upgrade, version):
