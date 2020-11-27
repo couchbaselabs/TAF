@@ -27,6 +27,10 @@ class UpgradeTests(UpgradeBase):
         create_batch_size = 10000
         update_task = None
 
+        t_durability_level = ""
+        if self.cluster_supports_sync_write:
+            t_durability_level = Bucket.DurabilityLevel.MAJORITY
+
         if self.upgrade_with_data_load:
             self.log.info("Starting async doc updates")
             update_task = self.task.async_continuous_doc_ops(
@@ -35,6 +39,7 @@ class UpgradeTests(UpgradeBase):
                 process_concurrency=1,
                 persist_to=1,
                 replicate_to=1,
+                durability=t_durability_level,
                 timeout_secs=30)
 
         create_gen = doc_generator(self.key, self.num_items,
@@ -48,11 +53,6 @@ class UpgradeTests(UpgradeBase):
                                                      self.upgrade_version)
             self.cluster_util.print_cluster_stats()
 
-            try:
-                self.cluster.update_master(self.cluster.servers[0])
-            except Exception:
-                self.cluster.update_master(
-                    self.cluster.servers[self.nodes_init-1])
             # Validate sync_write results after upgrade
             if self.atomicity:
                 create_batch_size = 10
@@ -94,10 +94,20 @@ class UpgradeTests(UpgradeBase):
                 if node_to_upgrade is None:
                     if sync_write_task.fail.keys():
                         self.log_failure("Failures after cluster upgrade")
+                elif self.cluster_supports_sync_write:
+                    if sync_write_task.fail:
+                        self.log.error("SyncWrite failed: %s"
+                                       % sync_write_task.fail)
+                        self.log_failure("SyncWrite failed during upgrade")
+                    else:
+                        self.num_items += create_batch_size
+                        create_gen = doc_generator(
+                            self.key,
+                            self.num_items,
+                            self.num_items + create_batch_size)
                 elif len(sync_write_task.fail.keys()) != create_batch_size:
                     self.log_failure(
                         "SyncWrite succeeded with mixed mode cluster")
-                    break
                 else:
                     for doc_id, doc_result in sync_write_task.fail.items():
                         if SDKException.FeatureNotAvailableException \
@@ -106,7 +116,7 @@ class UpgradeTests(UpgradeBase):
                                              % (doc_id, doc_result))
 
             # Halt further upgrade if test has failed during current upgrade
-            if self.test_failure is True:
+            if self.test_failure is not None:
                 break
 
         if self.upgrade_with_data_load:
