@@ -106,7 +106,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
             test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
                                       .format(timeout))
 
-
     def validate_docs(self):
         self.log.info("Validating docs")
         self.gen_create = self.get_doc_generator(0, self.num_items)
@@ -157,7 +156,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.swap_orchestrator:
             self.rest = RestConnection(new_swap_servers[0])
-            self.master = new_swap_servers[0]
+            self.cluster.master = self.master = new_swap_servers[0]
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios for vbs before rebalance")
@@ -425,7 +424,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.assertTrue(self.rest.monitorRebalance(),
                             msg="Rebalance failed after failover of node {0}"
                             .format(node))
-            
+
         self.rest.rebalance(
             otpNodes=[node.id for node in self.rest.node_statuses()],
             ejectedNodes=opt_nodes_ids)
