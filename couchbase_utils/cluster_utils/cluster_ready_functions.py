@@ -1077,7 +1077,7 @@ class ClusterUtils:
                     self.log.critical("%s cb_collect zip file size: %s"
                                       % (node.ip, cb_collect_size))
                     status = False
-                self.log.error("%s node cb collect zip coped on client : %s"
+                self.log.error("%s node cb collect zip copied on client : %s"
                                % (node.ip, zip_file_copied))
         return status
 
