@@ -1350,6 +1350,11 @@ class RestConnection(object):
                                            parameters=params)
         return status
 
+    def get_terse_cluster_info(self):
+        api = "%s%s" % (self.baseUrl, "pools/default/terseClusterInfo")
+        status, content, _ = self._http_request(api, "GET")
+        return status, content
+
     def diag_eval(self, code, print_log=True):
         api = '{0}{1}'.format(self.baseUrl, 'diag/eval/')
         status, content, header = self._http_request(api, "POST", code)

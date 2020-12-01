@@ -5,6 +5,7 @@ Created on Sep 26, 2017
 """
 
 import copy
+import json
 import re
 import time
 import os
@@ -58,20 +59,26 @@ class CBCluster:
         if node_in_cluster is None:
             node_in_cluster = self.master
 
-        # Enable diag_eval outside localhost
-        shell = RemoteMachineShellConnection(node_in_cluster)
-        shell.enable_diag_eval_on_non_local_hosts()
-        shell.disconnect()
+        retry_index = 0
+        max_retry = 12
+        orchestrator_node = None
+        status = None
 
         rest = RestConnection(node_in_cluster)
-        command = "mb_master:master_node()."
-        status, content = rest.diag_eval(command)
-
-        master_ip = content.split("@")[1].replace("\\", '').replace(
-            "'", "")
-        self.master = [server for server in self.servers if server.ip ==
-                       master_ip][0]
-
+        while retry_index < max_retry:
+            status, content = rest.get_terse_cluster_info()
+            json_content = json.loads(content)
+            orchestrator_node = json_content["orchestrator"]
+            if orchestrator_node == "undefined":
+                sleep(1, message="orchestrator='undefined'", log_type="test")
+            else:
+                break
+        orchestrator_node = \
+            orchestrator_node.split("@")[1].replace("\\", '').replace("'", "")
+        self.master = [server for server in self.servers
+                       if server.ip == orchestrator_node][0]
+        # Overriding to str type to match the previous dial/eval return value
+        content = "ns_1@%s" % self.master.ip
         return status, content
 
 
@@ -87,9 +94,7 @@ class ClusterUtils:
 
     def find_orchestrator(self, node=None):
         status, content = self.cluster.update_master(node)
-        content = content.replace("'", '')
         self.rest = RestConnection(self.cluster.master)
-
         return status, content
 
     def set_metadata_purge_interval(self, interval=0.04):

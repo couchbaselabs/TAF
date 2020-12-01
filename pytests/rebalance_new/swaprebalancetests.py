@@ -157,7 +157,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.swap_orchestrator:
             self.rest = RestConnection(new_swap_servers[0])
-            self.cluster.master = self.master = new_swap_servers[0]
+            self.master = new_swap_servers[0]
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios for vbs before rebalance")
@@ -237,7 +237,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.assertTrue(self.rest.monitorRebalance(),
                         msg="Rebalance operation failed after adding node {0}"
                         .format(opt_nodes_ids))
-        self.cluster.update_master(self.master)
+        status, _ = self.cluster_util.find_orchestrator(self.master)
+        self.assertTrue(status, msg="Unable to find the cluster orchestrator")
 
         # Wait till load phase is over
         for task in self.loaders:
