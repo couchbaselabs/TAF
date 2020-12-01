@@ -761,7 +761,7 @@ def main():
         time_taken = time.time() - start_time
         connection_status_msg = \
             "During the test,\n" \
-            "Remote Connections: %s, Disconnections: %s" \
+            "Remote Connections: %s, Disconnections: %s\n" \
             "SDK Connections: %s, Disconnections: %s" \
             % (RemoteMachineShellConnection.connections,
                RemoteMachineShellConnection.disconnections,

@@ -157,7 +157,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.swap_orchestrator:
             self.rest = RestConnection(new_swap_servers[0])
-            self.master = new_swap_servers[0]
+            self.cluster.master = self.master = new_swap_servers[0]
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios for vbs before rebalance")
