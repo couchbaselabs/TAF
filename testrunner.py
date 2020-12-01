@@ -648,6 +648,13 @@ def main():
 
     for name in names:
         start_time = time.time()
+
+        # Reset SDK/Shell connection counters
+        RemoteMachineShellConnection.connections = 0
+        RemoteMachineShellConnection.disconnections = 0
+        SDKClient.sdk_connections = 0
+        SDKClient.sdk_disconnections = 0
+
         argument_split = [a.strip()
                           for a in re.split("[,]?([^,=]+)=", name)[1:]]
         params = dict(zip(argument_split[::2], argument_split[1::2]))
@@ -752,11 +759,22 @@ def main():
                 print("========TEST WAS STOPPED DUE TO  TIMEOUT=========")
                 result.errors = [(name, "Test was stopped due to timeout")]
         time_taken = time.time() - start_time
-        print("During the test, Remote Connections: %s, Disconnections: %s" %
-              (RemoteMachineShellConnection.connections,
-               RemoteMachineShellConnection.disconnections))
-        print("SDK Connections: %s, Disconnections: %s" %
-              (SDKClient.sdk_connections, SDKClient.sdk_disconnections))
+        connection_status_msg = \
+            "During the test,\n" \
+            "Remote Connections: %s, Disconnections: %s" \
+            "SDK Connections: %s, Disconnections: %s" \
+            % (RemoteMachineShellConnection.connections,
+               RemoteMachineShellConnection.disconnections,
+               SDKClient.sdk_connections, SDKClient.sdk_disconnections)
+
+        if RemoteMachineShellConnection.connections \
+                != RemoteMachineShellConnection.disconnections:
+            connection_status_msg += \
+                "\n!!!!!! CRITICAL :: Shell disconnection mismatch !!!!!"
+        if SDKClient.sdk_connections != SDKClient.sdk_disconnections:
+            connection_status_msg += \
+                "\n!!!!!! CRITICAL :: SDK disconnection mismatch !!!!!"
+        print(connection_status_msg)
         # Concat params to test name
         # To make tests more readable
         params = ''

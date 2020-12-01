@@ -430,7 +430,7 @@ class BaseTestCase(unittest.TestCase):
                 # clean up everything
                 remote_client.execute_command("rm -rf pcaps")
                 remote_client.execute_command("rm -rf " + server.ip + "_pcaps.zip")
-                remote_client.disconnect()
+            remote_client.disconnect()
 
     def tearDown(self):
         self.task_manager.shutdown_task_manager()
@@ -763,6 +763,7 @@ class BaseTestCase(unittest.TestCase):
                 result = True
             else:
                 self.log.debug(server.ip + " : No sanitizers.log.* files found")
+            shell.disconnect()
 
         if result and force_collect and not self.stop_server_on_crash:
             self.fetch_cb_collect_logs()

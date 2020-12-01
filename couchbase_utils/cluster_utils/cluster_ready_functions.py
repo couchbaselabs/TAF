@@ -1065,7 +1065,7 @@ class ClusterUtils:
                 if zip_file_copied:
                     remote_client.execute_command("rm -f %s"
                                                   % cb_collect_path)
-                    remote_client.disconnect()
+                remote_client.disconnect()
                 cb_collect_size = int(os.path.getsize(
                     log_path + "/" + os.path.basename(cb_collect_path)))
                 if cb_collect_size == 0:
