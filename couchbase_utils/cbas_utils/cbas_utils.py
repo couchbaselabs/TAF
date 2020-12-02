@@ -2341,7 +2341,8 @@ class Dataset:
                 self.log.error("Error creating dataset {0}".format(self.full_dataset_name))
                 return False
         elif dataset_creation_method == "enable_cbas_from_kv":
-            self.log.info("Enabling Analytics on {0}".format(self.full_dataset_name))
+            self.log.info("Enabling Analytics on {0}".format(
+                self.get_fully_quantified_kv_entity_name(self.bucket_cardinality)))
             self.full_dataset_name = self.get_fully_quantified_kv_entity_name(3)
             self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name,
                                                                           True)

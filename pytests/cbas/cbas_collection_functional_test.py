@@ -12,6 +12,7 @@ from cbas_utils.cbas_utils import Dataset
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator
 from security.rbac_base import RbacBase
+from Queue import Queue
 
 
 class CBASDataverseAndScopes(CBASBaseTest):
@@ -343,17 +344,33 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         """
         self.log.info("Test started")
         results = list()
+        jobs = Queue()
+        
+        def create_datasets(job_queue, results):
+            while not job_queue.empty():
+                job_queue.get()
+                dataset_obj = Dataset(
+                    bucket_util=self.bucket_util,
+                    cbas_util=self.cbas_util,
+                    consider_default_KV_scope=True, 
+                    consider_default_KV_collection=True,
+                    dataset_name_cardinality=random.randint(1,3),
+                    bucket_cardinality=random.choice([1,3]),
+                    random_dataset_name=True)
+                results.append(dataset_obj.setup_dataset(
+                    dataset_creation_method=self.input.param('dataset_creation_method', "cbas_dataset")))
+                job_queue.task_done()
+        
         for i in range(int(self.input.param('no_of_datasets', 1))):
-            dataset_obj = Dataset(
-                bucket_util=self.bucket_util,
-                cbas_util=self.cbas_util,
-                consider_default_KV_scope=True, 
-                consider_default_KV_collection=True,
-                dataset_name_cardinality=random.randint(1,3),
-                bucket_cardinality=random.choice([1,3]),
-                random_dataset_name=True)
-            results.append(dataset_obj.setup_dataset(
-                dataset_creation_method=self.input.param('dataset_creation_method', "cbas_dataset")))
+            jobs.put(i)
+        
+        for i in range(int(self.input.param('thread_count', 5))):
+            worker = Thread(
+                target=create_datasets, 
+                name="dataset_create_{0}".format(str(i)), 
+                args=(jobs,results,))
+            worker.start()
+        jobs.join()
         
         if all(results):
             self.fail("All datasets were not created.")
@@ -1215,7 +1232,6 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         
         self.log.info("Test finished")
         
-    
     def test_docs_deleted_in_dataset_once_MaxTTL_reached(self):
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             "analytics.single_bucket")
@@ -1358,7 +1374,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         else:
             drop_idx_statement = "drop index {0}.{1};".format(
                 dataset_obj.full_dataset_name, self.index_name)
-        
+
         status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
             drop_idx_statement)
         if status != "success":
@@ -1415,293 +1431,156 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.fail("Index creation on synonym was successfull")
                     
         self.log.info("Test finished")
-   
-    def test_dataset_after_deleting_and_recreating_KV_collection(self):
-        self.log.info("Test started")
-        
-        dataset_objs = list()
-        count = 0
-        bucket = None
-        scope = None
-        collection = None
-        
-        for dataset_creation_method in ["enable_cbas_from_kv","cbas_dataset","cbas_collection"]:
-            count += 1
-            dataset_obj = Dataset(
-                bucket_util=self.bucket_util,
-                cbas_util=self.cbas_util,
-                consider_default_KV_scope=True, 
-                consider_default_KV_collection=True,
-                dataset_name_cardinality=int(self.input.param('cardinality', 1)),
-                bucket_cardinality=int(self.input.param('bucket_cardinality', 3)),
-                random_dataset_name=True)
-            
-            if count == 1:
-                bucket = dataset_obj.kv_bucket_obj
-                scope = dataset_obj.kv_scope_obj
-                collection = dataset_obj.kv_collection_obj
-            else:
-                dataset_obj.set_kv_entity(
-                    kv_bucket_obj=bucket, kv_scope_obj=scope,
-                    kv_collection_obj=collection)
-            dataset_objs.append(dataset_obj)
-            
-            dataset_obj.setup_dataset(
-                dataset_creation_method=dataset_creation_method,
-                validate_metadata=True, validate_doc_count=True, create_dataverse=True)
-            
-            index_fields = ""
-            for index_field in self.index_fields:
-                index_fields += index_field + ","
-            index_fields = index_fields[:-1]
-            
-            dataset_obj.index_name = self.index_name + str(count)
-            
-            if self.input.param('analytics_index', False):
-                create_idx_statement = "create analytics index {0} on {1}({2});".format(
-                    dataset_obj.index_name, dataset_obj.full_dataset_name, index_fields)
-            else:
-                create_idx_statement = "create index {0} on {1}({2});".format(
-                    dataset_obj.index_name, dataset_obj.full_dataset_name, index_fields)
-            
-            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
-                create_idx_statement)
-            
-            if status != "success" or not self.cbas_util.verify_index_created(
-                dataset_obj.index_name, self.index_fields, dataset_obj.name)[0]:
-                self.fail("Create Index query failed")
-            
-            statement = 'SELECT VALUE v FROM '+ dataset_obj.full_dataset_name + ' v WHERE age > 2'
-            
-            if not self.verify_index_used(statement, True, dataset_obj.index_name):
-                self.fail("Index was not used while querying the dataset")
-        
-        self.bucket_util.drop_collection(self.cluster.master, bucket, 
-                                         scope_name=scope.name,
-                                         collection_name=collection.name)
-        
-        for dataset_obj in dataset_objs:
-            if not self.cbas_util.validate_cbas_dataset_items_count(
-                dataset_obj.full_dataset_name, 0):
-                self.fail("Data still present in dataset even when the KV collection is deleted.")
-            
-            if not self.verify_index_used(statement, True, dataset_obj.index_name):
-                self.fail("Index was not used while querying the dataset")
-            
-        self.bucket_util.create_collection(
-            self.cluster.master, bucket, scope_name=scope.name,
-            collection_spec={"name" : collection.name})
-        
-        load_gen = doc_generator(self.key, 0, self.num_items)
-        self.task.load_gen_docs(
-            self.cluster, bucket, load_gen, "create", 
-            exp=0, batch_size=100, process_concurrency=8,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout, scope=scope.name,
-            collection=collection.name)
-        
-        for dataset_obj in dataset_objs:
-            if not self.cbas_util.validate_cbas_dataset_items_count(
-                dataset_obj.full_dataset_name, 
-                dataset_obj.get_item_count_in_collection(
-                    dataset_obj.bucket_util,bucket, 
-                    scope.name, collection.name)):
-                self.fail("Data ingestion after collection recreation failed.")
-            
-            if not self.verify_index_used(statement, True, self.index_name):
-                self.fail("Index was not used while querying the dataset")
-        
-        self.log.info("Test finished")
     
-    def test_dataset_after_deleting_and_recreating_KV_bucket(self):
+    def test_dataset_after_deleting_and_recreating_KV_entity(self):
         self.log.info("Test started")
         
         dataset_objs = list()
+        statement = 'SELECT VALUE v FROM {0} v WHERE age > 2'
+        
+        bucket_helper = BucketHelper(self.cluster.master)
         count = 0
         
-        for dataset_creation_method in ["enable_cbas_from_kv","cbas_dataset","cbas_collection"]:
+        threads = list()
+        failures = list()
+                    
+        for bucket in self.bucket_util.buckets:
+            # Create dataset on all KV collections in the bucket.
+            status, content = bucket_helper.list_collections(bucket.name)
+            if not status:
+                self.fail("Failed to fetch all the collections in bucket {0}".format(bucket.name))
+            json_parsed = json.loads(content)
+
+            for scope in json_parsed["scopes"]:
+                for collection in scope["collections"]:
+                    count += 1
+                    def testcase_setup(count,bucket_obj,scope_name,collection_name):
+                        dataset_obj = Dataset(
+                            bucket_util=self.bucket_util,
+                            cbas_util=self.cbas_util,
+                            consider_default_KV_scope=True, 
+                            consider_default_KV_collection=True,
+                            dataset_name_cardinality=int(self.input.param('cardinality', 1)),
+                            bucket_cardinality=int(self.input.param('bucket_cardinality', 3)),
+                            random_dataset_name=True)
+                        
+                        if int(self.input.param('bucket_cardinality', 3)) != 1:
+                            scope_obj = self.bucket_util.get_scope_obj(bucket_obj, scope_name)
+                            dataset_obj.set_kv_entity(
+                                kv_bucket_obj=bucket_obj, 
+                                kv_scope_obj=scope_obj,
+                                kv_collection_obj=self.bucket_util.get_collection_obj(
+                                    scope_obj, collection_name))
+                
+                        dataset_objs.append(dataset_obj)
+                        
+                        if not dataset_obj.setup_dataset(
+                            dataset_creation_method=random.choice(
+                                ["enable_cbas_from_kv","cbas_dataset","cbas_collection"]),
+                            validate_metadata=True, validate_doc_count=True, create_dataverse=True):
+                            failures.append("Creating dataset {0} failed".format(dataset_obj.full_dataset_name))
+                        
+                        index_fields = ""
+                        for index_field in self.index_fields:
+                            index_fields += index_field + ","
+                        index_fields = index_fields[:-1]
+                        
+                        dataset_obj.index_name = self.index_name + str(count)
+                        
+                        if self.input.param('analytics_index', False):
+                            create_idx_statement = "create analytics index {0} on {1}({2});".format(
+                                dataset_obj.index_name, dataset_obj.full_dataset_name, index_fields)
+                        else:
+                            create_idx_statement = "create index {0} on {1}({2});".format(
+                                dataset_obj.index_name, dataset_obj.full_dataset_name, index_fields)
+                        
+                        status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
+                            create_idx_statement)
+                        
+                        if status != "success" or not self.cbas_util.verify_index_created(
+                            dataset_obj.index_name, self.index_fields, dataset_obj.name)[0]:
+                            failures.append("Creating Index {0} failed".format(dataset_obj.index_name))
+                        
+                        if not self.verify_index_used(statement.format(dataset_obj.full_dataset_name
+                            ), True, dataset_obj.index_name):
+                            failures.append(
+                                "Index {0} was not used while querying the dataset {1}".format(
+                                    dataset_obj.index_name, dataset_obj.name))
+                    
+                    thread = Thread(
+                        target=testcase_setup, 
+                        name="dataset_create_{0}".format(str(count)), 
+                        args=(count,bucket,scope["name"],collection["name"]))
+                    threads.append(thread)
+                    thread.start()
+                    if int(self.input.param('bucket_cardinality', 3)) == 1:
+                        break
+                if int(self.input.param('bucket_cardinality', 3)) == 1:
+                    break
+            if int(self.input.param('bucket_cardinality', 3)) == 1:
+                break
+        
+        def join_threads(threads):
+            for thread in threads:
+                thread.join()
+        
+        def validate_dataset(doc_count=None):
+            if doc_count is None:
+                doc_count = dataset_obj.get_item_count_in_collection(
+                    dataset_obj.bucket_util,dataset_obj.kv_bucket_obj, 
+                    dataset_obj.kv_scope_obj.name, dataset_obj.kv_collection_obj.name)
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                dataset_obj.full_dataset_name, doc_count):
+                failures.append(
+                    "Doc count mismatch between KV and dataset {0}".format(
+                        dataset_obj.full_dataset_name))
             
-            count += 1
-            dataset_obj = Dataset(
-                bucket_util=self.bucket_util,
-                cbas_util=self.cbas_util,
-                consider_default_KV_scope=True, 
-                consider_default_KV_collection=True,
-                dataset_name_cardinality=int(self.input.param('cardinality', 1)),
-                bucket_cardinality=int(self.input.param('bucket_cardinality', 3)),
-                random_dataset_name=True
-                )
-            dataset_objs.append(dataset_obj)
-            
-            dataset_obj.setup_dataset(
-                dataset_creation_method=dataset_creation_method,
-                validate_metadata=True, validate_doc_count=True, create_dataverse=True)
-            
-            index_fields = ""
-            for index_field in self.index_fields:
-                index_fields += index_field + ","
-            index_fields = index_fields[:-1]
-            
-            dataset_obj.index_name = self.index_name + str(count)
-            
-            if self.input.param('analytics_index', False):
-                create_idx_statement = "create analytics index {0} on {1}({2});".format(
-                    dataset_obj.index_name, dataset_obj.full_dataset_name, index_fields)
+            if not self.verify_index_used(statement.format(dataset_obj.full_dataset_name
+                ), True, dataset_obj.index_name):
+                failures.append(
+                    "Index {0} was not used while querying the dataset {1}".format(
+                        dataset_obj.index_name, dataset_obj.name))
+        
+        def check_failures(failures):
+            if failures:
+                self.fail("Following errors have occurred - {0}".format(str(failures)))
             else:
-                create_idx_statement = "create index {0} on {1}({2});".format(
-                    dataset_obj.index_name, dataset_obj.full_dataset_name, index_fields)
+                failures = []
             
-            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
-                create_idx_statement)
-            
-            if status != "success" or not self.cbas_util.verify_index_created(
-                dataset_obj.index_name, self.index_fields, dataset_obj.name)[0]:
-                self.fail("Create Index query failed")
-            
-            statement = 'SELECT VALUE v FROM '+ dataset_obj.full_dataset_name + ' v WHERE age > 2'
-            
-            if not self.verify_index_used(statement, True, dataset_obj.index_name):
-                self.fail("Index was not used while querying the dataset")
+        join_threads(threads)
+        check_failures(failures)
         
         if not self.bucket_util.delete_bucket(
-            self.cluster.master, dataset_obj.kv_bucket_obj, 
+            self.cluster.master, dataset_objs[0].kv_bucket_obj, 
             wait_for_bucket_deletion=True):
             self.fail("Error while deleting bucket")
         
-        for dataset_obj in dataset_objs:
-            if not self.cbas_util.validate_cbas_dataset_items_count(
-                dataset_obj.full_dataset_name, 0):
-                self.fail("Data still present in dataset even when the KV collection is deleted.")
-            
-            statement = 'SELECT VALUE v FROM '+ dataset_obj.full_dataset_name + ' v WHERE age > 2'
-            if not self.verify_index_used(statement, True, dataset_obj.index_name):
-                self.fail("Index was not used while querying the dataset")
+        threads = []
+        for i, dataset_obj in enumerate(dataset_objs):
+            thread = Thread(
+                target=validate_dataset, 
+                name="validate_dataset_create_{0}".format(str(i)),
+                args=(0,))
+            threads.append(thread)
+            thread.start()
+        
+        join_threads(threads)
+        check_failures(failures)
         
         self.collectionSetUp(self.cluster, self.bucket_util, self.cluster_util)
         
-        for dataset_obj in dataset_objs:
-            if not self.cbas_util.validate_cbas_dataset_items_count(
-                dataset_obj.full_dataset_name, 
-                dataset_obj.get_item_count_in_collection(
-                    dataset_obj.bucket_util,dataset_obj.kv_bucket_obj, 
-                    dataset_obj.kv_scope_obj.name, dataset_obj.kv_collection_obj.name)):
-                self.fail("Data ingestion after collection recreation failed.")
-            
-            statement = 'SELECT VALUE v FROM '+ dataset_obj.full_dataset_name + ' v WHERE age > 2'
-            if not self.verify_index_used(statement, True, dataset_obj.index_name):
-                self.fail("Index was not used while querying the dataset")
+        for i, dataset_obj in enumerate(dataset_objs):
+            thread = Thread(
+                target=validate_dataset, 
+                name="validate_dataset_create_{0}".format(str(i)))
+            threads.append(thread)
+            thread.start()
+        
+        join_threads(threads)
+        check_failures(failures)
         
         self.log.info("Test finished")
-    
-    def test_dataset_after_deleting_and_recreating_KV_scope(self):
-        self.log.info("Test started")
         
-        dataset_objs = list()
-        exclude_scope = list()
-        count = 0
-        
-        for dataset_creation_method in ["enable_cbas_from_kv","cbas_dataset","cbas_collection"]:
-            
-            count += 1
-            dataset_obj = Dataset(
-                bucket_util=self.bucket_util,
-                cbas_util=self.cbas_util,
-                consider_default_KV_scope=True, 
-                consider_default_KV_collection=True,
-                dataset_name_cardinality=int(self.input.param('cardinality', 1)),
-                bucket_cardinality=int(self.input.param('bucket_cardinality', 3)),
-                random_dataset_name=True,
-                exclude_scope=exclude_scope
-                )
-            dataset_objs.append(dataset_obj)
-            
-            # Set exclude _scope only the first time
-            if not exclude_scope:
-                bucket_spec = self.bucket_util.get_bucket_template_from_package(self.spec_name)
-                exclude_scope = (bucket_spec["buckets"]["default"]["scopes"].keys()).remove(
-                    dataset_obj.kv_scope_obj.name)
-            
-            dataset_obj.setup_dataset(
-                dataset_creation_method=dataset_creation_method,
-                validate_metadata=True, validate_doc_count=True, create_dataverse=True)
-            
-            index_fields = ""
-            for index_field in self.index_fields:
-                index_fields += index_field + ","
-            index_fields = index_fields[:-1]
-            
-            dataset_obj.index_name = self.index_name + str(count)
-            
-            if self.input.param('analytics_index', False):
-                create_idx_statement = "create analytics index {0} on {1}({2});".format(
-                    dataset_obj.index_name, dataset_obj.full_dataset_name, index_fields)
-            else:
-                create_idx_statement = "create index {0} on {1}({2});".format(
-                    dataset_obj.index_name, dataset_obj.full_dataset_name, index_fields)
-            
-            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
-                create_idx_statement)
-            
-            if status != "success" or not self.cbas_util.verify_index_created(
-                dataset_obj.index_name, self.index_fields, dataset_obj.name)[0]:
-                self.fail("Create Index query failed")
-            
-            statement = 'SELECT VALUE v FROM '+ dataset_obj.full_dataset_name + ' v WHERE age > 2'
-            
-            if not self.verify_index_used(statement, True, dataset_obj.index_name):
-                self.fail("Index was not used while querying the dataset")
-        
-        if not self.bucket_util.drop_scope(
-            self.cluster.master, dataset_obj.kv_bucket_obj, 
-            dataset_obj.kv_scope_obj.name):
-            self.fail("Error while deleting bucket")
-        
-        for dataset_obj in dataset_objs:
-            if not self.cbas_util.validate_cbas_dataset_items_count(
-                dataset_obj.full_dataset_name, 0):
-                self.fail("Data still present in dataset even when the KV collection is deleted.")
-            
-            statement = 'SELECT VALUE v FROM '+ dataset_obj.full_dataset_name + ' v WHERE age > 2'
-            if not self.verify_index_used(statement, True, dataset_obj.index_name):
-                self.fail("Index was not used while querying the dataset")
-        
-        self.bucket_util.create_scope(
-            self.cluster.master, dataset_obj.kv_bucket_obj, 
-            scope_spec={"name":dataset_obj.kv_scope_obj.name})
-        
-        for collection in bucket_spec["buckets"]["default"]["scopes"][
-            dataset_obj.kv_scope_obj.name]["collections"]:
-            
-            self.bucket_util.create_collection(
-                self.cluster.master, dataset_obj.kv_bucket_obj, 
-                scope_name=dataset_obj.kv_scope_obj.name,
-                collection_spec={"name" : collection})
-        
-            load_gen = doc_generator(self.key, 0, 100)
-            self.task.load_gen_docs(
-                self.cluster, dataset_obj.kv_bucket_obj, load_gen, "create", 
-                exp=0, batch_size=100, process_concurrency=8,
-                replicate_to=self.replicate_to, persist_to=self.persist_to,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, scope=dataset_obj.kv_scope_obj.name,
-                collection=collection)
-            
-        
-        for dataset_obj in dataset_objs:
-            if not self.cbas_util.validate_cbas_dataset_items_count(
-                dataset_obj.full_dataset_name, 
-                dataset_obj.get_item_count_in_collection(
-                    dataset_obj.bucket_util,dataset_obj.kv_bucket_obj, 
-                    dataset_obj.kv_scope_obj.name, dataset_obj.kv_collection_obj.name)):
-                self.fail("Data ingestion after collection recreation failed.")
-            
-            statement = 'SELECT VALUE v FROM '+ dataset_obj.full_dataset_name + ' v WHERE age > 2'
-            if not self.verify_index_used(statement, True, dataset_obj.index_name):
-                self.fail("Index was not used while querying the dataset")
-        
-        self.log.info("Test finished")
-    
     def test_KV_collection_deletion_does_not_effect_dataset_on_other_collections_in_same_scope(self):
         self.log.info("Test started")
         dataset_objs = list()
@@ -1779,7 +1658,6 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             
             if not self.verify_index_used(statement, True, dataset_obj.index_name):
                 self.fail("Index was not used while querying the dataset")
-        
         self.log.info("Test finished")
     
     def test_analytics_select_rbac_role_for_collections(self):
@@ -1801,7 +1679,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 count = 0
                 for collection in scope["collections"]:
                     dataset_name = "{0}-{1}-{2}".format(bucket.name,scope["name"],collection["name"])
-                    dataset_names.append(dataset_name)
+                    dataset_names.append((dataset_name,bucket.name,scope["name"],collection["name"]))
+                    self.log.info("Creating dataset {0}".format(dataset_name))
                     if not self.cbas_util.create_dataset_on_bucket(
                         cbas_bucket_name=Dataset.format_name(
                             bucket.name,scope["name"],collection["name"]), 
@@ -1812,47 +1691,51 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                         break
         
         rbac_username = "test_user"
-        dataset_name = random.choice(dataset_names)
-        kv_entity = dataset_name.split("-")
+        dataset_info = random.choice(dataset_names)
         user = [{'id': rbac_username, 'password': 'password', 'name': 'Some Name'}]
         _ = RbacBase().create_user_source(user, 'builtin', self.cluster.master)
         
         if self.input.param('collection_user', False):
             self.log.info("Granting analytics_select user access to following KV entity - {0}.{1}.{2}".format(
-                kv_entity[0], kv_entity[1], kv_entity[2]))
-            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + kv_entity[0] + ":" + kv_entity[1] + ":" + kv_entity[2] + "]"
-            response = self.rest.set_user_roles(rbac_username, payload)
+                dataset_info[1], dataset_info[2], dataset_info[3]))
+            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + dataset_info[1] + ":" + dataset_info[2] + ":" + dataset_info[3] + "]"
+            response = self.rest.add_set_builtin_user(rbac_username, payload)
         if self.input.param('scope_user', False):
             self.log.info("Granting analytics_select user access to following KV entity - {0}.{1}".format(
-                kv_entity[0], kv_entity[1]))
-            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + kv_entity[0] + ":" + kv_entity[1] + "]"
-            response = self.rest.set_user_roles(rbac_username, payload)
+                dataset_info[1], dataset_info[2]))
+            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + dataset_info[1] + ":" + dataset_info[2] + "]"
+            response = self.rest.add_set_builtin_user(rbac_username, payload)
         if self.input.param('bucket_user', False):
             self.log.info("Granting analytics_select user access to following KV entity - {0}".format(
-                kv_entity[0]))
-            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + kv_entity[0] + "]"
-            response = self.rest.set_user_roles(rbac_username, payload)
+                dataset_info[1]))
+            payload = "name=" + rbac_username + "&roles=analytics_select" + "[" + dataset_info[1] + "]"
+            response = self.rest.add_set_builtin_user(rbac_username, payload)
         
         for dataset_name in dataset_names:
-            cmd_get_num_items = "select count(*) from %s;" % Dataset.format_name(dataset_name)
+            cmd_get_num_items = "select count(*) from %s;" % Dataset.format_name(dataset_name[0])
             status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
                 cmd_get_num_items, username=rbac_username, password="password")
+            
             validate_error = False
             if self.input.param('bucket_user', False):
-                if kv_entity[0] in dataset_name and status == "success":
-                    self.log.info("Query passed with analytics select user")
-                else:
-                    validate_error = True
+                selected_kv_entity = dataset_info[1]
+                current_kv_entity = dataset_name[1]
             elif self.input.param('scope_user', False):
-                if kv_entity[1] in dataset_name and status == "success":
-                    self.log.info("Query passed with analytics select user")
-                else:
-                    validate_error = True
+                selected_kv_entity = "{0}-{1}".format(dataset_info[1],dataset_info[2])
+                current_kv_entity = "{0}-{1}".format(dataset_name[1],dataset_name[2] )
             elif self.input.param('collection_user', False):
-                if kv_entity[2] in dataset_name and status == "success":
+                selected_kv_entity = dataset_info[0]
+                current_kv_entity = dataset_name[0]
+            
+            if selected_kv_entity == current_kv_entity:
+                if status == "success":
                     self.log.info("Query passed with analytics select user")
                 else:
-                    validate_error = True
+                    self.fail("RBAC user is unable to query dataset {0}".format(dataset_name[0]))
+            else:
+                validate_error = True
+            
             if validate_error and not self.cbas_util.validate_error_in_response(
-                status, errors, "User must have permission"):
-                self.fail("RBAC user is able to query dataset {0}".format(dataset_name))
+                status, errors, "Unauthorized user"):
+                self.fail("RBAC user is able to query dataset {0}".format(dataset_name[0]))
+        self.log.info("Test finished")
