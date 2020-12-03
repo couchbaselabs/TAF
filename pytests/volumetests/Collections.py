@@ -44,17 +44,20 @@ class volume(CollectionBase):
         self.services_for_rebalance_in = self.input.param("services_for_rebalance_in", None)
 
         # Initialize parameters for index querying
-        self.n1ql_node = None
+        self.n1ql_nodes = None
         self.number_of_indexes = self.input.param("number_of_indexes", 0)
         if self.number_of_indexes > 0:
             self.set_memory_quota_kv_index()
-            self.n1ql_node = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
-                                                                           get_all_nodes=False,
-                                                                           servers=self.cluster.servers[
-                                                                                   :self.nodes_init],
-                                                                           master=self.cluster.master)
-            self.n1ql_rest = RestConnection(self.n1ql_node)
-            self.exclude_nodes.append(self.n1ql_node)
+            self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
+                                                                            get_all_nodes=True,
+                                                                            servers=self.cluster.servers[
+                                                                                    :self.nodes_init],
+                                                                            master=self.cluster.master)
+            self.n1ql_rest_connections = list()
+            for n1ql_node in self.n1ql_nodes:
+                self.n1ql_rest_connections.append(RestConnection(n1ql_node))
+                self.exclude_nodes.append(n1ql_node)
+            self.n1ql_turn_counter = 0  # To distribute the turn of using n1ql nodes for query. Start with first node
             indexes_to_build = self.create_indexes_and_initialize_queries()
             self.build_deferred_indexes(indexes_to_build)
         self.query_thread_flag = False
@@ -71,7 +74,7 @@ class volume(CollectionBase):
         if self.collect_pcaps:
             self.start_fetch_pcaps()
         result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(self.servers,
-                                                                          force_collect=True)
+                                                                           force_collect=True)
         if not self.crash_warning:
             self.assertFalse(result, msg=core_msg + stream_msg + asan_msg)
         if self.crash_warning and result:
@@ -79,7 +82,7 @@ class volume(CollectionBase):
 
     def set_memory_quota_kv_index(self):
         """
-        To set memory quota of Kv and index services before starting step 5 of volume test
+        To set memory quota of KV and index services before starting step 5 of volume test
         """
         if self.number_of_indexes == 0:
             return
@@ -88,7 +91,12 @@ class volume(CollectionBase):
             self.rest.set_service_memoryQuota(service="indexMemoryQuota", memoryQuota=3000)
 
     def run_cbq_query(self, query):
-        result = self.n1ql_rest.query_tool(query, timeout=1300)
+        """
+        To run cbq queries
+        Note: Do not run this in parallel
+        """
+        result = self.n1ql_rest_connections[self.n1ql_turn_counter].query_tool(query, timeout=1300)
+        self.n1ql_turn_counter = int((self.n1ql_turn_counter + 1) / len(self.n1ql_nodes))
         return result
 
     def wait_for_indexes_to_go_online(self, gsi_index_names, timeout=300):
