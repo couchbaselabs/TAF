@@ -5,6 +5,7 @@ from threading import Thread
 from BucketLib.BucketOperations import BucketHelper
 from basetestcase import BaseTestCase
 from Cb_constants import constants, CbServer, DocLoading
+from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from cb_tools.mc_stat import McStat
 from couchbase_helper.documentgenerator import doc_generator
@@ -15,6 +16,7 @@ from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from table_view import TableView
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -1011,6 +1013,169 @@ class basic_ops(BaseTestCase):
 
         # Close SDK and shell connections
         client.close()
+        for node in nodes_data.keys():
+            nodes_data[node]["shell"].disconnect()
+
+        self.validate_test_failure()
+
+    def test_MB_43055(self):
+        """
+        1. Load till low_wm
+        2. Make non_io_threads=0
+        3. Load few more docs and so that we do exceed the high_wm,
+           this schedules the item pager
+        4. Delete few docs to go below low_wm
+        5. Make non_io_threads=default. Now the item pager tries to run,
+           but finds mem_used < low_wat so exits without paging anything,
+           triggering the bug
+        6. Load docs to cross high_wm
+        7. Confirm that the item pager never runs successfully,
+           even though the memory usage is back above the high watermark
+        """
+        def perform_doc_op(op_type):
+            start = self.num_items
+            if op_type == "delete":
+                start = self.del_items
+            doc_gen = doc_generator(self.key, start, start+load_batch,
+                                    doc_size=self.doc_size)
+            doc_op_task = self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_gen, op_type,
+                timeout_secs=self.sdk_timeout,
+                print_ops_rate=False,
+                skip_read_on_error=True,
+                suppress_error_table=True,
+                batch_size=100,
+                process_concurrency=8)
+            self.task_manager.get_task_result(doc_op_task)
+            self.bucket_util._wait_for_stats_all_buckets()
+            if op_type == "create":
+                self.num_items += load_batch
+            elif op_type == "delete":
+                self.del_items += load_batch
+
+        def display_bucket_water_mark_values(t_node):
+            wm_tbl.rows = list()
+            a_stats = nodes_data[t_node]["cbstat"].all_stats(bucket.name)
+            wm_tbl.add_row(["High water_mark", a_stats["ep_mem_high_wat"],
+                            a_stats["ep_mem_high_wat_percent"]])
+            wm_tbl.add_row(["Low water_mark", a_stats["ep_mem_low_wat"],
+                            a_stats["ep_mem_low_wat_percent"]])
+            wm_tbl.add_row(["Num pager runs", a_stats["ep_num_pager_runs"],
+                            ""])
+            wm_tbl.add_row(["Memory Used", a_stats["mem_used"],
+                            ""])
+            wm_tbl.display("Memory stats")
+            return a_stats
+
+        stats = None
+        nodes_data = dict()
+        self.num_items = 0
+        self.del_items = 0
+        load_batch = 20000
+        low_wm_reached = False
+        high_wm_reached = False
+        wm_tbl = TableView(self.log.info)
+        bucket = self.bucket_util.buckets[0]
+
+        wm_tbl.set_headers(["Stat", "Memory Val", "Percent"])
+        kv_nodes = self.cluster_util.get_kv_nodes()
+
+        for node in kv_nodes:
+            shell = RemoteMachineShellConnection(node)
+            nodes_data[node] = dict()
+            nodes_data[node]["shell"] = shell
+            nodes_data[node]["cbstat"] = Cbstats(shell)
+            nodes_data[node]["eviction_start"] = False
+            nodes_data[node]["active_vbs"] = nodes_data[node][
+                "cbstat"].vbucket_list(bucket.name, "active")
+            nodes_data[node]["replica_vbs"] = nodes_data[node][
+                "cbstat"].vbucket_list(bucket.name, "replica")
+
+        target_node = choice(kv_nodes)
+        cbepctl = Cbepctl(nodes_data[target_node]["shell"])
+
+        self.log.info("Loading till low_water_mark is reached")
+        while not low_wm_reached:
+            perform_doc_op("create")
+            stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
+            if int(stats["mem_used"]) > int(stats["ep_mem_low_wat"]):
+                display_bucket_water_mark_values(target_node)
+                self.log.info("Low water_mark reached")
+                low_wm_reached = True
+
+                if int(stats["ep_num_pager_runs"]) != 0:
+                    self.log_failure("ItemPager has run while loading")
+                else:
+                    self.log.info("Setting num_nonio_threads=0")
+                    cbepctl.set(bucket.name,
+                                "flush_param", "num_nonio_threads", 0)
+
+        self.log.info("Loading docs till high_water_mark is reached")
+        while not high_wm_reached:
+            perform_doc_op("create")
+            stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
+            if int(stats["mem_used"]) > int(stats["ep_mem_high_wat"]):
+                display_bucket_water_mark_values(target_node)
+                self.log.info("High water_mark reached")
+                high_wm_reached = True
+
+        if not high_wm_reached:
+            self.log_failure("Failed to reach high_wm with the given load")
+
+        if int(stats["ep_num_pager_runs"]) != 0:
+            self.log_failure("ItemPager has run with non_io_threads=0")
+
+        self.log.info("Delete docs until the mem_used goes below low_wm")
+        low_wm_reached = False
+        while not low_wm_reached and self.del_items < self.num_items:
+            perform_doc_op("delete")
+            stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
+            if int(stats["mem_used"]) < int(stats["ep_mem_low_wat"]):
+                low_wm_reached = True
+                display_bucket_water_mark_values(target_node)
+                self.log.info("Low water_mark reached")
+
+        if int(stats["ep_num_pager_runs"]) != 0:
+            self.log_failure("ItemPager ran after del_op & non_io_threads=0")
+
+        self.log.info("Setting num_nonio_threads=8")
+        cbepctl.set(bucket.name, "flush_param", "num_nonio_threads", 8)
+
+        retry_count = 0
+        while retry_count < 10:
+            retry_count += 1
+            stats = display_bucket_water_mark_values(target_node)
+            if int(stats["ep_num_pager_runs"]) == 1:
+                break
+            self.sleep(1, "ep_num_pager_runs actual::0, expected::1. "
+                          " Will retry..")
+        else:
+            self.log_failure("ItemPager not run with lower_wm levels")
+
+        self.log.info("Loading docs till high_water_mark is reached")
+        high_wm_reached = False
+        while not high_wm_reached:
+            perform_doc_op("create")
+            stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
+            if int(stats["mem_used"]) > int(stats["ep_mem_high_wat"]):
+                high_wm_reached = True
+                self.log.info("High water_mark reached")
+                retry_count = 0
+                while retry_count < 5:
+                    retry_count += 1
+                    stats = display_bucket_water_mark_values(target_node)
+                    if int(stats["ep_num_pager_runs"]) > 1:
+                        break
+                    self.sleep(1, "ep_num_pager_runs=%s, expected > 1"
+                                  % stats["ep_num_pager_runs"])
+                else:
+                    self.log_failure("ItemPager not triggered with high_wm")
+
+            elif int(stats["ep_num_pager_runs"]) > 5:
+                high_wm_reached = True
+                self.log.info("ep_num_pager_runs started running")
+
+        # Closing all shell connections
         for node in nodes_data.keys():
             nodes_data[node]["shell"].disconnect()
 
