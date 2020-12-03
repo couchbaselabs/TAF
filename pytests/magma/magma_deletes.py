@@ -158,9 +158,9 @@ class BasicDeleteTests(BasicCrudTests):
                     break
 
             msg = "Disk Usage={}MB > {} * init_Usage={}MB"
-            self.assertIs(_res > 1.7 * self.disk_usage[
+            self.assertIs(_res > 2 * self.disk_usage[
                 self.disk_usage.keys()[0]], False,
-                msg.format(disk_usage[0], 0.5,
+                msg.format(disk_usage[0], 2,
                            self.disk_usage[self.disk_usage.keys()[0]]))
 
             disk_usage = self.get_disk_usage(
@@ -173,9 +173,9 @@ class BasicDeleteTests(BasicCrudTests):
                     msg.format(count+1, disk_usage[3], disk_usage[2]))
             else:
                 msg = "Iteration={}, Disk Usage={}MB > {} * init_Usage={}MB"
-                self.assertIs(disk_usage[0] > 1.7 * self.disk_usage[
+                self.assertIs(disk_usage[0] > 2 * self.disk_usage[
                     self.disk_usage.keys()[0]],
-                    False, msg.format(count+1, disk_usage[0], 1.7,
+                    False, msg.format(count+1, disk_usage[0], 2,
                                       self.disk_usage[self.disk_usage.keys()[0]]))
             #Space Amplifacation check Ends
             count += 1
