@@ -96,7 +96,7 @@ class volume(CollectionBase):
         Note: Do not run this in parallel
         """
         result = self.n1ql_rest_connections[self.n1ql_turn_counter].query_tool(query, timeout=1300)
-        self.n1ql_turn_counter = int((self.n1ql_turn_counter + 1) / len(self.n1ql_nodes))
+        self.n1ql_turn_counter = (self.n1ql_turn_counter + 1) % len(self.n1ql_nodes)
         return result
 
     def wait_for_indexes_to_go_online(self, gsi_index_names, timeout=300):
