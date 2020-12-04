@@ -24,7 +24,7 @@ class volume(AutoFailoverBaseTest):
         self.iterations = self.input.param("iterations", 1)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_with_CRUD_on_collections")
-        self.spec_name_eph = self.input.param("bucket_spec_eph", "multi_bucket.ephemeral_buckets_for_volume_test")
+        self.spec_name_eph = self.input.param("bucket_spec_eph", "volume_templates.ephemeral_buckets_for_volume_test")
         self.skip_validations = self.input.param("skip_validations", True)
         self.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
 
@@ -35,7 +35,7 @@ class volume(AutoFailoverBaseTest):
         if self.collect_pcaps:
             self.start_fetch_pcaps()
         result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(self.servers,
-                                                                          force_collect=True)
+                                                                           force_collect=True)
         if not self.crash_warning:
             self.assertFalse(result, msg=core_msg + stream_msg + asan_msg)
         if self.crash_warning and result:
