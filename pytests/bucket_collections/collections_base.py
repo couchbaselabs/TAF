@@ -92,6 +92,7 @@ class CollectionBase(BaseTestCase):
                           % (bucket.name, result))
             if not self.skip_collections_cleanup:
                 self.bucket_util.remove_scope_collections_for_bucket(bucket)
+        shell.disconnect()
         if self.validate_docs_count_during_teardown:
             self.bucket_util.validate_docs_per_collections_all_buckets()
         super(CollectionBase, self).tearDown()
