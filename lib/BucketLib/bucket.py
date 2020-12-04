@@ -95,8 +95,15 @@ class Collection(object):
         return {"name": self.name, "maxTTL": self.maxTTL}
 
     @staticmethod
-    def flushed(collection_obj):
-        collection_obj.num_items = 0
+    def flushed(collection_obj, skip_resetting_num_items=False):
+        """
+        :collection_obj: collection_obj for which index, and num_items have to be set to 0
+        :skip_resetting_num_items: Boolean on whether to skip resetting num_items
+            this argument is to support cases where we need to skip resetting num_items,
+            so that same number of items can be reloaded into the collection after bucket flush
+        """
+        if not skip_resetting_num_items:
+            collection_obj.num_items = 0
         collection_obj.doc_index = (0, 0)
         collection_obj.sub_doc_index = (0, 0)
 

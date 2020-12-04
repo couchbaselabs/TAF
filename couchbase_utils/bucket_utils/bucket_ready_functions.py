@@ -820,17 +820,20 @@ class CollectionUtils(DocLoaderUtils):
         collection.is_dropped = True
 
     @staticmethod
-    def mark_collection_as_flushed(bucket, scope_name, collection_name):
+    def mark_collection_as_flushed(bucket, scope_name, collection_name, skip_resetting_num_items=False):
         """
         Function to mark the collection object as flushed
         :param bucket: Bucket object under which the collection is flushed
         :param scope_name: Scope name under which the collection is flushed
         :param collection_name: Collection name to be marked as flushed
+        :param skip_resetting_num_items: whether to skip resetting num_items of collection object;
+                useful when same number of items need to be reloaded into the collection after
+                bucket flush
         :return:
         """
         scope = ScopeUtils.get_scope_obj(bucket, scope_name)
         collection = CollectionUtils.get_collection_obj(scope, collection_name)
-        Collection.flushed(collection)
+        Collection.flushed(collection, skip_resetting_num_items=skip_resetting_num_items)
 
     @staticmethod
     def create_collection(node, bucket,
@@ -1970,7 +1973,7 @@ class BucketUtils(ScopeUtils):
                 raise Exception(raise_exception)
         return success
 
-    def flush_bucket(self, kv_node, bucket):
+    def flush_bucket(self, kv_node, bucket, skip_resetting_num_items=False):
         self.log.debug('Flushing existing bucket {0} on {1}'
                        .format(bucket, kv_node))
         bucket_conn = BucketHelper(kv_node)
@@ -1987,15 +1990,16 @@ class BucketUtils(ScopeUtils):
                             bucket, s_name, only_names=True):
                         BucketUtils.mark_collection_as_flushed(bucket,
                                                                s_name,
-                                                               c_name)
+                                                               c_name,
+                                                               skip_resetting_num_items=skip_resetting_num_items)
             return status
 
-    def flush_all_buckets(self, kv_node):
+    def flush_all_buckets(self, kv_node, skip_resetting_num_items=False):
         status = dict()
         self.log.debug("Flushing existing buckets '%s'"
                        % [bucket.name for bucket in self.buckets])
         for bucket in self.buckets:
-            status[bucket] = self.flush_bucket(kv_node, bucket)
+            status[bucket] = self.flush_bucket(kv_node, bucket, skip_resetting_num_items=skip_resetting_num_items)
         return status
 
     def update_bucket_property(self, bucket, ram_quota_mb=None, auth_type=None,

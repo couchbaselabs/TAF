@@ -46,7 +46,12 @@ class volume(CollectionBase):
         # Initialize parameters for index querying
         self.n1ql_nodes = None
         self.number_of_indexes = self.input.param("number_of_indexes", 0)
+        self.flush_buckets_before_indexes_creation = False
         if self.number_of_indexes > 0:
+            self.flush_buckets_before_indexes_creation = \
+                self.input.param("flush_buckets_before_indexes_creation", True)
+            if self.flush_buckets_before_indexes_creation:
+                self.bucket_util.flush_all_buckets(self.cluster.master)
             self.set_memory_quota_kv_index()
             self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
                                                                             get_all_nodes=True,
@@ -245,6 +250,37 @@ class volume(CollectionBase):
                                                        async_load=async_load)
         return task
 
+    def reload_data_into_buckets(self):
+        """
+        Initial data load happens in collections_base. But this method loads
+        data again when buckets have been flushed during volume test
+        """
+        doc_loading_spec = \
+            self.bucket_util.get_crud_template_from_package(
+                self.data_spec_name)
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.bucket_util.buckets,
+                doc_loading_spec,
+                mutation_num=0,
+                batch_size=self.batch_size)
+        if doc_loading_task.result is False:
+            self.fail("Initial reloading failed")
+        ttl_buckets = [
+            "multi_bucket.buckets_for_rebalance_tests_with_ttl",
+            "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
+            "volume_templates.buckets_for_volume_tests_with_ttl"]
+
+        # Verify initial doc load count
+        self.bucket_util._wait_for_stats_all_buckets()
+        if self.spec_name not in ttl_buckets:
+            self.bucket_util.validate_docs_per_collections_all_buckets()
+
+        # Prints bucket stats after doc_ops
+        self.bucket_util.print_bucket_stats()
+
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         if not self.skip_validations:
@@ -317,8 +353,12 @@ class volume(CollectionBase):
             self.query_thread = threading.Thread(target=self.run_select_query)
             self.query_thread_flag = True
             self.query_thread.start()
+        self.log.info("Finished steps 1-4 successfully in setup")
         while self.loop < self.iterations:
-            self.log.info("Finished steps 1-4 successfully in setup")
+            if self.loop > 0 or self.flush_buckets_before_indexes_creation:
+                self.log.info("Reloading items to buckets")
+                self.reload_data_into_buckets()
+            #########################################################################################################################
             self.log.info("Step 5: Rebalance in with Loading of docs")
             if self.data_load_stage == "before":
                 task = self.data_load_collection(async_load=False)
@@ -525,11 +565,11 @@ class volume(CollectionBase):
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
-            self.log.info("Step 18: Flush the bucket and start the entire process again")
+            self.log.info("Step 18: Flush bucket(s) and start the entire process again")
             self.loop += 1
             if self.loop < self.iterations:
-                # Flush the bucket
-                self.bucket_util.flush_all_buckets(self.cluster.master)
+                # Flush buckets(s)
+                self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
                 self.sleep(10)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
                     self.nodes_cluster = self.cluster.nodes_in_cluster[:]

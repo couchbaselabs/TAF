@@ -13,7 +13,7 @@ spec = {
     Bucket.replicaNumber: Bucket.ReplicaNum.TWO,
     Bucket.ramQuotaMB: 100,
     Bucket.replicaIndex: 1,
-    Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
+    Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
     Bucket.priority: Bucket.Priority.LOW,
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
     Bucket.maxTTL: 0,
