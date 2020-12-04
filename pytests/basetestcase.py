@@ -759,7 +759,7 @@ class BaseTestCase(unittest.TestCase):
                 warnMessages = shell.execute_command("grep -r 'WARN'" + logFile.strip("\n")
                                                      + "| grep -v Slow "
                                                      + "| grep -v 'The stream closed early because the conn was"
-                                                       " disconnected'")[0]
+                                                     + " disconnected'")[0]
                 if warnMessages:
                     if check_if_new_messages(warnMessages):
                         print(server.ip + " : Found WARN message in " + logFile.strip("\n"))
