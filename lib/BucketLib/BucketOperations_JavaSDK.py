@@ -13,12 +13,10 @@ from com.couchbase.client.java.error import BucketDoesNotExistException
 
 
 class BucketHelper(BucketHelperRest, SDKClient):
-
-    def __init__(self,server):
+    def __init__(self, server):
         self.server = server
         super(BucketHelper, self).__init__(server)
         super(SDKClient, self).__init__(server)
-        pass
 
     def bucket_exists(self, bucket):
         try:

@@ -19,13 +19,6 @@ class CollectionsDgmSteady(CollectionBase):
         self.bucket = self.bucket_util.buckets[0]
 
     def tearDown(self):
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstat_obj = Cbstats(shell)
-        for bucket in self.bucket_util.buckets:
-            result = cbstat_obj.all_stats(
-                bucket.name, field_to_grep="vb_active_perc_mem_resident")
-            self.log.info("Bucket: %s, Resident ratio(DGM): %s%%"
-                          % (bucket.name, result))
         super(CollectionsDgmSteady, self).tearDown()
 
     def get_common_spec(self):

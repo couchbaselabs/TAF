@@ -329,40 +329,33 @@ class Cbstats(CbCmdBase):
         return self._execute_cmd(cmd)
 
     # Below are wrapper functions for above command executor APIs
-    def all_stats(self, bucket_name, field_to_grep, stat_name="all"):
+    def all_stats(self, bucket_name, stat_name="all"):
         """
         Get a particular value of stat from the command,
           cbstats localhost:port all
-
         Arguments:
         :bucket_name   - Name of the bucket to get the stats
         :stat_name     - Any valid stat_command accepted by cbstats
-        :field_to_grep - Target stat name string to grep.
-
         Returns:
-        :result - Value of the 'field_to_grep' using regexp.
-                  If not matched, 'None'
-
+        :result - Dict of stat_key:value
         Raise:
         :Exception returned from command line execution (if any)
         """
 
-        result = None
-        output, error = self.get_stats(bucket_name, stat_name,
-                                       field_to_grep=field_to_grep)
+        result = dict()
+        output, error = self.get_stats(bucket_name, stat_name)
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        pattern = "[ \t]*{0}[ \t]*:[ \t]+([a-zA-Z0-9]+)".format(field_to_grep)
-        regexp = re.compile(pattern)
-        if type(output) is not list:
-            output = [output]
-        for line in output:
-            match_result = regexp.match(line)
-            if match_result:
-                result = match_result.group(1)
-                break
+        if type(output) is str:
+            output = output.split("\n")
 
+        pattern = "[ \t]*([0-9A-Za-z_]+)[ \t]*:[ \t]+([a-zA-Z0-9\-\.\: ]+)"
+        pattern = re.compile(pattern)
+        for line in output:
+            match_result = pattern.match(line)
+            if match_result:
+                result[match_result.group(1)] = match_result.group(2)
         return result
 
     def magma_stats(self, bucket_name, field_to_grep=None,

@@ -2377,11 +2377,10 @@ class StatsWaitTask(Task):
             try:
                 for cb_stat_obj in self.cbstatObjList:
                     tem_stat = cb_stat_obj.all_stats(self.bucket.name,
-                                                     field_to_grep=self.stat,
                                                      stat_name=self.statCmd)
-                    val_dict[cb_stat_obj.shellConn.ip] = tem_stat
-                    if tem_stat and tem_stat != "None":
-                        stat_result += int(tem_stat)
+                    val_dict[cb_stat_obj.shellConn.ip] = tem_stat[self.stat]
+                    if self.stat in tem_stat:
+                        stat_result += int(tem_stat[self.stat])
             except Exception as error:
                 if retry > 0:
                     retry -= 1

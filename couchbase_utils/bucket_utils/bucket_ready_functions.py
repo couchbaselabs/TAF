@@ -3900,15 +3900,13 @@ class BucketUtils(ScopeUtils):
             shell = RemoteMachineShellConnection(server)
             cbstat_obj = Cbstats(shell)
             while time.time() - start < wait_time:
-                result = None
                 try:
-                    result = cbstat_obj.all_stats(bucket.name,
-                                                  "ep_warmup_thread")
-                except:
-                    pass
-                if result is not None and result == "complete":
-                    warmed_up = True
-                    break
+                    result = cbstat_obj.all_stats(bucket.name)
+                    if result["ep_warmup_thread"] == "complete":
+                        warmed_up = True
+                        break
+                except Exception as e:
+                    self.log.warning("Exception during cbstat all cmd: %s" % e)
                 sleep(2, "Warm-up not complete for %s on %s" % (bucket.name,
                                                                 server.ip))
             shell.disconnect()
