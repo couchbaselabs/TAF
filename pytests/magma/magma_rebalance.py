@@ -636,7 +636,7 @@ class MagmaRebalance(MagmaBaseTest):
         collections = self.buckets[0].scopes[self.scope_name].collections.keys()
         self.log.info("collections list is {}".format(collections))
 
-        if self.data_load_stage == "before" or self.data_load_stage == "during":
+        if self.data_load_stage == "before":
             tasks_info = dict()
             if self.num_collections_to_drop > 0:
                 self.collections.remove(CbServer.default_collection)
@@ -723,6 +723,36 @@ class MagmaRebalance(MagmaBaseTest):
                                                        failover_nodes=self.cluster.servers[:self.nodes_init]
                                                        [-self.nodes_failover:]
                                                        )
+        if self.data_load_stage == "during":
+            self.sleep(10, "wait for rebalance to start")
+            tasks_info = dict()
+            if self.num_collections_to_drop > 0:
+                self.collections.remove(CbServer.default_collection)
+                collections = self.collections[(self.num_collections_to_drop):]
+                collections_to_drop = self.collections[:self.num_collections_to_drop]
+                collections.append(CbServer.default_collection)
+                self.collections.append(CbServer.default_collection)
+                self.log.debug("collections list after dropping collections {}".format(collections))
+                self.log.debug("collections_to_drop {}".format(collections_to_drop))
+            for collection in collections:
+                tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
+                                                 ignore_exceptions=self.ignore_exceptions,
+                                                 scope=scope_name,
+                                                 collection=collection,
+                                                 _sync=False)
+                tasks_info.update(tem_tasks_in.items())
+            if self.num_collections_to_drop > 0:
+                self.log.info("Starting to drop collections")
+                for collection in collections_to_drop:
+                    self.log.info("Collection to be dropped {}".format(collection))
+                    for bucket in self.bucket_util.buckets:
+                        self.bucket_util.drop_collection(self.cluster.master, bucket,
+                                                     scope_name=scope_name,
+                                                     collection_name=collection)
+                        self.bucket_util.buckets[self.bucket_util.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
+                    self.collections.remove(collection)
+                #self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
+                self.log.debug("collections list after dropping collections is {}".format(self.collections))
         if not self.warmup:
             self.wait_for_rebalance_to_complete(rebalance)
         if self.data_load_stage == "before" or self.data_load_stage == "during":
