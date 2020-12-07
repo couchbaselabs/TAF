@@ -51,7 +51,7 @@ class volume(CollectionBase):
             self.flush_buckets_before_indexes_creation = \
                 self.input.param("flush_buckets_before_indexes_creation", True)
             if self.flush_buckets_before_indexes_creation:
-                self.bucket_util.flush_all_buckets(self.cluster.master)
+                self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
             self.set_memory_quota_kv_index()
             self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
                                                                             get_all_nodes=True,
@@ -92,8 +92,8 @@ class volume(CollectionBase):
         if self.number_of_indexes == 0:
             return
         else:
-            self.rest.set_service_memoryQuota(service="memoryQuota", memoryQuota=18000)
-            self.rest.set_service_memoryQuota(service="indexMemoryQuota", memoryQuota=3000)
+            self.rest.set_service_memoryQuota(service="memoryQuota", memoryQuota=10000)
+            self.rest.set_service_memoryQuota(service="indexMemoryQuota", memoryQuota=11000)
 
     def run_cbq_query(self, query):
         """
@@ -141,6 +141,7 @@ class volume(CollectionBase):
         query = "select state from system:indexes where state='online'"
         result = self.run_cbq_query(query)
         self.log.info("online indexes count: {0}".format(len(result['results'])))
+        self.sleep(600, "Wait after building indexes")
 
     def create_indexes_and_initialize_queries(self):
         """
@@ -189,7 +190,7 @@ class volume(CollectionBase):
                 result = self.run_cbq_query(select_query)
                 if result['status'] != "success":
                     self.log.warn("Query failed: {0}".format(select_query))
-                time.sleep(2)
+                time.sleep(3)
         self.log.info("Stopping select queries")
 
     # Stopping and restarting the memcached process
