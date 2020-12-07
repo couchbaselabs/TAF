@@ -261,7 +261,23 @@ class TravelSample(Bucket):
         bucket_param = dict()
         bucket_param["name"] = "travel-sample"
         super(TravelSample, self).__init__(bucket_param)
-        self.stats.expected_item_count = 31591
+        self.stats.expected_item_count = 63182
+
+        # Update scope-collections with num_items
+        self.scopes[CbServer.default_scope].collections[
+            CbServer.default_collection].num_items = 31591
+        s_name = "inventory"
+        scope = Scope({"name": s_name})
+        # Collection data format: (col_name, item_count)
+        inventory_collections = [["airline", 187],
+                                 ["airport", 1968],
+                                 ["hotel", 917],
+                                 ["landmark", 4495],
+                                 ["route", 24024]]
+        for c_data in inventory_collections:
+            scope.collections[s_name] = Collection({"name": c_data[0],
+                                                    "num_items": c_data[1]})
+        self.scopes[s_name] = scope
 
 
 class BeerSample(Bucket):
@@ -270,6 +286,9 @@ class BeerSample(Bucket):
         bucket_param["name"] = "beer-sample"
         super(BeerSample, self).__init__(bucket_param)
         self.stats.expected_item_count = 7303
+        # Update scope-collections with num_items
+        self.scopes[CbServer.default_scope].collections[
+            CbServer.default_collection].num_items = 7303
 
 
 class GamesimSample(Bucket):
@@ -278,3 +297,6 @@ class GamesimSample(Bucket):
         bucket_param["name"] = "gamesim-sample"
         super(GamesimSample, self).__init__(bucket_param)
         self.stats.expected_item_count = 586
+        # Update scope-collections with num_items
+        self.scopes[CbServer.default_scope].collections[
+            CbServer.default_collection].num_items = 586

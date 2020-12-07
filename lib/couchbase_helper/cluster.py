@@ -595,7 +595,8 @@ class ServerTasks(object):
         _task = self.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp,
             flag=flag, persist_to=persist_to, replicate_to=replicate_to,
-            only_store_hash=only_store_hash, batch_size=batch_size, pause_secs=pause_secs,
+            only_store_hash=only_store_hash, batch_size=batch_size,
+            pause_secs=pause_secs,
             timeout_secs=timeout_secs, compression=compression,
             process_concurrency=process_concurrency, retries=retries,
             active_resident_threshold=active_resident_threshold,
@@ -608,7 +609,8 @@ class ServerTasks(object):
             dgm_batch=dgm_batch,
             scope=scope,
             collection=collection)
-        return self.jython_task_manager.get_task_result(_task)
+        self.jython_task_manager.get_task_result(_task)
+        return _task
 
     def verify_data(self, server, bucket, kv_store, timeout=None,
                     compression=None):
