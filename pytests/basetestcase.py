@@ -756,7 +756,7 @@ class BaseTestCase(unittest.TestCase):
                         result = True
                         break
                 # Check for WARN messages in logs
-                warnMessages = shell.execute_command("grep -r 'WARN'" + logFile.strip("\n")
+                warnMessages = shell.execute_command("grep -r 'WARN' " + logFile.strip("\n")
                                                      + "| grep -v Slow "
                                                      + "| grep -v 'The stream closed early because the conn was"
                                                      + " disconnected'")[0]
