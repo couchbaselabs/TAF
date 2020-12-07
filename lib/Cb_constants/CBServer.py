@@ -14,6 +14,7 @@ class CbServer(object):
     n1ql_port = 8093
     index_port = 9102
     eventing_port = 8096
+    backup_port = 8097
 
     memcached_port = 11210
     moxi_port = 11211

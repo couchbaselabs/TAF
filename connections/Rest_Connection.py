@@ -19,6 +19,11 @@ import requests
 
 
 class RestConnection(object):
+    DELETE = "DELETE"
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+
     def __new__(self, serverInfo={}, node=None):
         # allow port to determine
         # behavior of rest connection
@@ -48,6 +53,7 @@ class RestConnection(object):
         fts_port = constants.fts_port
         query_port = constants.n1ql_port
         eventing_port = constants.eventing_port
+        backup_port = constants.backup_port
         if isinstance(serverInfo, dict):
             self.ip = serverInfo["ip"]
             self.username = serverInfo["username"]
@@ -107,6 +113,7 @@ class RestConnection(object):
         self.queryUrl = generic_url % (url_host, query_port)
         self.ftsUrl = generic_url % (url_host, fts_port)
         self.eventing_baseUrl = generic_url % (url_host, eventing_port)
+        self.backup_url = generic_url % (url_host, backup_port)
 
         # for Node is unknown to this cluster error
         node_unknown_msg = "Node is unknown to this cluster"
