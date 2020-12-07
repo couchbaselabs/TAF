@@ -13,6 +13,7 @@ from security_utils.x509main import x509main
 from shutil import copytree
 from membase.api.rest_client import RestHelper
 from cbas_utils.cbas_utils import Dataset
+from Cb_constants import CbServer
 
 rbac_users_created = {}
 
@@ -249,7 +250,8 @@ class CBASExternalLinks(CBASBaseTest):
                 self.log.info("Waiting for data ingestion to complete")
                 if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete(
                     ["{0}.{1}".format(self.link_info["dataverse"],self.cbas_dataset_name)],
-                    self.sample_bucket.stats.expected_item_count, 300):
+                    self.sample_bucket.scopes[CbServer.default_scope].collections[
+                        CbServer.default_collection].num_items, 300):
                     self.fail("Data Ingestion did not complete")
                 self.log.info("Setting primary index on dataset")
                 if set_primary_index and not self.set_primary_index(to_cluster.rest, self.sample_bucket.name):
@@ -266,7 +268,9 @@ class CBASExternalLinks(CBASBaseTest):
 
         if wait_for_ingestion:
             assert(self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                           self.sample_bucket.stats.expected_item_count + number_of_docs,
+                                                                           self.sample_bucket.scopes[
+                                                                               CbServer.default_scope].collections[
+                                                                                   CbServer.default_collection].num_items + number_of_docs,
                                                                            300), "Data Ingestion did not complete")
         return to_cluster
 
@@ -672,7 +676,8 @@ class CBASExternalLinks(CBASBaseTest):
         if operation == "create":
             if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete(
                 ["{0}.{1}".format(self.link_info["dataverse"],self.cbas_dataset_name)],
-                self.sample_bucket.stats.expected_item_count + 10, 300):
+                self.sample_bucket.scopes[CbServer.default_scope].collections[
+                    CbServer.default_collection].num_items + 10, 300):
                 raise Exception("Data Ingestion did not complete")
         else:
             end_time = time.time() + timeout
@@ -733,7 +738,8 @@ class CBASExternalLinks(CBASBaseTest):
         result = self.task.jython_task_manager.get_task_result(task)
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete(
             ["{0}.{1}".format(self.link_info["dataverse"],self.cbas_dataset_name)],
-            self.sample_bucket.stats.expected_item_count + 10, 300):
+            self.sample_bucket.scopes[CbServer.default_scope].collections[
+                CbServer.default_collection].num_items + 10, 300):
                 raise Exception("Data Ingestion did not complete")
 
         # Create users with all RBAC roles.
@@ -1196,7 +1202,9 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Allow ingestion to complete
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + 1000, 300):
+                                                                            self.sample_bucket.scopes[
+                                                                                CbServer.default_scope].collections[
+                                                                                    CbServer.default_collection].num_items + 1000, 300):
             self.fail("Data Ingestion did not complete")
 
     def test_data_ingestion_after_reducing_and_then_restoring_remote_user_permission(self):
@@ -1237,7 +1245,9 @@ class CBASExternalLinks(CBASBaseTest):
 
             self.log.info("Validate not all new data has been ingested into dataset")
             if self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
-                                                                                  self.sample_bucket.stats.expected_item_count + self.num_items,
+                                                                                  self.sample_bucket.scopes[
+                                                                                      CbServer.default_scope].collections[
+                                                                                          CbServer.default_collection].num_items + self.num_items,
                                                                                   num_tries=1):
                 self.fail("New data was ingested into dataset even after remote user permission was revoked.")
 
@@ -1254,7 +1264,9 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Allow ingestion to complete
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + self.num_items,
+                                                                            self.sample_bucket.scopes[
+                                                                                CbServer.default_scope].collections[
+                                                                                    CbServer.default_collection].num_items + self.num_items,
                                                                             300):
             self.fail("Data Ingestion did not complete")
 
@@ -1308,7 +1320,9 @@ class CBASExternalLinks(CBASBaseTest):
 
             self.log.info("Validate not all new data has been ingested into dataset")
             if self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
-                                                                                  self.sample_bucket.stats.expected_item_count + self.num_items,
+                                                                                  self.sample_bucket.scopes[
+                                                                                      CbServer.default_scope].collections[
+                                                                                          CbServer.default_collection].num_items + self.num_items,
                                                                                   num_tries=1):
                 self.fail("New data was ingested into dataset even after remote user permission was revoked.")
 
@@ -1330,12 +1344,16 @@ class CBASExternalLinks(CBASBaseTest):
         # Allow ingestion to complete
         if not self.input.param("has_bucket_access", False):
             if self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + self.num_items,
+                                                                            self.sample_bucket.scopes[
+                                                                                CbServer.default_scope].collections[
+                                                                                    CbServer.default_collection].num_items + self.num_items,
                                                                             300):
                 self.fail("Data Ingestion started when it should not.")
         else:
             if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                                self.sample_bucket.stats.expected_item_count + self.num_items,
+                                                                                self.sample_bucket.scopes[
+                                                                                    CbServer.default_scope].collections[
+                                                                                        CbServer.default_collection].num_items + self.num_items,
                                                                                 300):
                 self.fail("Data Ingestion did not complete")
 
@@ -1403,7 +1421,9 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Link connection Failed.")
 
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count, 300):
+                                                                            self.sample_bucket.scopes[
+                                                                                CbServer.default_scope].collections[
+                                                                                    CbServer.default_collection].num_items, 300):
             self.fail("Data Ingestion did not resume")
 
     def test_data_ingestion_resumes_when_network_up_before_timeout(self):
@@ -1432,7 +1452,9 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Allow ingestion to complete
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + self.num_items,
+                                                                            self.sample_bucket.scopes[
+                                                                                CbServer.default_scope].collections[
+                                                                                    CbServer.default_collection].num_items + self.num_items,
                                                                             300):
             self.fail("Data Ingestion did not complete")
 
@@ -1463,7 +1485,9 @@ class CBASExternalLinks(CBASBaseTest):
                                                                               username=self.analytics_username):
             self.fail("Link connection failed")
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count,
+                                                                            self.sample_bucket.scopes[
+                                                                                CbServer.default_scope].collections[
+                                                                                    CbServer.default_collection].num_items,
                                                                             300):
             self.fail("Data Ingestion did not resume")
 
@@ -1484,7 +1508,9 @@ class CBASExternalLinks(CBASBaseTest):
             self.sleep(10)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
-                                                                                  self.sample_bucket.stats.expected_item_count):
+                                                                                  self.sample_bucket.scopes[
+                                                                                      CbServer.default_scope].collections[
+                                                                                          CbServer.default_collection].num_items):
             self.fail("Mismatch between number of documents in dataset and remote bucket")
 
     def test_dataset_behaviour_on_remote_bucket_deletion_and_recreation(self):
@@ -1527,7 +1553,9 @@ class CBASExternalLinks(CBASBaseTest):
                                                                               expected_error=expected_error_msg):
             self.fail("Error while connecting link")
         if with_force_flag and not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
-                                                                                                      self.sample_bucket.stats.expected_item_count):
+                                                                                                      self.sample_bucket.scopes[
+                                                                                                          CbServer.default_scope].collections[
+                                                                                                              CbServer.default_collection].num_items):
             self.fail("Mismatch between number of documents in dataset and remote bucket")
 
     def test_data_ingestion_for_data_updation_in_remote_cluster(self):
@@ -1539,7 +1567,9 @@ class CBASExternalLinks(CBASBaseTest):
         result = self.task.jython_task_manager.get_task_result(task)
 
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count + 10,
+                                                                            self.sample_bucket.scopes[
+                                                                                CbServer.default_scope].collections[
+                                                                                    CbServer.default_collection].num_items + 10,
                                                                             300):
             self.fail("Data Ingestion did not complete")
 
@@ -1563,7 +1593,9 @@ class CBASExternalLinks(CBASBaseTest):
         result = self.task.jython_task_manager.get_task_result(task)
 
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                            self.sample_bucket.stats.expected_item_count,
+                                                                            self.sample_bucket.scopes[
+                                                                                CbServer.default_scope].collections[
+                                                                                    CbServer.default_collection].num_items,
                                                                             300):
             self.fail("Data Ingestion did not complete")
 
@@ -1632,7 +1664,9 @@ class CBASExternalLinks(CBASBaseTest):
             self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
-                                                                                  self.sample_bucket.stats.expected_item_count +
+                                                                                  self.sample_bucket.scopes[
+                                                                                      CbServer.default_scope].collections[
+                                                                                          CbServer.default_collection].num_items +
                                                                                   self.num_items):
             self.fail("Number of items in dataset do not match number of items in bucket")
 
@@ -1678,7 +1712,9 @@ class CBASExternalLinks(CBASBaseTest):
             self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
-                                                                                  self.sample_bucket.stats.expected_item_count
+                                                                                  self.sample_bucket.scopes[
+                                                                                      CbServer.default_scope].collections[
+                                                                                          CbServer.default_collection].num_items
                                                                                   + self.num_items, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
 
@@ -1734,7 +1770,9 @@ class CBASExternalLinks(CBASBaseTest):
             self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
-                                                                                  self.sample_bucket.stats.expected_item_count
+                                                                                  self.sample_bucket.scopes[
+                                                                                      CbServer.default_scope].collections[
+                                                                                          CbServer.default_collection].num_items
                                                                                   + self.num_items):
             self.fail("Number of items in dataset do not match number of items in bucket")
 
@@ -1792,7 +1830,9 @@ class CBASExternalLinks(CBASBaseTest):
             self.analytics_cluster.cbas_util.log_concurrent_query_outcome(self.analytics_cluster.master, handles)
 
         if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name,
-                                                                                  self.sample_bucket.stats.expected_item_count
+                                                                                  self.sample_bucket.scopes[
+                                                                                      CbServer.default_scope].collections[
+                                                                                          CbServer.default_collection].num_items
                                                                                   + self.num_items, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
 

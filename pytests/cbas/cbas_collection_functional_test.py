@@ -1262,6 +1262,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout, scope="scope1",
             collection="collection_1")
+        self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util._expiry_pager()
         
         self.log.info("Creating dataset {0}".format(self.cbas_dataset_name))

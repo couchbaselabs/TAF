@@ -101,13 +101,13 @@ class CBASExternalLinks(CBASBaseTest):
             dataverse_name = Dataset.create_name_with_cardinality(dataverse_cardinality)
             if not self.cbas_util.validate_dataverse_in_metadata(
                 dataverse_name) and not self.cbas_util.create_dataverse_on_cbas(
-                    dataverse_name=Dataset.format_name(dataverse_name)):
+                    dataverse_name=Dataset.format_name_for_error(True,dataverse_name)):
                 self.fail("Creation of Dataverse {0} failed".format(
                     dataverse_name))
         else:
             dataverse_name = "Default"
         self.link_info = dict()
-        self.link_info["dataverse"] = Dataset.format_name(dataverse_name)
+        self.link_info["dataverse"] = Dataset.format_name_for_error(True,dataverse_name)
         self.link_info["name"] = "newAwsLink"
         self.link_info["type"] = "s3"
         self.link_info["region"] = self.region
