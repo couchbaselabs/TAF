@@ -783,13 +783,34 @@ class MagmaRebalance(MagmaBaseTest):
 
         if self.data_load_stage == "after":
             tasks_info = dict()
-            for collection in self.collections:
+            if self.num_collections_to_drop > 0:
+                self.collections.remove(CbServer.default_collection)
+                collections = self.collections[(self.num_collections_to_drop):]
+                collections_to_drop = self.collections[:self.num_collections_to_drop]
+                collections.append(CbServer.default_collection)
+                self.collections.append(CbServer.default_collection)
+                self.log.debug("collections list after dropping collections {}".format(collections))
+                self.log.debug("collections_to_drop {}".format(collections_to_drop))
+            for collection in collections:
                 tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
                                                  ignore_exceptions=self.ignore_exceptions,
                                                  scope=scope_name,
                                                  collection=collection,
                                                  _sync=False)
                 tasks_info.update(tem_tasks_in.items())
+            if self.num_collections_to_drop > 0:
+                self.log.info("Starting to drop collections")
+                for collection in collections_to_drop:
+                    self.log.info("Collection to be dropped {}".format(collection))
+                    for bucket in self.bucket_util.buckets:
+                        self.bucket_util.drop_collection(self.cluster.master, bucket,
+                                                     scope_name=scope_name,
+                                                     collection_name=collection)
+                        self.bucket_util.buckets[self.bucket_util.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
+                    self.collections.remove(collection)
+                #self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
+                self.log.debug("collections list after dropping collections is {}".format(self.collections))
+
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info, self.cluster)
