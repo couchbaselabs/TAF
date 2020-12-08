@@ -444,8 +444,9 @@ class BaseTestCase(unittest.TestCase):
             self.sdk_client_pool.shutdown()
         if self.collect_pcaps:
             self.start_fetch_pcaps()
-        result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(self.servers,
-                                                                          force_collect=True)
+        result, core_msg, stream_msg, asan_msg = \
+            self.check_coredump_exist(self.servers,
+                                      force_collect=True)
         self.tearDownEverything()
         if not self.crash_warning:
             self.assertFalse(result, msg=core_msg + stream_msg + asan_msg)
@@ -606,14 +607,16 @@ class BaseTestCase(unittest.TestCase):
         for cluster in self.__cb_clusters:
             rest = RestConnection(cluster.master)
             nodes = rest.get_nodes()
-            status = self.cluster_util.trigger_cb_collect_on_cluster(
+            # Creating cluster_util object to handle multi_cluster scenario
+            cluster_util = ClusterUtils(cluster, self.task_manager)
+            status = cluster_util.trigger_cb_collect_on_cluster(
                 rest, nodes,
                 is_single_node_server)
 
             if status is True:
-                self.cluster_util.wait_for_cb_collect_to_complete(rest)
-                self.cluster_util.copy_cb_collect_logs(rest, nodes, cluster,
-                                                       log_path)
+                cluster_util.wait_for_cb_collect_to_complete(rest)
+                cluster_util.copy_cb_collect_logs(rest, nodes, cluster,
+                                                  log_path)
             else:
                 self.log.error("API perform_cb_collect returned False")
 
