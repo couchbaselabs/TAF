@@ -764,7 +764,6 @@ class BaseTestCase(unittest.TestCase):
                     if check_if_new_messages(warnMessages):
                         print(server.ip + " : Found WARN message in " + logFile.strip("\n"))
                         print("".join(warnMessages))
-                        result = True
                 streamreqfailed = "Stream request failed because the snap start seqno"
                 found = shell.execute_command(("grep -r '{}' " + logFile.strip("\n")).
                                               format(streamreqfailed))[0]
