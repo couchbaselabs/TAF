@@ -278,7 +278,7 @@ class MagmaBaseTest(BaseTestCase):
                 final_result = self.query_client.query_tool(count_query)["results"][0]["items"]
                 self.sleep(5)
             if "expiry" not in self.doc_ops:
-                self.assertTrue(initial_result == final_result, 
+                self.assertTrue(initial_result == final_result,
                                 "Indexer failed. Initial: %s, Final: %s".
                                 format(initial_result, final_result))
 
@@ -753,18 +753,13 @@ class MagmaBaseTest(BaseTestCase):
                         count -= 1
                     count = kill_itr
 
-            result, core_msg, streamFailures, asan_msg = self.check_coredump_exist(
-                self.cluster.nodes_in_cluster, force_collect=force_collect)
+            result = self.check_coredump_exist(self.cluster.nodes_in_cluster,
+                                               force_collect=force_collect)
             if result:
                 self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
-                if core_msg:
-                    self.log.error("Issues found on server: %s" % core_msg)
-                if streamFailures:
-                    self.log.error("Issues found on server: %s" % streamFailures)
-                if asan_msg:
-                    self.log.error("Issues found on server: %s" % asan_msg)
-                self.assertFalse(result)
+                self.assertFalse(result, "CRASH | CRITICAL | WARN messages "
+                                         "found in cb_logs")
 
             if wait:
                 for node in nodes:

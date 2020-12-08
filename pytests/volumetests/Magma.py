@@ -548,15 +548,9 @@ class volume(BaseTestCase):
                                  scopes[self.scope_name].collections.keys())
 
         self.print_stats()
-        result, cores, streamFailures, asanFailures = self.check_coredump_exist(self.cluster.
-                                                                  nodes_in_cluster)
+        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if result:
-            if cores:
-                self.PrintStep("Issues found on server: %s" % cores)
-            if streamFailures:
-                self.PrintStep("Issues found on server: %s" % streamFailures)
-            if asanFailures:
-                self.PrintStep("Issues found on server: %s" % asanFailures)
+            self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
             if self.assert_crashes_on_load:
                 self.task.jython_task_manager.abort_all_tasks()
                 self.assertFalse(result)
@@ -688,13 +682,13 @@ class volume(BaseTestCase):
 
                 shell.disconnect()
 
-        result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(
-            self.cluster.nodes_in_cluster)
+        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if result:
             self.stop_crash = True
             self.task.jython_task_manager.abort_all_tasks()
-            self.log.error(core_msg + stream_msg + asan_msg)
-            self.assertFalse(result, "Found crashes/issues on the nodes")
+            self.assertFalse(
+                result,
+                "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         if wait:
             for server in servers:
@@ -866,13 +860,13 @@ class volume(BaseTestCase):
                                  scopes[self.scope_name].collections.keys())
 
             self.print_stats()
-            result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(
-                self.cluster.nodes_in_cluster)
+            result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
             if result:
                 self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
-                self.log.error(core_msg + stream_msg + asan_msg)
-                self.assertFalse(result, "Found issues on the nodes")
+                self.assertFalse(
+                    result,
+                    "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.loop = 0
         while self.loop < self.iterations:
@@ -1343,7 +1337,7 @@ class volume(BaseTestCase):
             tasks_info = self.data_load(
                 scope=self.scope_name,
                 collections=self.bucket.scopes[self.scope_name].collections.keys())
- 
+
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks(tasks_info)

@@ -3,6 +3,9 @@ import os
 import traceback
 import unittest
 
+from datetime import datetime
+from ruamel.yaml import YAML
+
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 from cb_tools.cb_cli import CbCli
@@ -18,7 +21,6 @@ from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
-from datetime import datetime
 
 
 class BaseTestCase(unittest.TestCase):
@@ -449,14 +451,12 @@ class BaseTestCase(unittest.TestCase):
             self.sdk_client_pool.shutdown()
         if self.collect_pcaps:
             self.start_fetch_pcaps()
-        result, core_msg, stream_msg, asan_msg = \
-            self.check_coredump_exist(self.servers,
-                                      force_collect=True)
+        result = self.check_coredump_exist(self.servers, force_collect=True)
         self.tearDownEverything()
         if not self.crash_warning:
-            self.assertFalse(result, msg=core_msg + stream_msg + asan_msg)
+            self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
-            self.log.warn(core_msg + stream_msg + asan_msg)
+            self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
@@ -654,9 +654,6 @@ class BaseTestCase(unittest.TestCase):
         # crash_dir = "/opt/couchbase/var/lib/couchbase/"
         crash_dir_win = "c://CrashDumps"
         result = False
-        dmp_msg = ""
-        stream_msg = ""
-        asan_msg = ""
 
         def find_index_of(str_list, sub_string):
             for i in range(len(str_list)):
@@ -701,7 +698,7 @@ class BaseTestCase(unittest.TestCase):
         for idx, server in enumerate(servers):
             shell = RemoteMachineShellConnection(server)
             shell.extract_remote_info()
-            self.log.info(server.ip + " : Looking for crash dump files")
+            self.log.info(server.ip + ": Looking for crash / dump files")
             crash_dir = lib_cb + "crash/"
             if shell.info.type.lower() == "windows":
                 crash_dir = crash_dir_win
@@ -717,9 +714,7 @@ class BaseTestCase(unittest.TestCase):
             dmp_files = [f.split()[-1] for f in dmp_files if ".core" not in f]
             dmp_files = [f.strip("\n") for f in dmp_files]
             if dmp_files:
-                msg = "Node %s - Core dump seen: %s" % (server.ip,
-                                                        str(len(dmp_files)))
-                dmp_msg += msg + "\n"
+                msg = "%s: %d core dump seen" % (server.ip, len(dmp_files))
                 self.log.critical(msg)
                 self.log.critical("%s: Stack Trace of first crash - %s\n%s"
                                   % (server.ip, dmp_files[-1],
@@ -730,104 +725,80 @@ class BaseTestCase(unittest.TestCase):
             else:
                 self.log.debug(server.ip + ": No crash files found")
 
-            self.log.info(server.ip + ": Looking for CRITICAL| ERROR | WARN | "
-                          "Run loop exception  messages in log")
             logs_dir = lib_cb + "logs/"
             if int(server.port) in range(ClusterRun.port,
                                          ClusterRun.port + 10):
                 logs_dir = os.path.join(
                     TestInputSingleton.input.servers[0].cli_path,
                     "ns_server", "logs", "n_%s" % str(idx))
-            log_files = shell.execute_command(
-                "ls " + os.path.join(logs_dir, "memcached.log.*"))[0]
-            for log_file in log_files:
-                log_file = log_file.strip("\n")
-                # Check for CRITICAL messages in logs
-                critical_msgs = shell.execute_command(
-                    "grep -r 'CRITICAL' " + log_file
-                    + " | grep -v 'Rollback point not found'")[0]
-                index = find_index_of(
-                    critical_msgs,
-                    "Fatal error encountered during exception handling")
-                critical_msgs = critical_msgs[:index]
-                if critical_msgs:
-                    if check_if_new_messages(critical_msgs):
-                        self.log.critical("%s: Found CRITICAL msg in %s"
-                                          % (server.ip, log_file))
-                        print("".join(critical_msgs))
+
+            # Perform log file searching based on the input yaml config
+            yaml = YAML()
+            with open("lib/couchbase_helper/error_log_config.yaml", "r") as fp:
+                y_data = yaml.load(fp.read())
+
+            for file_data in y_data["file_name_patterns"]:
+                log_files = shell.execute_command(
+                    "ls " + os.path.join(logs_dir, file_data['file']))[0]
+
+                if len(log_files) == 0:
+                    self.log.warning("%s: No '%s' files found"
+                                     % (server.ip, file_data['file']))
+                    continue
+
+                if 'target_file_index' in file_data:
+                    log_files = [
+                        log_files[int(file_data['target_file_index'])]
+                    ]
+
+                for log_file in log_files:
+                    log_file = log_file.strip("\n")
+                    self.log.info("Looking for CRITICAL|WARN messages in %s"
+                                  % log_file)
+                    for grep_pattern in file_data['grep_for']:
+                        grep_for_str = grep_pattern['string']
+                        err_pattern = exclude_pattern = None
+                        if 'error_patterns' in grep_pattern:
+                            err_pattern = grep_pattern['error_patterns']
+                        if 'exclude_patterns' in grep_pattern:
+                            exclude_pattern = grep_pattern['exclude_patterns']
+
+                        cmd_to_run = "grep -r '%s' %s" \
+                                     % (grep_for_str, log_file)
+                        if exclude_pattern is not None:
+                            for pattern in exclude_pattern:
+                                cmd_to_run += " | grep -v '%s'" % pattern
+
+                        grep_output = shell.execute_command(cmd_to_run)[0]
+                        if err_pattern is not None:
+                            for pattern in err_pattern:
+                                index = find_index_of(grep_output, pattern)
+                                grep_output = grep_output[:index]
+                                if grep_output:
+                                    if check_if_new_messages(grep_output):
+                                        self.log.critical(
+                                            "%s: Found '%s' logs - %s"
+                                            % (server.ip, grep_for_str,
+                                               "".join(grep_output)))
+                                        result = True
+                                        break
+                        else:
+                            if grep_output \
+                                    and check_if_new_messages(grep_output):
+                                self.log.critical("%s: Found '%s' logs - %s"
+                                                  % (server.ip, grep_for_str,
+                                                     grep_output))
+                                result = True
+                                break
+                    if result is True:
                         if self.stop_server_on_crash:
                             shell.stop_couchbase()
-                        result = True
                         break
-                # Check for ERROR messages in logs
-                error_msgs = shell.execute_command("grep -r 'ERROR' "
-                                                   + log_file
-                                                   + " | grep -v 'XERROR'")[0]
-                if error_msgs:
-                    if check_if_new_messages(error_msgs):
-                        self.log.critical("%s: Found ERROR msg in %s"
-                                          % (server.ip, log_file))
-                        print("".join(error_msgs))
-                        result = True
-                        break
-                # Check for "exception occurred in runloop" messages in logs
-                exception_run_loop = shell.execute_command(
-                    "grep -r 'exception occurred in runloop' "
-                    + log_file)[0]
-                if exception_run_loop:
-                    if check_if_new_messages(exception_run_loop):
-                        self.log.critical(
-                            "%s: Found exceptionRunLoop msg in %s\n%s"
-                            % (server.ip, log_file,
-                               "".join(exception_run_loop)))
-                        result = True
-                        break
-                # Check for WARN messages in logs
-                warn_msgs = shell.execute_command(
-                    "grep -r 'WARN' " + log_file + " | grep -v Slow "
-                    + "| grep -v 'The stream closed early because the conn was"
-                    + " disconnected'")[0]
-                if warn_msgs:
-                    if check_if_new_messages(warn_msgs):
-                        self.log.critical("%s: Found WARN msg in %s\n%s"
-                                          % (server.ip, log_file,
-                                             "".join(warn_msgs)))
-                        result = True
-                stream_req_failed = \
-                    "Stream request failed because the snap start seqno"
-                found = shell.execute_command(("grep -r '{}' " + log_file)
-                                              .format(stream_req_failed))[0]
-                if found:
-                    temp = "Found {} in {}".format(stream_req_failed, log_file)
-                    self.log.error(temp)
-                    stream_msg += temp + "\n"
-                    result = True
 
-            asan_files = shell.execute_command(
-                "ls " + os.path.join(logs_dir, "sanitizers.log.*"))[0]
-            if len(asan_files) > 0:
-                msg = "Node %s - Sanitizers.log files: %s" \
-                      % (server.ip,  str(len(asan_files)))
-                asan_msg += msg + "\n"
-                self.log.error(msg)
-                content_asan_file_list = shell.execute_command(
-                    "grep '^' " + asan_files[0].strip("\n"))[0]
-                content_asan_file = ""
-                for line in content_asan_file_list:
-                    content_asan_file += line
-                self.log.error(
-                    "%s - Content of the first Sanitizers.log file - %s \n %s "
-                    % (server.ip, asan_files[0].strip("\n"),
-                       content_asan_file))
-                if self.stop_server_on_crash:
-                    shell.stop_couchbase()
-                result = True
-            else:
-                self.log.debug(server.ip + ": No sanitizers.log.* files found")
             shell.disconnect()
 
         if result and force_collect and not self.stop_server_on_crash:
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False
 
-        return result, dmp_msg, stream_msg, asan_msg
+        return result

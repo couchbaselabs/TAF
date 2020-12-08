@@ -1,0 +1,22 @@
+file_name_patterns:
+  - file: 'memcached.log.*'
+    grep_for:
+      - string: 'CRITICAL'
+        error_patterns:
+          - 'Fatal error encountered during exception handling'
+        exclude_patterns:
+          - 'Rollback point not found'
+      - string: 'ERROR'
+        exclude_patterns:
+          - 'XERROR'
+      - string: 'WARN'
+        exclude_patterns:
+          - 'Slow'
+          - 'The stream closed early because the conn was disconnected'
+      - string: 'exception occurred in runloop'
+      - string: 'Stream request failed because the snap start seqno'
+
+  - file: 'sanitizers.log.*'
+    target_file_index: 0
+    grep_for:
+      - string: '^'

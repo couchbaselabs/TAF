@@ -78,12 +78,11 @@ class volume(CollectionBase):
         self.bucket_util.print_bucket_stats()
         if self.collect_pcaps:
             self.start_fetch_pcaps()
-        result, core_msg, stream_msg, asan_msg = self.check_coredump_exist(self.servers,
-                                                                           force_collect=True)
+        result = self.check_coredump_exist(self.servers, force_collect=True)
         if not self.crash_warning:
-            self.assertFalse(result, msg=core_msg + stream_msg + asan_msg)
+            self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
-            self.log.warn(core_msg + stream_msg + asan_msg)
+            self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
 
     def set_memory_quota_kv_index(self):
         """

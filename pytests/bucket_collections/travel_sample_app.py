@@ -422,9 +422,10 @@ class TravelSampleApp(BaseTestCase):
             # Backup and restore
 
             # Check for core dumps / critical messages in logs
-            result, core_msg, stream_msg, asan_msg = \
-                self.check_coredump_exist(self.servers, force_collect=True)
-            self.assertFalse(result, msg=core_msg + stream_msg + asan_msg)
+            result = self.check_coredump_exist(self.servers,
+                                               force_collect=True)
+            self.assertFalse(result, "CRASH | CRITICAL | WARN messages "
+                                     "found in cb_logs")
 
             if choice(range(0, 9)) == 10:
                 query_util.CommonUtil.incr_date()
