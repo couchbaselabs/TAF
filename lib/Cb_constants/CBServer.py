@@ -1,4 +1,13 @@
 class CbServer(object):
+    class Services(object):
+        KV = "kv"
+        INDEX = "index"
+        N1QL = "n1ql"
+        CBAS = "cbas"
+        FTS = "fts"
+        EVENTING = "eventing"
+        BACKUP = "backup"
+
     port = 8091
     capi_port = 8092
     fts_port = 8094
