@@ -1089,10 +1089,14 @@ class ClusterUtils:
         status = False
         while retry < retry_count:
             cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
+            cb_collect_progress = int(cb_collect_response['progress'])
+            cb_collect_status = cb_collect_response['status']
             self.log.debug("CBCollectInfo Iteration {} - {}"
-                           .format(retry,
-                                   cb_collect_response["status"]))
-            if cb_collect_response['status'] == 'completed':
+                           .format(retry, cb_collect_status))
+            if cb_collect_progress == 100:
+                if cb_collect_status != 'completed':
+                    self.log.warning("Cb collect completed with status '%s'"
+                                     % cb_collect_status)
                 status = True
                 break
             else:

@@ -616,7 +616,8 @@ class RebalanceBaseTest(BaseTestCase):
         rest.set_retry_rebalance_settings(body)
         self.log.debug("Retry Rebalance settings reset ....")
 
-    def cbcollect_info(self, trigger=True, validate=True):
+    def cbcollect_info(self, trigger=True, validate=True,
+                       known_failures=dict()):
         rest = RestConnection(self.cluster.master)
         nodes = rest.get_nodes()
         if trigger:
@@ -628,6 +629,30 @@ class RebalanceBaseTest(BaseTestCase):
             status = self.cluster_util.wait_for_cb_collect_to_complete(rest)
             if status is False:
                 self.fail("cb_collect timed out")
+
+            cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
+            per_node_data = cb_collect_response["perNode"]
+            skip_node_ips = list()
+            for node, reason in known_failures.items():
+                if reason in ["in_node", "out_node"]:
+                    skip_node_ips.append(node)
+                    continue
+                n_key = "ns_1@" + node
+                if n_key in per_node_data:
+                    if per_node_data[n_key]["status"] == reason:
+                        skip_node_ips.append(node)
+                    else:
+                        self.fail("Invalid failure : %s, Expected: %s"
+                                  % (per_node_data[n_key]['status'], reason))
+
+            filtered_nodes = list()
+            for t_node in nodes:
+                for t_skip_node in skip_node_ips:
+                    if t_node.ip == t_skip_node:
+                        break
+                else:
+                    filtered_nodes.append(t_node)
+            nodes = filtered_nodes
 
             status = self.cluster_util.copy_cb_collect_logs(
                 rest, nodes, self.cluster, self.logs_folder)
