@@ -6,6 +6,7 @@ from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_utils.cb_tools.cbstats import Cbstats
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from sdk_exceptions import SDKException
 
 
 class CollectionsDgmSteady(CollectionBase):
@@ -125,6 +126,12 @@ class CollectionsDgmSteady(CollectionBase):
                 self.fail("preload dgm failed")
         self.bucket_util.print_bucket_stats()
 
+    def set_ignore_exceptions(self, doc_loading_spec):
+        ignore_exceptions = list()
+        ignore_exceptions.append(SDKException.ServerOutOfMemoryException)
+        ignore_exceptions.append(SDKException.TemporaryFailureException)
+        doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
+
     def data_validation(self, doc_loading_task):
         if doc_loading_task.result is False:
             self.fail("doc_loading failed while in DGM")
@@ -134,6 +141,7 @@ class CollectionsDgmSteady(CollectionBase):
     def test_crud_docs(self):
         self.custom_load()
         doc_loading_spec = self.get_common_spec()
+        self.set_ignore_exceptions(doc_loading_spec)
         if self.creates:
             doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 20
         doc_loading_task = \
@@ -162,6 +170,7 @@ class CollectionsDgmSteady(CollectionBase):
     def test_create_scopes_collections(self):
         self.custom_load()
         doc_loading_spec = self.spec_for_create_scopes_collections()
+        self.set_ignore_exceptions(doc_loading_spec)
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task,
@@ -175,6 +184,7 @@ class CollectionsDgmSteady(CollectionBase):
     def test_mix_crud_collections_and_docs(self):
         self.custom_load()
         doc_loading_spec = self.spec_for_mix_crud_collections_and_docs()
+        self.set_ignore_exceptions(doc_loading_spec)
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task,
