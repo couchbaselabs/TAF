@@ -173,7 +173,8 @@ class BasicOps(N1qlBase):
         collections = self.n1ql_helper.get_collections()
         self.n1ql_helper.create_index(collections[0])
         name = collections[0].split(".")
-        query_params = self.n1ql_helper.create_txn()
+        query_params = self.n1ql_helper.create_txn(self.txtimeout,
+                                                   self.durability_level)
         query1 = "INSERT INTO default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query1 += "(KEY, VALUE) VALUES ( 'KEY', 'VALUE') "
         result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
@@ -192,7 +193,8 @@ class BasicOps(N1qlBase):
         collections = self.n1ql_helper.get_collections()
         self.n1ql_helper.create_index(collections[0])
         name = collections[0].split(".")
-        query_params = self.n1ql_helper.create_txn()()
+        query_params = self.n1ql_helper.create_txn(self.txtimeout,
+                                                   self.durability_level)
         query1 = "INSERT INTO default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query1 += "(KEY, VALUE) VALUES ( 'KEY', 'VALUE') "
         result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)

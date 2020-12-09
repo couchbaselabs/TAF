@@ -20,6 +20,7 @@ from sdk_exceptions import SDKException
 from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
+from Cb_constants import CbServer
 
 
 class N1qlBase(CollectionBase):
@@ -58,7 +59,7 @@ class N1qlBase(CollectionBase):
         self.buckets = self.bucket_util.get_all_buckets()
         self.collection_map = {}
         self.txtimeout = self.input.param("txntimeout", 0)
-        self.atrcollection = self.input.param("atrcollection", True)
+        self.atrcollection = self.input.param("atrcollection", False)
         load_spec = self.input.param("load_spec", self.data_spec_name)
         self.num_commit = self.input.param("num_commit", 3)
         self.num_rollback_to_savepoint = \
@@ -613,7 +614,21 @@ class N1qlBase(CollectionBase):
             yield i_list[i:i + n]
 
     def execute_query_and_validate_results(self, stmt, bucket_col, doc_gen_list=None):
-        query_params = self.n1ql_helper.create_txn(self.txtimeout)
+        atrcollection = ""
+        if self.atrcollection:
+            collections = BucketUtils.get_random_collections(
+                self.buckets, 1, "all", self.num_buckets)
+            for bucket, scope_dict in collections.items():
+                for s_name, c_dict in scope_dict["scopes"].items():
+                    for c_name, c_data in c_dict["collections"].items():
+                        if random.choice([True, False]):
+                            atrcollection = ("`%s`.`%s`.`%s`"%(bucket, s_name, c_name))
+                        else:
+                            atrcollection = ("`%s`.`%s`.`%s`"%(bucket,
+                                         CbServer.default_scope,
+                                         CbServer.default_collection))
+        query_params = self.n1ql_helper.create_txn(self.txtimeout, self.durability_level,
+                                                   atrcollection)
         collection_savepoint, savepoints, queries = \
             self.full_execute_query(stmt, self.commit, query_params,
                                     self.rollback_to_savepoint)
