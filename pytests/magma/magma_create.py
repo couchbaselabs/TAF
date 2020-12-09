@@ -44,17 +44,17 @@ class BasicCreateTests(BasicCrudTests):
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             self.generate_docs(doc_ops="read")
-
-            if self.doc_size <= 32:
-                for bucket in self.bucket_util.get_all_buckets():
-                    disk_usage = self.get_disk_usage(
-                        bucket, self.cluster.nodes_in_cluster)
-                    msg = "Bucket={},Iteration= {},\
-                    SeqTree= {}MB > keyTree= {}MB"
-                    self.assertIs(
-                        disk_usage[2] > disk_usage[3], True,
-                        msg.format(bucket.name, count+1,
-                                   disk_usage[3], disk_usage[2]))
+            # Check for doc size < 32 , not required
+            #if self.doc_size <= 32:
+            #    for bucket in self.bucket_util.get_all_buckets():
+            #        disk_usage = self.get_disk_usage(
+            #            bucket, self.cluster.nodes_in_cluster)
+            #        msg = "Bucket={},Iteration= {},\
+            #        SeqTree= {}MB > keyTree= {}MB"
+            #        self.assertIs(
+            #            disk_usage[2] > disk_usage[3], True,
+            #            msg.format(bucket.name, count+1,
+            #                       disk_usage[3], disk_usage[2]))
             count += 1
 
         self.log.info("====test_basic_create_read ends====")
