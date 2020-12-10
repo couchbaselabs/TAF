@@ -10,7 +10,6 @@ from global_vars import logger
 from sdk_client3 import SDKClient
 from BucketLib.BucketOperations import BucketHelper
 
-
 """An API for scheduling tasks that run against Couchbase Server
 
 This module is contains the top-level API's for scheduling and executing tasks.
@@ -161,7 +160,7 @@ class ServerTasks(object):
                     monitor_stats=monitor_stats,
                     track_failures=track_failures)
             else:
-                majority_value = (bucket.replicaNumber + 1)/2 + 1
+                majority_value = (bucket.replicaNumber + 1) / 2 + 1
 
                 if durability.lower() == "none":
                     check_persistence = False
@@ -358,7 +357,7 @@ class ServerTasks(object):
                 % (bucket.name,
                    bucket_stat["vb_active_resident_items_ratio"]))
             gen_load = doc_generator(key, num_items,
-                                     num_items+load_batch_size,
+                                     num_items + load_batch_size,
                                      doc_type=doc_type)
             num_items += load_batch_size
             task = self.async_load_gen_docs(

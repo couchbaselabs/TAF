@@ -1920,8 +1920,14 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.sdk_client_pool = sdk_client_pool
 
     def _get_bucket_dgm(self, bucket):
-        return self.rest_client.fetch_bucket_stats(
+        """
+        Returns a tuple of (active_rr, replica_rr)
+        """
+        active_resident_items_ratio = self.rest_client.fetch_bucket_stats(
             bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+        replica_resident_items_ratio = self.rest_client.fetch_bucket_stats(
+            bucket.name)["op"]["samples"]["vb_replica_resident_items_ratio"][-1]
+        return active_resident_items_ratio, replica_resident_items_ratio
 
     def _load_next_batch_of_docs(self, bucket):
         doc_gens = list()
@@ -1957,16 +1963,23 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
             self.task_manager.get_task_result(task)
 
     def _load_bucket_into_dgm(self, bucket):
-        dgm_value = self._get_bucket_dgm(bucket)
+        """
+        Load bucket into dgm until either active_rr or replica_rr
+        goes below self.active_resident_threshold
+        """
+        active_dgm_value, replica_dgm_value = self._get_bucket_dgm(bucket)
         self.test_log.info("DGM doc loading for '%s' to atleast %s%%"
                            % (bucket.name, self.active_resident_threshold))
-        while dgm_value > self.active_resident_threshold:
+        while active_dgm_value > self.active_resident_threshold and \
+                replica_dgm_value > self.active_resident_threshold:
             self.test_log.info("Active_resident_items_ratio for {0} is {1}"
-                               .format(bucket.name, dgm_value))
+                               .format(bucket.name, active_dgm_value))
+            self.test_log.info("Replica_resident_items_ratio for {0} is {1}"
+                               .format(bucket.name, replica_dgm_value))
             self._load_next_batch_of_docs(bucket)
-            dgm_value = self._get_bucket_dgm(bucket)
-        self.test_log.info("DGM %s%% achieved for '%s'. Loaded docs: %s"
-                           % (dgm_value, bucket.name,
+            active_dgm_value, replica_dgm_value = self._get_bucket_dgm(bucket)
+        self.test_log.info("Active DGM %s%% Replica DGM %s%% achieved for '%s'. Loaded docs: %s"
+                           % (active_dgm_value, replica_dgm_value, bucket.name,
                               self.docs_loaded_per_bucket[bucket]))
 
     def call(self):
