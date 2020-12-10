@@ -1975,10 +1975,11 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         for bucket in self.buckets:
             self.docs_loaded_per_bucket[bucket] = 0
             self._load_bucket_into_dgm(bucket)
-            bucket.scopes[
-                self.scope].collections[
-                self.collection] \
-                .num_items += self.docs_loaded_per_bucket[bucket]
+            collection = bucket.scopes[self.scope].collections[self.collection]
+            collection.num_items += self.docs_loaded_per_bucket[bucket]
+            collection.doc_index = (collection.doc_index[0],
+                                    collection.doc_index[1] +
+                                    self.docs_loaded_per_bucket[bucket])
 
         # Close all SDK clients
         if self.sdk_client_pool is None:
