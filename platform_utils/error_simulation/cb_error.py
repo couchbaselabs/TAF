@@ -7,7 +7,9 @@ class CouchbaseError:
     STOP_MEMCACHED = "stop_memcached"
     STOP_PERSISTENCE = "stop_persistence"
     STOP_SERVER = "stop_server"
+    STOP_PROMETHEUS = "stop_prometheus"
 
+    KILL_PROMETHEUS = "kill_prometheus"
     KILL_MEMCACHED = "kill_memcached"
     KILL_BEAMSMP = "kill_beam.smp"
 
@@ -45,8 +47,14 @@ class CouchbaseError:
         elif action == CouchbaseError.STOP_BEAMSMP:
             _, error = self.__interrupt_process("beam.smp", "stop")
             self.__handle_shell_error(error)
+        elif action == CouchbaseError.STOP_PROMETHEUS:
+            _, error = self.__interrupt_process("prometheus", "stop")
+            self.__handle_shell_error(error)
         elif action == CouchbaseError.KILL_BEAMSMP:
             _, error = self.__interrupt_process("beam.smp", "kill")
+            self.__handle_shell_error(error)
+        elif action == CouchbaseError.KILL_PROMETHEUS:
+            _, error = self.__interrupt_process("prometheus", "kill")
             self.__handle_shell_error(error)
         elif action == CouchbaseError.STOP_SERVER:
             self.shell_conn.stop_server()
@@ -64,6 +72,9 @@ class CouchbaseError:
             self.__handle_shell_error(error)
         elif action == CouchbaseError.STOP_BEAMSMP:
             _, error = self.__interrupt_process("beam.smp", "resume")
+            self.__handle_shell_error(error)
+        elif action == CouchbaseError.STOP_PROMETHEUS:
+            _, error = self.__interrupt_process("prometheus", "resume")
             self.__handle_shell_error(error)
         elif action == CouchbaseError.KILL_BEAMSMP \
                 or action == CouchbaseError.STOP_SERVER:
