@@ -9,18 +9,18 @@ file_name_patterns:
       - string: 'ERROR'
         exclude_patterns:
           - 'XERROR'
-      - string: 'WARN'
-        exclude_patterns:
-          - 'Slow'
-          - 'The stream closed early because the conn was disconnected'
-            # MB-43121
-          - 'CouchKVStore::unlinkCouchFile: remove error:'
-          - 'reason: The stream closed early due to a close stream message'
-            # MB-43124
-          - 'send buffer stuck at'
-          - 'system clock changed'
-            # MB-43133
-          - 'Invalid password specified for'
+      #- string: 'WARN'
+      #  exclude_patterns:
+      #    - 'Slow'
+      #    - 'The stream closed early because the conn was disconnected'
+      #      # MB-43121
+      #    - 'CouchKVStore::unlinkCouchFile: remove error:'
+      #    - 'reason: The stream closed early due to a close stream message'
+      #      # MB-43124
+      #    - 'send buffer stuck at'
+      #    - 'system clock changed'
+      #      # MB-43133
+      #    - 'Invalid password specified for'
       - string: 'exception occurred in runloop'
       - string: 'Stream request failed because the snap start seqno'
 
