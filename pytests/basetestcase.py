@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 import traceback
 import unittest
 
@@ -684,9 +685,12 @@ class BaseTestCase(unittest.TestCase):
                   that of VM's. Else it won't be possible to compare timestamps
             """
             last_line = grep_output_list[-1]
+            if not re.match(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T", last_line):
+                # To check if line doesn't begin with any yyyy-mm-ddT
+                self.log.critical("%s does not match any timestamp" % last_line)
+                return True
             timestamp = last_line.split()[0]
             timestamp = timestamp.split(".")[0]
-            timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             self.log.info("Comparing timestamps: Log's latest timestamp: %s, "
                           "Test's start timestamp is %s"
                           % (timestamp, self.start_timestamp))
