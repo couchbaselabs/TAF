@@ -75,6 +75,20 @@ class MagmaBaseTest(BaseTestCase):
         self.num_scopes = self.input.param("num_scopes", 1)
 
         self.scope_name = CbServer.default_scope
+        # Creation of scopes of num_scopes is > 1
+        scope_prefix = "Scope"
+        for bucket in self.bucket_util.buckets:
+            for i in range(1, self.num_scopes):
+                scope_name = scope_prefix + str(i)
+                self.log.info("Creating bucket::scope {} {}\
+                ".format(bucket.name, scope_name))
+                self.bucket_util.create_scope(self.cluster.master,
+                                          bucket,
+                                          {"name": scope_name})
+                self.sleep(2)
+        self.scopes = self.buckets[0].scopes.keys()
+        self.log.info("Scopes list is {}".format(self.scopes))
+
         collection_prefix = "FunctionCollection"
         # Creation of collection of num_collections is > 1
         for bucket in self.bucket_util.buckets:
