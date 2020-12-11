@@ -46,8 +46,8 @@ class TravelSampleApp(BaseTestCase):
                 [self.cluster.master] + nodes_init)
 
             # Load travel_sample bucket
-            status = self.bucket_util.load_sample_bucket(TravelSample())
-            if status is False:
+            ts_bucket = TravelSample()
+            if self.bucket_util.load_sample_bucket(ts_bucket) is False:
                 self.fail("Failed to load sample bucket")
 
             self.bucket = self.bucket_util.buckets[0]
@@ -56,9 +56,11 @@ class TravelSampleApp(BaseTestCase):
 
             # Create required scope/collections
             self.create_scope_collections()
-            self.bucket.scopes[CbServer.default_scope].collections[
-                CbServer.default_collection] \
-                .num_items = TravelSample().stats.expected_item_count
+            self.bucket.scopes[
+                CbServer.default_scope].collections[
+                CbServer.default_collection].num_items \
+                = ts_bucket.scopes[CbServer.default_scope].collections[
+                    CbServer.default_collection].num_items
             self.sleep(20, "Wait for num_items to get updated")
             self.bucket_util.validate_docs_per_collections_all_buckets()
 
