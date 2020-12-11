@@ -1,11 +1,13 @@
 import time
 from copy import deepcopy
 from random import choice
+from ruamel.yaml import YAML
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import TravelSample
 from Cb_constants import CbServer, DocLoading
 from SecurityLib.rbac import RbacUtil
+from backup_lib.backup import BackupHelper
 from basetestcase import BaseTestCase
 from bucket_collections.app.constants import global_vars
 from bucket_collections.app.constants.collection_spec import collection_spec
@@ -33,15 +35,20 @@ class TravelSampleApp(BaseTestCase):
         self.rbac_util = RbacUtil()
         self.sdk_clients = global_vars.sdk_clients
 
+        cluster_yaml = "pytests/bucket_collections/app/config/cluster.yaml"
+        with open(cluster_yaml, "r") as fp:
+            self.cluster_config = YAML().load(fp.read())
+
+        # Override nodes_init, services_init from yaml data
+        self.nodes_init = self.cluster_config["cb_cluster"]["nodes_init"]
+        self.services_init = self.cluster_config["cb_cluster"]["services"]
+
         if not self.skip_setup_cleanup:
             # Rebalance_in required nodes
-            services = list()
-            for service in self.services_init.split("-"):
-                services.append(service.replace(":", ","))
             nodes_init = self.cluster.servers[1:self.nodes_init] \
                 if self.nodes_init != 1 else []
             self.task.rebalance([self.cluster.master], nodes_init, [],
-                                services=services[1:])
+                                services=self.services_init[1:])
             self.cluster.nodes_in_cluster.extend(
                 [self.cluster.master] + nodes_init)
 
@@ -73,6 +80,9 @@ class TravelSampleApp(BaseTestCase):
             # Loading initial data into created collections
             self.load_initial_collection_data()
             self.bucket_util.validate_docs_per_collections_all_buckets()
+
+            # Configure backup settings
+            self.configure_bucket_backups()
 
             # Create required indexes
             self.create_indexes()
@@ -226,7 +236,8 @@ class TravelSampleApp(BaseTestCase):
 
         hotel_review_rows = list()
         sdk_client = self.sdk_clients["bucket_data_writer"]
-        query = "SELECT * FROM `travel-sample` WHERE type='%s'"
+        query = "SELECT * FROM `travel-sample`.`_default`.`_default` " \
+                "WHERE type='%s'"
         for d_type, collection_info in type_collection_map.items():
             s_name, c_name = collection_info[0], collection_info[1]
 
@@ -372,6 +383,43 @@ class TravelSampleApp(BaseTestCase):
                     break
                 if time.time() > stop_time:
                     self.fail("Index availability timeout")
+
+    def configure_bucket_backups(self):
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+        backup_node = self.cluster.backup_nodes[0]
+        backup_helper = BackupHelper(backup_node)
+
+        self.log.info("Creating permissions for backup folder")
+        backup_configs = self.cluster_config["cb_cluster"]["backup"]
+        shell = RemoteMachineShellConnection(backup_node)
+        for backup_config in backup_configs:
+            plan_params = dict()
+            repo_params = dict()
+            if "plan" in backup_config:
+                plan_params["plan"] = backup_config["plan"]
+                repo_params["plan"] = backup_config["plan"]
+            if "description" in backup_config:
+                plan_params["description"] = backup_config["description"]
+            if "archive_path" in backup_config:
+                repo_params["archive"] = backup_config["archive_path"]
+                shell.execute_command("mkdir -p {0} ; chmod 777 {0}"
+                                      .format(backup_config["archive_path"]))
+            if "bucket" in backup_config:
+                repo_params["bucket"] = backup_config["bucket"]
+
+            if plan_params["plan"] not in ["_hourly_backups",
+                                           "_daily_backups"]:
+                self.log.info("Updating custom plan %s" % plan_params["plan"])
+                status = backup_helper.create_edit_plan("create", plan_params)
+                if status is False:
+                    self.fail("Backup %s create failed" % backup_config)
+
+            # Create repo
+            status = backup_helper.create_repo(backup_config["repo_id"],
+                                               repo_params)
+            if status is False:
+                self.fail("Create repo failed for %s" % backup_config)
+        shell.disconnect()
 
     def run_app(self):
         random_op = "random"

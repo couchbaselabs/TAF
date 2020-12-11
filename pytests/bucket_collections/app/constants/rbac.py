@@ -11,7 +11,7 @@ for user in ["cluster_admin", "bucket_admin", "rbac_admin",
 rbac_data["cluster_admin"]["roles"] = "cluster_admin"
 rbac_data["bucket_admin"]["roles"] = "bucket_admin[travel-sample]," \
                                      "query_manage_index[travel-sample]"
-rbac_data["rbac_admin"]["roles"] = "security_admin"
+rbac_data["rbac_admin"]["roles"] = "security_admin_local"
 rbac_data["bucket_data_writer"]["roles"] = "data_writer[travel-sample]," \
                                            "query_select[travel-sample]"
 

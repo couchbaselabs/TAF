@@ -1,0 +1,13 @@
+cb_cluster:
+  nodes_init: 4
+  services:
+    - "kv"
+    - "kv"
+    - "index,n1ql"
+    - "backup"
+  backup:
+    - repo_id: 'repo_1'
+      plan: '_hourly_backups'
+      bucket: 'travel-sample'
+      storage_location: 'filesystem'
+      archive_path: '/data/cb_backups'
