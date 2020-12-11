@@ -15,6 +15,8 @@ from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
 from bucket_collections.collections_base import CollectionBase
 
+from sdk_exceptions import SDKException
+
 
 class volume(CollectionBase):
     # will add the __init__ functions after the test has been stabilised
@@ -238,9 +240,25 @@ class volume(CollectionBase):
         self.task.jython_task_manager.get_task_result(task)
         self.assertTrue(task.result, "Rebalance Failed")
 
+    def set_retry_exceptions(self, doc_loading_spec):
+        """
+        Exceptions for which mutations need to be retried during
+        topology changes
+        """
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+
     def data_load_collection(self, async_load=True, skip_read_success_results=True):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(self.data_load_spec)
+        self.set_retry_exceptions(doc_loading_spec)
+        doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
         doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
         task = self.bucket_util.run_scenario_from_spec(self.task,
                                                        self.cluster,
@@ -485,7 +503,16 @@ class volume(CollectionBase):
                                                                exclude_nodes=self.exclude_nodes)
 
                     if self.data_load_stage == "during":
+                        reset_flag = False
+                        if (not self.durability_level) and failover == "Hard":
+                            # Force a durability level to prevent data loss during hard failover
+                            self.log.info("Forcing durability level: MAJORITY")
+                            self.durability_level = "MAJORITY"
+                            reset_flag = True
                         task = self.data_load_collection()
+                        if reset_flag:
+                            self.durability_level = ""
+
                     # Mark Node for failover
                     if failover == "Graceful":
                         self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=True)
