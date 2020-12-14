@@ -92,14 +92,15 @@ class MagmaBaseTest(BaseTestCase):
         collection_prefix = "FunctionCollection"
         # Creation of collection of num_collections is > 1
         for bucket in self.bucket_util.buckets:
-            for i in range(1, self.num_collections):
-                collection_name = collection_prefix + str(i)
-                self.log.info("Creating scope::collection {} {}\
-                ".format(self.scope_name, collection_name))
-                self.bucket_util.create_collection(
-                    self.cluster.master, bucket,
-                    self.scope_name, {"name": collection_name})
-                self.sleep(2)
+            for scope_name in self.scopes:
+                for i in range(1, self.num_collections):
+                    collection_name = collection_prefix + str(i)
+                    self.log.info("Creating scope::collection {} {}\
+                    ".format(scope_name, collection_name))
+                    self.bucket_util.create_collection(
+                        self.cluster.master, bucket,
+                        scope_name, {"name": collection_name})
+                    self.sleep(2)
         self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
         self.log.debug("Collections list == {}".format(self.collections))
 
