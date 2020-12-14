@@ -87,9 +87,12 @@ class CollectionBase(BaseTestCase):
         cbstat_obj = Cbstats(shell)
         for bucket in self.bucket_util.buckets:
             result = cbstat_obj.all_stats(bucket.name)
-            self.log.info("Bucket: %s, Resident ratio(DGM): %s%%"
+            self.log.info("Bucket: %s, Active Resident ratio(DGM): %s%%"
                           % (bucket.name,
                              result["vb_active_perc_mem_resident"]))
+            self.log.info("Bucket: %s, Replica Resident ratio(DGM): %s%%"
+                          % (bucket.name,
+                             result["vb_replica_perc_mem_resident"]))
             if not self.skip_collections_cleanup:
                 self.bucket_util.remove_scope_collections_for_bucket(bucket)
         shell.disconnect()

@@ -1,6 +1,7 @@
 import time
 
 from BucketLib.BucketOperations import BucketHelper
+from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
@@ -42,9 +43,10 @@ class CollectionsRebalance(CollectionBase):
         self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster",
                                                          False)  # To change during rebalance
         self.skip_validations = self.input.param("skip_validations", True)
-        if self.compaction:
-            self.compaction_tasks = list()
+        self.compaction_tasks = list()
         self.dgm_test = self.input.param("dgm_test", False)
+        self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)
+        self.dgm = self.input.param("dgm", "80")  # Initial dgm threshold, for dgm test
         self.N1ql_txn = self.input.param("N1ql_txn", False)
         if self.N1ql_txn:
             self.num_stmt_txn = self.input.param("num_stmt_txn", 5)
@@ -144,16 +146,31 @@ class CollectionsRebalance(CollectionBase):
             bucket_name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
         return dgm
 
-    def load_to_dgm(self, threshold=100):
-        # load data until resident % goes below 100
-        bucket_name = self.bucket_util.buckets[0].name
-        curr_active = self.get_active_resident_threshold(bucket_name)
-        while curr_active >= threshold:
-            self.subsequent_data_load(data_load_spec="dgm_load")
-            curr_active = self.get_active_resident_threshold(bucket_name)
-            self.log.info("curr_active resident {0} %".format(curr_active))
-            self.bucket_util._wait_for_stats_all_buckets()
-        self.log.info("Initial dgm load done. Resident {0} %".format(curr_active))
+    def load_to_dgm(self, maxttl=0):
+        self.log.info("Loading docs with maxttl:{0} in default collection "
+                      "in order to load bucket in dgm".format(maxttl))
+        self.key = "test_collections"
+        start = self.bucket.scopes[CbServer.default_scope] \
+            .collections[CbServer.default_collection] \
+            .num_items
+        load_gen = doc_generator(self.key, start, start + 1)
+        tasks = []
+        tasks.append(self.task.async_load_gen_docs(
+            self.cluster, self.bucket, load_gen, "create", maxttl,
+            batch_size=1000, process_concurrency=8,
+            timeout_secs=60,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            active_resident_threshold=self.dgm,
+            compression=self.sdk_compression,
+            scope=CbServer.default_scope,
+            collection=CbServer.default_collection))
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+            if task.fail:
+                self.fail("preload dgm failed")
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.print_bucket_stats()
 
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
@@ -608,12 +625,9 @@ class CollectionsRebalance(CollectionBase):
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         self.set_retry_exceptions(doc_loading_spec)
         if self.dgm_test:
-            if data_load_spec == "dgm_load":
-                # pre-load to dgm
-                doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 2
-            else:
-                # Do only deletes during dgm + rebalance op
-                doc_loading_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+            # No new items are created during dgm + rebalance/failover tests
+            doc_loading_spec["doc_crud"][MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+            doc_loading_spec["doc_crud"][MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 0
         if self.forced_hard_failover and self.spec_name == "multi_bucket.buckets_for_rebalance_tests_more_collections":
             # create collections, else if other bucket_spec - then just "create" ops
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
@@ -647,20 +661,9 @@ class CollectionsRebalance(CollectionBase):
             self.assertTrue(task.result, "Compaction failed for bucket: %s" %
                             task.bucket.name)
 
-
-    def wait_for_rebalance_to_complete(self, task, wait_step=120):
+    def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
-        if self.dgm_test and (not task.result):
-            fail_flag = True
-            for bucket in self.bucket_util.buckets:
-                result = self.get_active_resident_threshold(bucket.name)
-                if result < 20:
-                    fail_flag = False
-                    self.log.error("DGM less than 20")
-                    break
-            self.assertFalse(fail_flag, "rebalance failed")
-        else:
-            self.assertTrue(task.result, "Rebalance Failed")
+        self.assertTrue(task.result, "Rebalance Failed")
         if self.compaction:
             self.wait_for_compaction_to_complete()
 
@@ -669,12 +672,16 @@ class CollectionsRebalance(CollectionBase):
             if self.data_load_spec == "ttl_load" or self.data_load_spec == "ttl_load1":
                 self.bucket_util._expiry_pager()
                 self.sleep(400, "wait for maxttl to finish")
+                # Compact buckets to delete non-resident expired items
+                self.compact_all_buckets()
+                self.wait_for_compaction_to_complete()
+                self.sleep(60, "wait after compaction")
                 items = 0
                 self.bucket_util._wait_for_stats_all_buckets()
                 for bucket in self.bucket_util.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
-                    self.fail("TTL + rebalance failed")
+                    self.fail("Items did not go to 0")
             elif self.forced_hard_failover:
                 pass
             else:
@@ -692,6 +699,8 @@ class CollectionsRebalance(CollectionBase):
                 self.sync_data_load()
         if self.dgm_test:
             self.load_to_dgm()
+        elif self.dgm_ttl_test:
+            self.load_to_dgm(maxttl=300)
         if self.N1ql_txn:
             self.setup_N1ql_txn()
         if rebalance_operation == "rebalance_in":
