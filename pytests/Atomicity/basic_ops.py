@@ -161,7 +161,7 @@ class basic_ops(BaseTestCase):
     def test_MB_41944(self):
         num_index = self.input.param("num_index", 1)
         # Create doc_gen for loading
-        doc_gen = doc_generator(self.key, 0, self.num_items)
+        doc_gen = doc_generator(self.key, 0, 1)
 
         # Get key for delete op and reset the gen
         key, v = doc_gen.next()
