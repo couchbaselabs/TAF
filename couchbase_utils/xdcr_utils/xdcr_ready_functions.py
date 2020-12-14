@@ -542,12 +542,13 @@ class XDCRUtils:
         """
         for cb_cluster in self.__cb_clusters:
             for remote_cluster in cb_cluster.xdcr_remote_clusters:
-                for src_bucket in remote_cluster.get_src_cluster().bucket_util.get_all_buckets():
+                buckets = remote_cluster.get_src_cluster().bucket_util.get_all_buckets()
+                for src_bucket in buckets:
                     remote_cluster.create_replication(
                         src_bucket,
                         rep_type=self.__rep_type,
-                        toBucket=remote_cluster.get_dest_cluster().bucket_util.get_bucket_object_from_name(
-                            src_bucket.name))
+                        toBucket=remote_cluster.get_dest_cluster().bucket_util.get_bucket_obj(
+                            buckets, src_bucket.name))
                 remote_cluster.start_all_replications()
 
     def _resetup_replication_for_recreate_buckets(self, cluster_name):
@@ -556,12 +557,13 @@ class XDCRUtils:
                 if remote_cluster_ref.get_src_cluster().name != cluster_name and remote_cluster_ref.get_dest_cluster().name != cluster_name:
                     continue
                 remote_cluster_ref.clear_all_replications()
+                buckets = remote_cluster_ref.get_src_cluster().bucket_util.get_all_buckets()
                 for src_bucket in remote_cluster_ref.get_src_cluster().get_buckets():
                     remote_cluster_ref.create_replication(
                         src_bucket,
                         rep_type=self.__rep_type,
-                        toBucket=remote_cluster_ref.get_dest_cluster().get_bucket_by_name(
-                            src_bucket.name))
+                        toBucket=remote_cluster_ref.get_dest_cluster().bucket_util.get_bucket_obj(
+                            buckets, src_bucket.name))
 
     def setup_xdcr(self):
         self.set_xdcr_topology()
