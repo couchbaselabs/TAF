@@ -691,6 +691,7 @@ class BaseTestCase(unittest.TestCase):
                 return True
             timestamp = last_line.split()[0]
             timestamp = timestamp.split(".")[0]
+            timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             self.log.info("Comparing timestamps: Log's latest timestamp: %s, "
                           "Test's start timestamp is %s"
                           % (timestamp, self.start_timestamp))
