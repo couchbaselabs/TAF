@@ -44,9 +44,8 @@ class CollectionsRebalance(CollectionBase):
                                                          False)  # To change during rebalance
         self.skip_validations = self.input.param("skip_validations", True)
         self.compaction_tasks = list()
-        self.dgm_test = self.input.param("dgm_test", False)
-        self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)
-        self.dgm = self.input.param("dgm", "80")  # Initial dgm threshold, for dgm test
+        self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)  # if dgm with ttl
+        self.dgm = self.input.param("dgm", "100")  # Initial dgm threshold, for dgm test; 100 means no dgm
         self.N1ql_txn = self.input.param("N1ql_txn", False)
         if self.N1ql_txn:
             self.num_stmt_txn = self.input.param("num_stmt_txn", 5)
@@ -146,7 +145,11 @@ class CollectionsRebalance(CollectionBase):
             bucket_name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
         return dgm
 
-    def load_to_dgm(self, maxttl=0):
+    def load_to_dgm(self):
+        if self.dgm_ttl_test:
+            maxttl = 300
+        else:
+            maxttl = 0
         self.log.info("Loading docs with maxttl:{0} in default collection "
                       "in order to load bucket in dgm".format(maxttl))
         self.key = "test_collections"
@@ -624,7 +627,7 @@ class CollectionsRebalance(CollectionBase):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         self.set_retry_exceptions(doc_loading_spec)
-        if self.dgm_test:
+        if self.dgm < 100:
             # No new items are created during dgm + rebalance/failover tests
             doc_loading_spec["doc_crud"][MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
             doc_loading_spec["doc_crud"][MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 0
@@ -697,10 +700,8 @@ class CollectionsRebalance(CollectionBase):
                 tasks = self.async_data_load()
             else:
                 self.sync_data_load()
-        if self.dgm_test:
+        if self.dgm < 100:
             self.load_to_dgm()
-        elif self.dgm_ttl_test:
-            self.load_to_dgm(maxttl=300)
         if self.N1ql_txn:
             self.setup_N1ql_txn()
         if rebalance_operation == "rebalance_in":
