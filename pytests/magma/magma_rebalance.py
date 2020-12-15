@@ -642,17 +642,25 @@ class MagmaRebalance(MagmaBaseTest):
                 self.collections.remove(CbServer.default_collection)
                 collections = self.collections[(self.num_collections_to_drop):]
                 collections_to_drop = self.collections[:self.num_collections_to_drop]
-                collections.append(CbServer.default_collection)
+                #collections.append(CbServer.default_collection)
                 self.collections.append(CbServer.default_collection)
                 self.log.debug("collections list after dropping collections {}".format(collections))
                 self.log.debug("collections_to_drop {}".format(collections_to_drop))
-            for collection in collections:
-                tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
-                                                 ignore_exceptions=self.ignore_exceptions,
-                                                 scope=scope_name,
-                                                 collection=collection,
-                                                 _sync=False)
-                tasks_info.update(tem_tasks_in.items())
+            for scope_name in self.scopes:
+                for collection in collections:
+                    tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
+                                                     ignore_exceptions=self.ignore_exceptions,
+                                                     scope=scope_name,
+                                                     collection=collection,
+                                                     _sync=False)
+                    tasks_info.update(tem_tasks_in.items())
+            tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
+                                             ignore_exceptions=self.ignore_exceptions,
+                                             scope=self.scope_name,
+                                             collection=CbServer.default_collection,
+                                             _sync=False)
+            tasks_info.update(tem_tasks_in.items())
+            collections.append(CbServer.default_collection)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
