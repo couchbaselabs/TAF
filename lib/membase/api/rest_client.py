@@ -2014,29 +2014,28 @@ class RestConnection(object):
         return status
 
     def set_data_path(self, data_path=None, index_path=None, cbas_path=[]):
-        api = self.baseUrl + '/nodes/self/controller/settings'
+        end_point = '/nodes/self/controller/settings'
+        api = self.baseUrl + end_point
+        set_path = False
         from urllib3._collections import HTTPHeaderDict
         data = HTTPHeaderDict()
 
-        paths = {}
         if data_path:
+            set_path = True
             data.add('path', data_path)
-            paths['path'] = data_path
         if index_path:
+            set_path = True
             data.add('index_path', index_path)
-            paths['index_path'] = index_path
         if cbas_path:
+            set_path = True
             import ast
             cbas_path = ast.literal_eval(cbas_path)
             for cbas in cbas_path:
                 data.add('cbas_path', cbas)
-            paths['cbas_path'] = cbas_path
-        if paths:
-            params = urllib.urlencode(paths)
-            self.test_log.debug('/nodes/self/controller/settings params: {0}'
-                                .format(urllib.urlencode(data)))
-            status, content, header = self._http_request(
-                api, 'POST', urllib.urlencode(data))
+        if set_path:
+            data = urllib.urlencode(data)
+            self.test_log.debug('%s: %s' % (end_point, data))
+            status, content, header = self._http_request(api, 'POST', data)
             if status:
                 self.test_log.debug("Setting paths: {0}: status {1}"
                                     .format(data, status))
@@ -2045,14 +2044,14 @@ class RestConnection(object):
                                     .format(data, content))
             return status
 
-    def set_jre_path(self,jre_path=None,set=True):
+    def set_jre_path(self, jre_path=None, set=True):
         api = self.baseUrl + '/nodes/self/controller/settings'
         from urllib3._collections import HTTPHeaderDict
         data = HTTPHeaderDict()
-        paths={}
+        paths = {}
         if jre_path:
-            data.add('java_home',jre_path)
-            paths['java_home']=jre_path
+            data.add('java_home', jre_path)
+            paths['java_home'] = jre_path
 
         if paths:
             params = urllib.urlencode(paths)

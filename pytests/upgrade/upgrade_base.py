@@ -44,9 +44,11 @@ class UpgradeBase(BaseTestCase):
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
 
-        self.cluster_supports_sync_write = False
-        if float(self.initial_version[:3]) >= 6.5:
-            self.cluster_supports_sync_write = True
+        if self.initial_version == "same_version":
+            self.initial_version = self.upgrade_version
+
+        self.cluster_supports_sync_write = \
+            float(self.initial_version[:3]) >= 6.5
 
         self.installer_job = InstallerJob()
 
@@ -56,6 +58,8 @@ class UpgradeBase(BaseTestCase):
         self.upgrade_function["online_incremental"] = self.online_incremental
         self.upgrade_function["online_rebalance_in_out"] = \
             self.online_rebalance_in_out
+        self.upgrade_function["online_rebalance_out_in"] = \
+            self.online_rebalance_out_in
         self.upgrade_function["failover_delta_recovery"] = \
             self.failover_delta_recovery
         self.upgrade_function["failover_full_recovery"] = \
@@ -369,7 +373,8 @@ class UpgradeBase(BaseTestCase):
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
 
-    def online_swap(self, node_to_upgrade, version):
+    def online_swap(self, node_to_upgrade, version,
+                    install_on_spare_node=True):
         vb_details = dict()
         vb_verification = dict()
         vb_types = ["active", "replica"]
@@ -389,8 +394,9 @@ class UpgradeBase(BaseTestCase):
                     cbstats.vbucket_list(self.bucket.name, vb_type)
             shell.disconnect()
 
-        # Install target version on spare node
-        self.install_version_on_node([self.spare_node], version)
+        if install_on_spare_node:
+            # Install target version on spare node
+            self.install_version_on_node([self.spare_node], version)
 
         # Fetch node not going to be involved in upgrade
         rest.add_node(self.creds.rest_username,
@@ -435,10 +441,60 @@ class UpgradeBase(BaseTestCase):
         # Update spare_node to rebalanced-out node
         self.spare_node = node_to_upgrade
 
-    def online_rebalance_in_out(self, node_to_upgrade, version):
+    def online_rebalance_out_in(self, node_to_upgrade, version,
+                                install_on_spare_node=True):
         """
-        cluster <-- Node with latest_build
-        cluster --> Node with previous version
+        cluster --OUT--> Node with previous version
+        cluster <--IN-- Node with latest_build
+        """
+
+        # Fetch active services on node_to_upgrade
+        rest = self.__get_rest_node(node_to_upgrade)
+        services = rest.get_nodes_services()
+        services_on_target_node = services[(node_to_upgrade.ip + ":"
+                                            + node_to_upgrade.port)]
+
+        # Rebalance-out the target_node
+        eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)
+        otp_nodes = [node.id for node in rest.node_statuses()]
+        rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[eject_otp_node.id])
+        rebalance_passed = rest.monitorRebalance()
+        if not rebalance_passed:
+            self.log_failure("Rebalance-out failed during upgrade of %s"
+                             % node_to_upgrade.ip)
+            return
+
+        # Install target version on spare node
+        if install_on_spare_node:
+            self.install_version_on_node([self.spare_node], version)
+
+        # Rebalance-in spare node into the cluster
+        rest.add_node(self.creds.rest_username,
+                      self.creds.rest_password,
+                      self.spare_node.ip,
+                      self.spare_node.port,
+                      services=services_on_target_node)
+        otp_nodes = [node.id for node in rest.node_statuses()]
+        rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
+        rebalance_passed = rest.monitorRebalance()
+        if not rebalance_passed:
+            self.log_failure("Rebalance-in failed during upgrade of {0}"
+                             .format(node_to_upgrade))
+
+        # Print cluster status
+        self.cluster_util.print_cluster_stats()
+
+        # Update master node
+        self.cluster.master = self.spare_node
+
+        # Update spare node to rebalanced_out node
+        self.spare_node = node_to_upgrade
+
+    def online_rebalance_in_out(self, node_to_upgrade, version,
+                                install_on_spare_node=True):
+        """
+        cluster <--IN-- Node with latest_build
+        cluster --OUT--> Node with previous version
         """
         # Fetch active services on node_to_upgrade
         rest = self.__get_rest_node(node_to_upgrade)
@@ -446,8 +502,9 @@ class UpgradeBase(BaseTestCase):
         services_on_target_node = services[(node_to_upgrade.ip + ":"
                                             + node_to_upgrade.port)]
 
-        # Install target version on spare node
-        self.install_version_on_node([self.spare_node], version)
+        if install_on_spare_node:
+            # Install target version on spare node
+            self.install_version_on_node([self.spare_node], version)
 
         # Rebalance-in spare node into the cluster
         rest.add_node(self.creds.rest_username,

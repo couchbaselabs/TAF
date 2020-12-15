@@ -573,7 +573,8 @@ class BaseTestCase(unittest.TestCase):
                 shell.disconnect()
                 rest = RestConnection(server)
                 rest.set_data_path(data_path=server.data_path,
-                                   index_path=server.index_path)
+                                   index_path=server.index_path,
+                                   cbas_path = server.cbas_path)
             init_port = port or server.port or '8091'
             assigned_services = services
             if cluster.master != server:
