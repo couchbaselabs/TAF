@@ -24,13 +24,13 @@ from math import ceil
 class CBASBaseTest(BaseTestCase):
     def setUp(self, add_default_cbas_node=True):
         super(CBASBaseTest, self).setUp()
-        
+
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
                           % (self._testMethodName, self._testMethodDoc))
         else:
             self.log.info("Starting Test: %s" % self._testMethodName)
-        
+
         invalid_ip = '10.111.151.109'
         self.cb_bucket_name = self.input.param('cb_bucket_name',
                                                'travel-sample')
@@ -82,11 +82,11 @@ class CBASBaseTest(BaseTestCase):
             self._cb_cluster = self.cluster
         else:
             self._cb_cluster = self.get_clusters()
-            
+
         self.expected_error = self.input.param("error", None)
-        
+
         self.spec_name = self.input.param("bucket_spec", None)
-        
+
         # Single cluster support
         if hasattr(self, "cluster"):
             for server in self.servers:
@@ -94,10 +94,10 @@ class CBASBaseTest(BaseTestCase):
                     self.cluster.cbas_nodes.append(server)
                 if "kv" in server.services:
                     self.cluster.kv_nodes.append(server)
-            rest = RestConnection(server)
-            rest.set_data_path(data_path=server.data_path,
-                               index_path=server.index_path,
-                               cbas_path=server.cbas_path)
+                rest = RestConnection(server)
+                rest.set_data_path(data_path=server.data_path,
+                                   index_path=server.index_path,
+                                   cbas_path=server.cbas_path)
             if self.expected_error:
                 self.expected_error = \
                     self.expected_error.replace("INVALID_IP", invalid_ip)
@@ -160,7 +160,7 @@ class CBASBaseTest(BaseTestCase):
                     self.cluster.cbas_nodes.remove(self.cbas_node)
             if self.spec_name is not None:
                 try:
-                    self.collectionSetUp(self.cluster, self.bucket_util, 
+                    self.collectionSetUp(self.cluster, self.bucket_util,
                                          self.cluster_util)
                 except Java_base_exception as exception:
                     self.handle_collection_setup_exception(exception)
@@ -199,7 +199,7 @@ class CBASBaseTest(BaseTestCase):
                     rest.set_data_path(data_path=server.data_path,
                                        index_path=server.index_path,
                                        cbas_path=server.cbas_path)
-                
+
                 if self.expected_error:
                     cluster.expected_error = \
                         self.expected_error.replace("INVALID_IP", invalid_ip)
@@ -209,7 +209,7 @@ class CBASBaseTest(BaseTestCase):
 
                 cluster.otpNodes = list()
                 cluster.cbas_path = server.cbas_path
-                
+
                 cluster.rest = RestConnection(cluster.master)
 
                 self.log.info(
@@ -271,7 +271,7 @@ class CBASBaseTest(BaseTestCase):
                         cluster.cbas_nodes.remove(cluster.cbas_node)
                 if self.spec_name is not None:
                     try:
-                        self.collectionSetUp(cluster, cluster.bucket_util, 
+                        self.collectionSetUp(cluster, cluster.bucket_util,
                                              cluster.cluster_util)
                     except Java_base_exception as exception:
                         self.handle_collection_setup_exception(exception)
@@ -298,7 +298,7 @@ class CBASBaseTest(BaseTestCase):
     def tearDown(self):
         if hasattr(self, "cluster"):
             self.cbas_util.closeConn()
-        else:            
+        else:
             for cluster in self._cb_cluster:
                 if cluster.cbas_util:
                     cluster.cbas_util.closeConn()
@@ -340,7 +340,7 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("********* Dropped all buckets *********")
             else:
                 self.log.info("********* No buckets to drop *********")
-            
+
             self.log.info("Drop Dataverse other than Default and Metadata")
             cmd_get_dataverse = 'select DataverseName from Metadata.`Dataverse` where DataverseName != "Metadata" and DataverseName != "Default";'
             status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_dataverse)
@@ -426,7 +426,7 @@ class CBASBaseTest(BaseTestCase):
                     suppress_error_table=True)
         except Exception as e:
             self.log.error(e.message)
-    
+
     def remove_node(self, otpnode=None, wait_for_rebalance=True, rest=None):
         """
         Method to remove nodes from a cluster.
@@ -458,7 +458,7 @@ class CBASBaseTest(BaseTestCase):
             self.assertTrue(removed,
                             "Rebalance operation failed while removing %s"
                             % otpnode)
-    
+
     def create_dataverse_link_map(self, cbas_util, dataverse=0, link=0):
         """
         This function creates a hash map, depicting links in different dataverses.
@@ -466,8 +466,8 @@ class CBASBaseTest(BaseTestCase):
          and any link if present will be associated with the "Default" dataverse.
         :param link: total number of links to be created.
         :returns hash map with dataverse names as keys and associated links as values.
-        
-        Sample dataverse map: 
+
+        Sample dataverse map:
         Note - Default dataverse will always be present
         Note - 2 different dataverses can have links with same name.
         dataverse_map = {
@@ -577,7 +577,7 @@ class CBASBaseTest(BaseTestCase):
             pass
         finally:
             return itemlist
-    
+
     def set_primary_index(self, rest, bucket_name):
         query = "CREATE PRIMARY INDEX ON `{0}`;".format(bucket_name)
         result = rest.query_tool(query)
@@ -594,13 +594,13 @@ class CBASBaseTest(BaseTestCase):
                 return False
             else:
                 return value
-    
+
     def handle_collection_setup_exception(self, exception_obj):
         if self.sdk_client_pool is not None:
             self.sdk_client_pool.shutdown()
         traceback.print_exc()
         raise exception_obj
-    
+
     def collectionSetUp(self, cluster, bucket_util, cluster_util):
         """
         Setup the buckets, scopes and collecitons based on the spec passed.
@@ -609,7 +609,7 @@ class CBASBaseTest(BaseTestCase):
             "override_spec_params", "").split(";")
         self.remove_default_collection = self.input.param(
             "remove_default_collection", False)
-        
+
         # Create bucket(s) and add rbac user
         bucket_util.add_rbac_user()
         buckets_spec = bucket_util.get_bucket_template_from_package(
@@ -620,7 +620,7 @@ class CBASBaseTest(BaseTestCase):
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
-        
+
         # MB-38438, adding CollectionNotFoundException in retry exception
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
             SDKException.CollectionNotFoundException)
@@ -677,7 +677,7 @@ class CBASBaseTest(BaseTestCase):
 
         # Prints bucket stats after doc_ops
         bucket_util.print_bucket_stats()
-    
+
     def over_ride_bucket_template_params(self, bucket_spec):
         for over_ride_param in self.over_ride_spec_params:
             if over_ride_param == "replicas":
@@ -709,5 +709,5 @@ class CBASBaseTest(BaseTestCase):
             elif over_ride_param == "doc_size":
                 target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
 
-        
-        
+
+
