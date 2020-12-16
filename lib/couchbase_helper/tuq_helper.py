@@ -72,7 +72,8 @@ class N1QLHelper:
             txid = ""
         return txid
 
-    def create_txn(self, txtimeout=0, durability_level="", atrcollection=""):
+    def create_txn(self, txtimeout=0, durability_level="", atrcollection="",
+                   server=None):
         query_params = {}
         if durability_level:
             query_params["durability_level"] = durability_level
@@ -81,11 +82,12 @@ class N1QLHelper:
         if atrcollection:
             query_params["atrcollection"] = atrcollection
         stmt = "BEGIN WORK"
-        results = self.run_cbq_query(stmt, query_params=query_params)
+        results = self.run_cbq_query(stmt, query_params=query_params,
+                                     server=server)
         txid = self.get_txid(results)
         return {'txid': txid}
 
-    def end_txn(self, query_params, commit, savepoint=""):
+    def end_txn(self, query_params, commit, savepoint="", server=None):
         # query_params = {'txid': txid}
         if savepoint:
             stmt = "ROLLBACK TO SAVEPOINT " + savepoint
@@ -94,7 +96,8 @@ class N1QLHelper:
         else:
             stmt = "ROLLBACK WORK"
         self.log.info("commit work for txn %s"%query_params)
-        result = self.run_cbq_query(stmt, query_params=query_params)
+        result = self.run_cbq_query(stmt, query_params=query_params,
+                                    server=server)
         return stmt, result
 
     def run_cbq_query(self, query=None, min_output_size=10,
@@ -103,9 +106,12 @@ class N1QLHelper:
         if query is None:
             query = ""
         if server is None:
-            server = self.server
+            if isinstance(self.server, list):
+                server = self.server[0]
+            else:
+                server = self.server
         cred_params = {'creds': []}
-        rest = RestConnection(server[0])
+        rest = RestConnection(server)
         if username is None and password is None:
             username = 'Administrator'
             password = 'password'
