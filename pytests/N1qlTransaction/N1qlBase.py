@@ -66,7 +66,9 @@ class N1qlBase(CollectionBase):
         self.input.param("num_rollback_to_savepoint", 0)
         self.num_conflict = self.input.param("num_conflict", 0)
         self.write_conflict = self.input.param("write_conflict", False)
-        self.n1ql_helper = N1QLHelper(server=self.servers,
+        self.n1ql_server = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
+                                                                         get_all_nodes=True)
+        self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                       use_rest=True,
                                       buckets = self.buckets,
                                       log=self.log,
