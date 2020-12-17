@@ -289,6 +289,8 @@ class DocumentGenerator(KVGenerator):
         self.random.seed(seed_hash)
         if self.randomize:
             for k in template.getNames():
+                if k not in self.kwargs:
+                    continue
                 if callable(self.kwargs[k]):
                     t_val = self.kwargs[k]()
                 else:
