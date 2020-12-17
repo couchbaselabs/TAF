@@ -8,6 +8,7 @@ from couchbase_helper.durability_helper import DurabilityHelper, \
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
 
 
@@ -387,6 +388,8 @@ class UpgradeTests(UpgradeBase):
         self.task_manager.get_task_result(trans_task)
 
     def test_cbcollect_info(self):
+        self.parse = self.input.param("parse", False)
+        self.metric_name = self.input.param("metric_name", "kv_curr_items")
         log_path = self.input.param("logs_folder")
         self.log.info("Starting update tasks")
         update_tasks = list()
@@ -432,12 +435,20 @@ class UpgradeTests(UpgradeBase):
                 self.cluster.update_master(
                     self.cluster.servers[self.nodes_init-1])
 
+            # TODO: Do some validations here
+            try:
+                self.get_all_metrics(self.parse, self.metric_name)
+            except Exception:
+                pass
+
             node_to_upgrade = self.fetch_node_to_upgrade()
 
             # Halt further upgrade if test has failed during current upgrade
             if self.test_failure is True:
                 break
 
+        # Metrics should work in fully upgraded cluster
+        self.get_all_metrics(self.parse, self.metric_name)
         # Cbcollect with fully upgraded cluster
         self.__trigger_cbcollect(log_path)
 
@@ -447,3 +458,38 @@ class UpgradeTests(UpgradeBase):
             self.task_manager.get_task_result(update_task)
 
         self.validate_test_failure()
+
+    def get_low_cardinality_metrics(self, parse):
+        content = None
+        for server in self.cluster_util.get_kv_nodes():
+            content = StatsHelper(server).get_prometheus_metrics(parse=parse)
+            if not parse:
+                StatsHelper(server)._validate_metrics(content)
+        for line in content:
+            self.log.info(line.strip("\n"))
+
+    def get_high_cardinality_metrics(self,parse):
+        content = None
+        try:
+            for server in self.cluster_util.get_kv_nodes():
+                content = StatsHelper(server).get_prometheus_metrics_high(parse=parse)
+                if not parse:
+                    StatsHelper(server)._validate_metrics(content)
+            for line in content:
+                self.log.info(line.strip("\n"))
+        except:
+            pass
+
+    def get_range_api_metrics(self, metric_name):
+        label_values = {"bucket": self.bucket_util.buckets[0].name, "nodes": self.cluster.master.ip}
+        content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
+        self.log.info(content)
+
+    def get_instant_api(self, metric_name):
+        pass
+
+    def get_all_metrics(self, parse, metrics):
+        self.get_low_cardinality_metrics(parse)
+        self.get_high_cardinality_metrics(parse)
+        self.get_range_api_metrics(metrics)
+        self.get_instant_api(metrics)
