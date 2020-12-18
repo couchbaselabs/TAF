@@ -164,7 +164,7 @@ class N1QLHelper:
                                          is_prepared=is_prepared,
                                          named_prepare=self.named_prepare,
                                          encoded_plan=encoded_plan,
-                                         servers=server)
+                                         servers=server, timeout=100)
         else:
             self.shell = RemoteMachineShellConnection(self.cluster.master)
             if self.version == "git_repo":
