@@ -181,7 +181,7 @@ class RestConnection(object):
         except requests.exceptions.HTTPError as errh:
             self.log.error("HTTP Error {0}".format(errh))
         except requests.exceptions.ConnectionError as errc:
-            self.log.info("Error Connecting {0}".format(errc))
+            self.log.error("Error Connecting {0}".format(errc))
         except requests.exceptions.Timeout as errt:
             self.log.error("Timeout Error: {0}".format(errt))
         except requests.exceptions.RequestException as err:
@@ -201,7 +201,7 @@ class RestConnection(object):
         except requests.exceptions.HTTPError as errh:
             self.log.error("HTTP Error {0}".format(errh))
         except requests.exceptions.ConnectionError as errc:
-            self.log.info("Error Connecting {0}".format(errc))
+            self.log.error("Error Connecting {0}".format(errc))
         except requests.exceptions.Timeout as errt:
             self.log.error("Timeout Error: {0}".format(errt))
         except requests.exceptions.RequestException as err:
