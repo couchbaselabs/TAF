@@ -298,8 +298,18 @@ class MagmaBaseTest(BaseTestCase):
                                 format(initial_result, final_result))
 
         self.cluster_util.print_cluster_stats()
-        dgm = BucketHelper(self.cluster.master).fetch_bucket_stats(
-            self.buckets[0].name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+        dgm = None
+        timeout = 65
+        while dgm is None and timeout > 0:
+            try:
+                stats = BucketHelper(self.cluster.master).fetch_bucket_stats(
+                    self.buckets[0].name)
+                dgm = stats["op"]["samples"]["vb_active_resident_items_ratio"][
+                    -1]
+            except:
+                self.log.debug("Fetching vb_active_resident_items_ratio(dgm) failed...retying")
+                timeout -= 1
+                time.sleep(1)
         self.log.info("## Active Resident Threshold of {0} is {1} ##".format(
             self.buckets[0].name, dgm))
         super(MagmaBaseTest, self).tearDown()
