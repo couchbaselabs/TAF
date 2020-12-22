@@ -753,6 +753,32 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
+    def async_n1qlTxn_query(self, stmts, n1ql_helper,
+                     commit=True,
+                     scan_consistency='REQUEST_PLUS'):
+        """Asynchronously runs n1ql querya and verifies result if required
+
+        Parameters:
+          server - Server to handle query verification task (TestInputServer)
+          query - Query params being used with the query. (dict)
+          expected_result - expected result after querying
+          is_explain_query - is query explain query
+          index_name - index related to query
+          bucket - Name of the bucket containing items for this view (String)
+          verify_results -  Verify results after query runs successfully
+          retry_time - Seconds to wait before retrying failed queries (int)
+          n1ql_helper - n1ql helper object
+          scan_consistency - consistency value for querying
+          scan_vector - scan vector used for consistency
+        Returns:
+          N1QLQueryTask - A task future that is a handle to the scheduled task
+        """
+        _task = jython_tasks.N1QLTxnQueryTask(stmts=stmts,
+                n1ql_helper=n1ql_helper, commit=commit,
+                 scan_consistency=scan_consistency)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
     def async_monitor_index(self, server, bucket, n1ql_helper=None,
                             index_name=None, retry_time=2, timeout=240):
         """

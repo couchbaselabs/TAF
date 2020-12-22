@@ -11,6 +11,7 @@ from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from couchbase_helper.tuq_helper import N1QLHelper
 
 from sdk_exceptions import SDKException
 
@@ -25,6 +26,7 @@ class CrashTest(CollectionBase):
         self.sig_type = self.input.param("sig_type", "SIGKILL").upper()
         self.target_node = self.input.param("target_node", "active")
         self.client_type = self.input.param("client_type", "sdk").lower()
+        self.N1qltxn = self.input.param("N1qltxn", False)
 
         self.pre_warmup_stats = dict()
         self.timeout = 120
@@ -105,6 +107,24 @@ class CrashTest(CollectionBase):
 
             self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.bucket = self.bucket_util.buckets[0]
+        if self.N1qltxn:
+            self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
+                                service_type="n1ql",
+                                get_all_nodes=True)
+            self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
+                                              use_rest=True,
+                                              buckets = self.bucket_util.buckets,
+                                              log=self.log,
+                                              scan_consistency='REQUEST_PLUS',
+                                              num_collection=3,
+                                              num_buckets=1,
+                                              num_savepoints=1,
+                                              override_savepoint=False,
+                                              num_stmt=10,
+                                              load_spec=self.data_spec_name)
+            self.bucket_col = self.n1ql_helper.get_collections()
+            self.stmts = self.n1ql_helper.get_stmt(self.bucket_col)
+            self.stmts = self.n1ql_helper.create_full_stmts(self.stmts)
         self.log.info("==========Finished CrashTest setup========")
 
     def tearDown(self):
@@ -150,6 +170,11 @@ class CrashTest(CollectionBase):
                     commit=True,
                     sync=self.sync)
             collection_obj.num_items += self.new_docs_to_add
+        elif self.N1qltxn:
+            self.N1ql_load_task = self.task.async_n1qlTxn_query( self.stmts,
+                 n1ql_helper=self.n1ql_helper,
+                 commit=True,
+                 scan_consistency="REQUEST_PLUS")
         self.doc_loading_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_load, "create",
             exp=0,
@@ -419,6 +444,9 @@ class CrashTest(CollectionBase):
         if self.atomicity:
             self.task.jython_task_manager.get_task_result(
                 self.transaction_load_task)
+        elif self.N1qltxn:
+            self.task.jython_task_manager.get_task_result(
+                self.N1ql_load_task)
 
         if len(self.doc_loading_task.fail.keys()) != 0:
             if self.target_node == "active" or self.num_replicas in [2, 3]:
@@ -452,7 +480,8 @@ class CrashTest(CollectionBase):
 
         # Update self.num_items and validate docs per collection
         collection.num_items += self.new_docs_to_add
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        if not self.N1qltxn:
+            self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_crash_process(self):
         """
@@ -469,6 +498,7 @@ class CrashTest(CollectionBase):
         retry_exceptions = list()
         self.transaction_load_task = None
         self.doc_loading_task = None
+        self.N1ql_load_task = None
 
         # If Memcached is killed, we should not perform KV ops on
         # particular node. If not we can target all nodes for KV operation.
@@ -520,6 +550,9 @@ class CrashTest(CollectionBase):
         if self.transaction_load_task:
             self.task.jython_task_manager.get_task_result(
                 self.transaction_load_task)
+        if self.N1qltxn:
+            self.task.jython_task_manager.get_task_result(
+                self.N1ql_load_task)
         self.task_manager.get_task_result(self.doc_loading_task)
         self.bucket_util.verify_doc_op_task_exceptions(task_info,
                                                        self.cluster)
@@ -551,4 +584,5 @@ class CrashTest(CollectionBase):
                 self.fail("Cbstats verification failed")
 
         # Doc count validation per collection
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        if not self.N1qltxn:
+            self.bucket_util.validate_docs_per_collections_all_buckets()

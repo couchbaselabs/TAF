@@ -2898,6 +2898,36 @@ class N1QLQueryTask(Task):
         except Exception as e:
             self.set_exception(e)
 
+class N1QLTxnQueryTask(Task):
+    def __init__(self, stmts, n1ql_helper,
+                 commit=True,
+                 scan_consistency='REQUEST_PLUS'):
+        super(N1QLTxnQueryTask, self).__init__("query_n1ql_task_%s"
+                                            % (time.time()))
+        self.stmt = stmts
+        self.scan_consistency = scan_consistency
+        self.commit = commit
+        self.n1ql_helper = n1ql_helper
+
+    def call(self):
+        self.start_task()
+        try:
+            # Query and get results
+            self.test_log.info(" <<<<< START Executing N1ql Transaction >>>>>>")
+            sleep(5)
+            self.query_params = self.n1ql_helper.create_txn()
+            for query in self.stmt:
+                result = self.n1ql_helper.run_cbq_query(query,
+                                                        query_params=self.query_params)
+                sleep(2)
+                print result
+            self.n1ql_helper.end_txn(self.query_params, self.commit)
+            self.test_log.debug(" <<<<< Done Executing N1ql Transaction >>>>>>")
+            self.test_log.info("Expected Query to fail but passed")
+        # catch and set all unexpected exceptions
+        except Exception:
+            self.test_log.info(" <<<<< Query Failed as Expected >>>>>>")
+
 class CreateIndexTask(Task):
     def __init__(self, server, bucket, index_name, query, n1ql_helper=None,
                  retry_time=2, defer_build=False, timeout=240):
