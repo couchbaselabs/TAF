@@ -226,7 +226,10 @@ class RebalanceDurability(RebalanceBaseTest):
                     transaction_timeout=self.transaction_timeout,
                     commit=True, durability=self.durability_level, sync=True,
                     num_threads=1, record_fail=True, defer=self.defer))
-                self.num_items = self.num_items+num_of_docs_to_insert
+                self.num_items += num_of_docs_to_insert
+                def_bucket.scopes[self.scope_name] \
+                    .collections[self.collection_name] \
+                    .num_items += num_of_docs_to_insert
             else:
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, def_bucket, gen_create, "create", exp=0,
@@ -269,6 +272,9 @@ class RebalanceDurability(RebalanceBaseTest):
             elif not self.atomicity:
                 # If durability works fine, re-calculate the self.num_items
                 self.num_items += num_of_docs_to_insert
+                def_bucket.scopes[self.scope_name] \
+                    .collections[self.collection_name] \
+                    .num_items += num_of_docs_to_insert
                 # Reset the tasks list to reuse
                 tasks = list()
                 # Create tasks for doc verification
@@ -340,6 +346,9 @@ class RebalanceDurability(RebalanceBaseTest):
             # After rebalance-in durability should work fine
             # So recalculating the self.num_items to match gen_create loader
             self.num_items += num_of_docs_to_insert
+            def_bucket.scopes[self.scope_name] \
+                .collections[self.collection_name] \
+                .num_items += num_of_docs_to_insert
 
             # Reset the tasks list
             tasks = list()
