@@ -31,10 +31,7 @@ class MagmaBaseTest(BaseTestCase):
                                password=self.cluster.master.rest_password)
 
         nodes_init = self.cluster.servers[1:self.nodes_init]
-
-        self.services = []
-        if nodes_init:
-            self.services = ["kv"]*(self.nodes_init)
+        self.services = ["kv"]*(self.nodes_init)
 
         self.dcp_services = self.input.param("dcp_services", None)
         self.dcp_servers = []
