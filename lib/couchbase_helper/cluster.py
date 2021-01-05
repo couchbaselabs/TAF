@@ -106,7 +106,7 @@ class ServerTasks(object):
             self.jython_task_manager.add_new_task(task)
         return task
 
-    def async_load_gen_docs(self, cluster, bucket, generator, op_type, 
+    def async_load_gen_docs(self, cluster, bucket, generator, op_type,
                             exp=0, random_exp=False,
                             flag=0, persist_to=0, replicate_to=0,
                             only_store_hash=True, batch_size=1, pause_secs=1,
@@ -558,7 +558,8 @@ class ServerTasks(object):
         return _task.get_result(timeout)
 
     def rebalance(self, servers, to_add, to_remove, timeout=None,
-                  use_hostnames=False, services=None):
+                  use_hostnames=False, services=None,
+                  check_vbucket_shuffling=True):
         """
         Synchronously rebalances a cluster
 
@@ -572,9 +573,11 @@ class ServerTasks(object):
         Returns:
           boolean - Whether or not the rebalance was successful
         """
-        _task = self.async_rebalance(servers, to_add, to_remove,
-                                     use_hostnames=use_hostnames,
-                                     services=services)
+        _task = self.async_rebalance(
+            servers, to_add, to_remove,
+            use_hostnames=use_hostnames,
+            services=services,
+            check_vbucket_shuffling=check_vbucket_shuffling)
         self.jython_task_manager.get_task_result(_task)
         return _task.result
 
