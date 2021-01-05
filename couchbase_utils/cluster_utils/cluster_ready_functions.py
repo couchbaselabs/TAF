@@ -33,7 +33,7 @@ class CBCluster:
         self.kv_nodes = list()
         self.fts_nodes = list()
         self.cbas_nodes = list()
-        self.indes_nodes = list()
+        self.index_nodes = list()
         self.query_nodes = list()
         self.eventing_nodes = list()
         self.nodes_in_cluster = list()
@@ -425,6 +425,37 @@ class ClusterUtils:
             time.sleep(10)
         except Exception, ex:
             self.log.error(ex)
+
+    def update_cluster_nodes_service_list(self, cluster):
+        def append_nodes_to_list(nodes, list_to_append):
+            for t_node in nodes:
+                t_node = t_node.split(":")
+                for server in cluster.servers:
+                    if server.ip == t_node[0] and server.port == t_node[1]:
+                        list_to_append.append(server)
+                        break
+
+        service_map = self.get_services_map(cluster.master)
+        cluster.kv_nodes = list()
+        cluster.fts_nodes = list()
+        cluster.cbas_nodes = list()
+        cluster.index_nodes = list()
+        cluster.query_nodes = list()
+        cluster.eventing_nodes = list()
+        cluster.backup_nodes = list()
+        for service_type, node_list in service_map.items():
+            if service_type == "kv":
+                append_nodes_to_list(node_list, cluster.kv_nodes)
+            elif service_type == "index":
+                append_nodes_to_list(node_list, cluster.index_nodes)
+            elif service_type == "n1ql":
+                append_nodes_to_list(node_list, cluster.query_nodes)
+            elif service_type == "cbas":
+                append_nodes_to_list(node_list, cluster.cbas_nodes)
+            elif service_type == "eventing":
+                append_nodes_to_list(node_list, cluster.eventing_nodes)
+            elif service_type == "fts":
+                append_nodes_to_list(node_list, cluster.fts_nodes)
 
     def get_nodes_from_services_map(self, service_type="n1ql",
                                     get_all_nodes=False, servers=None,

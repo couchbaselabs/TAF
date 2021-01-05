@@ -38,11 +38,21 @@ class RebalanceBaseTest(BaseTestCase):
                                password=self.cluster.master.rest_password)
         self.rest.init_cluster_memoryQuota(memoryQuota=int(info.mcdMemoryReserved*node_ram_ratio))
         self.check_temporary_failure_exception = False
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
+
+        services = None
+        if self.services_init:
+            services = list()
+            for service in self.services_init.split("-"):
+                services.append(service.replace(":", ","))
+            services = services[1:] if len(services) > 1 else None
+
         if nodes_init:
-            result = self.task.rebalance([self.cluster.master], nodes_init, [])
+            result = self.task.rebalance([self.cluster.master], nodes_init, [],
+                                         services=services)
             self.assertTrue(result, "Initial rebalance failed")
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.check_replica = self.input.param("check_replica", False)
 
         self.bucket_util.add_rbac_user()
