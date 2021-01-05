@@ -1,12 +1,12 @@
 file_name_patterns:
   - file: 'memcached.log.*'
     grep_for:
-      - string: 'CRITICAL'
+      - string: ' CRITICAL '
         error_patterns:
           - 'Fatal error encountered during exception handling'
         exclude_patterns:
           - 'Rollback point not found'
-      - string: 'ERROR'
+      - string: ' ERROR '
         exclude_patterns:
           - 'XERROR'
       #- string: 'WARN'
