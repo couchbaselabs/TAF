@@ -521,6 +521,7 @@ class N1qlBase(CollectionBase):
         5. validate inserted docs
         """
         for collection in bucket_col:
+            self.log.info("validation started for collection %s"%collection)
             gen_load = doc_gen_list[collection]
             self.validate_dict = {}
             self.deleted_key = []
@@ -543,7 +544,7 @@ class N1qlBase(CollectionBase):
                                         mutated[1]
                                 except:
                                     self.validate_dict[t_id].put(mutated[0],
-                                                                 mutated[1])
+                                                                     mutated[1])
             bucket_collection = collection.split('.')
             if buckets:
                 self.buckets = buckets

@@ -105,7 +105,7 @@ class BasicOps(N1qlBase):
                 self.task_manager.get_task_result(task)
         stmts = self.n1ql_helper.get_stmt(bucket_collections)
         self.execute_query_and_validate_results(stmts,
-                                            bucket_collections)
+                                            bucket_collections, doc_gen_list)
 
     def text_txn_same_collection_diff_bucket(self):
         '''
@@ -142,7 +142,7 @@ class BasicOps(N1qlBase):
             self.task_manager.get_task_result(task)
         stmts = self.n1ql_helper.get_stmt(bucket_collections)
         self.execute_query_and_validate_results(stmts,
-                                            bucket_collections)
+                                            bucket_collections, doc_gen_list)
 
     def test_txn_same_keys(self):
         collections = self.n1ql_helper.get_collections()
