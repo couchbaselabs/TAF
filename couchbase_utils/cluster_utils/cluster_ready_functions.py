@@ -48,38 +48,20 @@ class CBCluster:
         return "Couchbase Cluster: %s, Nodes: %s" % (
             self.name, ', '.join([s.ip for s in self.servers]))
 
-    def update_master(self, node_in_cluster=None):
-        """
-        Update the master of the cluster with the orchestrator of the
-        cluster.
-        :param node_in_cluster: Any node that is still part of the
-        cluster. Note that we need to enable diag_eval on non local
-        hosts first before running this method.
-        :return:
-        """
+    def update_master_using_diag_eval(self, node_in_cluster=None):
         if node_in_cluster is None:
             node_in_cluster = self.master
 
-        retry_index = 0
-        max_retry = 12
-        orchestrator_node = None
-        status = None
+        shell = RemoteMachineShellConnection(node_in_cluster)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
 
         rest = RestConnection(node_in_cluster)
-        while retry_index < max_retry:
-            status, content = rest.get_terse_cluster_info()
-            json_content = json.loads(content)
-            orchestrator_node = json_content["orchestrator"]
-            if orchestrator_node == "undefined":
-                sleep(1, message="orchestrator='undefined'", log_type="test")
-            else:
-                break
-        orchestrator_node = \
-            orchestrator_node.split("@")[1].replace("\\", '').replace("'", "")
+        status, content = rest.diag_eval("mb_master:master_node().")
+
+        master_ip = content.split("@")[1].replace("\\", '').replace("'", "")
         self.master = [server for server in self.servers
-                       if server.ip == orchestrator_node][0]
-        # Overriding to str type to match the previous dial/eval return value
-        content = "ns_1@%s" % self.master.ip
+                       if server.ip == master_ip][0]
         return status, content
 
 
@@ -94,7 +76,34 @@ class ClusterUtils:
         self.log = logger.get("test")
 
     def find_orchestrator(self, node=None):
-        status, content = self.cluster.update_master(node)
+        """
+        Update the orchestrator of the cluster
+        :param node: Any node that is still part of the cluster or master
+        :return:
+        """
+        retry_index = 0
+        max_retry = 12
+        orchestrator_node = None
+        status = None
+        node = self.cluster.master if node is None else node
+
+        rest = RestConnection(node)
+        while retry_index < max_retry:
+            status, content = rest.get_terse_cluster_info()
+            json_content = json.loads(content)
+            orchestrator_node = json_content["orchestrator"]
+            if orchestrator_node == "undefined":
+                sleep(1, message="orchestrator='undefined'", log_type="test")
+            else:
+                break
+        orchestrator_node = \
+            orchestrator_node.split("@")[1] \
+            .replace("\\", '').replace("'", "")
+
+        self.cluster.master = [server for server in self.cluster.servers
+                               if server.ip == orchestrator_node][0]
+        # Type cast to str - match the previous dial/eval return value
+        content = "ns_1@%s" % self.master.ip
         self.rest = RestConnection(self.cluster.master)
         return status, content
 

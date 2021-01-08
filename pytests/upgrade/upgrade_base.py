@@ -160,7 +160,7 @@ class UpgradeBase(BaseTestCase):
             return False
 
         cluster_node = None
-        self.cluster.update_master()
+        self.cluster.update_master_using_diag_eval()
 
         if self.prefer_master:
             node_info = RestConnection(self.cluster.master).get_nodes_self(10)

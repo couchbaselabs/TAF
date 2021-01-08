@@ -179,9 +179,10 @@ class UpgradeTests(UpgradeBase):
             self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                      self.upgrade_version)
             try:
-                self.cluster.update_master(self.cluster.servers[0])
+                self.cluster.update_master_using_diag_eval(
+                    self.cluster.servers[0])
             except Exception:
-                self.cluster.update_master(
+                self.cluster.update_master_using_diag_eval(
                     self.cluster.servers[self.nodes_init-1])
 
             create_gen = doc_generator(self.key, self.num_items,
@@ -339,9 +340,10 @@ class UpgradeTests(UpgradeBase):
             self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                      self.upgrade_version)
             try:
-                self.cluster.update_master(self.cluster.servers[0])
+                self.cluster.update_master_using_diag_eval(
+                    self.cluster.servers[0])
             except Exception:
-                self.cluster.update_master(
+                self.cluster.update_master_using_diag_eval(
                     self.cluster.servers[self.nodes_init-1])
 
             if self.upgrade_with_data_load:
@@ -430,9 +432,10 @@ class UpgradeTests(UpgradeBase):
             self.cluster_util.print_cluster_stats()
 
             try:
-                self.cluster.update_master(self.cluster.servers[0])
+                self.cluster.update_master_using_diag_eval(
+                    self.cluster.servers[0])
             except Exception:
-                self.cluster.update_master(
+                self.cluster.update_master_using_diag_eval(
                     self.cluster.servers[self.nodes_init-1])
 
             # TODO: Do some validations here
