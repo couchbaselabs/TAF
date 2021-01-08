@@ -121,7 +121,7 @@ class MagmaBaseTest(BaseTestCase):
             self.max_commit_points = 0
 
         if self.max_commit_points is not None:
-            props += ";magma_max_commit_points={}".format(self.max_commit_points)
+            props += ";magma_max_checkpoints={}".format(self.max_commit_points)
             self.log.debug("props== {}".format(props))
             update_bucket_props = True
 
