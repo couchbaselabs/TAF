@@ -86,7 +86,7 @@ class CollectionsRebalance(CollectionBase):
             self.n1ql_fun = N1qlBase()
             try:
                 query_params = self.n1ql_helper.create_txn(server=self.server)
-                self.collection_savepoint, self.savepoints, self.queries = \
+                self.collection_savepoint, self.savepoints, self.queries, rerun = \
                     self.n1ql_fun.full_execute_query(self.stmts, True, query_params,
                                         N1qlhelper=self.n1ql_helper, server=self.server)
                 if not isinstance(self.collection_savepoint, dict):

@@ -89,7 +89,7 @@ class N1ql_txn_negative(N1qlBase):
         self.task_manager.get_task_result(task)
 
     def execute_query(self, stmts, query_params, sleep=200):
-        collection_savepoint, savepoints, queries = \
+        collection_savepoint, savepoints, queries, rerun = \
             self.full_execute_query(stmts, self.commit,
                         query_params, self.rollback_to_savepoint,
                         self.write_conflict, sleep)

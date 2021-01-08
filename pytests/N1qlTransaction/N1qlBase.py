@@ -85,26 +85,6 @@ class N1qlBase(CollectionBase):
     def tearDown(self):
         self.n1ql_helper.drop_index()
         super(N1qlBase, self).tearDown()
-
-#     def create_txn(self, txtimeout=0, durability_level=""):
-#         query_params = {}
-#         if self.durability_level:
-#             query_params["durability"] = self.durability_level
-#         if self.txtimeout:
-#             query_params["txtimeout"] = str(txtimeout) + "m"
-#         if self.atrcollection:
-#             collections = self.bucket_util.get_random_collections(
-#             self.buckets, 1, "all", self.num_buckets)
-#             for bucket, scope_dict in collections.items():
-#                 for s_name, c_dict in scope_dict["scopes"].items():
-#                     for c_name, c_data in c_dict["collections"].items():
-#                         keyspace = ("`%s`.`%s`.`%s`"%(bucket, s_name, c_name))
-#             query_params["atrcollection"] = keyspace
-#         stmt = "BEGIN WORK"
-#         print query_params
-#         results = self.n1ql_helper.run_cbq_query(stmt, query_params=query_params)
-#         txid = self.get_txid(results)
-#         return {'txid': txid}
 #
     def runTest(self):
         pass
@@ -130,7 +110,6 @@ class N1qlBase(CollectionBase):
                                                 query_params=query_params,
                                                 server=server)
         collection = index.split('.')[-1]
-
         for doc in result["results"]:
             value = doc[collection].get(dict_to_add[0].encode())
             if isinstance(value, list):
@@ -209,7 +188,7 @@ class N1qlBase(CollectionBase):
                                                 query_params=query_params,
                                                 server=server)
         if result["status"] == "success":
-            list_docs = [d.get('id').encode() for d in result["results"]]
+            list_docs = copy.deepcopy([d.get('id').encode() for d in result["results"]])
             self.validate_update_results(clause[0], list_docs, clause[3],
                                          query_params, server)
         else:
@@ -271,7 +250,9 @@ class N1qlBase(CollectionBase):
         query = "SAVEPOINT %s" % clause[1]
         result = self.n1ql_helper.run_cbq_query(query, query_params=query_params,
                                                 server=server)
-        return result
+        if result["status"] != "success":
+            self.fail("savepoint query failed %s"%query)
+        return query
 
     def get_savepoint_to_verify(self, savepoint):
         savepoint_txn = random.choice(savepoint).split(":")[0]
@@ -300,6 +281,7 @@ class N1qlBase(CollectionBase):
         savepoint = list()
         collection_map = dict()
         txid = query_params.values()[0]
+        rerun_thread = False
         if N1qlhelper:
             self.n1ql_helper = N1qlhelper
         queries = dict()
@@ -325,7 +307,7 @@ class N1qlBase(CollectionBase):
                 if clause[1] == "UPDATE":
                     result, query = \
                         self.run_update_query(clause, query_params, server)
-                    queries[txid].append(query)
+                    queries[txid].extend(query)
                     collection_map[clause[0]]["UPDATE"][clause[3]] = result
                 if clause[1] == "INSERT":
                     result, query = self.run_insert_query(
@@ -351,9 +333,9 @@ class N1qlBase(CollectionBase):
             if commit is False:
                 savepoint = []
                 collection_savepoint = {}
-                queries[txid].append(query)
                 query, result = self.n1ql_helper.end_txn(query_params, commit=False,
                                                          server=server)
+                queries[txid].append(query)
             else:
                 if (not rollback_to_savepoint) or len(savepoint) == 0:
                     collection_savepoint['last'] = copy.deepcopy(collection_map)
@@ -364,25 +346,26 @@ class N1qlBase(CollectionBase):
                 queries[txid].append(query)
                 query, result = self.n1ql_helper.end_txn(query_params, commit=True,
                                                          server=server)
+                queries[txid].append(query)
                 if isinstance(result, str) or 'errors' in result:
                     #retry the entire transaction
-                    rerun = self.validate_error_during_commit(result,
+                    rerun_thread = self.validate_error_during_commit(result,
                                      collection_savepoint, savepoint)
-                    if rerun:
-                        query_params = self.n1ql_helper.create_txn(server=server)
-                        self.full_execute_query(stmts, commit, query_params,
-                             rollback_to_savepoint, write_conflict, issleep,
-                             server=server)
-                    else:
-                        savepoint = []
-                        collection_savepoint = {}
+#                     if rerun:
+#                         query_params = self.n1ql_helper.create_txn(server=server)
+#                         self.full_execute_query(stmts, commit, query_params,
+#                              rollback_to_savepoint, write_conflict, issleep,
+#                              server=server)
+#                     else:
+                    savepoint = []
+                    collection_savepoint = {}
             if write_conflict and write_conflict_result:
                 collection_savepoint['last'] = copy.deepcopy(write_conflict_result)
                 savepoint.append("last")
         except Exception as e:
             self.log.info(e)
             collection_savepoint = e
-        return collection_savepoint, savepoint, queries
+        return collection_savepoint, savepoint, queries, rerun_thread
 
     def simulate_write_conflict(self, stmts, commit):
         collection_map = {}
@@ -567,7 +550,13 @@ class N1qlBase(CollectionBase):
         self.log.info("values are %s %s %s %s" % (stmt, commit,
                                                   rollback_to_savepoint,
                                                   write_conflict))
-        collection_savepoint, savepoints, queries = \
+        collection_savepoint, savepoints, queries, rerun_thread = \
+            self.full_execute_query(stmt, commit, query_params,
+                                    rollback_to_savepoint, write_conflict,
+                                    server=server)
+        if rerun_thread:
+            query_params = self.n1ql_helper.create_txn(server=server, txtimeout=1)
+            collection_savepoint, savepoints, queries, rerun_thread = \
             self.full_execute_query(stmt, commit, query_params,
                                     rollback_to_savepoint, write_conflict,
                                     server=server)
@@ -605,7 +594,7 @@ class N1qlBase(CollectionBase):
                 self.num_count(num_conflict)
             if isinstance(self.n1ql_server, list):
                 server = random.choice(self.n1ql_server)
-            query_params = self.n1ql_helper.create_txn(server=server)
+            query_params = self.n1ql_helper.create_txn(server=server, txtimeout=1)
             self.threads.append(
                 Thread(target=lambda q, arg1: q.put(self.thread_txn(arg1)),
                        args=(que, [stmt, query_params, commit,
@@ -655,16 +644,15 @@ class N1qlBase(CollectionBase):
                                          CbServer.default_collection))
         query_params = self.n1ql_helper.create_txn(self.txtimeout, self.durability_level,
                                                    atrcollection)
-        collection_savepoint, savepoints, queries = \
+        collection_savepoint, savepoints, queries, rerun = \
             self.full_execute_query(stmt, self.commit, query_params,
                                     self.rollback_to_savepoint)
+        self.log.info("queries ran are %s" % queries)
         if not doc_gen_list:
             doc_gen_list = self.n1ql_helper.get_doc_gen_list(bucket_col)
         if isinstance(collection_savepoint, dict):
             results = [[collection_savepoint, savepoints]]
-            self.log.info("queries ran are %s" % queries)
             self.process_value_for_verification(bucket_col,
                                  doc_gen_list, results)
         else:
             self.fail(collection_savepoint)
-
