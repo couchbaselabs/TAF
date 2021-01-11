@@ -1,4 +1,11 @@
 services:
+  backup:
+    - repo_id: 'repo_1'
+      plan: '_hourly_backups'
+      bucket: 'travel-sample'
+      storage_location: 'filesystem'
+      archive_path: '/data/cb_backups'
+
   cbas:
     dataverses:
       - name: users

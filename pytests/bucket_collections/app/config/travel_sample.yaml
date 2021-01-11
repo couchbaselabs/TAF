@@ -1,0 +1,34 @@
+buckets:
+  - name: "travel-sample"
+    sample_bucket: True
+    replicas: 1
+    scopes:
+      - name: "_default"
+        collections:
+          - name: "_default"
+          - name: "meta_data"
+      - name: "users"
+        collections:
+          - name: "profile"
+          - name: "search_history"
+          - name: "flight_booking"
+          - name: "hotel_booking"
+      - name: "flights"
+        collections:
+          - name: "flight_schedules"
+          - name: "booking_data"
+          - name: "checkout_cart"
+            maxTTL: 300
+      - name: "hotels"
+        collections:
+          - name: "hotels"
+          - name: "reviews"
+          - name: "landmark"
+          - name: "booking_data"
+          - name: "checkout_cart"
+            maxTTL: 420
+      - name: "airlines"
+        collections:
+          - name: "airport"
+          - name: "airline"
+          - name: "routes"

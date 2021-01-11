@@ -1,0 +1,65 @@
+rbac_roles:
+  - bucket: "travel-sample"
+    roles:
+      - user_name: "bucket_admin"
+        password: "bucket_admin"
+        roles:
+          - "bucket_admin[travel-sample]"
+          - "query_manage_index[travel-sample]"
+      - user_name: "guest"
+        password: "guest123"
+        roles:
+          - "query_select[travel-sample]"
+      - user_name: "cbas_admin"
+        password: "cbas_admin"
+        select_bucket: False
+        roles:
+          - "cluster_admin"
+      - user_name: "user_query"
+        password: "user_query"
+        roles:
+          - "query_select[travel-sample]"
+          - "query_update[travel-sample]"
+      - user_name: "user_manager"
+        password: "user_manager"
+        roles:
+          - "data_reader[travel-sample]"
+          - "data_writer[travel-sample]"
+          - "query_select[travel-sample]"
+      - user_name: "user_booking"
+        password: "user_booking"
+        roles:
+          - "data_reader[travel-sample]"
+          - "data_writer[travel-sample]"
+      - user_name: "review_writer"
+        password: "review_writer"
+        roles:
+          - "data_reader[travel-sample]"
+          - "data_writer[travel-sample]"
+      - user_name: "bucket_data_writer"
+        password: "bucket_data_writer"
+        roles:
+          - "data_writer[travel-sample]"
+          - "query_select[travel-sample]"
+      - user_name: "airline_admin"
+        password: "airline_admin"
+        roles:
+          - "data_reader[travel-sample]"
+          - "data_writer[travel-sample]"
+      - user_name: "airline_booking"
+        password: "airline_booking"
+        roles:
+          - "data_reader[travel-sample]"
+          - "data_writer[travel-sample]"
+          - "query_select[travel-sample]"
+          - "query_update[travel-sample]"
+      - user_name: "hotel_admin"
+        password: "hotel_admin"
+        roles:
+          - "data_reader[travel-sample]"
+          - "data_writer[travel-sample]"
+      - user_name: "hotel_booking"
+        password: "hotel_booking"
+        roles:
+          - "data_reader[travel-sample]"
+          - "data_writer[travel-sample]"

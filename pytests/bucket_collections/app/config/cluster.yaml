@@ -4,10 +4,14 @@ cb_cluster:
     - "kv"
     - "kv"
     - "index,n1ql"
-    - "backup"
-  backup:
-    - repo_id: 'repo_1'
-      plan: '_hourly_backups'
-      bucket: 'travel-sample'
-      storage_location: 'filesystem'
-      archive_path: '/data/cb_backups'
+    - "backup,cbas,index"
+
+  rbac_users:
+    - user_name: "cluster_admin"
+      password: "cluster_admin"
+      roles:
+        - "cluster_admin"
+    - user_name: "rbac_admin"
+      password: "rbac_admin"
+      roles:
+        - "security_admin_local"

@@ -239,8 +239,7 @@ class SDKClient(object):
 
     def __create_conn(self):
         try:
-            self.log.debug("Creating SDK connection for '%s'" %
-                           self.bucket.name)
+            self.log.debug("Creating SDK connection for '%s'" % self.bucket)
             System.setProperty("com.couchbase.forceIPv4", "false")
             sdk_logger = Logger.getLogger("com.couchbase.client")
             # TO-DO: Make it SEVERE after bug is fixed
@@ -316,14 +315,16 @@ class SDKClient(object):
         return diagnostics_results.toString()
 
     def get_memory_footprint(self):
-        out = subprocess.Popen(['ps', 'v', '-p', str(os.getpid())],stdout=subprocess.PIPE).communicate()[0].split(b'\n')
+        out = subprocess.Popen(
+            ['ps', 'v', '-p', str(os.getpid())],
+            stdout=subprocess.PIPE).communicate()[0].split(b'\n')
         vsz_index = out[0].split().index(b'RSS')
         mem = float(out[1].split()[vsz_index]) / 1024
         self.log.info("RAM FootPrint: {}".format(str(mem)))
         return mem
 
     def close(self):
-        self.log.debug("Closing SDK for bucket '%s'" % self.bucket.name)
+        self.log.debug("Closing SDK for bucket '%s'" % self.bucket)
         if self.cluster:
             self.cluster.disconnect()
             self.cluster.environment().shutdown()
