@@ -12,7 +12,7 @@ class CollectionsNegativeTc(CollectionBase):
         self.bucket = self.bucket_util.buckets[0]
         self.invalid = ["_a", "%%", "a~", "a`", "a!", "a@", "a#", "a$", "a^", "a&", "a*", "a(", "a)", "a=", "a+", "a{",
                         "a}", "a|", "a:", "a;", "a'", "a,", "a<", "a.", "a>", "a?", "a/",
-                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+                        "a"*(CbServer.max_name_len_scope_collection + 1)]
 
     def tearDown(self):
         super(CollectionsNegativeTc, self).tearDown()

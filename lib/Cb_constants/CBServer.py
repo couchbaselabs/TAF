@@ -24,6 +24,8 @@ class CbServer(object):
 
     total_vbuckets = 1024
 
+    max_name_len_scope_collection = 251 # max allowed number of bytes for scope/collection name
+
     # Count excluding the default scope/collection
     max_scopes = 1200
     max_collections = 1200
