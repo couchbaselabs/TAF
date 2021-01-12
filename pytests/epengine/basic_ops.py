@@ -890,8 +890,7 @@ class basic_ops(BaseTestCase):
                 skip_read_on_error=True,
                 suppress_error_table=True,
                 batch_size=100,
-                process_concurrency=8,
-                sdk_client_pool=self.sdk_client_pool)
+                process_concurrency=8)
             self.task_manager.get_task_result(doc_op_task)
             self.bucket_util._wait_for_stats_all_buckets()
             if op_type == "create":
