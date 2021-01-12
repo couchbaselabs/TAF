@@ -106,7 +106,8 @@ class ServerTasks(object):
             self.jython_task_manager.add_new_task(task)
         return task
 
-    def async_load_gen_docs(self, cluster, bucket, generator, op_type, exp=0,
+    def async_load_gen_docs(self, cluster, bucket, generator, op_type, 
+                            exp=0, random_exp=False,
                             flag=0, persist_to=0, replicate_to=0,
                             only_store_hash=True, batch_size=1, pause_secs=1,
                             timeout_secs=5, compression=None,
@@ -145,8 +146,9 @@ class ServerTasks(object):
             if not ryow:
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
                     cluster, self.jython_task_manager, bucket, clients,
-                    [generator], op_type, exp, exp_unit="seconds", flag=flag,
-                    persist_to=persist_to, replicate_to=replicate_to,
+                    [generator], op_type,
+                    exp, random_exp=random_exp, exp_unit="seconds",
+                    flag=flag, persist_to=persist_to, replicate_to=replicate_to,
                     only_store_hash=only_store_hash,
                     batch_size=batch_size, pause_secs=pause_secs,
                     timeout_secs=timeout_secs, compression=compression,

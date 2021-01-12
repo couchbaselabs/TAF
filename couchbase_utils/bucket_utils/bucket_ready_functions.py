@@ -2447,7 +2447,8 @@ class BucketUtils(ScopeUtils):
 
         return tasks_info
 
-    def async_load_bucket(self, cluster, bucket, generator, op_type, exp=0,
+    def async_load_bucket(self, cluster, bucket, generator, op_type,
+                          exp=0, random_exp=False,
                           flag=0, persist_to=0, replicate_to=0,
                           durability="", sdk_timeout=5,
                           only_store_hash=True, batch_size=10, pause_secs=1,
@@ -2462,8 +2463,9 @@ class BucketUtils(ScopeUtils):
                           track_failures=True,
                           sdk_client_pool=None):
         return self.task.async_load_gen_docs(
-            cluster, bucket, generator, op_type, exp=exp, flag=flag,
-            persist_to=persist_to, replicate_to=replicate_to,
+            cluster, bucket, generator, op_type,
+            exp=exp, random_exp=random_exp,
+            flag=flag, persist_to=persist_to, replicate_to=replicate_to,
             durability=durability, timeout_secs=sdk_timeout,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, compression=compression,
@@ -2478,8 +2480,9 @@ class BucketUtils(ScopeUtils):
             track_failures=track_failures,
             sdk_client_pool=sdk_client_pool)
 
-    def _async_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
-                                persist_to=0, replicate_to=0,
+    def _async_load_all_buckets(self, cluster, kv_gen, op_type,
+                                exp, random_exp=False,
+                                flag=0, persist_to=0, replicate_to=0,
                                 only_store_hash=True, batch_size=1,
                                 pause_secs=1, timeout_secs=30,
                                 sdk_compression=True, process_concurrency=8,
@@ -2510,7 +2513,8 @@ class BucketUtils(ScopeUtils):
         tasks_info = dict()
         for bucket in self.buckets:
             task = self.async_load_bucket(
-                cluster, bucket, kv_gen, op_type, exp, flag, persist_to,
+                cluster, bucket, kv_gen, op_type, exp, random_exp,
+                flag, persist_to,
                 replicate_to, durability, timeout_secs,
                 only_store_hash, batch_size, pause_secs,
                 sdk_compression, process_concurrency, retries,

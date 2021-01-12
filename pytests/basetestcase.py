@@ -107,6 +107,7 @@ class BaseTestCase(unittest.TestCase):
         self.num_items = self.input.param("num_items", 100000)
         self.target_vbucket = self.input.param("target_vbucket", None)
         self.maxttl = self.input.param("maxttl", 0)
+        self.random_exp = self.input.param("random_exp", False)
         self.randomize_doc_size = self.input.param("randomize_doc_size", False)
         self.randomize_value = self.input.param("randomize_value", False)
         self.rev_write = self.input.param("rev_write", False)

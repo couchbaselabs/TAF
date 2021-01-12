@@ -734,8 +734,8 @@ class GenericLoadingTask(Task):
 
 
 class LoadDocumentsTask(GenericLoadingTask):
-    def __init__(self, cluster, bucket, client, generator, op_type, exp,
-                 exp_unit="seconds", flag=0,
+    def __init__(self, cluster, bucket, client, generator, op_type,
+                 exp, random_exp=False, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
                  compression=None, retries=5,
@@ -763,6 +763,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         self.generator = generator
         self.op_type = op_type
         self.exp = exp
+        self.abs_exp = self.exp
+        self.random_exp = random_exp
         self.exp_unit = exp_unit
         self.flag = flag
         self.persist_to = persist_to
@@ -787,6 +789,9 @@ class LoadDocumentsTask(GenericLoadingTask):
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch(self.op_type)
+        if self.random_exp:
+            self.exp = random.randint(self.abs_exp/2, self.abs_exp)
+            print "EXPIRY SET TO %s" % self.exp
         if self.sdk_client_pool is not None:
             self.client = \
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
@@ -1408,7 +1413,7 @@ class Durability(Task):
 
 class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generators,
-                 op_type, exp, exp_unit="seconds", flag=0,
+                 op_type, exp, exp_unit="seconds", random_exp=False, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  only_store_hash=True, batch_size=1, pause_secs=1,
                  timeout_secs=5, compression=None, process_concurrency=8,
@@ -1425,6 +1430,7 @@ class LoadDocumentsGeneratorsTask(Task):
             % (bucket, scope, collection, task_identifier, time.time()))
         self.cluster = cluster
         self.exp = exp
+        self.random_exp = random_exp
         self.exp_unit = exp_unit
         self.flag = flag
         self.persist_to = persist_to
@@ -1571,7 +1577,8 @@ class LoadDocumentsGeneratorsTask(Task):
         for i in range(0, len(generators)):
             task = LoadDocumentsTask(
                 self.cluster, self.bucket, self.clients[i], generators[i],
-                self.op_type, self.exp, self.exp_unit, self.flag,
+                self.op_type, self.exp, self.random_exp, self.exp_unit,
+                self.flag,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 time_unit=self.time_unit, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
