@@ -104,8 +104,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_in_cluster:
             self.node_data[node]["cb_collect_task"] = Thread(
                 target=self.cluster_util.run_cb_collect,
-                args=[node, self.node_data[node]["shell"],
-                      self.node_data[node]["cb_collect_file"]],
+                args=[node, self.node_data[node]["cb_collect_file"]],
                 kwargs={"options": "",
                         "result": self.node_data[node]["cb_collect_result"]})
             self.node_data[node]["cb_collect_task"].start()
@@ -153,8 +152,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_in_cluster:
             self.node_data[node]["cb_collect_task"] = Thread(
                 target=self.cluster_util.run_cb_collect,
-                args=[node, self.node_data[node]["shell"],
-                      self.node_data[node]["cb_collect_file"]],
+                args=[node,  self.node_data[node]["cb_collect_file"]],
                 kwargs={"options": "",
                         "result": self.node_data[node]["cb_collect_result"]})
             self.node_data[node]["cb_collect_task"].start()
@@ -194,8 +192,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_to_affect:
             self.node_data[node]["cb_collect_task"] = Thread(
                 target=self.cluster_util.run_cb_collect,
-                args=[node, self.node_data[node]["shell"],
-                      self.node_data[node]["cb_collect_file"]],
+                args=[node, self.node_data[node]["cb_collect_file"]],
                 kwargs={"options": "",
                         "result": self.node_data[node]["cb_collect_result"]})
             self.node_data[node]["cb_collect_task"].start()
@@ -249,16 +246,19 @@ class CbCollectInfoTests(CollectionBase):
 
         # Create required indexes on the bucket
         client = self.sdk_client_pool.get_client_for_bucket(def_bucket)
-        client.cluster.query("CREATE PRIMARY INDEX default_primary on `%s`"
-                             % def_bucket.name)
-        index_names = list()
-        for i in range(total_index_to_create):
-            index_name = "index_%d" % i
-            index_names.append(index_name)
-            client.cluster.query(
-                'CREATE INDEX `%s` on `%s`(name,age) '
-                'WHERE age=%d'
-                % (index_name, def_bucket.name, i))
+        for scope, s_data in def_bucket.scopes.items():
+            for collection in s_data.collections.keys():
+                client.cluster.query(
+                    "CREATE PRIMARY INDEX index_primary on `%s`.`%s`.`%s`"
+                    % (def_bucket.name, scope, collection))
+                index_names = list()
+                for i in range(total_index_to_create):
+                    index_name = "%s_%s_index_%d" % (scope, collection, i)
+                    index_names.append(index_name)
+                    client.cluster.query(
+                        'CREATE INDEX `%s` on `%s`.`%s`.`%s`(name,age) '
+                        'WHERE age=%d'
+                        % (index_name, def_bucket.name, scope, collection, i))
         self.sdk_client_pool.release_client(client)
 
         doc_load_tasks = list()
@@ -277,8 +277,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_in_cluster:
             self.node_data[node]["cb_collect_task"] = Thread(
                 target=self.cluster_util.run_cb_collect,
-                args=[node, self.node_data[node]["shell"],
-                      self.node_data[node]["cb_collect_file"]],
+                args=[node, self.node_data[node]["cb_collect_file"]],
                 kwargs={"options": "",
                         "result": self.node_data[node]["cb_collect_result"]})
             self.node_data[node]["cb_collect_task"].start()
@@ -358,8 +357,7 @@ class CbCollectInfoTests(CollectionBase):
             # Trigger cb_collect_info after corruption
             self.node_data[node]["cb_collect_task"] = Thread(
                 target=self.cluster_util.run_cb_collect,
-                args=[node, self.node_data[node]["shell"],
-                      self.node_data[node]["cb_collect_file"]],
+                args=[node, self.node_data[node]["cb_collect_file"]],
                 kwargs={"options": "",
                         "result": self.node_data[node]["cb_collect_result"]})
             self.node_data[node]["cb_collect_task"].start()
