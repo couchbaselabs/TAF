@@ -1045,7 +1045,8 @@ class basic_ops(BaseTestCase):
                 skip_read_on_error=True,
                 suppress_error_table=True,
                 batch_size=100,
-                process_concurrency=8)
+                process_concurrency=8,
+                sdk_client_pool=self.sdk_client_pool)
             self.task_manager.get_task_result(doc_op_task)
             self.bucket_util._wait_for_stats_all_buckets()
             if op_type == "create":
@@ -1071,7 +1072,9 @@ class basic_ops(BaseTestCase):
         nodes_data = dict()
         self.num_items = 0
         self.del_items = 0
-        load_batch = 20000
+        load_batch = 5000
+        # To provide little 'headroom' while loading/deleting docs in batches
+        mem_buffer_gap = 10000
         low_wm_reached = False
         high_wm_reached = False
         wm_tbl = TableView(self.log.info)
@@ -1130,7 +1133,8 @@ class basic_ops(BaseTestCase):
         while not low_wm_reached and self.del_items < self.num_items:
             perform_doc_op("delete")
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
-            if int(stats["mem_used"]) < int(stats["ep_mem_low_wat"]):
+            if int(stats["mem_used"]) < (int(stats["ep_mem_low_wat"])
+                                         - mem_buffer_gap):
                 low_wm_reached = True
                 display_bucket_water_mark_values(target_node)
                 self.log.info("Low water_mark reached")
@@ -1141,23 +1145,18 @@ class basic_ops(BaseTestCase):
         self.log.info("Setting num_nonio_threads=8")
         cbepctl.set(bucket.name, "flush_param", "num_nonio_threads", 8)
 
-        retry_count = 0
-        while retry_count < 10:
-            retry_count += 1
-            stats = display_bucket_water_mark_values(target_node)
-            if int(stats["ep_num_pager_runs"]) == 1:
-                break
-            self.sleep(1, "ep_num_pager_runs actual::0, expected::1. "
-                          " Will retry..")
-        else:
-            self.log_failure("ItemPager not run with lower_wm levels")
+        self.sleep(10, "Wait after setting num_nonio_threads=8")
+        stats = display_bucket_water_mark_values(target_node)
+        if int(stats["ep_num_pager_runs"]) != 0:
+            self.log_failure("ItemPager run with lower_wm levels")
 
         self.log.info("Loading docs till high_water_mark is reached")
         high_wm_reached = False
         while not high_wm_reached:
             perform_doc_op("create")
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
-            if int(stats["mem_used"]) > int(stats["ep_mem_high_wat"]):
+            if int(stats["mem_used"]) > (int(stats["ep_mem_high_wat"])
+                                         + mem_buffer_gap):
                 high_wm_reached = True
                 self.log.info("High water_mark reached")
                 retry_count = 0
