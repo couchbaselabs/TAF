@@ -1554,9 +1554,12 @@ class MagmaRollbackTests(MagmaBaseTest):
             else:
                 tasks_in = dict()
                 nodes = self.cluster.nodes_in_cluster[target_active_nodes:]
-                th = threading.Thread(target=self.crash_sigkill,
-                                      kwargs=dict(nodes=nodes))
-                th.start()
+                '''
+                   Disabling Crash thread for load during rollback
+                '''
+                #th = threading.Thread(target=self.crash_sigkill,
+                #                      kwargs=dict(nodes=nodes))
+                #th.start()
                 for collection in collections[0:collections_for_rollback]:
                     self.compute_docs(start, mem_only_items)
                     self.gen_create = None
@@ -1577,8 +1580,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                         start_items = self.gen_create.key_counter
                 self.log.debug("start_items after load during rollback is {}"
                                .format(start_items))
-                self.stop_crash = True
-                th.join()
+                #self.stop_crash = True
+                #th.join()
                 #self.bucket_util.verify_doc_op_task_exceptions(tasks_in, self.cluster)
                 #self.bucket_util.log_doc_ops_task_failures(tasks_in)
             self.log.debug("Iteration == {},State files after killing memCached ".
