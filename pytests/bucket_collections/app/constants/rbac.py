@@ -3,7 +3,7 @@ for user in ["cluster_admin", "bucket_admin", "rbac_admin",
              "guest", "user_query", "user_manager", "user_booking",
              "review_writer", "bucket_data_writer",
              "airline_admin", "airline_booking",
-             "hotel_admin", "hotel_booking"]:
+             "hotel_admin", "hotel_booking", "cbas_admin"]:
     rbac_data[user] = dict()
     rbac_data[user]["auth"] = [user, user + "_passwd_!@#"]
 
@@ -35,3 +35,4 @@ rbac_data["hotel_admin"]["roles"] = "data_reader[travel-sample]," \
                                     "data_writer[travel-sample]"
 rbac_data["hotel_booking"]["roles"] = "data_reader[travel-sample]," \
                                       "data_writer[travel-sample]"
+rbac_data["cbas_admin"]["roles"] = "analytics_admin"

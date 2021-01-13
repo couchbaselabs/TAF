@@ -1,0 +1,26 @@
+services:
+  cbas:
+    dataverses:
+      - name: users
+      - name: hotels
+      - name: airlines
+    datasets:
+      - name: user_senior
+        dataverse: users
+        on: "`travel-sample`.`users`.`profile`"
+        where: "age > 55"
+      - name: user_avg_age
+        dataverse: users
+        on: "`travel-sample`.`users`.`profile`"
+        where: "age > 30 and age < 55"
+      - name: hotel_with_good_ratings
+        dataverse: hotels
+        on: "`travel-sample`.`hotels`.`reviews`"
+        where: "ratings.Overall >= 3"
+      - name: hotel_with_low_ratings
+        dataverse: hotels
+        on: "`travel-sample`.`hotels`.`reviews`"
+        where: "ratings.Overall < 3"
+      - name: user_bookings
+        dataverse: airlines
+        on: "`travel-sample`.`users`.`flight_booking`"
