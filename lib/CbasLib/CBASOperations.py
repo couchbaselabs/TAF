@@ -15,4 +15,31 @@ else:
 
 
 class CBASHelper(CbasLib):
-    pass
+    
+    @staticmethod
+    def format_name(*args):
+        """
+        Enclose the name in `` if the name consist of - or starts with a number.
+        """
+        full_name = list()
+        for name in args:
+            if name:
+                for _ in name.split("."):
+                    _ = _.strip("`")
+                    if _[0].isdigit() or ("-" in _):
+                        full_name.append("`{0}`".format(_))
+                    else:
+                        full_name.append(_)
+        return '.'.join(full_name)
+    
+    @staticmethod
+    def unformat_name(*args):
+        '''
+        Strips the name of ``
+        '''
+        full_name = list()
+        for name in args:
+            for _ in name.split("."):
+                _ = _.strip("`")
+                full_name.append(_)
+        return '.'.join(full_name)

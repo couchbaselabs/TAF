@@ -19,6 +19,8 @@ from sdk_exceptions import SDKException
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from math import ceil
+# This is temporary import for now, it will be removed once the old CbasUtil is deprecated.
+from cbas_utils.cbas_utils_v2 import CbasUtil as CbasUtilV2
 
 
 class CBASBaseTest(BaseTestCase):
@@ -77,6 +79,7 @@ class CBASBaseTest(BaseTestCase):
         self.flush_enabled = Bucket.FlushBucket.ENABLED
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
+        self.cbas_spec_name = self.input.param("cbas_spec", None)
 
         if hasattr(self, "cluster"):
             self._cb_cluster = self.cluster
@@ -144,6 +147,7 @@ class CBASBaseTest(BaseTestCase):
             if self.cluster.cbas_nodes:
                 self.cbas_node = self.cluster.cbas_nodes[0]
                 self.cbas_util = CbasUtil(self.cluster.master, self.cbas_node)
+                self.cbas_util_v2 = CbasUtilV2(self.cluster.master, self.cbas_node)
                 if "cbas" in self.cluster.master.services:
                     self.cleanup_cbas()
                 if add_default_cbas_node:
