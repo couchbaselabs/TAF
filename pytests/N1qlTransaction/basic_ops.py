@@ -170,11 +170,16 @@ class BasicOps(N1qlBase):
 
     def test_basic_insert(self):
         queries = []
+        atrcollection = ""
+        if self.atrcollection:
+            atrcollection = self.get_collection_for_atrcollection()
         collections = self.n1ql_helper.get_collections()
         self.n1ql_helper.create_index(collections[0])
         name = collections[0].split(".")
         query_params = self.n1ql_helper.create_txn(self.txtimeout,
-                                                   self.durability_level)
+                                                   self.durability_level,
+                                                   atrcollection)
+        txid = query_params["txid"]
         query1 = "INSERT INTO default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query1 += "(KEY, VALUE) VALUES ( 'KEY', 'VALUE') "
         result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
@@ -182,28 +187,86 @@ class BasicOps(N1qlBase):
                 % (name[0], name[1], name[2])
         result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
         result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
+        self.check_txid(txid)
         self.n1ql_helper.end_txn(query_params, self.commit)
         query = "select * FROM default:`%s`.`%s`.`%s` WHERE meta().id = 'KEY'"\
                 % (name[0], name[1], name[2])
         result = self.n1ql_helper.run_cbq_query(query)
         if result["results"][0][name[2]] != 'VALUE':
             self.fail("expected and actual values are different")
+        self.check_txid(txid, True)
 
     def test_basic_update(self):
+        atrcollection = ""
+        if self.atrcollection:
+            atrcollection = self.get_collection_for_atrcollection()
         collections = self.n1ql_helper.get_collections()
         self.n1ql_helper.create_index(collections[0])
         name = collections[0].split(".")
         query_params = self.n1ql_helper.create_txn(self.txtimeout,
-                                                   self.durability_level)
+                                                   self.durability_level,
+                                                   atrcollection)
+        txid = query_params["txid"]
         query1 = "INSERT INTO default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query1 += "(KEY, VALUE) VALUES ( 'KEY', 'VALUE') "
         result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
         query = "UPDATE default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
-        query += "SET d=5 returning *"
+        query += "SET d=5 WHERE meta().id = 'KEY' returning *"
         result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
         query = "select * FROM default:`%s`.`%s`.`%s` WHERE meta().id = 'KEY'"\
                 % (name[0], name[1], name[2])
         result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
-        self.n1ql_helper.end_txn(query_params, self.commit)
-        print result
+        self.check_txid(txid)
+        result = self.n1ql_helper.end_txn(query_params, self.commit)
+        if isinstance(result, str) or 'errors' in result:
+            self.fail("txn failed")
+        self.check_txid(txid, True)
 
+    def check_txid(self, txid, fail=False):
+        query = "SELECT * FROM system:transactions"
+        results = self.n1ql_helper.run_cbq_query(query)
+        if fail and results["results"]:
+            self.fail("txid present when expected not to present")
+        elif not fail:
+            if txid in results["results"][0]["transactions"]["id"]:
+                self.log.info("txid is present %s"%txid)
+            else:
+                self.fail("txid not present")
+
+    def test_system_txn_commands(self):
+        atrcollection = ""
+        if self.atrcollection:
+            atrcollection = self.get_collection_for_atrcollection()
+        collections = self.n1ql_helper.get_collections()
+        self.n1ql_helper.create_index(collections[0])
+        name = collections[0].split(".")
+        query_params = self.n1ql_helper.create_txn(self.txtimeout,
+                                                   self.durability_level,
+                                                   atrcollection)
+        txid = query_params["txid"]
+        self.check_txid(txid)
+        #execute query
+        query1 = "INSERT INTO default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
+        query1 += "(KEY, VALUE) VALUES ( 'KEY', 'VALUE') "
+        result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
+        # check transactions
+        self.check_txid(txid)
+        #execute update query
+        query1 = "UPDATE default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
+        query1 += "SET d=5 WHERE meta().id = 'KEY' returning *"
+        result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
+        # check transactions
+        self.check_txid(txid)
+        #execute delete query
+        query = "DELETE FROM default:`%s`.`%s`.`%s` WHERE meta().id = 'KEY'"\
+                % (name[0], name[1], name[2])
+        result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
+        # check transactions
+        self.check_txid(txid)
+        #check timeout
+        if self.txtimeout:
+            self.sleep(100)
+            self.check_txid(txid, True)
+        else:
+            result = self.n1ql_helper.end_txn(query_params, self.commit)
+            self.check_txid(txid, True)

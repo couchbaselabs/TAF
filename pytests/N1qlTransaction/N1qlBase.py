@@ -628,20 +628,24 @@ class N1qlBase(CollectionBase):
         for i in range(0, len(i_list), n):
             yield i_list[i:i + n]
 
+    def get_collection_for_atrcollection(self):
+        collections = BucketUtils.get_random_collections(
+                self.buckets, 1, "all", self.num_buckets)
+        for bucket, scope_dict in collections.items():
+            for s_name, c_dict in scope_dict["scopes"].items():
+                for c_name, c_data in c_dict["collections"].items():
+                    if random.choice([True, False]):
+                        atrcollection = ("`%s`.`%s`.`%s`"%(bucket, s_name, c_name))
+                    else:
+                        atrcollection = ("`%s`.`%s`.`%s`"%(bucket,
+                                     CbServer.default_scope,
+                                     CbServer.default_collection))
+        return atrcollection
+
     def execute_query_and_validate_results(self, stmt, bucket_col, doc_gen_list=None):
         atrcollection = ""
         if self.atrcollection:
-            collections = BucketUtils.get_random_collections(
-                self.buckets, 1, "all", self.num_buckets)
-            for bucket, scope_dict in collections.items():
-                for s_name, c_dict in scope_dict["scopes"].items():
-                    for c_name, c_data in c_dict["collections"].items():
-                        if random.choice([True, False]):
-                            atrcollection = ("`%s`.`%s`.`%s`"%(bucket, s_name, c_name))
-                        else:
-                            atrcollection = ("`%s`.`%s`.`%s`"%(bucket,
-                                         CbServer.default_scope,
-                                         CbServer.default_collection))
+            atrcollection = self.get_collection_for_atrcollection()
         query_params = self.n1ql_helper.create_txn(self.txtimeout, self.durability_level,
                                                    atrcollection)
         collection_savepoint, savepoints, queries, rerun = \
