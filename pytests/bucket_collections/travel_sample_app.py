@@ -22,7 +22,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
 from com.couchbase.client.java.json import JsonObject
-
+from com.couchbase.client.core.error import IndexFailureException
 
 class TravelSampleApp(BaseTestCase):
     def setUp(self):
@@ -242,7 +242,16 @@ class TravelSampleApp(BaseTestCase):
             s_name, c_name = collection_info[0], collection_info[1]
 
             sdk_client.select_collection(s_name, c_name)
-            query_result = sdk_client.cluster.query(query % d_type)
+            # TODO: Remove this retry logic once MB-41535 is fixed
+            retry_index = 0
+            while retry_index < 5:
+                try:
+                    query_result = sdk_client.cluster.query(query % d_type)
+                    break
+                except IndexFailureException as err:
+                    retry_index += 1
+                    self.sleep(5, "Retrying due to IndexFailureException")
+                    continue
             rows_inserted = 0
             for row in query_result.rowsAsObject():
                 value = row.getObject("travel-sample").removeKey("type")
