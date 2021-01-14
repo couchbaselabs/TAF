@@ -22,7 +22,9 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
 from com.couchbase.client.java.json import JsonObject
-from com.couchbase.client.core.error import IndexFailureException
+from com.couchbase.client.core.error import IndexFailureException, \
+    InternalServerFailureException
+
 
 class TravelSampleApp(BaseTestCase):
     def setUp(self):
@@ -244,17 +246,19 @@ class TravelSampleApp(BaseTestCase):
             sdk_client.select_collection(s_name, c_name)
             # TODO: Remove this retry logic once MB-41535 is fixed
             retry_index = 0
+            query_result = None
             while retry_index < 5:
                 try:
                     query_result = sdk_client.cluster.query(query % d_type)
                     break
-                except IndexFailureException as err:
+                except IndexFailureException:
                     retry_index += 1
-                    self.sleep(5, "Retrying due to IndexFailureException")
+                    self.sleep(5, "Retrying due to IndexFailure (MB-41535)")
                     continue
             rows_inserted = 0
             for row in query_result.rowsAsObject():
-                value = row.getObject("travel-sample").removeKey("type")
+                value = row.getObject(CbServer.default_collection)\
+                    .removeKey("type")
 
                 doc_id = value.getInt("id")
                 if doc_id > meta_data[s_name][c_name]["doc_counter"]:
@@ -371,12 +375,20 @@ class TravelSampleApp(BaseTestCase):
         for bucket, b_data in indexes_to_build.items():
             for scope, s_data in b_data.items():
                 for collection, indexes in s_data.items():
-                    build_res = self.sdk_clients["bucket_admin"].cluster.query(
-                        "BUILD INDEX on `%s`.`%s`.`%s`(%s)"
-                        % (bucket, scope, collection, ",".join(indexes)))
-                    if build_res.metaData().status().toString() != "SUCCESS":
-                        self.fail("Build index failed for %s: %s"
-                                  % (indexes, build_res))
+                    try:
+                        build_res = \
+                            self.sdk_clients["bucket_admin"].cluster.query(
+                                "BUILD INDEX on `%s`.`%s`.`%s`(%s)"
+                                % (bucket, scope, collection,
+                                   ",".join(indexes)))
+                        if build_res.metaData().status().toString() \
+                                != "SUCCESS":
+                            self.fail("Build index failed for %s: %s"
+                                      % (indexes, build_res))
+                    except InternalServerFailureException as err:
+                        if "will retry building in the background" \
+                                not in str(err):
+                            raise err
 
         self.log.info("Waiting for indexes to become online")
         start_time = time.time()
