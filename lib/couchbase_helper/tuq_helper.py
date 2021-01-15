@@ -19,7 +19,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 class N1QLHelper:
     def __init__(self, version=None, server=None, shell=None,  max_verify=0, buckets=[], item_flag=0,
                  n1ql_port=8093, full_docs_list=[], log=None, input=None, database=None, use_rest=None,
-                 scan_consistency=None, hint_index=False, num_collection=1, num_buckets=1,
+                 scan_consistency="not_bounded", hint_index=False, num_collection=1, num_buckets=1,
                  num_savepoints=0, override_savepoint=0, num_stmt=3, load_spec=None):
         self.version = version
         self.shell = shell
@@ -46,10 +46,12 @@ class N1QLHelper:
         self.load_spec = load_spec
         if self.full_docs_list and len(self.full_docs_list) > 0:
             self.gen_results = TuqGenerators(self.log, self.full_docs_list)
-        input_spec = BucketUtils.get_crud_template_from_package(
-                                        self.load_spec)
-        self.doc_gen_type = input_spec.get(
-                                MetaCrudParams.DOC_GEN_TYPE, "default")
+        self.doc_gen_type = "default"
+        if self.load_spec is not None:
+            input_spec = \
+                BucketUtils.get_crud_template_from_package(self.load_spec)
+            self.doc_gen_type = \
+                input_spec.get(MetaCrudParams.DOC_GEN_TYPE, "default")
         self.get_random_number_stmt(self.num_stmt_txn)
         self.index_map = {}
         self.name_list = []

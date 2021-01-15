@@ -181,7 +181,7 @@ class ServiceRebalanceTests(RebalanceBaseTest):
 
         n1ql_node = self.cluster.query_nodes[0]
         fts_helper = FtsHelper(self.cluster.fts_nodes[0])
-        n1ql_helper = N1QLHelper(master=n1ql_node, use_rest=True, log=self.log)
+        n1ql_helper = N1QLHelper(server=n1ql_node, use_rest=True, log=self.log)
 
         gsi_index_name_pattern = "%s_primary_%d"
         gsi_create_template = "CREATE PRIMARY INDEX `" \
