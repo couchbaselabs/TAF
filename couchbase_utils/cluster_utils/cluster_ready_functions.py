@@ -103,7 +103,7 @@ class ClusterUtils:
         self.cluster.master = [server for server in self.cluster.servers
                                if server.ip == orchestrator_node][0]
         # Type cast to str - match the previous dial/eval return value
-        content = "ns_1@%s" % self.master.ip
+        content = "ns_1@%s" % self.cluster.master.ip
         self.rest = RestConnection(self.cluster.master)
         return status, content
 

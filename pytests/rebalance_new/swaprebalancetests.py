@@ -49,8 +49,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.fail(e)
 
         self.creds = self.input.membase_settings
-        self.master = self.cluster.master
-
         self.gen_create = self.get_doc_generator(self.num_items,
                                                  self.num_items + self.items)
         self.gen_update = self.get_doc_generator(self.num_items,
@@ -126,16 +124,17 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
             retry_exceptions=retry_exceptions)
         # Start the swap rebalance
-        current_nodes = RebalanceHelper.getOtpNodeIds(self.master)
+        current_nodes = RebalanceHelper.getOtpNodeIds(self.cluster.master)
         self.log.info("Current nodes: %s" % current_nodes)
-        to_eject_nodes = self.cluster_util.pick_nodes(self.master,
+        to_eject_nodes = self.cluster_util.pick_nodes(self.cluster.master,
                                                       howmany=self.num_swap)
         opt_nodes_ids = [node.id for node in to_eject_nodes]
 
         if self.swap_orchestrator:
-            status, content = self.cluster_util.find_orchestrator(self.master)
-            self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
-                            .format(status, content))
+            status, content = \
+                self.cluster_util.find_orchestrator(self.cluster.master)
+            self.assertTrue(status, msg="Unable to find orchestrator: %s:%s"
+                                        % (status, content))
             if self.num_swap is len(current_nodes):
                 opt_nodes_ids.append(content)
             else:
@@ -157,7 +156,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.swap_orchestrator:
             self.rest = RestConnection(new_swap_servers[0])
-            self.master = new_swap_servers[0]
+            self.cluster.master = new_swap_servers[0]
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios for vbs before rebalance")
@@ -237,7 +236,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.assertTrue(self.rest.monitorRebalance(),
                         msg="Rebalance operation failed after adding node {0}"
                         .format(opt_nodes_ids))
-        status, _ = self.cluster_util.find_orchestrator(self.master)
+        status, _ = self.cluster_util.find_orchestrator(self.cluster.master)
         self.assertTrue(status, msg="Unable to find the cluster orchestrator")
 
         # Wait till load phase is over
@@ -260,13 +259,14 @@ class SwapRebalanceBase(RebalanceBaseTest):
         retry_exceptions.append(SDKException.TemporaryFailureException)
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
             retry_exceptions=retry_exceptions)
-        current_nodes = RebalanceHelper.getOtpNodeIds(self.master)
+        current_nodes = RebalanceHelper.getOtpNodeIds(self.cluster.master)
         self.log.info("current nodes : {0}".format(current_nodes))
-        to_eject_nodes = self.cluster_util.pick_nodes(self.master,
+        to_eject_nodes = self.cluster_util.pick_nodes(self.cluster.master,
                                                       howmany=self.num_swap)
         opt_nodes_ids = [node.id for node in to_eject_nodes]
         if self.swap_orchestrator:
-            status, content = self.cluster_util.find_orchestrator(self.master)
+            status, content = \
+                self.cluster_util.find_orchestrator(self.cluster.master)
             self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
                             .format(status, content))
             # When swapping all the nodes
@@ -291,7 +291,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.swap_orchestrator:
             self.rest = RestConnection(new_swap_servers[0])
-            self.cluster.master = self.master = new_swap_servers[0]
+            self.cluster.master = new_swap_servers[0]
 
         self.log.info("SWAP REBALANCE PHASE")
         self.rest.rebalance(
@@ -311,7 +311,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         pid = None
         if self.swap_orchestrator and not self.cluster_run:
             # get PID via remote connection if master is a new node
-            shell = RemoteMachineShellConnection(self.master)
+            shell = RemoteMachineShellConnection(self.cluster.master)
             pid = shell.get_memcache_pid()
             shell.disconnect()
         else:
@@ -320,7 +320,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 times = 20
             for _ in xrange(times):
                 try:
-                    shell = RemoteMachineShellConnection(self.master)
+                    shell = RemoteMachineShellConnection(self.cluster.master)
                     pid = shell.get_memcache_pid()
                     shell.disconnect()
                     break
@@ -333,13 +333,14 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.log.info(command)
         killed = self.rest.diag_eval(command)
         self.log.info("killed {0}:{1}??  {2} "
-                      .format(self.master.ip, self.master.port, killed))
+                      .format(self.cluster.master.ip, self.cluster.master.port,
+                              killed))
         self.log.info("sleep for 10 sec after kill memcached")
         self.sleep(10)
         # we can't get stats for new node when rebalance falls
         if not self.swap_orchestrator:
-            self.bucket_util._wait_warmup_completed([self.master], bucket,
-                                                    wait_time=600)
+            self.bucket_util._wait_warmup_completed([self.cluster.master],
+                                                    bucket, wait_time=600)
         # we expect that rebalance will be failed
         try:
             self.rest.monitorRebalance()
@@ -382,11 +383,11 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
             retry_exceptions=retry_exceptions)
         # Start the swap rebalance
-        current_nodes = RebalanceHelper.getOtpNodeIds(self.master)
+        current_nodes = RebalanceHelper.getOtpNodeIds(self.cluster.master)
         self.log.info("current nodes : {0}".format(current_nodes))
 
         to_eject_nodes = self.cluster_util.pick_nodes(
-            self.master, howmany=self.failover_factor)
+            self.cluster.master, howmany=self.failover_factor)
         opt_nodes_ids = [node.id for node in to_eject_nodes]
         self.log.info("To be removed nodes: %s" % to_eject_nodes)
 
@@ -405,7 +406,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                                   .format(server.ip, server.port))
 
         if self.fail_orchestrator:
-            status, content = self.cluster_util.find_orchestrator(self.master)
+            status, content = \
+                self.cluster_util.find_orchestrator(self.cluster.master)
             self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
                             .format(status, content))
             # When swapping all the nodes
@@ -477,15 +479,16 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
             retry_exceptions=retry_exceptions)
         # Start the swap rebalance
-        self.log.info("current nodes : {0}"
-                      .format(RebalanceHelper.getOtpNodeIds(self.master)))
+        self.log.info("current nodes: %s"
+                      % RebalanceHelper.getOtpNodeIds(self.cluster.master))
         to_eject_nodes = self.cluster_util.pick_nodes(
-            self.master, howmany=self.failover_factor)
+            self.cluster.master, howmany=self.failover_factor)
         opt_nodes_ids = [node.id for node in to_eject_nodes]
         if self.fail_orchestrator:
-            status, content = self.cluster_util.find_orchestrator(self.master)
-            self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
-                            .format(status, content))
+            status, content = \
+                self.cluster_util.find_orchestrator(self.cluster.master)
+            self.assertTrue(status, msg="Unable to find orchestrator: %s:%s"
+                                        % (status, content))
             opt_nodes_ids[0] = content
 
         self.log.info("Failover phase")
