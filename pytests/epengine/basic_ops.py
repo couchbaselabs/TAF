@@ -3,6 +3,7 @@ from random import choice, randint
 from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
+from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 from Cb_constants import constants, CbServer, DocLoading
 from cb_tools.cbepctl import Cbepctl
@@ -44,8 +45,10 @@ class basic_ops(BaseTestCase):
 
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+        if nodes_init:
+            self.task.rebalance([self.cluster.master], nodes_init, [])
+            self.cluster.nodes_in_cluster.extend([self.cluster.master]
+                                                 + nodes_init)
         self.bucket_util.create_default_bucket(
             replica=self.num_replicas, compression_mode=self.compression_mode,
             bucket_type=self.bucket_type, storage=self.bucket_storage,
@@ -1177,6 +1180,76 @@ class basic_ops(BaseTestCase):
         # Closing all shell connections
         for node in nodes_data.keys():
             nodes_data[node]["shell"].disconnect()
+
+        self.validate_test_failure()
+
+    def test_MB_42918(self):
+        """
+        - Add item for some key
+        - Stop persistence
+        - Delete item
+        - Do durable write with PersistMajority for same key
+        - Doc get should return KEY_NOENT
+        """
+
+        doc_val = {"field": "val"}
+        bucket = self.bucket_util.buckets[0]
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cb_err = CouchbaseError(self.log, shell)
+
+        client_1 = SDKClient([self.cluster.master], bucket)
+        client_2 = SDKClient([self.cluster.master], bucket)
+
+        # Perform create-delete to populate bloom-filter
+        client_1.crud("create", self.key, doc_val)
+        self.bucket_util._wait_for_stats_all_buckets()
+        client_1.crud("delete", self.key)
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(0)
+
+        # Create the document using async-write
+        client_1.crud("create", self.key, doc_val)
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(1)
+
+        # Stop persistence and delete te document
+        cb_err.create(CouchbaseError.STOP_PERSISTENCE, bucket.name)
+        self.sleep(2, "Wait after stop_persistence")
+        client_1.crud("delete", self.key)
+
+        # Get doc to make sure we see not_found exception
+        result = client_1.crud("read", self.key)
+        if SDKException.DocumentNotFoundException not in str(result["error"]):
+            self.log.info("Result: %s" % result)
+            self.log_failure("Invalid exception with deleted_doc: %s"
+                             % result["error"])
+
+        # Perform sync-write to create doc prepare in hash-table
+        create_thread = Thread(
+            target=client_1.crud,
+            args=["create", self.key, doc_val],
+            kwargs={"durability": Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+                    "timeout": 15})
+        create_thread.start()
+        self.sleep(5, "Wait to make sure prepare is generated")
+
+        # Doc read should return not_found
+        result = client_2.crud("read", self.key)
+        if SDKException.DocumentNotFoundException not in str(result["error"]):
+            self.log.info("Result: %s" % result)
+            self.log_failure("Invalid exception with prepared doc: %s"
+                             % result["error"])
+        result = client_2.getFromAllReplica(self.key)
+        if result:
+            self.log_failure("Able to read deleted value: %s" % result)
+        create_thread.join()
+
+        cb_err.revert(CouchbaseError.STOP_MEMCACHED, bucket.name)
+
+        # Close shell and SDK connections
+        client_1.close()
+        client_2.close()
+        shell.disconnect()
 
         self.validate_test_failure()
 
