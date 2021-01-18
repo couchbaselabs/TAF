@@ -239,7 +239,9 @@ class DocumentGenerator(KVGenerator):
         if 'deep_copy' in kwargs:
             self.deep_copy = kwargs['deep_copy']
 
-        if self.randomize_value or self.randomize:
+        if self.randomize_value \
+                or self.randomize \
+                or self.name == "random_keys":
             random.seed(key_prefix)
             self.random_string = [''.join(random.choice(letters)
                                           for _ in range(4*1024))][0]
@@ -250,9 +252,11 @@ class DocumentGenerator(KVGenerator):
             seed_hash = self.name + '-' + str(abs(self.itr))
             self.random.seed(seed_hash)
             """ This will generate a random ascii key with 12 characters """
-            _slice = int(self.random.random()*(self.len_random_string-self.key_size))
+            _slice = int(self.random.random()*(self.len_random_string
+                                               - self.key_size))
             key_len = self.key_size - (len(str(self.itr)) + 1)
-            doc_key = self.random_string[_slice:key_len+_slice] + "-" + str(self.itr)
+            doc_key = self.random_string[_slice:key_len+_slice] + "-" \
+                      + str(self.itr)
         elif self.mix_key_size:
             seed_hash = self.name + '-' + str(abs(self.itr))
             self.random.seed(seed_hash)
@@ -267,7 +271,6 @@ class DocumentGenerator(KVGenerator):
         return doc_key
 
     """Creates the next generated document and increments the iterator.
-
     Returns:
         The document generated"""
 
