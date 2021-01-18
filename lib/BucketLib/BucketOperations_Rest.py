@@ -737,7 +737,7 @@ class BucketHelper(RestConnection):
         return manifest_uid
 
     def import_collection_using_manifest(self, bucket_name, manifest_data):
-        url = "pools/default/buckets/%s/collections" \
+        url = "pools/default/buckets/%s/scopes" \
               % urllib.quote_plus(bucket_name)
         json_header = self.get_headers_for_content_type_json()
         api = self.baseUrl + url
