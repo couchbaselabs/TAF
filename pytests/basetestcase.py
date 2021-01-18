@@ -1,4 +1,3 @@
-import datetime
 import os
 import re
 import traceback
@@ -545,7 +544,7 @@ class BaseTestCase(unittest.TestCase):
     def __log(self, status):
         try:
             msg = "{0}: {1} {2}" \
-                .format(datetime.datetime.now(), self._testMethodName, status)
+                .format(datetime.now(), self._testMethodName, status)
             RestConnection(self.servers[0]).log_client_error(msg)
         except Exception as e:
             self.log.warning("Exception during REST log_client_error: %s" % e)
