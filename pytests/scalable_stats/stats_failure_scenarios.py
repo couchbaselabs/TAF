@@ -4,6 +4,7 @@ from bucket_collections.collections_base import CollectionBase
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from crash_test.constants import signum
+from membase.api.rest_client import RestConnection
 
 
 class StatsFailureScenarios(CollectionBase):
@@ -101,3 +102,14 @@ class StatsFailureScenarios(CollectionBase):
             self.get_high_cardinality_metrics(component, parse)
         self.get_range_api_metrics(metrics)
         self.get_instant_api(metrics)
+        self.get_ui_stats_from_all_nodes()
+
+    def _get_ui_stats(self, bucket, node_ip):
+        self.rest = RestConnection(self.cluster.master)
+        content = self.rest.get_ui_stats(bucket, node_ip)
+        self.log.info(content)
+        return content
+
+    def get_ui_stats_from_all_nodes(self):
+        for server in self.cluster.servers[:self.nodes_init]:
+            self._get_ui_stats('travel-sample', server.ip)

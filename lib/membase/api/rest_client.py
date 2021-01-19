@@ -3398,6 +3398,14 @@ class RestConnection(object):
             raise Exception(content)
         return content
 
+    def get_ui_stats(self, bucket, ip):
+        url = "_uistats"
+        api = self.baseUrl + url + "?bucket={0}&node={1}&zoom=minute".format(bucket, ip)
+        status, content, header = self._http_request(api, 'GET')
+
+        if not status:
+            raise Exception(content)
+        return content
 
 class MembaseServerVersion:
     def __init__(self, implementationVersion='', componentsVersion=''):
