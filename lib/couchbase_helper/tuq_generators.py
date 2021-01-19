@@ -666,6 +666,7 @@ class JsonGenerator:
         template.put("citizen_of", None)
         template.put("Working_country", None)
         template.put("languanges_known", None)
+        template.put("key", None)
 #         if is_manager:
 #             template.put("manages", manages)
         templates.append(template)

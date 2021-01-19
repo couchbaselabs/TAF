@@ -296,6 +296,8 @@ class DocumentGenerator(KVGenerator):
                     continue
                 if callable(self.kwargs[k]):
                     t_val = self.kwargs[k]()
+                elif k == "key":
+                    t_val = doc_key
                 else:
                     t_val = self.random.choice(self.kwargs[k])
                 template.put(k, t_val)

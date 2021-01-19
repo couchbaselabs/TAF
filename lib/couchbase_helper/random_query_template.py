@@ -3,7 +3,7 @@ import random
 
 class WhereClause(object):
     def get_where_clause(self, data="default", collection="",
-                         num_insert=0, num_update=0, num_delete=0):
+                         num_insert=0, num_update=0, num_delete=0, num_merge=0):
         if data =="employee":
             INSERT_CLAUSE = [
                 "join_mo=10:join_mo",
@@ -30,6 +30,16 @@ class WhereClause(object):
                 "citizen_of='INDIA':rating='exceeded_expectation':citizen_of",
                 "Working_country='USA':temp_emp=True:Working_country"
             ]
+            MERGE_CLAUSE = [
+                "target.join_mo = source.month:target.period='winter':UPDATE:join_mo",
+                "target.join_day = source.day:target.joined='towards_end':UPDATE:join_day",
+                "target.job_title = source.job:target.VISA=['US', 'CANADA']:UPDATE:job_title"
+                "target.join_yr = source.year:target.join_yr < 2009:DELETE:join_yr",
+                "target.join_yr = source.year and target.join_mo = source.month:target.join_yr < 2009:DELETE:job_title,join_yr",
+                "target.job_title = source.job and target.join_day > 25:target.join_yr < 2009:DELETE:job_title,join_day,join_yr",
+                "target.join_yr = source.year:{'join_yr': source.year,'join_mo': source.month}:INSERT:join_yr,join_mo",
+                "target.job_title = source.job:{'join_yr': source.year,'join_mo': source.month, 'job_title': source.job}:INSERT:job_title,join_yr,join_mo",
+                "target.join_yr = source.year and targer.job_title = source.job:{'join_yr': source.year,'join_mo': source.month, 'job_title': source.job}:INSERT:join_mo,join_yr,job_title"]
         else:
             WHERE_CLAUSE = [
                 "join_mo < 3 OR join_mo > 11:period='winter'",
@@ -50,12 +60,13 @@ class WhereClause(object):
         insert_clause = random.sample(INSERT_CLAUSE, num_insert)
         update_clause = random.sample(WHERE_CLAUSE, num_update)
         delete_clause = random.sample(WHERE_CLAUSE, num_delete)
+        merge_clause = random.sample(MERGE_CLAUSE, num_merge)
         stmt = self.randomize_query(collection, insert_clause,
-                                    update_clause, delete_clause)
+                                    update_clause, delete_clause, merge_clause)
         return stmt
 
     def randomize_query(self, collection,
-                        insert_clause=[], update_clause=[], delete_clause=[]):
+                        insert_clause=[], update_clause=[], delete_clause=[], merge_clause=[]):
         stmts = []
         for stmt in insert_clause:
             stmts.append("%s:INSERT: %s" % (collection, stmt))
@@ -63,4 +74,6 @@ class WhereClause(object):
             stmts.append("%s:UPDATE: %s" % (collection, stmt))
         for stmt in delete_clause:
             stmts.append("%s:DELETE: %s" % (collection, stmt))
+        for stmt in merge_clause:
+            stmts.append("%s:MERGE: %s" % (collection, stmt))
         return stmts

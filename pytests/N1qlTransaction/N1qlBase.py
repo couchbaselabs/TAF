@@ -15,7 +15,7 @@ from couchbase_helper.tuq_generators import TuqGenerators
 from membase.api.rest_client import RestConnection
 from n1ql_exceptions import N1qlException
 from remote.remote_util import RemoteMachineShellConnection
-from random_query_template import WhereClause
+from couchbase_helper.random_query_template import WhereClause
 from sdk_exceptions import SDKException
 from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.tuq_helper import N1QLHelper
@@ -79,9 +79,8 @@ class N1qlBase(CollectionBase):
                                       override_savepoint=self.override_savepoint,
                                       num_stmt=self.num_stmt_txn,
                                       load_spec=self.data_spec_name)
-        self.num_insert,self.num_update,self.num_delete = \
+        self.num_insert,self.num_update,self.num_delete,self.num_merge = \
                         self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
-
     def tearDown(self):
         self.n1ql_helper.drop_index()
         super(N1qlBase, self).tearDown()
@@ -111,6 +110,9 @@ class N1qlBase(CollectionBase):
                                                 server=server)
         collection = index.split('.')[-1]
         for doc in result["results"]:
+            if "target" in dict_to_add[0]:
+                new_add = dict_to_add[0].split(".")[1]
+                dict_to_add[0] = new_add
             value = doc[collection].get(dict_to_add[0].encode())
             if isinstance(value, list):
                 value = [x.encode('UTF8') for x in value]
@@ -246,6 +248,57 @@ class N1qlBase(CollectionBase):
             self.fail("delete query failed %s"%queries[-1])
         return docs, queries
 
+    def run_merge_query(self, clause, query_params, server=None):
+        # [bucket.scope.collection:MERGE:query]
+        name = clause[0].split('.')
+        match_or_not = ''
+        inserted_docs = {}
+        deleted_docs = list()
+        if clause[4] == 'DELETE':
+            tmp_query = "DELETE WHERE {0} LIMIT 200 RETURNING meta().id".format(clause[3])
+            match_or_not = 'WHEN MATCHED'
+
+        elif clause[4] == 'UPDATE':
+            tmp_query = "UPDATE SET {0} LIMIT 100 RETURNING meta().id".format(clause[3])
+            match_or_not = 'WHEN MATCHED'
+
+        elif clause[4] == 'INSERT':
+            tmp_query ='INSERT (KEY UUID(), VALUE {0} ) RETURNING *'.format(clause[3])
+            match_or_not = 'WHEN NOT MATCHED'
+
+        # build query
+        query = 'MERGE INTO default:`{0}`.`{1}`.`{2}` target USING [{{"id":"21728", "month": 10, "year":2010, "day":25, "job":"Engineer"}},{{"id":"21730", "month": 7, "year":2008, "day":26, "job":"Support"}}] source ON {3} {4} THEN {5}'.format(
+            name[0], name[1], name[2], clause[2], match_or_not, tmp_query)
+        #execute query
+        result = self.n1ql_helper.run_cbq_query(query,
+                                                query_params=query_params,
+                                                server=server)
+        # if success then validate and return results
+        if result["status"] == "success":
+            # in case of insert, send the list of inserted docs
+            if clause[4] == 'INSERT':
+                for val in result["results"]:
+                    t = val.values()[0]
+                    key = t["name"]
+                    inserted_docs[key] = t
+                self.validate_insert_results(clause[0], inserted_docs, query_params, server)
+                docs = inserted_docs
+            elif clause[4] == 'UPDATE':
+                updated_docs = copy.deepcopy([d.get('id').encode() for d in result["results"]])
+                updated_val = clause[3].split('.')[-1]
+                # in case of update , get update docs and updated value
+                self.validate_update_results(clause[0], updated_docs, updated_val, query_params, server)
+                docs = {updated_val: updated_docs}
+            elif clause[4] == 'DELETE':
+                deleted_docs = [d.get('id').encode() for d in result["results"]]
+                # in case of delete, get deelted docs in deleted_docs
+                self.validate_delete_results(clause[0], deleted_docs, query_params, server)
+                docs = deleted_docs
+        else:
+            self.fail("merge query failed %s" % query)
+            docs = list()
+        return docs, query
+
     def run_savepoint_query(self, clause, query_params, server=None):
         query = "SAVEPOINT %s" % clause[1]
         result = self.n1ql_helper.run_cbq_query(query, query_params=query_params,
@@ -319,6 +372,14 @@ class N1qlBase(CollectionBase):
                                         clause, query_params, server)
                     collection_map[clause[0]]["DELETE"].extend(result)
                     queries[txid].extend(query)
+                if clause[1] == "MERGE":
+                    result, query = \
+                            self.run_merge_query(clause, query_params, server)
+                    if isinstance(result, list):
+                        collection_map[clause[0]][clause[4]].extend(result)
+                    else:
+                        collection_map[clause[0]][clause[4]].update(result)
+                    queries[txid].append(query)
             if issleep:
                 self.sleep(issleep)
             if write_conflict:
@@ -351,12 +412,6 @@ class N1qlBase(CollectionBase):
                     #retry the entire transaction
                     rerun_thread = self.validate_error_during_commit(result,
                                      collection_savepoint, savepoint)
-#                     if rerun:
-#                         query_params = self.n1ql_helper.create_txn(server=server)
-#                         self.full_execute_query(stmts, commit, query_params,
-#                              rollback_to_savepoint, write_conflict, issleep,
-#                              server=server)
-#                     else:
                     savepoint = []
                     collection_savepoint = {}
             if write_conflict and write_conflict_result:
@@ -578,7 +633,7 @@ class N1qlBase(CollectionBase):
                               self.num_delete))
             stmt.extend(self.clause.get_where_clause(
                 doc_type_list[bucket_col], bucket_col,
-                self.num_insert, self.num_update, self.num_delete))
+                self.num_insert, self.num_update, self.num_delete, self.num_merge))
             self.n1ql_helper.process_index_to_create(stmt, bucket_col)
         random.shuffle(stmt)
         stmt_list = self.__chunks(stmt, int(len(stmt)/self.num_txn))
