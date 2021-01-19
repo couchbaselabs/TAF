@@ -375,13 +375,17 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         """
         self.log.info("Test started")
         
+        exclude_collections=[]
+        if not self.input.param('consider_default_KV_collection', True):
+            exclude_collections=["_default"]
+        
         self.cbas_util_v2.create_dataset_obj(
             self.bucket_util,
             dataset_cardinality=self.input.param('cardinality', 1), 
             bucket_cardinality=self.input.param('bucket_cardinality', 3),
             enabled_from_KV=False, 
             name_length=self.input.param('name_length', 30), fixed_length=False,
-            exclude_bucket=[], exclude_scope=[], exclude_collection=[], no_of_objs=1)
+            exclude_bucket=[], exclude_scope=[], exclude_collection=exclude_collections, no_of_objs=1)
         dataset = self.cbas_util_v2.list_all_dataset_objs()[0]
         
         # Negative scenario 
@@ -416,6 +420,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.fail("Dataset creation failed")
         
         if not self.input.param('validate_error', False):
+            if self.input.param('no_dataset_name', False):
+                dataset.name = dataset.kv_bucket.name
             if not self.cbas_util_v2.validate_dataset_in_metadata(dataset.name, dataset.dataverse_name):
                 self.fail("Dataset entry not present in Metadata.Dataset")
             if not self.cbas_util_v2.validate_cbas_dataset_items_count(dataset.full_name, dataset.num_of_items):

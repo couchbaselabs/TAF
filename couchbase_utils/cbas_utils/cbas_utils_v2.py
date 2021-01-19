@@ -263,6 +263,8 @@ class BaseUtil(object):
             consume_from_queue = consume_from_queue_func
             consume_from_queue(jobs, results)
         #start worker threads
+        if jobs.qsize() < thread_count:
+            thread_count = jobs.qsize() 
         for tc in range(1,thread_count+1):
             worker = Thread(
                 target=consume_from_queue, 
@@ -694,6 +696,7 @@ class Link_Util(Dataverse_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
+        self.log.info("Creating link - {0}.{1}".format(link_properties["scope"],link_properties["name"]))
         exists = False
         if create_if_not_exists:
             exists = self.validate_link_in_metadata(
@@ -703,7 +706,7 @@ class Link_Util(Dataverse_Util):
         if not exists:
             # If dataverse does not exits
             if not self.create_dataverse(
-                dataverse=link_properties["scope"], username=username, password=password, 
+                CBASHelper.format_name(link_properties["scope"]), username=username, password=password, 
                 if_not_exists=True, timeout=timeout, analytics_timeout=analytics_timeout):
                 return False
             
@@ -966,7 +969,7 @@ class Link_Util(Dataverse_Util):
                 dataverse.links[link.name] = link
             
             def consumer_func(link):
-                return self.create_link(link.properties)
+                return self.create_link(link.properties,create_if_not_exists=True)
             
             self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec.get("max_thread_count",1), 
                                       async_run=False, consume_from_queue_func=None)
@@ -1128,15 +1131,17 @@ class Dataset_Util(Link_Util):
             cmd += " if not exists"
         
         if dataverse_name:
-            cmd += " {0}.{1} on {2}".format(dataverse_name, dataset_name, kv_entity)
+            cmd += " {0}.{1}".format(dataverse_name, dataset_name)
         else:
-            cmd += " {0} on {1}".format(dataset_name, kv_entity)
+            cmd += " {0}".format(dataset_name)
         
         if compress_dataset:
             cmd += " with {'storage-block-compression': {'scheme': 'snappy'}}"
         
         if with_clause:
             cmd += " " + with_clause
+        
+        cmd += " on {0}".format(kv_entity)
         
         if link_name:
             cmd += " at {0}".format(link_name)
