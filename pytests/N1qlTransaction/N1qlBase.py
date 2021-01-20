@@ -66,6 +66,7 @@ class N1qlBase(CollectionBase):
         self.input.param("num_rollback_to_savepoint", 0)
         self.num_conflict = self.input.param("num_conflict", 0)
         self.write_conflict = self.input.param("write_conflict", False)
+        self.Kvtimeout = self.input.param("Kvtimeout", None)
         self.n1ql_server = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
                                                                          get_all_nodes=True)
         self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
@@ -702,7 +703,7 @@ class N1qlBase(CollectionBase):
         if self.atrcollection:
             atrcollection = self.get_collection_for_atrcollection()
         query_params = self.n1ql_helper.create_txn(self.txtimeout, self.durability_level,
-                                                   atrcollection)
+                                                   atrcollection, Kvtimeout=self.Kvtimeout)
         collection_savepoint, savepoints, queries, rerun = \
             self.full_execute_query(stmt, self.commit, query_params,
                                     self.rollback_to_savepoint)

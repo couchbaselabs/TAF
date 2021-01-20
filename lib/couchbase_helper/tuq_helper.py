@@ -75,12 +75,14 @@ class N1QLHelper:
         return txid
 
     def create_txn(self, txtimeout=0, durability_level="", atrcollection="",
-                   server=None):
+                   server=None, Kvtimeout=None):
         query_params = {}
         if durability_level:
             query_params["durability_level"] = durability_level
         if txtimeout:
             query_params["txtimeout"] = str(txtimeout) + "m"
+        if Kvtimeout:
+            query_params["Kvtimeout"] = str(Kvtimeout) + "s"
         if atrcollection:
             query_params["atrcollection"] = atrcollection
         stmt = "BEGIN WORK"
