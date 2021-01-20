@@ -57,8 +57,6 @@ class BaseSecondaryIndexingTests(QueryTests):
         self.index_loglevel = self.input.param("index_loglevel", None)
         if self.index_loglevel:
             self.set_indexer_logLevel(self.index_loglevel)
-        # if self.dgm_run:
-        #     self.bucket_util._load_doc_data_all_buckets(gen_load=self.gens_load)
         self.gsi_thread = self.task
         self.defer_build = self.defer_build and self.use_gsi_for_secondary
         self.num_index_replicas = self.input.param("num_index_replica", 0)

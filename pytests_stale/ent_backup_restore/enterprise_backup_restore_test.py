@@ -13,7 +13,6 @@ from membase.api.rest_client import RestConnection, RestHelper
 from BucketLib.bucket import Bucket
 from membase.helper.bucket_helper import BucketOperationHelper
 from pytests.query_tests_helper import QueryHelperTests
-#from lib.membase.helper.cluster_helper import ClusterOperationHelper
 from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 from security.auditmain import audit
 from security.rbac_base import RbacBase

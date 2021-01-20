@@ -30,7 +30,8 @@ from membase.api.exception import \
     DesignDocCreationException, QueryViewException, ReadDocumentException, \
     RebalanceFailedException, ServerUnavailableException, \
     BucketCreationException, AutoFailoverException, GetBucketInfoFailed,\
-    CompactViewFailed, SetViewInfoNotFound
+    CompactViewFailed, SetViewInfoNotFound, FailoverFailedException,\
+    BucketFlushFailed
 from membase.api.rest_client import RestConnection
 from java.util.concurrent import Callable
 from java.lang import Thread
@@ -41,6 +42,7 @@ from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from reactor.util.function import Tuples
 from com.couchbase.client.java.json import JsonObject
+from testconstants import INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA, MIN_KV_QUOTA
 
 
 class Task(Callable):
@@ -2820,7 +2822,7 @@ class N1QLQueryTask(Task):
     def __init__(self, server, bucket, query, n1ql_helper=None,
                  expected_result=None, verify_results=True,
                  is_explain_query=False, index_name=None, retry_time=2,
-                 scan_consistency=None, scan_vector=None):
+                 scan_consistency=None, scan_vector=None, timeout=900):
         super(N1QLQueryTask, self).__init__("query_n1ql_task_%s_%s_%s"
                                             % (bucket, query, time.time()))
         self.server = server
@@ -2828,7 +2830,7 @@ class N1QLQueryTask(Task):
         self.query = query
         self.expected_result = expected_result
         self.n1ql_helper = n1ql_helper
-        self.timeout = 900
+        self.timeout = timeout
         self.verify_results = verify_results
         self.is_explain_query = is_explain_query
         self.index_name = index_name
@@ -5186,3 +5188,204 @@ class CBASQueryExecuteTask(Task):
             self.set_exception(e)
 
         self.complete_task()
+
+
+class NodeInitializeTask(Task):
+    def __init__(self, server, task_manager, disabled_consistent_view=None,
+                 rebalanceIndexWaitingDisabled=None,
+                 rebalanceIndexPausingDisabled=None,
+                 maxParallelIndexers=None,
+                 maxParallelReplicaIndexers=None,
+                 port=None, quota_percent=None,
+                 index_quota_percent=None,
+                 fts_quota_percent=None,
+                 cbas_quota_percent=None,
+                 services=None, gsi_type='forestdb'):
+        Task.__init__(self, "node_init_task_%s_%s" %
+                      (server.ip, server.port))
+        self.server = server
+        self.port = port or server.port
+        self.index_quota_percent = index_quota_percent
+        self.fts_quota_percent = fts_quota_percent
+        self.cbas_quota_percent = cbas_quota_percent
+        self.quota_percent = quota_percent
+        self.disable_consistent_view = disabled_consistent_view
+        self.rebalanceIndexWaitingDisabled = rebalanceIndexWaitingDisabled
+        self.rebalanceIndexPausingDisabled = rebalanceIndexPausingDisabled
+        self.maxParallelIndexers = maxParallelIndexers
+        self.maxParallelReplicaIndexers = maxParallelReplicaIndexers
+        self.services = services
+        self.gsi_type = gsi_type
+
+    def call(self):
+        self.start_task()
+        try:
+            rest = RestConnection(self.server)
+        except ServerUnavailableException as error:
+            self.set_exception(error)
+
+        # Change timeout back to 10 after https://issues.couchbase.com/browse/MB-40670 is resolved
+        info = Task.wait_until(lambda: rest.get_nodes_self(),
+                               lambda x: x.memoryTotal > 0, 30)
+        self.test_log.debug("server: %s, nodes/self: %s", self.server,
+                            info.__dict__)
+
+        username = self.server.rest_username
+        password = self.server.rest_password
+
+        if int(info.port) in range(9091, 9991):
+            self.set_result(True)
+            return
+
+        total_memory = int(info.mcdMemoryReserved - 100)
+        if self.quota_percent:
+            total_memory = int(total_memory * self.quota_percent / 100)
+
+        set_services = copy.deepcopy(self.services)
+        if set_services is None:
+            set_services = ["kv"]
+        if "index" in set_services:
+            if self.index_quota_percent:
+                index_memory = total_memory * self.index_quota_percent/100
+            else:
+                index_memory = INDEX_QUOTA
+            self.test_log.debug("Quota for index service will be %s MB"
+                                % index_memory)
+            total_memory -= index_memory
+            rest.set_service_memoryQuota(service='indexMemoryQuota',
+                                         memoryQuota=index_memory)
+        if "fts" in set_services:
+            if self.fts_quota_percent:
+                fts_memory = total_memory * self.fts_quota_percent/100
+            else:
+                fts_memory = FTS_QUOTA
+            self.test_log.debug("Quota for fts service will be %s MB"
+                                % fts_memory)
+            total_memory -= fts_memory
+            rest.set_service_memoryQuota(service='ftsMemoryQuota',
+                                         memoryQuota=fts_memory)
+        if "cbas" in set_services:
+            if self.cbas_quota_percent:
+                cbas_memory = total_memory * self.cbas_quota_percent/100
+            else:
+                cbas_memory = CBAS_QUOTA
+            self.test_log.debug("Quota for cbas service will be %s MB"
+                                % cbas_memory)
+            total_memory -= cbas_memory
+            rest.set_service_memoryQuota(service="cbasMemoryQuota",
+                                         memoryQuota=cbas_memory)
+        if total_memory < MIN_KV_QUOTA:
+            raise Exception("KV RAM needs to be more than %s MB"
+                            " at node  %s" % (MIN_KV_QUOTA, self.server.ip))
+
+        rest.init_cluster_memoryQuota(username, password, total_memory)
+        rest.set_indexer_storage_mode(username, password, self.gsi_type)
+
+        if self.services:
+            status = rest.init_node_services(
+                username=username,
+                password=password,
+                port=self.port,
+                hostname=self.server.ip,
+                services=self.services)
+            if not status:
+                self.set_exception(
+                    Exception('unable to set services for server %s'
+                              % self.server.ip))
+        if self.disable_consistent_view is not None:
+            rest.set_reb_cons_view(self.disable_consistent_view)
+        if self.rebalanceIndexWaitingDisabled is not None:
+            rest.set_reb_index_waiting(self.rebalanceIndexWaitingDisabled)
+        if self.rebalanceIndexPausingDisabled is not None:
+            rest.set_rebalance_index_pausing(
+                self.rebalanceIndexPausingDisabled)
+        if self.maxParallelIndexers is not None:
+            rest.set_max_parallel_indexers(self.maxParallelIndexers)
+        if self.maxParallelReplicaIndexers is not None:
+            rest.set_max_parallel_replica_indexers(
+                self.maxParallelReplicaIndexers)
+
+        rest.init_cluster(username, password, self.port)
+        self.server.port = self.port
+        try:
+            rest = RestConnection(self.server)
+        except ServerUnavailableException as error:
+            self.set_exception(error)
+        info = rest.get_nodes_self()
+
+        if info is None:
+            self.set_exception(
+                Exception(
+                    'unable to get information on a server %s, it is available?'
+                    % self.server.ip))
+        self.set_result(total_memory)
+
+
+class FailoverTask(Task):
+    def __init__(self, servers, task_manager,
+                 to_failover=[], wait_for_pending=0,
+                 graceful=False, use_hostnames=False):
+        Task.__init__(self, "failover_task", task_manager)
+        self.servers = servers
+        self.to_failover = to_failover
+        self.graceful = graceful
+        self.wait_for_pending = wait_for_pending
+        self.use_hostnames = use_hostnames
+
+    def call(self):
+        try:
+            self._failover_nodes()
+            self.test_log.debug("{0} seconds sleep after failover for nodes to go pending...."
+                                .format(self.wait_for_pending))
+            sleep(self.wait_for_pending)
+            self.set_result(True)
+
+        except FailoverFailedException as e:
+            self.set_exception(e)
+
+        except Exception as e:
+            self.set_exception(e)
+
+    def _failover_nodes(self):
+        rest = RestConnection(self.servers[0])
+        # call REST fail_over for the nodes to be failed over
+        for server in self.to_failover:
+            for node in rest.node_statuses():
+                if (server.hostname if self.use_hostnames else server.ip) == node.ip and int(
+                        server.port) == int(node.port):
+                    self.test_log.debug(
+                        "Failing over {0}:{1} with graceful={2}"
+                        .format(node.ip, node.port, self.graceful))
+                    rest.fail_over(node.id, self.graceful)
+
+
+class BucketFlushTask(Task):
+    def __init__(self, server, task_manager, bucket="default", timeout=300):
+        Task.__init__(self, "bucket_flush_task", task_manager)
+        self.server = server
+        self.bucket = bucket
+        if isinstance(bucket, Bucket):
+            self.bucket = bucket.name
+        self.timeout = timeout
+
+    def call(self):
+        try:
+            rest = BucketHelper(self.server)
+            if rest.flush_bucket(self.bucket):
+                if MemcachedHelper.wait_for_vbuckets_ready_state(
+                    self.server, self.bucket,
+                    timeout_in_seconds=self.timeout):
+                    self.set_result(True)
+                else:
+                    self.test_log.error(
+                        "Unable to reach bucket {0} on server {1} after flush"
+                        .format(self.bucket, self.server))
+                    self.set_result(False)
+            else:
+                self.set_result(False)
+
+        except BucketFlushFailed as e:
+            self.set_exception(e)
+
+        except Exception as e:
+            self.set_exception(e)
