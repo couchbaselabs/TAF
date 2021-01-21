@@ -199,6 +199,8 @@ class CollectionBase(BaseTestCase):
                         self.input.param(key)
                 elif key == "bucket_storage":
                     bucket_spec[Bucket.storageBackend] = self.bucket_storage
+                elif key == "compression_mode":
+                    bucket_spec[Bucket.compressionMode] = self.compression_mode
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for key, value in self.input.test_params.items():
