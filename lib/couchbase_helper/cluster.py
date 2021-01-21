@@ -41,10 +41,11 @@ class ServerTasks(object):
         Returns:
           FailOverTask - A task future that is a handle to the scheduled task
         """
-        _task = jython_tasks.FailoverTask(
-            servers, task_manager=self.jython_task_manager,
-            to_failover=failover_nodes, graceful=graceful,
-            use_hostnames=use_hostnames, wait_for_pending=wait_for_pending)
+        _task = jython_tasks.FailoverTask(servers,
+                                          to_failover=failover_nodes,
+                                          graceful=graceful,
+                                          use_hostnames=use_hostnames,
+                                          wait_for_pending=wait_for_pending)
         self.jython_task_manager.schedule(_task)
         return _task
 

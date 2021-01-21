@@ -5322,10 +5322,9 @@ class NodeInitializeTask(Task):
 
 
 class FailoverTask(Task):
-    def __init__(self, servers, task_manager,
-                 to_failover=[], wait_for_pending=0,
+    def __init__(self, servers, to_failover=[], wait_for_pending=0,
                  graceful=False, use_hostnames=False):
-        Task.__init__(self, "failover_task", task_manager)
+        Task.__init__(self, "failover_task")
         self.servers = servers
         self.to_failover = to_failover
         self.graceful = graceful
@@ -5356,7 +5355,10 @@ class FailoverTask(Task):
                     self.test_log.debug(
                         "Failing over {0}:{1} with graceful={2}"
                         .format(node.ip, node.port, self.graceful))
-                    rest.fail_over(node.id, self.graceful)
+                    result = rest.fail_over(node.id, self.graceful)
+                    if not result:
+                        self.set_exception("Node failover failed!!")
+        rest.monitorRebalance()
 
 
 class BucketFlushTask(Task):
