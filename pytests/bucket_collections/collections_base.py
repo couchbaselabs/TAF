@@ -151,9 +151,6 @@ class CollectionBase(BaseTestCase):
                 clients_per_bucket,
                 compression_settings=self.sdk_compression)
 
-        # TODO: remove this once the bug is fixed
-        self.sleep(120, "MB-38497")
-
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task,

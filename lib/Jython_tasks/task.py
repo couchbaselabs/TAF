@@ -3288,8 +3288,7 @@ class BucketCreateTask(Task):
 
 
 class BucketCreateFromSpecTask(Task):
-    def __init__(self, task_manager, server, bucket_name, bucket_spec,
-                 wait_for_collection=2):
+    def __init__(self, task_manager, server, bucket_name, bucket_spec):
         super(BucketCreateFromSpecTask, self) \
             .__init__("Bucket_create_task_%s" % bucket_name)
         self.task_manager = task_manager
@@ -3299,7 +3298,6 @@ class BucketCreateFromSpecTask(Task):
         self.retries = 0
         self.rest = RestConnection(self.server)
         self.bucket_helper = BucketHelper(self.server)
-        self.wait_for_collection = wait_for_collection
         # Used to store the Created Bucket() object, for appending into
         # bucket_utils.buckets list
         self.bucket_obj = Bucket()
@@ -3414,9 +3412,6 @@ class BucketCreateFromSpecTask(Task):
                 args=[scope_spec["name"], collection_spec])
             collection_create_thread.start()
             collection_create_thread.join(30)
-            sleep(self.wait_for_collection,
-                  "MB-38073: Wait after collection %s creation" %
-                  collection_name)
 
     def create_collection_from_spec(self, scope_name, collection_spec):
         self.test_log.debug("Creating collection for '%s:%s' - %s"

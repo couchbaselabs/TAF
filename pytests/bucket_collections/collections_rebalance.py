@@ -774,8 +774,6 @@ class CollectionsRebalance(CollectionBase):
                                                        )
 
         if self.data_load_stage == "during":
-            # MB-40654
-            self.sleep(10, "wait for rebalance to start")
             if self.data_load_type == "async":
                 tasks = self.async_data_load()
             else:
