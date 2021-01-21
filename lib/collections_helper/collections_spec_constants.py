@@ -77,3 +77,6 @@ class MetaCrudParams(object):
     COLLECTIONS_CONSIDERED_FOR_CRUD = "collections_considered_for_crud"
     SCOPES_CONSIDERED_FOR_CRUD = "scopes_considers_for_crud"
     BUCKETS_CONSIDERED_FOR_CRUD = "buckets_considered_for_crud"
+
+    # Number of threadpool executor workers for scope/collection drops/creates
+    THREADPOOL_MAX_WORKERS = "threadpool_max_workers"

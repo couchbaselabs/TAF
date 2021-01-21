@@ -76,5 +76,9 @@ spec = {
     # Applies only for DocCrud / SubDocCrud operation
     MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
     MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
-    MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all"
+    MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all",
+
+    # Number of threadpool executor workers for scope/collection drops/creates
+    # for making parallel rest calls during subsequent data load
+    MetaCrudParams.THREADPOOL_MAX_WORKERS: 10
 }
