@@ -142,7 +142,7 @@ class volume(CollectionBase):
         query = "select state from system:indexes where state='online'"
         result = self.run_cbq_query(query)
         self.log.info("online indexes count: {0}".format(len(result['results'])))
-        self.sleep(600, "Wait after building indexes")
+        self.sleep(60, "Wait after building indexes")
 
     def create_indexes_and_initialize_queries(self):
         """
