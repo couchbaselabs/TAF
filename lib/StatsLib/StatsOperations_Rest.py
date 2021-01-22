@@ -1,6 +1,7 @@
 import json
 import urllib
 import re
+import base64
 
 import testconstants
 from connections.Rest_Connection import RestConnection
@@ -8,6 +9,7 @@ from membase.api.rest_client import RestConnection as RestClientConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from global_vars import logger
 from pytests.scalable_stats import constants
+from membase.api import httplib2
 
 
 class StatsHelper(RestConnection):
@@ -112,6 +114,19 @@ class StatsHelper(RestConnection):
         if not status:
             raise Exception(content)
         # ToDo - Think of a way to a parse time series, instead of returning the entire content
+        return json.loads(content)
+
+    def post_range_api_metrics(self, params):
+        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
+        api = self.base_url + '/pools/default/stats/range/'
+        headers = {'Content-Type': 'text/plain', 'Authorization': 'Basic %s' % authorization}
+        # We are using it because there are lot of code in _http_request which works only when output is json
+        # In this case response in list, apart from that there is few more checks like we do for redaction
+        # that doesnt work when the body is list
+        # TODO : fix _http_request to work with lists(both body and repsonse)
+        response, content = httplib2.Http(timeout=120).request(api, 'POST', params, headers)
+        if not response['status']:
+            raise Exception(content)
         return json.loads(content)
 
     def get_instant_api_metrics(self, metric_name, label_values=None, optional_params=None):
