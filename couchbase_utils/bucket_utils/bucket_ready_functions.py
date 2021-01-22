@@ -4408,10 +4408,12 @@ class BucketUtils(ScopeUtils):
                                 scope_name=scope.name)
 
     @staticmethod
-    def perform_tasks_from_spec_high_ops(cluster, buckets, input_spec):
+    def perform_tasks_from_spec(cluster, buckets, input_spec):
         """
         Perform Create/Drop/Flush of scopes and collections as specified
         in the input json spec template.
+        Scopes/collections drop/creation is done using threads instead
+        of sequential manner
 
         :param cluster: Cluster object to fetch master node
                         (To create REST connections for bucket operations)
@@ -4735,10 +4737,12 @@ class BucketUtils(ScopeUtils):
         return ops_details
 
     @staticmethod
-    def perform_tasks_from_spec(cluster, buckets, input_spec):
+    def perform_tasks_from_spec_old(cluster, buckets, input_spec):
         """
         Perform Create/Drop/Flush of scopes and collections as specified
         in the input json spec template.
+        (Old function that does CRUD on collections in sequential manner)
+        ToDo:Remove this function after a few weekly runs
 
         :param cluster: Cluster object to fetch master node
                         (To create REST connections for bucket operations)
