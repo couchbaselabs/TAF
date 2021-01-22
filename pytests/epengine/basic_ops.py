@@ -233,7 +233,8 @@ class basic_ops(BaseTestCase):
         self.log.info("Loading {0} docs into the bucket: {1}"
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_docs(
-            self.cluster, def_bucket, doc_create, "create", 0,
+            self.cluster, def_bucket, doc_create,
+            DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -254,7 +255,8 @@ class basic_ops(BaseTestCase):
         self.log.info("Validating failed doc's (if any) exceptions")
         doc_op_info_dict = dict()
         doc_op_info_dict[task] = self.bucket_util.get_doc_op_info_dict(
-            def_bucket, "create", exp=0, replicate_to=self.replicate_to,
+            def_bucket, DocLoading.Bucket.DocOps.CREATE,
+            exp=0, replicate_to=self.replicate_to,
             persist_to=self.persist_to, durability=self.durability_level,
             timeout=self.sdk_timeout, time_unit="seconds",
             ignore_exceptions=ignore_exceptions,
@@ -306,10 +308,11 @@ class basic_ops(BaseTestCase):
             mutation_doc_count = (doc_update.end - doc_update.start
                                   + len(task.fail.keys()))
 
-        if doc_op == "update":
+        if doc_op == DocLoading.Bucket.DocOps.UPDATE:
             self.log.info("Performing 'update' mutation over the docs")
             task = self.task.async_load_gen_docs(
-                self.cluster, def_bucket, doc_update, "update", 0,
+                self.cluster, def_bucket, doc_update,
+                DocLoading.Bucket.DocOps.UPDATE, 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -332,7 +335,7 @@ class basic_ops(BaseTestCase):
             # Read all the values to validate update operation
             task = self.task.async_validate_docs(
                     self.cluster, def_bucket,
-                    doc_update, "update", 0,
+                    doc_update, DocLoading.Bucket.DocOps.UPDATE, 0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     scope=self.scope_name,
@@ -340,10 +343,11 @@ class basic_ops(BaseTestCase):
                     sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
 
-        elif doc_op == "delete":
+        elif doc_op == DocLoading.Bucket.DocOps.DELETE:
             self.log.info("Performing 'delete' mutation over the docs")
             task = self.task.async_load_gen_docs(
-                self.cluster, def_bucket, doc_update, "delete", 0,
+                self.cluster, def_bucket, doc_update,
+                DocLoading.Bucket.DocOps.DELETE, 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -376,11 +380,11 @@ class basic_ops(BaseTestCase):
 
             # Read all the values to validate delete operation
             task = self.task.async_validate_docs(
-                    self.cluster, def_bucket,
-                    doc_update, "delete", 0,
-                    batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency,
-                    sdk_client_pool=self.sdk_client_pool)
+                self.cluster, def_bucket, doc_update,
+                DocLoading.Bucket.DocOps.DELETE, 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
 
         else:
@@ -409,7 +413,8 @@ class basic_ops(BaseTestCase):
             docs_per_day=self.num_items, document_size=self.doc_size)
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
-                self.cluster, bucket, gens_load, "create", 0,
+                self.cluster, bucket, gens_load,
+                DocLoading.Bucket.DocOps.CREATE, 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
@@ -431,7 +436,8 @@ class basic_ops(BaseTestCase):
             docs_per_day=1, document_size=(self.doc_size * 1024000))
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
-                self.cluster, bucket, gens_load, "create", 0,
+                self.cluster, bucket, gens_load,
+                DocLoading.Bucket.DocOps.CREATE, 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
@@ -459,7 +465,8 @@ class basic_ops(BaseTestCase):
                 gens_update = self.generate_docs_bigdata(
                     docs_per_day=1, document_size=(21 * 1024000))
                 task = self.task.async_load_gen_docs(
-                    self.cluster, bucket, gens_update, "update", 0,
+                    self.cluster, bucket, gens_update,
+                    DocLoading.Bucket.DocOps.UPDATE, 0,
                     batch_size=10,
                     process_concurrency=8,
                     replicate_to=self.replicate_to,
@@ -591,17 +598,22 @@ class basic_ops(BaseTestCase):
                     self.cluster.master.rest_password, port)
         command = cmd_base + '-X POST -d \'os:cmd("env")\''
         cmd.append(command)
-        command = cmd_base + '-X POST -d \'case file:read_file("/etc/passwd") of {ok, B} -> io:format("~p~n", [binary_to_term(B)]) end.\''
+        command = cmd_base + '-X POST ' \
+                             '-d \'case file:read_file("/etc/passwd") ' \
+                             'of {ok, B} -> io:format("~p~n", ' \
+                             '[binary_to_term(B)]) end.\''
         cmd.append(command)
 
         shell = RemoteMachineShellConnection(self.cluster.master)
         for command in cmd:
             output, error = shell.execute_command(command)
-            self.assertNotEquals("API is accessible from localhost only", output[0])
+            self.assertNotEquals("API is accessible from localhost only",
+                                 output[0])
 
         # Disable allow_nonlocal_eval
         if not self.disable_diag_eval_on_non_local_host:
-            command = cmd_base + '-X POST -d \'ns_config:set(allow_nonlocal_eval, true).\''
+            command = cmd_base + '-X POST -d \'ns_config:set(' \
+                                 'allow_nonlocal_eval, true).\''
             _, _ = shell.execute_command(command)
 
         # Check ip address on diag/eval will not work fine
@@ -613,7 +625,10 @@ class basic_ops(BaseTestCase):
                     self.cluster.master.ip, port)
         command = cmd_base + '-X POST -d \'os:cmd("env")\''
         cmd.append(command)
-        command = cmd_base + '-X POST -d \'case file:read_file("/etc/passwd") of {ok, B} -> io:format("~p~n", [binary_to_term(B)]) end.\''
+        command = cmd_base + '-X POST ' \
+                             '-d \'case file:read_file("/etc/passwd") ' \
+                             'of {ok, B} -> io:format("~p~n", ' \
+                             '[binary_to_term(B)]) end.\''
         cmd.append(command)
 
         for command in cmd:
@@ -637,9 +652,8 @@ class basic_ops(BaseTestCase):
         doc_gen = doc_generator(self.key, 0, self.num_items,
                                 doc_size=1)
         create_task = self.task.async_load_gen_docs(
-            self.cluster, bucket, doc_gen, "create", 0,
-            batch_size=100,
-            process_concurrency=self.process_concurrency,
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
+            batch_size=100, process_concurrency=self.process_concurrency,
             timeout_secs=self.sdk_timeout)
         self.task_manager.get_task_result(create_task)
 
@@ -652,7 +666,7 @@ class basic_ops(BaseTestCase):
         self.log.info("Start doc_reads until total_gets cross: %s" % max_gets)
         read_task = self.task.async_continuous_doc_ops(
             self.cluster, bucket, doc_gen,
-            op_type="read", batch_size=self.batch_size,
+            op_type=DocLoading.Bucket.DocOps.READ, batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             timeout_secs=self.sdk_timeout)
         self.sleep(60, "Wait for read task to start")
@@ -748,22 +762,20 @@ class basic_ops(BaseTestCase):
 
         doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=1)
         create_task = self.task.async_load_gen_docs(
-            self.cluster, bucket, doc_gen, "create", 0,
-            batch_size=500,
-            process_concurrency=self.process_concurrency,
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
+            batch_size=500, process_concurrency=self.process_concurrency,
             timeout_secs=self.sdk_timeout)
         self.task_manager.get_task_result(create_task)
 
-        mc_stat_reset_thread = Thread(target=reset_mcstat,
-                                      args=[bucket.name])
-        get_timings_thread = Thread(target=get_timings,
-                                    args=[bucket.name])
+        mc_stat_reset_thread = Thread(target=reset_mcstat, args=[bucket.name])
+        get_timings_thread = Thread(target=get_timings, args=[bucket.name])
         mc_stat_reset_thread.start()
         get_timings_thread.start()
 
         read_task = self.task.async_continuous_doc_ops(
             self.cluster, bucket, doc_gen,
-            op_type="read", batch_size=self.batch_size,
+            op_type=DocLoading.Bucket.DocOps.READ,
+            batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             timeout_secs=self.sdk_timeout)
 
@@ -806,8 +818,8 @@ class basic_ops(BaseTestCase):
             xattr_kv = ["field", "value"]
             while not stop_loader:
                 t_key = "%s-%s" % (self.key, self.num_items)
-                crud_result = client.crud("create", t_key, value,
-                                          timeout=60)
+                crud_result = client.crud(DocLoading.Bucket.DocOps.CREATE,
+                                          t_key, value, timeout=60)
                 if crud_result["status"] is False:
                     self.log_failure("Create key %s failed: %s"
                                      % (t_key, crud_result["error"]))
@@ -884,7 +896,7 @@ class basic_ops(BaseTestCase):
         # Start deleting the evicted docs in parallel to rebalance task
         self.log.info("Deleting evicted keys")
         for key in non_resident_keys:
-            result = client.crud("delete", key)
+            result = client.crud(DocLoading.Bucket.DocOps.DELETE, key)
             if result["status"] is False:
                 self.log_failure("Key %s deletion failed: %s"
                                  % (key, result["error"]))
@@ -957,10 +969,10 @@ class basic_ops(BaseTestCase):
             vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
 
             # Create and delete a key
-            result = client.crud("create", key, val)
-            validate_crud_result("create", key, result)
-            result = client.crud("delete", key, val)
-            validate_crud_result("delete", key, result)
+            result = client.crud(DocLoading.Bucket.DocOps.CREATE, key, val)
+            validate_crud_result(DocLoading.Bucket.DocOps.CREATE, key, result)
+            result = client.crud(DocLoading.Bucket.DocOps.DELETE, key, val)
+            validate_crud_result(DocLoading.Bucket.DocOps.DELETE, key, result)
             on_disk_deletes += 1
 
             # Wait for ep_queue_size to become zero
@@ -999,8 +1011,8 @@ class basic_ops(BaseTestCase):
         while doc_gen.has_next():
             key, val = doc_gen.next()
             # Create and delete a key
-            client.crud("create", key, val)
-            client.crud("delete", key, val)
+            client.crud(DocLoading.Bucket.DocOps.CREATE, key, val)
+            client.crud(DocLoading.Bucket.DocOps.DELETE, key, val)
             # self.bucket_util._wait_for_stats_all_buckets()
 
         self.bucket_util._run_compaction(number_of_times=1)
@@ -1037,7 +1049,7 @@ class basic_ops(BaseTestCase):
         """
         def perform_doc_op(op_type):
             start = self.num_items
-            if op_type == "delete":
+            if op_type == DocLoading.Bucket.DocOps.DELETE:
                 start = self.del_items
             doc_gen = doc_generator(self.key, start, start+load_batch,
                                     doc_size=self.doc_size)
@@ -1052,9 +1064,9 @@ class basic_ops(BaseTestCase):
                 sdk_client_pool=self.sdk_client_pool)
             self.task_manager.get_task_result(doc_op_task)
             self.bucket_util._wait_for_stats_all_buckets()
-            if op_type == "create":
+            if op_type == DocLoading.Bucket.DocOps.CREATE:
                 self.num_items += load_batch
-            elif op_type == "delete":
+            elif op_type == DocLoading.Bucket.DocOps.DELETE:
                 self.del_items += load_batch
 
         def display_bucket_water_mark_values(t_node):
@@ -1102,7 +1114,7 @@ class basic_ops(BaseTestCase):
 
         self.log.info("Loading till low_water_mark is reached")
         while not low_wm_reached:
-            perform_doc_op("create")
+            perform_doc_op(DocLoading.Bucket.DocOps.CREATE)
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
             if int(stats["mem_used"]) > int(stats["ep_mem_low_wat"]):
                 display_bucket_water_mark_values(target_node)
@@ -1118,7 +1130,7 @@ class basic_ops(BaseTestCase):
 
         self.log.info("Loading docs till high_water_mark is reached")
         while not high_wm_reached:
-            perform_doc_op("create")
+            perform_doc_op(DocLoading.Bucket.DocOps.CREATE)
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
             if int(stats["mem_used"]) > int(stats["ep_mem_high_wat"]):
                 display_bucket_water_mark_values(target_node)
@@ -1134,7 +1146,7 @@ class basic_ops(BaseTestCase):
         self.log.info("Delete docs until the mem_used goes below low_wm")
         low_wm_reached = False
         while not low_wm_reached and self.del_items < self.num_items:
-            perform_doc_op("delete")
+            perform_doc_op(DocLoading.Bucket.DocOps.DELETE)
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
             if int(stats["mem_used"]) < (int(stats["ep_mem_low_wat"])
                                          - mem_buffer_gap):
@@ -1156,7 +1168,7 @@ class basic_ops(BaseTestCase):
         self.log.info("Loading docs till high_water_mark is reached")
         high_wm_reached = False
         while not high_wm_reached:
-            perform_doc_op("create")
+            perform_doc_op(DocLoading.Bucket.DocOps.CREATE)
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
             if int(stats["mem_used"]) > (int(stats["ep_mem_high_wat"])
                                          + mem_buffer_gap):
@@ -1201,24 +1213,24 @@ class basic_ops(BaseTestCase):
         client_2 = SDKClient([self.cluster.master], bucket)
 
         # Perform create-delete to populate bloom-filter
-        client_1.crud("create", self.key, doc_val)
+        client_1.crud(DocLoading.Bucket.DocOps.CREATE, self.key, doc_val)
         self.bucket_util._wait_for_stats_all_buckets()
-        client_1.crud("delete", self.key)
+        client_1.crud(DocLoading.Bucket.DocOps.DELETE, self.key)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(0)
 
         # Create the document using async-write
-        client_1.crud("create", self.key, doc_val)
+        client_1.crud(DocLoading.Bucket.DocOps.CREATE, self.key, doc_val)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(1)
 
         # Stop persistence and delete te document
         cb_err.create(CouchbaseError.STOP_PERSISTENCE, bucket.name)
         self.sleep(2, "Wait after stop_persistence")
-        client_1.crud("delete", self.key)
+        client_1.crud(DocLoading.Bucket.DocOps.DELETE, self.key)
 
         # Get doc to make sure we see not_found exception
-        result = client_1.crud("read", self.key)
+        result = client_1.crud(DocLoading.Bucket.DocOps.READ, self.key)
         if SDKException.DocumentNotFoundException not in str(result["error"]):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with deleted_doc: %s"
@@ -1227,14 +1239,14 @@ class basic_ops(BaseTestCase):
         # Perform sync-write to create doc prepare in hash-table
         create_thread = Thread(
             target=client_1.crud,
-            args=["create", self.key, doc_val],
+            args=[DocLoading.Bucket.DocOps.CREATE, self.key, doc_val],
             kwargs={"durability": Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
                     "timeout": 15})
         create_thread.start()
         self.sleep(5, "Wait to make sure prepare is generated")
 
         # Doc read should return not_found
-        result = client_2.crud("read", self.key)
+        result = client_2.crud(DocLoading.Bucket.DocOps.READ, self.key)
         if SDKException.DocumentNotFoundException not in str(result["error"]):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with prepared doc: %s"
@@ -1298,7 +1310,8 @@ class basic_ops(BaseTestCase):
                                     randomize_value=self.randomize_value)
         def_bucket = self.bucket_util.get_all_buckets()[0]
         task = self.task.async_load_gen_docs(
-            self.cluster, def_bucket, gen_create, "create", 0,
+            self.cluster, def_bucket, gen_create,
+            DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
@@ -1326,7 +1339,8 @@ class basic_ops(BaseTestCase):
         # Load data and check stats to see compression
         # is not done for newly added data
         task = self.task.async_load_gen_docs(
-            self.cluster, def_bucket, gen_create2, "create", 0,
+            self.cluster, def_bucket, gen_create2,
+            DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
@@ -1352,11 +1366,13 @@ class basic_ops(BaseTestCase):
         err_sim = CouchbaseError(self.log, ssh_conn)
         err_sim.create(CouchbaseError.STOP_MEMCACHED)
 
-        result = client.crud("create", "abort1", "abort1_val")
+        result = client.crud(DocLoading.Bucket.DocOps.CREATE,
+                             "abort1", "abort1_val")
         if not result["status"]:
             self.log_failure("Async SET failed")
 
-        result = client.crud("update", "abort1", "abort1_val",
+        result = client.crud(DocLoading.Bucket.DocOps.UPDATE,
+                             "abort1", "abort1_val",
                              durability=self.durability_level,
                              timeout=3, time_unit="seconds")
         if result["status"]:
