@@ -562,7 +562,8 @@ class DCPBase(CollectionBase):
         return vb_ids
 
     def wait_for_persistence(self, client):
-        if self.bucket_type == 'ephemeral': return
+        if self.bucket_type == 'ephemeral':
+            return
         while int(self.get_stat(client, 'ep_queue_size')) > 0:
             self.sleep(1)
         while int(self.get_stat(client, 'ep_commit_num')) == 0:

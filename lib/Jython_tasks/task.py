@@ -2380,6 +2380,8 @@ class StatsWaitTask(Task):
             while not self.stop and time.time() < timeout:
                 if self.statCmd in ["all", "dcp"]:
                     self._get_all_stats_and_compare()
+                elif self.statCmd == "checkpoint":
+                    self._get_checkpoint_stats_and_compare()
                 else:
                     raise Exception("Not supported. Implement the stat call")
         finally:
@@ -2404,6 +2406,7 @@ class StatsWaitTask(Task):
                     val_dict[cb_stat_obj.shellConn.ip] = tem_stat[self.stat]
                     if self.stat in tem_stat:
                         stat_result += int(tem_stat[self.stat])
+                break
             except Exception as error:
                 if retry > 0:
                     retry -= 1
@@ -2413,8 +2416,44 @@ class StatsWaitTask(Task):
                     shell.disconnect()
                 self.set_exception(error)
                 self.stop = True
-                return False
-            break
+
+        if not self._compare(self.comparison, str(stat_result), self.value):
+            self.log.debug("Not Ready: %s %s %s %s. "
+                           "Received: %s for bucket '%s'"
+                           % (self.stat, stat_result, self.comparison,
+                              self.value, val_dict, self.bucket.name))
+            self.log.debug("Wait before next StatWaitTask check")
+            sleep(5, log_type="infra")
+        else:
+            self.test_log.debug("Ready: %s %s %s %s. "
+                                "Received: %s for bucket '%s'"
+                                % (self.stat, stat_result, self.comparison,
+                                   self.value, val_dict, self.bucket.name))
+            self.stop = True
+
+    def _get_checkpoint_stats_and_compare(self):
+        stat_result = 0
+        val_dict = dict()
+        retry = 5
+        while retry > 0:
+            try:
+                for cb_stat_obj in self.cbstatObjList:
+                    tem_stat = cb_stat_obj.checkpoint_stats(self.bucket.name)
+                    node_stat_val = 0
+                    for vb in tem_stat:
+                        node_stat_val += tem_stat[vb][self.stat]
+                    val_dict[cb_stat_obj.shellConn.ip] = node_stat_val
+                    stat_result += node_stat_val
+                break
+            except Exception as error:
+                if retry > 0:
+                    retry -= 1
+                    sleep(5, "MC is down. Retrying.. %s" % str(error))
+                    continue
+                for shell in self.shellConnList:
+                    shell.disconnect()
+                self.set_exception(error)
+                self.stop = True
         if not self._compare(self.comparison, str(stat_result), self.value):
             self.test_log.debug("Not Ready: %s %s %s %s. "
                                 "Received: %s for bucket '%s'"
@@ -2422,14 +2461,12 @@ class StatsWaitTask(Task):
                                    self.value, val_dict, self.bucket.name))
             self.log.debug("Wait before next StatWaitTask check")
             sleep(5, log_type="infra")
-            return False
         else:
             self.test_log.debug("Ready: %s %s %s %s. "
                                 "Received: %s for bucket '%s'"
                                 % (self.stat, stat_result, self.comparison,
                                    self.value, val_dict, self.bucket.name))
             self.stop = True
-            return True
 
     def _compare(self, cmp_type, a, b):
         if isinstance(b, (int, long)) and a.isdigit():
@@ -3164,9 +3201,9 @@ class PrintBucketStats(Task):
         return ops_rate
 
     def print_ep_queue_size(self, bucket_stats):
-        if 'op' in bucket_stats and \
-        'samples' in bucket_stats['op'] and \
-        'ep_queue_size' in bucket_stats['op']['samples']:
+        if 'op' in bucket_stats \
+                and 'samples' in bucket_stats['op'] \
+                and 'ep_queue_size' in bucket_stats['op']['samples']:
             ep_q_size = bucket_stats['op']['samples']['ep_queue_size'][-1]
             self.test_log.debug("ep_queue_size for {}: {}\
             ".format(self.bucket.name, ep_q_size))
