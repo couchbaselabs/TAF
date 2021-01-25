@@ -1,26 +1,25 @@
+import random
+import traceback
+
+from math import ceil
+
 from BucketLib.bucket import TravelSample, BeerSample, Bucket
 from basetestcase import BaseTestCase
-from cbas_utils.cbas_utils import CbasUtil
-from com.couchbase.client.java.json import JsonObject
-from couchbase_helper.documentgenerator import DocumentGenerator
-from membase.api.rest_client import RestHelper, RestConnection
-from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
-
-from cluster_utils.cluster_ready_functions import ClusterUtils
 from bucket_utils.bucket_ready_functions import BucketUtils
-from rbac_utils.Rbac_ready_functions import RbacUtils
-
-import random
-from remote.remote_util import RemoteMachineShellConnection
-
-import traceback
-from java.lang import Exception as Java_base_exception
-from sdk_exceptions import SDKException
+from cbas_utils.cbas_utils import CbasUtil
+# TODO: Need to removed once the old CbasUtil is deprecated.
+from cbas_utils.cbas_utils_v2 import CbasUtil as CbasUtilV2
+from cluster_utils.cluster_ready_functions import ClusterUtils
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
-from math import ceil
-# This is temporary import for now, it will be removed once the old CbasUtil is deprecated.
-from cbas_utils.cbas_utils_v2 import CbasUtil as CbasUtilV2
+from couchbase_helper.documentgenerator import DocumentGenerator
+from membase.api.rest_client import RestHelper, RestConnection
+from rbac_utils.Rbac_ready_functions import RbacUtils
+from sdk_exceptions import SDKException
+from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
+
+from com.couchbase.client.java.json import JsonObject
+from java.lang import Exception as Java_base_exception
 
 
 class CBASBaseTest(BaseTestCase):
