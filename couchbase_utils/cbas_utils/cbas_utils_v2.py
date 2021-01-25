@@ -2,6 +2,10 @@
 Created on 08-Dec-2020
 
 @author: Umang
+
+Very Important Note - All the CBAS DDLs currently run sequentially, thus the code for 
+executing DDLs is hard coded to run on a single thread. If this changes in future, we can just 
+remove this hard coded value. 
 '''
 import json
 import urllib
@@ -552,7 +556,7 @@ class Dataverse_Util(BaseUtil):
                     analytics_scope = False
                 return self.create_dataverse(dataverse.name, if_not_exists=True, analytics_scope=analytics_scope)
             
-            self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec.get("max_thread_count",1), 
+            self.run_jobs_in_parallel(consumer_func, jobs, results, 1, 
                                       async_run=False, consume_from_queue_func=None)
             
             return all(results)
@@ -971,8 +975,8 @@ class Link_Util(Dataverse_Util):
             def consumer_func(link):
                 return self.create_link(link.properties,create_if_not_exists=True)
             
-            self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec.get("max_thread_count",1), 
-                                      async_run=False, consume_from_queue_func=None)
+            self.run_jobs_in_parallel(consumer_func, jobs, results, 1, async_run=False, 
+                                      consume_from_queue_func=None)
             
             return all(results)
         return True
@@ -1814,27 +1818,27 @@ class Dataset_Util(Link_Util):
                         dataset.dataset_properties["exclude"],
                         False, None, None, None, None, 120, 120)
             
-            self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec.get("max_thread_count",1), 
-                                      async_run=False, consume_from_queue_func=None)
+            self.run_jobs_in_parallel(consumer_func, jobs, results, 1, async_run=False, consume_from_queue_func=None)
                 
             return all(results)
         return True
     
     def create_datasets_on_all_collections(self, bucket_util, cbas_name_cardinality=1, kv_name_cardinality=1, 
-                                           remote_datasets=False, max_thread_count=10):
+                                           remote_datasets=False, creation_methods=None):
         """
         Create datasets on every collection across all the buckets and scopes.
         :param bucket_util obj, bucket_util obj to perform operations on KV bucket.
         :param cbas_name_cardinality int, no of parts in dataset name. valid value 1,2,3 
         :param kv_name_cardinality int, no of parts in KV entity name. Valid values 1 or 3. 
         :param remote_datasets bool, if True create remote datasets using remote links.
-        :param max_thread_count int, max no. of parallel threads to execute.
+        :param creation_methods list, support values are "cbas_collection","cbas_dataset","enable_cbas_from_kv"
         """
         self.log.info("Creating Datasets on all KV collections")
         jobs = Queue()
         results = list()
         
-        creation_methods = ["cbas_collection","cbas_dataset","enable_cbas_from_kv"]
+        if not creation_methods:
+            creation_methods = ["cbas_collection","cbas_dataset","enable_cbas_from_kv"]
         
         if remote_datasets:
             remote_link_objs = self.list_all_link_objs("couchbase")
@@ -1928,8 +1932,7 @@ class Dataset_Util(Link_Util):
                         False, False, None, dataset.link_name, None, False, None, None, 
                         None, 120, 120, analytics_collection)
         
-        self.run_jobs_in_parallel(consumer_func, jobs, results, max_thread_count, 
-                                  async_run=False, consume_from_queue_func=None)
+        self.run_jobs_in_parallel(consumer_func, jobs, results, 1, async_run=False, consume_from_queue_func=None)
             
         return all(results)
     
@@ -1968,11 +1971,16 @@ class Dataset_Util(Link_Util):
             else:
                 dataverse_obj = self.get_dataverse_obj("Default")
             
+            if collection:
+                num_of_items = collection.num_items
+            else:
+                num_of_items = 0
+            
             dataset_obj = Dataset(
                 name=dataset_name, dataverse_name=dataverse_name, link_name=None, 
                 dataset_source="internal", dataset_properties={},
                 bucket=bucket, scope=scope, collection=collection, 
-                enabled_from_KV=enabled_from_KV, num_of_items=collection.num_items)
+                enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
             
             dataverse_obj.datasets[dataset_obj.full_name] = dataset_obj
             
@@ -2274,8 +2282,7 @@ class Synonym_Util(Dataset_Util):
                     expected_error=None, username=None, password=None,
                     timeout=120, analytics_timeout=120)
             
-            self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec.get("max_thread_count",1), 
-                                      async_run=False, consume_from_queue_func=None)            
+            self.run_jobs_in_parallel(consumer_func, jobs, results, 1, async_run=False, consume_from_queue_func=None)            
             return all(results)
         return True 
 
@@ -2551,7 +2558,7 @@ class Index_Util(Synonym_Util):
                     username=None, password=None,
                     timeout=120, analytics_timeout=120)
             
-            self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec.get("max_thread_count",1), 
+            self.run_jobs_in_parallel(consumer_func, jobs, results, 1, 
                                       async_run=False, consume_from_queue_func=None)
             
             return all(results)
@@ -3308,8 +3315,7 @@ class CbasUtil(Index_Util):
             for link in remote_links:
                 jobs.put((self.connect_link, {"link_name" : link.full_name}))
         
-        self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec["max_thread_count"], 
-                                  async_run=False, consume_from_queue_func=None)
+        self.run_jobs_in_parallel(consumer_func, jobs, results, 1, async_run=False, consume_from_queue_func=None)
         if not all(results):
             return False
         results = []
@@ -3337,8 +3343,7 @@ class CbasUtil(Index_Util):
         return True
     
     def delete_cbas_infra_created_from_spec(
-            self, cbas_spec, 
-            continue_if_index_drop_fail=True,
+            self, continue_if_index_drop_fail=True,
             continue_if_synonym_drop_fail=True,
             continue_if_dataset_drop_fail=True,
             continue_if_link_drop_fail=True,
@@ -3366,7 +3371,7 @@ class CbasUtil(Index_Util):
             jobs.put((index, self.drop_cbas_index,{"index_name":index.name, 
                                                    "dataset_name":index.full_dataset_name,
                                                    "analytics_index":index.analytics_index}))
-        self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec["max_thread_count"], 
+        self.run_jobs_in_parallel(consumer_func, jobs, results, 1, 
                                   async_run=False, consume_from_queue_func=None)
         if any(results):
             if continue_if_index_drop_fail:
@@ -3379,7 +3384,7 @@ class CbasUtil(Index_Util):
         for synonym in self.list_all_synonym_objs():
             jobs.put((synonym, self.drop_analytics_synonym,{"synonym_full_name":synonym.full_name,
                                                             "if_exists":True}))
-        self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec["max_thread_count"], 
+        self.run_jobs_in_parallel(consumer_func, jobs, results, 1, 
                                   async_run=False, consume_from_queue_func=None)
         if any(results):
             if continue_if_synonym_drop_fail:
@@ -3400,7 +3405,7 @@ class CbasUtil(Index_Util):
             else:
                 jobs.put((dataset,self.drop_dataset,{"dataset_name":dataset_name,
                                                      "if_exists":True}))
-        self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec["max_thread_count"], 
+        self.run_jobs_in_parallel(consumer_func, jobs, results, 1, 
                                   async_run=False, consume_from_queue_func=None)
         if any(results):
             if continue_if_dataset_drop_fail:
@@ -3413,7 +3418,7 @@ class CbasUtil(Index_Util):
         for link in self.list_all_link_objs():
             jobs.put((link, self.drop_link,{"link_name":link.full_name,
                                             "if_exists":True}))
-        self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec["max_thread_count"], 
+        self.run_jobs_in_parallel(consumer_func, jobs, results, 1, 
                                   async_run=False, consume_from_queue_func=None)
         if any(results):
             if continue_if_link_drop_fail:
@@ -3434,7 +3439,7 @@ class CbasUtil(Index_Util):
                     jobs.put((dataverse,self.drop_dataverse,{"dataverse_name":dataverse.name,
                                                              "if_exists":True,
                                                              "delete_dataverse_obj":delete_dataverse_object}))
-        self.run_jobs_in_parallel(consumer_func, jobs, results, cbas_spec["max_thread_count"], 
+        self.run_jobs_in_parallel(consumer_func, jobs, results, 1, 
                                   async_run=False, consume_from_queue_func=None)
         if any(results):
             if continue_if_dataverse_drop_fail:

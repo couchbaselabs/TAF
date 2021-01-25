@@ -1973,7 +1973,7 @@ class CBASExternalLinks(CBASBaseTest):
         to_cluster = random.choice(self.to_clusters)
         
         self.log.info("Loading bucket, scopes and collections")
-        self.spec_name = "analytics.single_bucket"
+        self.bucket_spec = "analytics.single_bucket"
         self.collectionSetUp(to_cluster, to_cluster.bucket_util, to_cluster.cluster_util)
         
         dataset_obj = Dataset(

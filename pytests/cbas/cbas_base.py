@@ -87,7 +87,8 @@ class CBASBaseTest(BaseTestCase):
 
         self.expected_error = self.input.param("error", None)
 
-        self.spec_name = self.input.param("bucket_spec", None)
+        self.bucket_spec = self.input.param("bucket_spec", None)
+        self.doc_spec_name = self.input.param("doc_spec_name", "initial_load")
 
         # Single cluster support
         if hasattr(self, "cluster"):
@@ -109,18 +110,8 @@ class CBASBaseTest(BaseTestCase):
             self.otpNodes = []
             self.cbas_path = server.cbas_path
             self.rest = RestConnection(self.cluster.master)
-            self.log.info(
-                "Setting the min possible memory quota so that adding "
-                "more nodes to the cluster wouldn't be a problem.")
-            self.rest.set_service_memoryQuota(service='memoryQuota',
-                                              memoryQuota=MIN_KV_QUOTA)
-            self.rest.set_service_memoryQuota(service='ftsMemoryQuota',
-                                              memoryQuota=FTS_QUOTA)
-            self.rest.set_service_memoryQuota(service='indexMemoryQuota',
-                                              memoryQuota=INDEX_QUOTA)
-            self.set_cbas_memory_from_available_free_memory = \
-                self.input.param('set_cbas_memory_from_available_free_memory',
-                                 False)
+            self.set_cbas_memory_from_available_free_memory = self.input.param(
+                'set_cbas_memory_from_available_free_memory', False)
             if self.expected_error:
                 self.expected_error = \
                     self.expected_error.replace("INVALID_IP", invalid_ip)
@@ -128,23 +119,11 @@ class CBASBaseTest(BaseTestCase):
                     self.expected_error.replace("PORT",
                                                 self.cluster.master.port)
 
-            if self.set_cbas_memory_from_available_free_memory:
-                info = self.rest.get_nodes_self()
-                self.cbas_memory_quota = int((info.memoryFree // 1024 ** 2)
-                                             * 0.9)
-                self.log.info("Setting %d memory quota for CBAS"
-                              % self.cbas_memory_quota)
-                self.rest.set_service_memoryQuota(
-                    service='cbasMemoryQuota',
-                    memoryQuota=self.cbas_memory_quota)
-            else:
-                self.log.info("Setting %d memory quota for CBAS" % CBAS_QUOTA)
-                self.cbas_memory_quota = CBAS_QUOTA
-                self.rest.set_service_memoryQuota(service='cbasMemoryQuota',
-                                                  memoryQuota=CBAS_QUOTA)
             self.cbas_util = None
             if self.cluster.cbas_nodes:
                 self.cbas_node = self.cluster.cbas_nodes[0]
+                self.set_memory_for_services(
+                    self.cluster.master, self.cluster_util, self.cbas_node, self.cbas_node.services)
                 self.cbas_util = CbasUtil(self.cluster.master, self.cbas_node)
                 self.cbas_util_v2 = CbasUtilV2(self.cluster.master, self.cbas_node)
                 if "cbas" in self.cluster.master.services:
@@ -161,7 +140,7 @@ class CBASBaseTest(BaseTestCase):
                         it is automatically cleaned-up.'''
                     self.cleanup_cbas()
                     self.cluster.cbas_nodes.remove(self.cbas_node)
-            if self.spec_name is not None:
+            if self.bucket_spec is not None:
                 try:
                     self.collectionSetUp(self.cluster, self.bucket_util,
                                          self.cluster_util)
@@ -215,44 +194,16 @@ class CBASBaseTest(BaseTestCase):
 
                 cluster.rest = RestConnection(cluster.master)
 
-                self.log.info(
-                    "Setting the min possible memory quota so that adding "
-                    "more nodes to the cluster wouldn't be a problem.")
-                cluster.rest.set_service_memoryQuota(
-                    service='memoryQuota',
-                    memoryQuota=MIN_KV_QUOTA)
-                cluster.rest.set_service_memoryQuota(
-                    service='ftsMemoryQuota',
-                    memoryQuota=FTS_QUOTA)
-                cluster.rest.set_service_memoryQuota(
-                    service='indexMemoryQuota',
-                    memoryQuota=INDEX_QUOTA)
                 cluster.set_cbas_memory_from_available_free_memory = \
                     self.input.param(
                         'set_cbas_memory_from_available_free_memory', False)
-
-                if cluster.set_cbas_memory_from_available_free_memory:
-                    info = cluster.rest.get_nodes_self()
-                    cluster.cbas_memory_quota = int((info.memoryFree
-                                                     // 1024 ** 2) * 0.9)
-                    self.log.info("Setting %d memory quota for CBAS"
-                                  % cluster.cbas_memory_quota)
-                    cluster.rest.set_service_memoryQuota(
-                        service='cbasMemoryQuota',
-                        memoryQuota=cluster.cbas_memory_quota)
-                else:
-                    self.log.info("Setting %d memory quota for CBAS"
-                                  % CBAS_QUOTA)
-                    cluster.cbas_memory_quota = CBAS_QUOTA
-
-                    cluster.rest.set_service_memoryQuota(
-                        service='cbasMemoryQuota',
-                        memoryQuota=CBAS_QUOTA)
 
                 cluster.cbas_util = None
                 # Drop any existing buckets and datasets
                 if cluster.cbas_nodes:
                     cluster.cbas_node = cluster.cbas_nodes[0]
+                    self.set_memory_for_services(cluster.master, cluster.cluster_util, 
+                                                 cluster.cbas_node, cluster.cbas_node.services)
                     cluster.cbas_util = CbasUtil(cluster.master,
                                                  cluster.cbas_node,
                                                  self.task)
@@ -272,7 +223,7 @@ class CBASBaseTest(BaseTestCase):
                         """
                         self.cleanup_cbas(cluster.cbas_util)
                         cluster.cbas_nodes.remove(cluster.cbas_node)
-                if self.spec_name is not None:
+                if self.bucket_spec is not None:
                     try:
                         self.collectionSetUp(cluster, cluster.bucket_util,
                                              cluster.cluster_util)
@@ -604,7 +555,7 @@ class CBASBaseTest(BaseTestCase):
         traceback.print_exc()
         raise exception_obj
 
-    def collectionSetUp(self, cluster, bucket_util, cluster_util):
+    def collectionSetUp(self, cluster, bucket_util, cluster_util, load_data=True, buckets_spec=None, doc_loading_spec=None):
         """
         Setup the buckets, scopes and collecitons based on the spec passed.
         """
@@ -615,18 +566,12 @@ class CBASBaseTest(BaseTestCase):
 
         # Create bucket(s) and add rbac user
         bucket_util.add_rbac_user()
-        buckets_spec = bucket_util.get_bucket_template_from_package(
-            self.spec_name)
-        doc_loading_spec = \
-            bucket_util.get_crud_template_from_package("initial_load")
-
+        if not buckets_spec:
+            buckets_spec = bucket_util.get_bucket_template_from_package(
+                self.bucket_spec)
+        
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
-        self.over_ride_doc_loading_template_params(doc_loading_spec)
-
-        # MB-38438, adding CollectionNotFoundException in retry exception
-        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
-            SDKException.CollectionNotFoundException)
 
         bucket_util.create_buckets_using_json_data(buckets_spec)
         bucket_util.wait_for_collection_creation_to_complete()
@@ -654,32 +599,39 @@ class CBASBaseTest(BaseTestCase):
         # TODO: remove this once the bug is fixed
         #self.sleep(120, "MB-38497")
         self.sleep(10, "MB-38497")
-
-        doc_loading_task = \
-            bucket_util.run_scenario_from_spec(
-                self.task,
-                cluster,
-                bucket_util.buckets,
-                doc_loading_spec,
-                mutation_num=0,
-                batch_size=self.batch_size)
-        if doc_loading_task.result is False:
-            self.fail("Initial doc_loading failed")
-
         cluster_util.print_cluster_stats()
 
+        if load_data:
+            self.load_data_into_buckets(cluster, bucket_util, doc_loading_spec)
+    
+    def load_data_into_buckets(self,cluster, bucket_util, doc_loading_spec=None):
+        """
+        Loads data into buckets using the data spec
+        """
+        if not doc_loading_spec:
+            doc_loading_spec = bucket_util.get_crud_template_from_package(self.doc_spec_name)
+        
+        self.over_ride_doc_loading_template_params(doc_loading_spec)
+
+        # MB-38438, adding CollectionNotFoundException in retry exception
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
+            SDKException.CollectionNotFoundException)
+        
+        doc_loading_task = bucket_util.run_scenario_from_spec(
+            self.task, cluster, bucket_util.buckets, doc_loading_spec, mutation_num=0, batch_size=self.batch_size)
+        
+        if doc_loading_task.result is False:
+            self.fail("Initial reloading failed")
+        
         ttl_buckets = [
             "multi_bucket.buckets_for_rebalance_tests_with_ttl",
             "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
-            "multi_bucket.buckets_for_volume_tests_with_ttl"]
+            "volume_templates.buckets_for_volume_tests_with_ttl"]
 
         # Verify initial doc load count
         bucket_util._wait_for_stats_all_buckets()
-        if self.spec_name not in ttl_buckets:
+        if self.bucket_spec not in ttl_buckets:
             bucket_util.validate_docs_per_collections_all_buckets()
-
-        # Prints bucket stats after doc_ops
-        bucket_util.print_bucket_stats()
 
     def over_ride_bucket_template_params(self, bucket_spec):
         for over_ride_param in self.over_ride_spec_params:
@@ -711,6 +663,71 @@ class CBASBaseTest(BaseTestCase):
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
             elif over_ride_param == "doc_size":
                 target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
-
-
-
+    
+    def set_memory_for_services(self, master_node, cluster_util, server, services):
+        services = services.split(",")
+        if len(services) > 0:
+            service_mem_dict = {
+                "kv": ["memoryQuota",MIN_KV_QUOTA],
+                "fts": ["ftsMemoryQuota",FTS_QUOTA],
+                "index": ["indexMemoryQuota",INDEX_QUOTA],
+                "cbas": ["cbasMemoryQuota",CBAS_QUOTA]}
+            
+            # Get all services that are already running in cluster
+            cluster_services = cluster_util.get_services_map()
+            cluster_info = RestConnection(master_node).get_nodes_self()
+            
+            rest = RestConnection(server)
+            info = rest.get_nodes_self()
+            memory_quota_available = int((info.memoryFree // 1024 ** 2) * 0.9)
+            
+            if len(services) == 1:
+                service = services[0]
+                if service in cluster_services:
+                    if service is not "kv":
+                        self.log.info("Setting {0} memory quota for {1}".format(memory_quota_available, service))
+                        property_name = service_mem_dict[service][0]
+                        service_mem_in_cluster = cluster_info.get(property_name,service_mem_dict[service][1])
+                        # if service is already in cluster we cannot increase the RAM allocation, but we can reduce the RAM allocation if needed.
+                        if memory_quota_available < service_mem_in_cluster:
+                            if memory_quota_available > service_mem_dict[service][1]:
+                                rest.set_service_memoryQuota(service=property_name, memoryQuota=memory_quota_available)
+                            else:
+                                self.fail("Error while setting service memory quota {0} for {1}".format(service_mem_dict[service][1], service))                                    
+                else:
+                    self.log.info("Setting {0} memory quota for {1}".format(memory_quota_available, service))
+                    if memory_quota_available > service_mem_dict[service][1]:
+                        rest.set_service_memoryQuota(service=service_mem_dict[service][0], memoryQuota=memory_quota_available)
+                    else:
+                        self.fail("Error while setting service memory quota {0} for {1}".format(service_mem_dict[service][1], service))
+            else:
+                # if KV is present, then don't change the KV memory quota
+                # It is assumed that KV node will always be present in the master node of cluster.
+                if "kv" in services:
+                    services.remove("kv")
+                    memory_quota_available -= cluster_info.get("memoryQuota")
+                
+                set_cbas_mem = False
+                if "cbas" in services:
+                    services.remove("cbas")
+                    set_cbas_mem = True
+                
+                for service in services:
+                    # setting minimum possible memory for other services.
+                    self.log.info("Setting {0} memory quota for {1}".format(service_mem_dict[service][1], service))
+                    if memory_quota_available >= service_mem_dict[service][1]:
+                        rest.set_service_memoryQuota(service=service_mem_dict[service][0], memoryQuota=service_mem_dict[service][1])
+                        memory_quota_available -= service_mem_dict[service][1]
+                    else:
+                        self.fail("Error while setting service memory quota {0} for {1}".format(service_mem_dict[service][1], service))
+                
+                if set_cbas_mem and memory_quota_available >= service_mem_dict["cbas"][1]:
+                    if "cbas" in cluster_services:
+                        if cluster_info.get("cbasMemoryQuota") >= memory_quota_available:
+                            self.log.info("Setting {0} memory quota for CBAS".format(memory_quota_available))
+                            rest.set_service_memoryQuota(service="cbasMemoryQuota", memoryQuota=memory_quota_available) 
+                    else: 
+                        self.log.info("Setting {0} memory quota for CBAS".format(memory_quota_available))
+                        rest.set_service_memoryQuota(service="cbasMemoryQuota", memoryQuota=memory_quota_available)
+                else:
+                    self.fail("Error while setting service memory quota {0} for CBAS".format(memory_quota_available))
