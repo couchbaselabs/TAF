@@ -151,6 +151,39 @@ class Cbstats(CbCmdBase):
                 result[match_result.group(1)] = match_result.group(2)
         return result
 
+    def checkpoint_stats(self, bucket_name):
+        """
+        Fetches checkpoint stats for the given bucket_name
+
+        :param bucket_name: Bucket name to fetch the stats for
+        :return result: Dictionary map of vb_num as inner dict
+
+        Raise:
+        :Exception returned from the command line execution (if any)
+        """
+        result = dict()
+        output, error = self.get_stats(bucket_name, "checkpoint")
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+
+        pattern = \
+            "[\t ]*vb_([0-9]+):([a-zA-Z0-9@.->:_]+):[\t ]+([0-9A-Za-z_]+)"
+        pattern = re.compile(pattern)
+        for line in output:
+            match_result = pattern.match(line)
+            if match_result:
+                vb_num = int(match_result.group(1))
+                stat_name = match_result.group(2)
+                stat_value = match_result.group(3)
+                try:
+                    stat_value = int(stat_value)
+                except ValueError:
+                    pass
+                if vb_num not in result:
+                    result[vb_num] = dict()
+                result[vb_num][stat_name] = stat_value
+        return result
+
     def vbucket_list(self, bucket_name, vbucket_type="active"):
         """
         Get list of vbucket numbers as list.

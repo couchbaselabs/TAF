@@ -2149,6 +2149,8 @@ class StatsWaitTask(Task):
             while not self.stop and time.time() < timeout:
                 if self.statCmd in ["all", "dcp"]:
                     self._get_all_stats_and_compare()
+                elif self.statCmd == "checkpoint":
+                    self._get_checkpoint_stats_and_compare()
                 else:
                     raise Exception("Not supported. Implement the stat call")
         finally:
@@ -2164,30 +2166,74 @@ class StatsWaitTask(Task):
     def _get_all_stats_and_compare(self):
         stat_result = 0
         val_dict = dict()
-        try:
-            for cb_stat_obj in self.cbstatObjList:
-                tem_stat = cb_stat_obj.all_stats(
-                    self.bucket.name, stat_name=self.statCmd)[self.stat]
-                val_dict[cb_stat_obj.shellConn.ip] = tem_stat
-                if tem_stat and tem_stat != "None":
-                    stat_result += int(tem_stat)
-        except MemcachedError as e:
-            self.test_log.warn("Cbstats memcached error: %s" % e)
-        except Exception as error:
-            self.test_log.error("Exception during get_all_stats: %s" % error)
-            return False
+        retry = 10
+        while retry > 0:
+            try:
+                for cb_stat_obj in self.cbstatObjList:
+                    tem_stat = cb_stat_obj.all_stats(self.bucket.name,
+                                                     stat_name=self.statCmd)
+                    val_dict[cb_stat_obj.shellConn.ip] = tem_stat[self.stat]
+                    if self.stat in tem_stat:
+                        stat_result += int(tem_stat[self.stat])
+                break
+            except Exception as error:
+                if retry > 0:
+                    retry -= 1
+                    self.sleep(5, "MC is down. Retrying.. %s" % str(error))
+                    continue
+                for shell in self.shellConnList:
+                    shell.disconnect()
+                self.set_exception(error)
+                self.stop = True
+
         if not self._compare(self.comparison, str(stat_result), self.value):
-            self.test_log.warn("Not Ready: %s %s %s %s. Received: %s for bucket '%s'"
-                               % (self.stat, stat_result, self.comparison,
-                                  self.value, val_dict, self.bucket.name))
-            time.sleep(5)
-            return False
+            self.log.debug("Not Ready: %s %s %s %s. "
+                           "Received: %s for bucket '%s'"
+                           % (self.stat, stat_result, self.comparison,
+                              self.value, val_dict, self.bucket.name))
+            self.sleep(5, "Wait before next StatWaitTask check")
         else:
-            self.test_log.debug("Ready: %s %s %s %s. Received: %s for bucket '%s'"
+            self.test_log.debug("Ready: %s %s %s %s. "
+                                "Received: %s for bucket '%s'"
                                 % (self.stat, stat_result, self.comparison,
                                    self.value, val_dict, self.bucket.name))
             self.stop = True
-            return True
+
+    def _get_checkpoint_stats_and_compare(self):
+        stat_result = 0
+        val_dict = dict()
+        retry = 5
+        while retry > 0:
+            try:
+                for cb_stat_obj in self.cbstatObjList:
+                    tem_stat = cb_stat_obj.checkpoint_stats(self.bucket.name)
+                    node_stat_val = 0
+                    for vb in tem_stat:
+                        node_stat_val += tem_stat[vb][self.stat]
+                    val_dict[cb_stat_obj.shellConn.ip] = node_stat_val
+                    stat_result += node_stat_val
+                break
+            except Exception as error:
+                if retry > 0:
+                    retry -= 1
+                    self.sleep(5, "MC is down. Retrying.. %s" % str(error))
+                    continue
+                for shell in self.shellConnList:
+                    shell.disconnect()
+                self.set_exception(error)
+                self.stop = True
+        if not self._compare(self.comparison, str(stat_result), self.value):
+            self.test_log.debug("Not Ready: %s %s %s %s. "
+                                "Received: %s for bucket '%s'"
+                                % (self.stat, stat_result, self.comparison,
+                                   self.value, val_dict, self.bucket.name))
+            self.sleep(5, "Wait before next StatWaitTask check")
+        else:
+            self.test_log.debug("Ready: %s %s %s %s. "
+                                "Received: %s for bucket '%s'"
+                                % (self.stat, stat_result, self.comparison,
+                                   self.value, val_dict, self.bucket.name))
+            self.stop = True
 
     def _compare(self, cmp_type, a, b):
         if isinstance(b, (int, long)) and a.isdigit():

@@ -608,7 +608,8 @@ class BucketUtils:
                             "snap_start and snap_end corruption found!!!")
 
     def _wait_for_stat(self, bucket, stat_map=None,
-                       stat_name="ep_queue_size",
+                       cbstat_cmd="checkpoint",
+                       stat_name="num_items_for_persistence",
                        stat_cond='==',
                        timeout=60):
         """
@@ -617,22 +618,22 @@ class BucketUtils:
         A utility function that waits for all of the items loaded to be
         persisted and replicated.
 
-        Args:
-          servers - List of all servers in the cluster ([TestInputServer])
-          ep_queue_size - expected ep_queue_size (int)
-          ep_queue_size_cond - condition for comparing (str)
-          check_ep_dcp_items_remaining - to check if replication is complete
-          timeout - Waiting the end of the thread. (str)
+        Arguments:
+        :param bucket: Bucket object used for verification
+        :param stat_map: Dict of node_ip:expected stat value
+        :param cbstat_cmd: cbstat command name to execute
+        :param stat_name: Stat to validate against the expected value
+        :param stat_cond: Binary condition used for validation
+        :param timeout: Waiting the end of the thread. (str)
         """
         tasks = []
-        stat_cmd = "all"
         if stat_map:
             for server, stat_value in stat_map.items():
                 if bucket.bucketType == 'memcached':
                     continue
                 shell_conn = RemoteMachineShellConnection(server)
                 tasks.append(self.task.async_wait_for_stats(
-                    [shell_conn], bucket, stat_cmd,
+                    [shell_conn], bucket, cbstat_cmd,
                     stat_name, stat_cond, stat_value,
                     timeout=timeout))
         for task in tasks:
@@ -640,10 +641,12 @@ class BucketUtils:
             for shell in task.shellConnList:
                 shell.disconnect()
 
-    def _wait_for_stats_all_buckets(self, ep_queue_size=0,
-                                    ep_queue_size_cond='==',
+    def _wait_for_stats_all_buckets(self, expected_val=0,
+                                    comparison_condition='==',
                                     check_ep_items_remaining=False,
-                                    timeout=500):
+                                    timeout=500,
+                                    cbstat_cmd="checkpoint",
+                                    stat_name="num_items_for_persistence"):
         """
         Waits for queues to drain on all servers and buckets in a cluster.
 
@@ -658,24 +661,21 @@ class BucketUtils:
           timeout - Waiting the end of the thread. (str)
         """
         tasks = list()
-        stat_cmd = "all"
-        dcp_cmd = "dcp"
-        ep_queue_size_str = 'ep_queue_size'
-        ep_dcp_items_remaining_str = 'ep_dcp_items_remaining'
         for server in self.cluster_util.get_kv_nodes():
             for bucket in self.buckets:
                 if bucket.bucketType == 'memcached':
                     continue
                 shell_conn = RemoteMachineShellConnection(server)
                 tasks.append(self.task.async_wait_for_stats(
-                    [shell_conn], bucket, stat_cmd,
-                    ep_queue_size_str, ep_queue_size_cond, ep_queue_size,
+                    [shell_conn], bucket, cbstat_cmd,
+                    stat_name, comparison_condition, expected_val,
                     timeout=timeout))
                 if check_ep_items_remaining:
+                    dcp_cmd = "dcp"
                     shell_conn = RemoteMachineShellConnection(server)
                     tasks.append(self.task.async_wait_for_stats(
                         [shell_conn], bucket, dcp_cmd,
-                        ep_dcp_items_remaining_str, "==", 0,
+                        'ep_dcp_items_remaining', "==", 0,
                         timeout=timeout))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
