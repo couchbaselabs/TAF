@@ -1,5 +1,6 @@
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection, RestHelper
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from rebalance_base import RebalanceBaseTest
 
 
@@ -25,6 +26,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.gen_update = doc_generator("test_collections", 0,
                                             (self.items / 2),
                                             mutation_type="SET")
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
 
     def tearDown(self):
         super(RebalanceStartStopTests, self).tearDown()
@@ -39,7 +43,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                         self.cluster, bucket, doc_gen, op, 0,
                         durability=self.durability_level,
                         timeout_secs=self.sdk_timeout,
-                        batch_size=10,
+                        batch_size=1000,
                         process_concurrency=8,
                         scope=scope.name,
                         collection=collection.name,
@@ -51,6 +55,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         return tasks
 
     def tasks_result(self, tasks):
+        self.log.info("Waiting for data load to finish")
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
